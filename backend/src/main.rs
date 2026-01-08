@@ -10,9 +10,12 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tracing::{info, warn};
+use tracing::{info, warn, error};
 use tracing_subscriber;
 use uuid::Uuid;
+
+mod sfu;
+use sfu::SfuRouter;
 
 // Participant information structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,7 +33,14 @@ enum ClientMessage {
     JoinRoom { room_id: String },
     LeaveRoom,
     Ping,
-    // TODO: Migrate to SFU topology in future iterations
+    // SFU-based WebRTC messages
+    CreatePublisher,
+    PublishAudio { sdp: String },
+    CreateConsumer { publisher_user_id: String },
+    ConsumerAnswer { consumer_id: String, sdp: String },
+    PublisherIceCandidate { candidate: String },
+    ConsumerIceCandidate { consumer_id: String, candidate: String },
+    // Legacy P2P messages (deprecated, will be removed)
     WebrtcOffer { target_user_id: String, sdp: String },
     WebrtcAnswer { target_user_id: String, sdp: String },
     IceCandidate { target_user_id: String, candidate: String },
@@ -47,7 +57,14 @@ enum ServerMessage {
     RoomLeft,
     Error { message: String },
     Pong,
-    // TODO: Migrate to SFU topology in future iterations
+    // SFU-based WebRTC messages
+    PublisherCreated { sdp: String },
+    AudioPublished { track_id: String },
+    ConsumerCreated { consumer_id: String, publisher_user_id: String, sdp: String },
+    NewPublisher { user_id: String, username: String },
+    PublisherIceCandidate { candidate: String },
+    ConsumerIceCandidate { consumer_id: String, candidate: String },
+    // Legacy P2P messages (deprecated, will be removed)
     WebrtcOffer { from_user_id: String, sdp: String },
     WebrtcAnswer { from_user_id: String, sdp: String },
     IceCandidate { from_user_id: String, candidate: String },
@@ -78,6 +95,7 @@ struct AppState {
     rooms: Rooms,
     users: Users,
     user_rooms: UserRooms,
+    sfu_router: SfuRouter,
 }
 
 #[tokio::main]
@@ -90,6 +108,7 @@ async fn main() {
         rooms: Arc::new(RwLock::new(HashMap::new())),
         users: Arc::new(RwLock::new(HashMap::new())),
         user_rooms: Arc::new(RwLock::new(HashMap::new())),
+        sfu_router: SfuRouter::new(),
     };
 
     // Build application router with WebSocket endpoint
@@ -295,8 +314,162 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     let response = ServerMessage::Pong;
                                     let _ = tx.send(serde_json::to_string(&response).unwrap());
                                 }
-                                // WebRTC signaling relay logic
-                                // TODO: Migrate to SFU topology in future iterations
+                                // SFU WebRTC handlers
+                                ClientMessage::CreatePublisher => {
+                                    if let Some(uid) = &user_id {
+                                        let users = state.users.read().await;
+                                        if let Some(user) = users.get(uid) {
+                                            let username = user.username.clone();
+                                            drop(users);
+
+                                            info!("[SFU] Creating publisher for user {} ({})", username, uid);
+
+                                            match state.sfu_router.add_publisher(uid.clone(), username.clone()).await {
+                                                Ok(sdp_offer) => {
+                                                    let response = ServerMessage::PublisherCreated {
+                                                        sdp: sdp_offer,
+                                                    };
+                                                    let _ = tx.send(serde_json::to_string(&response).unwrap());
+
+                                                    // NOTE: NewPublisher notification moved to PublishAudio handler
+                                                    // to avoid race condition where consumers try to subscribe
+                                                    // before the audio track is published
+                                                }
+                                                Err(e) => {
+                                                    error!("[SFU] Failed to create publisher: {}", e);
+                                                    let response = ServerMessage::Error {
+                                                        message: format!("Failed to create publisher: {}", e),
+                                                    };
+                                                    let _ = tx.send(serde_json::to_string(&response).unwrap());
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        let response = ServerMessage::Error {
+                                            message: "Not registered".to_string(),
+                                        };
+                                        let _ = tx.send(serde_json::to_string(&response).unwrap());
+                                    }
+                                }
+                                ClientMessage::PublishAudio { sdp } => {
+                                    if let Some(uid) = &user_id {
+                                        info!("[SFU] Setting publisher answer for user {}", uid);
+
+                                        match state.sfu_router.set_publisher_answer(uid, sdp).await {
+                                            Ok(track_id_opt) => {
+                                                // Wait for track to be available
+                                                let track_id = if track_id_opt.is_some() {
+                                                    track_id_opt.unwrap()
+                                                } else {
+                                                    // Try to get track ID with retries
+                                                    match state.sfu_router.get_publisher_track_id(uid, 50).await {
+                                                        Some(tid) => tid,
+                                                        None => {
+                                                            warn!("[SFU] Track not available yet for user {}", uid);
+                                                            "pending".to_string()
+                                                        }
+                                                    }
+                                                };
+
+                                                let response = ServerMessage::AudioPublished {
+                                                    track_id,
+                                                };
+                                                let _ = tx.send(serde_json::to_string(&response).unwrap());
+
+                                                // Now that audio track is published, notify other room members
+                                                // This avoids race condition where consumers try to subscribe
+                                                // before the audio track is available
+                                                let users = state.users.read().await;
+                                                if let Some(user) = users.get(uid) {
+                                                    let username = user.username.clone();
+                                                    drop(users);
+
+                                                    if let Some(room_id) = state.user_rooms.read().await.get(uid) {
+                                                        let rooms = state.rooms.read().await;
+                                                        if let Some(room) = rooms.get(room_id) {
+                                                            let notification = ServerMessage::NewPublisher {
+                                                                user_id: uid.clone(),
+                                                                username: username.clone(),
+                                                            };
+                                                            let notification_str = serde_json::to_string(&notification).unwrap();
+
+                                                            let users_lock = state.users.read().await;
+                                                            for (participant_id, _) in &room.participants {
+                                                                if participant_id != uid {
+                                                                    if let Some(participant) = users_lock.get(participant_id) {
+                                                                        info!("[SFU] Notifying {} about new publisher {}", participant_id, uid);
+                                                                        let _ = participant.tx.send(notification_str.clone());
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("[SFU] Failed to set publisher answer: {}", e);
+                                                let response = ServerMessage::Error {
+                                                    message: format!("Failed to set publisher answer: {}", e),
+                                                };
+                                                let _ = tx.send(serde_json::to_string(&response).unwrap());
+                                            }
+                                        }
+                                    }
+                                }
+                                ClientMessage::CreateConsumer { publisher_user_id } => {
+                                    if let Some(uid) = &user_id {
+                                        info!("[SFU] Creating consumer for user {} to consume {}", uid, publisher_user_id);
+
+                                        match state.sfu_router.add_consumer(publisher_user_id.clone(), uid.clone()).await {
+                                            Ok((consumer_id, sdp_offer)) => {
+                                                let response = ServerMessage::ConsumerCreated {
+                                                    consumer_id,
+                                                    publisher_user_id: publisher_user_id.clone(),
+                                                    sdp: sdp_offer,
+                                                };
+                                                let _ = tx.send(serde_json::to_string(&response).unwrap());
+                                            }
+                                            Err(e) => {
+                                                error!("[SFU] Failed to create consumer: {}", e);
+                                                let response = ServerMessage::Error {
+                                                    message: format!("Failed to create consumer: {}", e),
+                                                };
+                                                let _ = tx.send(serde_json::to_string(&response).unwrap());
+                                            }
+                                        }
+                                    }
+                                }
+                                ClientMessage::ConsumerAnswer { consumer_id, sdp } => {
+                                    if let Some(_uid) = &user_id {
+                                        info!("[SFU] Setting consumer answer for consumer {}", consumer_id);
+
+                                        match state.sfu_router.set_consumer_answer(&consumer_id, sdp).await {
+                                            Ok(_) => {
+                                                info!("[SFU] Consumer {} answer set successfully", consumer_id);
+                                            }
+                                            Err(e) => {
+                                                error!("[SFU] Failed to set consumer answer: {}", e);
+                                                let response = ServerMessage::Error {
+                                                    message: format!("Failed to set consumer answer: {}", e),
+                                                };
+                                                let _ = tx.send(serde_json::to_string(&response).unwrap());
+                                            }
+                                        }
+                                    }
+                                }
+                                ClientMessage::PublisherIceCandidate { candidate } => {
+                                    if let Some(uid) = &user_id {
+                                        if let Err(e) = state.sfu_router.add_publisher_ice_candidate(uid, candidate).await {
+                                            warn!("[SFU] Failed to add publisher ICE candidate: {}", e);
+                                        }
+                                    }
+                                }
+                                ClientMessage::ConsumerIceCandidate { consumer_id, candidate } => {
+                                    if let Err(e) = state.sfu_router.add_consumer_ice_candidate(&consumer_id, candidate).await {
+                                        warn!("[SFU] Failed to add consumer ICE candidate: {}", e);
+                                    }
+                                }
+                                // Legacy WebRTC signaling relay logic (deprecated)
                                 ClientMessage::WebrtcOffer { target_user_id, sdp } => {
                                     if let Some(uid) = &user_id {
                                         info!("Relaying WebRTC offer from {} to {}", uid, target_user_id);
@@ -382,6 +555,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         // Cleanup on disconnect
         if let Some(uid) = &user_id {
             info!("Cleaning up user {}", uid);
+
+            // Clean up SFU publisher and consumers
+            if let Err(e) = state.sfu_router.remove_publisher(uid).await {
+                warn!("[SFU] Failed to remove publisher during cleanup: {}", e);
+            }
+            if let Err(e) = state.sfu_router.remove_consumers_for_subscriber(uid).await {
+                warn!("[SFU] Failed to remove consumers during cleanup: {}", e);
+            }
 
             // Remove from room if in one
             if let Some(room_id) = state.user_rooms.write().await.remove(uid) {

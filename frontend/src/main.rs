@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::info;
+use tracing::{info, error};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
@@ -65,9 +65,13 @@ enum ClientMessage {
     JoinRoom { room_id: String },
     LeaveRoom,
     Ping,
-    WebrtcOffer { target_user_id: String, sdp: String },
-    WebrtcAnswer { target_user_id: String, sdp: String },
-    IceCandidate { target_user_id: String, candidate: String },
+    // SFU-based WebRTC messages
+    CreatePublisher,
+    PublishAudio { sdp: String },
+    CreateConsumer { publisher_user_id: String },
+    ConsumerAnswer { consumer_id: String, sdp: String },
+    PublisherIceCandidate { candidate: String },
+    ConsumerIceCandidate { consumer_id: String, candidate: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,9 +85,13 @@ enum ServerMessage {
     RoomLeft,
     Error { message: String },
     Pong,
-    WebrtcOffer { from_user_id: String, sdp: String },
-    WebrtcAnswer { from_user_id: String, sdp: String },
-    IceCandidate { from_user_id: String, candidate: String },
+    // SFU-based WebRTC messages
+    PublisherCreated { sdp: String },
+    AudioPublished { track_id: String },
+    ConsumerCreated { consumer_id: String, publisher_user_id: String, sdp: String },
+    NewPublisher { user_id: String, username: String },
+    PublisherIceCandidate { candidate: String },
+    ConsumerIceCandidate { consumer_id: String, candidate: String },
 }
 
 // Microphone status enum
@@ -113,11 +121,18 @@ struct Participant {
     user_id: String,
 }
 
+// Consumer connection info for SFU topology
+#[derive(Clone, Debug)]
+struct ConsumerInfo {
+    connection: RtcPeerConnection,
+    publisher_user_id: String,
+}
+
 // Connection statistics for WebRTC peers
 #[derive(Clone, Debug)]
 struct ConnectionStats {
     audio_bitrate: f64,           // кбит/с
-    audio_level: f64,             // 0.0-100.0
+    _audio_level: f64,             // 0.0-100.0
     packet_loss: f64,             // процент (0.0-100.0)
     jitter: f64,                  // миллисекунды
     rtt: f64,                     // Round-trip time в ms
@@ -131,7 +146,7 @@ impl Default for ConnectionStats {
     fn default() -> Self {
         Self {
             audio_bitrate: 0.0,
-            audio_level: 0.0,
+            _audio_level: 0.0,
             packet_loss: 0.0,
             jitter: 0.0,
             rtt: 0.0,
@@ -166,16 +181,15 @@ fn App() -> Element {
     let mut room_input = use_signal(|| String::from(""));
     let mut participants = use_signal(|| Vec::<Participant>::new());
     
-    // TODO: Replace Mesh topology with SFU for better scalability
-    // WebRTC state - peer connections per user
-    let mut peer_connections = use_signal(|| HashMap::<String, RtcPeerConnection>::new());
+    // SFU WebRTC state - publisher/consumer topology
+    let mut publisher_connection = use_signal(|| None::<RtcPeerConnection>);
+    let mut consumer_connections = use_signal(|| HashMap::<String, ConsumerInfo>::new());
     
-    // TODO: Move media processing to SFU server
     // Audio levels for each participant
     let mut participant_audio_levels = use_signal(|| HashMap::<String, f64>::new());
     
-    // Connection statistics for each peer
-    let connection_stats = use_signal(|| HashMap::<String, ConnectionStats>::new());
+    // Connection statistics for each connection (keyed by user_id for consumers, "publisher" for publisher)
+    let mut connection_stats = use_signal(|| HashMap::<String, ConnectionStats>::new());
     
     // Toggle for showing detailed statistics
     let mut show_detailed_stats = use_signal(|| false);
@@ -271,7 +285,7 @@ fn App() -> Element {
                         if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&message) {
                             match server_msg {
                                 ServerMessage::Registered { user_id: uid } => {
-                                    info!("[Room] Registered with user_id: {}", uid);
+                                    info!("[SFU] Registered with user_id: {}", uid);
                                     user_id.set(Some(uid));
                                     
                                     // Auto-join room if room_id is present in URL
@@ -287,114 +301,86 @@ fn App() -> Element {
                                     }
                                 }
                                 ServerMessage::RoomCreated { room_id: rid } => {
-                                    info!("[Room] Room created: {}", rid);
+                                    info!("[SFU] Room created: {}", rid);
                                     current_room.set(Some(rid.clone()));
                                     room_input.set(rid);
                                     participants.set(vec![]);
                                 }
                                 ServerMessage::RoomJoined { room_id: rid, participants: parts_info } => {
-                                    info!("[Room] Joined room: {}", rid);
+                                    info!("[SFU] Joined room: {}", rid);
                                     current_room.set(Some(rid));
+                                    
                                     // Convert ParticipantInfo to Participant
-                                    let parts: Vec<Participant> = parts_info.into_iter()
+                                    let parts: Vec<Participant> = parts_info.iter()
                                         .map(|info| Participant {
-                                            username: info.username,
-                                            user_id: info.user_id,
+                                            username: info.username.clone(),
+                                            user_id: info.user_id.clone(),
                                         })
                                         .collect();
                                     
-                                    info!("[Room] Received {} participants with user_ids", parts.len());
-                                    for p in &parts {
-                                        info!("[Room] Participant: {} (user_id: {})", p.username, p.user_id);
-                                    }
-                                    
+                                    info!("[SFU] Received {} existing participants", parts.len());
                                     participants.set(parts);
+                                    
+                                    // If we have microphone, create publisher
+                                    if media_stream.read().is_some() {
+                                        info!("[SFU] Microphone available, creating publisher");
+                                        let msg = ClientMessage::CreatePublisher;
+                                        if let Ok(msg_str) = serde_json::to_string(&msg) {
+                                            let _ = ws_for_msg.send_with_str(&msg_str);
+                                        }
+                                    } else {
+                                        info!("[SFU] No microphone yet, publisher will be created when mic is granted");
+                                    }
                                 }
-                                ServerMessage::UserJoined { username, user_id } => {
-                                    info!("[Room] User joined: {} ({})", username, user_id);
+                                ServerMessage::UserJoined { username: uname, user_id: uid } => {
+                                    info!("[SFU] User joined: {} ({})", uname, uid);
                                     
-                                    // Безопасное добавление участника
+                                    // Add participant to list
                                     participants.write().push(Participant {
-                                        username: username.clone(),
-                                        user_id: user_id.clone(),
+                                        username: uname,
+                                        user_id: uid,
                                     });
-                                    
-                                    // Проверить что у нас есть микрофон перед созданием peer connection
-                                    let stream = match media_stream.read().as_ref() {
-                                        Some(s) => {
-                                            info!("[WebRTC] Microphone available, creating peer connection for {}", username);
-                                            s.clone()
-                                        }
-                                        None => {
-                                            info!("[WebRTC] No microphone yet, skipping peer connection for {}", username);
-                                            return;
-                                        }
-                                    };
-                                    
-                                    // WebSocket уже доступен (мы внутри onmessage handler)
-                                    info!("[WebRTC] Initiating peer connection for {} ({})", username, user_id);
-                                    
-                                    // Клонировать переменные с логированием каждого шага
-                                    info!("[WebRTC] Step 0.1: About to clone stream");
-                                    let stream_clone = stream.clone();
-                                    info!("[WebRTC] Step 0.2: Stream cloned successfully");
-                                    
-                                    info!("[WebRTC] Step 0.3: About to clone user_id");
-                                    let target_uid = user_id.clone();
-                                    info!("[WebRTC] Step 0.4: user_id cloned successfully");
-                                    
-                                    info!("[WebRTC] Step 0.5: About to clone username");
-                                    let target_name = username.clone();
-                                    info!("[WebRTC] Step 0.6: username cloned successfully");
-                                    
-                                    info!("[WebRTC] Step 0.7: About to clone WebSocket");
-                                    let ws_clone = ws_for_msg.clone();
-                                    info!("[WebRTC] Step 0.8: WebSocket cloned successfully");
-                                    
-                                    info!("[WebRTC] Step 0.9: All variables cloned, about to spawn task for {}", target_uid);
-                                    
-                                    // Создать peer connection безопасно
-                                    spawn_local(async move {
-                                        info!("[WebRTC] INSIDE SPAWN_LOCAL - VERY FIRST LINE - Starting task");
-                                        info!("[WebRTC] INSIDE SPAWN_LOCAL - Step 1: Starting spawn for {} ({})", target_name, target_uid);
-                                        info!("[WebRTC] Step 2: About to call create_peer_connection");
-                                        
-                                        match create_peer_connection(stream_clone, target_uid.clone(), ws_clone, true, participant_audio_levels, connection_stats).await {
-                                            Ok(pc) => {
-                                                info!("[WebRTC] Step 3: create_peer_connection succeeded for {} ({})", target_name, target_uid);
-                                                info!("[WebRTC] Step 4: Inserting peer connection into map");
-                                                peer_connections.write().insert(target_uid.clone(), pc);
-                                                info!("[WebRTC] Step 5: Peer connection stored successfully for {}", target_uid);
-                                            }
-                                            Err(e) => {
-                                                info!("[Error] create_peer_connection failed for {} ({}): {:?}", target_name, target_uid, e);
-                                            }
-                                        }
-                                        info!("[WebRTC] Step 6: Spawn block completed for {}", target_name);
-                                    });
-                                    
-                                    info!("[WebRTC] Step 0.10: Spawn created successfully");
                                 }
                                 ServerMessage::UserLeft { username: uname, user_id: uid } => {
-                                    info!("[Room] User left: {} ({})", uname, uid);
+                                    info!("[SFU] User left: {} ({})", uname, uid);
                                     participants.write().retain(|p| p.user_id != uid);
                                     
-                                    // Close and remove peer connection
-                                    if let Some(pc) = peer_connections.write().remove(&uid) {
-                                        pc.close();
+                                    // Remove consumer connection for this user
+                                    let removed_consumers: Vec<String> = consumer_connections.read()
+                                        .iter()
+                                        .filter(|(_, info)| info.publisher_user_id == uid)
+                                        .map(|(cid, _)| cid.clone())
+                                        .collect();
+                                    
+                                    for consumer_id in removed_consumers {
+                                        if let Some(info) = consumer_connections.write().remove(&consumer_id) {
+                                            info!("[SFU] Closing consumer {} for user {}", consumer_id, uid);
+                                            info.connection.close();
+                                        }
                                     }
+                                    
                                     participant_audio_levels.write().remove(&uid);
+                                    connection_stats.write().remove(&uid);
                                 }
                                 ServerMessage::RoomLeft => {
-                                    info!("[Room] Left room");
+                                    info!("[SFU] Left room");
                                     current_room.set(None);
                                     participants.set(vec![]);
                                     
-                                    // Close all peer connections
-                                    for (_, pc) in peer_connections.write().drain() {
+                                    // Close publisher connection
+                                    if let Some(pc) = publisher_connection.write().take() {
+                                        info!("[SFU] Closing publisher connection");
                                         pc.close();
                                     }
+                                    
+                                    // Close all consumer connections
+                                    for (cid, info) in consumer_connections.write().drain() {
+                                        info!("[SFU] Closing consumer {}", cid);
+                                        info.connection.close();
+                                    }
+                                    
                                     participant_audio_levels.write().clear();
+                                    connection_stats.write().clear();
                                 }
                                 ServerMessage::Error { message: err } => {
                                     info!("[Error] Server error: {}", err);
@@ -402,72 +388,91 @@ fn App() -> Element {
                                 ServerMessage::Pong => {
                                     // Pong received - no logging needed
                                 }
-                                ServerMessage::WebrtcOffer { from_user_id, sdp } => {
-                                    info!("[WebRTC] Received offer from {}", from_user_id);
-                                    info!("[DEBUG] About to check media_stream for offer handling");
+                                // SFU message handlers
+                                ServerMessage::PublisherCreated { sdp } => {
+                                    info!("[SFU] Publisher created, received SDP offer");
                                     
                                     if let Some(stream) = media_stream.read().as_ref() {
-                                        info!("[DEBUG] Media stream found, spawning offer handler");
-                                        spawn_local({
-                                            let stream = stream.clone();
-                                            let from_uid = from_user_id.clone();
-                                            let ws = ws_for_msg.clone();
-                                            let offer_sdp = sdp.clone();
-                                            async move {
-                                                info!("[DEBUG] INSIDE SPAWN - offer handler started for {}", from_uid);
-                                                info!("[DEBUG] About to call handle_webrtc_offer");
-                                                match handle_webrtc_offer(stream, from_uid.clone(), ws, offer_sdp, participant_audio_levels, connection_stats).await {
-                                                    Ok(pc) => {
-                                                        info!("[DEBUG] handle_webrtc_offer succeeded, about to write to peer_connections");
-                                                        peer_connections.write().insert(from_uid, pc);
-                                                        info!("[DEBUG] peer_connection inserted successfully");
-                                                    }
-                                                    Err(e) => {
-                                                        info!("Failed to handle WebRTC offer: {:?}", e);
-                                                    }
+                                        let stream_clone = stream.clone();
+                                        let ws_clone = ws_for_msg.clone();
+                                        
+                                        spawn_local(async move {
+                                            match create_publisher_connection(stream_clone, ws_clone, sdp, connection_stats).await {
+                                                Ok(pc) => {
+                                                    info!("[SFU] Publisher connection created successfully");
+                                                    publisher_connection.set(Some(pc));
                                                 }
-                                            }
-                                        });
-                                    }
-                                }
-                                ServerMessage::WebrtcAnswer { from_user_id, sdp } => {
-                                    info!("Received WebRTC answer from {}", from_user_id);
-                                    info!("[DEBUG] About to read peer_connections for answer handling");
-                                    
-                                    if let Some(pc) = peer_connections.read().get(&from_user_id) {
-                                        info!("[DEBUG] Found peer connection for {}, spawning answer handler", from_user_id);
-                                        spawn_local({
-                                            let pc = pc.clone();
-                                            let answer_sdp = sdp.clone();
-                                            let from_uid_debug = from_user_id.clone();
-                                            async move {
-                                                info!("[DEBUG] INSIDE SPAWN - answer handler started for {}", from_uid_debug);
-                                                if let Err(e) = handle_webrtc_answer(pc, answer_sdp).await {
-                                                    info!("Failed to handle WebRTC answer: {:?}", e);
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                ServerMessage::IceCandidate { from_user_id, candidate } => {
-                                    info!("Received ICE candidate from {}", from_user_id);
-                                    info!("[DEBUG] About to read peer_connections for ICE candidate - THIS IS LINE 384");
-                                    
-                                    if let Some(pc) = peer_connections.read().get(&from_user_id) {
-                                        info!("[DEBUG] Found peer connection for {}, spawning ICE handler", from_user_id);
-                                        spawn_local({
-                                            let pc = pc.clone();
-                                            let cand = candidate.clone();
-                                            let from_uid_debug = from_user_id.clone();
-                                            async move {
-                                                info!("[DEBUG] INSIDE SPAWN_LOCAL - ICE handler started for {}", from_uid_debug);
-                                                if let Err(e) = handle_ice_candidate(pc, cand).await {
-                                                    info!("Failed to handle ICE candidate: {:?}", e);
+                                                Err(e) => {
+                                                    info!("[Error] Failed to create publisher connection: {:?}", e);
                                                 }
                                             }
                                         });
                                     } else {
-                                        info!("[DEBUG] No peer connection found for {} when handling ICE candidate", from_user_id);
+                                        info!("[Error] No media stream available for publisher");
+                                    }
+                                }
+                                ServerMessage::AudioPublished { track_id } => {
+                                    info!("[SFU] Audio published successfully, track_id: {}", track_id);
+                                }
+                                ServerMessage::NewPublisher { user_id: pub_uid, username: pub_name } => {
+                                    info!("[SFU] New publisher available: {} ({})", pub_name, pub_uid);
+                                    
+                                    // Request to create consumer for this publisher
+                                    let msg = ClientMessage::CreateConsumer {
+                                        publisher_user_id: pub_uid,
+                                    };
+                                    if let Ok(msg_str) = serde_json::to_string(&msg) {
+                                        let _ = ws_for_msg.send_with_str(&msg_str);
+                                    }
+                                }
+                                ServerMessage::ConsumerCreated { consumer_id, publisher_user_id, sdp } => {
+                                    info!("[SFU] Consumer created: {}, publisher: {}", consumer_id, publisher_user_id);
+                                    
+                                    let ws_clone = ws_for_msg.clone();
+                                    let cid = consumer_id.clone();
+                                    let pub_uid = publisher_user_id.clone();
+                                    
+                                    spawn_local(async move {
+                                        match create_consumer_connection(cid.clone(), pub_uid.clone(), ws_clone, sdp, participant_audio_levels, connection_stats).await {
+                                            Ok(pc) => {
+                                                info!("[SFU] Consumer connection created successfully");
+                                                consumer_connections.write().insert(cid, ConsumerInfo {
+                                                    connection: pc,
+                                                    publisher_user_id: pub_uid,
+                                                });
+                                            }
+                                            Err(e) => {
+                                                info!("[Error] Failed to create consumer connection: {:?}", e);
+                                            }
+                                        }
+                                    });
+                                }
+                                ServerMessage::PublisherIceCandidate { candidate } => {
+                                    info!("[SFU] Received publisher ICE candidate");
+                                    
+                                    if let Some(pc) = publisher_connection.read().as_ref() {
+                                        let pc_clone = pc.clone();
+                                        spawn_local(async move {
+                                            if let Err(e) = handle_ice_candidate(pc_clone, candidate).await {
+                                                info!("[Error] Failed to add publisher ICE candidate: {:?}", e);
+                                            }
+                                        });
+                                    } else {
+                                        info!("[Warning] Received publisher ICE candidate but no publisher connection");
+                                    }
+                                }
+                                ServerMessage::ConsumerIceCandidate { consumer_id, candidate } => {
+                                    info!("[SFU] Received consumer ICE candidate for {}", consumer_id);
+                                    
+                                    if let Some(info) = consumer_connections.read().get(&consumer_id) {
+                                        let pc_clone = info.connection.clone();
+                                        spawn_local(async move {
+                                            if let Err(e) = handle_ice_candidate(pc_clone, candidate).await {
+                                                info!("[Error] Failed to add consumer ICE candidate: {:?}", e);
+                                            }
+                                        });
+                                    } else {
+                                        info!("[Warning] Received ICE candidate for unknown consumer: {}", consumer_id);
                                     }
                                 }
                             }
@@ -495,11 +500,18 @@ fn App() -> Element {
                     current_room.set(None);
                     participants.set(vec![]);
                     
-                    // Close all peer connections
-                    for (_, pc) in peer_connections.write().drain() {
+                    // Close publisher connection
+                    if let Some(pc) = publisher_connection.write().take() {
                         pc.close();
                     }
+                    
+                    // Close all consumer connections
+                    for (_, info) in consumer_connections.write().drain() {
+                        info.connection.close();
+                    }
+                    
                     participant_audio_levels.write().clear();
+                    connection_stats.write().clear();
                 }) as Box<dyn FnMut(JsValue)>);
                 
                 websocket.set_onclose(Some(onclose.as_ref().unchecked_ref()));
@@ -638,113 +650,16 @@ fn App() -> Element {
                     media_stream.set(Some(stream.clone()));
                     mic_status.set(MicStatus::Allowed);
                     
-                    // If we're already in a room - create peer connections for all participants
-                    info!("[WebRTC] Checking if we're in a room for deferred connections...");
-                    
-                    let in_room = current_room.read().is_some();
-                    if !in_room {
-                        info!("[WebRTC] Not in a room, skipping deferred connections");
-                    } else {
-                        info!("[WebRTC] Microphone obtained while in room, initiating connections");
+                    // If we're already in a room, create publisher
+                    if current_room.read().is_some() {
+                        info!("[SFU] Already in room, creating publisher");
                         
-                        // Safely get user_id
-                        info!("[WebRTC] Getting current user_id...");
-                        let current_uid = match user_id.read().as_ref() {
-                            Some(id) => {
-                                info!("[WebRTC] Current user_id: {}", id);
-                                id.clone()
+                        if let Some(websocket) = ws.read().as_ref() {
+                            let msg = ClientMessage::CreatePublisher;
+                            if let Ok(msg_str) = serde_json::to_string(&msg) {
+                                let _ = websocket.send_with_str(&msg_str);
                             }
-                            None => {
-                                info!("[Error] No user_id set, cannot create deferred connections");
-                                return; // Early return from async block
-                            }
-                        };
-                        
-                        // Safely get WebSocket connection
-                        info!("[WebRTC] Getting WebSocket connection...");
-                        let ws_sock = match ws.read().as_ref() {
-                            Some(socket) => {
-                                info!("[WebRTC] WebSocket connection available");
-                                socket.clone()
-                            }
-                            None => {
-                                info!("[Error] No WebSocket connection, cannot create deferred connections");
-                                return; // Early return from async block
-                            }
-                        };
-                        
-                        // Safely get participants list
-                        info!("[WebRTC] Getting participants list...");
-                        let parts = participants.read().clone();
-                        info!("[WebRTC] Found {} participants", parts.len());
-                        
-                        // Iterate through participants safely
-                        for (idx, participant) in parts.iter().enumerate() {
-                            info!("[WebRTC] Processing participant {}/{}: {} (user_id: {})",
-                                idx + 1, parts.len(), participant.username, participant.user_id);
-                            
-                            // Skip if user_id is empty
-                            if participant.user_id.is_empty() {
-                                info!("[WebRTC] Skipping participant {} - empty user_id", participant.username);
-                                continue;
-                            }
-                            
-                            // Skip if this is us
-                            if participant.user_id == current_uid {
-                                info!("[WebRTC] Skipping participant {} - this is us", participant.username);
-                                continue;
-                            }
-                            
-                            // Skip if peer connection already exists
-                            let has_connection = peer_connections.read().contains_key(&participant.user_id);
-                            if has_connection {
-                                info!("[WebRTC] Peer connection already exists for {} ({})",
-                                    participant.username, participant.user_id);
-                                continue;
-                            }
-                            
-                            // Create peer connection for this participant
-                            info!("[WebRTC] Creating peer connection for existing participant: {} ({})",
-                                participant.username, participant.user_id);
-                            
-                            // Clone necessary data for spawn
-                            let stream_clone = stream.clone();
-                            let target_uid = participant.user_id.clone();
-                            let ws_clone = ws_sock.clone();
-                            let participant_name = participant.username.clone();
-                            
-                            info!("[WebRTC] Spawning connection task for {}", target_uid);
-                            
-                            // Clone target_uid again for use after spawn
-                            let target_uid_for_log = target_uid.clone();
-                            
-                            spawn_local(async move {
-                                info!("[WebRTC] Starting peer connection creation for {} in spawned task", target_uid);
-                                
-                                match create_peer_connection(
-                                    stream_clone,
-                                    target_uid.clone(),
-                                    ws_clone,
-                                    true,
-                                    participant_audio_levels,
-                                    connection_stats
-                                ).await {
-                                    Ok(pc) => {
-                                        info!("[WebRTC] Successfully created peer connection for {} ({})",
-                                            participant_name, target_uid);
-                                        peer_connections.write().insert(target_uid, pc);
-                                    }
-                                    Err(e) => {
-                                        info!("[Error] Failed to create peer connection for {} ({}): {:?}",
-                                            participant_name, target_uid, e);
-                                    }
-                                }
-                            });
-                            
-                            info!("[WebRTC] Successfully spawned connection task for {}", target_uid_for_log);
                         }
-                        
-                        info!("[WebRTC] Finished processing all participants for deferred connections");
                     }
                 }
                 Err(e) => {
@@ -776,7 +691,7 @@ fn App() -> Element {
         style { {include_str!("../style.css")} }
         
         div { class: "container",
-            h1 { "Voice Messenger PoC" }
+            h1 { "Voice Messenger PoC (SFU)" }
             
             div { class: "status-bar",
                 span { "Server: " }
@@ -1034,7 +949,7 @@ fn App() -> Element {
                     li { "Request microphone access to enable voice" }
                     li { "Create a new room or join an existing one" }
                     li { "Share the room link with others to invite them" }
-                    li { "Audio levels shown for each participant" }
+                    li { "🎙️ SFU topology: 1 publisher + N consumers (better scalability)" }
                     li { "Check browser console for detailed logs" }
                 }
             }
@@ -1253,10 +1168,7 @@ async fn collect_peer_stats(
         // Get RTCStatsReport
         let stats_promise = pc.get_stats();
         let stats_result = match JsFuture::from(stats_promise).await {
-            Ok(result) => {
-                info!("[Stats] Successfully got stats for {}", user_id);
-                result
-            }
+            Ok(result) => result,
             Err(e) => {
                 info!("[Stats] Failed to get stats for {}: {:?}, connection may be closed", user_id, e);
                 break;
@@ -1264,14 +1176,9 @@ async fn collect_peer_stats(
         };
         
         let mut current_stats = ConnectionStats::default();
-        let mut found_inbound = false;
-        let mut found_outbound = false;
-        let mut found_candidate_pair = false;
-        let mut found_codec = false;
         
         // Use JavaScript helper to parse RTCStatsReport
         let stats_array = parse_rtc_stats(&stats_result);
-        info!("[Stats] Parsed {} stat entries", stats_array.length());
         
         // Get previous stats values from thread-local storage
         let (mut prev_bytes_sent, mut prev_bytes_received, mut prev_timestamp) =
@@ -1285,8 +1192,6 @@ async fn collect_peer_stats(
                 // Get stat type
                 if let Ok(type_val) = Reflect::get(&stat_obj, &JsValue::from_str("type")) {
                     if let Some(stat_type) = type_val.as_string() {
-                        info!("[Stats] Processing stat type: {}", stat_type);
-                        
                         // Get the data object
                         if let Ok(data) = Reflect::get(&stat_obj, &JsValue::from_str("data")) {
                             match stat_type.as_str() {
@@ -1295,9 +1200,6 @@ async fn collect_peer_stats(
                                     if let Ok(kind) = Reflect::get(&data, &JsValue::from_str("kind")) {
                                         let kind_str = kind.as_string().unwrap_or_default();
                                         if kind_str == "audio" {
-                                            found_inbound = true;
-                                            info!("[Stats] Found inbound audio RTP stats");
-                                            
                                             // Packets received and lost for packet loss percentage
                                             let packets_received = Reflect::get(&data, &JsValue::from_str("packetsReceived"))
                                                 .ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -1307,22 +1209,12 @@ async fn collect_peer_stats(
                                             
                                             if packets_received > 0.0 {
                                                 current_stats.packet_loss = (packets_lost / (packets_received + packets_lost)) * 100.0;
-                                                info!("[Stats] Packet loss: {:.2}% (lost: {}, received: {})",
-                                                    current_stats.packet_loss, packets_lost, packets_received);
                                             }
                                             
                                             // Jitter (in seconds, convert to ms)
                                             if let Some(jitter) = Reflect::get(&data, &JsValue::from_str("jitter"))
                                                 .ok().and_then(|v| v.as_f64()) {
                                                 current_stats.jitter = jitter * 1000.0;
-                                                info!("[Stats] Jitter: {:.2} ms", current_stats.jitter);
-                                            }
-                                            
-                                            // Audio level
-                                            if let Some(level) = Reflect::get(&data, &JsValue::from_str("audioLevel"))
-                                                .ok().and_then(|v| v.as_f64()) {
-                                                current_stats.audio_level = level * 100.0;
-                                                info!("[Stats] Audio level: {:.2}%", current_stats.audio_level);
                                             }
                                             
                                             // Bytes received for bitrate calculation
@@ -1337,7 +1229,6 @@ async fn collect_peer_stats(
                                                         
                                                         if time_delta > 0.0 {
                                                             current_stats.audio_bitrate = (bytes_delta * 8.0) / (time_delta * 1000.0); // kbps
-                                                            info!("[Stats] Audio bitrate (inbound): {:.2} kbps", current_stats.audio_bitrate);
                                                         }
                                                     }
                                                     
@@ -1353,9 +1244,6 @@ async fn collect_peer_stats(
                                     if let Ok(kind) = Reflect::get(&data, &JsValue::from_str("kind")) {
                                         let kind_str = kind.as_string().unwrap_or_default();
                                         if kind_str == "audio" {
-                                            found_outbound = true;
-                                            info!("[Stats] Found outbound audio RTP stats");
-                                            
                                             // Bytes sent for bitrate calculation
                                             if let Some(bytes_sent) = Reflect::get(&data, &JsValue::from_str("bytesSent"))
                                                 .ok().and_then(|v| v.as_f64()) {
@@ -1368,7 +1256,6 @@ async fn collect_peer_stats(
                                                         
                                                         if time_delta > 0.0 {
                                                             current_stats.audio_bitrate = (bytes_delta * 8.0) / (time_delta * 1000.0);
-                                                            info!("[Stats] Audio bitrate (outbound): {:.2} kbps", current_stats.audio_bitrate);
                                                         }
                                                     }
                                                     
@@ -1386,14 +1273,10 @@ async fn collect_peer_stats(
                                     if let Ok(state) = Reflect::get(&data, &JsValue::from_str("state")) {
                                         let state_str = state.as_string().unwrap_or_default();
                                         if state_str == "succeeded" {
-                                            found_candidate_pair = true;
-                                            info!("[Stats] Found succeeded candidate pair");
-                                            
                                             // RTT (round-trip time)
                                             if let Some(rtt) = Reflect::get(&data, &JsValue::from_str("currentRoundTripTime"))
                                                 .ok().and_then(|v| v.as_f64()) {
                                                 current_stats.rtt = rtt * 1000.0; // convert to ms
-                                                info!("[Stats] RTT: {:.2} ms", current_stats.rtt);
                                             }
                                         }
                                     }
@@ -1402,16 +1285,13 @@ async fn collect_peer_stats(
                                     // Codec information
                                     if let Some(mime_str) = Reflect::get(&data, &JsValue::from_str("mimeType"))
                                         .ok().and_then(|v| v.as_string()) {
-                                        info!("[Stats] Found codec mimeType: {}", mime_str);
                                         if mime_str.contains("audio") {
-                                            found_codec = true;
                                             // Extract codec name (e.g., "audio/opus" -> "opus")
                                             current_stats.codec_name = mime_str
                                                 .split('/')
                                                 .nth(1)
                                                 .unwrap_or("unknown")
                                                 .to_string();
-                                            info!("[Stats] Codec name: {}", current_stats.codec_name);
                                         }
                                     }
                                 }
@@ -1427,9 +1307,6 @@ async fn collect_peer_stats(
         PREV_STATS.with(|map| {
             map.borrow_mut().insert(user_id.clone(), (prev_bytes_sent, prev_bytes_received, prev_timestamp));
         });
-        
-        info!("[Stats] Summary for {}: inbound={}, outbound={}, candidate-pair={}, codec={}",
-            user_id, found_inbound, found_outbound, found_candidate_pair, found_codec);
         
         // Get connection states
         current_stats.connection_state = match pc.connection_state() {
@@ -1453,19 +1330,12 @@ async fn collect_peer_stats(
             _ => "unknown",
         }.to_string();
         
-        info!("[Stats] Connection state: {}, ICE state: {}",
-            current_stats.connection_state, current_stats.ice_connection_state);
-        
         // Set timestamp
         if let Some(window) = web_sys::window() {
             if let Some(performance) = window.performance() {
                 current_stats.last_updated = performance.now();
             }
         }
-        
-        info!("[Stats] Final stats for {}: bitrate={:.1}kbps, rtt={:.0}ms, jitter={:.1}ms, loss={:.1}%, codec={}",
-            user_id, current_stats.audio_bitrate, current_stats.rtt, current_stats.jitter,
-            current_stats.packet_loss, current_stats.codec_name);
         
         // Update the stats map
         connection_stats.write().insert(user_id.clone(), current_stats);
@@ -1496,50 +1366,45 @@ fn create_rtc_peer_connection() -> Result<RtcPeerConnection, JsValue> {
     
     config.set_ice_servers(&ice_servers);
     
-    // Optimize for low latency: use max-bundle to multiplex all media on one connection
-    config.set_bundle_policy(web_sys::RtcBundlePolicy::MaxBundle);
+    // Use balanced bundle policy for compatibility with webrtc-rs backend
+    // webrtc-rs doesn't generate BUNDLE group in SDP, so MaxBundle would fail
+    config.set_bundle_policy(web_sys::RtcBundlePolicy::Balanced);
     
     info!("[WebRTC] Creating peer connection with low-latency configuration");
     
     RtcPeerConnection::new_with_configuration(&config)
 }
 
-// Create peer connection and optionally create offer
-async fn create_peer_connection(
+// Create publisher connection (sends local audio to SFU)
+async fn create_publisher_connection(
     local_stream: MediaStream,
-    target_user_id: String,
     ws: WebSocket,
-    create_offer: bool,
-    participant_audio_levels: Signal<HashMap<String, f64>>,
+    offer_sdp: String,
     connection_stats: Signal<HashMap<String, ConnectionStats>>,
 ) -> Result<RtcPeerConnection, JsValue> {
-    info!("Creating peer connection for user {}", target_user_id);
+    info!("[SFU] Creating publisher connection");
     
     let pc = create_rtc_peer_connection()?;
     
-    // Add local tracks to peer connection
+    // Add local audio track
     let tracks = local_stream.get_tracks();
     for i in 0..tracks.length() {
         if let Some(track) = tracks.get(i).dyn_into::<web_sys::MediaStreamTrack>().ok() {
-            let streams = Array::new();
-            streams.push(&local_stream);
-            let _ = pc.add_track(&track, &local_stream, &streams);
+            info!("[SFU] Adding local track to publisher");
+            let _ = pc.add_track(&track, &local_stream, &Array::new());
         }
     }
     
-    // Set up onicecandidate handler
+    // Set up ICE candidate handler
     let ws_clone = ws.clone();
-    let target_uid = target_user_id.clone();
     let onicecandidate = Closure::wrap(Box::new(move |ev: RtcPeerConnectionIceEvent| {
         if let Some(candidate) = ev.candidate() {
-            info!("ICE candidate generated for {}", target_uid);
+            info!("[SFU] Publisher ICE candidate generated");
             let candidate_json = candidate.to_json();
             
-            // Extract candidate string
             if let Ok(candidate_str) = Reflect::get(&candidate_json, &JsValue::from_str("candidate")) {
                 if let Some(cand_str) = candidate_str.as_string() {
-                    let msg = ClientMessage::IceCandidate {
-                        target_user_id: target_uid.clone(),
+                    let msg = ClientMessage::PublisherIceCandidate {
                         candidate: cand_str,
                     };
                     if let Ok(msg_str) = serde_json::to_string(&msg) {
@@ -1553,33 +1418,150 @@ async fn create_peer_connection(
     pc.set_onicecandidate(Some(onicecandidate.as_ref().unchecked_ref()));
     onicecandidate.forget();
     
-    // Set up ontrack handler to receive remote audio
-    let target_uid_track = target_user_id.clone();
+    // Set remote description (offer from server)
+    let offer_init = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
+    offer_init.set_sdp(&offer_sdp);
+    info!("[SFU Publisher] Setting remote description (offer)");
+    wasm_bindgen_futures::JsFuture::from(pc.set_remote_description(&offer_init)).await?;
+    
+    // STEP 1: Log state after setRemoteDescription
+    info!("[SFU Publisher] Remote description set successfully");
+    info!("[SFU Publisher] ICE connection state: {:?}", pc.ice_connection_state());
+    info!("[SFU Publisher] Connection state: {:?}", pc.connection_state());
+    
+    // Create answer
+    info!("[SFU Publisher] Creating answer");
+    let answer = wasm_bindgen_futures::JsFuture::from(pc.create_answer()).await?;
+    let answer_sdp = Reflect::get(&answer, &JsValue::from_str("sdp"))?
+        .as_string()
+        .ok_or_else(|| JsValue::from_str("No SDP in answer"))?;
+    
+    // STEP 2: Log answer SDP BEFORE setLocalDescription
+    info!("[SFU Publisher] Answer created");
+    let answer_sdp_before = answer_sdp.clone();
+    info!("[SFU Publisher] Answer SDP length BEFORE setLocalDescription: {}", answer_sdp_before.len());
+    info!("[SFU Publisher] Answer contains 'a=ice-ufrag' BEFORE: {}", answer_sdp_before.contains("a=ice-ufrag"));
+    info!("[SFU Publisher] Answer contains 'a=ice-pwd' BEFORE: {}", answer_sdp_before.contains("a=ice-pwd"));
+    // Log first 500 characters of SDP for inspection
+    let preview_len = answer_sdp_before.len().min(500);
+    info!("[SFU Publisher] Answer SDP preview: {}", &answer_sdp_before[..preview_len]);
+    
+    // Set local description
+    let answer_init = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
+    answer_init.set_sdp(&answer_sdp);
+    info!("[SFU Publisher] Setting local description (answer)");
+    wasm_bindgen_futures::JsFuture::from(pc.set_local_description(&answer_init)).await?;
+    
+    // STEP 3: Log state after setLocalDescription
+    info!("[SFU Publisher] Local description set");
+    info!("[SFU Publisher] ICE connection state AFTER setLocal: {:?}", pc.ice_connection_state());
+    
+    // CRITICAL FIX: Wait for browser to populate ICE credentials in SDP
+    // After setLocalDescription, the browser needs time to add ice-ufrag and ice-pwd
+    info!("[SFU Publisher] Waiting 100ms for ICE credentials to be added to SDP...");
+    gloo_timers::future::TimeoutFuture::new(100).await;
+    
+    // STEP 4: Log final local_description content
+    let final_answer_sdp = if let Some(final_desc) = pc.local_description() {
+        let final_sdp = final_desc.sdp();
+        info!("[SFU Publisher] Final SDP length: {}", final_sdp.len());
+        info!("[SFU Publisher] Final contains 'a=ice-ufrag': {}", final_sdp.contains("a=ice-ufrag"));
+        info!("[SFU Publisher] Final contains 'a=ice-pwd': {}", final_sdp.contains("a=ice-pwd"));
+        info!("[SFU Publisher] Final contains 'a=candidate': {}", final_sdp.contains("a=candidate"));
+        // Log first 500 characters of final SDP
+        let final_preview_len = final_sdp.len().min(500);
+        info!("[SFU Publisher] Final SDP preview: {}", &final_sdp[..final_preview_len]);
+        final_sdp
+    } else {
+        error!("[SFU Publisher] local_description() returned None!");
+        answer_sdp_before
+    };
+    
+    // Send answer to server with ICE credentials
+    let msg = ClientMessage::PublishAudio { sdp: final_answer_sdp };
+    let msg_str = serde_json::to_string(&msg).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    ws.send_with_str(&msg_str)?;
+    
+    info!("[SFU] Publisher answer sent with ICE credentials");
+    
+    // Start collecting stats for publisher
+    {
+        let pc_clone = pc.clone();
+        spawn_local(async move {
+            if let Err(e) = collect_peer_stats(pc_clone, "publisher".to_string(), connection_stats).await {
+                info!("[Stats] Publisher stats collection ended: {:?}", e);
+            }
+        });
+    }
+    
+    Ok(pc)
+}
+
+// Create consumer connection (receives audio from SFU for a specific publisher)
+async fn create_consumer_connection(
+    consumer_id: String,
+    publisher_user_id: String,
+    ws: WebSocket,
+    offer_sdp: String,
+    participant_audio_levels: Signal<HashMap<String, f64>>,
+    connection_stats: Signal<HashMap<String, ConnectionStats>>,
+) -> Result<RtcPeerConnection, JsValue> {
+    info!("[SFU] Creating consumer connection for publisher {}", publisher_user_id);
+    
+    let pc = create_rtc_peer_connection()?;
+    
+    // Set up ICE candidate handler
+    let ws_clone = ws.clone();
+    let cid_clone = consumer_id.clone();
+    let onicecandidate = Closure::wrap(Box::new(move |ev: RtcPeerConnectionIceEvent| {
+        if let Some(candidate) = ev.candidate() {
+            info!("[SFU] Consumer {} ICE candidate generated", cid_clone);
+            let candidate_json = candidate.to_json();
+            
+            if let Ok(candidate_str) = Reflect::get(&candidate_json, &JsValue::from_str("candidate")) {
+                if let Some(cand_str) = candidate_str.as_string() {
+                    let msg = ClientMessage::ConsumerIceCandidate {
+                        consumer_id: cid_clone.clone(),
+                        candidate: cand_str,
+                    };
+                    if let Ok(msg_str) = serde_json::to_string(&msg) {
+                        let _ = ws_clone.send_with_str(&msg_str);
+                    }
+                }
+            }
+        }
+    }) as Box<dyn FnMut(RtcPeerConnectionIceEvent)>);
+    
+    pc.set_onicecandidate(Some(onicecandidate.as_ref().unchecked_ref()));
+    onicecandidate.forget();
+    
+    // Set up ontrack handler to receive audio
+    let pub_uid = publisher_user_id.clone();
     let ontrack = Closure::wrap(Box::new(move |ev: RtcTrackEvent| {
-        info!("Received remote track from {}", target_uid_track);
+        info!("[SFU] Received track from publisher {}", pub_uid);
         
         let streams = ev.streams();
         if streams.length() > 0 {
             if let Some(remote_stream) = streams.get(0).dyn_into::<MediaStream>().ok() {
-                // Play the remote audio stream - use safe error handling
+                // Play the remote audio stream
                 match web_sys::HtmlAudioElement::new() {
                     Ok(audio) => {
                         audio.set_src_object(Some(&remote_stream));
                         audio.set_autoplay(true);
                         match audio.play() {
                             Ok(_) => {
-                                info!("[Audio] Started playing remote audio from {}", target_uid_track);
+                                info!("[Audio] Started playing audio from {}", pub_uid);
                             }
                             Err(e) => {
-                                info!("[Error] Failed to play remote audio from {}: {:?}", target_uid_track, e);
+                                info!("[Error] Failed to play audio from {}: {:?}", pub_uid, e);
                             }
                         }
                         
-                        // Start audio analysis for this remote stream
-                        start_remote_audio_analysis(remote_stream, target_uid_track.clone(), participant_audio_levels);
+                        // Start audio analysis
+                        start_remote_audio_analysis(remote_stream, pub_uid.clone(), participant_audio_levels);
                     }
                     Err(e) => {
-                        info!("[Error] Failed to create audio element for {}: {:?}", target_uid_track, e);
+                        info!("[Error] Failed to create audio element: {:?}", e);
                     }
                 }
             }
@@ -1589,110 +1571,65 @@ async fn create_peer_connection(
     pc.set_ontrack(Some(ontrack.as_ref().unchecked_ref()));
     ontrack.forget();
     
-    // Set up onconnectionstatechange handler
+    // Set remote description (offer from server)
+    let offer_init = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
+    offer_init.set_sdp(&offer_sdp);
+    info!("[WebRTC] Setting remote description (offer) for consumer {}", consumer_id);
+    wasm_bindgen_futures::JsFuture::from(pc.set_remote_description(&offer_init)).await?;
+    
+    // Create answer
+    info!("[WebRTC] Creating answer for consumer {}", consumer_id);
+    let answer = wasm_bindgen_futures::JsFuture::from(pc.create_answer()).await?;
+    let answer_sdp = Reflect::get(&answer, &JsValue::from_str("sdp"))?
+        .as_string()
+        .ok_or_else(|| JsValue::from_str("No SDP in answer"))?;
+    
+    // Debug: Check SDP before setting local description
+    info!("[WebRTC] Consumer answer SDP length: {} bytes", answer_sdp.len());
+    info!("[WebRTC] Consumer answer contains ice-ufrag: {}", answer_sdp.contains("ice-ufrag"));
+    info!("[WebRTC] Consumer answer contains ice-pwd: {}", answer_sdp.contains("ice-pwd"));
+    
+    // Set local description
+    let answer_init = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
+    answer_init.set_sdp(&answer_sdp);
+    info!("[WebRTC] Setting local description (answer) for consumer {}", consumer_id);
+    wasm_bindgen_futures::JsFuture::from(pc.set_local_description(&answer_init)).await?;
+    
+    // CRITICAL FIX: Wait for browser to populate ICE credentials in SDP
+    // After setLocalDescription, the browser needs time to add ice-ufrag and ice-pwd
+    info!("[WebRTC] Waiting for ICE credentials to be added to consumer SDP...");
+    gloo_timers::future::TimeoutFuture::new(100).await;
+    
+    // Get the local description again after ICE gathering has started
+    // The browser will have updated it with ICE credentials
+    let final_answer_sdp = if let Some(local_desc) = pc.local_description() {
+        let final_sdp = local_desc.sdp();
+        info!("[WebRTC] Final consumer answer SDP length: {} bytes", final_sdp.len());
+        info!("[WebRTC] Final consumer answer contains ice-ufrag: {}", final_sdp.contains("ice-ufrag"));
+        info!("[WebRTC] Final consumer answer contains ice-pwd: {}", final_sdp.contains("ice-pwd"));
+        final_sdp
+    } else {
+        info!("[Warning] No local description available for consumer, using original answer");
+        answer_sdp
+    };
+    
+    // Send answer to server with ICE credentials
+    let msg = ClientMessage::ConsumerAnswer {
+        consumer_id: consumer_id.clone(),
+        sdp: final_answer_sdp,
+    };
+    let msg_str = serde_json::to_string(&msg).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    ws.send_with_str(&msg_str)?;
+    
+    info!("[SFU] Consumer answer sent for {} with ICE credentials", consumer_id);
+    
+    // Start collecting stats for this consumer
     {
         let pc_clone = pc.clone();
-        let uid_clone = target_user_id.clone();
-        let mut stats_clone = connection_stats.clone();
-        
-        let onconnectionstatechange = Closure::wrap(Box::new(move || {
-            let state = pc_clone.connection_state();
-            let state_str = match state {
-                web_sys::RtcPeerConnectionState::New => "new",
-                web_sys::RtcPeerConnectionState::Connecting => "connecting",
-                web_sys::RtcPeerConnectionState::Connected => "connected",
-                web_sys::RtcPeerConnectionState::Disconnected => "disconnected",
-                web_sys::RtcPeerConnectionState::Failed => "failed",
-                web_sys::RtcPeerConnectionState::Closed => "closed",
-                _ => "unknown",
-            };
-            info!("[Connection] State changed to: {} for {}", state_str, uid_clone);
-            
-            // Update connection stats
-            if let Some(stats) = stats_clone.write().get_mut(&uid_clone) {
-                stats.connection_state = state_str.to_string();
-            }
-        }) as Box<dyn FnMut()>);
-        
-        pc.set_onconnectionstatechange(Some(onconnectionstatechange.as_ref().unchecked_ref()));
-        onconnectionstatechange.forget();
-    }
-    
-    // Set up oniceconnectionstatechange handler
-    {
-        let pc_clone = pc.clone();
-        let uid_clone = target_user_id.clone();
-        let mut stats_clone = connection_stats.clone();
-        
-        let oniceconnectionstatechange = Closure::wrap(Box::new(move || {
-            let ice_state = pc_clone.ice_connection_state();
-            let ice_state_str = match ice_state {
-                web_sys::RtcIceConnectionState::New => "new",
-                web_sys::RtcIceConnectionState::Checking => "checking",
-                web_sys::RtcIceConnectionState::Connected => "connected",
-                web_sys::RtcIceConnectionState::Completed => "completed",
-                web_sys::RtcIceConnectionState::Failed => "failed",
-                web_sys::RtcIceConnectionState::Disconnected => "disconnected",
-                web_sys::RtcIceConnectionState::Closed => "closed",
-                _ => "unknown",
-            };
-            info!("[ICE] State changed to: {} for {}", ice_state_str, uid_clone);
-            
-            // Update connection stats
-            if let Some(stats) = stats_clone.write().get_mut(&uid_clone) {
-                stats.ice_connection_state = ice_state_str.to_string();
-            }
-        }) as Box<dyn FnMut()>);
-        
-        pc.set_oniceconnectionstatechange(Some(oniceconnectionstatechange.as_ref().unchecked_ref()));
-        oniceconnectionstatechange.forget();
-    }
-    
-    // Create offer if requested
-    if create_offer {
-        info!("Creating offer for {}", target_user_id);
-        let offer = wasm_bindgen_futures::JsFuture::from(pc.create_offer()).await?;
-        let mut offer_sdp = Reflect::get(&offer, &JsValue::from_str("sdp"))?
-            .as_string()
-            .ok_or_else(|| JsValue::from_str("No SDP in offer"))?;
-        
-        // Optimize SDP for Opus low-latency codec
-        if offer_sdp.contains("opus/48000") {
-            info!("[WebRTC] Optimizing SDP for low-latency Opus codec");
-            // Add Opus codec parameters for low latency:
-            // - minptime=10: minimum packet time of 10ms (lower latency)
-            // - useinbandfec=1: enable forward error correction
-            // - maxaveragebitrate=64000: 64kbps suitable for voice
-            offer_sdp = offer_sdp.replace(
-                "opus/48000/2",
-                "opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1;maxaveragebitrate=64000"
-            );
-        }
-        
-        // Set local description
-        let offer_init = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
-        offer_init.set_sdp(&offer_sdp);
-        wasm_bindgen_futures::JsFuture::from(pc.set_local_description(&offer_init)).await?;
-        
-        // Send offer via WebSocket
-        let msg = ClientMessage::WebrtcOffer {
-            target_user_id: target_user_id.clone(),
-            sdp: offer_sdp,
-        };
-        let msg_str = serde_json::to_string(&msg).map_err(|e| JsValue::from_str(&e.to_string()))?;
-        ws.send_with_str(&msg_str)?;
-        
-        info!("Sent offer to {}", target_user_id);
-    }
-    
-    // Start collecting statistics for this peer connection
-    {
-        let pc_clone = pc.clone();
-        let uid_clone = target_user_id.clone();
+        let pub_uid_clone = publisher_user_id.clone();
         spawn_local(async move {
-            info!("[Stats] Starting statistics collection for {}", uid_clone);
-            if let Err(e) = collect_peer_stats(pc_clone, uid_clone, connection_stats).await {
-                info!("[Stats] Statistics collection ended: {:?}", e);
+            if let Err(e) = collect_peer_stats(pc_clone, pub_uid_clone.clone(), connection_stats).await {
+                info!("[Stats] Consumer stats for {} ended: {:?}", pub_uid_clone, e);
             }
         });
     }
@@ -1700,71 +1637,9 @@ async fn create_peer_connection(
     Ok(pc)
 }
 
-// Handle incoming WebRTC offer
-async fn handle_webrtc_offer(
-    local_stream: MediaStream,
-    from_user_id: String,
-    ws: WebSocket,
-    offer_sdp: String,
-    participant_audio_levels: Signal<HashMap<String, f64>>,
-    connection_stats: Signal<HashMap<String, ConnectionStats>>,
-) -> Result<RtcPeerConnection, JsValue> {
-    info!("Handling WebRTC offer from {}", from_user_id);
-    
-    let pc = create_peer_connection(local_stream, from_user_id.clone(), ws.clone(), false, participant_audio_levels, connection_stats).await?;
-    
-    // Set remote description (the offer)
-    let offer_init = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
-    offer_init.set_sdp(&offer_sdp);
-    wasm_bindgen_futures::JsFuture::from(pc.set_remote_description(&offer_init)).await?;
-    
-    // Create answer
-    let answer = wasm_bindgen_futures::JsFuture::from(pc.create_answer()).await?;
-    let mut answer_sdp = Reflect::get(&answer, &JsValue::from_str("sdp"))?
-        .as_string()
-        .ok_or_else(|| JsValue::from_str("No SDP in answer"))?;
-    
-    // Optimize SDP for Opus low-latency codec
-    if answer_sdp.contains("opus/48000") {
-        info!("[WebRTC] Optimizing answer SDP for low-latency Opus codec");
-        answer_sdp = answer_sdp.replace(
-            "opus/48000/2",
-            "opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1;maxaveragebitrate=64000"
-        );
-    }
-    
-    // Set local description
-    let answer_init = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
-    answer_init.set_sdp(&answer_sdp);
-    wasm_bindgen_futures::JsFuture::from(pc.set_local_description(&answer_init)).await?;
-    
-    // Send answer via WebSocket
-    let msg = ClientMessage::WebrtcAnswer {
-        target_user_id: from_user_id.clone(),
-        sdp: answer_sdp,
-    };
-    let msg_str = serde_json::to_string(&msg).map_err(|e| JsValue::from_str(&e.to_string()))?;
-    ws.send_with_str(&msg_str)?;
-    
-    info!("Sent answer to {}", from_user_id);
-    
-    Ok(pc)
-}
-
-// Handle incoming WebRTC answer
-async fn handle_webrtc_answer(pc: RtcPeerConnection, answer_sdp: String) -> Result<(), JsValue> {
-    info!("Setting remote description (answer)");
-    
-    let answer_init = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
-    answer_init.set_sdp(&answer_sdp);
-    wasm_bindgen_futures::JsFuture::from(pc.set_remote_description(&answer_init)).await?;
-    
-    Ok(())
-}
-
 // Handle incoming ICE candidate
 async fn handle_ice_candidate(pc: RtcPeerConnection, candidate_str: String) -> Result<(), JsValue> {
-    info!("Adding ICE candidate");
+    info!("[ICE] Adding ICE candidate");
     
     let candidate_init = RtcIceCandidateInit::new(&candidate_str);
     candidate_init.set_sdp_m_line_index(Some(0));
