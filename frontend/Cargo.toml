@@ -6,7 +6,12 @@ edition.workspace = true
 [dependencies]
 dioxus = { version = "0.6.3", features = ["web"] }
 dioxus-web = "0.6.3"
-web-sys = { version = "0.3", features = ["WebSocket", "MessageEvent", "ErrorEvent", "CloseEvent"] }
+web-sys = { version = "0.3", features = [
+    "WebSocket", "MessageEvent", "ErrorEvent", "CloseEvent",
+    "MediaStream", "MediaStreamTrack", "MediaDevices", "Navigator", "Window",
+    "MediaStreamConstraints", "MediaTrackConstraints",
+    "AudioContext", "AnalyserNode", "AudioNode", "MediaStreamAudioSourceNode"
+] }
 js-sys = "0.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
