@@ -11,11 +11,14 @@ web-sys = { version = "0.3", features = [
     "MediaStream", "MediaStreamTrack", "MediaDevices", "Navigator", "Window",
     "MediaStreamConstraints", "MediaTrackConstraints",
     "AudioContext", "AnalyserNode", "AudioNode", "MediaStreamAudioSourceNode",
+    "AudioContextOptions", "AudioContextLatencyCategory",
     "UrlSearchParams", "Location", "Clipboard",
     "RtcPeerConnection", "RtcConfiguration", "RtcIceServer",
     "RtcSessionDescription", "RtcSessionDescriptionInit", "RtcSdpType",
     "RtcIceCandidate", "RtcIceCandidateInit", "RtcPeerConnectionIceEvent",
     "RtcTrackEvent", "MediaStreamEvent", "RtcPeerConnectionState",
+    "RtcIceConnectionState", "RtcBundlePolicy",
+    "RtcStatsReport", "Performance",
     "HtmlAudioElement", "RtcRtpSender"
 ] }
 js-sys = "0.3"
@@ -26,3 +29,4 @@ tracing-wasm = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 console_error_panic_hook = "0.1"
+gloo-timers = { version = "0.3", features = ["futures"] }

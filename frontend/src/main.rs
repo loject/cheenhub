@@ -12,6 +12,13 @@ use web_sys::{
 };
 use js_sys::{Array, JsString, Reflect};
 
+// JavaScript helper for parsing RTCStatsReport
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_name = "parseRTCStats")]
+    fn parse_rtc_stats(stats_report: &JsValue) -> js_sys::Array;
+}
+
 fn main() {
     console_error_panic_hook::set_once();
 
@@ -21,6 +28,23 @@ fn main() {
             .set_max_level(tracing::Level::INFO)
             .build()
     );
+    
+    // Inject JavaScript helper for parsing RTCStatsReport
+    let js_code = r#"
+        window.parseRTCStats = function(statsReport) {
+            const result = [];
+            statsReport.forEach((value, key) => {
+                result.push({
+                    id: key,
+                    type: value.type,
+                    timestamp: value.timestamp,
+                    data: value
+                });
+            });
+            return result;
+        };
+    "#;
+    let _ = js_sys::eval(js_code);
     
     dioxus::launch(App);
 }
@@ -89,6 +113,36 @@ struct Participant {
     user_id: String,
 }
 
+// Connection statistics for WebRTC peers
+#[derive(Clone, Debug)]
+struct ConnectionStats {
+    audio_bitrate: f64,           // кбит/с
+    audio_level: f64,             // 0.0-100.0
+    packet_loss: f64,             // процент (0.0-100.0)
+    jitter: f64,                  // миллисекунды
+    rtt: f64,                     // Round-trip time в ms
+    codec_name: String,           // "opus", "pcm", etc.
+    connection_state: String,     // "new", "connecting", "connected", "disconnected"
+    ice_connection_state: String, // "new", "checking", "connected", etc.
+    last_updated: f64,            // performance.now()
+}
+
+impl Default for ConnectionStats {
+    fn default() -> Self {
+        Self {
+            audio_bitrate: 0.0,
+            audio_level: 0.0,
+            packet_loss: 0.0,
+            jitter: 0.0,
+            rtt: 0.0,
+            codec_name: "N/A".to_string(),
+            connection_state: "new".to_string(),
+            ice_connection_state: "new".to_string(),
+            last_updated: 0.0,
+        }
+    }
+}
+
 #[component]
 fn App() -> Element {
     // State for username input
@@ -104,6 +158,7 @@ fn App() -> Element {
     let mut mic_status = use_signal(|| MicStatus::NotRequested);
     let mut media_stream = use_signal(|| None::<MediaStream>);
     let audio_level = use_signal(|| 0.0);
+    let mut is_muted = use_signal(|| false);
     
     // State for rooms
     let mut user_id = use_signal(|| None::<String>);
@@ -118,6 +173,12 @@ fn App() -> Element {
     // TODO: Move media processing to SFU server
     // Audio levels for each participant
     let mut participant_audio_levels = use_signal(|| HashMap::<String, f64>::new());
+    
+    // Connection statistics for each peer
+    let connection_stats = use_signal(|| HashMap::<String, ConnectionStats>::new());
+    
+    // Toggle for showing detailed statistics
+    let mut show_detailed_stats = use_signal(|| false);
     
     // Check URL for room parameter on mount
     use_effect(move || {
@@ -298,7 +359,7 @@ fn App() -> Element {
                                         info!("[WebRTC] INSIDE SPAWN_LOCAL - Step 1: Starting spawn for {} ({})", target_name, target_uid);
                                         info!("[WebRTC] Step 2: About to call create_peer_connection");
                                         
-                                        match create_peer_connection(stream_clone, target_uid.clone(), ws_clone, true, participant_audio_levels).await {
+                                        match create_peer_connection(stream_clone, target_uid.clone(), ws_clone, true, participant_audio_levels, connection_stats).await {
                                             Ok(pc) => {
                                                 info!("[WebRTC] Step 3: create_peer_connection succeeded for {} ({})", target_name, target_uid);
                                                 info!("[WebRTC] Step 4: Inserting peer connection into map");
@@ -355,7 +416,7 @@ fn App() -> Element {
                                             async move {
                                                 info!("[DEBUG] INSIDE SPAWN - offer handler started for {}", from_uid);
                                                 info!("[DEBUG] About to call handle_webrtc_offer");
-                                                match handle_webrtc_offer(stream, from_uid.clone(), ws, offer_sdp, participant_audio_levels).await {
+                                                match handle_webrtc_offer(stream, from_uid.clone(), ws, offer_sdp, participant_audio_levels, connection_stats).await {
                                                     Ok(pc) => {
                                                         info!("[DEBUG] handle_webrtc_offer succeeded, about to write to peer_connections");
                                                         peer_connections.write().insert(from_uid, pc);
@@ -525,9 +586,28 @@ fn App() -> Element {
                 }
             };
             
-            // Create constraints for audio only
+            // Create constraints for audio only with optimizations for low latency
             let constraints = web_sys::MediaStreamConstraints::new();
-            constraints.set_audio(&JsValue::from(true));
+            
+            // Create advanced audio constraints object
+            let audio_constraints_obj = js_sys::Object::new();
+            
+            // Enable audio processing features
+            if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("echoCancellation"), &JsValue::from(true)) {
+                info!("[Warning] Failed to set echoCancellation: {:?}", e);
+            }
+            if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("noiseSuppression"), &JsValue::from(true)) {
+                info!("[Warning] Failed to set noiseSuppression: {:?}", e);
+            }
+            if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("autoGainControl"), &JsValue::from(true)) {
+                info!("[Warning] Failed to set autoGainControl: {:?}", e);
+            }
+            // Set latency to 10ms for low-latency audio capture
+            if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("latency"), &JsValue::from(0.01)) {
+                info!("[Warning] Failed to set latency: {:?}", e);
+            }
+            
+            constraints.set_audio(&audio_constraints_obj.into());
             constraints.set_video(&JsValue::from(false));
             
             let get_user_media_promise = match media_devices.get_user_media_with_constraints(&constraints) {
@@ -646,7 +726,8 @@ fn App() -> Element {
                                     target_uid.clone(),
                                     ws_clone,
                                     true,
-                                    participant_audio_levels
+                                    participant_audio_levels,
+                                    connection_stats
                                 ).await {
                                     Ok(pc) => {
                                         info!("[WebRTC] Successfully created peer connection for {} ({})",
@@ -672,6 +753,23 @@ fn App() -> Element {
                 }
             }
         });
+    };
+    
+    // Handler for muting/unmuting microphone
+    let toggle_mute = move |_: Event<MouseData>| {
+        if let Some(stream) = media_stream.read().as_ref() {
+            let tracks = stream.get_audio_tracks();
+            let new_muted_state = !is_muted.read().clone();
+            
+            for i in 0..tracks.length() {
+                if let Some(track) = tracks.get(i).dyn_into::<web_sys::MediaStreamTrack>().ok() {
+                    track.set_enabled(!new_muted_state);
+                }
+            }
+            
+            is_muted.set(new_muted_state);
+            info!("[Audio] Microphone {}", if new_muted_state { "muted" } else { "unmuted" });
+        }
     };
 
     rsx! {
@@ -740,6 +838,15 @@ fn App() -> Element {
                 "Request Microphone Access"
             }
             
+            // Mute/Unmute button
+            if *mic_status.read() == MicStatus::Allowed {
+                button {
+                    class: if *is_muted.read() { "mute-btn muted" } else { "mute-btn" },
+                    onclick: toggle_mute,
+                    if *is_muted.read() { "🔇 Unmute Microphone" } else { "🔊 Mute Microphone" }
+                }
+            }
+            
             // Room management section
             if ws.read().is_some() && user_id.read().is_some() {
                 div { class: "room-section",
@@ -786,23 +893,120 @@ fn App() -> Element {
                             
                             div { class: "participants-section",
                                 h4 { "Participants ({participants.read().len()}):" }
-                                ul { class: "participants-list",
-                                    for participant in participants.read().iter() {
-                                        li { 
-                                            class: "participant-item",
-                                            span { class: "participant-name", "{participant.username}" }
-                                            // Show compact audio meter for each participant
+                                
+                                // Toggle for detailed statistics
+                                div { class: "stats-toggle",
+                                    label {
+                                        input {
+                                            r#type: "checkbox",
+                                            checked: *show_detailed_stats.read(),
+                                            onchange: move |evt| show_detailed_stats.set(evt.checked())
+                                        }
+                                        " Show detailed statistics"
+                                    }
+                                }
+                                
+                                // Participants list with conditional rendering
+                                if *show_detailed_stats.read() {
+                                    // Detailed stats view
+                                    div { class: "participants-stats-list",
+                                        for participant in participants.read().iter() {
                                             if !participant.user_id.is_empty() {
                                                 {
+                                                    let stats = connection_stats.read()
+                                                        .get(&participant.user_id)
+                                                        .cloned()
+                                                        .unwrap_or_default();
                                                     let level = participant_audio_levels.read()
                                                         .get(&participant.user_id)
                                                         .copied()
                                                         .unwrap_or(0.0);
+                                                    
                                                     rsx! {
-                                                        div { class: "participant-audio-meter",
-                                                            div { 
-                                                                class: "participant-audio-fill",
-                                                                style: "width: {level}%"
+                                                        div { class: "participant-stats-card",
+                                                            div { class: "participant-header",
+                                                                span { class: "participant-name", "{participant.username}" }
+                                                                span {
+                                                                    class: if stats.connection_state == "connected" {
+                                                                        "connection-badge badge-connected"
+                                                                    } else {
+                                                                        "connection-badge badge-disconnected"
+                                                                    },
+                                                                    "{stats.connection_state}"
+                                                                }
+                                                            }
+                                                            
+                                                            // Audio level meter
+                                                            div { class: "stats-row",
+                                                                span { class: "stats-label", "Audio:" }
+                                                                div { class: "audio-meter-inline",
+                                                                    div {
+                                                                        class: "audio-meter-fill",
+                                                                        style: "width: {level}%"
+                                                                    }
+                                                                }
+                                                            }
+                                                            
+                                                            // Network metrics
+                                                            div { class: "stats-grid",
+                                                                div { class: "stat-item",
+                                                                    span { class: "stat-label", "Bitrate:" }
+                                                                    span { class: "stat-value", "{stats.audio_bitrate:.1} kbps" }
+                                                                }
+                                                                div { class: "stat-item",
+                                                                    span { class: "stat-label", "RTT:" }
+                                                                    span { class: "stat-value", "{stats.rtt:.0} ms" }
+                                                                }
+                                                                div { class: "stat-item",
+                                                                    span { class: "stat-label", "Jitter:" }
+                                                                    span { class: "stat-value", "{stats.jitter:.1} ms" }
+                                                                }
+                                                                div { class: "stat-item",
+                                                                    span { class: "stat-label", "Loss:" }
+                                                                    span {
+                                                                        class: if stats.packet_loss > 5.0 {
+                                                                            "stat-value stat-warning"
+                                                                        } else {
+                                                                            "stat-value"
+                                                                        },
+                                                                        "{stats.packet_loss:.1}%"
+                                                                    }
+                                                                }
+                                                                div { class: "stat-item",
+                                                                    span { class: "stat-label", "Codec:" }
+                                                                    span { class: "stat-value", "{stats.codec_name}" }
+                                                                }
+                                                                div { class: "stat-item",
+                                                                    span { class: "stat-label", "ICE:" }
+                                                                    span { class: "stat-value-small", "{stats.ice_connection_state}" }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Compact view
+                                    ul { class: "participants-list",
+                                        for participant in participants.read().iter() {
+                                            li {
+                                                class: "participant-item",
+                                                span { class: "participant-name", "{participant.username}" }
+                                                // Show compact audio meter for each participant
+                                                if !participant.user_id.is_empty() {
+                                                    {
+                                                        let level = participant_audio_levels.read()
+                                                            .get(&participant.user_id)
+                                                            .copied()
+                                                            .unwrap_or(0.0);
+                                                        rsx! {
+                                                            div { class: "participant-audio-meter",
+                                                                div {
+                                                                    class: "participant-audio-fill",
+                                                                    style: "width: {level}%"
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -841,11 +1045,23 @@ fn App() -> Element {
 // Function to start audio analysis and update audio level
 fn start_audio_analysis(stream: MediaStream, mut audio_level: Signal<f64>) {
     spawn_local(async move {
-        let audio_context = match AudioContext::new() {
+        // Create optimized AudioContext for low latency
+        let audio_options = web_sys::AudioContextOptions::new();
+        audio_options.set_latency_hint(&JsValue::from_str("interactive"));
+        audio_options.set_sample_rate(48000.0);
+        
+        let audio_context = match AudioContext::new_with_context_options(&audio_options) {
             Ok(ctx) => ctx,
-            Err(e) => {
-                info!("[Error] Failed to create AudioContext: {:?}", e);
-                return;
+            Err(_) => {
+                // Fallback to default AudioContext if options not supported
+                info!("[Audio] AudioContextOptions not supported, using default");
+                match AudioContext::new() {
+                    Ok(ctx) => ctx,
+                    Err(e) => {
+                        info!("[Error] Failed to create AudioContext: {:?}", e);
+                        return;
+                    }
+                }
             }
         };
         
@@ -864,7 +1080,10 @@ fn start_audio_analysis(stream: MediaStream, mut audio_level: Signal<f64>) {
                 return;
             }
         };
-        analyser.set_fft_size(2048);
+        // Reduce FFT size for lower latency (512 samples @ 48kHz = ~10ms)
+        analyser.set_fft_size(512);
+        // Add smoothing for more stable audio level readings
+        analyser.set_smoothing_time_constant(0.3);
         
         if let Err(e) = source.connect_with_audio_node(&analyser) {
             info!("[Error] Failed to connect source to analyser: {:?}", e);
@@ -921,11 +1140,23 @@ fn start_audio_analysis(stream: MediaStream, mut audio_level: Signal<f64>) {
 // Function to start audio analysis for remote stream and update participant audio level
 fn start_remote_audio_analysis(stream: MediaStream, user_id: String, mut participant_audio_levels: Signal<HashMap<String, f64>>) {
     spawn_local(async move {
-        let audio_context = match AudioContext::new() {
+        // Create optimized AudioContext for low latency
+        let audio_options = web_sys::AudioContextOptions::new();
+        audio_options.set_latency_hint(&JsValue::from_str("interactive"));
+        audio_options.set_sample_rate(48000.0);
+        
+        let audio_context = match AudioContext::new_with_context_options(&audio_options) {
             Ok(ctx) => ctx,
-            Err(e) => {
-                info!("[Error] Failed to create AudioContext for remote stream {}: {:?}", user_id, e);
-                return;
+            Err(_) => {
+                // Fallback to default AudioContext if options not supported
+                info!("[Audio] AudioContextOptions not supported for {}, using default", user_id);
+                match AudioContext::new() {
+                    Ok(ctx) => ctx,
+                    Err(e) => {
+                        info!("[Error] Failed to create AudioContext for remote stream {}: {:?}", user_id, e);
+                        return;
+                    }
+                }
             }
         };
         
@@ -944,7 +1175,10 @@ fn start_remote_audio_analysis(stream: MediaStream, user_id: String, mut partici
                 return;
             }
         };
-        analyser.set_fft_size(2048);
+        // Reduce FFT size for lower latency (512 samples @ 48kHz = ~10ms)
+        analyser.set_fft_size(512);
+        // Add smoothing for more stable audio level readings
+        analyser.set_smoothing_time_constant(0.3);
         
         if let Err(e) = source.connect_with_audio_node(&analyser) {
             info!("[Error] Failed to connect source to analyser for {}: {:?}", user_id, e);
@@ -995,7 +1229,258 @@ fn start_remote_audio_analysis(stream: MediaStream, user_id: String, mut partici
     });
 }
 
-// Create RTCPeerConnection with ICE servers
+// Thread-local storage for tracking previous stats values
+use std::cell::RefCell;
+
+thread_local! {
+    static PREV_STATS: RefCell<HashMap<String, (f64, f64, f64)>> = RefCell::new(HashMap::new());
+}
+
+// Collect WebRTC statistics for a peer connection
+async fn collect_peer_stats(
+    pc: RtcPeerConnection,
+    user_id: String,
+    mut connection_stats: Signal<HashMap<String, ConnectionStats>>,
+) -> Result<(), JsValue> {
+    use wasm_bindgen_futures::JsFuture;
+    
+    info!("[Stats] Starting stats collection for {}", user_id);
+    
+    loop {
+        // Wait 1 second between stat collections
+        gloo_timers::future::TimeoutFuture::new(1000).await;
+        
+        // Get RTCStatsReport
+        let stats_promise = pc.get_stats();
+        let stats_result = match JsFuture::from(stats_promise).await {
+            Ok(result) => {
+                info!("[Stats] Successfully got stats for {}", user_id);
+                result
+            }
+            Err(e) => {
+                info!("[Stats] Failed to get stats for {}: {:?}, connection may be closed", user_id, e);
+                break;
+            }
+        };
+        
+        let mut current_stats = ConnectionStats::default();
+        let mut found_inbound = false;
+        let mut found_outbound = false;
+        let mut found_candidate_pair = false;
+        let mut found_codec = false;
+        
+        // Use JavaScript helper to parse RTCStatsReport
+        let stats_array = parse_rtc_stats(&stats_result);
+        info!("[Stats] Parsed {} stat entries", stats_array.length());
+        
+        // Get previous stats values from thread-local storage
+        let (mut prev_bytes_sent, mut prev_bytes_received, mut prev_timestamp) =
+            PREV_STATS.with(|map| {
+                map.borrow().get(&user_id).copied().unwrap_or((0.0, 0.0, 0.0))
+            });
+        
+        // Iterate through all stat entries
+        for i in 0..stats_array.length() {
+            if let Some(stat_obj) = stats_array.get(i).dyn_into::<js_sys::Object>().ok() {
+                // Get stat type
+                if let Ok(type_val) = Reflect::get(&stat_obj, &JsValue::from_str("type")) {
+                    if let Some(stat_type) = type_val.as_string() {
+                        info!("[Stats] Processing stat type: {}", stat_type);
+                        
+                        // Get the data object
+                        if let Ok(data) = Reflect::get(&stat_obj, &JsValue::from_str("data")) {
+                            match stat_type.as_str() {
+                                "inbound-rtp" => {
+                                    // Check if this is audio
+                                    if let Ok(kind) = Reflect::get(&data, &JsValue::from_str("kind")) {
+                                        let kind_str = kind.as_string().unwrap_or_default();
+                                        if kind_str == "audio" {
+                                            found_inbound = true;
+                                            info!("[Stats] Found inbound audio RTP stats");
+                                            
+                                            // Packets received and lost for packet loss percentage
+                                            let packets_received = Reflect::get(&data, &JsValue::from_str("packetsReceived"))
+                                                .ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                            
+                                            let packets_lost = Reflect::get(&data, &JsValue::from_str("packetsLost"))
+                                                .ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                            
+                                            if packets_received > 0.0 {
+                                                current_stats.packet_loss = (packets_lost / (packets_received + packets_lost)) * 100.0;
+                                                info!("[Stats] Packet loss: {:.2}% (lost: {}, received: {})",
+                                                    current_stats.packet_loss, packets_lost, packets_received);
+                                            }
+                                            
+                                            // Jitter (in seconds, convert to ms)
+                                            if let Some(jitter) = Reflect::get(&data, &JsValue::from_str("jitter"))
+                                                .ok().and_then(|v| v.as_f64()) {
+                                                current_stats.jitter = jitter * 1000.0;
+                                                info!("[Stats] Jitter: {:.2} ms", current_stats.jitter);
+                                            }
+                                            
+                                            // Audio level
+                                            if let Some(level) = Reflect::get(&data, &JsValue::from_str("audioLevel"))
+                                                .ok().and_then(|v| v.as_f64()) {
+                                                current_stats.audio_level = level * 100.0;
+                                                info!("[Stats] Audio level: {:.2}%", current_stats.audio_level);
+                                            }
+                                            
+                                            // Bytes received for bitrate calculation
+                                            if let Some(bytes_received) = Reflect::get(&data, &JsValue::from_str("bytesReceived"))
+                                                .ok().and_then(|v| v.as_f64()) {
+                                                if let Some(timestamp) = Reflect::get(&data, &JsValue::from_str("timestamp"))
+                                                    .ok().and_then(|v| v.as_f64()) {
+                                                    
+                                                    if prev_bytes_received > 0.0 && prev_timestamp > 0.0 {
+                                                        let bytes_delta = bytes_received - prev_bytes_received;
+                                                        let time_delta = (timestamp - prev_timestamp) / 1000.0; // ms to seconds
+                                                        
+                                                        if time_delta > 0.0 {
+                                                            current_stats.audio_bitrate = (bytes_delta * 8.0) / (time_delta * 1000.0); // kbps
+                                                            info!("[Stats] Audio bitrate (inbound): {:.2} kbps", current_stats.audio_bitrate);
+                                                        }
+                                                    }
+                                                    
+                                                    prev_bytes_received = bytes_received;
+                                                    prev_timestamp = timestamp;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                "outbound-rtp" => {
+                                    // Check if this is audio
+                                    if let Ok(kind) = Reflect::get(&data, &JsValue::from_str("kind")) {
+                                        let kind_str = kind.as_string().unwrap_or_default();
+                                        if kind_str == "audio" {
+                                            found_outbound = true;
+                                            info!("[Stats] Found outbound audio RTP stats");
+                                            
+                                            // Bytes sent for bitrate calculation
+                                            if let Some(bytes_sent) = Reflect::get(&data, &JsValue::from_str("bytesSent"))
+                                                .ok().and_then(|v| v.as_f64()) {
+                                                if let Some(timestamp) = Reflect::get(&data, &JsValue::from_str("timestamp"))
+                                                    .ok().and_then(|v| v.as_f64()) {
+                                                    
+                                                    if prev_bytes_sent > 0.0 && prev_timestamp > 0.0 {
+                                                        let bytes_delta = bytes_sent - prev_bytes_sent;
+                                                        let time_delta = (timestamp - prev_timestamp) / 1000.0;
+                                                        
+                                                        if time_delta > 0.0 {
+                                                            current_stats.audio_bitrate = (bytes_delta * 8.0) / (time_delta * 1000.0);
+                                                            info!("[Stats] Audio bitrate (outbound): {:.2} kbps", current_stats.audio_bitrate);
+                                                        }
+                                                    }
+                                                    
+                                                    prev_bytes_sent = bytes_sent;
+                                                    if prev_timestamp == 0.0 {
+                                                        prev_timestamp = timestamp;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                "candidate-pair" => {
+                                    // Check if this candidate pair is selected/active
+                                    if let Ok(state) = Reflect::get(&data, &JsValue::from_str("state")) {
+                                        let state_str = state.as_string().unwrap_or_default();
+                                        if state_str == "succeeded" {
+                                            found_candidate_pair = true;
+                                            info!("[Stats] Found succeeded candidate pair");
+                                            
+                                            // RTT (round-trip time)
+                                            if let Some(rtt) = Reflect::get(&data, &JsValue::from_str("currentRoundTripTime"))
+                                                .ok().and_then(|v| v.as_f64()) {
+                                                current_stats.rtt = rtt * 1000.0; // convert to ms
+                                                info!("[Stats] RTT: {:.2} ms", current_stats.rtt);
+                                            }
+                                        }
+                                    }
+                                }
+                                "codec" => {
+                                    // Codec information
+                                    if let Some(mime_str) = Reflect::get(&data, &JsValue::from_str("mimeType"))
+                                        .ok().and_then(|v| v.as_string()) {
+                                        info!("[Stats] Found codec mimeType: {}", mime_str);
+                                        if mime_str.contains("audio") {
+                                            found_codec = true;
+                                            // Extract codec name (e.g., "audio/opus" -> "opus")
+                                            current_stats.codec_name = mime_str
+                                                .split('/')
+                                                .nth(1)
+                                                .unwrap_or("unknown")
+                                                .to_string();
+                                            info!("[Stats] Codec name: {}", current_stats.codec_name);
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Save stats to thread-local storage
+        PREV_STATS.with(|map| {
+            map.borrow_mut().insert(user_id.clone(), (prev_bytes_sent, prev_bytes_received, prev_timestamp));
+        });
+        
+        info!("[Stats] Summary for {}: inbound={}, outbound={}, candidate-pair={}, codec={}",
+            user_id, found_inbound, found_outbound, found_candidate_pair, found_codec);
+        
+        // Get connection states
+        current_stats.connection_state = match pc.connection_state() {
+            web_sys::RtcPeerConnectionState::New => "new",
+            web_sys::RtcPeerConnectionState::Connecting => "connecting",
+            web_sys::RtcPeerConnectionState::Connected => "connected",
+            web_sys::RtcPeerConnectionState::Disconnected => "disconnected",
+            web_sys::RtcPeerConnectionState::Failed => "failed",
+            web_sys::RtcPeerConnectionState::Closed => "closed",
+            _ => "unknown",
+        }.to_string();
+        
+        current_stats.ice_connection_state = match pc.ice_connection_state() {
+            web_sys::RtcIceConnectionState::New => "new",
+            web_sys::RtcIceConnectionState::Checking => "checking",
+            web_sys::RtcIceConnectionState::Connected => "connected",
+            web_sys::RtcIceConnectionState::Completed => "completed",
+            web_sys::RtcIceConnectionState::Failed => "failed",
+            web_sys::RtcIceConnectionState::Disconnected => "disconnected",
+            web_sys::RtcIceConnectionState::Closed => "closed",
+            _ => "unknown",
+        }.to_string();
+        
+        info!("[Stats] Connection state: {}, ICE state: {}",
+            current_stats.connection_state, current_stats.ice_connection_state);
+        
+        // Set timestamp
+        if let Some(window) = web_sys::window() {
+            if let Some(performance) = window.performance() {
+                current_stats.last_updated = performance.now();
+            }
+        }
+        
+        info!("[Stats] Final stats for {}: bitrate={:.1}kbps, rtt={:.0}ms, jitter={:.1}ms, loss={:.1}%, codec={}",
+            user_id, current_stats.audio_bitrate, current_stats.rtt, current_stats.jitter,
+            current_stats.packet_loss, current_stats.codec_name);
+        
+        // Update the stats map
+        connection_stats.write().insert(user_id.clone(), current_stats);
+        
+        // Break if connection is closed
+        if pc.connection_state() == web_sys::RtcPeerConnectionState::Closed {
+            info!("[Stats] Connection closed for {}, stopping stats collection", user_id);
+            break;
+        }
+    }
+    
+    Ok(())
+}
+
+// Create RTCPeerConnection with ICE servers optimized for low latency
 fn create_rtc_peer_connection() -> Result<RtcPeerConnection, JsValue> {
     let config = RtcConfiguration::new();
     
@@ -1011,6 +1496,11 @@ fn create_rtc_peer_connection() -> Result<RtcPeerConnection, JsValue> {
     
     config.set_ice_servers(&ice_servers);
     
+    // Optimize for low latency: use max-bundle to multiplex all media on one connection
+    config.set_bundle_policy(web_sys::RtcBundlePolicy::MaxBundle);
+    
+    info!("[WebRTC] Creating peer connection with low-latency configuration");
+    
     RtcPeerConnection::new_with_configuration(&config)
 }
 
@@ -1021,6 +1511,7 @@ async fn create_peer_connection(
     ws: WebSocket,
     create_offer: bool,
     participant_audio_levels: Signal<HashMap<String, f64>>,
+    connection_stats: Signal<HashMap<String, ConnectionStats>>,
 ) -> Result<RtcPeerConnection, JsValue> {
     info!("Creating peer connection for user {}", target_user_id);
     
@@ -1098,13 +1589,85 @@ async fn create_peer_connection(
     pc.set_ontrack(Some(ontrack.as_ref().unchecked_ref()));
     ontrack.forget();
     
+    // Set up onconnectionstatechange handler
+    {
+        let pc_clone = pc.clone();
+        let uid_clone = target_user_id.clone();
+        let mut stats_clone = connection_stats.clone();
+        
+        let onconnectionstatechange = Closure::wrap(Box::new(move || {
+            let state = pc_clone.connection_state();
+            let state_str = match state {
+                web_sys::RtcPeerConnectionState::New => "new",
+                web_sys::RtcPeerConnectionState::Connecting => "connecting",
+                web_sys::RtcPeerConnectionState::Connected => "connected",
+                web_sys::RtcPeerConnectionState::Disconnected => "disconnected",
+                web_sys::RtcPeerConnectionState::Failed => "failed",
+                web_sys::RtcPeerConnectionState::Closed => "closed",
+                _ => "unknown",
+            };
+            info!("[Connection] State changed to: {} for {}", state_str, uid_clone);
+            
+            // Update connection stats
+            if let Some(stats) = stats_clone.write().get_mut(&uid_clone) {
+                stats.connection_state = state_str.to_string();
+            }
+        }) as Box<dyn FnMut()>);
+        
+        pc.set_onconnectionstatechange(Some(onconnectionstatechange.as_ref().unchecked_ref()));
+        onconnectionstatechange.forget();
+    }
+    
+    // Set up oniceconnectionstatechange handler
+    {
+        let pc_clone = pc.clone();
+        let uid_clone = target_user_id.clone();
+        let mut stats_clone = connection_stats.clone();
+        
+        let oniceconnectionstatechange = Closure::wrap(Box::new(move || {
+            let ice_state = pc_clone.ice_connection_state();
+            let ice_state_str = match ice_state {
+                web_sys::RtcIceConnectionState::New => "new",
+                web_sys::RtcIceConnectionState::Checking => "checking",
+                web_sys::RtcIceConnectionState::Connected => "connected",
+                web_sys::RtcIceConnectionState::Completed => "completed",
+                web_sys::RtcIceConnectionState::Failed => "failed",
+                web_sys::RtcIceConnectionState::Disconnected => "disconnected",
+                web_sys::RtcIceConnectionState::Closed => "closed",
+                _ => "unknown",
+            };
+            info!("[ICE] State changed to: {} for {}", ice_state_str, uid_clone);
+            
+            // Update connection stats
+            if let Some(stats) = stats_clone.write().get_mut(&uid_clone) {
+                stats.ice_connection_state = ice_state_str.to_string();
+            }
+        }) as Box<dyn FnMut()>);
+        
+        pc.set_oniceconnectionstatechange(Some(oniceconnectionstatechange.as_ref().unchecked_ref()));
+        oniceconnectionstatechange.forget();
+    }
+    
     // Create offer if requested
     if create_offer {
         info!("Creating offer for {}", target_user_id);
         let offer = wasm_bindgen_futures::JsFuture::from(pc.create_offer()).await?;
-        let offer_sdp = Reflect::get(&offer, &JsValue::from_str("sdp"))?
+        let mut offer_sdp = Reflect::get(&offer, &JsValue::from_str("sdp"))?
             .as_string()
             .ok_or_else(|| JsValue::from_str("No SDP in offer"))?;
+        
+        // Optimize SDP for Opus low-latency codec
+        if offer_sdp.contains("opus/48000") {
+            info!("[WebRTC] Optimizing SDP for low-latency Opus codec");
+            // Add Opus codec parameters for low latency:
+            // - minptime=10: minimum packet time of 10ms (lower latency)
+            // - useinbandfec=1: enable forward error correction
+            // - maxaveragebitrate=64000: 64kbps suitable for voice
+            offer_sdp = offer_sdp.replace(
+                "opus/48000/2",
+                "opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1;maxaveragebitrate=64000"
+            );
+        }
         
         // Set local description
         let offer_init = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
@@ -1122,6 +1685,18 @@ async fn create_peer_connection(
         info!("Sent offer to {}", target_user_id);
     }
     
+    // Start collecting statistics for this peer connection
+    {
+        let pc_clone = pc.clone();
+        let uid_clone = target_user_id.clone();
+        spawn_local(async move {
+            info!("[Stats] Starting statistics collection for {}", uid_clone);
+            if let Err(e) = collect_peer_stats(pc_clone, uid_clone, connection_stats).await {
+                info!("[Stats] Statistics collection ended: {:?}", e);
+            }
+        });
+    }
+    
     Ok(pc)
 }
 
@@ -1132,10 +1707,11 @@ async fn handle_webrtc_offer(
     ws: WebSocket,
     offer_sdp: String,
     participant_audio_levels: Signal<HashMap<String, f64>>,
+    connection_stats: Signal<HashMap<String, ConnectionStats>>,
 ) -> Result<RtcPeerConnection, JsValue> {
     info!("Handling WebRTC offer from {}", from_user_id);
     
-    let pc = create_peer_connection(local_stream, from_user_id.clone(), ws.clone(), false, participant_audio_levels).await?;
+    let pc = create_peer_connection(local_stream, from_user_id.clone(), ws.clone(), false, participant_audio_levels, connection_stats).await?;
     
     // Set remote description (the offer)
     let offer_init = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
@@ -1144,9 +1720,18 @@ async fn handle_webrtc_offer(
     
     // Create answer
     let answer = wasm_bindgen_futures::JsFuture::from(pc.create_answer()).await?;
-    let answer_sdp = Reflect::get(&answer, &JsValue::from_str("sdp"))?
+    let mut answer_sdp = Reflect::get(&answer, &JsValue::from_str("sdp"))?
         .as_string()
         .ok_or_else(|| JsValue::from_str("No SDP in answer"))?;
+    
+    // Optimize SDP for Opus low-latency codec
+    if answer_sdp.contains("opus/48000") {
+        info!("[WebRTC] Optimizing answer SDP for low-latency Opus codec");
+        answer_sdp = answer_sdp.replace(
+            "opus/48000/2",
+            "opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1;maxaveragebitrate=64000"
+        );
+    }
     
     // Set local description
     let answer_init = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
