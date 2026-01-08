@@ -14,6 +14,13 @@ use tracing::{info, warn};
 use tracing_subscriber;
 use uuid::Uuid;
 
+// Participant information structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ParticipantInfo {
+    username: String,
+    user_id: String,
+}
+
 // Message types for WebSocket communication
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -23,6 +30,10 @@ enum ClientMessage {
     JoinRoom { room_id: String },
     LeaveRoom,
     Ping,
+    // TODO: Migrate to SFU topology in future iterations
+    WebrtcOffer { target_user_id: String, sdp: String },
+    WebrtcAnswer { target_user_id: String, sdp: String },
+    IceCandidate { target_user_id: String, candidate: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,12 +41,16 @@ enum ClientMessage {
 enum ServerMessage {
     Registered { user_id: String },
     RoomCreated { room_id: String },
-    RoomJoined { room_id: String, participants: Vec<String> },
-    UserJoined { username: String },
-    UserLeft { username: String },
+    RoomJoined { room_id: String, participants: Vec<ParticipantInfo> },
+    UserJoined { username: String, user_id: String },
+    UserLeft { username: String, user_id: String },
     RoomLeft,
     Error { message: String },
     Pong,
+    // TODO: Migrate to SFU topology in future iterations
+    WebrtcOffer { from_user_id: String, sdp: String },
+    WebrtcAnswer { from_user_id: String, sdp: String },
+    IceCandidate { from_user_id: String, candidate: String },
 }
 
 // User info
@@ -125,8 +140,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         while let Some(msg) = receiver.next().await {
             match msg {
                 Ok(Message::Text(text)) => {
-                    info!("Received message: {}", text);
-
                     // Parse message
                     let msg_result: Result<ClientMessage, _> = serde_json::from_str(&text);
                     
@@ -135,7 +148,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             match client_msg {
                                 ClientMessage::Register { username } => {
                                     let new_user_id = Uuid::new_v4().to_string();
-                                    info!("Registering user {} as {}", username, new_user_id);
+                                    info!("[Room] Registering user {} as {}", username, new_user_id);
 
                                     let user = User {
                                         _id: new_user_id.clone(),
@@ -159,7 +172,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                             drop(users);
 
                                             let room_id = Uuid::new_v4().to_string();
-                                            info!("User {} ({}) creating room {}", uid, username, room_id);
+                                            info!("[Room] User {} ({}) creating room {}", uid, username, room_id);
 
                                             let mut participants = HashMap::new();
                                             participants.insert(uid.clone(), username.clone());
@@ -174,7 +187,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
                                             let response = ServerMessage::RoomJoined {
                                                 room_id,
-                                                participants: vec![username],
+                                                participants: vec![ParticipantInfo {
+                                                    username,
+                                                    user_id: uid.clone(),
+                                                }],
                                             };
                                             let _ = tx.send(serde_json::to_string(&response).unwrap());
                                         }
@@ -198,7 +214,12 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                 room.participants.insert(uid.clone(), username.clone());
                                                 state.user_rooms.write().await.insert(uid.clone(), room_id.clone());
 
-                                                let participants: Vec<String> = room.participants.values().cloned().collect();
+                                                let participants: Vec<ParticipantInfo> = room.participants.iter()
+                                                    .map(|(uid, uname)| ParticipantInfo {
+                                                        username: uname.clone(),
+                                                        user_id: uid.clone(),
+                                                    })
+                                                    .collect();
                                                 
                                                 info!("User {} ({}) joined room {}", uid, username, room_id);
 
@@ -212,6 +233,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                 // Notify other participants
                                                 let notification = ServerMessage::UserJoined {
                                                     username: username.clone(),
+                                                    user_id: uid.clone(),
                                                 };
                                                 let notification_str = serde_json::to_string(&notification).unwrap();
 
@@ -254,6 +276,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                     // Notify other participants
                                                     let notification = ServerMessage::UserLeft {
                                                         username: username.clone(),
+                                                        user_id: uid.clone(),
                                                     };
                                                     let notification_str = serde_json::to_string(&notification).unwrap();
 
@@ -271,6 +294,62 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 ClientMessage::Ping => {
                                     let response = ServerMessage::Pong;
                                     let _ = tx.send(serde_json::to_string(&response).unwrap());
+                                }
+                                // WebRTC signaling relay logic
+                                // TODO: Migrate to SFU topology in future iterations
+                                ClientMessage::WebrtcOffer { target_user_id, sdp } => {
+                                    if let Some(uid) = &user_id {
+                                        info!("Relaying WebRTC offer from {} to {}", uid, target_user_id);
+                                        let users = state.users.read().await;
+                                        if let Some(target_user) = users.get(&target_user_id) {
+                                            let relay_msg = ServerMessage::WebrtcOffer {
+                                                from_user_id: uid.clone(),
+                                                sdp,
+                                            };
+                                            let _ = target_user.tx.send(serde_json::to_string(&relay_msg).unwrap());
+                                        } else {
+                                            let response = ServerMessage::Error {
+                                                message: "Target user not found".to_string(),
+                                            };
+                                            let _ = tx.send(serde_json::to_string(&response).unwrap());
+                                        }
+                                    }
+                                }
+                                ClientMessage::WebrtcAnswer { target_user_id, sdp } => {
+                                    if let Some(uid) = &user_id {
+                                        info!("Relaying WebRTC answer from {} to {}", uid, target_user_id);
+                                        let users = state.users.read().await;
+                                        if let Some(target_user) = users.get(&target_user_id) {
+                                            let relay_msg = ServerMessage::WebrtcAnswer {
+                                                from_user_id: uid.clone(),
+                                                sdp,
+                                            };
+                                            let _ = target_user.tx.send(serde_json::to_string(&relay_msg).unwrap());
+                                        } else {
+                                            let response = ServerMessage::Error {
+                                                message: "Target user not found".to_string(),
+                                            };
+                                            let _ = tx.send(serde_json::to_string(&response).unwrap());
+                                        }
+                                    }
+                                }
+                                ClientMessage::IceCandidate { target_user_id, candidate } => {
+                                    if let Some(uid) = &user_id {
+                                        info!("Relaying ICE candidate from {} to {}", uid, target_user_id);
+                                        let users = state.users.read().await;
+                                        if let Some(target_user) = users.get(&target_user_id) {
+                                            let relay_msg = ServerMessage::IceCandidate {
+                                                from_user_id: uid.clone(),
+                                                candidate,
+                                            };
+                                            let _ = target_user.tx.send(serde_json::to_string(&relay_msg).unwrap());
+                                        } else {
+                                            let response = ServerMessage::Error {
+                                                message: "Target user not found".to_string(),
+                                            };
+                                            let _ = tx.send(serde_json::to_string(&response).unwrap());
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -314,6 +393,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         // Notify remaining participants
                         let notification = ServerMessage::UserLeft {
                             username,
+                            user_id: uid.clone(),
                         };
                         let notification_str = serde_json::to_string(&notification).unwrap();
 

@@ -1,11 +1,11 @@
-# Voice Messenger PoC (Iteration 3)
+# Voice Messenger PoC (Iteration 4)
 
-A proof of concept for a voice messenger built with Rust. This iteration features WebSocket connectivity, microphone access with audio level visualization, and room management with shareable links.
+A proof of concept for a voice messenger built with Rust. This iteration features WebSocket connectivity, microphone access with audio level visualization, room management with shareable links, and **WebRTC P2P audio transmission between participants**.
 
 ## Tech Stack
 
-- **Backend**: Rust + Axum + WebSocket
-- **Frontend**: Dioxus (WASM) + Web Audio API
+- **Backend**: Rust + Axum + WebSocket (WebRTC signaling)
+- **Frontend**: Dioxus (WASM) + Web Audio API + WebRTC
 
 ## Project Structure
 

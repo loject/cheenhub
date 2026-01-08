@@ -355,6 +355,36 @@ input[type="text"]:focus {
     margin-bottom: 0;
 }
 
+/* Participant item with audio meter */
+.participant-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.participant-name {
+    flex: 1;
+}
+
+/* Compact audio meter for participants */
+.participant-audio-meter {
+    width: 60px;
+    height: 16px;
+    background: #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+}
+
+.participant-audio-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981 0%, #059669 50%, #f59e0b 80%, #ef4444 100%);
+    border-radius: 8px;
+    transition: width 0.1s ease-out;
+    min-width: 2px;
+}
+
 .leave-btn {
     width: 100%;
     padding: 12px;

@@ -11,7 +11,12 @@ web-sys = { version = "0.3", features = [
     "MediaStream", "MediaStreamTrack", "MediaDevices", "Navigator", "Window",
     "MediaStreamConstraints", "MediaTrackConstraints",
     "AudioContext", "AnalyserNode", "AudioNode", "MediaStreamAudioSourceNode",
-    "UrlSearchParams", "Location", "Clipboard"
+    "UrlSearchParams", "Location", "Clipboard",
+    "RtcPeerConnection", "RtcConfiguration", "RtcIceServer",
+    "RtcSessionDescription", "RtcSessionDescriptionInit", "RtcSdpType",
+    "RtcIceCandidate", "RtcIceCandidateInit", "RtcPeerConnectionIceEvent",
+    "RtcTrackEvent", "MediaStreamEvent", "RtcPeerConnectionState",
+    "HtmlAudioElement", "RtcRtpSender"
 ] }
 js-sys = "0.3"
 wasm-bindgen = "0.2"
