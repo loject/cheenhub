@@ -1,0 +1,12 @@
+[application]
+name = "frontend"
+
+[web.app]
+title = "Voice Messenger PoC"
+
+[web.watcher]
+
+[web.resource]
+style = ["style.css"]
+
+[web.resource.dev]

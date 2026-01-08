@@ -1,0 +1,12 @@
+[package]
+name = "backend"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1.42", features = ["full"] }
+tokio-tungstenite = "0.24"
+tower = "0.5"
+tracing = "0.1"
+tracing-subscriber = "0.3"
