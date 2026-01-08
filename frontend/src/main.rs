@@ -997,7 +997,7 @@ fn start_remote_audio_analysis(stream: MediaStream, user_id: String, mut partici
 
 // Create RTCPeerConnection with ICE servers
 fn create_rtc_peer_connection() -> Result<RtcPeerConnection, JsValue> {
-    let mut config = RtcConfiguration::new();
+    let config = RtcConfiguration::new();
     
     // Add STUN servers (using Google's public STUN servers)
     let ice_servers = Array::new();
@@ -1107,8 +1107,8 @@ async fn create_peer_connection(
             .ok_or_else(|| JsValue::from_str("No SDP in offer"))?;
         
         // Set local description
-        let mut offer_init = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
-        offer_init.sdp(&offer_sdp);
+        let offer_init = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
+        offer_init.set_sdp(&offer_sdp);
         wasm_bindgen_futures::JsFuture::from(pc.set_local_description(&offer_init)).await?;
         
         // Send offer via WebSocket
@@ -1138,8 +1138,8 @@ async fn handle_webrtc_offer(
     let pc = create_peer_connection(local_stream, from_user_id.clone(), ws.clone(), false, participant_audio_levels).await?;
     
     // Set remote description (the offer)
-    let mut offer_init = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
-    offer_init.sdp(&offer_sdp);
+    let offer_init = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
+    offer_init.set_sdp(&offer_sdp);
     wasm_bindgen_futures::JsFuture::from(pc.set_remote_description(&offer_init)).await?;
     
     // Create answer
@@ -1149,8 +1149,8 @@ async fn handle_webrtc_offer(
         .ok_or_else(|| JsValue::from_str("No SDP in answer"))?;
     
     // Set local description
-    let mut answer_init = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
-    answer_init.sdp(&answer_sdp);
+    let answer_init = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
+    answer_init.set_sdp(&answer_sdp);
     wasm_bindgen_futures::JsFuture::from(pc.set_local_description(&answer_init)).await?;
     
     // Send answer via WebSocket
@@ -1170,8 +1170,8 @@ async fn handle_webrtc_offer(
 async fn handle_webrtc_answer(pc: RtcPeerConnection, answer_sdp: String) -> Result<(), JsValue> {
     info!("Setting remote description (answer)");
     
-    let mut answer_init = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
-    answer_init.sdp(&answer_sdp);
+    let answer_init = RtcSessionDescriptionInit::new(RtcSdpType::Answer);
+    answer_init.set_sdp(&answer_sdp);
     wasm_bindgen_futures::JsFuture::from(pc.set_remote_description(&answer_init)).await?;
     
     Ok(())
@@ -1181,8 +1181,8 @@ async fn handle_webrtc_answer(pc: RtcPeerConnection, answer_sdp: String) -> Resu
 async fn handle_ice_candidate(pc: RtcPeerConnection, candidate_str: String) -> Result<(), JsValue> {
     info!("Adding ICE candidate");
     
-    let mut candidate_init = RtcIceCandidateInit::new(&candidate_str);
-    candidate_init.sdp_m_line_index(Some(0));
+    let candidate_init = RtcIceCandidateInit::new(&candidate_str);
+    candidate_init.set_sdp_m_line_index(Some(0));
     
     wasm_bindgen_futures::JsFuture::from(pc.add_ice_candidate_with_opt_rtc_ice_candidate_init(Some(&candidate_init))).await?;
     
