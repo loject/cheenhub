@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use tracing::info;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::spawn_local;
 use web_sys::{
     AudioContext, MessageEvent, MediaStream, UrlSearchParams, WebSocket,
     RtcPeerConnection, RtcConfiguration, RtcIceServer, RtcSessionDescriptionInit,
@@ -12,6 +13,8 @@ use web_sys::{
 use js_sys::{Array, JsString, Reflect};
 
 fn main() {
+    console_error_panic_hook::set_once();
+
     // Initialize tracing for web console logging
     tracing_wasm::set_as_global_default_with_config(
         tracing_wasm::WASMLayerConfigBuilder::new()
@@ -290,9 +293,9 @@ fn App() -> Element {
                                     info!("[WebRTC] Step 0.9: All variables cloned, about to spawn task for {}", target_uid);
                                     
                                     // Создать peer connection безопасно
-                                    spawn(async move {
-                                        info!("[WebRTC] INSIDE SPAWN - VERY FIRST LINE - Starting task");
-                                        info!("[WebRTC] INSIDE SPAWN - Step 1: Starting spawn for {} ({})", target_name, target_uid);
+                                    spawn_local(async move {
+                                        info!("[WebRTC] INSIDE SPAWN_LOCAL - VERY FIRST LINE - Starting task");
+                                        info!("[WebRTC] INSIDE SPAWN_LOCAL - Step 1: Starting spawn for {} ({})", target_name, target_uid);
                                         info!("[WebRTC] Step 2: About to call create_peer_connection");
                                         
                                         match create_peer_connection(stream_clone, target_uid.clone(), ws_clone, true, participant_audio_levels).await {
@@ -340,17 +343,23 @@ fn App() -> Element {
                                 }
                                 ServerMessage::WebrtcOffer { from_user_id, sdp } => {
                                     info!("[WebRTC] Received offer from {}", from_user_id);
+                                    info!("[DEBUG] About to check media_stream for offer handling");
                                     
                                     if let Some(stream) = media_stream.read().as_ref() {
-                                        spawn({
+                                        info!("[DEBUG] Media stream found, spawning offer handler");
+                                        spawn_local({
                                             let stream = stream.clone();
                                             let from_uid = from_user_id.clone();
                                             let ws = ws_for_msg.clone();
                                             let offer_sdp = sdp.clone();
                                             async move {
+                                                info!("[DEBUG] INSIDE SPAWN - offer handler started for {}", from_uid);
+                                                info!("[DEBUG] About to call handle_webrtc_offer");
                                                 match handle_webrtc_offer(stream, from_uid.clone(), ws, offer_sdp, participant_audio_levels).await {
                                                     Ok(pc) => {
+                                                        info!("[DEBUG] handle_webrtc_offer succeeded, about to write to peer_connections");
                                                         peer_connections.write().insert(from_uid, pc);
+                                                        info!("[DEBUG] peer_connection inserted successfully");
                                                     }
                                                     Err(e) => {
                                                         info!("Failed to handle WebRTC offer: {:?}", e);
@@ -362,12 +371,16 @@ fn App() -> Element {
                                 }
                                 ServerMessage::WebrtcAnswer { from_user_id, sdp } => {
                                     info!("Received WebRTC answer from {}", from_user_id);
+                                    info!("[DEBUG] About to read peer_connections for answer handling");
                                     
                                     if let Some(pc) = peer_connections.read().get(&from_user_id) {
-                                        spawn({
+                                        info!("[DEBUG] Found peer connection for {}, spawning answer handler", from_user_id);
+                                        spawn_local({
                                             let pc = pc.clone();
                                             let answer_sdp = sdp.clone();
+                                            let from_uid_debug = from_user_id.clone();
                                             async move {
+                                                info!("[DEBUG] INSIDE SPAWN - answer handler started for {}", from_uid_debug);
                                                 if let Err(e) = handle_webrtc_answer(pc, answer_sdp).await {
                                                     info!("Failed to handle WebRTC answer: {:?}", e);
                                                 }
@@ -377,17 +390,23 @@ fn App() -> Element {
                                 }
                                 ServerMessage::IceCandidate { from_user_id, candidate } => {
                                     info!("Received ICE candidate from {}", from_user_id);
+                                    info!("[DEBUG] About to read peer_connections for ICE candidate - THIS IS LINE 384");
                                     
                                     if let Some(pc) = peer_connections.read().get(&from_user_id) {
-                                        spawn({
+                                        info!("[DEBUG] Found peer connection for {}, spawning ICE handler", from_user_id);
+                                        spawn_local({
                                             let pc = pc.clone();
                                             let cand = candidate.clone();
+                                            let from_uid_debug = from_user_id.clone();
                                             async move {
+                                                info!("[DEBUG] INSIDE SPAWN_LOCAL - ICE handler started for {}", from_uid_debug);
                                                 if let Err(e) = handle_ice_candidate(pc, cand).await {
                                                     info!("Failed to handle ICE candidate: {:?}", e);
                                                 }
                                             }
                                         });
+                                    } else {
+                                        info!("[DEBUG] No peer connection found for {} when handling ICE candidate", from_user_id);
                                     }
                                 }
                             }
@@ -485,7 +504,7 @@ fn App() -> Element {
         mic_status.set(MicStatus::Requesting);
         info!("Requesting microphone access...");
         
-        spawn(async move {
+        spawn_local(async move {
             let window = match web_sys::window() {
                 Some(w) => w,
                 None => {
@@ -619,7 +638,7 @@ fn App() -> Element {
                             // Clone target_uid again for use after spawn
                             let target_uid_for_log = target_uid.clone();
                             
-                            spawn(async move {
+                            spawn_local(async move {
                                 info!("[WebRTC] Starting peer connection creation for {} in spawned task", target_uid);
                                 
                                 match create_peer_connection(
@@ -821,7 +840,7 @@ fn App() -> Element {
 
 // Function to start audio analysis and update audio level
 fn start_audio_analysis(stream: MediaStream, mut audio_level: Signal<f64>) {
-    spawn(async move {
+    spawn_local(async move {
         let audio_context = match AudioContext::new() {
             Ok(ctx) => ctx,
             Err(e) => {
@@ -901,7 +920,7 @@ fn start_audio_analysis(stream: MediaStream, mut audio_level: Signal<f64>) {
 
 // Function to start audio analysis for remote stream and update participant audio level
 fn start_remote_audio_analysis(stream: MediaStream, user_id: String, mut participant_audio_levels: Signal<HashMap<String, f64>>) {
-    spawn(async move {
+    spawn_local(async move {
         let audio_context = match AudioContext::new() {
             Ok(ctx) => ctx,
             Err(e) => {
