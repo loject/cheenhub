@@ -1,6 +1,6 @@
-# Voice Messenger PoC (Iteration 2)
+# Voice Messenger PoC (Iteration 3)
 
-A proof of concept for a voice messenger built with Rust. This iteration features WebSocket connectivity and microphone access with audio level visualization.
+A proof of concept for a voice messenger built with Rust. This iteration features WebSocket connectivity, microphone access with audio level visualization, and room management with shareable links.
 
 ## Tech Stack
 
@@ -11,7 +11,7 @@ A proof of concept for a voice messenger built with Rust. This iteration feature
 
 ```
 .
-├── backend/          # WebSocket server
+├── backend/          # WebSocket server with room management
 │   ├── src/
 │   │   └── main.rs   # Server implementation
 │   └── Cargo.toml
@@ -57,31 +57,43 @@ cd frontend
 dx serve
 ```
 
-The Dioxus development server will start (typically on `http://localhost:8080` or another available port).
+The Dioxus development server will start (typically on a different port like `http://localhost:8080`).
 
-Open your browser and navigate to the URL shown in the terminal output (e.g., `http://localhost:8080`).
+Open your browser and navigate to the URL shown in the terminal output.
 
 ## Using the Application
 
-### Basic Connection
-1. Enter a username in the text field
+### 1. Connect to Server
+1. Enter your username in the text field
 2. Click "Connect to Server" button
 3. The status will change from "Disconnected" to "Connected"
-4. The application will automatically send a `ping` message
-5. The server will respond with `pong`
+4. You will be automatically registered with a unique user ID
 
-### Microphone Access
+### 2. Enable Microphone
 1. Click "Request Microphone Access" button
 2. Your browser will ask for permission to access the microphone
 3. Grant permission
 4. The microphone status will change to "Allowed ✓"
-5. You will see a real-time audio level indicator showing your microphone input
-6. Speak into your microphone to see the audio level bar animate
+5. You will see a real-time audio level indicator
 
-### Audio Level Indicator
-- The green-to-red gradient bar shows your current audio input level
-- The bar updates 20 times per second for smooth visualization
-- Green indicates low levels, yellow medium, red high levels
+### 3. Create or Join a Room
+
+**Option A: Create a New Room**
+1. Click "Create New Room" button
+2. A new room will be created with a unique ID
+3. Click "📋 Copy Room Link" to copy the shareable link
+4. Share this link with others to invite them
+
+**Option B: Join an Existing Room**
+1. Enter the room ID in the input field (or the room ID will be auto-filled if you opened a room link)
+2. Click "Join Room" button
+3. You will see the list of participants already in the room
+
+### 4. Room Features
+- View all participants in the room
+- See when users join or leave in real-time
+- Leave the room at any time with "Leave Room" button
+- Room links automatically use the current host (works on localhost with different ports)
 
 ## Features
 
@@ -92,12 +104,22 @@ Open your browser and navigate to the URL shown in the terminal output (e.g., `h
 - ✅ User-friendly UI with minimal styling
 - ✅ Comprehensive logging
 
-### Iteration 2 (Current)
+### Iteration 2
 - ✅ Microphone access request via Web Audio API
 - ✅ Real-time audio level visualization
 - ✅ Microphone status indicator (Not requested / Requesting / Allowed / Denied)
 - ✅ Visual audio meter with gradient colors
 - ✅ Automatic audio analysis using AnalyserNode
+
+### Iteration 3 (Current)
+- ✅ Room creation with unique IDs (UUID)
+- ✅ Room joining via ID or shareable link
+- ✅ Shareable room links with dynamic base URL
+- ✅ Real-time participant list
+- ✅ User join/leave notifications
+- ✅ In-memory room management
+- ✅ URL parameter parsing for auto-join
+- ✅ Copy to clipboard functionality
 
 ## Development Notes
 
@@ -105,28 +127,37 @@ Open your browser and navigate to the URL shown in the terminal output (e.g., `h
 
 - Server runs on port **8080**
 - WebSocket endpoint: `/ws`
-- Handles text messages: `ping` → responds with `pong`, echoes all other messages
-- Logs all connections, disconnections, and messages
+- Message types (JSON):
+  - `register`: Register user with username
+  - `create_room`: Create new room
+  - `join_room`: Join room by ID
+  - `leave_room`: Leave current room
+- In-memory storage:
+  - Rooms: HashMap<room_id, Room>
+  - Users: HashMap<user_id, User>
+  - User-Room mapping: HashMap<user_id, room_id>
+- Automatic cleanup on disconnect
 
 ### Frontend
 
 - Built with Dioxus web framework (WASM target)
-- WebSocket client connects to `ws://localhost:8080/ws`
-- Uses browser's native WebSocket API via `web-sys`
+- WebSocket client with dynamic URL (uses current host + port 8080)
+- URL parsing for room parameter (`?room=<id>`)
+- Clipboard API for copying room links
 - Microphone access via `navigator.mediaDevices.getUserMedia()`
-- Audio analysis using Web Audio API's `AudioContext` and `AnalyserNode`
-- UI includes:
-  - Username input
-  - Server connection button and status
-  - Microphone request button and status
-  - Real-time audio level meter
+- Audio analysis using Web Audio API
+- UI sections:
+  - Server and microphone status
+  - Audio level meter
+  - Room management (create/join/leave)
+  - Participants list
+  - Instructions
 
 ## Future Iterations
 
-- **Iteration 3**: WebRTC peer-to-peer connection for audio transmission
-- **Iteration 4**: Room management (in-memory)
-- **Iteration 5**: Multiple users per room
-- **Iteration 6**: UI improvements and audio controls (mute/unmute)
+- **Iteration 4**: WebRTC peer-to-peer audio transmission between participants
+- **Iteration 5**: Multiple users per room with audio mixing (SFU/Mesh topology)
+- **Iteration 6**: UI improvements and audio controls (mute/unmute, volume)
 - Redis for session management
 - CockroachDB for persistent storage
 - Server sharding for scalability
@@ -134,23 +165,29 @@ Open your browser and navigate to the URL shown in the terminal output (e.g., `h
 ## Troubleshooting
 
 ### Port already in use
-- Make sure no other application is using port 8080
-- Or modify the port in `backend/src/main.rs` (line with `SocketAddr::from`)
+- Make sure no other application is using port 8080 for the backend
+- The frontend dev server will automatically use a different port
+- Room links will automatically adapt to the frontend's port
 
 ### Frontend won't connect
 - Ensure the backend server is running first
 - Check browser console for error messages
-- Verify WebSocket URL matches the backend address
+- Verify WebSocket connection to port 8080
 
 ### Microphone permission denied
 - Check your browser's microphone permissions (usually in address bar)
 - Some browsers require HTTPS for microphone access in production
 - Make sure another application isn't using your microphone
 
-### Audio level not showing
-- Ensure microphone permission was granted
-- Try speaking louder or checking microphone input level in system settings
-- Check browser console (F12) for any errors
+### Cannot join room
+- Verify the room ID is correct
+- Ensure you're connected to the server (username entered and connected)
+- Check that the room still exists (rooms are in-memory only)
+
+### Room link doesn't work
+- Make sure both users are connected to the same backend server
+- Room links use the current host - if accessing from different machines, adjust accordingly
+- Rooms are temporary (in-memory) - they disappear when the server restarts
 
 ### Dioxus CLI not found
 ```bash
@@ -164,12 +201,32 @@ This application requires a modern browser with support for:
 - WebSocket
 - Web Audio API
 - getUserMedia API
+- Clipboard API
+- URLSearchParams
 
 Tested on:
 - Chrome/Chromium 90+
 - Firefox 88+
 - Edge 90+
 - Safari 14+
+
+## Architecture Notes
+
+### Scalability Considerations (Future)
+
+The current implementation uses in-memory storage and is designed as a proof of concept. For production:
+
+1. **Sharding Strategy**: Rooms are isolated units, making them ideal for sharding
+2. **State Management**: Will migrate to Redis for distributed state
+3. **Persistence**: CockroachDB for user data and room history
+4. **WebRTC Topology**: Will implement SFU (Selective Forwarding Unit) for multi-party calls
+
+### Dynamic URL Handling
+
+The frontend automatically adapts to the current host and port:
+- WebSocket URL: Constructed from `window.location` (uses backend port 8080)
+- Share URLs: Use current frontend host and port
+- This allows the app to work on different environments (localhost, staging, production)
 
 ## License
 
