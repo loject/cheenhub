@@ -320,6 +320,15 @@ fn App() -> Element {
                                     
                                     info!("[SFU] Received {} existing participants", parts.len());
                                     participants.set(parts);
+
+                                    // Auto-request microphone access when joining a room.
+                                    request_microphone_access(
+                                        mic_status,
+                                        media_stream,
+                                        audio_level,
+                                        current_room,
+                                        ws,
+                                    );
                                     
                                     // If we have microphone, create publisher
                                     if media_stream.read().is_some() {
@@ -574,100 +583,13 @@ fn App() -> Element {
     
     // Handler for requesting microphone access
     let request_microphone = move |_| {
-        mic_status.set(MicStatus::Requesting);
-        info!("Requesting microphone access...");
-        
-        spawn_local(async move {
-            let window = match web_sys::window() {
-                Some(w) => w,
-                None => {
-                    info!("[Error] No global window available");
-                    mic_status.set(MicStatus::Denied);
-                    return;
-                }
-            };
-            
-            let navigator = window.navigator();
-            
-            let media_devices = match navigator.media_devices() {
-                Ok(md) => md,
-                Err(e) => {
-                    info!("[Error] No media devices available: {:?}", e);
-                    mic_status.set(MicStatus::Denied);
-                    return;
-                }
-            };
-            
-            // Create constraints for audio only with optimizations for low latency
-            let constraints = web_sys::MediaStreamConstraints::new();
-            
-            // Create advanced audio constraints object
-            let audio_constraints_obj = js_sys::Object::new();
-            
-            // Enable audio processing features
-            if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("echoCancellation"), &JsValue::from(true)) {
-                info!("[Warning] Failed to set echoCancellation: {:?}", e);
-            }
-            if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("noiseSuppression"), &JsValue::from(true)) {
-                info!("[Warning] Failed to set noiseSuppression: {:?}", e);
-            }
-            if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("autoGainControl"), &JsValue::from(true)) {
-                info!("[Warning] Failed to set autoGainControl: {:?}", e);
-            }
-            // Set latency to 10ms for low-latency audio capture
-            if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("latency"), &JsValue::from(0.01)) {
-                info!("[Warning] Failed to set latency: {:?}", e);
-            }
-            
-            constraints.set_audio(&audio_constraints_obj.into());
-            constraints.set_video(&JsValue::from(false));
-            
-            let get_user_media_promise = match media_devices.get_user_media_with_constraints(&constraints) {
-                Ok(promise) => promise,
-                Err(e) => {
-                    info!("[Error] Failed to call getUserMedia: {:?}", e);
-                    mic_status.set(MicStatus::Denied);
-                    return;
-                }
-            };
-            
-            match wasm_bindgen_futures::JsFuture::from(get_user_media_promise).await {
-                Ok(stream_val) => {
-                    info!("Microphone access granted");
-                    
-                    let stream: MediaStream = match stream_val.dyn_into() {
-                        Ok(s) => s,
-                        Err(e) => {
-                            info!("[Error] Failed to convert to MediaStream: {:?}", e);
-                            mic_status.set(MicStatus::Denied);
-                            return;
-                        }
-                    };
-                    
-                    // Start audio analysis
-                    start_audio_analysis(stream.clone(), audio_level);
-                    
-                    media_stream.set(Some(stream.clone()));
-                    mic_status.set(MicStatus::Allowed);
-                    
-                    // If we're already in a room, create publisher
-                    if current_room.read().is_some() {
-                        info!("[SFU] Already in room, creating publisher");
-                        
-                        if let Some(websocket) = ws.read().as_ref() {
-                            let msg = ClientMessage::CreatePublisher;
-                            if let Ok(msg_str) = serde_json::to_string(&msg) {
-                                let _ = websocket.send_with_str(&msg_str);
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    info!("Microphone access denied: {:?}", e);
-                    mic_status.set(MicStatus::Denied);
-                }
-            }
-        });
+        request_microphone_access(
+            mic_status,
+            media_stream,
+            audio_level,
+            current_room,
+            ws,
+        );
     };
     
     // Handler for muting/unmuting microphone
@@ -955,6 +877,113 @@ fn App() -> Element {
             }
         }
     }
+}
+
+fn request_microphone_access(
+    mut mic_status: Signal<MicStatus>,
+    mut media_stream: Signal<Option<MediaStream>>,
+    audio_level: Signal<f64>,
+    current_room: Signal<Option<String>>,
+    ws: Signal<Option<WebSocket>>,
+) {
+    if *mic_status.read() != MicStatus::NotRequested {
+        return;
+    }
+
+    mic_status.set(MicStatus::Requesting);
+    info!("Requesting microphone access...");
+
+    spawn_local(async move {
+        let window = match web_sys::window() {
+            Some(w) => w,
+            None => {
+                info!("[Error] No global window available");
+                mic_status.set(MicStatus::Denied);
+                return;
+            }
+        };
+
+        let navigator = window.navigator();
+
+        let media_devices = match navigator.media_devices() {
+            Ok(md) => md,
+            Err(e) => {
+                info!("[Error] No media devices available: {:?}", e);
+                mic_status.set(MicStatus::Denied);
+                return;
+            }
+        };
+
+        // Create constraints for audio only with optimizations for low latency
+        let constraints = web_sys::MediaStreamConstraints::new();
+
+        // Create advanced audio constraints object
+        let audio_constraints_obj = js_sys::Object::new();
+
+        // Enable audio processing features
+        if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("echoCancellation"), &JsValue::from(true)) {
+            info!("[Warning] Failed to set echoCancellation: {:?}", e);
+        }
+        if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("noiseSuppression"), &JsValue::from(true)) {
+            info!("[Warning] Failed to set noiseSuppression: {:?}", e);
+        }
+        if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("autoGainControl"), &JsValue::from(true)) {
+            info!("[Warning] Failed to set autoGainControl: {:?}", e);
+        }
+        // Set latency to 10ms for low-latency audio capture
+        if let Err(e) = js_sys::Reflect::set(&audio_constraints_obj, &JsValue::from("latency"), &JsValue::from(0.01)) {
+            info!("[Warning] Failed to set latency: {:?}", e);
+        }
+
+        constraints.set_audio(&audio_constraints_obj.into());
+        constraints.set_video(&JsValue::from(false));
+
+        let get_user_media_promise = match media_devices.get_user_media_with_constraints(&constraints) {
+            Ok(promise) => promise,
+            Err(e) => {
+                info!("[Error] Failed to call getUserMedia: {:?}", e);
+                mic_status.set(MicStatus::Denied);
+                return;
+            }
+        };
+
+        match wasm_bindgen_futures::JsFuture::from(get_user_media_promise).await {
+            Ok(stream_val) => {
+                info!("Microphone access granted");
+
+                let stream: MediaStream = match stream_val.dyn_into() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        info!("[Error] Failed to convert to MediaStream: {:?}", e);
+                        mic_status.set(MicStatus::Denied);
+                        return;
+                    }
+                };
+
+                // Start audio analysis
+                start_audio_analysis(stream.clone(), audio_level);
+
+                media_stream.set(Some(stream.clone()));
+                mic_status.set(MicStatus::Allowed);
+
+                // If we're already in a room, create publisher
+                if current_room.read().is_some() {
+                    info!("[SFU] Already in room, creating publisher");
+
+                    if let Some(websocket) = ws.read().as_ref() {
+                        let msg = ClientMessage::CreatePublisher;
+                        if let Ok(msg_str) = serde_json::to_string(&msg) {
+                            let _ = websocket.send_with_str(&msg_str);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                info!("Microphone access denied: {:?}", e);
+                mic_status.set(MicStatus::Denied);
+            }
+        }
+    });
 }
 
 // Function to start audio analysis and update audio level
