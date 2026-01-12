@@ -170,8 +170,8 @@ fn App() -> Element {
     let mut ws = use_signal(|| None::<WebSocket>);
     
     // State for microphone
-    let mut mic_status = use_signal(|| MicStatus::NotRequested);
-    let mut media_stream = use_signal(|| None::<MediaStream>);
+    let mic_status = use_signal(|| MicStatus::NotRequested);
+    let media_stream = use_signal(|| None::<MediaStream>);
     let audio_level = use_signal(|| 0.0);
     let mut is_muted = use_signal(|| false);
     
