@@ -35,5 +35,5 @@
 ## Configuration
 
 - Local configuration is loaded from `.env`.
-- Keep local database credentials in the local env file; do not commit local secrets or passwords.
+- Keep local database credentials in `.env`; do not commit local secrets or passwords.
 - Do not add Docker Compose unless explicitly requested.
