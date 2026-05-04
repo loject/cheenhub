@@ -7,7 +7,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-dioxus = { workspace = true, features = ["web"] }
+dioxus = { workspace = true, features = ["router", "web"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys.workspace = true

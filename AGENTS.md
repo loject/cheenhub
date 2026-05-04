@@ -12,9 +12,11 @@
 - Prefer local component state with Dioxus signals/events.
 - Do not introduce global state, shared state modules, or context providers unless several independent feature boundaries need the same state.
 - Keep component props explicit and small.
+- Keep Dioxus components isolated: a file must not define more than one component.
 
 ## Client Styling
 
+- User-facing UI must feel welcoming and complete; do not show development-only technical details, TODO text, placeholder copy, or messages that explicitly frame a page as unfinished.
 - Use Dioxus CLI Tailwind autodetection for the client.
 - Keep Tailwind input files in `crates/client`; do not add root npm scripts, `package.json`, or a local `node_modules` styling pipeline.
 

@@ -4,8 +4,9 @@
 use dioxus::prelude::*;
 
 mod features;
+mod routes;
 
-use features::landing::LandingPage;
+use routes::{Landing, Login, Register};
 
 static TAILWIND_CSS: Asset = asset!(
     "/assets/tailwind.css",
@@ -16,10 +17,20 @@ fn main() {
     dioxus::launch(App);
 }
 
+#[derive(Clone, Debug, PartialEq, Routable)]
+enum Route {
+    #[route("/")]
+    Landing {},
+    #[route("/login")]
+    Login {},
+    #[route("/register")]
+    Register {},
+}
+
 #[component]
 fn App() -> Element {
     rsx! {
         document::Stylesheet { href: TAILWIND_CSS }
-        LandingPage {}
+        Router::<Route> {}
     }
 }
