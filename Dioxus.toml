@@ -1,0 +1,8 @@
+[application]
+name = "CheenHub"
+default_platform = "web"
+asset_dir = "crates/client/assets"
+sub_package = "cheenhub_client"
+
+[web.app]
+title = "CheenHub — голосовой чат для геймеров"

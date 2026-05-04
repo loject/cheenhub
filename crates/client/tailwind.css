@@ -1,0 +1,142 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  .a1 {
+    animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both 0.05s;
+  }
+
+  .a2 {
+    animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both 0.15s;
+  }
+
+  .a3 {
+    animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both 0.25s;
+  }
+
+  .a4 {
+    animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both 0.35s;
+  }
+
+  .a5 {
+    animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both 0.48s;
+  }
+
+  .bar {
+    display: inline-block;
+    width: 3px;
+    border-radius: 999px;
+    background: currentColor;
+    animation: pulse-bar 0.85s ease-in-out infinite;
+    transform-origin: bottom;
+  }
+
+  .bar:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .bar:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  .bar:nth-child(4) {
+    animation-delay: 0.45s;
+  }
+
+  .glow-ring {
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 1px solid rgba(59, 130, 246, 0.5);
+    animation: glow-ping 2s ease-out infinite;
+  }
+
+  .fcard {
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .fcard:hover {
+    border-color: rgba(59, 130, 246, 0.18);
+    background: rgba(59, 130, 246, 0.03);
+  }
+
+  .btn-p {
+    transition: background 0.15s, box-shadow 0.15s;
+  }
+
+  .btn-p:hover {
+    background: #60a5fa;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+  }
+
+  .btn-g {
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .btn-g:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+    color: #f4f4f5;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-bar {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes glow-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -c crates/client/tailwind.config.js -i crates/client/tailwind.css -o crates/client/assets/tailwind.css --minify",
+    "watch:css": "tailwindcss -c crates/client/tailwind.config.js -i crates/client/tailwind.css -o crates/client/assets/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}
