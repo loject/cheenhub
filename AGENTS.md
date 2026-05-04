@@ -13,6 +13,11 @@
 - Do not introduce global state, shared state modules, or context providers unless several independent feature boundaries need the same state.
 - Keep component props explicit and small.
 
+## Client Styling
+
+- Use Dioxus CLI Tailwind autodetection for the client.
+- Keep Tailwind input files in `crates/client`; do not add root npm scripts, `package.json`, or a local `node_modules` styling pipeline.
+
 ## Public API Documentation
 
 - Every crate must include crate-level documentation.

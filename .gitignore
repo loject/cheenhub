@@ -1,5 +1,4 @@
 /target/
-/node_modules/
 /dist/
 /crates/client/dist/
 /crates/client/assets/tailwind.css.map
