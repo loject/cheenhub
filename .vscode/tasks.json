@@ -73,6 +73,23 @@
           "endsPattern": "."
         }
       }
+    },
+    {
+      "label": "CheenHub: migrate database",
+      "type": "shell",
+      "command": "set -a; [ -f .env ] && source .env; set +a; cargo run -p cheenhub_migrations -- up",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "dedicated",
+        "group": "cheenhub-dev",
+        "clear": true
+      },
+      "problemMatcher": "$rustc"
     }
   ]
 }

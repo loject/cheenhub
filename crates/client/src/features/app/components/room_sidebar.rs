@@ -44,10 +44,10 @@ pub(crate) fn RoomSidebar(
                             span { class: "truncate text-[12px] font-medium", "Лобби" }
                         }
                         span { class: "flex shrink-0 items-center -space-x-1.5 pl-2",
-                            span { class: "flex h-5 w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-100 text-[9px] font-bold text-zinc-950", title: "chingiz", "Ч" }
-                            span { class: "flex h-5 w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-800 text-[9px] font-bold text-zinc-100", title: "valeria", "В" }
-                            span { class: "flex h-5 w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-800 text-[9px] font-bold text-zinc-100", title: "alex", "A" }
-                            button { r#type: "button", class: "relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-900 px-1 text-[9px] font-semibold text-zinc-400 transition hover:border-accent/35 hover:bg-accent/10 hover:text-zinc-100", title: "Показать всех участников", "aria-label": "Показать всех участников Лобби", "+2" }
+                            span { class: "flex h-5 w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-100 text-[9px] font-bold text-zinc-950", "aria-label": "chingiz", "Ч" }
+                            span { class: "flex h-5 w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-800 text-[9px] font-bold text-zinc-100", "aria-label": "valeria", "В" }
+                            span { class: "flex h-5 w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-800 text-[9px] font-bold text-zinc-100", "aria-label": "alex", "A" }
+                            button { r#type: "button", class: "relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-900 px-1 text-[9px] font-semibold text-zinc-400 transition hover:border-accent/35 hover:bg-accent/10 hover:text-zinc-100", "aria-label": "Показать всех участников Лобби", "+2" }
                         }
                     }
                     button { r#type: "button", "data-active": if active_room == "Разработка" { "true" } else { "false" }, class: "flex w-full items-center justify-between rounded-lg border border-transparent px-2.5 py-2 text-left text-zinc-400 transition-[background,border-color,color,transform,opacity] duration-150 hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-100 data-[active=true]:border-accent/25 data-[active=true]:bg-accent/10 data-[active=true]:text-zinc-100",
@@ -119,22 +119,22 @@ pub(crate) fn RoomSidebar(
                         }
                     }
                     div { class: "grid grid-cols-4 gap-2",
-                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900", "aria-label": "Выключить микрофон", title: "Микрофон",
+                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900", "aria-label": "Выключить микрофон",
                             svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 11a7 7 0 0 1-14 0m7 8v3m-4 0h8m-4-18a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V7a3 3 0 0 0-3-3Z" }
                             }
                         }
-                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900", "aria-label": "Отключить звук", title: "Отключить звук",
+                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900", "aria-label": "Отключить звук",
                             svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25 10.5 4.5v15l-3.75-3.75H3.75A1.5 1.5 0 0 1 2.25 14.25v-4.5A1.5 1.5 0 0 1 3.75 8.25h3Z" }
                             }
                         }
-                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900", "aria-label": "Настройки голосовой сессии", title: "Настройки голоса",
+                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900", "aria-label": "Настройки голосовой сессии",
                             svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m9 6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75m-3 6h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5" }
                             }
                         }
-                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200", "aria-label": "Выйти из голосового чата", title: "Выйти из голоса",
+                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200", "aria-label": "Выйти из голосового чата",
                             svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" }
                             }

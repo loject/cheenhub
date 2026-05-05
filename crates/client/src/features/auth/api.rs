@@ -82,7 +82,7 @@ pub(crate) async fn logout() -> Result<(), String> {
     }
 }
 
-async fn fresh_access_token() -> Result<String, String> {
+pub(crate) async fn fresh_access_token() -> Result<String, String> {
     let Some(tokens) = storage::load() else {
         return Err("Войди, чтобы продолжить.".to_owned());
     };
@@ -139,7 +139,7 @@ fn save_response(response: AuthResponse) -> Result<AuthUser, String> {
     Ok(response.user)
 }
 
-async fn read_error(response: gloo_net::http::Response) -> String {
+pub(crate) async fn read_error(response: gloo_net::http::Response) -> String {
     response
         .json::<ApiError>()
         .await
@@ -147,7 +147,7 @@ async fn read_error(response: gloo_net::http::Response) -> String {
         .unwrap_or_else(|_| "Не удалось выполнить запрос. Попробуй еще раз.".to_owned())
 }
 
-fn url(path: &str) -> String {
+pub(crate) fn url(path: &str) -> String {
     format!("{}{}", api_base_url().trim_end_matches('/'), path)
 }
 

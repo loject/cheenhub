@@ -33,4 +33,13 @@ impl AuthKeys {
             signing_key: SigningKey::from_bytes(&seed),
         })
     }
+
+    /// Builds deterministic authentication keys for tests.
+    #[cfg(test)]
+    pub(crate) fn generate_for_tests() -> Self {
+        Self {
+            key_id: "test-key".to_owned(),
+            signing_key: SigningKey::from_bytes(&[7; 32]),
+        }
+    }
 }

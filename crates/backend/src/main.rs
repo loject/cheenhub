@@ -27,19 +27,29 @@ async fn main() -> anyhow::Result<()> {
         &config.jwt_private_key_base64,
         config.jwt_key_id.clone(),
     )?;
-    let auth_store: Arc<dyn features::auth::infrastructure::AuthStore> = match config.auth_store {
+    let (auth_store, server_store): (
+        Arc<dyn features::auth::infrastructure::AuthStore>,
+        Arc<dyn features::servers::infrastructure::ServerStore>,
+    ) = match config.auth_store {
         config::AuthStoreConfig::Postgres => {
             let database = db::connect(&config.database_url).await?;
-            Arc::new(features::auth::infrastructure::PostgresAuthStore::new(
-                database,
-            ))
+            (
+                Arc::new(features::auth::infrastructure::PostgresAuthStore::new(
+                    database.clone(),
+                )),
+                Arc::new(features::servers::infrastructure::PostgresServerStore::new(
+                    database,
+                )),
+            )
         }
-        config::AuthStoreConfig::InMemory => {
-            Arc::new(features::auth::infrastructure::InMemoryAuthStore::default())
-        }
+        config::AuthStoreConfig::InMemory => (
+            Arc::new(features::auth::infrastructure::InMemoryAuthStore::default()),
+            Arc::new(features::servers::infrastructure::InMemoryServerStore::default()),
+        ),
     };
     let state = http::AppState {
         auth_store,
+        server_store,
         auth_keys,
         access_token_lifetime_minutes: config.access_token_lifetime_minutes,
         refresh_token_lifetime_days: config.refresh_token_lifetime_days,

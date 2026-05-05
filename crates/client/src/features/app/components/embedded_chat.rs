@@ -8,7 +8,7 @@ pub(crate) fn EmbeddedChat() -> Element {
     rsx! {
         div { id: "embedded-chat", class: "embedded-chat h-0 shrink-0 translate-y-6 overflow-hidden border-t border-transparent bg-[rgba(9,9,11,.86)] opacity-0 shadow-[0_-1px_0_rgba(255,255,255,0.025),0_-24px_70px_rgba(0,0,0,0.22)] backdrop-blur-[18px] transition-[height,opacity,transform,border-color] duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
             div { class: "flex h-full min-h-0 flex-col",
-                div { class: "chat-resize-handle flex h-3.5 shrink-0 cursor-ns-resize touch-none items-center justify-center", role: "separator", "aria-orientation": "horizontal", "aria-label": "Изменить высоту чата", title: "Потяните, чтобы изменить высоту чата" }
+                div { class: "chat-resize-handle flex h-3.5 shrink-0 cursor-ns-resize touch-none items-center justify-center", role: "separator", "aria-orientation": "horizontal", "aria-label": "Потяните, чтобы изменить высоту чата" }
                 div { class: "min-h-0 flex-1 overflow-y-auto p-4 pt-2",
                     div { class: "space-y-4",
                         div { class: "flex gap-3",

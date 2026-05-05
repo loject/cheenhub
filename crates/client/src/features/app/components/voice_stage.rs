@@ -85,7 +85,7 @@ pub(crate) fn VoiceStage() -> Element {
                         }
                     }
                     div { class: "absolute bottom-3 right-3 flex gap-1.5",
-                        span { class: "rounded-lg border border-zinc-700 bg-zinc-950/80 p-1.5 text-zinc-300", title: "Демонстрация экрана",
+                        span { class: "rounded-lg border border-zinc-700 bg-zinc-950/80 p-1.5 text-zinc-300", "aria-label": "Демонстрация экрана",
                             svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24",
                                 rect { x: "3", y: "4", width: "18", height: "12", rx: "2" }
                                 path { stroke_linecap: "round", d: "M8 20h8m-4-4v4" }
@@ -131,7 +131,7 @@ pub(crate) fn VoiceStage() -> Element {
                     }
                     div { class: "relative z-10 flex min-h-full flex-col justify-end text-left",
                         div { class: "flex items-center gap-2",
-                            span { class: "rounded-lg border border-zinc-800 bg-zinc-950/80 p-1.5 text-zinc-500", title: "Микрофон выключен",
+                            span { class: "rounded-lg border border-zinc-800 bg-zinc-950/80 p-1.5 text-zinc-500", "aria-label": "Микрофон выключен",
                                 svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24",
                                     path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 9.34V7a3 3 0 0 0-5.68-1.34M9 9v2a3 3 0 0 0 5.12 2.12M19 11a7 7 0 0 1-7 7m0 0v3m0-3a7 7 0 0 1-7-7m3 10h8M3 3l18 18" }
                                 }
@@ -181,7 +181,7 @@ pub(crate) fn VoiceStage() -> Element {
                         let point = event.client_coordinates();
                         open_user_menu.set(Some(UserMenuState { name: "den", volume: "100", x: point.x, y: point.y }));
                     },
-                    div { class: "absolute bottom-3 right-3 rounded-lg border border-zinc-800 bg-zinc-950/80 p-1.5 text-zinc-500", title: "Камера включена",
+                    div { class: "absolute bottom-3 right-3 rounded-lg border border-zinc-800 bg-zinc-950/80 p-1.5 text-zinc-500", "aria-label": "Камера включена",
                         svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24",
                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9A2.25 2.25 0 0 0 13.5 5.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" }
                         }
@@ -203,7 +203,7 @@ pub(crate) fn VoiceStage() -> Element {
                     }
                     div { class: "relative z-10 flex min-h-full flex-col justify-end text-left",
                         div { class: "flex items-center gap-2",
-                            span { class: "rounded-lg border border-zinc-800 bg-zinc-950/80 p-1.5 text-zinc-500", title: "Микрофон выключен",
+                            span { class: "rounded-lg border border-zinc-800 bg-zinc-950/80 p-1.5 text-zinc-500", "aria-label": "Микрофон выключен",
                                 svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24",
                                     path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 9.34V7a3 3 0 0 0-5.68-1.34M9 9v2a3 3 0 0 0 5.12 2.12M19 11a7 7 0 0 1-7 7m0 0v3m0-3a7 7 0 0 1-7-7m3 10h8M3 3l18 18" }
                                 }

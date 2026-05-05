@@ -1,8 +1,8 @@
 //! Email/password authentication feature.
 
-mod application;
+pub(crate) mod application;
 mod domain;
-mod error;
+pub(crate) mod error;
 pub(crate) mod infrastructure;
 pub(crate) mod security;
 mod transport;

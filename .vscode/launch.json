@@ -13,6 +13,19 @@
       "console": "internalConsole",
       "internalConsoleOptions": "neverOpen",
       "preLaunchTask": "CheenHub: dev stack"
+    },
+    {
+      "name": "CheenHub: migrate database",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        ""
+      ],
+      "console": "internalConsole",
+      "internalConsoleOptions": "neverOpen",
+      "preLaunchTask": "CheenHub: migrate database"
     }
   ]
 }
