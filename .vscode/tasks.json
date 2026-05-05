@@ -36,13 +36,7 @@
         "clear": true
       },
       "problemMatcher": {
-        "owner": "dioxus",
-        "pattern": [
-          {
-            "regexp": "^(.*)$",
-            "message": 1
-          }
-        ],
+        "base": "$rustc",
         "background": {
           "activeOnStart": true,
           "beginsPattern": ".",
