@@ -21,6 +21,7 @@
 - User-facing UI must feel welcoming and complete; do not show development-only technical details, TODO text, placeholder copy, or messages that explicitly frame a page as unfinished.
 - Use Dioxus CLI Tailwind autodetection for the client.
 - Keep Tailwind input files in `crates/client`; do not add root npm scripts, `package.json`, or a local `node_modules` styling pipeline.
+- Do not try to start `dx serve` by default; assume the Dioxus dev server is usually already running in the background unless the user explicitly asks to start or restart it.
 
 ## Public API Documentation
 
