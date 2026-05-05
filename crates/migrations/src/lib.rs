@@ -5,6 +5,7 @@ mod m20260505_000001_create_auth_tables;
 mod m20260505_000002_create_servers_table;
 mod m20260505_000003_create_server_invites_table;
 mod m20260505_000004_create_server_members_and_invite_uses_tables;
+mod m20260505_000005_create_server_rooms_table;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -19,6 +20,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260505_000002_create_servers_table::Migration),
             Box::new(m20260505_000003_create_server_invites_table::Migration),
             Box::new(m20260505_000004_create_server_members_and_invite_uses_tables::Migration),
+            Box::new(m20260505_000005_create_server_rooms_table::Migration),
         ]
     }
 }

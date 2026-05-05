@@ -19,6 +19,25 @@ pub(crate) fn create_server(name: String) -> Result<ValidCreateServer, &'static 
     Ok(ValidCreateServer { name })
 }
 
+/// Normalized server-room input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ValidServerRoom {
+    /// Human-readable room name.
+    pub(crate) name: String,
+}
+
+/// Validates and normalizes room input.
+pub(crate) fn server_room(name: String) -> Result<ValidServerRoom, &'static str> {
+    let name = name.trim().to_owned();
+    let len = name.chars().count();
+
+    if !(1..=48).contains(&len) {
+        return Err("Название комнаты должно быть длиной от 1 до 48 символов.");
+    }
+
+    Ok(ValidServerRoom { name })
+}
+
 /// Normalized create-invite input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ValidCreateServerInvite {
@@ -49,7 +68,7 @@ pub(crate) fn create_server_invite(
 
 #[cfg(test)]
 mod tests {
-    use super::create_server;
+    use super::{create_server, server_room};
 
     #[test]
     fn trims_valid_server_name() {
@@ -71,6 +90,23 @@ mod tests {
     #[test]
     fn rejects_long_server_name() {
         assert!(create_server("a".repeat(49)).is_err());
+    }
+
+    #[test]
+    fn trims_valid_room_name() {
+        let valid = server_room("  x  ".to_owned()).expect("room name should be valid");
+
+        assert_eq!(valid.name, "x");
+    }
+
+    #[test]
+    fn rejects_empty_room_name() {
+        assert!(server_room("   ".to_owned()).is_err());
+    }
+
+    #[test]
+    fn rejects_long_room_name() {
+        assert!(server_room("a".repeat(49)).is_err());
     }
 
     #[test]

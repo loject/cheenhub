@@ -4,11 +4,12 @@ use std::sync::Mutex;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
+use cheenhub_contracts::rest::ServerRoomKind;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::features::servers::domain::{
-    Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember,
+    Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerRoom,
 };
 use crate::features::servers::infrastructure::ServerStore;
 
@@ -24,6 +25,7 @@ struct InMemoryState {
     invites: Vec<ServerInvite>,
     members: Vec<ServerMember>,
     invite_uses: Vec<ServerInviteUse>,
+    rooms: Vec<ServerRoom>,
 }
 
 #[async_trait]
@@ -210,6 +212,108 @@ impl ServerStore for InMemoryServerStore {
             .invite_uses
             .iter()
             .filter(|invite_use| invite_use.invite_id == *invite_id)
+            .count()
+            .try_into()
+            .unwrap_or(u32::MAX))
+    }
+
+    async fn insert_server_room(
+        &self,
+        server_id: &Uuid,
+        name: String,
+        kind: ServerRoomKind,
+    ) -> anyhow::Result<ServerRoom> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+        let position = state
+            .rooms
+            .iter()
+            .filter(|room| room.server_id == *server_id)
+            .map(|room| room.position)
+            .max()
+            .map(|position| position.saturating_add(1))
+            .unwrap_or(0);
+        let now = Utc::now();
+        let room = ServerRoom {
+            id: Uuid::new_v4(),
+            server_id: *server_id,
+            name,
+            kind,
+            position,
+            created_at: now,
+            updated_at: now,
+        };
+
+        state.rooms.push(room.clone());
+
+        Ok(room)
+    }
+
+    async fn list_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRoom>> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+        let mut rooms = state
+            .rooms
+            .iter()
+            .filter(|room| room.server_id == *server_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        rooms.sort_by_key(|room| room.position);
+
+        Ok(rooms)
+    }
+
+    async fn find_server_room(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerRoom>> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+
+        Ok(state
+            .rooms
+            .iter()
+            .find(|room| room.server_id == *server_id && room.id == *room_id)
+            .cloned())
+    }
+
+    async fn update_server_room(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        name: String,
+        kind: ServerRoomKind,
+    ) -> anyhow::Result<Option<ServerRoom>> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+        let Some(room) = state
+            .rooms
+            .iter_mut()
+            .find(|room| room.server_id == *server_id && room.id == *room_id)
+        else {
+            return Ok(None);
+        };
+
+        room.name = name;
+        room.kind = kind;
+        room.updated_at = Utc::now();
+
+        Ok(Some(room.clone()))
+    }
+
+    async fn delete_server_room(&self, server_id: &Uuid, room_id: &Uuid) -> anyhow::Result<()> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+        state
+            .rooms
+            .retain(|room| room.server_id != *server_id || room.id != *room_id);
+
+        Ok(())
+    }
+
+    async fn count_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<u32> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+
+        Ok(state
+            .rooms
+            .iter()
+            .filter(|room| room.server_id == *server_id)
             .count()
             .try_into()
             .unwrap_or(u32::MAX))

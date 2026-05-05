@@ -1,5 +1,6 @@
 //! Server domain models.
 
+use cheenhub_contracts::rest::ServerRoomKind;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
@@ -28,6 +29,27 @@ pub(crate) struct ServerAccess {
     pub(crate) server: Server,
     /// Whether the current user is an active server member.
     pub(crate) is_member: bool,
+}
+
+/// Server room data used by server flows.
+#[derive(Debug, Clone)]
+pub(crate) struct ServerRoom {
+    /// Stable room identifier.
+    pub(crate) id: Uuid,
+    /// Server the room belongs to.
+    pub(crate) server_id: Uuid,
+    /// Human-readable room name.
+    pub(crate) name: String,
+    /// Room interaction type.
+    pub(crate) kind: ServerRoomKind,
+    /// Append-only ordering position inside the server.
+    pub(crate) position: u32,
+    /// Room creation timestamp.
+    #[allow(dead_code)]
+    pub(crate) created_at: DateTime<Utc>,
+    /// Last room update timestamp.
+    #[allow(dead_code)]
+    pub(crate) updated_at: DateTime<Utc>,
 }
 
 /// Server invite data used by server flows.

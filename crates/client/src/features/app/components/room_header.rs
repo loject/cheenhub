@@ -1,5 +1,6 @@
 //! Current room header component.
 
+use cheenhub_contracts::rest::ServerRoomKind;
 use dioxus::prelude::*;
 
 use super::app_shell::ActiveRoom;
@@ -8,20 +9,20 @@ use super::app_shell::ActiveRoom;
 #[component]
 pub(crate) fn RoomHeader(room: ActiveRoom) -> Element {
     let (badge, dot_class, subtitle) = match room.kind {
-        "text" => (
+        ServerRoomKind::Text => (
             "текст",
             "h-1.5 w-1.5 rounded-full bg-zinc-600",
             "текстовая комната",
         ),
-        "mixed-chat" => (
+        ServerRoomKind::TextAndVoice => (
             "текст + голос",
             "h-1.5 w-1.5 rounded-full bg-accent",
             "текстовая + голосовая комната · не в голосе",
         ),
-        _ => (
-            "голос и текст",
+        ServerRoomKind::Voice => (
+            "голос",
             "h-1.5 w-1.5 rounded-full bg-accent",
-            "5 участников · текстовая + голосовая комната",
+            "голосовая комната · не в голосе",
         ),
     };
 

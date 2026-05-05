@@ -138,18 +138,19 @@
   #app-shell[data-room-kind="text"] .content-split,
   #app-shell[data-room-kind="text"] .voice-floating-controls,
   #app-shell[data-room-kind="text"] .chat-corner-toggle,
-  #app-shell[data-room-kind="mixed-chat"] .content-split,
-  #app-shell[data-room-kind="mixed-chat"] .voice-floating-controls,
-  #app-shell[data-room-kind="mixed-chat"] .chat-corner-toggle {
+  #app-shell[data-room-kind="voice"] .chat-corner-toggle,
+  #app-shell[data-room-kind="text_and_voice"] .content-split,
+  #app-shell[data-room-kind="text_and_voice"] .voice-floating-controls,
+  #app-shell[data-room-kind="text_and_voice"] .chat-corner-toggle {
     display: none;
   }
 
   #app-shell[data-room-kind="text"] .text-room-view,
-  #app-shell[data-room-kind="mixed-chat"] .text-room-view {
+  #app-shell[data-room-kind="text_and_voice"] .text-room-view {
     display: flex;
   }
 
-  #app-shell[data-room-kind="mixed-chat"] .join-voice-button {
+  #app-shell[data-room-kind="text_and_voice"] .join-voice-button {
     display: inline-flex;
   }
 

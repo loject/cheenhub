@@ -1,6 +1,6 @@
 //! Main authenticated CheenHub application shell.
 
-use cheenhub_contracts::rest::ServerSummary;
+use cheenhub_contracts::rest::{ServerRoomKind, ServerSummary};
 use dioxus::prelude::*;
 
 use crate::features::app::api;
@@ -12,10 +12,11 @@ use super::invite_link_modal::InviteLinkModal;
 use super::server_instance::ServerInstance;
 use super::server_rail::ServerRail;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub(crate) struct ActiveRoom {
-    pub(crate) kind: &'static str,
-    pub(crate) name: &'static str,
+    pub(crate) id: String,
+    pub(crate) kind: ServerRoomKind,
+    pub(crate) name: String,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -200,7 +201,15 @@ fn upsert_server_summary(servers: &mut Vec<ServerSummary>, server: ServerSummary
 fn default_server_shell_state() -> ServerShellState {
     ServerShellState {
         chat_open: false,
-        room_kind: "mixed",
+        room_kind: "text_and_voice",
+    }
+}
+
+pub(crate) fn room_kind_attr(kind: ServerRoomKind) -> &'static str {
+    match kind {
+        ServerRoomKind::Text => "text",
+        ServerRoomKind::Voice => "voice",
+        ServerRoomKind::TextAndVoice => "text_and_voice",
     }
 }
 

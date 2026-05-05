@@ -4,18 +4,19 @@ mod entities;
 mod in_memory;
 
 use async_trait::async_trait;
+use cheenhub_contracts::rest::ServerRoomKind;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, PaginatorTrait, QueryFilter, Set,
+    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, Set,
 };
 use uuid::Uuid;
 
 use crate::features::servers::domain::{
-    Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember,
+    Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerRoom,
 };
 use crate::features::servers::infrastructure::entities::{
-    server_invite_uses, server_invites, server_members, servers,
+    server_invite_uses, server_invites, server_members, server_rooms, servers,
 };
 
 pub(crate) use in_memory::InMemoryServerStore;
@@ -77,6 +78,39 @@ pub(crate) trait ServerStore: Send + Sync {
 
     /// Counts successful uses for an invite.
     async fn count_server_invite_uses(&self, invite_id: &Uuid) -> anyhow::Result<u32>;
+
+    /// Inserts a new server room.
+    async fn insert_server_room(
+        &self,
+        server_id: &Uuid,
+        name: String,
+        kind: ServerRoomKind,
+    ) -> anyhow::Result<ServerRoom>;
+
+    /// Lists rooms for a server in display order.
+    async fn list_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRoom>>;
+
+    /// Finds a room that belongs to a server.
+    async fn find_server_room(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerRoom>>;
+
+    /// Updates a room that belongs to a server.
+    async fn update_server_room(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        name: String,
+        kind: ServerRoomKind,
+    ) -> anyhow::Result<Option<ServerRoom>>;
+
+    /// Deletes a room that belongs to a server.
+    async fn delete_server_room(&self, server_id: &Uuid, room_id: &Uuid) -> anyhow::Result<()>;
+
+    /// Counts rooms that belong to a server.
+    async fn count_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<u32>;
 }
 
 /// Postgres-backed server storage.
@@ -165,8 +199,47 @@ impl ServerStore for PostgresServerStore {
     async fn count_server_invite_uses(&self, invite_id: &Uuid) -> anyhow::Result<u32> {
         count_server_invite_uses(&self.database, invite_id).await
     }
-}
 
+    async fn insert_server_room(
+        &self,
+        server_id: &Uuid,
+        name: String,
+        kind: ServerRoomKind,
+    ) -> anyhow::Result<ServerRoom> {
+        insert_server_room(&self.database, server_id, name, kind).await
+    }
+
+    async fn list_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRoom>> {
+        list_server_rooms(&self.database, server_id).await
+    }
+
+    async fn find_server_room(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerRoom>> {
+        find_server_room(&self.database, server_id, room_id).await
+    }
+
+    async fn update_server_room(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        name: String,
+        kind: ServerRoomKind,
+    ) -> anyhow::Result<Option<ServerRoom>> {
+        update_server_room(&self.database, server_id, room_id, name, kind).await
+    }
+
+    async fn delete_server_room(&self, server_id: &Uuid, room_id: &Uuid) -> anyhow::Result<()> {
+        delete_server_room(&self.database, server_id, room_id).await
+    }
+
+    async fn count_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<u32> {
+        count_server_rooms(&self.database, server_id).await
+    }
+}
+// TODO: заинлайнить методы ниже и аналогично в других схожих файлах
 /// Inserts a new server for a user.
 async fn insert_server(
     database: &impl ConnectionTrait,
@@ -377,6 +450,154 @@ async fn count_server_invite_uses(
         .await?;
 
     Ok(count.try_into().unwrap_or(u32::MAX))
+}
+
+/// Inserts a new server room.
+async fn insert_server_room(
+    database: &impl ConnectionTrait,
+    server_id: &Uuid,
+    name: String,
+    kind: ServerRoomKind,
+) -> anyhow::Result<ServerRoom> {
+    let position = server_rooms::Entity::find()
+        .filter(server_rooms::Column::ServerId.eq(*server_id))
+        .order_by_desc(server_rooms::Column::Position)
+        .one(database)
+        .await?
+        .map(|room| room.position.saturating_add(1))
+        .unwrap_or(0);
+    let now = Utc::now();
+    let model = server_rooms::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        server_id: Set(*server_id),
+        name: Set(name),
+        kind: Set(room_kind_as_str(kind).to_owned()),
+        position: Set(position),
+        created_at: Set(now),
+        updated_at: Set(now),
+    }
+    .insert(database)
+    .await?;
+
+    server_room_from_model(model)
+}
+
+/// Lists rooms for a server in display order.
+async fn list_server_rooms(
+    database: &impl ConnectionTrait,
+    server_id: &Uuid,
+) -> anyhow::Result<Vec<ServerRoom>> {
+    let rows = server_rooms::Entity::find()
+        .filter(server_rooms::Column::ServerId.eq(*server_id))
+        .order_by_asc(server_rooms::Column::Position)
+        .all(database)
+        .await?;
+
+    rows.into_iter().map(server_room_from_model).collect()
+}
+
+/// Finds a room that belongs to a server.
+async fn find_server_room(
+    database: &impl ConnectionTrait,
+    server_id: &Uuid,
+    room_id: &Uuid,
+) -> anyhow::Result<Option<ServerRoom>> {
+    server_rooms::Entity::find()
+        .filter(server_rooms::Column::ServerId.eq(*server_id))
+        .filter(server_rooms::Column::Id.eq(*room_id))
+        .one(database)
+        .await?
+        .map(server_room_from_model)
+        .transpose()
+}
+
+/// Updates a room that belongs to a server.
+async fn update_server_room(
+    database: &impl ConnectionTrait,
+    server_id: &Uuid,
+    room_id: &Uuid,
+    name: String,
+    kind: ServerRoomKind,
+) -> anyhow::Result<Option<ServerRoom>> {
+    let Some(room) = server_rooms::Entity::find()
+        .filter(server_rooms::Column::ServerId.eq(*server_id))
+        .filter(server_rooms::Column::Id.eq(*room_id))
+        .one(database)
+        .await?
+    else {
+        return Ok(None);
+    };
+    let mut room = room.into_active_model();
+    room.name = Set(name);
+    room.kind = Set(room_kind_as_str(kind).to_owned());
+    room.updated_at = Set(Utc::now());
+    let room = room.update(database).await?;
+
+    server_room_from_model(room).map(Some)
+}
+
+/// Deletes a room that belongs to a server.
+async fn delete_server_room(
+    database: &impl ConnectionTrait,
+    server_id: &Uuid,
+    room_id: &Uuid,
+) -> anyhow::Result<()> {
+    if let Some(room) = server_rooms::Entity::find()
+        .filter(server_rooms::Column::ServerId.eq(*server_id))
+        .filter(server_rooms::Column::Id.eq(*room_id))
+        .one(database)
+        .await?
+    {
+        server_rooms::Entity::delete_by_id(room.id)
+            .exec(database)
+            .await?;
+    }
+
+    Ok(())
+}
+
+/// Counts rooms that belong to a server.
+async fn count_server_rooms(
+    database: &impl ConnectionTrait,
+    server_id: &Uuid,
+) -> anyhow::Result<u32> {
+    let count = server_rooms::Entity::find()
+        .filter(server_rooms::Column::ServerId.eq(*server_id))
+        .count(database)
+        .await?;
+
+    Ok(count.try_into().unwrap_or(u32::MAX))
+}
+
+fn server_room_from_model(row: server_rooms::Model) -> anyhow::Result<ServerRoom> {
+    let position = row.position.try_into().unwrap_or(0);
+
+    Ok(ServerRoom {
+        id: row.id,
+        server_id: row.server_id,
+        name: row.name,
+        kind: room_kind_from_str(&row.kind)?,
+        position,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+fn room_kind_as_str(kind: ServerRoomKind) -> &'static str {
+    match kind {
+        ServerRoomKind::Text => "text",
+        ServerRoomKind::Voice => "voice",
+        ServerRoomKind::TextAndVoice => "text_and_voice",
+    }
+}
+
+fn room_kind_from_str(kind: &str) -> anyhow::Result<ServerRoomKind> {
+    match kind {
+        "text" => Ok(ServerRoomKind::Text),
+        "voice" => Ok(ServerRoomKind::Voice),
+        "text_and_voice" => Ok(ServerRoomKind::TextAndVoice),
+        other => Err(anyhow::anyhow!("unknown server room kind: {other}")),
+    }
 }
 
 impl From<servers::Model> for Server {

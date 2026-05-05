@@ -8,7 +8,9 @@ use axum::{
 };
 use cheenhub_contracts::rest::{
     AcceptServerInviteResponse, ApiError, CreateServerInviteRequest, CreateServerInviteResponse,
-    CreateServerRequest, CreateServerResponse, ListServersResponse, ServerInviteInfoResponse,
+    CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
+    ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse,
+    UpdateServerRoomRequest, UpdateServerRoomResponse,
 };
 
 use crate::features::servers::application;
@@ -79,6 +81,55 @@ pub(crate) async fn leave(
 ) -> Result<StatusCode, ServerError> {
     let token = bearer_token(&headers)?;
     application::leave(&state, token, server_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Lists rooms available on a server for the current user.
+pub(crate) async fn list_rooms(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+) -> Result<Json<ListServerRoomsResponse>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::list_rooms(&state, token, server_id)
+        .await
+        .map(Json)
+}
+
+/// Creates a room on a server owned by the current user.
+pub(crate) async fn create_room(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+    Json(request): Json<CreateServerRoomRequest>,
+) -> Result<Json<CreateServerRoomResponse>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::create_room(&state, token, server_id, request)
+        .await
+        .map(Json)
+}
+
+/// Updates a room on a server owned by the current user.
+pub(crate) async fn update_room(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((server_id, room_id)): Path<(String, String)>,
+    Json(request): Json<UpdateServerRoomRequest>,
+) -> Result<Json<UpdateServerRoomResponse>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::update_room(&state, token, server_id, room_id, request)
+        .await
+        .map(Json)
+}
+
+/// Deletes a room from a server owned by the current user.
+pub(crate) async fn delete_room(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((server_id, room_id)): Path<(String, String)>,
+) -> Result<StatusCode, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::delete_room(&state, token, server_id, room_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

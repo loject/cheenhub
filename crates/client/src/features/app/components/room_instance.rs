@@ -14,16 +14,13 @@ use super::voice_stage::VoiceStage;
 pub(crate) fn RoomInstance(
     server_id: String,
     room: ActiveRoom,
-    room_index: usize,
     active: bool,
-    mut chat_open_by_room: Signal<Vec<bool>>,
+    mut chat_open_by_room: Signal<Vec<(String, bool)>>,
     on_state_change: EventHandler<(String, ServerShellState)>,
 ) -> Element {
     let wrapper_class = if active { "contents" } else { "hidden" };
-    let chat_open = chat_open_by_room()
-        .get(room_index)
-        .copied()
-        .unwrap_or(false);
+    let room_id = room.id.clone();
+    let chat_open = chat_open_for_room(&chat_open_by_room(), &room_id);
     let chat_open_attr = if chat_open { "true" } else { "false" };
     let chat_label = if chat_open {
         "Скрыть текстовый чат"
@@ -34,12 +31,12 @@ pub(crate) fn RoomInstance(
     rsx! {
         div { class: wrapper_class,
             section { class: "voice-shell relative flex min-w-0 flex-1 flex-col bg-zinc-950/35",
-                RoomHeader { room }
+                RoomHeader { room: room.clone() }
                 div { class: "content-split flex min-h-0 flex-1 flex-col",
                     VoiceStage {}
                     EmbeddedChat {}
                 }
-                TextRoomView { room }
+                TextRoomView { room: room.clone() }
                 button {
                     r#type: "button",
                     class: "chat-corner-toggle group absolute bottom-5 left-5 z-40 flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/85 text-zinc-300 shadow-[0_18px_50px_rgba(0,0,0,0.38)] backdrop-blur-xl transition-[background-color,border-color,color,transform,box-shadow] duration-[180ms] hover:-translate-y-0.5 hover:border-accent/35 hover:bg-accent/10 hover:text-zinc-100",
@@ -49,8 +46,13 @@ pub(crate) fn RoomInstance(
                         let next_chat_open = !chat_open;
                         let mut next_chat_open_by_room = chat_open_by_room();
 
-                        if let Some(saved_chat_open) = next_chat_open_by_room.get_mut(room_index) {
+                        if let Some((_, saved_chat_open)) = next_chat_open_by_room
+                            .iter_mut()
+                            .find(|(saved_room_id, _)| saved_room_id == &room_id)
+                        {
                             *saved_chat_open = next_chat_open;
+                        } else {
+                            next_chat_open_by_room.push((room_id.clone(), next_chat_open));
                         }
 
                         chat_open_by_room.set(next_chat_open_by_room);
@@ -58,7 +60,7 @@ pub(crate) fn RoomInstance(
                             server_id.clone(),
                             ServerShellState {
                                 chat_open: next_chat_open,
-                                room_kind: room.kind,
+                                room_kind: super::app_shell::room_kind_attr(room.kind),
                             },
                         ));
                     },
@@ -74,4 +76,11 @@ pub(crate) fn RoomInstance(
             }
         }
     }
+}
+
+fn chat_open_for_room(chat_open_by_room: &[(String, bool)], room_id: &str) -> bool {
+    chat_open_by_room
+        .iter()
+        .find_map(|(saved_room_id, chat_open)| (saved_room_id == room_id).then_some(*chat_open))
+        .unwrap_or(false)
 }

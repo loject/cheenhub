@@ -2,15 +2,17 @@
 
 use cheenhub_contracts::rest::{
     AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,
-    CreateServerRequest, CreateServerResponse, ListServersResponse, ServerInviteInfoResponse,
-    ServerInviteSummary, ServerSummary,
+    CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
+    ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse, ServerInviteSummary,
+    ServerRoomKind, ServerRoomSummary, ServerSummary, UpdateServerRoomRequest,
+    UpdateServerRoomResponse,
 };
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
 use crate::features::auth::application as auth_application;
 use crate::features::auth::error::AuthError;
-use crate::features::servers::domain::Server;
+use crate::features::servers::domain::{Server, ServerRoom};
 use crate::features::servers::error::ServerError;
 use crate::features::servers::validation;
 use crate::http::AppState;
@@ -36,6 +38,11 @@ pub(crate) async fn create(
     state
         .server_store
         .insert_server_member(&server.id, &owner_user_id)
+        .await
+        .map_err(ServerError::Internal)?;
+    state
+        .server_store
+        .insert_server_room(&server.id, "общий".to_owned(), ServerRoomKind::TextAndVoice)
         .await
         .map_err(ServerError::Internal)?;
 
@@ -301,6 +308,117 @@ pub(crate) async fn leave(
         .map_err(ServerError::Internal)
 }
 
+/// Lists rooms available on a server for the current user.
+pub(crate) async fn list_rooms(
+    state: &AppState,
+    access_token: &str,
+    server_id: String,
+) -> Result<ListServerRoomsResponse, ServerError> {
+    let user_id = current_user_id(state, access_token).await?;
+    let server_id = parse_server_id(server_id)?;
+    let server = server_for_member_or_owner(state, &server_id, &user_id).await?;
+    let rooms = state
+        .server_store
+        .list_server_rooms(&server.id)
+        .await
+        .map_err(ServerError::Internal)?;
+
+    Ok(ListServerRoomsResponse {
+        rooms: rooms.iter().map(room_summary).collect(),
+    })
+}
+
+/// Creates a room on a server owned by the current user.
+pub(crate) async fn create_room(
+    state: &AppState,
+    access_token: &str,
+    server_id: String,
+    request: CreateServerRoomRequest,
+) -> Result<CreateServerRoomResponse, ServerError> {
+    let owner_user_id = current_user_id(state, access_token).await?;
+    let server_id = parse_server_id(server_id)?;
+    let valid = validation::server_room(request.name)
+        .map_err(|message| ServerError::BadRequest(message.to_owned()))?;
+    let server = owned_server(state, &server_id, &owner_user_id).await?;
+    let room = state
+        .server_store
+        .insert_server_room(&server.id, valid.name, request.kind)
+        .await
+        .map_err(ServerError::Internal)?;
+
+    Ok(CreateServerRoomResponse {
+        room: room_summary(&room),
+    })
+}
+
+/// Updates a room on a server owned by the current user.
+pub(crate) async fn update_room(
+    state: &AppState,
+    access_token: &str,
+    server_id: String,
+    room_id: String,
+    request: UpdateServerRoomRequest,
+) -> Result<UpdateServerRoomResponse, ServerError> {
+    let owner_user_id = current_user_id(state, access_token).await?;
+    let server_id = parse_server_id(server_id)?;
+    let room_id = Uuid::parse_str(&room_id)
+        .map_err(|_| ServerError::BadRequest("Комната не найдена.".to_owned()))?;
+    let valid = validation::server_room(request.name)
+        .map_err(|message| ServerError::BadRequest(message.to_owned()))?;
+    let server = owned_server(state, &server_id, &owner_user_id).await?;
+    let Some(room) = state
+        .server_store
+        .update_server_room(&server.id, &room_id, valid.name, request.kind)
+        .await
+        .map_err(ServerError::Internal)?
+    else {
+        return Err(ServerError::NotFound("Комната не найдена.".to_owned()));
+    };
+
+    Ok(UpdateServerRoomResponse {
+        room: room_summary(&room),
+    })
+}
+
+/// Deletes a room from a server owned by the current user.
+pub(crate) async fn delete_room(
+    state: &AppState,
+    access_token: &str,
+    server_id: String,
+    room_id: String,
+) -> Result<(), ServerError> {
+    let owner_user_id = current_user_id(state, access_token).await?;
+    let server_id = parse_server_id(server_id)?;
+    let room_id = Uuid::parse_str(&room_id)
+        .map_err(|_| ServerError::BadRequest("Комната не найдена.".to_owned()))?;
+    let server = owned_server(state, &server_id, &owner_user_id).await?;
+    let Some(room) = state
+        .server_store
+        .find_server_room(&server.id, &room_id)
+        .await
+        .map_err(ServerError::Internal)?
+    else {
+        return Err(ServerError::NotFound("Комната не найдена.".to_owned()));
+    };
+    let room_count = state
+        .server_store
+        .count_server_rooms(&server.id)
+        .await
+        .map_err(ServerError::Internal)?;
+
+    if room_count <= 1 {
+        return Err(ServerError::BadRequest(
+            "Нельзя удалить последнюю комнату сервера.".to_owned(),
+        ));
+    }
+
+    state
+        .server_store
+        .delete_server_room(&server.id, &room.id)
+        .await
+        .map_err(ServerError::Internal)
+}
+
 fn server_summary(server: &Server, user_id: &Uuid, is_member: bool) -> ServerSummary {
     ServerSummary {
         id: server.id.to_string(),
@@ -308,6 +426,74 @@ fn server_summary(server: &Server, user_id: &Uuid, is_member: bool) -> ServerSum
         is_owner: server.owner_user_id == *user_id,
         is_member,
     }
+}
+
+fn room_summary(room: &ServerRoom) -> ServerRoomSummary {
+    ServerRoomSummary {
+        id: room.id.to_string(),
+        name: room.name.clone(),
+        kind: room.kind,
+        position: room.position,
+    }
+}
+
+async fn current_user_id(state: &AppState, access_token: &str) -> Result<Uuid, ServerError> {
+    let user = auth_application::me(state, access_token)
+        .await
+        .map_err(map_auth_error)?;
+
+    Uuid::parse_str(&user.id)
+        .map_err(|_| ServerError::Unauthorized("Сессия истекла. Войди снова.".to_owned()))
+}
+
+fn parse_server_id(server_id: String) -> Result<Uuid, ServerError> {
+    Uuid::parse_str(&server_id).map_err(|_| ServerError::BadRequest("Сервер не найден.".to_owned()))
+}
+
+async fn owned_server(
+    state: &AppState,
+    server_id: &Uuid,
+    owner_user_id: &Uuid,
+) -> Result<Server, ServerError> {
+    state
+        .server_store
+        .find_owned_server(server_id, owner_user_id)
+        .await
+        .map_err(ServerError::Internal)?
+        .ok_or_else(|| ServerError::NotFound("Сервер не найден или недоступен.".to_owned()))
+}
+
+async fn server_for_member_or_owner(
+    state: &AppState,
+    server_id: &Uuid,
+    user_id: &Uuid,
+) -> Result<Server, ServerError> {
+    let Some(server) = state
+        .server_store
+        .find_server(server_id)
+        .await
+        .map_err(ServerError::Internal)?
+    else {
+        return Err(ServerError::NotFound("Сервер не найден.".to_owned()));
+    };
+
+    if server.owner_user_id == *user_id {
+        return Ok(server);
+    }
+
+    let is_member = state
+        .server_store
+        .find_active_server_member(&server.id, user_id)
+        .await
+        .map_err(ServerError::Internal)?
+        .is_some();
+    if is_member {
+        return Ok(server);
+    }
+
+    Err(ServerError::NotFound(
+        "Сервер не найден или недоступен.".to_owned(),
+    ))
 }
 
 fn map_auth_error(error: AuthError) -> ServerError {
@@ -325,10 +511,14 @@ mod tests {
     use std::sync::Arc;
 
     use cheenhub_contracts::rest::{
-        CreateServerInviteRequest, CreateServerRequest, RegisterRequest,
+        CreateServerInviteRequest, CreateServerRequest, CreateServerRoomRequest, RegisterRequest,
+        ServerRoomKind, UpdateServerRoomRequest,
     };
 
-    use super::{accept_invite, create, create_invite, invite_info, leave, list};
+    use super::{
+        accept_invite, create, create_invite, create_room, delete_room, invite_info, leave, list,
+        list_rooms, update_room,
+    };
     use crate::features::auth::application as auth_application;
     use crate::features::auth::infrastructure::InMemoryAuthStore;
     use crate::features::auth::security::keys::AuthKeys;
@@ -381,6 +571,363 @@ mod tests {
 
         assert_eq!(created.server.name, "Dev Server");
         assert_eq!(listed.servers, vec![created.server]);
+    }
+
+    #[tokio::test]
+    async fn new_server_has_default_room() {
+        let state = state();
+        let auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "room_owner".to_owned(),
+                email: "room-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("registration should succeed");
+        let server = create(
+            &state,
+            &auth.access_token,
+            CreateServerRequest {
+                name: "Rooms".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+
+        let rooms = list_rooms(&state, &auth.access_token, server.server.id)
+            .await
+            .expect("room list should load");
+
+        assert_eq!(rooms.rooms.len(), 1);
+        assert_eq!(rooms.rooms[0].name, "общий");
+        assert_eq!(rooms.rooms[0].kind, ServerRoomKind::TextAndVoice);
+        assert_eq!(rooms.rooms[0].position, 0);
+    }
+
+    #[tokio::test]
+    async fn active_member_can_list_rooms_but_non_member_cannot() {
+        let state = state();
+        let owner_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "rooms_access_owner".to_owned(),
+                email: "rooms-access-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("owner registration should succeed");
+        let guest_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "rooms_access_guest".to_owned(),
+                email: "rooms-access-guest@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("guest registration should succeed");
+        let outsider_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "rooms_access_outsider".to_owned(),
+                email: "rooms-access-outsider@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("outsider registration should succeed");
+        let server = create(
+            &state,
+            &owner_auth.access_token,
+            CreateServerRequest {
+                name: "Readable Rooms".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+        let invite = create_invite(
+            &state,
+            &owner_auth.access_token,
+            server.server.id.clone(),
+            CreateServerInviteRequest {
+                max_uses: None,
+                expires_in_days: None,
+            },
+        )
+        .await
+        .expect("invite should be created");
+
+        let denied = list_rooms(
+            &state,
+            &outsider_auth.access_token,
+            server.server.id.clone(),
+        )
+        .await
+        .expect_err("outsider should not list rooms");
+        accept_invite(&state, &guest_auth.access_token, invite.code)
+            .await
+            .expect("guest should join");
+        let rooms = list_rooms(&state, &guest_auth.access_token, server.server.id)
+            .await
+            .expect("member should list rooms");
+
+        assert!(matches!(denied, ServerError::NotFound(_)));
+        assert_eq!(rooms.rooms.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn owner_can_create_update_and_delete_room() {
+        let state = state();
+        let auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "room_crud_owner".to_owned(),
+                email: "room-crud-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("registration should succeed");
+        let server = create(
+            &state,
+            &auth.access_token,
+            CreateServerRequest {
+                name: "Crud Rooms".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+
+        let created = create_room(
+            &state,
+            &auth.access_token,
+            server.server.id.clone(),
+            CreateServerRoomRequest {
+                name: "  x  ".to_owned(),
+                kind: ServerRoomKind::Text,
+            },
+        )
+        .await
+        .expect("room creation should succeed");
+        let updated = update_room(
+            &state,
+            &auth.access_token,
+            server.server.id.clone(),
+            created.room.id.clone(),
+            UpdateServerRoomRequest {
+                name: "Voice".to_owned(),
+                kind: ServerRoomKind::Voice,
+            },
+        )
+        .await
+        .expect("room update should succeed");
+        delete_room(
+            &state,
+            &auth.access_token,
+            server.server.id.clone(),
+            updated.room.id.clone(),
+        )
+        .await
+        .expect("room deletion should succeed");
+        let rooms = list_rooms(&state, &auth.access_token, server.server.id)
+            .await
+            .expect("room list should load");
+
+        assert_eq!(created.room.name, "x");
+        assert_eq!(created.room.kind, ServerRoomKind::Text);
+        assert_eq!(created.room.position, 1);
+        assert_eq!(updated.room.name, "Voice");
+        assert_eq!(updated.room.kind, ServerRoomKind::Voice);
+        assert_eq!(rooms.rooms.len(), 1);
+        assert_eq!(rooms.rooms[0].name, "общий");
+    }
+
+    #[tokio::test]
+    async fn non_owner_member_cannot_mutate_rooms() {
+        let state = state();
+        let owner_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "room_mutation_owner".to_owned(),
+                email: "room-mutation-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("owner registration should succeed");
+        let guest_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "room_mutation_guest".to_owned(),
+                email: "room-mutation-guest@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("guest registration should succeed");
+        let server = create(
+            &state,
+            &owner_auth.access_token,
+            CreateServerRequest {
+                name: "Locked Rooms".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+        let invite = create_invite(
+            &state,
+            &owner_auth.access_token,
+            server.server.id.clone(),
+            CreateServerInviteRequest {
+                max_uses: None,
+                expires_in_days: None,
+            },
+        )
+        .await
+        .expect("invite should be created");
+        accept_invite(&state, &guest_auth.access_token, invite.code)
+            .await
+            .expect("guest should join");
+        let rooms = list_rooms(&state, &guest_auth.access_token, server.server.id.clone())
+            .await
+            .expect("member should list rooms");
+        let room_id = rooms.rooms[0].id.clone();
+
+        let create_error = create_room(
+            &state,
+            &guest_auth.access_token,
+            server.server.id.clone(),
+            CreateServerRoomRequest {
+                name: "Denied".to_owned(),
+                kind: ServerRoomKind::Text,
+            },
+        )
+        .await
+        .expect_err("member room creation should fail");
+        let update_error = update_room(
+            &state,
+            &guest_auth.access_token,
+            server.server.id.clone(),
+            room_id.clone(),
+            UpdateServerRoomRequest {
+                name: "Denied".to_owned(),
+                kind: ServerRoomKind::Voice,
+            },
+        )
+        .await
+        .expect_err("member room update should fail");
+        let delete_error = delete_room(&state, &guest_auth.access_token, server.server.id, room_id)
+            .await
+            .expect_err("member room deletion should fail");
+
+        assert!(matches!(create_error, ServerError::NotFound(_)));
+        assert!(matches!(update_error, ServerError::NotFound(_)));
+        assert!(matches!(delete_error, ServerError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn cannot_delete_last_room() {
+        let state = state();
+        let auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "last_room_owner".to_owned(),
+                email: "last-room-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("registration should succeed");
+        let server = create(
+            &state,
+            &auth.access_token,
+            CreateServerRequest {
+                name: "Last Room".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+        let rooms = list_rooms(&state, &auth.access_token, server.server.id.clone())
+            .await
+            .expect("room list should load");
+
+        let error = delete_room(
+            &state,
+            &auth.access_token,
+            server.server.id,
+            rooms.rooms[0].id.clone(),
+        )
+        .await
+        .expect_err("last room deletion should fail");
+
+        assert!(matches!(error, ServerError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn room_flows_reject_invalid_ids_and_names() {
+        let state = state();
+        let auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "invalid_room_owner".to_owned(),
+                email: "invalid-room-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("registration should succeed");
+        let server = create(
+            &state,
+            &auth.access_token,
+            CreateServerRequest {
+                name: "Invalid Rooms".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+
+        let invalid_server_id = list_rooms(&state, &auth.access_token, "not-a-uuid".to_owned())
+            .await
+            .expect_err("invalid server id should fail");
+        let invalid_room_id = update_room(
+            &state,
+            &auth.access_token,
+            server.server.id.clone(),
+            "not-a-uuid".to_owned(),
+            UpdateServerRoomRequest {
+                name: "Room".to_owned(),
+                kind: ServerRoomKind::Text,
+            },
+        )
+        .await
+        .expect_err("invalid room id should fail");
+        let invalid_name = create_room(
+            &state,
+            &auth.access_token,
+            server.server.id,
+            CreateServerRoomRequest {
+                name: " ".to_owned(),
+                kind: ServerRoomKind::Text,
+            },
+        )
+        .await
+        .expect_err("invalid room name should fail");
+
+        assert!(matches!(invalid_server_id, ServerError::BadRequest(_)));
+        assert!(matches!(invalid_room_id, ServerError::BadRequest(_)));
+        assert!(matches!(invalid_name, ServerError::BadRequest(_)));
     }
 
     #[tokio::test]

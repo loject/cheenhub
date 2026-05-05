@@ -9,7 +9,7 @@ mod validation;
 
 use axum::{
     Router,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
 };
 
 use crate::http::AppState;
@@ -28,6 +28,14 @@ pub(crate) fn routes() -> Router<AppState> {
         .route(
             "/{server_id}/membership",
             delete(transport::handlers::leave),
+        )
+        .route(
+            "/{server_id}/rooms",
+            get(transport::handlers::list_rooms).post(transport::handlers::create_room),
+        )
+        .route(
+            "/{server_id}/rooms/{room_id}",
+            put(transport::handlers::update_room).delete(transport::handlers::delete_room),
         )
         .route("/invites/{code}", get(transport::handlers::invite_info))
         .route(
