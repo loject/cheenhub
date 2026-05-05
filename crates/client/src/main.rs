@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 mod features;
 mod routes;
 
-use routes::{AppHome, Landing, Login, Register};
+use routes::{AppHome, Invite, Landing, Login, Register};
 
 static TAILWIND_CSS: Asset = asset!(
     "/assets/tailwind.css",
@@ -27,6 +27,8 @@ enum Route {
     Register {},
     #[route("/app")]
     AppHome {},
+    #[route("/invite/:code")]
+    Invite { code: String },
 }
 
 #[component]

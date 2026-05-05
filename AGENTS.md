@@ -21,6 +21,8 @@
 ## Client Styling
 
 - User-facing UI must feel welcoming and complete; do not show development-only technical details, TODO text, placeholder copy, or messages that explicitly frame a page as unfinished.
+- Every UI area that waits for async data or an async action must include a loader/loading state.
+- Every list that can be empty because of data, filters, sync errors, or first-run state must include a user-friendly empty state with a clear next action.
 - Use Dioxus CLI Tailwind autodetection for the client.
 - Keep Tailwind input files in `crates/client`; do not add root npm scripts, `package.json`, or a local `node_modules` styling pipeline.
 - Do not try to start `dx serve` by default; assume the Dioxus dev server is usually already running in the background unless the user explicitly asks to start or restart it.

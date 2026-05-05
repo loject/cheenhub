@@ -2,7 +2,7 @@
 
 use cheenhub_contracts::rest::{
     CreateServerInviteRequest, CreateServerInviteResponse, CreateServerRequest,
-    CreateServerResponse, ListServersResponse, ServerSummary,
+    CreateServerResponse, ListServersResponse, ServerInviteInfoResponse, ServerSummary,
 };
 use gloo_net::http::Request;
 
@@ -73,6 +73,25 @@ pub(crate) async fn create_server_invite(
             .json::<CreateServerInviteResponse>()
             .await
             .map(|response| response.code)
+            .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned());
+    }
+
+    Err(auth_api::read_error(response).await)
+}
+
+/// Loads server invite information for the current user.
+pub(crate) async fn load_server_invite(code: String) -> Result<ServerInviteInfoResponse, String> {
+    let access_token = auth_api::fresh_access_token().await?;
+    let response = Request::get(&auth_api::url(&format!("/servers/invites/{code}")))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if response.ok() {
+        return response
+            .json::<ServerInviteInfoResponse>()
+            .await
             .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned());
     }
 

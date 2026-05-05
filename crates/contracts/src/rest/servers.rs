@@ -43,6 +43,26 @@ pub struct CreateServerInviteResponse {
     pub code: String,
 }
 
+/// Server invite data returned by invite lookup endpoints.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerInviteSummary {
+    /// Stable invite code.
+    pub code: String,
+    /// Optional maximum number of accepted invite uses.
+    pub max_uses: Option<u32>,
+    /// Optional invite expiration timestamp in RFC3339 format.
+    pub expires_at: Option<String>,
+}
+
+/// Successful server invite lookup response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerInviteInfoResponse {
+    /// Invite metadata.
+    pub invite: ServerInviteSummary,
+    /// Server the invite points to.
+    pub server: ServerSummary,
+}
+
 /// Server list response.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListServersResponse {

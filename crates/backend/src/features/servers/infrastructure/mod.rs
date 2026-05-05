@@ -40,6 +40,12 @@ pub(crate) trait ServerStore: Send + Sync {
         max_uses: Option<u32>,
         expires_at: Option<chrono::DateTime<Utc>>,
     ) -> anyhow::Result<ServerInvite>;
+
+    /// Finds a server invite by code.
+    async fn find_server_invite(&self, code: &Uuid) -> anyhow::Result<Option<ServerInvite>>;
+
+    /// Finds a server by id.
+    async fn find_server(&self, server_id: &Uuid) -> anyhow::Result<Option<Server>>;
 }
 
 /// Postgres-backed server storage.
@@ -87,6 +93,14 @@ impl ServerStore for PostgresServerStore {
             expires_at,
         )
         .await
+    }
+
+    async fn find_server_invite(&self, code: &Uuid) -> anyhow::Result<Option<ServerInvite>> {
+        find_server_invite(&self.database, code).await
+    }
+
+    async fn find_server(&self, server_id: &Uuid) -> anyhow::Result<Option<Server>> {
+        find_server(&self.database, server_id).await
     }
 }
 
@@ -159,6 +173,28 @@ async fn insert_server_invite(
     .await?;
 
     Ok(model.into())
+}
+
+/// Finds a server invite by code.
+async fn find_server_invite(
+    database: &impl ConnectionTrait,
+    code: &Uuid,
+) -> anyhow::Result<Option<ServerInvite>> {
+    Ok(server_invites::Entity::find_by_id(*code)
+        .one(database)
+        .await?
+        .map(Into::into))
+}
+
+/// Finds a server by id.
+async fn find_server(
+    database: &impl ConnectionTrait,
+    server_id: &Uuid,
+) -> anyhow::Result<Option<Server>> {
+    Ok(servers::Entity::find_by_id(*server_id)
+        .one(database)
+        .await?
+        .map(Into::into))
 }
 
 impl From<servers::Model> for Server {

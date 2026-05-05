@@ -8,7 +8,7 @@ use axum::{
 };
 use cheenhub_contracts::rest::{
     ApiError, CreateServerInviteRequest, CreateServerInviteResponse, CreateServerRequest,
-    CreateServerResponse, ListServersResponse,
+    CreateServerResponse, ListServersResponse, ServerInviteInfoResponse,
 };
 
 use crate::features::servers::application;
@@ -43,6 +43,18 @@ pub(crate) async fn create_invite(
 ) -> Result<Json<CreateServerInviteResponse>, ServerError> {
     let token = bearer_token(&headers)?;
     application::create_invite(&state, token, server_id, request)
+        .await
+        .map(Json)
+}
+
+/// Loads server invite information for the current user.
+pub(crate) async fn invite_info(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(code): Path<String>,
+) -> Result<Json<ServerInviteInfoResponse>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::invite_info(&state, token, code)
         .await
         .map(Json)
 }

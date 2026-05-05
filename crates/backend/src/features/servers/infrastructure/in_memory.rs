@@ -86,6 +86,26 @@ impl ServerStore for InMemoryServerStore {
 
         Ok(invite)
     }
+
+    async fn find_server_invite(&self, code: &Uuid) -> anyhow::Result<Option<ServerInvite>> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+
+        Ok(state
+            .invites
+            .iter()
+            .find(|invite| invite.id == *code)
+            .cloned())
+    }
+
+    async fn find_server(&self, server_id: &Uuid) -> anyhow::Result<Option<Server>> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+
+        Ok(state
+            .servers
+            .iter()
+            .find(|server| server.id == *server_id)
+            .cloned())
+    }
 }
 
 #[cfg(test)]
