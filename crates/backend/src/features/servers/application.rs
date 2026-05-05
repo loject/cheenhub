@@ -254,6 +254,53 @@ pub(crate) async fn accept_invite(
     })
 }
 
+/// Leaves a server as the current user.
+pub(crate) async fn leave(
+    state: &AppState,
+    access_token: &str,
+    server_id: String,
+) -> Result<(), ServerError> {
+    let user = auth_application::me(state, access_token)
+        .await
+        .map_err(map_auth_error)?;
+    let user_id = Uuid::parse_str(&user.id)
+        .map_err(|_| ServerError::Unauthorized("Сессия истекла. Войди снова.".to_owned()))?;
+    let server_id = Uuid::parse_str(&server_id)
+        .map_err(|_| ServerError::BadRequest("Сервер не найден.".to_owned()))?;
+    let Some(server) = state
+        .server_store
+        .find_server(&server_id)
+        .await
+        .map_err(ServerError::Internal)?
+    else {
+        return Err(ServerError::NotFound("Сервер не найден.".to_owned()));
+    };
+
+    if server.owner_user_id == user_id {
+        return Err(ServerError::BadRequest(
+            "Владелец сервера не может покинуть сервер.".to_owned(),
+        ));
+    }
+
+    let active_member = state
+        .server_store
+        .find_active_server_member(&server.id, &user_id)
+        .await
+        .map_err(ServerError::Internal)?
+        .is_some();
+    if !active_member {
+        return Err(ServerError::NotFound(
+            "Сервер не найден или недоступен.".to_owned(),
+        ));
+    }
+
+    state
+        .server_store
+        .leave_server(&server.id, &user_id)
+        .await
+        .map_err(ServerError::Internal)
+}
+
 fn server_summary(server: &Server, user_id: &Uuid, is_member: bool) -> ServerSummary {
     ServerSummary {
         id: server.id.to_string(),
@@ -281,7 +328,7 @@ mod tests {
         CreateServerInviteRequest, CreateServerRequest, RegisterRequest,
     };
 
-    use super::{accept_invite, create, create_invite, invite_info, list};
+    use super::{accept_invite, create, create_invite, invite_info, leave, list};
     use crate::features::auth::application as auth_application;
     use crate::features::auth::infrastructure::InMemoryAuthStore;
     use crate::features::auth::security::keys::AuthKeys;
@@ -616,6 +663,96 @@ mod tests {
         assert_eq!(invite_info.invite.uses, 1);
         assert_eq!(invite_uses.len(), 1);
         assert_eq!(invite_uses[0].user_id.to_string(), guest_auth.user.id);
+    }
+
+    #[tokio::test]
+    async fn member_can_leave_joined_server() {
+        let state = state();
+        let owner_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "leave_owner".to_owned(),
+                email: "leave-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("owner registration should succeed");
+        let guest_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "leave_guest".to_owned(),
+                email: "leave-guest@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("guest registration should succeed");
+        let server = create(
+            &state,
+            &owner_auth.access_token,
+            CreateServerRequest {
+                name: "Leavable".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+        let invite = create_invite(
+            &state,
+            &owner_auth.access_token,
+            server.server.id.clone(),
+            CreateServerInviteRequest {
+                max_uses: None,
+                expires_in_days: None,
+            },
+        )
+        .await
+        .expect("invite creation should succeed");
+        accept_invite(&state, &guest_auth.access_token, invite.code)
+            .await
+            .expect("invite should be accepted");
+
+        leave(&state, &guest_auth.access_token, server.server.id)
+            .await
+            .expect("member should leave");
+        let listed = list(&state, &guest_auth.access_token)
+            .await
+            .expect("server list should load after leaving");
+
+        assert!(listed.servers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn owner_cannot_leave_owned_server() {
+        let state = state();
+        let auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "leave_blocked_owner".to_owned(),
+                email: "leave-blocked-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("registration should succeed");
+        let server = create(
+            &state,
+            &auth.access_token,
+            CreateServerRequest {
+                name: "Owned".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+
+        let error = leave(&state, &auth.access_token, server.server.id)
+            .await
+            .expect_err("owner leave should fail");
+
+        assert!(matches!(error, ServerError::BadRequest(_)));
     }
 
     #[tokio::test]
@@ -980,7 +1117,8 @@ mod tests {
             .await
             .expect("first join should succeed");
         server_store
-            .leave_server_for_tests(&server_id, &guest_user_id)
+            .leave_server(&server_id, &guest_user_id)
+            .await
             .expect("test member should soft leave");
         let second_join = accept_invite(&state, &guest_auth.access_token, invite.code)
             .await

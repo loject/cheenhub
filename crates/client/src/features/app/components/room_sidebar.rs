@@ -12,6 +12,7 @@ pub(crate) fn RoomSidebar(
     server: ServerSummary,
     active_room: &'static str,
     on_create_invite: EventHandler<(String, String)>,
+    on_left_server: EventHandler<String>,
     on_select_room: EventHandler<ActiveRoom>,
 ) -> Element {
     let mut is_server_menu_open = use_signal(|| false);
@@ -44,10 +45,15 @@ pub(crate) fn RoomSidebar(
                 }
                 if is_server_menu_open() {
                     ServerContextMenu {
+                        server_id: server_id.clone(),
                         is_owner,
                         on_create_invite: move |_| {
                             is_server_menu_open.set(false);
                             on_create_invite.call((server_id.clone(), invite_server_name.clone()));
+                        },
+                        on_left_server: move |server_id: String| {
+                            is_server_menu_open.set(false);
+                            on_left_server.call(server_id);
                         },
                     }
                 }

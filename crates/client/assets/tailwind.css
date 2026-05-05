@@ -1480,6 +1480,10 @@ video {
   cursor: pointer;
 }
 
+.cursor-wait {
+  cursor: wait;
+}
+
 .touch-none {
   touch-action: none;
 }
@@ -2378,6 +2382,10 @@ video {
   color: rgb(9 9 11 / var(--tw-text-opacity, 1));
 }
 
+.text-red-300\/60 {
+  color: rgb(252 165 165 / 0.6);
+}
+
 .accent-blue-500 {
   accent-color: #3b82f6;
 }
@@ -2396,6 +2404,10 @@ video {
 
 .opacity-90 {
   opacity: 0.9;
+}
+
+.opacity-80 {
+  opacity: 0.8;
 }
 
 .shadow-2xl {

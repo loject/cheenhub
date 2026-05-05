@@ -114,6 +114,32 @@ pub(crate) fn AppShell() -> Element {
                             }
                         },
                         on_open_modal: move |modal: AppModal| app_modal.set(Some(modal)),
+                        on_left_server: move |left_server_id: String| {
+                            let mut next_servers = servers();
+                            next_servers.retain(|server| server.id != left_server_id);
+
+                            let mut next_states = shell_state_by_server();
+                            next_states.retain(|(server_id, _)| server_id != &left_server_id);
+                            shell_state_by_server.set(next_states.clone());
+
+                            let next_active_server_id =
+                                if active_server_id().as_deref() == Some(left_server_id.as_str()) {
+                                    next_servers.first().map(|server| server.id.clone())
+                                } else {
+                                    active_server_id()
+                                };
+                            let next_shell_state = next_active_server_id
+                                .as_deref()
+                                .and_then(|server_id| {
+                                    saved_server_shell_state(&next_states, server_id)
+                                })
+                                .unwrap_or_else(default_server_shell_state);
+
+                            servers.set(next_servers);
+                            active_server_id.set(next_active_server_id);
+                            shell_state.set(next_shell_state);
+                            server_status.set(String::new());
+                        },
                     }
                 }
             }

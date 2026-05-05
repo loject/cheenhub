@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
-    PaginatorTrait, QueryFilter, Set,
+    IntoActiveModel, PaginatorTrait, QueryFilter, Set,
 };
 use uuid::Uuid;
 
@@ -64,6 +64,9 @@ pub(crate) trait ServerStore: Send + Sync {
         server_id: &Uuid,
         user_id: &Uuid,
     ) -> anyhow::Result<Option<ServerMember>>;
+
+    /// Marks an active server membership as left.
+    async fn leave_server(&self, server_id: &Uuid, user_id: &Uuid) -> anyhow::Result<()>;
 
     /// Inserts a successful invite use row.
     async fn insert_server_invite_use(
@@ -145,6 +148,10 @@ impl ServerStore for PostgresServerStore {
         user_id: &Uuid,
     ) -> anyhow::Result<Option<ServerMember>> {
         find_active_server_member(&self.database, server_id, user_id).await
+    }
+
+    async fn leave_server(&self, server_id: &Uuid, user_id: &Uuid) -> anyhow::Result<()> {
+        leave_server(&self.database, server_id, user_id).await
     }
 
     async fn insert_server_invite_use(
@@ -317,6 +324,28 @@ async fn find_active_server_member(
         .one(database)
         .await?
         .map(Into::into))
+}
+
+/// Marks an active server membership as left.
+async fn leave_server(
+    database: &impl ConnectionTrait,
+    server_id: &Uuid,
+    user_id: &Uuid,
+) -> anyhow::Result<()> {
+    let Some(member) = server_members::Entity::find()
+        .filter(server_members::Column::ServerId.eq(*server_id))
+        .filter(server_members::Column::UserId.eq(*user_id))
+        .filter(server_members::Column::LeftAt.is_null())
+        .one(database)
+        .await?
+    else {
+        return Ok(());
+    };
+    let mut member = member.into_active_model();
+    member.left_at = Set(Some(Utc::now()));
+    member.update(database).await?;
+
+    Ok(())
 }
 
 /// Inserts a successful invite use row.

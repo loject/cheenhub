@@ -2,9 +2,24 @@
 
 use dioxus::prelude::*;
 
+use crate::features::app::api;
+
 /// Renders server-level actions.
 #[component]
-pub(crate) fn ServerContextMenu(is_owner: bool, on_create_invite: EventHandler<()>) -> Element {
+pub(crate) fn ServerContextMenu(
+    server_id: String,
+    is_owner: bool,
+    on_create_invite: EventHandler<()>,
+    on_left_server: EventHandler<String>,
+) -> Element {
+    let mut is_leaving = use_signal(|| false);
+    let mut leave_status = use_signal(String::new);
+    let leave_button_class = if is_leaving() {
+        "flex w-full cursor-wait items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300/60 opacity-80"
+    } else {
+        "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:bg-red-500/10 hover:text-red-200"
+    };
+
     rsx! {
         div {
             class: "absolute left-4 right-4 top-[86px] z-40 overflow-hidden rounded-[20px] border border-zinc-800 bg-zinc-950/95 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,.55)] backdrop-blur-xl",
@@ -47,11 +62,41 @@ pub(crate) fn ServerContextMenu(is_owner: bool, on_create_invite: EventHandler<(
                     }
                 }
             } else {
-                button { r#type: "button", class: "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:bg-red-500/10 hover:text-red-200",
+                button {
+                    r#type: "button",
+                    disabled: is_leaving(),
+                    class: leave_button_class,
+                    onclick: move |_| {
+                        if is_leaving() {
+                            return;
+                        }
+
+                        leave_status.set(String::new());
+                        is_leaving.set(true);
+                        let request_server_id = server_id.clone();
+                        spawn(async move {
+                            match api::leave_server(request_server_id.clone()).await {
+                                Ok(()) => {
+                                    on_left_server.call(request_server_id);
+                                }
+                                Err(error) => {
+                                    leave_status.set(error);
+                                    is_leaving.set(false);
+                                }
+                            }
+                        });
+                    },
                     svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" }
                     }
-                    "Выйти с сервера"
+                    if is_leaving() {
+                        "Выходим..."
+                    } else {
+                        "Выйти с сервера"
+                    }
+                }
+                if !leave_status().is_empty() {
+                    p { class: "px-3 pb-2 pt-1 text-[11px] leading-4 text-red-200", "{leave_status}" }
                 }
             }
         }

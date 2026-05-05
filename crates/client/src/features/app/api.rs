@@ -119,3 +119,19 @@ pub(crate) async fn accept_server_invite(
 
     Err(auth_api::read_error(response).await)
 }
+
+/// Leaves a server available to the current user.
+pub(crate) async fn leave_server(server_id: String) -> Result<(), String> {
+    let access_token = auth_api::fresh_access_token().await?;
+    let response = Request::delete(&auth_api::url(&format!("/servers/{server_id}/membership")))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if response.ok() {
+        return Ok(());
+    }
+
+    Err(auth_api::read_error(response).await)
+}

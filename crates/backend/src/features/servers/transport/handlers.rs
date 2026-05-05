@@ -71,6 +71,17 @@ pub(crate) async fn accept_invite(
         .map(Json)
 }
 
+/// Leaves a server as the current user.
+pub(crate) async fn leave(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+) -> Result<StatusCode, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::leave(&state, token, server_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {

@@ -173,6 +173,18 @@ impl ServerStore for InMemoryServerStore {
             .cloned())
     }
 
+    async fn leave_server(&self, server_id: &Uuid, user_id: &Uuid) -> anyhow::Result<()> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+
+        if let Some(member) = state.members.iter_mut().find(|member| {
+            member.server_id == *server_id && member.user_id == *user_id && member.left_at.is_none()
+        }) {
+            member.left_at = Some(Utc::now());
+        }
+
+        Ok(())
+    }
+
     async fn insert_server_invite_use(
         &self,
         invite_id: &Uuid,
@@ -222,22 +234,6 @@ impl InMemoryServerStore {
         let state = self.state.lock().map_err(|_| poisoned())?;
 
         Ok(state.invite_uses.clone())
-    }
-
-    pub(crate) fn leave_server_for_tests(
-        &self,
-        server_id: &Uuid,
-        user_id: &Uuid,
-    ) -> anyhow::Result<()> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-
-        if let Some(member) = state.members.iter_mut().find(|member| {
-            member.server_id == *server_id && member.user_id == *user_id && member.left_at.is_none()
-        }) {
-            member.left_at = Some(Utc::now());
-        }
-
-        Ok(())
     }
 }
 

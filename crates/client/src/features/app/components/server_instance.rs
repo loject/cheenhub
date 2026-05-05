@@ -41,6 +41,7 @@ pub(crate) fn ServerInstance(
     active: bool,
     on_state_change: EventHandler<(String, ServerShellState)>,
     on_open_modal: EventHandler<AppModal>,
+    on_left_server: EventHandler<String>,
 ) -> Element {
     let mut active_room = use_signal(|| ActiveRoom {
         kind: "mixed",
@@ -62,6 +63,7 @@ pub(crate) fn ServerInstance(
                         server_name,
                     });
                 },
+                on_left_server,
                 on_select_room: move |room: ActiveRoom| {
                     active_room.set(room);
 
