@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 
 use crate::features::app::api;
 
+use super::add_server_modal::AddServerModal;
 use super::create_server_modal::CreateServerModal;
 use super::embedded_chat::EmbeddedChat;
 use super::empty_servers_panel::EmptyServersPanel;
@@ -30,6 +31,7 @@ pub(crate) fn AppShell() -> Element {
     let mut loaded_servers = use_signal(|| false);
     let mut is_loading_servers = use_signal(|| false);
     let mut server_status = use_signal(String::new);
+    let mut is_add_server_open = use_signal(|| false);
     let mut is_create_server_open = use_signal(|| false);
     let mut active_room = use_signal(|| ActiveRoom {
         kind: "mixed",
@@ -82,11 +84,11 @@ pub(crate) fn AppShell() -> Element {
                 is_loading: is_loading_servers(),
                 status: server_status(),
                 on_select_server: move |server_id| active_server_id.set(Some(server_id)),
-                on_add_server: move |_| is_create_server_open.set(true),
+                on_add_server: move |_| is_add_server_open.set(true),
             }
             if show_empty_servers {
                 EmptyServersPanel {
-                    on_create_server: move |_| is_create_server_open.set(true),
+                    on_create_server: move |_| is_add_server_open.set(true),
                 }
             } else {
                 RoomSidebar {
@@ -118,6 +120,15 @@ pub(crate) fn AppShell() -> Element {
                         }
                     }
                     VoiceControls {}
+                }
+            }
+            if is_add_server_open() {
+                AddServerModal {
+                    on_close: move |_| is_add_server_open.set(false),
+                    on_create_server: move |_| {
+                        is_add_server_open.set(false);
+                        is_create_server_open.set(true);
+                    },
                 }
             }
             if is_create_server_open() {

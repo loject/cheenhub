@@ -1,5 +1,6 @@
 //! Authenticated application UI components.
 
+pub(crate) mod add_server_modal;
 pub(crate) mod app_shell;
 pub(crate) mod create_server_modal;
 pub(crate) mod embedded_chat;
