@@ -1,14 +1,21 @@
 //! Registration form panel component.
 
+use cheenhub_contracts::rest::RegisterRequest;
 use dioxus::prelude::*;
 
 use crate::Route;
-use crate::features::auth::behavior::show_todo_alert;
+use crate::features::auth::api;
 use crate::features::auth::components::text_input::TextInput;
 
 #[component]
 pub(crate) fn RegisterPanel() -> Element {
+    let navigator = use_navigator();
+    let mut nickname = use_signal(String::new);
+    let mut email = use_signal(String::new);
+    let mut password = use_signal(String::new);
     let mut accepts_policies = use_signal(|| false);
+    let mut status = use_signal(String::new);
+    let mut is_busy = use_signal(|| false);
     let checkbox_class = if accepts_policies() {
         "flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-accent text-white transition"
     } else {
@@ -29,21 +36,27 @@ pub(crate) fn RegisterPanel() -> Element {
                     label: "Никнейм",
                     name: "nickname",
                     placeholder: "cheenhero",
-                    autocomplete: "nickname"
+                    autocomplete: "nickname",
+                    value: nickname(),
+                    oninput: move |value| nickname.set(value)
                 }
                 TextInput {
                     input_type: "email",
                     label: "Email",
                     name: "email",
                     placeholder: "you@example.com",
-                    autocomplete: "email"
+                    autocomplete: "email",
+                    value: email(),
+                    oninput: move |value| email.set(value)
                 }
                 TextInput {
                     input_type: "password",
                     label: "Password",
                     name: "password",
                     placeholder: "••••••••",
-                    autocomplete: "new-password"
+                    autocomplete: "new-password",
+                    value: password(),
+                    oninput: move |value| password.set(value)
                 }
                 div { class: "flex items-center gap-3 text-[12px] leading-5 text-zinc-500",
                     input {
@@ -64,11 +77,37 @@ pub(crate) fn RegisterPanel() -> Element {
                         "Я принимаю правила сервиса, политику конфиденциальности и согласен с обработкой данных аккаунта."
                     }
                 }
+                if !status().is_empty() {
+                    p { class: "rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] leading-5 text-red-200",
+                        "{status()}"
+                    }
+                }
                 button {
                     r#type: "button",
+                    disabled: is_busy(),
                     class: "btn-p flex h-11 w-full items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)]",
-                    onclick: move |_| show_todo_alert(),
-                    "Создать аккаунт"
+                    onclick: move |_| {
+                        is_busy.set(true);
+                        status.set(String::new());
+                        let request = RegisterRequest {
+                            nickname: nickname(),
+                            email: email(),
+                            password: password(),
+                            accepts_policies: accepts_policies(),
+                        };
+                        spawn(async move {
+                            match api::register(request).await {
+                                Ok(_) => {
+                                    let _ = navigator.replace(Route::AppHome {});
+                                }
+                                Err(error) => {
+                                    status.set(error);
+                                    is_busy.set(false);
+                                }
+                            };
+                        });
+                    },
+                    if is_busy() { "Создаем..." } else { "Создать аккаунт" }
                 }
             }
 

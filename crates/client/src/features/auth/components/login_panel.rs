@@ -1,15 +1,22 @@
 //! Login form panel component.
 
+use cheenhub_contracts::rest::LoginRequest;
 use dioxus::prelude::*;
 
 use crate::Route;
-use crate::features::auth::behavior::show_todo_alert;
+use crate::features::auth::api;
 use crate::features::auth::components::provider_button::ProviderButton;
 use crate::features::auth::components::text_input::TextInput;
 use crate::features::auth::domain::AuthProvider;
 
 #[component]
 pub(crate) fn LoginPanel() -> Element {
+    let navigator = use_navigator();
+    let mut email = use_signal(String::new);
+    let mut password = use_signal(String::new);
+    let mut status = use_signal(String::new);
+    let mut is_busy = use_signal(|| false);
+
     rsx! {
         div { class: "rounded-[24px] border border-zinc-800 bg-zinc-900/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-6",
             div { class: "mb-6",
@@ -24,20 +31,48 @@ pub(crate) fn LoginPanel() -> Element {
                     label: "Email",
                     name: "email",
                     placeholder: "you@example.com",
-                    autocomplete: "email"
+                    autocomplete: "email",
+                    value: email(),
+                    oninput: move |value| email.set(value)
                 }
                 TextInput {
                     input_type: "password",
                     label: "Password",
                     name: "password",
                     placeholder: "••••••••",
-                    autocomplete: "current-password"
+                    autocomplete: "current-password",
+                    value: password(),
+                    oninput: move |value| password.set(value)
+                }
+                if !status().is_empty() {
+                    p { class: "rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] leading-5 text-red-200",
+                        "{status()}"
+                    }
                 }
                 button {
                     r#type: "button",
+                    disabled: is_busy(),
                     class: "btn-p flex h-11 w-full items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)]",
-                    onclick: move |_| show_todo_alert(),
-                    "Войти"
+                    onclick: move |_| {
+                        is_busy.set(true);
+                        status.set(String::new());
+                        let request = LoginRequest {
+                            email: email(),
+                            password: password(),
+                        };
+                        spawn(async move {
+                            match api::login(request).await {
+                                Ok(_) => {
+                                    let _ = navigator.replace(Route::AppHome {});
+                                }
+                                Err(error) => {
+                                    status.set(error);
+                                    is_busy.set(false);
+                                }
+                            };
+                        });
+                    },
+                    if is_busy() { "Входим..." } else { "Войти" }
                 }
             }
 

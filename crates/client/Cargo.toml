@@ -7,7 +7,15 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+base64.workspace = true
+cheenhub_contracts = { path = "../contracts" }
 dioxus = { workspace = true, features = ["router", "web"] }
+dioxus-sdk-storage.workspace = true
+ed25519-dalek.workspace = true
+gloo-net.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+wasm-bindgen-futures.workspace = true
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys.workspace = true
+[build-dependencies]
+dotenvy.workspace = true
