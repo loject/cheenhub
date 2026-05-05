@@ -11,10 +11,11 @@ use super::server_context_menu::ServerContextMenu;
 pub(crate) fn RoomSidebar(
     server: ServerSummary,
     active_room: &'static str,
-    on_create_invite: EventHandler<String>,
+    on_create_invite: EventHandler<(String, String)>,
     on_select_room: EventHandler<ActiveRoom>,
 ) -> Element {
     let mut is_server_menu_open = use_signal(|| false);
+    let server_id = server.id.clone();
     let server_name = server.name.clone();
     let invite_server_name = server_name.clone();
     let is_owner = server.is_owner;
@@ -46,7 +47,7 @@ pub(crate) fn RoomSidebar(
                         is_owner,
                         on_create_invite: move |_| {
                             is_server_menu_open.set(false);
-                            on_create_invite.call(invite_server_name.clone());
+                            on_create_invite.call((server_id.clone(), invite_server_name.clone()));
                         },
                     }
                 }

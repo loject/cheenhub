@@ -27,6 +27,22 @@ pub struct CreateServerResponse {
     pub server: ServerSummary,
 }
 
+/// Request body used to create a server invite.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateServerInviteRequest {
+    /// Optional maximum number of accepted invite uses.
+    pub max_uses: Option<u32>,
+    /// Optional invite lifetime in days.
+    pub expires_in_days: Option<u32>,
+}
+
+/// Successful server invite creation response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateServerInviteResponse {
+    /// Stable invite code.
+    pub code: String,
+}
+
 /// Server list response.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListServersResponse {

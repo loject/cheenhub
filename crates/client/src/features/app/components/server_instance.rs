@@ -56,8 +56,11 @@ pub(crate) fn ServerInstance(
             RoomSidebar {
                 server: server.clone(),
                 active_room: active_room().name,
-                on_create_invite: move |server_name: String| {
-                    on_open_modal.call(AppModal::InviteLink { server_name });
+                on_create_invite: move |(server_id, server_name): (String, String)| {
+                    on_open_modal.call(AppModal::InviteLink {
+                        server_id,
+                        server_name,
+                    });
                 },
                 on_select_room: move |room: ActiveRoom| {
                     active_room.set(room);

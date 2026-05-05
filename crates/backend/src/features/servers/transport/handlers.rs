@@ -2,12 +2,13 @@
 
 use axum::{
     Json,
-    extract::State,
+    extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 use cheenhub_contracts::rest::{
-    ApiError, CreateServerRequest, CreateServerResponse, ListServersResponse,
+    ApiError, CreateServerInviteRequest, CreateServerInviteResponse, CreateServerRequest,
+    CreateServerResponse, ListServersResponse,
 };
 
 use crate::features::servers::application;
@@ -33,10 +34,24 @@ pub(crate) async fn list(
     application::list(&state, token).await.map(Json)
 }
 
+/// Creates an invite for a server owned by the current user.
+pub(crate) async fn create_invite(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+    Json(request): Json<CreateServerInviteRequest>,
+) -> Result<Json<CreateServerInviteResponse>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::create_invite(&state, token, server_id, request)
+        .await
+        .map(Json)
+}
+
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, "bad_request", message),
+            Self::NotFound(message) => (StatusCode::NOT_FOUND, "not_found", message),
             Self::Unauthorized(message) => (StatusCode::UNAUTHORIZED, "unauthorized", message),
             Self::Internal(error) => {
                 tracing::error!(%error, "server request failed");

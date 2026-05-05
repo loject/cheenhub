@@ -13,6 +13,7 @@ dioxus = { workspace = true, features = ["router", "web"] }
 dioxus-sdk-storage.workspace = true
 ed25519-dalek.workspace = true
 gloo-net.workspace = true
+gloo-timers.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 wasm-bindgen-futures.workspace = true

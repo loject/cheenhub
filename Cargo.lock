@@ -374,6 +374,7 @@ dependencies = [
  "dotenvy",
  "ed25519-dalek",
  "gloo-net",
+ "gloo-timers",
  "serde",
  "serde_json",
  "wasm-bindgen-futures",

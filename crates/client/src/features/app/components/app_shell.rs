@@ -26,7 +26,10 @@ pub(crate) struct ServerShellState {
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum AppModal {
-    InviteLink { server_name: String },
+    InviteLink {
+        server_id: String,
+        server_name: String,
+    },
 }
 
 /// Renders the static room UI shell.
@@ -136,8 +139,9 @@ pub(crate) fn AppShell() -> Element {
                     },
                 }
             }
-            if let Some(AppModal::InviteLink { server_name }) = app_modal() {
+            if let Some(AppModal::InviteLink { server_id, server_name }) = app_modal() {
                 InviteLinkModal {
+                    server_id,
                     server_name,
                     on_close: move |_| app_modal.set(None),
                 }

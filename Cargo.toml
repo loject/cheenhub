@@ -25,6 +25,7 @@ dioxus-sdk-storage = "0.7"
 dotenvy = "0.15"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 gloo-net = "0.6"
+gloo-timers = { version = "0.3", features = ["futures"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 sea-orm = { version = "1.1", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-chrono", "with-uuid"] }
 sea-orm-migration = { version = "1.1", default-features = false, features = ["cli", "runtime-tokio-rustls", "sqlx-postgres"] }
