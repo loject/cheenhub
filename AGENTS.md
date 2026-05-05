@@ -15,6 +15,7 @@
 - Keep component props explicit and small.
 - Keep Dioxus components isolated: a file must not define more than one component.
 - Prefer a component instance per rendered item over reusing a component instance across multiple items.
+- When UI state belongs to a specific persistent entity, such as the selected server, room, text channel, voice room, or media session, render a keyed per-entity wrapper component and keep that entity-scoped state inside it instead of passing an optional active entity through long-lived siblings.
 - Do not use direct `web_sys`, `js_sys`, JavaScript snippets, or browser APIs without explicit approval; prefer Dioxus-provided APIs such as Dioxus storage/events.
 
 ## Client Styling

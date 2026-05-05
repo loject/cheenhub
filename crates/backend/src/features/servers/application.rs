@@ -61,6 +61,7 @@ fn server_summary(server: &Server) -> ServerSummary {
     ServerSummary {
         id: server.id.to_string(),
         name: server.name.clone(),
+        is_owner: true,
     }
 }
 

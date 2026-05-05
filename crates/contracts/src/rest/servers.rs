@@ -16,6 +16,8 @@ pub struct ServerSummary {
     pub id: String,
     /// Human-readable server name.
     pub name: String,
+    /// Whether the current user owns the server.
+    pub is_owner: bool,
 }
 
 /// Successful server creation response.

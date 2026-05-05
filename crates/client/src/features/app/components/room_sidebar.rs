@@ -1,25 +1,53 @@
 //! Room list and local voice status sidebar.
 
+use cheenhub_contracts::rest::ServerSummary;
 use dioxus::prelude::*;
 
 use super::app_shell::ActiveRoom;
+use super::server_context_menu::ServerContextMenu;
 
 /// Renders the static server room sidebar.
 #[component]
 pub(crate) fn RoomSidebar(
+    server: ServerSummary,
     active_room: &'static str,
+    on_create_invite: EventHandler<String>,
     on_select_room: EventHandler<ActiveRoom>,
 ) -> Element {
+    let mut is_server_menu_open = use_signal(|| false);
+    let server_name = server.name.clone();
+    let invite_server_name = server_name.clone();
+    let is_owner = server.is_owner;
+
     rsx! {
-        aside { class: "flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 backdrop-blur-xl",
+        aside {
+            class: "flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 backdrop-blur-xl",
+            onclick: move |_| is_server_menu_open.set(false),
             div { class: "relative border-b border-zinc-800/80 p-4",
-                button { r#type: "button", class: "flex w-full items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-900/80 px-4 py-3 text-left hover:border-zinc-700 hover:bg-zinc-800",
+                button {
+                    r#type: "button",
+                    class: "flex w-full items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-900/80 px-4 py-3 text-left transition-[background,border-color,color,transform,opacity] duration-150 hover:border-zinc-700 hover:bg-zinc-800",
+                    "aria-haspopup": "menu",
+                    "aria-expanded": if is_server_menu_open() { "true" } else { "false" },
+                    onclick: move |event| {
+                        event.stop_propagation();
+                        is_server_menu_open.set(!is_server_menu_open());
+                    },
                     span {
-                        span { class: "block text-[13px] font-semibold tracking-[-0.02em] text-zinc-100", "CheenHub Dev" }
+                        span { class: "block text-[13px] font-semibold tracking-[-0.02em] text-zinc-100", "{server_name}" }
                         span { class: "mt-0.5 block text-[11px] text-zinc-500", "Сервер разработки · 18 онлайн" }
                     }
                     svg { class: "h-4 w-4 text-zinc-500", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "m6 9 6 6 6-6" }
+                    }
+                }
+                if is_server_menu_open() {
+                    ServerContextMenu {
+                        is_owner,
+                        on_create_invite: move |_| {
+                            is_server_menu_open.set(false);
+                            on_create_invite.call(invite_server_name.clone());
+                        },
                     }
                 }
             }
@@ -109,7 +137,7 @@ pub(crate) fn RoomSidebar(
                             }
                         }
                         div { class: "min-w-0 flex-1",
-                            div { class: "truncate text-[11px] font-medium text-zinc-100", "CheenHub Dev" }
+                            div { class: "truncate text-[11px] font-medium text-zinc-100", "{server_name}" }
                             div { class: "mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-500",
                                 svg { class: "h-3.5 w-3.5 shrink-0 text-zinc-600", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                                     path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 11a7 7 0 0 1-14 0m7 8v3m-4 0h8m-4-18a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V7a3 3 0 0 0-3-3Z" }
