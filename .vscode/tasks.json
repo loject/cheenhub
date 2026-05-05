@@ -1,0 +1,84 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CheenHub: dev stack",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "CheenHub: dioxus web",
+        "CheenHub: backend watch"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: dioxus web",
+      "type": "shell",
+      "command": "dx",
+      "args": [
+        "serve",
+        "--package",
+        "cheenhub_client"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "CHEENHUB_JWT_KEY_ID": "dev-ed25519-1",
+          "CHEENHUB_JWT_PUBLIC_KEY_BASE64": "FyeAHCHdj3LQJcxcJv1Zo3mW8m+kqBGytTetC2NCIBU="
+        }
+      },
+      "isBackground": true,
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "dedicated",
+        "group": "cheenhub-dev",
+        "clear": true
+      },
+      "problemMatcher": {
+        "owner": "dioxus",
+        "pattern": [
+          {
+            "regexp": "^(.*)$",
+            "message": 1
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "."
+        }
+      }
+    },
+    {
+      "label": "CheenHub: backend watch",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "watch",
+        "-x",
+        "run -p cheenhub_backend"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "dedicated",
+        "group": "cheenhub-dev",
+        "clear": true
+      },
+      "problemMatcher": {
+        "base": "$rustc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "."
+        }
+      }
+    }
+  ]
+}
