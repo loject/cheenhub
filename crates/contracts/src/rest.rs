@@ -9,7 +9,7 @@ pub use auth::{
 };
 pub use error::ApiError;
 pub use servers::{
-    CreateServerInviteRequest, CreateServerInviteResponse, CreateServerRequest,
-    CreateServerResponse, ListServersResponse, ServerInviteInfoResponse, ServerInviteSummary,
-    ServerSummary,
+    AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,
+    CreateServerRequest, CreateServerResponse, ListServersResponse, ServerInviteInfoResponse,
+    ServerInviteSummary, ServerSummary,
 };

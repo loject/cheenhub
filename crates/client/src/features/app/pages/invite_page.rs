@@ -1,7 +1,8 @@
 //! Server invite acceptance page.
 
-use cheenhub_contracts::rest::ServerInviteInfoResponse;
+use cheenhub_contracts::rest::AcceptServerInviteResponse;
 use dioxus::prelude::*;
+use gloo_timers::future::TimeoutFuture;
 
 use crate::Route;
 use crate::features::app::api;
@@ -10,34 +11,20 @@ use crate::features::app::api;
 #[component]
 pub(crate) fn InvitePage(code: String) -> Element {
     let navigator = use_navigator();
-    let mut is_joined = use_signal(|| false);
-    let mut load_state = use_signal(|| InviteLoadState::Loading);
-    let mut requested_key = use_signal(|| None::<(String, u64)>);
-    let mut retry_generation = use_signal(|| 0_u64);
+    let mut accept_state = use_signal(|| InviteAcceptState::Idle);
+    let mut redirect_countdown = use_signal(|| None::<u8>);
+    let load_code = code.clone();
+    let mut invite_resource = use_resource(move || {
+        let request_code = load_code.clone();
 
-    use_effect(move || {
-        let retry = retry_generation();
-        let request_code = code.clone();
-        let next_key = (request_code.clone(), retry);
-
-        if requested_key() == Some(next_key.clone()) {
-            return;
-        }
-
-        requested_key.set(Some(next_key));
-        load_state.set(InviteLoadState::Loading);
-
-        spawn(async move {
-            match api::load_server_invite(request_code).await {
-                Ok(invite) => load_state.set(InviteLoadState::Loaded(invite)),
-                Err(error) => load_state.set(InviteLoadState::Failed(error)),
-            }
-        });
+        async move { api::load_server_invite(request_code).await }
     });
 
-    match load_state() {
-        InviteLoadState::Loading => invite_loader(),
-        InviteLoadState::Failed(error) => {
+    let invite_result = invite_resource.read().clone();
+
+    match invite_result {
+        None => invite_loader(),
+        Some(Err(error)) => {
             let show_login = error == "Войди, чтобы продолжить.";
 
             rsx! {
@@ -55,7 +42,10 @@ pub(crate) fn InvitePage(code: String) -> Element {
                                 button {
                                     r#type: "button",
                                     class: "flex h-12 w-full items-center justify-center rounded-xl bg-accent px-4 text-[14px] font-semibold text-white transition-[background,transform] duration-150 hover:-translate-y-px hover:bg-blue-400 sm:w-auto",
-                                    onclick: move |_| retry_generation.set(retry_generation() + 1),
+                                    onclick: move |_| {
+                                        invite_resource.clear();
+                                        invite_resource.restart();
+                                    },
                                     "Повторить"
                                 }
                                 if show_login {
@@ -82,13 +72,26 @@ pub(crate) fn InvitePage(code: String) -> Element {
                 }
             }
         }
-        InviteLoadState::Loaded(invite) => {
+        Some(Ok(invite)) => {
             let server_name = invite.server.name.clone();
             let server_initials = initials(&server_name);
             let invite_code = invite.invite.code.clone();
             let limit_text = usage_limit_text(invite.invite.max_uses);
+            let uses_text = usage_text(invite.invite.uses, invite.invite.max_uses);
             let expiration_text = expiration_text(invite.invite.expires_at.as_deref());
-            let is_current_user_server_member = invite.server.is_owner;
+            let accepted_response = match accept_state() {
+                InviteAcceptState::Accepted(response) => Some(response),
+                _ => None,
+            };
+            let is_accepting = matches!(accept_state(), InviteAcceptState::Accepting);
+            let accept_error = match accept_state() {
+                InviteAcceptState::Failed(error) => Some(error),
+                _ => None,
+            };
+            let countdown = redirect_countdown();
+            let is_redirecting = countdown.is_some();
+            let is_current_user_server_member =
+                invite.server.is_member || accepted_response.is_some();
             let headline = if is_current_user_server_member {
                 format!("Ты уже на сервере {server_name}")
             } else {
@@ -104,20 +107,23 @@ pub(crate) fn InvitePage(code: String) -> Element {
             } else {
                 "Доступно по приглашению"
             };
-            let action_label = if is_current_user_server_member {
-                "Открыть сервер"
-            } else if is_joined() {
-                "Приглашение принято"
+            let action_label = if let Some(seconds) = countdown {
+                format!("Открываем через {seconds}...")
+            } else if is_current_user_server_member {
+                "Открыть сервер".to_owned()
+            } else if is_accepting {
+                "Принимаем...".to_owned()
             } else {
-                "Принять приглашение"
+                "Принять приглашение".to_owned()
             };
             let action_class = if is_current_user_server_member {
                 "flex h-12 w-full items-center justify-center rounded-xl bg-emerald-500 px-4 text-[14px] font-semibold text-emerald-950 transition-[background,transform] duration-150 hover:-translate-y-px hover:bg-emerald-400 sm:w-auto sm:min-w-48"
-            } else if is_joined() {
-                "flex h-12 w-full items-center justify-center rounded-xl bg-emerald-500 px-4 text-[14px] font-semibold text-emerald-950 transition sm:w-auto sm:min-w-48"
+            } else if is_accepting {
+                "flex h-12 w-full items-center justify-center rounded-xl bg-accent/70 px-4 text-[14px] font-semibold text-white transition sm:w-auto sm:min-w-48"
             } else {
                 "flex h-12 w-full items-center justify-center rounded-xl bg-accent px-4 text-[14px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_12px_34px_rgba(59,130,246,0.22)] transition-[background,transform,opacity] duration-150 hover:-translate-y-px hover:bg-blue-400 sm:w-auto sm:min-w-48"
             };
+            let accept_code = code.clone();
 
             rsx! {
                 main { class: "min-h-screen bg-zinc-950 px-4 py-6 text-zinc-100 sm:px-6 lg:px-8",
@@ -142,12 +148,34 @@ pub(crate) fn InvitePage(code: String) -> Element {
                                     button {
                                         r#type: "button",
                                         class: "{action_class}",
-                                        disabled: !is_current_user_server_member && is_joined(),
+                                        disabled: is_accepting || is_redirecting,
                                         onclick: move |_| {
                                             if is_current_user_server_member {
                                                 navigator.push(Route::AppHome {});
                                             } else {
-                                                is_joined.set(true);
+                                                let request_code = accept_code.clone();
+                                                accept_state.set(InviteAcceptState::Accepting);
+                                                spawn(async move {
+                                                    match api::accept_server_invite(request_code).await {
+                                                        Ok(response) => {
+                                                            accept_state.set(InviteAcceptState::Accepted(response));
+                                                            redirect_countdown.set(Some(3));
+
+                                                            for seconds_left in (1..=2).rev() {
+                                                                TimeoutFuture::new(1000).await;
+                                                                redirect_countdown.set(Some(seconds_left));
+                                                            }
+
+                                                            TimeoutFuture::new(1000).await;
+                                                            redirect_countdown.set(None);
+                                                            navigator.push(Route::AppHome {});
+                                                        }
+                                                        Err(error) => {
+                                                            redirect_countdown.set(None);
+                                                            accept_state.set(InviteAcceptState::Failed(error));
+                                                        }
+                                                    }
+                                                });
                                             }
                                         },
                                         "{action_label}"
@@ -162,15 +190,15 @@ pub(crate) fn InvitePage(code: String) -> Element {
                                     }
                                 }
 
-                                if is_current_user_server_member {
-                                    div { class: "max-w-xl rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-[13px] leading-6 text-emerald-100",
-                                        "Сервер уже доступен в твоем списке. Можно открыть CheenHub и перейти к нему."
+                                if let Some(error) = accept_error {
+                                    div { class: "max-w-xl rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] leading-6 text-red-100",
+                                        "{error}"
                                     }
                                 }
 
-                                if is_joined() {
+                                if is_current_user_server_member {
                                     div { class: "max-w-xl rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-[13px] leading-6 text-emerald-100",
-                                        "Приглашение отмечено как принято. Можешь открыть CheenHub и продолжить работу."
+                                        "Сервер уже доступен в твоем списке. Можно открыть CheenHub и перейти к нему."
                                     }
                                 }
                             }
@@ -189,7 +217,8 @@ pub(crate) fn InvitePage(code: String) -> Element {
                                 div { class: "mt-6 space-y-3",
                                     div { class: "rounded-2xl bg-zinc-950/70 p-3",
                                         p { class: "text-[11px] font-medium uppercase text-zinc-500", "Использования" }
-                                        p { class: "mt-1 text-[14px] font-semibold text-zinc-100", "{limit_text}" }
+                                        p { class: "mt-1 text-[14px] font-semibold text-zinc-100", "{uses_text}" }
+                                        p { class: "mt-1 text-[12px] text-zinc-500", "{limit_text}" }
                                     }
                                     div { class: "rounded-2xl bg-zinc-950/70 p-3",
                                         p { class: "text-[11px] font-medium uppercase text-zinc-500", "Срок действия" }
@@ -211,9 +240,10 @@ pub(crate) fn InvitePage(code: String) -> Element {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-enum InviteLoadState {
-    Loading,
-    Loaded(ServerInviteInfoResponse),
+enum InviteAcceptState {
+    Idle,
+    Accepting,
+    Accepted(AcceptServerInviteResponse),
     Failed(String),
 }
 
@@ -270,6 +300,12 @@ fn usage_limit_text(max_uses: Option<u32>) -> String {
     max_uses
         .map(|uses| format!("До {uses} входов"))
         .unwrap_or_else(|| "Без ограничения".to_owned())
+}
+
+fn usage_text(uses: u32, max_uses: Option<u32>) -> String {
+    max_uses
+        .map(|limit| format!("{uses} из {limit} входов"))
+        .unwrap_or_else(|| format!("{uses} входов"))
 }
 
 fn expiration_text(expires_at: Option<&str>) -> String {

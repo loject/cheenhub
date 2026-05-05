@@ -1,6 +1,6 @@
 //! Browser token storage for authentication.
 
-use dioxus_sdk_storage::{SessionStorage, StorageBacking};
+use dioxus_sdk_storage::{LocalStorage, SessionStorage, StorageBacking};
 
 const ACCESS_TOKEN_KEY: &str = "cheenhub.access_token";
 const REFRESH_TOKEN_KEY: &str = "cheenhub.refresh_token";
@@ -16,8 +16,21 @@ pub(crate) struct StoredTokens {
 
 /// Loads tokens from Dioxus-managed browser storage boundary.
 pub(crate) fn load() -> Option<StoredTokens> {
-    let access_token = get(ACCESS_TOKEN_KEY)?;
-    let refresh_token = get(REFRESH_TOKEN_KEY)?;
+    if let Some(tokens) = load_from::<LocalStorage>() {
+        return Some(tokens);
+    }
+
+    let tokens = load_from::<SessionStorage>()?;
+    save(&tokens.access_token, &tokens.refresh_token);
+    Some(tokens)
+}
+
+fn load_from<S>() -> Option<StoredTokens>
+where
+    S: StorageBacking<Key = String>,
+{
+    let access_token = get::<S>(ACCESS_TOKEN_KEY)?;
+    let refresh_token = get::<S>(REFRESH_TOKEN_KEY)?;
 
     Some(StoredTokens {
         access_token,
@@ -27,24 +40,37 @@ pub(crate) fn load() -> Option<StoredTokens> {
 
 /// Saves tokens into browser storage.
 pub(crate) fn save(access_token: &str, refresh_token: &str) {
-    set(ACCESS_TOKEN_KEY, access_token);
-    set(REFRESH_TOKEN_KEY, refresh_token);
+    set::<LocalStorage>(ACCESS_TOKEN_KEY, access_token);
+    set::<LocalStorage>(REFRESH_TOKEN_KEY, refresh_token);
+    set::<SessionStorage>(ACCESS_TOKEN_KEY, access_token);
+    set::<SessionStorage>(REFRESH_TOKEN_KEY, refresh_token);
 }
 
 /// Clears all stored authentication tokens.
 pub(crate) fn clear() {
-    remove(ACCESS_TOKEN_KEY);
-    remove(REFRESH_TOKEN_KEY);
+    remove::<LocalStorage>(ACCESS_TOKEN_KEY);
+    remove::<LocalStorage>(REFRESH_TOKEN_KEY);
+    remove::<SessionStorage>(ACCESS_TOKEN_KEY);
+    remove::<SessionStorage>(REFRESH_TOKEN_KEY);
 }
 
-fn get(key: &str) -> Option<String> {
-    SessionStorage::get::<Option<String>>(&key.to_owned()).flatten()
+fn get<S>(key: &str) -> Option<String>
+where
+    S: StorageBacking<Key = String>,
+{
+    S::get::<Option<String>>(&key.to_owned()).flatten()
 }
 
-fn set(key: &str, value: &str) {
-    SessionStorage::set(key.to_owned(), &Some(value.to_owned()));
+fn set<S>(key: &str, value: &str)
+where
+    S: StorageBacking<Key = String>,
+{
+    S::set(key.to_owned(), &Some(value.to_owned()));
 }
 
-fn remove(key: &str) {
-    SessionStorage::set(key.to_owned(), &Option::<String>::None);
+fn remove<S>(key: &str)
+where
+    S: StorageBacking<Key = String>,
+{
+    S::set(key.to_owned(), &Option::<String>::None);
 }

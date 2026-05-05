@@ -124,6 +124,15 @@ pub(crate) fn AppShell() -> Element {
                         is_add_server_open.set(false);
                         is_create_server_open.set(true);
                     },
+                    on_joined_server: move |server: ServerSummary| {
+                        shell_state.set(default_server_shell_state());
+                        active_server_id.set(Some(server.id.clone()));
+                        let mut next_servers = servers();
+                        upsert_server_summary(&mut next_servers, server);
+                        servers.set(next_servers);
+                        server_status.set(String::new());
+                        is_add_server_open.set(false);
+                    },
                 }
             }
             if is_create_server_open() {
@@ -148,6 +157,18 @@ pub(crate) fn AppShell() -> Element {
             }
         }
     }
+}
+
+fn upsert_server_summary(servers: &mut Vec<ServerSummary>, server: ServerSummary) {
+    if let Some(saved_server) = servers
+        .iter_mut()
+        .find(|saved_server| saved_server.id == server.id)
+    {
+        *saved_server = server;
+        return;
+    }
+
+    servers.push(server);
 }
 
 fn default_server_shell_state() -> ServerShellState {

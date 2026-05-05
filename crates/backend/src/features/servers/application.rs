@@ -1,9 +1,9 @@
 //! Server application flows.
 
 use cheenhub_contracts::rest::{
-    CreateServerInviteRequest, CreateServerInviteResponse, CreateServerRequest,
-    CreateServerResponse, ListServersResponse, ServerInviteInfoResponse, ServerInviteSummary,
-    ServerSummary,
+    AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,
+    CreateServerRequest, CreateServerResponse, ListServersResponse, ServerInviteInfoResponse,
+    ServerInviteSummary, ServerSummary,
 };
 use chrono::{Duration, Utc};
 use uuid::Uuid;
@@ -33,13 +33,18 @@ pub(crate) async fn create(
         .insert_server(&owner_user_id, valid.name)
         .await
         .map_err(ServerError::Internal)?;
+    state
+        .server_store
+        .insert_server_member(&server.id, &owner_user_id)
+        .await
+        .map_err(ServerError::Internal)?;
 
     Ok(CreateServerResponse {
-        server: server_summary(&server),
+        server: server_summary(&server, &owner_user_id, true),
     })
 }
 
-/// Lists servers owned by the current user.
+/// Lists servers available to the current user.
 pub(crate) async fn list(
     state: &AppState,
     access_token: &str,
@@ -47,16 +52,19 @@ pub(crate) async fn list(
     let user = auth_application::me(state, access_token)
         .await
         .map_err(map_auth_error)?;
-    let owner_user_id = Uuid::parse_str(&user.id)
+    let user_id = Uuid::parse_str(&user.id)
         .map_err(|_| ServerError::Unauthorized("Сессия истекла. Войди снова.".to_owned()))?;
     let servers = state
         .server_store
-        .list_servers(&owner_user_id)
+        .list_servers(&user_id)
         .await
         .map_err(ServerError::Internal)?;
 
     Ok(ListServersResponse {
-        servers: servers.iter().map(server_summary).collect(),
+        servers: servers
+            .iter()
+            .map(|access| server_summary(&access.server, &user_id, access.is_member))
+            .collect(),
     })
 }
 
@@ -139,25 +147,119 @@ pub(crate) async fn invite_info(
     else {
         return Err(ServerError::NotFound("Сервер не найден.".to_owned()));
     };
+    let uses = state
+        .server_store
+        .count_server_invite_uses(&invite.id)
+        .await
+        .map_err(ServerError::Internal)?;
+    let is_member = server.owner_user_id == user_id
+        || state
+            .server_store
+            .find_active_server_member(&server.id, &user_id)
+            .await
+            .map_err(ServerError::Internal)?
+            .is_some();
 
     Ok(ServerInviteInfoResponse {
         invite: ServerInviteSummary {
             code: invite.id.to_string(),
+            uses,
             max_uses: invite.max_uses,
             expires_at: invite.expires_at.map(|expires_at| expires_at.to_rfc3339()),
         },
-        server: ServerSummary {
-            is_owner: server.owner_user_id == user_id,
-            ..server_summary(&server)
-        },
+        server: server_summary(&server, &user_id, is_member),
     })
 }
 
-fn server_summary(server: &Server) -> ServerSummary {
+/// Accepts a server invite for the current user.
+pub(crate) async fn accept_invite(
+    state: &AppState,
+    access_token: &str,
+    code: String,
+) -> Result<AcceptServerInviteResponse, ServerError> {
+    let user = auth_application::me(state, access_token)
+        .await
+        .map_err(map_auth_error)?;
+    let user_id = Uuid::parse_str(&user.id)
+        .map_err(|_| ServerError::Unauthorized("Сессия истекла. Войди снова.".to_owned()))?;
+    let code = Uuid::parse_str(&code)
+        .map_err(|_| ServerError::BadRequest("Приглашение не найдено.".to_owned()))?;
+    let Some(invite) = state
+        .server_store
+        .find_server_invite(&code)
+        .await
+        .map_err(ServerError::Internal)?
+    else {
+        return Err(ServerError::NotFound("Приглашение не найдено.".to_owned()));
+    };
+
+    if invite
+        .expires_at
+        .is_some_and(|expires_at| expires_at <= Utc::now())
+    {
+        return Err(ServerError::BadRequest(
+            "Срок действия приглашения истек.".to_owned(),
+        ));
+    }
+
+    let Some(server) = state
+        .server_store
+        .find_server(&invite.server_id)
+        .await
+        .map_err(ServerError::Internal)?
+    else {
+        return Err(ServerError::NotFound("Сервер не найден.".to_owned()));
+    };
+
+    let is_owner = server.owner_user_id == user_id;
+    let active_member = state
+        .server_store
+        .find_active_server_member(&server.id, &user_id)
+        .await
+        .map_err(ServerError::Internal)?
+        .is_some();
+
+    if is_owner || active_member {
+        return Ok(AcceptServerInviteResponse {
+            server: server_summary(&server, &user_id, true),
+            already_member: true,
+        });
+    }
+
+    let uses = state
+        .server_store
+        .count_server_invite_uses(&invite.id)
+        .await
+        .map_err(ServerError::Internal)?;
+    if invite.max_uses.is_some_and(|max_uses| uses >= max_uses) {
+        return Err(ServerError::BadRequest(
+            "Лимит использований приглашения исчерпан.".to_owned(),
+        ));
+    }
+
+    state
+        .server_store
+        .insert_server_member(&server.id, &user_id)
+        .await
+        .map_err(ServerError::Internal)?;
+    state
+        .server_store
+        .insert_server_invite_use(&invite.id, &user_id)
+        .await
+        .map_err(ServerError::Internal)?;
+
+    Ok(AcceptServerInviteResponse {
+        server: server_summary(&server, &user_id, true),
+        already_member: false,
+    })
+}
+
+fn server_summary(server: &Server, user_id: &Uuid, is_member: bool) -> ServerSummary {
     ServerSummary {
         id: server.id.to_string(),
         name: server.name.clone(),
-        is_owner: true,
+        is_owner: server.owner_user_id == *user_id,
+        is_member,
     }
 }
 
@@ -179,7 +281,7 @@ mod tests {
         CreateServerInviteRequest, CreateServerRequest, RegisterRequest,
     };
 
-    use super::{create, create_invite, invite_info, list};
+    use super::{accept_invite, create, create_invite, invite_info, list};
     use crate::features::auth::application as auth_application;
     use crate::features::auth::infrastructure::InMemoryAuthStore;
     use crate::features::auth::security::keys::AuthKeys;
@@ -382,11 +484,13 @@ mod tests {
             .expect("invite info should load");
 
         assert_eq!(response.invite.code, invite.code);
+        assert_eq!(response.invite.uses, 0);
         assert_eq!(response.invite.max_uses, Some(7));
         assert!(response.invite.expires_at.is_some());
         assert_eq!(response.server.id, server.server.id);
         assert_eq!(response.server.name, "Info Hub");
         assert!(response.server.is_owner);
+        assert!(response.server.is_member);
     }
 
     #[tokio::test]
@@ -441,6 +545,184 @@ mod tests {
 
         assert_eq!(response.server.id, server.server.id);
         assert!(!response.server.is_owner);
+        assert!(!response.server.is_member);
+    }
+
+    #[tokio::test]
+    async fn non_member_accepts_invite_and_server_appears_in_list() {
+        let server_store = Arc::new(InMemoryServerStore::default());
+        let state = state_with_store(server_store.clone());
+        let owner_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "accept_owner".to_owned(),
+                email: "accept-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("owner registration should succeed");
+        let guest_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "accept_guest".to_owned(),
+                email: "accept-guest@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("guest registration should succeed");
+        let server = create(
+            &state,
+            &owner_auth.access_token,
+            CreateServerRequest {
+                name: "Joinable".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+        let invite = create_invite(
+            &state,
+            &owner_auth.access_token,
+            server.server.id.clone(),
+            CreateServerInviteRequest {
+                max_uses: None,
+                expires_in_days: None,
+            },
+        )
+        .await
+        .expect("invite creation should succeed");
+
+        let accepted = accept_invite(&state, &guest_auth.access_token, invite.code.clone())
+            .await
+            .expect("invite should be accepted");
+        let listed = list(&state, &guest_auth.access_token)
+            .await
+            .expect("joined server list should load");
+        let invite_info = invite_info(&state, &guest_auth.access_token, invite.code)
+            .await
+            .expect("invite info should load");
+        let invite_uses = server_store
+            .invite_uses_for_tests()
+            .expect("invite uses should be readable");
+
+        assert!(!accepted.already_member);
+        assert_eq!(accepted.server.id, server.server.id);
+        assert!(!accepted.server.is_owner);
+        assert!(accepted.server.is_member);
+        assert_eq!(listed.servers, vec![accepted.server]);
+        assert_eq!(invite_info.invite.uses, 1);
+        assert_eq!(invite_uses.len(), 1);
+        assert_eq!(invite_uses[0].user_id.to_string(), guest_auth.user.id);
+    }
+
+    #[tokio::test]
+    async fn active_member_accept_returns_already_member_without_new_usage() {
+        let server_store = Arc::new(InMemoryServerStore::default());
+        let state = state_with_store(server_store.clone());
+        let owner_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "already_owner".to_owned(),
+                email: "already-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("owner registration should succeed");
+        let server = create(
+            &state,
+            &owner_auth.access_token,
+            CreateServerRequest {
+                name: "Already".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+        let invite = create_invite(
+            &state,
+            &owner_auth.access_token,
+            server.server.id,
+            CreateServerInviteRequest {
+                max_uses: Some(1),
+                expires_in_days: None,
+            },
+        )
+        .await
+        .expect("invite creation should succeed");
+
+        let accepted = accept_invite(&state, &owner_auth.access_token, invite.code)
+            .await
+            .expect("owner should already be a member");
+        let invite_uses = server_store
+            .invite_uses_for_tests()
+            .expect("invite uses should be readable");
+
+        assert!(accepted.already_member);
+        assert!(accepted.server.is_owner);
+        assert!(accepted.server.is_member);
+        assert!(invite_uses.is_empty());
+    }
+
+    #[tokio::test]
+    async fn accept_invite_accepts_compact_uuid_code() {
+        let state = state();
+        let owner_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "compact_accept_owner".to_owned(),
+                email: "compact-accept-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("owner registration should succeed");
+        let guest_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "compact_accept_guest".to_owned(),
+                email: "compact-accept-guest@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("guest registration should succeed");
+        let server = create(
+            &state,
+            &owner_auth.access_token,
+            CreateServerRequest {
+                name: "Compact Accept".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+        let invite = create_invite(
+            &state,
+            &owner_auth.access_token,
+            server.server.id,
+            CreateServerInviteRequest {
+                max_uses: None,
+                expires_in_days: None,
+            },
+        )
+        .await
+        .expect("invite creation should succeed");
+
+        let response = accept_invite(
+            &state,
+            &guest_auth.access_token,
+            invite.code.replace('-', ""),
+        )
+        .await
+        .expect("compact invite should be accepted");
+
+        assert_eq!(response.server.name, "Compact Accept");
+        assert!(response.server.is_member);
     }
 
     #[tokio::test]
@@ -535,6 +817,187 @@ mod tests {
         assert!(matches!(invalid, ServerError::BadRequest(_)));
         assert!(matches!(missing, ServerError::NotFound(_)));
         assert!(matches!(expired, ServerError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn accept_invite_rejects_missing_invalid_expired_and_exhausted_invites() {
+        let server_store = Arc::new(InMemoryServerStore::default());
+        let state = state_with_store(server_store.clone());
+        let owner_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "accept_error_owner".to_owned(),
+                email: "accept-error-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("owner registration should succeed");
+        let first_guest_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "accept_error_first_guest".to_owned(),
+                email: "accept-error-first-guest@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("first guest registration should succeed");
+        let second_guest_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "accept_error_second_guest".to_owned(),
+                email: "accept-error-second-guest@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("second guest registration should succeed");
+        let server = create(
+            &state,
+            &owner_auth.access_token,
+            CreateServerRequest {
+                name: "Accept Errors".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+        let server_id = Uuid::parse_str(&server.server.id).expect("server id should be uuid");
+        let owner_user_id = Uuid::parse_str(&owner_auth.user.id).expect("user id should be uuid");
+        let expired_invite = server_store
+            .insert_server_invite(
+                &server_id,
+                &owner_user_id,
+                None,
+                Some(chrono::Utc::now() - chrono::Duration::days(1)),
+            )
+            .await
+            .expect("expired invite should be inserted");
+        let limited_invite = create_invite(
+            &state,
+            &owner_auth.access_token,
+            server.server.id,
+            CreateServerInviteRequest {
+                max_uses: Some(1),
+                expires_in_days: None,
+            },
+        )
+        .await
+        .expect("limited invite should be created");
+
+        accept_invite(
+            &state,
+            &first_guest_auth.access_token,
+            limited_invite.code.clone(),
+        )
+        .await
+        .expect("first use should succeed");
+
+        let invalid = accept_invite(
+            &state,
+            &second_guest_auth.access_token,
+            "not-a-uuid".to_owned(),
+        )
+        .await
+        .expect_err("invalid invite code should fail");
+        let missing = accept_invite(
+            &state,
+            &second_guest_auth.access_token,
+            Uuid::new_v4().to_string(),
+        )
+        .await
+        .expect_err("missing invite should fail");
+        let expired = accept_invite(
+            &state,
+            &second_guest_auth.access_token,
+            expired_invite.id.to_string(),
+        )
+        .await
+        .expect_err("expired invite should fail");
+        let exhausted = accept_invite(&state, &second_guest_auth.access_token, limited_invite.code)
+            .await
+            .expect_err("exhausted invite should fail");
+
+        assert!(matches!(invalid, ServerError::BadRequest(_)));
+        assert!(matches!(missing, ServerError::NotFound(_)));
+        assert!(matches!(expired, ServerError::BadRequest(_)));
+        assert!(matches!(exhausted, ServerError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn member_can_join_again_after_soft_leave() {
+        let server_store = Arc::new(InMemoryServerStore::default());
+        let state = state_with_store(server_store.clone());
+        let owner_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "rejoin_owner".to_owned(),
+                email: "rejoin-owner@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("owner registration should succeed");
+        let guest_auth = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: "rejoin_guest".to_owned(),
+                email: "rejoin-guest@example.com".to_owned(),
+                password: "password123".to_owned(),
+                accepts_policies: true,
+            },
+        )
+        .await
+        .expect("guest registration should succeed");
+        let server = create(
+            &state,
+            &owner_auth.access_token,
+            CreateServerRequest {
+                name: "Rejoin".to_owned(),
+            },
+        )
+        .await
+        .expect("server creation should succeed");
+        let invite = create_invite(
+            &state,
+            &owner_auth.access_token,
+            server.server.id.clone(),
+            CreateServerInviteRequest {
+                max_uses: None,
+                expires_in_days: None,
+            },
+        )
+        .await
+        .expect("invite creation should succeed");
+        let server_id = Uuid::parse_str(&server.server.id).expect("server id should be uuid");
+        let guest_user_id = Uuid::parse_str(&guest_auth.user.id).expect("user id should be uuid");
+
+        accept_invite(&state, &guest_auth.access_token, invite.code.clone())
+            .await
+            .expect("first join should succeed");
+        server_store
+            .leave_server_for_tests(&server_id, &guest_user_id)
+            .expect("test member should soft leave");
+        let second_join = accept_invite(&state, &guest_auth.access_token, invite.code)
+            .await
+            .expect("second join should succeed");
+        let guest_members = server_store
+            .members_for_tests()
+            .expect("members should be readable")
+            .into_iter()
+            .filter(|member| member.server_id == server_id && member.user_id == guest_user_id)
+            .collect::<Vec<_>>();
+        let invite_uses = server_store
+            .invite_uses_for_tests()
+            .expect("invite uses should be readable");
+
+        assert!(!second_join.already_member);
+        assert_eq!(guest_members.len(), 2);
+        assert_eq!(invite_uses.len(), 2);
     }
 
     #[tokio::test]

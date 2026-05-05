@@ -1,8 +1,9 @@
 //! Authenticated app API client.
 
 use cheenhub_contracts::rest::{
-    CreateServerInviteRequest, CreateServerInviteResponse, CreateServerRequest,
-    CreateServerResponse, ListServersResponse, ServerInviteInfoResponse, ServerSummary,
+    AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,
+    CreateServerRequest, CreateServerResponse, ListServersResponse, ServerInviteInfoResponse,
+    ServerSummary,
 };
 use gloo_net::http::Request;
 
@@ -91,6 +92,27 @@ pub(crate) async fn load_server_invite(code: String) -> Result<ServerInviteInfoR
     if response.ok() {
         return response
             .json::<ServerInviteInfoResponse>()
+            .await
+            .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned());
+    }
+
+    Err(auth_api::read_error(response).await)
+}
+
+/// Accepts a server invite for the current user.
+pub(crate) async fn accept_server_invite(
+    code: String,
+) -> Result<AcceptServerInviteResponse, String> {
+    let access_token = auth_api::fresh_access_token().await?;
+    let response = Request::post(&auth_api::url(&format!("/servers/invites/{code}/accept")))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if response.ok() {
+        return response
+            .json::<AcceptServerInviteResponse>()
             .await
             .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned());
     }

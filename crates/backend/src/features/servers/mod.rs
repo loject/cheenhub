@@ -26,4 +26,8 @@ pub(crate) fn routes() -> Router<AppState> {
             post(transport::handlers::create_invite),
         )
         .route("/invites/{code}", get(transport::handlers::invite_info))
+        .route(
+            "/invites/{code}/accept",
+            post(transport::handlers::accept_invite),
+        )
 }

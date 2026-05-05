@@ -18,6 +18,8 @@ pub struct ServerSummary {
     pub name: String,
     /// Whether the current user owns the server.
     pub is_owner: bool,
+    /// Whether the current user is an active server member.
+    pub is_member: bool,
 }
 
 /// Successful server creation response.
@@ -48,6 +50,8 @@ pub struct CreateServerInviteResponse {
 pub struct ServerInviteSummary {
     /// Stable invite code.
     pub code: String,
+    /// Number of successful invite uses.
+    pub uses: u32,
     /// Optional maximum number of accepted invite uses.
     pub max_uses: Option<u32>,
     /// Optional invite expiration timestamp in RFC3339 format.
@@ -61,6 +65,15 @@ pub struct ServerInviteInfoResponse {
     pub invite: ServerInviteSummary,
     /// Server the invite points to.
     pub server: ServerSummary,
+}
+
+/// Successful server invite acceptance response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AcceptServerInviteResponse {
+    /// Server the current user can now access.
+    pub server: ServerSummary,
+    /// Whether the current user was already an active member.
+    pub already_member: bool,
 }
 
 /// Server list response.

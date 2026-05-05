@@ -1,6 +1,9 @@
 //! Add-server choice modal.
 
+use cheenhub_contracts::rest::ServerSummary;
 use dioxus::prelude::*;
+
+use crate::features::app::api;
 
 use super::modal::Modal;
 
@@ -9,9 +12,11 @@ use super::modal::Modal;
 pub(crate) fn AddServerModal(
     on_close: EventHandler<()>,
     on_create_server: EventHandler<()>,
+    on_joined_server: EventHandler<ServerSummary>,
 ) -> Element {
     let mut invite = use_signal(String::new);
     let mut status = use_signal(String::new);
+    let mut is_joining = use_signal(|| false);
 
     rsx! {
         Modal {
@@ -65,19 +70,57 @@ pub(crate) fn AddServerModal(
                         }
                         button {
                             r#type: "button",
-                            class: "flex h-10 w-full items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 px-4 text-[13px] font-medium text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100",
+                            disabled: is_joining(),
+                            class: "flex h-10 w-full items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 px-4 text-[13px] font-medium text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100 disabled:cursor-wait disabled:opacity-70",
                             onclick: move |_| {
-                                if invite().trim().is_empty() {
+                                let Some(code) = invite_code(&invite()) else {
                                     status.set("Вставь ссылку-приглашение или код сервера.".to_owned());
-                                } else {
-                                    status.set("Не удалось найти сервер по этому приглашению.".to_owned());
-                                }
+                                    return;
+                                };
+
+                                is_joining.set(true);
+                                status.set(String::new());
+                                spawn(async move {
+                                    match api::accept_server_invite(code).await {
+                                        Ok(response) => {
+                                            on_joined_server.call(response.server);
+                                        }
+                                        Err(error) => {
+                                            status.set(error);
+                                            is_joining.set(false);
+                                        }
+                                    }
+                                });
                             },
-                            "Подключиться"
+                            if is_joining() {
+                                "Подключаем..."
+                            } else {
+                                "Подключиться"
+                            }
                         }
                     }
                 }
             }
         }
     }
+}
+
+fn invite_code(value: &str) -> Option<String> {
+    let trimmed = value.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let candidate = trimmed
+        .rsplit_once("/invite/")
+        .map(|(_, code)| code)
+        .unwrap_or(trimmed)
+        .trim()
+        .trim_matches('/');
+    let candidate = candidate
+        .find(['?', '#'])
+        .map(|index| &candidate[..index])
+        .unwrap_or(candidate);
+
+    (!candidate.is_empty()).then(|| candidate.to_owned())
 }

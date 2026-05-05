@@ -21,6 +21,15 @@ pub(crate) struct Server {
     pub(crate) updated_at: DateTime<Utc>,
 }
 
+/// Server data with current-user membership context.
+#[derive(Debug, Clone)]
+pub(crate) struct ServerAccess {
+    /// Server available to the current user.
+    pub(crate) server: Server,
+    /// Whether the current user is an active server member.
+    pub(crate) is_member: bool,
+}
+
 /// Server invite data used by server flows.
 #[derive(Debug, Clone)]
 pub(crate) struct ServerInvite {
@@ -41,4 +50,37 @@ pub(crate) struct ServerInvite {
     /// Invite creation timestamp.
     #[allow(dead_code)]
     pub(crate) created_at: DateTime<Utc>,
+}
+
+/// Server member data used by server flows.
+#[derive(Debug, Clone)]
+pub(crate) struct ServerMember {
+    /// Stable server member row identifier.
+    #[allow(dead_code)]
+    pub(crate) id: Uuid,
+    /// Server the member belongs to.
+    pub(crate) server_id: Uuid,
+    /// User that joined the server.
+    pub(crate) user_id: Uuid,
+    /// Membership start timestamp.
+    #[allow(dead_code)]
+    pub(crate) joined_at: DateTime<Utc>,
+    /// Membership end timestamp for future soft leave.
+    pub(crate) left_at: Option<DateTime<Utc>>,
+}
+
+/// Server invite use data used by server flows.
+#[derive(Debug, Clone)]
+pub(crate) struct ServerInviteUse {
+    /// Stable invite use row identifier.
+    #[allow(dead_code)]
+    pub(crate) id: Uuid,
+    /// Invite that was used successfully.
+    pub(crate) invite_id: Uuid,
+    /// User that used the invite successfully.
+    #[allow(dead_code)]
+    pub(crate) user_id: Uuid,
+    /// Invite use timestamp.
+    #[allow(dead_code)]
+    pub(crate) used_at: DateTime<Utc>,
 }
