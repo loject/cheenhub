@@ -58,6 +58,7 @@ pub(crate) async fn current_user() -> Result<AuthUser, String> {
 }
 
 /// Invalidates the current refresh session and clears stored tokens.
+#[allow(dead_code)]
 pub(crate) async fn logout() -> Result<(), String> {
     let Some(tokens) = storage::load() else {
         storage::clear();

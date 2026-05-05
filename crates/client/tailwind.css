@@ -9,6 +9,7 @@
 
   ::-webkit-scrollbar {
     width: 8px;
+    height: 8px;
   }
 
   ::-webkit-scrollbar-thumb {
@@ -22,7 +23,150 @@
 }
 
 @layer components {
+  .voice-shell::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 72px;
+    width: min(760px, 64vw);
+    height: 420px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.05);
+    filter: blur(64px);
+    pointer-events: none;
+  }
+
+  .participants-grid > article {
+    flex: 0 1 var(--tile-basis, clamp(220px, 24vw, 360px));
+    width: var(--tile-basis, clamp(220px, 24vw, 360px));
+    aspect-ratio: 16 / 9;
+  }
+
+  .participants-grid[data-count="1"] {
+    --tile-basis: min(760px, 78vw);
+  }
+
+  .participants-grid[data-count="2"] {
+    --tile-basis: min(560px, 44vw);
+  }
+
+  .participants-grid[data-count="3"],
+  .participants-grid[data-count="4"] {
+    --tile-basis: min(420px, 38vw);
+  }
+
+  .participants-grid[data-count="5"],
+  .participants-grid[data-count="6"] {
+    --tile-basis: clamp(260px, 24vw, 360px);
+  }
+
+  .participants-grid[data-count="7"],
+  .participants-grid[data-count="8"],
+  .participants-grid[data-count="9"] {
+    --tile-basis: clamp(220px, 20vw, 300px);
+  }
+
+  .participants-grid[data-count="10"],
+  .participants-grid[data-count="11"],
+  .participants-grid[data-count="12"] {
+    --tile-basis: clamp(180px, 17vw, 250px);
+  }
+
+  .user-tile::before {
+    content: attr(data-avatar);
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: clamp(5rem, 12vw, 11rem);
+    font-weight: 750;
+    color: rgba(255, 255, 255, 0.08);
+    pointer-events: none;
+  }
+
+  .user-tile::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(9, 9, 11, 0.1), rgba(9, 9, 11, 0.7));
+    pointer-events: none;
+  }
+
+  .chat-tooltip-close {
+    display: none;
+  }
+
+  #app-shell[data-chat-open="true"] .voice-stage {
+    padding-bottom: 18px;
+  }
+
+  #app-shell[data-chat-open="true"] .embedded-chat {
+    height: min(340px, 38vh);
+    opacity: 1;
+    transform: translateY(0);
+    border-top-color: rgba(63, 63, 70, 0.9);
+  }
+
+  #app-shell[data-chat-open="true"] .voice-floating-controls {
+    bottom: min(340px, 38vh);
+  }
+
+  #app-shell[data-chat-open="true"] .chat-corner-toggle {
+    bottom: calc(min(340px, 38vh) + 20px);
+    border-color: rgba(59, 130, 246, 0.32);
+    background: rgba(59, 130, 246, 0.1);
+    color: #f4f4f5;
+    box-shadow:
+      0 0 0 1px rgba(59, 130, 246, 0.1),
+      0 0 0 4px rgba(59, 130, 246, 0.08),
+      0 18px 50px rgba(0, 0, 0, 0.38);
+  }
+
+  #app-shell[data-chat-open="true"] .chat-corner-toggle svg {
+    transform: rotate(180deg);
+  }
+
+  #app-shell[data-chat-open="true"] .chat-tooltip-open {
+    display: none;
+  }
+
+  #app-shell[data-chat-open="true"] .chat-tooltip-close {
+    display: inline;
+  }
+
+  #app-shell[data-room-kind="text"] .content-split,
+  #app-shell[data-room-kind="text"] .voice-floating-controls,
+  #app-shell[data-room-kind="text"] .chat-corner-toggle,
+  #app-shell[data-room-kind="mixed-chat"] .content-split,
+  #app-shell[data-room-kind="mixed-chat"] .voice-floating-controls,
+  #app-shell[data-room-kind="mixed-chat"] .chat-corner-toggle {
+    display: none;
+  }
+
+  #app-shell[data-room-kind="text"] .text-room-view,
+  #app-shell[data-room-kind="mixed-chat"] .text-room-view {
+    display: flex;
+  }
+
+  #app-shell[data-room-kind="mixed-chat"] .join-voice-button {
+    display: inline-flex;
+  }
+
+  .chat-resize-handle::before {
+    content: "";
+    width: 44px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(113, 113, 122, 0.72);
+    transition: width 0.16s ease, background 0.16s ease;
+  }
+
+}
+
+@layer components {
   .grid-bg {
+    background-color: #09090b;
     background-image:
       linear-gradient(to right, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
       linear-gradient(to bottom, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
@@ -126,6 +270,36 @@
 
   50% {
     transform: scaleY(1);
+  }
+}
+
+@keyframes voice-pulse-bar {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+    opacity: 0.55;
+  }
+
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes soft-pulse {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.32);
+  }
+
+  50% {
+    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.16);
+  }
+}
+
+@media (max-width: 900px) {
+  .participants-grid > article {
+    --tile-basis: clamp(180px, 42vw, 280px);
   }
 }
 
