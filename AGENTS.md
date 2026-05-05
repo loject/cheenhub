@@ -6,6 +6,7 @@
 - Prefer vertical feature modules over shared horizontal folders when adding product behavior.
 - Do not add repository/service traits, generic abstraction layers, macros, or domain entities before they solve a real problem.
 - Each file should have a current purpose: startup, config, telemetry, database, HTTP shell, contracts, migrations, UI feature, or styling.
+- Use GUID/UUID values for persistent identifiers; expose them at API boundaries as strings only when the wire format requires it.
 
 ## Dioxus State
 
@@ -13,6 +14,7 @@
 - Do not introduce global state, shared state modules, or context providers unless several independent feature boundaries need the same state.
 - Keep component props explicit and small.
 - Keep Dioxus components isolated: a file must not define more than one component.
+- Do not use direct `web_sys`, `js_sys`, JavaScript snippets, or browser APIs without explicit approval; prefer Dioxus-provided APIs such as Dioxus storage/events.
 
 ## Client Styling
 
@@ -33,6 +35,11 @@
 - WebTransport is reserved for voice/media transport.
 - WebCodecs is reserved for browser-side audio/video processing.
 - Do not implement voice rooms, authentication, WebTransport, or WebCodecs behavior until explicitly requested.
+- Backend product features should use vertical layered modules when they contain real behavior: `transport` for HTTP adapters, `application` for use cases, `domain` for feature data/rules, `infrastructure` for database/external adapters, and `security` for auth/crypto primitives.
+- Keep layer boundaries concrete: transport must not contain business rules or SQL, application must orchestrate behavior without HTTP response types, and infrastructure must not decide user-facing API errors.
+- Do not introduce repository traits or service traits just to satisfy layering; use concrete modules/functions until multiple implementations are actually needed.
+- Do not use raw SQL when SeaORM entities, SeaQuery, migration DSL, or another structured database API can express the operation clearly; reserve raw SQL for database-specific queries that the structured APIs cannot represent cleanly, and keep it isolated in infrastructure or migrations.
+- In-memory infrastructure implementations are only for local testing and development; keep them maximally simple, deterministic, and free of production-style indexing, caching, cleanup jobs, or database emulation unless a test explicitly requires it.
 
 ## Configuration
 
