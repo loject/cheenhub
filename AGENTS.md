@@ -14,6 +14,7 @@
 - Do not introduce global state, shared state modules, or context providers unless several independent feature boundaries need the same state.
 - Keep component props explicit and small.
 - Keep Dioxus components isolated: a file must not define more than one component.
+- Prefer a component instance per rendered item over reusing a component instance across multiple items.
 - Do not use direct `web_sys`, `js_sys`, JavaScript snippets, or browser APIs without explicit approval; prefer Dioxus-provided APIs such as Dioxus storage/events.
 
 ## Client Styling
