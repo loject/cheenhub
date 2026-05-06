@@ -3,6 +3,7 @@
 ## Project Shape
 
 - Keep code simple first, then extend it through clear module boundaries.
+- When several implementation paths are available and there is no obvious best choice, state the tradeoff and get explicit user approval before implementing.
 - Prefer vertical feature modules over shared horizontal folders when adding product behavior.
 - Treat feature and layer boundaries as hard design constraints. Do not move state, contracts, or behavior across those boundaries for convenience unless the user explicitly approves the boundary violation after the tradeoff is stated.
 - Do not add repository/service traits, generic abstraction layers, macros, or domain entities before they solve a real problem.
