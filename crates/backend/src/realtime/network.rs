@@ -6,6 +6,7 @@ use cheenhub_contracts::realtime::{
     NetworkKind, Ping, Pong, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
 };
 use tokio::sync::Mutex;
+use tracing::debug;
 use web_transport::SendStream;
 
 use crate::state::AppState;
@@ -23,6 +24,12 @@ pub(crate) async fn handle(
             let request_id = require_request_id(&envelope)?;
             let received_at = now_ms();
             let payload: Ping = decode_payload(&envelope)?;
+            let server_sent_at = now_ms();
+            debug!(
+                id = %request_id,
+                srv_ms = server_sent_at.saturating_sub(received_at),
+                "rt ping->pong"
+            );
             write_envelope(
                 send,
                 RealtimeModule::Network,
@@ -31,7 +38,7 @@ pub(crate) async fn handle(
                 Pong {
                     sent_at_ms: payload.sent_at_ms,
                     server_received_at_ms: received_at,
-                    server_sent_at_ms: now_ms(),
+                    server_sent_at_ms: server_sent_at,
                 },
             )
             .await

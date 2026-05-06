@@ -5,7 +5,7 @@ use cheenhub_contracts::realtime::{
     RealtimeKind, RealtimeModule, RejectionCode,
 };
 use tokio::sync::Mutex;
-use tracing::warn;
+use tracing::{info, warn};
 use web_transport::SendStream;
 
 use crate::features::auth::application as auth_application;
@@ -20,7 +20,7 @@ pub(crate) async fn authenticate_session(
     state: &AppState,
     send: &Mutex<SendStream>,
     envelope: RealtimeEnvelope,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<Option<String>> {
     validate_envelope(&envelope)?;
 
     if envelope.module != RealtimeModule::Control
@@ -33,7 +33,7 @@ pub(crate) async fn authenticate_session(
             "Первое realtime сообщение должно авторизовать сессию.",
         )
         .await?;
-        return Ok(false);
+        return Ok(None);
     }
 
     let request_id = require_request_id(&envelope)?;
@@ -49,9 +49,10 @@ pub(crate) async fn authenticate_session(
                 "Сессия истекла. Войди снова.",
             )
             .await?;
-            return Ok(false);
+            return Ok(None);
         }
     };
+    let user_id = user.id.clone();
 
     write_envelope(
         send,
@@ -62,7 +63,9 @@ pub(crate) async fn authenticate_session(
     )
     .await?;
 
-    Ok(true)
+    info!(%user_id, "accepted realtime authentication");
+
+    Ok(Some(user_id))
 }
 
 /// Handles one control module envelope.

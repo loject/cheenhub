@@ -9,6 +9,7 @@ use rcgen::{CertificateParams, KeyPair};
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use time::{Duration, OffsetDateTime};
 use tracing::info;
+use x509_parser::prelude::parse_x509_certificate;
 
 const DEFAULT_DEV_CERT_PATH: &str = "target/cheenhub-dev/webtransport-cert.pem";
 const DEFAULT_DEV_KEY_PATH: &str = "target/cheenhub-dev/webtransport-key.pem";
@@ -32,6 +33,18 @@ pub(crate) fn ensure_tls_config(
     let key_path = key_path.unwrap_or(DEFAULT_DEV_KEY_PATH);
     let using_default_paths =
         cert_path == DEFAULT_DEV_CERT_PATH && key_path == DEFAULT_DEV_KEY_PATH;
+
+    if using_default_paths
+        && Path::new(cert_path).exists()
+        && Path::new(key_path).exists()
+        && !is_webtransport_dev_certificate_usable(cert_path)?
+    {
+        info!(
+            cert_path,
+            key_path, "regenerating WebTransport dev TLS certificate"
+        );
+        generate_dev_certificate(cert_path, key_path)?;
+    }
 
     if !Path::new(cert_path).exists() || !Path::new(key_path).exists() {
         if !using_default_paths {
@@ -136,6 +149,19 @@ fn generate_dev_certificate(cert_path: &str, key_path: &str) -> anyhow::Result<(
     Ok(())
 }
 
+fn is_webtransport_dev_certificate_usable(path: &str) -> anyhow::Result<bool> {
+    let certificates = load_certificates(path)?;
+    let Some(certificate) = certificates.first() else {
+        return Ok(false);
+    };
+    let (_, parsed) = parse_x509_certificate(certificate.as_ref())
+        .map_err(|error| anyhow!("failed to parse WebTransport dev certificate: {error}"))?;
+    let validity = parsed.validity();
+    let lifetime = validity.not_after.to_datetime() - validity.not_before.to_datetime();
+
+    Ok(lifetime <= Duration::days(14))
+}
+
 fn write_private_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     let mut file = File::create(path)?;
     file.write_all(bytes)?;
@@ -183,6 +209,10 @@ mod tests {
             !load_certificates(cert_path.to_str().expect("utf-8 cert path"))
                 .expect("certificates load")
                 .is_empty()
+        );
+        assert!(
+            is_webtransport_dev_certificate_usable(cert_path.to_str().expect("utf-8 cert path"))
+                .expect("certificate parses")
         );
         load_private_key(key_path.to_str().expect("utf-8 key path")).expect("private key loads");
 

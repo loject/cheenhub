@@ -34,3 +34,4 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 web-transport.workspace = true
 web-transport-quinn.workspace = true
+x509-parser.workspace = true

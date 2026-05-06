@@ -12,6 +12,7 @@ use std::net::SocketAddr;
 
 use anyhow::Context;
 use tracing::{info, warn};
+use uuid::Uuid;
 use web_transport::Session;
 use web_transport_quinn::{Server, ServerBuilder};
 
@@ -40,10 +41,20 @@ pub(crate) async fn serve(
     info!(%address, "webtransport realtime listening");
 
     while let Some(request) = server.accept().await {
+        let session_id = Uuid::new_v4();
+        let remote_address = request.conn().remote_address();
+        let url = request.url.clone();
+        info!(%session_id, %remote_address, %url, "received WebTransport request");
+
         if request.url.path() != REALTIME_PATH {
-            warn!(url = %request.url, "rejecting WebTransport request for unsupported path");
+            warn!(
+                %session_id,
+                %remote_address,
+                %url,
+                "rejecting WebTransport request for unsupported path"
+            );
             if let Err(error) = request.reject(http::StatusCode::NOT_FOUND).await {
-                warn!(%error, "failed to reject WebTransport request");
+                warn!(%session_id, %remote_address, %url, %error, "failed to reject WebTransport request");
             }
             continue;
         }
@@ -52,12 +63,25 @@ pub(crate) async fn serve(
         tokio::spawn(async move {
             match request.ok().await {
                 Ok(session) => {
+                    info!(%session_id, %remote_address, %url, "accepted WebTransport request");
                     let session = Session::from(session);
-                    if let Err(error) = session::handle_session(state, session).await {
-                        warn!(%error, "WebTransport session ended with error");
+                    if let Err(error) = session::handle_session(state, session_id, session).await {
+                        warn!(
+                            %session_id,
+                            %remote_address,
+                            %url,
+                            %error,
+                            "WebTransport session ended with error"
+                        );
                     }
                 }
-                Err(error) => warn!(%error, "failed to accept WebTransport request"),
+                Err(error) => warn!(
+                    %session_id,
+                    %remote_address,
+                    %url,
+                    %error,
+                    "failed to accept WebTransport request"
+                ),
             }
         });
     }

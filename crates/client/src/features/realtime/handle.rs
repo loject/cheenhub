@@ -6,9 +6,10 @@ use std::rc::Rc;
 
 use bytes::Bytes;
 use cheenhub_contracts::realtime::{
-    Authenticate, Authenticated, ControlKind, RealtimeEnvelope, RealtimeKind, RealtimeModule,
-    Rejected,
+    Authenticate, Authenticated, ControlKind, NetworkKind, Ping, Pong, RealtimeEnvelope,
+    RealtimeKind, RealtimeModule, Rejected,
 };
+use dioxus::prelude::{debug, info, warn};
 use futures_channel::{mpsc, oneshot};
 use futures_util::{StreamExt, lock::Mutex};
 use serde::{Serialize, de::DeserializeOwned};
@@ -44,20 +45,28 @@ impl RealtimeHandle {
         access_token: String,
     ) -> Result<Authenticated, RealtimeError> {
         let client = config::realtime_client()?;
-        let session = client
-            .connect(config::realtime_url()?)
-            .await
-            .map_err(|error| {
-                RealtimeError::new(format!("Failed to connect realtime session: {error}"))
-            })?;
+        let url = config::realtime_url()?;
+        info!(%url, "connecting WebTransport realtime session");
+        let session = client.connect(url.clone()).await.map_err(|error| {
+            RealtimeError::new(format!("Failed to connect realtime session: {error}"))
+        })?;
 
-        self.inner.session.lock().await.replace(session);
-        self.request(
-            RealtimeModule::Control,
-            RealtimeKind::Control(ControlKind::Authenticate),
-            Authenticate { access_token },
-        )
-        .await
+        info!(%url, "WebTransport transport connected");
+        self.inner.streams.lock().await.clear();
+        self.inner.pending.borrow_mut().clear();
+        self.inner.session.lock().await.replace(session.clone());
+
+        let authenticated: Authenticated = self
+            .request(
+                RealtimeModule::Control,
+                RealtimeKind::Control(ControlKind::Authenticate),
+                Authenticate { access_token },
+            )
+            .await?;
+        info!(%url, user_id = %authenticated.user.id, "WebTransport realtime authenticated");
+        spawn_connection_logger(url.to_string(), session);
+
+        Ok(authenticated)
     }
 
     /// Sends one reliable fire-and-forget message.
@@ -106,6 +115,18 @@ impl RealtimeHandle {
             })
     }
 
+    /// Sends one reliable network ping and waits for the pong response.
+    pub(crate) async fn ping(&self) -> Result<Pong, RealtimeError> {
+        self.request(
+            RealtimeModule::Network,
+            RealtimeKind::Network(NetworkKind::Ping),
+            Ping {
+                sent_at_ms: now_ms(),
+            },
+        )
+        .await
+    }
+
     /// Sends one request and waits for a typed response.
     pub(crate) async fn request<P, R>(
         &self,
@@ -123,6 +144,7 @@ impl RealtimeHandle {
             RealtimeEnvelope::new(module, kind, Some(request_id), payload).map_err(|error| {
                 RealtimeError::new(format!("Failed to encode realtime payload: {error}"))
             })?;
+        log_realtime_request(&envelope);
         let (sender, receiver) = oneshot::channel();
         self.inner
             .pending
@@ -147,6 +169,7 @@ impl RealtimeHandle {
                 })?;
             return Err(RealtimeError::new(rejected.message));
         }
+        log_realtime_response(&response);
 
         serde_json::from_value(response.payload).map_err(|error| {
             RealtimeError::new(format!("Failed to decode realtime response: {error}"))
@@ -174,6 +197,7 @@ impl RealtimeHandle {
         })?;
         let send = Rc::new(Mutex::new(send));
         self.inner.streams.lock().await.insert(module, send.clone());
+        debug!(module = ?module, "opened WebTransport realtime stream");
         spawn_stream_reader(module, recv, self.inner.inbound.clone());
 
         Ok(send)
@@ -202,17 +226,92 @@ fn spawn_stream_reader(
     inbound: mpsc::UnboundedSender<RealtimeEnvelope>,
 ) {
     spawn_task(async move {
-        while let Ok(Some(envelope)) = framing::read_envelope(&mut recv).await {
+        loop {
+            let envelope = match framing::read_envelope(&mut recv).await {
+                Ok(Some(envelope)) => envelope,
+                Ok(None) => {
+                    debug!(module = ?module, "WebTransport realtime stream closed by peer");
+                    break;
+                }
+                Err(error) => {
+                    warn!(module = ?module, %error, "WebTransport realtime stream read failed");
+                    break;
+                }
+            };
+
             if !envelope.has_matching_module_kind()
                 || (envelope.module != module && !is_rejection(&envelope))
             {
+                warn!(
+                    module = ?module,
+                    envelope_module = ?envelope.module,
+                    envelope_kind = ?envelope.kind,
+                    "closing realtime stream after mismatched envelope"
+                );
                 break;
             }
             if inbound.unbounded_send(envelope).is_err() {
+                debug!(module = ?module, "realtime inbound dispatcher closed");
                 break;
             }
         }
     });
+}
+
+fn spawn_connection_logger(url: String, session: Session) {
+    spawn_task(async move {
+        let error = session.closed().await;
+        info!(%url, %error, "WebTransport realtime session closed");
+    });
+}
+
+fn log_realtime_request(envelope: &RealtimeEnvelope) {
+    if envelope.kind != RealtimeKind::Network(NetworkKind::Ping) {
+        return;
+    }
+    let Some(request_id) = envelope.request_id else {
+        return;
+    };
+    match serde_json::from_value::<Ping>(envelope.payload.clone()) {
+        Ok(_) => debug!(id = %request_id, "rt ping"),
+        Err(error) => {
+            warn!(%request_id, %error, "failed to decode outgoing realtime ping log payload")
+        }
+    }
+}
+
+fn log_realtime_response(envelope: &RealtimeEnvelope) {
+    if envelope.kind != RealtimeKind::Network(NetworkKind::Pong) {
+        return;
+    }
+    let Some(request_id) = envelope.request_id else {
+        return;
+    };
+    match serde_json::from_value::<Pong>(envelope.payload.clone()) {
+        Ok(payload) => {
+            let received_at = now_ms();
+            debug!(
+                id = %request_id,
+                rtt_ms = received_at.saturating_sub(payload.sent_at_ms),
+                srv_ms = payload
+                    .server_sent_at_ms
+                    .saturating_sub(payload.server_received_at_ms),
+                "rt pong"
+            );
+        }
+        Err(error) => {
+            warn!(%request_id, %error, "failed to decode incoming realtime pong log payload")
+        }
+    }
+}
+
+fn now_ms() -> u64 {
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
 }
 
 fn spawn_universal_reader(
