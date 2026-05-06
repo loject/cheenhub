@@ -4,16 +4,23 @@ use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomSummary, ServerSummary}
 use dioxus::prelude::*;
 
 use crate::features::app::api;
+use crate::features::server_settings::ServerSettingsScope;
 
 use super::app_shell::{ActiveRoom, AppModal, ServerShellState, room_kind_attr};
 use super::room_editor_modal::RoomEditorModal;
 use super::room_instance::RoomInstance;
-use super::server_context_menu::ServerContextMenu;
+use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
 
 #[derive(Clone, PartialEq)]
 enum RoomModal {
     Create,
     Edit(ServerRoomSummary),
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum ServerWorkspace {
+    Room(String),
+    Settings,
 }
 
 /// Owns room state for one server and renders the room sidebar and active room.
@@ -25,16 +32,16 @@ pub(crate) fn ServerRoomsScope(
     on_open_modal: EventHandler<AppModal>,
     on_left_server: EventHandler<String>,
 ) -> Element {
-    let mut rooms = use_signal(Vec::<ServerRoomSummary>::new);
+    let mut rooms = use_signal(|| None::<Vec<ServerRoomSummary>>);
     let mut active_room_id = use_signal(|| None::<String>);
-    let mut loaded_rooms = use_signal(|| false);
-    let mut is_loading_rooms = use_signal(|| false);
-    let mut room_status = use_signal(String::new);
     let mut room_action_status = use_signal(String::new);
     let mut room_modal = use_signal(|| None::<RoomModal>);
     let mut is_server_menu_open = use_signal(|| false);
+    let mut active_workspace = use_signal(|| None::<ServerWorkspace>);
+    let mut mounted_workspaces = use_signal(Vec::<ServerWorkspace>::new);
     let chat_open_by_room = use_signal(Vec::<(String, bool)>::new);
     let server_id = server.id.clone();
+    let load_server_id = server.id.clone();
     let delete_server_id = server.id.clone();
     let select_server_id = server.id.clone();
     let save_server_id = server.id.clone();
@@ -43,7 +50,19 @@ pub(crate) fn ServerRoomsScope(
     let server_name = server.name.clone();
     let invite_server_name = server_name.clone();
     let is_owner = server.is_owner;
-    let selected_room = active_room(&rooms(), active_room_id().as_deref());
+    let room_load_resource = use_resource(move || {
+        let request_server_id = load_server_id.clone();
+
+        async move { api::list_server_rooms(request_server_id).await }
+    });
+    let room_load_result = room_load_resource.read().clone();
+    let current_rooms = rooms().unwrap_or_default();
+    let is_loading_rooms = rooms().is_none() && room_load_result.is_none();
+    let initial_room_error = match room_load_result {
+        Some(Err(error)) if rooms().is_none() => Some(error),
+        _ => None,
+    };
+    let selected_room = active_room(&current_rooms, active_room_id().as_deref());
     let active_room_name = selected_room
         .as_ref()
         .map(|room| room.name.clone())
@@ -55,38 +74,37 @@ pub(crate) fn ServerRoomsScope(
     };
 
     use_effect(move || {
-        if loaded_rooms() {
+        if rooms().is_some() {
             return;
         }
-        loaded_rooms.set(true);
-        is_loading_rooms.set(true);
-        let request_server_id = server_id.clone();
-        let state_server_id = server_id.clone();
 
-        spawn(async move {
-            match api::list_server_rooms(request_server_id).await {
-                Ok(next_rooms) => {
-                    let next_active_room_id = next_rooms.first().map(|room| room.id.clone());
-                    active_room_id.set(next_active_room_id.clone());
-                    room_status.set(String::new());
-                    rooms.set(next_rooms);
+        let Some(Ok(next_rooms)) = room_load_resource.read().clone() else {
+            return;
+        };
 
-                    if let Some(room_id) = next_active_room_id
-                        && let Some(room) = active_room(&rooms(), Some(room_id.as_str()))
-                    {
-                        on_state_change.call((
-                            state_server_id.clone(),
-                            ServerShellState {
-                                chat_open: chat_open_for_room(&chat_open_by_room(), &room.id),
-                                room_kind: room_kind_attr(room.kind),
-                            },
-                        ));
-                    }
-                }
-                Err(error) => room_status.set(error),
-            }
-            is_loading_rooms.set(false);
-        });
+        let next_active_room_id = next_rooms.first().map(|room| room.id.clone());
+        active_room_id.set(next_active_room_id.clone());
+        rooms.set(Some(next_rooms.clone()));
+
+        if let Some(room_id) = next_active_room_id.clone() {
+            let workspace = ServerWorkspace::Room(room_id);
+            let mut next_mounted_workspaces = mounted_workspaces();
+            ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
+            mounted_workspaces.set(next_mounted_workspaces);
+            active_workspace.set(Some(workspace));
+        }
+
+        if let Some(room_id) = next_active_room_id
+            && let Some(room) = active_room(&next_rooms, Some(room_id.as_str()))
+        {
+            on_state_change.call((
+                server_id.clone(),
+                ServerShellState {
+                    chat_open: chat_open_for_room(&chat_open_by_room(), &room.id),
+                    room_kind: room_kind_attr(room.kind),
+                },
+            ));
+        }
     });
 
     rsx! {
@@ -117,16 +135,27 @@ pub(crate) fn ServerRoomsScope(
                     ServerContextMenu {
                         server_id: server.id.clone(),
                         is_owner,
-                        on_create_invite: move |_| {
+                        on_action: move |action: ServerMenuAction| {
                             is_server_menu_open.set(false);
-                            on_open_modal.call(AppModal::InviteLink {
-                                server_id: invite_server_id.clone(),
-                                server_name: invite_server_name.clone(),
-                            });
-                        },
-                        on_left_server: move |server_id: String| {
-                            is_server_menu_open.set(false);
-                            on_left_server.call(server_id);
+
+                            match action {
+                                ServerMenuAction::OpenSettings => {
+                                    let workspace = ServerWorkspace::Settings;
+                                    let mut next_mounted_workspaces = mounted_workspaces();
+                                    ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
+                                    mounted_workspaces.set(next_mounted_workspaces);
+                                    active_workspace.set(Some(workspace));
+                                }
+                                ServerMenuAction::CreateInvite => {
+                                    on_open_modal.call(AppModal::InviteLink {
+                                        server_id: invite_server_id.clone(),
+                                        server_name: invite_server_name.clone(),
+                                    });
+                                }
+                                ServerMenuAction::LeftServer(server_id) => {
+                                    on_left_server.call(server_id);
+                                }
+                            }
                         },
                     }
                 }
@@ -148,17 +177,17 @@ pub(crate) fn ServerRoomsScope(
                     }
                 }
 
-                if is_loading_rooms() {
+                if is_loading_rooms {
                     div { class: "space-y-2 px-1 py-2",
                         div { class: "h-9 animate-pulse rounded-lg bg-zinc-900/80" }
                         div { class: "h-9 animate-pulse rounded-lg bg-zinc-900/60" }
                         div { class: "h-9 animate-pulse rounded-lg bg-zinc-900/40" }
                     }
-                } else if !room_status().is_empty() {
+                } else if let Some(error) = initial_room_error.clone() {
                     div { class: "rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] leading-5 text-red-200",
-                        "{room_status()}"
+                        "{error}"
                     }
-                } else if rooms().is_empty() {
+                } else if current_rooms.is_empty() {
                     div { class: "rounded-xl border border-zinc-800 bg-zinc-900/70 p-3",
                         p { class: "text-[12px] font-medium text-zinc-100", "Комнат пока нет" }
                         p { class: "mt-1 text-[11px] leading-5 text-zinc-500",
@@ -179,10 +208,10 @@ pub(crate) fn ServerRoomsScope(
                     }
                 } else {
                     div { class: "space-y-1",
-                        for room in rooms() {
+                        for room in current_rooms.clone() {
                             div {
                                 key: "{room.id}",
-                                "data-active": if active_room_id().as_deref() == Some(room.id.as_str()) { "true" } else { "false" },
+                                "data-active": if matches!(active_workspace(), Some(ServerWorkspace::Room(active_room_id)) if active_room_id == room.id) { "true" } else { "false" },
                                 class: "group relative flex w-full items-center justify-between rounded-lg border border-transparent px-2.5 py-2 text-left text-zinc-400 transition-[background,border-color,color,transform,opacity] duration-150 hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-100 data-[active=true]:border-accent/25 data-[active=true]:bg-accent/10 data-[active=true]:text-zinc-100",
                                 button {
                                     r#type: "button",
@@ -193,6 +222,11 @@ pub(crate) fn ServerRoomsScope(
                                         let select_server_id = select_server_id.clone();
                                         move |_| {
                                             active_room_id.set(Some(room.id.clone()));
+                                            let workspace = ServerWorkspace::Room(room.id.clone());
+                                            let mut next_mounted_workspaces = mounted_workspaces();
+                                            ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
+                                            mounted_workspaces.set(next_mounted_workspaces);
+                                            active_workspace.set(Some(workspace));
 
                                             if active {
                                                 on_state_change.call((
@@ -246,7 +280,8 @@ pub(crate) fn ServerRoomsScope(
                                                         .await
                                                         {
                                                             Ok(()) => {
-                                                                let mut next_rooms = rooms();
+                                                                let mut next_rooms =
+                                                                    rooms().unwrap_or_default();
                                                                 next_rooms
                                                                     .retain(|room| room.id != room_id);
                                                                 let next_active_room_id =
@@ -261,7 +296,43 @@ pub(crate) fn ServerRoomsScope(
                                                                     };
                                                                 active_room_id
                                                                     .set(next_active_room_id.clone());
-                                                                rooms.set(next_rooms.clone());
+                                                                rooms.set(Some(next_rooms.clone()));
+                                                                let mut next_mounted_workspaces =
+                                                                    mounted_workspaces();
+                                                                next_mounted_workspaces.retain(
+                                                                    |workspace| {
+                                                                        !matches!(
+                                                                            workspace,
+                                                                            ServerWorkspace::Room(
+                                                                                mounted_room_id,
+                                                                            ) if mounted_room_id == &room_id
+                                                                        )
+                                                                    },
+                                                                );
+                                                                if matches!(
+                                                                    active_workspace(),
+                                                                    Some(ServerWorkspace::Room(
+                                                                        active_room_id,
+                                                                    )) if active_room_id == room_id
+                                                                ) {
+                                                                    if let Some(next_room_id) =
+                                                                        next_active_room_id.clone()
+                                                                    {
+                                                                        ensure_workspace_mounted(
+                                                                            &mut next_mounted_workspaces,
+                                                                            ServerWorkspace::Room(
+                                                                                next_room_id,
+                                                                            ),
+                                                                        );
+                                                                    }
+                                                                    active_workspace.set(
+                                                                        next_active_room_id
+                                                                            .clone()
+                                                                            .map(ServerWorkspace::Room),
+                                                                    );
+                                                                }
+                                                                mounted_workspaces
+                                                                    .set(next_mounted_workspaces);
 
                                                                 if let Some(next_room) = active_room(
                                                                     &next_rooms,
@@ -344,7 +415,17 @@ pub(crate) fn ServerRoomsScope(
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25 10.5 4.5v15l-3.75-3.75H3.75A1.5 1.5 0 0 1 2.25 14.25v-4.5A1.5 1.5 0 0 1 3.75 8.25h3Z" }
                             }
                         }
-                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900", "aria-label": "Настройки голосовой сессии",
+                        button {
+                            r#type: "button",
+                            class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900",
+                            "aria-label": "Параметры сервера",
+                            onclick: move |_| {
+                                let workspace = ServerWorkspace::Settings;
+                                let mut next_mounted_workspaces = mounted_workspaces();
+                                ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
+                                mounted_workspaces.set(next_mounted_workspaces);
+                                active_workspace.set(Some(workspace));
+                            },
                             svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m9 6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75m-3 6h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5" }
                             }
@@ -372,16 +453,39 @@ pub(crate) fn ServerRoomsScope(
             }
         }
 
-        if let Some(room) = selected_room {
-            RoomInstance {
-                key: "{server.id}:{room.id}",
-                server_id: server.id.clone(),
-                room,
-                active,
-                chat_open_by_room,
-                on_state_change,
+        for workspace in mounted_workspaces() {
+            if let ServerWorkspace::Room(room_id) = workspace {
+                if let Some(room) = room_by_id(&current_rooms, &room_id) {
+                    RoomInstance {
+                        key: "{server.id}:{room.id}",
+                        server_id: server.id.clone(),
+                        room: room.clone(),
+                        active: active && matches!(active_workspace(), Some(ServerWorkspace::Room(active_room_id)) if active_room_id == room.id),
+                        chat_open_by_room,
+                        on_state_change,
+                    }
+                }
             }
-        } else if !is_loading_rooms() {
+        }
+        if mounted_workspaces().contains(&ServerWorkspace::Settings) {
+            ServerSettingsScope {
+                key: "{server.id}:settings",
+                server_name: server.name.clone(),
+                active: active && matches!(active_workspace(), Some(ServerWorkspace::Settings)),
+                on_close: move |_| {
+                    if let Some(room_id) = active_room_id() {
+                        let workspace = ServerWorkspace::Room(room_id);
+                        let mut next_mounted_workspaces = mounted_workspaces();
+                        ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
+                        mounted_workspaces.set(next_mounted_workspaces);
+                        active_workspace.set(Some(workspace));
+                    } else {
+                        active_workspace.set(None);
+                    }
+                },
+            }
+        }
+        if !is_loading_rooms && selected_room.is_none() && !matches!(active_workspace(), Some(ServerWorkspace::Settings)) {
             section { class: "flex min-w-0 flex-1 items-center justify-center bg-zinc-950/35 p-6",
                 div { class: "max-w-sm text-center",
                     h2 { class: "text-[16px] font-semibold text-zinc-100", "Комнат пока нет" }
@@ -412,11 +516,16 @@ pub(crate) fn ServerRoomsScope(
                 },
                 on_close: move |_| room_modal.set(None),
                 on_saved: move |saved_room: ServerRoomSummary| {
-                    let mut next_rooms = rooms();
+                    let mut next_rooms = rooms().unwrap_or_default();
                     upsert_room(&mut next_rooms, saved_room.clone());
                     next_rooms.sort_by_key(|room| room.position);
-                    rooms.set(next_rooms);
+                    rooms.set(Some(next_rooms));
                     active_room_id.set(Some(saved_room.id.clone()));
+                    let workspace = ServerWorkspace::Room(saved_room.id.clone());
+                    let mut next_mounted_workspaces = mounted_workspaces();
+                    ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
+                    mounted_workspaces.set(next_mounted_workspaces);
+                    active_workspace.set(Some(workspace));
                     room_action_status.set(String::new());
                     on_state_change.call((
                         save_server_id.clone(),
@@ -431,10 +540,28 @@ pub(crate) fn ServerRoomsScope(
     }
 }
 
+fn ensure_workspace_mounted(workspaces: &mut Vec<ServerWorkspace>, workspace: ServerWorkspace) {
+    // TODO: Vec::contains is linear, which is fine for UI workspaces. Use IndexSet if
+    // this grows into many tabs or frequently mounted workspace kinds.
+    if !workspaces.contains(&workspace) {
+        workspaces.push(workspace);
+    }
+}
+
 fn active_room(rooms: &[ServerRoomSummary], active_room_id: Option<&str>) -> Option<ActiveRoom> {
     let room = active_room_id
         .and_then(|room_id| rooms.iter().find(|room| room.id == room_id))
         .or_else(|| rooms.first())?;
+
+    Some(ActiveRoom {
+        id: room.id.clone(),
+        kind: room.kind,
+        name: room.name.clone(),
+    })
+}
+
+fn room_by_id(rooms: &[ServerRoomSummary], room_id: &str) -> Option<ActiveRoom> {
+    let room = rooms.iter().find(|room| room.id == room_id)?;
 
     Some(ActiveRoom {
         id: room.id.clone(),

@@ -4,6 +4,7 @@
 
 - Keep code simple first, then extend it through clear module boundaries.
 - Prefer vertical feature modules over shared horizontal folders when adding product behavior.
+- Treat feature and layer boundaries as hard design constraints. Do not move state, contracts, or behavior across those boundaries for convenience unless the user explicitly approves the boundary violation after the tradeoff is stated.
 - Do not add repository/service traits, generic abstraction layers, macros, or domain entities before they solve a real problem.
 - Each file should have a current purpose: startup, config, telemetry, database, HTTP shell, contracts, migrations, UI feature, or styling.
 - Use GUID/UUID values for persistent identifiers; expose them at API boundaries as strings only when the wire format requires it.
@@ -11,11 +12,16 @@
 ## Dioxus State
 
 - Prefer local component state with Dioxus signals/events.
+- Prefer Dioxus-provided primitives over custom lifecycle state. For async data loading, use `use_resource` before adding manual `use_effect`/`spawn` guards such as `loaded_*` flags.
 - Do not introduce global state, shared state modules, or context providers unless several independent feature boundaries need the same state.
 - Keep component props explicit and small.
 - Keep Dioxus components isolated: a file must not define more than one component.
 - Prefer a component instance per rendered item over reusing a component instance across multiple items.
 - When UI state belongs to a specific persistent entity, such as the selected server, room, text channel, voice room, or media session, render a keyed per-entity wrapper component and keep that entity-scoped state inside it instead of passing an optional active entity through long-lived siblings.
+- Avoid prop drilling multiple unrelated callbacks through UI-only components. When a child component represents a menu, toolbar, or command surface with several actions, prefer a small feature-local action enum and a single `EventHandler<Action>` prop.
+- Keep action enums local to the nearest feature or component boundary that owns the resulting state changes. Do not promote them to shared modules unless multiple feature boundaries use the same action contract.
+- UI components should receive the data they render and emit user intent or completed local command outcomes; parent scopes should decide how that intent changes state, opens modals, or switches views.
+- Use Dioxus context/providers only when the same state or commands are needed by several independent feature boundaries. Do not introduce context only to avoid passing one or two props within a single local component tree.
 - Do not use direct `web_sys`, `js_sys`, JavaScript snippets, or browser APIs without explicit approval; prefer Dioxus-provided APIs such as Dioxus storage/events.
 
 ## Client Styling
