@@ -7,5 +7,6 @@ pub(crate) mod jwt;
 mod pages;
 mod storage;
 
+pub(crate) use components::token_refresher::TokenRefresher;
 pub(crate) use pages::login_page::LoginPage;
 pub(crate) use pages::register_page::RegisterPage;

@@ -9,3 +9,4 @@ pub(super) mod login_panel;
 pub(super) mod provider_button;
 pub(super) mod register_panel;
 pub(super) mod text_input;
+pub(super) mod token_refresher;

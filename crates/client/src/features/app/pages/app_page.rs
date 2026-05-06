@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 
 use crate::Route;
 use crate::features::app::components::app_shell::AppShell;
-use crate::features::auth::api;
+use crate::features::auth::{TokenRefresher, api};
 
 /// Renders the signed-in application home.
 #[component]
@@ -45,6 +45,11 @@ pub(crate) fn AppPage() -> Element {
     };
 
     rsx! {
+        TokenRefresher {
+            on_session_expired: move |_| {
+                let _ = navigator.replace(Route::Login {});
+            },
+        }
         AppShell {}
     }
 }

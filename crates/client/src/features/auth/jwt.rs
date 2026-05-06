@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 const DEFAULT_KEY_ID: &str = "dev-ed25519-1";
 const DEFAULT_PUBLIC_KEY_BASE64: &str = "FyeAHCHdj3LQJcxcJv1Zo3mW8m+kqBGytTetC2NCIBU=";
-const REFRESH_SKEW_SECONDS: i64 = 30;
+const REFRESH_SKEW_SECONDS: i64 = 60;
 
 /// Access JWT claims used by the client.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -41,6 +41,13 @@ pub(crate) fn is_fresh(token: &str) -> bool {
     verify(token)
         .map(|claims| claims.exp > now_seconds() + REFRESH_SKEW_SECONDS)
         .unwrap_or(false)
+}
+
+/// Returns the number of seconds to wait before refreshing an access JWT.
+pub(crate) fn seconds_until_refresh(token: &str) -> Result<u32, String> {
+    let claims = verify(token)?;
+    let seconds = claims.exp - now_seconds() - REFRESH_SKEW_SECONDS;
+    Ok(seconds.max(0) as u32)
 }
 
 /// Verifies a signed access JWT with the embedded public key.

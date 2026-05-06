@@ -36,7 +36,7 @@ pub(crate) async fn current_user() -> Result<AuthUser, String> {
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
     if response.status() == 401 {
-        let access_token = rotate_refresh().await?;
+        let access_token = refresh_access_token().await?;
         return Request::get(&url("/auth/me"))
             .header("Authorization", &format!("Bearer {access_token}"))
             .send()
@@ -91,25 +91,43 @@ pub(crate) async fn fresh_access_token() -> Result<String, String> {
         return Ok(tokens.access_token);
     }
 
-    rotate_refresh().await
+    refresh_access_token().await
 }
 
-async fn rotate_refresh() -> Result<String, String> {
+pub(crate) async fn refresh_access_token() -> Result<String, String> {
     let Some(tokens) = storage::load() else {
         return Err("Войди, чтобы продолжить.".to_owned());
     };
-    let response: AuthResponse = post_json(
+    let response: AuthResponse = match post_json(
         "/auth/refresh",
         &RefreshRequest {
-            refresh_token: tokens.refresh_token,
+            refresh_token: tokens.refresh_token.clone(),
         },
     )
     .await
-    .inspect_err(|_| storage::clear())?;
+    {
+        Ok(response) => response,
+        Err(error) => {
+            if let Some(access_token) = changed_access_token(&tokens) {
+                return Ok(access_token);
+            }
+            storage::clear();
+            return Err(error);
+        }
+    };
 
     jwt::verify(&response.access_token)?;
     storage::save(&response.access_token, &response.refresh_token);
     Ok(response.access_token)
+}
+
+fn changed_access_token(tokens: &storage::StoredTokens) -> Option<String> {
+    let stored = storage::load()?;
+    if stored.access_token == tokens.access_token && stored.refresh_token == tokens.refresh_token {
+        return None;
+    }
+
+    Some(stored.access_token)
 }
 
 async fn post_json<T>(path: &str, request: &T) -> Result<AuthResponse, String>
