@@ -19,23 +19,34 @@ argon2 = "0.5"
 async-trait = "0.1"
 axum = "0.8"
 base64 = "0.22"
+bytes = "1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
 dioxus = "=0.7.5"
 dioxus-sdk-storage = "0.7"
 dotenvy = "0.15"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
+futures-channel = "0.3"
+futures-util = "0.3"
 gloo-net = "0.6"
 gloo-timers = { version = "0.3", features = ["futures"] }
+http = "1"
 rand_core = { version = "0.6", features = ["getrandom"] }
+rcgen = "0.13"
+rustls-pki-types = "1"
+rustls-pemfile = "2"
 sea-orm = { version = "1.1", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-chrono", "with-uuid"] }
 sea-orm-migration = { version = "1.1", default-features = false, features = ["cli", "runtime-tokio-rustls", "sqlx-postgres"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+time = "0.3"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-uuid = { version = "1", features = ["serde", "v4"] }
+url = "2"
+uuid = { version = "1", features = ["js", "serde", "v4"] }
 wasm-bindgen-futures = "0.4"
 web-time = "1"
+web-transport = "0.10"
+web-transport-quinn = "0.11"

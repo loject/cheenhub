@@ -10,7 +10,7 @@ use crate::features::auth::error::AuthError;
 use crate::features::auth::infrastructure::{InsertUserError, UserConflict};
 use crate::features::auth::security::{jwt, password, refresh_token};
 use crate::features::auth::validation;
-use crate::http::AppState;
+use crate::state::AppState;
 use uuid::Uuid;
 
 /// Registers a user and creates an authenticated session.

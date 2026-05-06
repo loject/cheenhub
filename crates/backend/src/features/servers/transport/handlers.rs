@@ -15,7 +15,7 @@ use cheenhub_contracts::rest::{
 
 use crate::features::servers::application;
 use crate::features::servers::error::ServerError;
-use crate::http::AppState;
+use crate::state::AppState;
 
 /// Creates a server owned by the current user.
 pub(crate) async fn create(

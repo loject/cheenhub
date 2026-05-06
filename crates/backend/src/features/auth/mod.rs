@@ -13,7 +13,7 @@ use axum::{
     routing::{get, post},
 };
 
-use crate::http::AppState;
+use crate::state::AppState;
 
 /// Builds authentication routes.
 pub(crate) fn routes() -> Router<AppState> {

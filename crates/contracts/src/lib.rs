@@ -6,3 +6,6 @@ pub mod rest;
 
 /// Future media transport contract modules.
 pub mod media;
+
+/// Realtime WebTransport contract modules.
+pub mod realtime;

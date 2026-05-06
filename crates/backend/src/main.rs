@@ -5,6 +5,8 @@ mod config;
 mod db;
 mod features;
 mod http;
+mod realtime;
+mod state;
 mod telemetry;
 
 use anyhow::Context;
@@ -47,14 +49,30 @@ async fn main() -> anyhow::Result<()> {
             Arc::new(features::servers::infrastructure::InMemoryServerStore::default()),
         ),
     };
-    let state = http::AppState {
+    let realtime_tls = realtime::ensure_tls_config(
+        config.webtransport_tls_cert_path.as_deref(),
+        config.webtransport_tls_key_path.as_deref(),
+    )?;
+
+    let state = state::AppState {
         auth_store,
         server_store,
         auth_keys,
         access_token_lifetime_minutes: config.access_token_lifetime_minutes,
         refresh_token_lifetime_days: config.refresh_token_lifetime_days,
     };
-    let app = http::router(state);
+    let app = http::router(state.clone());
+    let realtime_address = config.webtransport_socket_addr()?;
+    let realtime_cert_path = realtime_tls.cert_path;
+    let realtime_key_path = realtime_tls.key_path;
+    let realtime_server =
+        realtime::bind(realtime_address, &realtime_cert_path, &realtime_key_path)?;
+
+    tokio::spawn(async move {
+        if let Err(error) = realtime::serve(state, realtime_address, realtime_server).await {
+            tracing::error!(%error, "webtransport realtime listener stopped");
+        }
+    });
 
     info!(%address, "backend listening");
     axum::serve(listener, app)

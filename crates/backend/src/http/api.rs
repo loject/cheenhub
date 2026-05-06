@@ -3,7 +3,7 @@
 use axum::{Router, http::StatusCode};
 
 use crate::features::{auth, servers};
-use crate::http::AppState;
+use crate::state::AppState;
 
 /// Builds the REST API router.
 pub(crate) fn router() -> Router<AppState> {

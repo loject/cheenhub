@@ -25,6 +25,14 @@ pub(crate) struct AppConfig {
     pub(crate) refresh_token_lifetime_days: i64,
     /// Authentication storage backend.
     pub(crate) auth_store: AuthStoreConfig,
+    /// Host address used by the WebTransport listener.
+    pub(crate) webtransport_host: String,
+    /// Port used by the WebTransport listener.
+    pub(crate) webtransport_port: u16,
+    /// Optional PEM certificate path used by the WebTransport listener.
+    pub(crate) webtransport_tls_cert_path: Option<String>,
+    /// Optional PEM private key path used by the WebTransport listener.
+    pub(crate) webtransport_tls_key_path: Option<String>,
 }
 
 /// Authentication storage backend configuration.
@@ -51,6 +59,12 @@ impl AppConfig {
             access_token_lifetime_minutes: positive_i64("ACCESS_TOKEN_LIFETIME_MINUTES")?,
             refresh_token_lifetime_days: positive_i64("REFRESH_TOKEN_LIFETIME_DAYS")?,
             auth_store: auth_store_config(&optional("AUTH_STORE", "postgres"))?,
+            webtransport_host: optional("WEBTRANSPORT_HOST", "127.0.0.1"),
+            webtransport_port: optional("WEBTRANSPORT_PORT", "4443")
+                .parse()
+                .context("WEBTRANSPORT_PORT must be a valid u16 port")?,
+            webtransport_tls_cert_path: env::var("WEBTRANSPORT_TLS_CERT_PATH").ok(),
+            webtransport_tls_key_path: env::var("WEBTRANSPORT_TLS_KEY_PATH").ok(),
         })
     }
 
@@ -62,6 +76,18 @@ impl AppConfig {
                 format!(
                     "BACKEND_HOST and BACKEND_PORT must form a valid socket address: {}:{}",
                     self.backend_host, self.backend_port
+                )
+            })
+    }
+
+    /// Returns the socket address used by the WebTransport listener.
+    pub(crate) fn webtransport_socket_addr(&self) -> anyhow::Result<SocketAddr> {
+        format!("{}:{}", self.webtransport_host, self.webtransport_port)
+            .parse()
+            .with_context(|| {
+                format!(
+                    "WEBTRANSPORT_HOST and WEBTRANSPORT_PORT must form a valid socket address: {}:{}",
+                    self.webtransport_host, self.webtransport_port
                 )
             })
     }

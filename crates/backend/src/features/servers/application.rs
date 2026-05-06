@@ -15,7 +15,7 @@ use crate::features::auth::error::AuthError;
 use crate::features::servers::domain::{Server, ServerRoom};
 use crate::features::servers::error::ServerError;
 use crate::features::servers::validation;
-use crate::http::AppState;
+use crate::state::AppState;
 
 /// Creates a server owned by the current user.
 pub(crate) async fn create(
@@ -524,7 +524,7 @@ mod tests {
     use crate::features::auth::security::keys::AuthKeys;
     use crate::features::servers::error::ServerError;
     use crate::features::servers::infrastructure::{InMemoryServerStore, ServerStore};
-    use crate::http::AppState;
+    use crate::state::AppState;
     use uuid::Uuid;
 
     fn state() -> AppState {

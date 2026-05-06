@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use crate::Route;
 use crate::features::app::components::app_shell::AppShell;
 use crate::features::auth::{TokenRefresher, api};
+use crate::features::realtime::RealtimeProvider;
 
 /// Renders the signed-in application home.
 #[component]
@@ -50,6 +51,8 @@ pub(crate) fn AppPage() -> Element {
                 let _ = navigator.replace(Route::Login {});
             },
         }
-        AppShell {}
+        RealtimeProvider {
+            AppShell {}
+        }
     }
 }

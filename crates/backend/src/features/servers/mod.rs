@@ -12,7 +12,7 @@ use axum::{
     routing::{delete, get, post, put},
 };
 
-use crate::http::AppState;
+use crate::state::AppState;
 
 /// Builds server routes.
 pub(crate) fn routes() -> Router<AppState> {

@@ -53,6 +53,13 @@
 - Do not use raw SQL when SeaORM entities, SeaQuery, migration DSL, or another structured database API can express the operation clearly; reserve raw SQL for database-specific queries that the structured APIs cannot represent cleanly, and keep it isolated in infrastructure or migrations.
 - In-memory infrastructure implementations are only for local testing and development; keep them maximally simple, deterministic, and free of production-style indexing, caching, cleanup jobs, or database emulation unless a test explicitly requires it.
 
+## Logging
+
+- New backend and frontend behavior must include useful logs at important lifecycle and failure points, especially connection/session lifecycle, authentication decisions, rejected requests, async task failures, and external resource setup.
+- Backend logs should use `tracing`; frontend logs should use the project's existing client-side logging mechanism or the smallest appropriate wrapper when none exists.
+- Logs must be structured and actionable: include stable identifiers and module/kind names when they help debugging, but never log access tokens, passwords, secrets, or full sensitive payloads.
+- Do not add noisy per-message `info` logs for hot paths such as media/datagram traffic; use debug-level diagnostics for expected high-frequency events and warn/error-level logs for unexpected failures.
+
 ## Configuration
 
 - Local configuration is loaded from `.env`.

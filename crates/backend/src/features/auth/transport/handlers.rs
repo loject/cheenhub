@@ -12,7 +12,7 @@ use cheenhub_contracts::rest::{
 
 use crate::features::auth::application;
 use crate::features::auth::error::AuthError;
-use crate::http::AppState;
+use crate::state::AppState;
 
 /// Registers a new email/password account.
 pub(crate) async fn register(

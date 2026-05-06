@@ -8,6 +8,8 @@ fn main() {
     dotenvy::from_filename("../../.env").ok();
 
     forward_env("CHEENHUB_JWT_PUBLIC_KEY_BASE64");
+    forward_env("CHEENHUB_REALTIME_URL");
+    forward_env("CHEENHUB_REALTIME_CERT_SHA256");
 
     if env::var("CHEENHUB_JWT_KEY_ID").is_err()
         && let Ok(key_id) = env::var("JWT_KEY_ID")

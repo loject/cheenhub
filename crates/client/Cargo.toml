@@ -8,16 +8,22 @@ rust-version.workspace = true
 
 [dependencies]
 base64.workspace = true
+bytes.workspace = true
 cheenhub_contracts = { path = "../contracts" }
 dioxus = { workspace = true, features = ["router", "web"] }
 dioxus-sdk-storage.workspace = true
 ed25519-dalek.workspace = true
+futures-channel.workspace = true
+futures-util.workspace = true
 gloo-net.workspace = true
 gloo-timers.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+url.workspace = true
+uuid.workspace = true
 wasm-bindgen-futures.workspace = true
 web-time.workspace = true
+web-transport.workspace = true
 
 [build-dependencies]
 dotenvy.workspace = true
