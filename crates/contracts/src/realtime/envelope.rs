@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use super::control::ControlKind;
 use super::network::NetworkKind;
+use super::text_chat::TextChatKind;
 
 /// Top-level realtime module namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -15,6 +16,8 @@ pub enum RealtimeModule {
     Control,
     /// Connection quality measurement messages.
     Network,
+    /// Text chat messages and events.
+    TextChat,
 }
 
 /// Typed realtime message kind wrapper.
@@ -24,6 +27,8 @@ pub enum RealtimeKind {
     Control(ControlKind),
     /// Network module message kind.
     Network(NetworkKind),
+    /// Text chat module message kind.
+    TextChat(TextChatKind),
 }
 
 impl RealtimeKind {
@@ -32,6 +37,7 @@ impl RealtimeKind {
         match self {
             Self::Control(_) => RealtimeModule::Control,
             Self::Network(_) => RealtimeModule::Network,
+            Self::TextChat(_) => RealtimeModule::TextChat,
         }
     }
 }
@@ -44,6 +50,7 @@ impl Serialize for RealtimeKind {
         match self {
             Self::Control(kind) => kind.serialize(serializer),
             Self::Network(kind) => kind.serialize(serializer),
+            Self::TextChat(kind) => kind.serialize(serializer),
         }
     }
 }
@@ -58,8 +65,11 @@ impl<'de> Deserialize<'de> for RealtimeKind {
         if let Ok(kind) = ControlKind::deserialize(value.clone()) {
             return Ok(Self::Control(kind));
         }
-        if let Ok(kind) = NetworkKind::deserialize(value) {
+        if let Ok(kind) = NetworkKind::deserialize(value.clone()) {
             return Ok(Self::Network(kind));
+        }
+        if let Ok(kind) = TextChatKind::deserialize(value) {
+            return Ok(Self::TextChat(kind));
         }
 
         Err(serde::de::Error::custom("unknown realtime kind"))

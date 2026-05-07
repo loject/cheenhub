@@ -3,12 +3,16 @@
 mod control;
 mod envelope;
 mod network;
+mod text_chat;
 
 pub use control::{
     Authenticate, Authenticated, ControlAck, ControlKind, ControlText, Rejected, RejectionCode,
 };
 pub use envelope::{RealtimeEnvelope, RealtimeKind, RealtimeModule};
 pub use network::{NetworkKind, Ping, Pong};
+pub use text_chat::{
+    LoadRoomHistory, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
+};
 
 #[cfg(test)]
 mod tests {
@@ -47,5 +51,30 @@ mod tests {
         .expect("payload serializes");
 
         assert!(!envelope.has_matching_module_kind());
+    }
+
+    #[test]
+    fn text_chat_envelope_round_trips() {
+        let envelope = RealtimeEnvelope::new(
+            RealtimeModule::TextChat,
+            RealtimeKind::TextChat(TextChatKind::LoadRoomHistory),
+            Some(Uuid::new_v4()),
+            LoadRoomHistory {
+                server_id: Uuid::new_v4().to_string(),
+                room_id: Uuid::new_v4().to_string(),
+            },
+        )
+        .expect("payload serializes");
+
+        let json = serde_json::to_string(&envelope).expect("envelope serializes");
+        assert!(json.contains("\"module\":\"text_chat\""));
+        assert!(json.contains("\"kind\":\"load_room_history\""));
+        let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+
+        assert_eq!(
+            decoded.kind,
+            RealtimeKind::TextChat(TextChatKind::LoadRoomHistory)
+        );
+        assert!(decoded.has_matching_module_kind());
     }
 }

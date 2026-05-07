@@ -3,11 +3,10 @@
 use dioxus::prelude::*;
 
 use super::app_shell::{ActiveRoom, ServerShellState};
-use super::embedded_chat::EmbeddedChat;
 use super::room_header::RoomHeader;
-use super::text_room_view::TextRoomView;
 use super::voice_controls::VoiceControls;
 use super::voice_stage::VoiceStage;
+use crate::features::text_chat::{RoomChatSurface, RoomChatSurfaceMode};
 
 /// Renders one room workspace with local UI state scoped to that room.
 #[component]
@@ -34,9 +33,17 @@ pub(crate) fn RoomInstance(
                 RoomHeader { room: room.clone() }
                 div { class: "content-split flex min-h-0 flex-1 flex-col",
                     VoiceStage {}
-                    EmbeddedChat {}
+                    RoomChatSurface {
+                        server_id: server_id.clone(),
+                        room: room.clone(),
+                        mode: RoomChatSurfaceMode::Embedded,
+                    }
                 }
-                TextRoomView { room: room.clone() }
+                RoomChatSurface {
+                    server_id: server_id.clone(),
+                    room: room.clone(),
+                    mode: RoomChatSurfaceMode::Full,
+                }
                 button {
                     r#type: "button",
                     class: "chat-corner-toggle group absolute bottom-5 left-5 z-40 flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/85 text-zinc-300 shadow-[0_18px_50px_rgba(0,0,0,0.38)] backdrop-blur-xl transition-[background-color,border-color,color,transform,box-shadow] duration-[180ms] hover:-translate-y-0.5 hover:border-accent/35 hover:bg-accent/10 hover:text-zinc-100",

@@ -24,6 +24,7 @@ use super::task::spawn_task;
 type PendingKey = (RealtimeModule, Uuid);
 type PendingRequests = Rc<RefCell<HashMap<PendingKey, oneshot::Sender<RealtimeEnvelope>>>>;
 type ModuleStreams = Rc<Mutex<HashMap<RealtimeModule, Rc<Mutex<SendStream>>>>>;
+type EventListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<RealtimeEnvelope>>>>;
 
 /// Cloneable handle exposed by the realtime provider.
 #[derive(Clone)]
@@ -35,6 +36,7 @@ struct RealtimeInner {
     session: Mutex<Option<Session>>,
     streams: ModuleStreams,
     pending: PendingRequests,
+    event_listeners: EventListeners,
     inbound: mpsc::UnboundedSender<RealtimeEnvelope>,
 }
 
@@ -127,6 +129,14 @@ impl RealtimeHandle {
         .await
     }
 
+    /// Subscribes to inbound fire-and-forget realtime events for this tab.
+    pub(crate) fn subscribe_events(&self) -> mpsc::UnboundedReceiver<RealtimeEnvelope> {
+        let (sender, receiver) = mpsc::unbounded();
+        self.inner.event_listeners.borrow_mut().push(sender);
+
+        receiver
+    }
+
     /// Sends one request and waits for a typed response.
     pub(crate) async fn request<P, R>(
         &self,
@@ -212,10 +222,15 @@ pub(crate) fn create_handle() -> RealtimeHandle {
             session: Mutex::new(None),
             streams: Rc::new(Mutex::new(HashMap::new())),
             pending: Rc::new(RefCell::new(HashMap::new())),
+            event_listeners: Rc::new(RefCell::new(Vec::new())),
             inbound,
         }),
     };
-    spawn_universal_reader(handle.inner.pending.clone(), receiver);
+    spawn_universal_reader(
+        handle.inner.pending.clone(),
+        handle.inner.event_listeners.clone(),
+        receiver,
+    );
 
     handle
 }
@@ -316,10 +331,15 @@ fn now_ms() -> u64 {
 
 fn spawn_universal_reader(
     pending: PendingRequests,
+    event_listeners: EventListeners,
     mut receiver: mpsc::UnboundedReceiver<RealtimeEnvelope>,
 ) {
     spawn_task(async move {
         while let Some(envelope) = receiver.next().await {
+            if envelope.request_id.is_none() {
+                dispatch_event(&event_listeners, envelope);
+                continue;
+            }
             let Some(request_id) = envelope.request_id else {
                 continue;
             };
@@ -340,6 +360,12 @@ fn spawn_universal_reader(
             }
         }
     });
+}
+
+fn dispatch_event(event_listeners: &EventListeners, envelope: RealtimeEnvelope) {
+    event_listeners
+        .borrow_mut()
+        .retain(|listener| listener.unbounded_send(envelope.clone()).is_ok());
 }
 
 fn is_rejection(envelope: &RealtimeEnvelope) -> bool {

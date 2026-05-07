@@ -5,3 +5,4 @@ pub(crate) mod auth;
 pub(crate) mod landing;
 pub(crate) mod realtime;
 pub(crate) mod server_settings;
+pub(crate) mod text_chat;

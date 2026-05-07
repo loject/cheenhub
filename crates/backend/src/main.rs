@@ -29,9 +29,10 @@ async fn main() -> anyhow::Result<()> {
         &config.jwt_private_key_base64,
         config.jwt_key_id.clone(),
     )?;
-    let (auth_store, server_store): (
+    let (auth_store, server_store, text_chat_store): (
         Arc<dyn features::auth::infrastructure::AuthStore>,
         Arc<dyn features::servers::infrastructure::ServerStore>,
+        Arc<dyn features::text_chat::infrastructure::TextChatStore>,
     ) = match config.auth_store {
         config::AuthStoreConfig::Postgres => {
             let database = db::connect(&config.database_url).await?;
@@ -40,13 +41,15 @@ async fn main() -> anyhow::Result<()> {
                     database.clone(),
                 )),
                 Arc::new(features::servers::infrastructure::PostgresServerStore::new(
-                    database,
+                    database.clone(),
                 )),
+                Arc::new(features::text_chat::infrastructure::PostgresTextChatStore::new(database)),
             )
         }
         config::AuthStoreConfig::InMemory => (
             Arc::new(features::auth::infrastructure::InMemoryAuthStore::default()),
             Arc::new(features::servers::infrastructure::InMemoryServerStore::default()),
+            Arc::new(features::text_chat::infrastructure::InMemoryTextChatStore::default()),
         ),
     };
     let realtime_tls = realtime::ensure_tls_config(
@@ -57,6 +60,8 @@ async fn main() -> anyhow::Result<()> {
     let state = state::AppState {
         auth_store,
         server_store,
+        text_chat_store,
+        realtime_hub: Arc::new(realtime::hub::RealtimeHub::default()),
         auth_keys,
         access_token_lifetime_minutes: config.access_token_lifetime_minutes,
         refresh_token_lifetime_days: config.refresh_token_lifetime_days,

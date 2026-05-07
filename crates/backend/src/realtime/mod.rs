@@ -2,8 +2,9 @@
 
 mod control;
 mod framing;
+pub(crate) mod hub;
 mod network;
-mod protocol;
+pub(crate) mod protocol;
 mod router;
 mod session;
 mod tls;

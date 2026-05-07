@@ -4,6 +4,7 @@ use cheenhub_contracts::realtime::{
     Authenticate, Authenticated, ControlAck, ControlKind, ControlText, RealtimeEnvelope,
     RealtimeKind, RealtimeModule, RejectionCode,
 };
+use cheenhub_contracts::rest::AuthUser;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 use web_transport::SendStream;
@@ -20,7 +21,7 @@ pub(crate) async fn authenticate_session(
     state: &AppState,
     send: &Mutex<SendStream>,
     envelope: RealtimeEnvelope,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<Option<AuthUser>> {
     validate_envelope(&envelope)?;
 
     if envelope.module != RealtimeModule::Control
@@ -59,13 +60,13 @@ pub(crate) async fn authenticate_session(
         RealtimeModule::Control,
         RealtimeKind::Control(ControlKind::Authenticated),
         Some(request_id),
-        Authenticated { user },
+        Authenticated { user: user.clone() },
     )
     .await?;
 
     info!(%user_id, "accepted realtime authentication");
 
-    Ok(Some(user_id))
+    Ok(Some(user))
 }
 
 /// Handles one control module envelope.

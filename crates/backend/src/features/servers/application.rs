@@ -524,6 +524,8 @@ mod tests {
     use crate::features::auth::security::keys::AuthKeys;
     use crate::features::servers::error::ServerError;
     use crate::features::servers::infrastructure::{InMemoryServerStore, ServerStore};
+    use crate::features::text_chat::infrastructure::InMemoryTextChatStore;
+    use crate::realtime::hub::RealtimeHub;
     use crate::state::AppState;
     use uuid::Uuid;
 
@@ -535,6 +537,8 @@ mod tests {
         AppState {
             auth_store: Arc::new(InMemoryAuthStore::default()),
             server_store,
+            text_chat_store: Arc::new(InMemoryTextChatStore::default()),
+            realtime_hub: Arc::new(RealtimeHub::default()),
             auth_keys: AuthKeys::generate_for_tests(),
             access_token_lifetime_minutes: 15,
             refresh_token_lifetime_days: 30,
