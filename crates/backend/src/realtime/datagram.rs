@@ -6,9 +6,10 @@ use uuid::Uuid;
 use web_transport::Session;
 
 use crate::features::voice_chat;
+use crate::state::AppState;
 
 /// Spawns the authenticated session datagram reader.
-pub(crate) fn spawn_reader(session_id: Uuid, user_id: Uuid, session: Session) {
+pub(crate) fn spawn_reader(state: AppState, session_id: Uuid, user_id: Uuid, session: Session) {
     tokio::spawn(async move {
         loop {
             let bytes = match session.recv_datagram().await {
@@ -25,7 +26,7 @@ pub(crate) fn spawn_reader(session_id: Uuid, user_id: Uuid, session: Session) {
             };
 
             match MediaDatagram::decode(&bytes) {
-                Ok(datagram) => dispatch(session_id, user_id, datagram),
+                Ok(datagram) => dispatch(&state, session_id, user_id, datagram).await,
                 Err(error) => {
                     debug!(
                         %session_id,
@@ -40,10 +41,10 @@ pub(crate) fn spawn_reader(session_id: Uuid, user_id: Uuid, session: Session) {
     });
 }
 
-fn dispatch(session_id: Uuid, user_id: Uuid, datagram: MediaDatagram) {
+async fn dispatch(state: &AppState, session_id: Uuid, user_id: Uuid, datagram: MediaDatagram) {
     match datagram.kind {
         MediaDatagramKind::VoiceFrame => {
-            voice_chat::media::handle_voice_frame(session_id, user_id, datagram);
+            voice_chat::media::handle_voice_frame(state, session_id, user_id, datagram).await;
         }
     }
 }

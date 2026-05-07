@@ -18,6 +18,7 @@ pub(crate) async fn dispatch(
     user: &AuthUser,
     user_id: &Uuid,
     stream_id: Uuid,
+    session_id: Uuid,
     send: &Mutex<SendStream>,
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<()> {
@@ -28,7 +29,10 @@ pub(crate) async fn dispatch(
             text_chat::realtime::handle(state, user, user_id, send, envelope).await
         }
         RealtimeModule::VoiceChat => {
-            voice_chat::realtime::handle(state, user, user_id, stream_id, send, envelope).await
+            voice_chat::realtime::handle(
+                state, user, user_id, stream_id, session_id, send, envelope,
+            )
+            .await
         }
     }
 }

@@ -13,6 +13,23 @@ use uuid::Uuid;
 use crate::features::microphone::{EncodedMicrophoneFrame, MicrophoneCodec};
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
 
+/// Inbound relayed voice frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InboundVoiceFrame {
+    /// Target room identifier.
+    pub(crate) room_id: String,
+    /// Authenticated sender identifier.
+    pub(crate) sender_user_id: String,
+    /// Sender-local packet sequence.
+    pub(crate) sequence: u64,
+    /// Capture or encode timestamp in microseconds.
+    pub(crate) timestamp_us: u64,
+    /// Frame duration in microseconds.
+    pub(crate) duration_us: u32,
+    /// Raw encoded frame bytes.
+    pub(crate) bytes: Vec<u8>,
+}
+
 /// Joins one voice-capable room.
 pub(crate) async fn join_room(
     realtime: &RealtimeHandle,
@@ -65,6 +82,28 @@ pub(crate) fn subscribe_voice_chat(
     receiver
 }
 
+/// Subscribes to inbound relayed voice frames for this tab.
+pub(crate) fn subscribe_voice_frames(
+    realtime: &RealtimeHandle,
+) -> mpsc::UnboundedReceiver<InboundVoiceFrame> {
+    let datagrams = realtime.subscribe_datagrams();
+    let (sender, receiver) = mpsc::unbounded();
+
+    dioxus::prelude::spawn(async move {
+        let mut datagrams = datagrams;
+        while let Some(bytes) = datagrams.next().await {
+            let Some(frame) = decode_voice_frame(&bytes) else {
+                continue;
+            };
+            if sender.unbounded_send(frame).is_err() {
+                break;
+            }
+        }
+    });
+
+    receiver
+}
+
 /// Sends one encoded microphone frame to the active voice room.
 pub(crate) async fn send_voice_frame(
     realtime: &RealtimeHandle,
@@ -84,6 +123,7 @@ pub(crate) async fn send_voice_frame(
         timestamp_us: frame.timestamp_us,
         duration_us: frame.duration_us,
         room_id,
+        sender_user_id: Uuid::nil(),
         payload: frame.bytes,
     };
     let bytes = datagram
@@ -101,4 +141,20 @@ fn decode_participants_changed(envelope: RealtimeEnvelope) -> Option<VoiceRoomSn
     }
 
     serde_json::from_value::<VoiceRoomSnapshot>(envelope.payload).ok()
+}
+
+fn decode_voice_frame(bytes: &[u8]) -> Option<InboundVoiceFrame> {
+    let datagram = MediaDatagram::decode(bytes).ok()?;
+    if datagram.kind != MediaDatagramKind::VoiceFrame || datagram.codec != MediaCodec::Opus {
+        return None;
+    }
+
+    Some(InboundVoiceFrame {
+        room_id: datagram.room_id.to_string(),
+        sender_user_id: datagram.sender_user_id.to_string(),
+        sequence: datagram.sequence,
+        timestamp_us: datagram.timestamp_us,
+        duration_us: datagram.duration_us,
+        bytes: datagram.payload,
+    })
 }

@@ -7,7 +7,7 @@ use serde::Serialize;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use uuid::Uuid;
-use web_transport::SendStream;
+use web_transport::{SendStream, Session};
 
 use crate::state::AppState;
 
@@ -17,6 +17,7 @@ use super::protocol;
 #[derive(Default)]
 pub(crate) struct RealtimeHub {
     streams: Mutex<Vec<RealtimeStream>>,
+    sessions: Mutex<Vec<RealtimeSession>>,
 }
 
 #[derive(Clone)]
@@ -25,6 +26,13 @@ struct RealtimeStream {
     module: RealtimeModule,
     user_id: Uuid,
     send: Arc<Mutex<SendStream>>,
+}
+
+#[derive(Clone)]
+struct RealtimeSession {
+    id: Uuid,
+    user_id: Uuid,
+    session: Session,
 }
 
 /// Public stream identity used by feature-level fanout policies.
@@ -56,6 +64,54 @@ impl RealtimeHub {
             send,
         });
         debug!(%stream_id, ?module, %user_id, "registered realtime stream");
+    }
+
+    /// Registers an authenticated WebTransport session for datagram fanout.
+    pub(crate) async fn register_session(&self, session_id: Uuid, user_id: Uuid, session: Session) {
+        let mut sessions = self.sessions.lock().await;
+        if sessions.iter().any(|session| session.id == session_id) {
+            return;
+        }
+        sessions.push(RealtimeSession {
+            id: session_id,
+            user_id,
+            session,
+        });
+        debug!(%session_id, %user_id, "registered realtime session");
+    }
+
+    /// Removes an authenticated WebTransport session.
+    pub(crate) async fn unregister_session(&self, session_id: Uuid) {
+        let mut sessions = self.sessions.lock().await;
+        sessions.retain(|session| session.id != session_id);
+        debug!(%session_id, "unregistered realtime session");
+    }
+
+    /// Sends one raw datagram to selected active sessions.
+    pub(crate) async fn fanout_datagram_to_sessions(
+        &self,
+        session_ids: &[Uuid],
+        bytes: bytes::Bytes,
+    ) {
+        let sessions = self
+            .sessions
+            .lock()
+            .await
+            .iter()
+            .filter(|session| session_ids.contains(&session.id))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for session in sessions {
+            if let Err(error) = session.session.send_datagram(bytes.clone()).await {
+                warn!(
+                    session_id = %session.id,
+                    user_id = %session.user_id,
+                    %error,
+                    "failed to fan out realtime datagram"
+                );
+            }
+        }
     }
 
     /// Removes a module-bound reliable stream.

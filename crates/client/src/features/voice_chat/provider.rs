@@ -8,6 +8,7 @@ use futures_util::StreamExt;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
+use crate::features::audio_playback::{AudioPlaybackHandle, PlaybackCodec, VoiceFrame};
 use crate::features::microphone::MicrophoneHandle;
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 
@@ -19,9 +20,10 @@ use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 pub(crate) fn VoiceConnectionProvider(current_user: AuthUser, children: Element) -> Element {
     let realtime = use_context::<RealtimeHandle>();
     let microphone = use_context::<MicrophoneHandle>();
+    let playback = use_context::<AudioPlaybackHandle>();
     let state = use_signal(|| VoiceConnectionState::Disconnected);
     let mut microphone_target_room = use_signal(|| None::<String>);
-    let handle = VoiceConnectionHandle::new(state, realtime.clone(), current_user);
+    let handle = VoiceConnectionHandle::new(state, realtime.clone(), current_user.clone());
     let context_handle = handle.clone();
     use_context_provider(move || context_handle.clone());
 
@@ -34,7 +36,35 @@ pub(crate) fn VoiceConnectionProvider(current_user: AuthUser, children: Element)
             }
         })
     });
+    let datagram_realtime = realtime.clone();
+    let datagram_playback = playback.clone();
+    let datagram_current_user_id = current_user.id.clone();
+    use_hook(move || {
+        spawn(async move {
+            let mut frames = realtime::subscribe_voice_frames(&datagram_realtime);
+            while let Some(frame) = frames.next().await {
+                let current = state();
+                let Some(target) = current.active_target() else {
+                    continue;
+                };
+                if frame.room_id != target.room_id
+                    || frame.sender_user_id == datagram_current_user_id
+                {
+                    continue;
+                }
+                datagram_playback.play_voice_frame(VoiceFrame {
+                    sender_user_id: frame.sender_user_id,
+                    sequence: frame.sequence,
+                    timestamp_us: frame.timestamp_us,
+                    duration_us: frame.duration_us,
+                    codec: PlaybackCodec::Opus,
+                    bytes: frame.bytes,
+                });
+            }
+        })
+    });
     let status_realtime = realtime.clone();
+    let status_playback = playback.clone();
     use_hook(move || {
         spawn(async move {
             let mut statuses = status_realtime.subscribe_connection_status();
@@ -42,12 +72,14 @@ pub(crate) fn VoiceConnectionProvider(current_user: AuthUser, children: Element)
                 if status == RealtimeConnectionStatus::Disconnected {
                     let mut state = state;
                     state.set(VoiceConnectionState::Disconnected);
+                    status_playback.stop_all();
                 }
             }
         })
     });
     use_effect(move || match state() {
         VoiceConnectionState::Connected { target, .. } => {
+            playback.resume();
             if microphone_target_room().as_deref() == Some(target.room_id.as_str()) {
                 return;
             }
@@ -66,6 +98,7 @@ pub(crate) fn VoiceConnectionProvider(current_user: AuthUser, children: Element)
             if microphone_target_room().is_some() {
                 microphone_target_room.set(None);
                 microphone.stop();
+                playback.stop_all();
             }
         }
     });

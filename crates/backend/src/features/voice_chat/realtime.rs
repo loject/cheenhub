@@ -21,6 +21,7 @@ pub(crate) async fn handle(
     user: &AuthUser,
     user_id: &Uuid,
     realtime_stream_id: Uuid,
+    session_id: Uuid,
     send: &Mutex<SendStream>,
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<()> {
@@ -28,7 +29,16 @@ pub(crate) async fn handle(
         RealtimeKind::VoiceChat(VoiceChatKind::JoinVoiceRoom) => {
             let request_id = require_request_id(&envelope)?;
             let payload: JoinVoiceRoom = decode_payload(&envelope)?;
-            match application::join_room(state, realtime_stream_id, user, user_id, payload).await {
+            match application::join_room(
+                state,
+                realtime_stream_id,
+                session_id,
+                user,
+                user_id,
+                payload,
+            )
+            .await
+            {
                 Ok(response) => {
                     write_envelope(
                         send,

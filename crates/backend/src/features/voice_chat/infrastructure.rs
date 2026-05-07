@@ -15,6 +15,8 @@ pub(crate) struct InMemoryVoicePresenceStore {
 pub(crate) struct VoicePresence {
     /// Realtime module stream that owns this presence and is used for disconnect cleanup.
     pub(crate) realtime_stream_id: Uuid,
+    /// Authenticated WebTransport session that receives media datagrams.
+    pub(crate) session_id: Uuid,
     /// Server that contains the joined room.
     pub(crate) server_id: Uuid,
     /// Joined room identifier.
@@ -107,5 +109,181 @@ impl InMemoryVoicePresenceStore {
             .collect::<Vec<_>>();
         participants.sort_by_key(|presence| presence.joined_at);
         participants
+    }
+
+    /// Returns the active presence for one user in one room.
+    pub(crate) async fn room_presence_for_user(
+        &self,
+        room_id: &Uuid,
+        user_id: &Uuid,
+    ) -> Option<VoicePresence> {
+        self.entries
+            .lock()
+            .await
+            .iter()
+            .find(|entry| &entry.room_id == room_id && &entry.user_id == user_id)
+            .cloned()
+    }
+
+    /// Lists active media recipients in one room excluding one sender session.
+    pub(crate) async fn media_recipient_sessions(
+        &self,
+        room_id: &Uuid,
+        sender_session_id: &Uuid,
+    ) -> Vec<Uuid> {
+        self.entries
+            .lock()
+            .await
+            .iter()
+            .filter(|entry| &entry.room_id == room_id && &entry.session_id != sender_session_id)
+            .map(|entry| entry.session_id)
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    use super::{InMemoryVoicePresenceStore, VoicePresence};
+
+    fn presence(
+        realtime_stream_id: Uuid,
+        session_id: Uuid,
+        server_id: Uuid,
+        room_id: Uuid,
+        user_id: Uuid,
+    ) -> VoicePresence {
+        VoicePresence {
+            realtime_stream_id,
+            session_id,
+            server_id,
+            room_id,
+            user_id,
+            nickname: "voice_user".to_owned(),
+            joined_at: Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn room_presence_authorizes_only_joined_users() {
+        let store = InMemoryVoicePresenceStore::default();
+        let room_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+
+        assert!(
+            store
+                .room_presence_for_user(&room_id, &user_id)
+                .await
+                .is_none()
+        );
+
+        store
+            .join(presence(
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                room_id,
+                user_id,
+            ))
+            .await;
+
+        assert!(
+            store
+                .room_presence_for_user(&room_id, &user_id)
+                .await
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn media_recipients_exclude_sender_and_other_rooms() {
+        let store = InMemoryVoicePresenceStore::default();
+        let server_id = Uuid::new_v4();
+        let room_id = Uuid::new_v4();
+        let other_room_id = Uuid::new_v4();
+        let sender_session_id = Uuid::new_v4();
+        let recipient_session_id = Uuid::new_v4();
+        let other_room_session_id = Uuid::new_v4();
+
+        store
+            .join(presence(
+                Uuid::new_v4(),
+                sender_session_id,
+                server_id,
+                room_id,
+                Uuid::new_v4(),
+            ))
+            .await;
+        store
+            .join(presence(
+                Uuid::new_v4(),
+                recipient_session_id,
+                server_id,
+                room_id,
+                Uuid::new_v4(),
+            ))
+            .await;
+        store
+            .join(presence(
+                Uuid::new_v4(),
+                other_room_session_id,
+                server_id,
+                other_room_id,
+                Uuid::new_v4(),
+            ))
+            .await;
+
+        let recipients = store
+            .media_recipient_sessions(&room_id, &sender_session_id)
+            .await;
+
+        assert_eq!(recipients, vec![recipient_session_id]);
+    }
+
+    #[tokio::test]
+    async fn replacing_user_presence_makes_old_session_stale() {
+        let store = InMemoryVoicePresenceStore::default();
+        let server_id = Uuid::new_v4();
+        let first_room_id = Uuid::new_v4();
+        let second_room_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let old_session_id = Uuid::new_v4();
+        let new_session_id = Uuid::new_v4();
+
+        store
+            .join(presence(
+                Uuid::new_v4(),
+                old_session_id,
+                server_id,
+                first_room_id,
+                user_id,
+            ))
+            .await;
+        store
+            .join(presence(
+                Uuid::new_v4(),
+                new_session_id,
+                server_id,
+                second_room_id,
+                user_id,
+            ))
+            .await;
+
+        assert!(
+            store
+                .room_presence_for_user(&first_room_id, &user_id)
+                .await
+                .is_none()
+        );
+        assert_eq!(
+            store
+                .room_presence_for_user(&second_room_id, &user_id)
+                .await
+                .expect("new presence should remain")
+                .session_id,
+            new_session_id
+        );
     }
 }

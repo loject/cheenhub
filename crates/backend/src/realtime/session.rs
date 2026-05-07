@@ -40,7 +40,11 @@ pub(crate) async fn handle_session(
     };
     let user_id = Uuid::parse_str(&user.id).context("authenticated user id is not a uuid")?;
     info!(%session_id, %user_id, "authenticated realtime session");
-    datagram::spawn_reader(session_id, user_id, session.clone());
+    state
+        .realtime_hub
+        .register_session(session_id, user_id, session.clone())
+        .await;
+    datagram::spawn_reader(state.clone(), session_id, user_id, session.clone());
 
     let state_for_control = state.clone();
     let user_for_control = user.clone();
@@ -73,6 +77,7 @@ pub(crate) async fn handle_session(
                     %error,
                     "realtime session closed while waiting for module stream"
                 );
+                state.realtime_hub.unregister_session(session_id).await;
                 return Ok(());
             }
         };
@@ -148,6 +153,7 @@ async fn handle_module_stream(
                 &context.user,
                 &context.user_id,
                 stream_id,
+                context.session_id,
                 &send,
                 envelope,
             )

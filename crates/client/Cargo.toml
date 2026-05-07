@@ -27,6 +27,11 @@ wasm-bindgen-futures.workspace = true
 web-time.workspace = true
 web-transport.workspace = true
 web-sys = { workspace = true, features = [
+    "AudioBuffer",
+    "AudioBufferSourceNode",
+    "AudioContext",
+    "AudioDestinationNode",
+    "AudioNode",
     "DomException",
     "MediaDevices",
     "MediaStream",

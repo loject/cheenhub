@@ -15,6 +15,7 @@ use crate::state::AppState;
 pub(crate) async fn join_room(
     state: &AppState,
     realtime_stream_id: Uuid,
+    session_id: Uuid,
     user: &AuthUser,
     user_id: &Uuid,
     request: JoinVoiceRoom,
@@ -26,6 +27,7 @@ pub(crate) async fn join_room(
         .voice_presence_store
         .join(VoicePresence {
             realtime_stream_id,
+            session_id,
             server_id,
             room_id,
             user_id: *user_id,
@@ -296,6 +298,7 @@ mod tests {
         let snapshot = join_room(
             &state,
             stream_id,
+            uuid::Uuid::new_v4(),
             &user,
             &user_id,
             JoinVoiceRoom {
@@ -331,6 +334,7 @@ mod tests {
         let error = join_room(
             &state,
             uuid::Uuid::new_v4(),
+            uuid::Uuid::new_v4(),
             &user,
             &user_id,
             JoinVoiceRoom { server_id, room_id },
@@ -352,6 +356,7 @@ mod tests {
         join_room(
             &state,
             stream_id,
+            uuid::Uuid::new_v4(),
             &user,
             &user_id,
             JoinVoiceRoom {
@@ -400,6 +405,7 @@ mod tests {
         join_room(
             &state,
             stream_id,
+            uuid::Uuid::new_v4(),
             &user,
             &user_id,
             JoinVoiceRoom {
@@ -412,6 +418,7 @@ mod tests {
         let snapshot = join_room(
             &state,
             stream_id,
+            uuid::Uuid::new_v4(),
             &user,
             &user_id,
             JoinVoiceRoom {

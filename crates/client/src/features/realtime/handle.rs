@@ -26,6 +26,7 @@ type PendingKey = (RealtimeModule, Uuid);
 type PendingRequests = Rc<RefCell<HashMap<PendingKey, oneshot::Sender<RealtimeEnvelope>>>>;
 type ModuleStreams = Rc<Mutex<HashMap<RealtimeModule, Rc<Mutex<SendStream>>>>>;
 type EventListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<RealtimeEnvelope>>>>;
+type DatagramListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<Bytes>>>>;
 type StatusListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<RealtimeConnectionStatus>>>>;
 
 /// Cloneable handle exposed by the realtime provider.
@@ -39,6 +40,7 @@ struct RealtimeInner {
     streams: ModuleStreams,
     pending: PendingRequests,
     event_listeners: EventListeners,
+    datagram_listeners: DatagramListeners,
     inbound: mpsc::UnboundedSender<RealtimeEnvelope>,
     generation: Cell<u64>,
     connection_status: Cell<RealtimeConnectionStatus>,
@@ -89,6 +91,11 @@ impl RealtimeHandle {
         };
         info!(%url, user_id = %authenticated.user.id, "WebTransport realtime authenticated");
         self.set_connection_status(RealtimeConnectionStatus::Connected);
+        spawn_datagram_reader(
+            session.clone(),
+            generation,
+            self.inner.datagram_listeners.clone(),
+        );
         spawn_connection_watcher(url.to_string(), session, generation, self.clone());
 
         Ok(authenticated)
@@ -160,6 +167,14 @@ impl RealtimeHandle {
     pub(crate) fn subscribe_events(&self) -> mpsc::UnboundedReceiver<RealtimeEnvelope> {
         let (sender, receiver) = mpsc::unbounded();
         self.inner.event_listeners.borrow_mut().push(sender);
+
+        receiver
+    }
+
+    /// Subscribes to inbound raw unreliable datagrams for this tab.
+    pub(crate) fn subscribe_datagrams(&self) -> mpsc::UnboundedReceiver<Bytes> {
+        let (sender, receiver) = mpsc::unbounded();
+        self.inner.datagram_listeners.borrow_mut().push(sender);
 
         receiver
     }
@@ -302,6 +317,7 @@ pub(crate) fn create_handle() -> RealtimeHandle {
             streams: Rc::new(Mutex::new(HashMap::new())),
             pending: Rc::new(RefCell::new(HashMap::new())),
             event_listeners: Rc::new(RefCell::new(Vec::new())),
+            datagram_listeners: Rc::new(RefCell::new(Vec::new())),
             inbound,
             generation: Cell::new(0),
             connection_status: Cell::new(RealtimeConnectionStatus::Disconnected),
@@ -315,6 +331,23 @@ pub(crate) fn create_handle() -> RealtimeHandle {
     );
 
     handle
+}
+
+fn spawn_datagram_reader(session: Session, generation: u64, datagram_listeners: DatagramListeners) {
+    spawn_task(async move {
+        loop {
+            let bytes = match session.recv_datagram().await {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    debug!(%generation, %error, "WebTransport datagram reader closed");
+                    break;
+                }
+            };
+            datagram_listeners
+                .borrow_mut()
+                .retain(|listener| listener.unbounded_send(bytes.clone()).is_ok());
+        }
+    });
 }
 
 fn spawn_stream_reader(

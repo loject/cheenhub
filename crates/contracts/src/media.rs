@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 const MAGIC: &[u8; 4] = b"CHUB";
 const VERSION: u8 = 1;
-const HEADER_LEN: usize = 48;
+const HEADER_LEN: usize = 64;
 
 /// Media datagram kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +53,8 @@ pub struct MediaDatagram {
     pub duration_us: u32,
     /// Target room identifier.
     pub room_id: Uuid,
+    /// Authenticated sender identifier assigned by the server for relayed frames.
+    pub sender_user_id: Uuid,
     /// Raw encoded media payload.
     pub payload: Vec<u8>,
 }
@@ -72,6 +74,7 @@ impl MediaDatagram {
         bytes.extend_from_slice(&self.timestamp_us.to_be_bytes());
         bytes.extend_from_slice(&self.duration_us.to_be_bytes());
         bytes.extend_from_slice(self.room_id.as_bytes());
+        bytes.extend_from_slice(self.sender_user_id.as_bytes());
         bytes.extend_from_slice(&payload_len.to_be_bytes());
         bytes.extend_from_slice(&self.payload);
 
@@ -95,7 +98,8 @@ impl MediaDatagram {
         let timestamp_us = u64::from_be_bytes(copy_array(&bytes[16..24]));
         let duration_us = u32::from_be_bytes(copy_array(&bytes[24..28]));
         let room_id = Uuid::from_bytes(copy_array(&bytes[28..44]));
-        let payload_len = u32::from_be_bytes(copy_array(&bytes[44..48])) as usize;
+        let sender_user_id = Uuid::from_bytes(copy_array(&bytes[44..60]));
+        let payload_len = u32::from_be_bytes(copy_array(&bytes[60..64])) as usize;
         let expected_len = HEADER_LEN
             .checked_add(payload_len)
             .ok_or(MediaDatagramError::PayloadTooLarge(payload_len))?;
@@ -110,6 +114,7 @@ impl MediaDatagram {
             timestamp_us,
             duration_us,
             room_id,
+            sender_user_id,
             payload: bytes[HEADER_LEN..expected_len].to_vec(),
         })
     }
@@ -178,6 +183,7 @@ mod tests {
             timestamp_us: 123_456,
             duration_us: 20_000,
             room_id: Uuid::new_v4(),
+            sender_user_id: Uuid::new_v4(),
             payload: vec![1, 2, 3, 4],
         };
 
@@ -196,6 +202,7 @@ mod tests {
             timestamp_us: 1,
             duration_us: 20_000,
             room_id: Uuid::new_v4(),
+            sender_user_id: Uuid::nil(),
             payload: vec![1, 2, 3],
         };
         let mut encoded = datagram.encode().expect("datagram encodes");
@@ -216,6 +223,7 @@ mod tests {
             timestamp_us: 1,
             duration_us: 20_000,
             room_id: Uuid::new_v4(),
+            sender_user_id: Uuid::nil(),
             payload: vec![],
         };
         let encoded = datagram.encode().expect("datagram encodes");
