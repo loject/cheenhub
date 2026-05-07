@@ -5,6 +5,7 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
+use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
 
@@ -16,12 +17,14 @@ use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
     let microphone = use_context::<MicrophoneHandle>();
+    let playback = use_context::<AudioPlaybackHandle>();
     let realtime_handle = use_context::<RealtimeHandle>();
     let state = voice.state();
     let microphone_status = microphone.status();
     let microphone_level = microphone.level();
     let is_active_room = state.is_active_room(&server_id, &room_id);
     let is_leaving = matches!(state, VoiceConnectionState::Disconnecting { .. });
+    let output_muted = playback.is_muted();
     let microphone_live = matches!(microphone_status, MicrophoneStatus::Live);
     let microphone_starting = matches!(microphone_status, MicrophoneStatus::Starting);
     let microphone_speaking = microphone_live && microphone_level.active;
@@ -34,8 +37,14 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
         MicrophoneStatus::PermissionDenied => "Доступ к микрофону запрещен",
         MicrophoneStatus::Error(_) => "Микрофон недоступен",
     };
+    let microphone_label = if output_muted {
+        "Включить микрофон (включит звук)"
+    } else {
+        microphone_label
+    };
     let toggle_microphone = microphone.clone();
     let leave_microphone = microphone.clone();
+    let unmute_playback = playback.clone();
 
     if !is_active_room {
         return rsx! {};
@@ -56,6 +65,9 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                     },
                     "aria-label": microphone_label,
                     onclick: move |_| {
+                        if output_muted {
+                            unmute_playback.set_muted(false);
+                        }
                         let send_realtime = realtime_handle.clone();
                         let send_server_id = server_id.clone();
                         let send_room_id = room_id.clone();

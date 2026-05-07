@@ -4,7 +4,7 @@ use cheenhub_contracts::rest::ServerRoomKind;
 use dioxus::prelude::*;
 
 use crate::features::app::components::app_shell::ActiveRoom;
-use crate::features::microphone::MicrophoneHandle;
+use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 
 use super::participant_grid::VoiceParticipantGrid;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget};
@@ -22,12 +22,21 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
     } else {
         Vec::new()
     };
-    let current_user_id = voice.current_user_id().to_owned();
-    let speaking_user_ids = if is_active_room && microphone.level().active {
-        vec![current_user_id]
+    let mut speaking_user_ids = if is_active_room {
+        voice.speaking_user_ids()
     } else {
         Vec::new()
     };
+    let microphone_live = matches!(microphone.status(), MicrophoneStatus::Live);
+    if is_active_room && microphone_live && microphone.level().active {
+        let current_user_id = voice.current_user_id().to_owned();
+        if !speaking_user_ids
+            .iter()
+            .any(|user_id| user_id == &current_user_id)
+        {
+            speaking_user_ids.push(current_user_id);
+        }
+    }
     let can_join = room.kind != ServerRoomKind::Text;
     let is_busy = matches!(
         state,

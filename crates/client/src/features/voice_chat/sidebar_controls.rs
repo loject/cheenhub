@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
+use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
 
@@ -17,8 +18,9 @@ use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 pub(crate) fn SidebarVoiceControls() -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
     let microphone = use_context::<MicrophoneHandle>();
+    let playback = use_context::<AudioPlaybackHandle>();
     let realtime_handle = use_context::<RealtimeHandle>();
-    let mut output_muted = use_signal(|| false);
+    let output_muted = playback.is_muted();
     let state = voice.state();
     let microphone_status = microphone.status();
     let microphone_level = microphone.level();
@@ -57,10 +59,15 @@ pub(crate) fn SidebarVoiceControls() -> Element {
         MicrophoneStatus::PermissionDenied => "Доступ к микрофону запрещен",
         MicrophoneStatus::Error(_) => "Микрофон недоступен",
     };
-    let output_label = if output_muted() {
+    let output_label = if output_muted {
         "Включить звук"
     } else {
         "Отключить звук"
+    };
+    let microphone_label = if output_muted {
+        "Включить микрофон (включит звук)"
+    } else {
+        microphone_label
     };
     let microphone_button_class = if microphone_speaking {
         "relative flex h-9 items-center justify-center overflow-hidden rounded-xl border border-emerald-300/80 bg-emerald-500/20 text-emerald-50 shadow-[0_0_0_1px_rgba(52,211,153,.25),0_10px_28px_rgba(16,185,129,.20)] transition-[background,border-color,color,transform,box-shadow,opacity] duration-150 hover:-translate-y-px hover:border-emerald-300 hover:bg-emerald-500/25 disabled:cursor-wait disabled:opacity-60"
@@ -74,13 +81,16 @@ pub(crate) fn SidebarVoiceControls() -> Element {
     } else {
         "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 disabled:cursor-wait disabled:opacity-60"
     };
-    let output_button_class = if output_muted() {
+    let output_button_class = if output_muted {
         "flex h-9 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-100 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-blue-400/40 hover:bg-blue-500/15"
     } else {
         "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900"
     };
     let toggle_microphone = microphone.clone();
     let leave_microphone = microphone.clone();
+    let output_microphone = microphone.clone();
+    let mic_playback = playback.clone();
+    let toggle_playback = playback.clone();
     let target_for_microphone = target.clone();
 
     rsx! {
@@ -104,6 +114,9 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                         class: microphone_button_class,
                         "aria-label": microphone_label,
                         onclick: move |_| {
+                            if output_muted {
+                                mic_playback.set_muted(false);
+                            }
                             let Some(target) = target_for_microphone.clone() else {
                                 return;
                             };
@@ -153,8 +166,14 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                         r#type: "button",
                         class: output_button_class,
                         "aria-label": output_label,
-                        onclick: move |_| output_muted.set(!output_muted()),
-                        if output_muted() {
+                        onclick: move |_| {
+                            let next_muted = !toggle_playback.is_muted();
+                            toggle_playback.set_muted(next_muted);
+                            if next_muted {
+                                output_microphone.stop();
+                            }
+                        },
+                        if output_muted {
                             svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "m3 3 18 18M9.75 9.75 10.5 9v6l-2.25-2.25H5.25A1.5 1.5 0 0 1 3.75 11.25v-1.5m12.713-1.462a5.25 5.25 0 0 1 0 7.424M19.114 5.636a9 9 0 0 1 0 12.728M10.5 4.5 7.5 7.5" }
                             }
