@@ -5,11 +5,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use js_sys::{Float32Array, Object, Promise, Reflect, Uint8Array};
+use js_sys::{Float32Array, Function, Object, Promise, Reflect, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
-use web_sys::AudioContext;
+use web_sys::{AudioBufferSourceNode, AudioContext};
 
 /// Encoded playback codec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,13 +39,21 @@ pub(crate) struct VoiceFrame {
 /// Context handle for browser audio playback.
 #[derive(Clone)]
 pub(crate) struct AudioPlaybackHandle {
+    muted: Signal<bool>,
     inner: Rc<RefCell<AudioPlaybackInner>>,
 }
 
 struct AudioPlaybackInner {
     context: Option<AudioContext>,
+    muted: bool,
     senders: HashMap<String, SenderPlayback>,
+    scheduled_sources: HashMap<String, Vec<ScheduledAudioSource>>,
     scheduled_until: HashMap<String, f64>,
+}
+
+struct ScheduledAudioSource {
+    source: AudioBufferSourceNode,
+    end_time: f64,
 }
 
 struct SenderPlayback {
@@ -60,6 +68,9 @@ impl AudioPlaybackHandle {
         if frame.codec != PlaybackCodec::Opus || frame.bytes.is_empty() {
             return;
         }
+        if self.is_muted() {
+            return;
+        }
         if let Err(error) = self.play(frame) {
             warn!(
                 error = %js_error_message(error),
@@ -68,10 +79,55 @@ impl AudioPlaybackHandle {
         }
     }
 
+    /// Returns whether inbound playback is muted.
+    pub(crate) fn is_muted(&self) -> bool {
+        (self.muted)()
+    }
+
+    /// Updates inbound playback mute state.
+    pub(crate) fn set_muted(&self, muted: bool) {
+        let changed_to_muted = {
+            let mut inner = self.inner.borrow_mut();
+            if inner.muted == muted {
+                return;
+            }
+            inner.muted = muted;
+            muted
+        };
+        let mut muted_signal = self.muted;
+        muted_signal.set(muted);
+
+        if changed_to_muted {
+            self.stop_all();
+        } else {
+            self.resume();
+        }
+    }
+
     /// Stops playback state for one sender.
     pub(crate) fn stop_sender(&self, sender_user_id: &str) {
-        let mut inner = self.inner.borrow_mut();
-        if let Some(sender) = inner.senders.remove(sender_user_id)
+        let (sender, sources) = {
+            let mut inner = self.inner.borrow_mut();
+            let sender = inner.senders.remove(sender_user_id);
+            let sources = inner
+                .scheduled_sources
+                .remove(sender_user_id)
+                .unwrap_or_default();
+            inner.scheduled_until.remove(sender_user_id);
+            (sender, sources)
+        };
+
+        for scheduled in sources {
+            if let Err(error) = stop_audio_source(&scheduled.source) {
+                warn!(
+                    error = %js_error_message(error),
+                    %sender_user_id,
+                    "failed to stop scheduled audio source"
+                );
+            }
+        }
+
+        if let Some(sender) = sender
             && let Err(error) = sender.decoder.close()
         {
             warn!(
@@ -80,18 +136,20 @@ impl AudioPlaybackHandle {
                 "failed to close audio decoder"
             );
         }
-        inner.scheduled_until.remove(sender_user_id);
     }
 
     /// Stops all active playback state.
     pub(crate) fn stop_all(&self) {
-        let sender_ids = self
-            .inner
-            .borrow()
-            .senders
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>();
+        let sender_ids = {
+            let inner = self.inner.borrow();
+            let mut sender_ids = inner.senders.keys().cloned().collect::<Vec<_>>();
+            for sender_id in inner.scheduled_sources.keys() {
+                if !sender_ids.iter().any(|known_id| known_id == sender_id) {
+                    sender_ids.push(sender_id.clone());
+                }
+            }
+            sender_ids
+        };
         for sender_id in sender_ids {
             self.stop_sender(&sender_id);
         }
@@ -99,6 +157,9 @@ impl AudioPlaybackHandle {
 
     /// Resumes the browser audio context after a user gesture.
     pub(crate) fn resume(&self) {
+        if self.is_muted() {
+            return;
+        }
         let Ok(context) = self.context() else {
             return;
         };
@@ -117,6 +178,9 @@ impl AudioPlaybackHandle {
     fn play(&self, frame: VoiceFrame) -> Result<(), JsValue> {
         let context = self.context()?;
         let mut inner = self.inner.borrow_mut();
+        if inner.muted {
+            return Ok(());
+        }
         if !inner.senders.contains_key(&frame.sender_user_id) {
             let sender = create_sender_playback(
                 frame.sender_user_id.clone(),
@@ -146,10 +210,14 @@ impl AudioPlaybackHandle {
 /// Provides audio playback to authenticated app features.
 #[component]
 pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
+    let muted = use_signal(|| false);
     let handle = AudioPlaybackHandle {
+        muted,
         inner: Rc::new(RefCell::new(AudioPlaybackInner {
             context: None,
+            muted: false,
             senders: HashMap::new(),
+            scheduled_sources: HashMap::new(),
             scheduled_until: HashMap::new(),
         })),
     };
@@ -229,6 +297,10 @@ fn schedule_audio_data(
     sender_user_id: &str,
     audio: &AudioData,
 ) -> Result<(), JsValue> {
+    if inner.borrow().muted {
+        return Ok(());
+    }
+
     let frames = audio.number_of_frames();
     if frames == 0 {
         return Ok(());
@@ -256,10 +328,17 @@ fn schedule_audio_data(
         .unwrap_or(now)
         .max(now + 0.02);
     let duration = f64::from(frames) / f64::from(sample_rate);
+    let end_time = start_at + duration;
     inner
         .scheduled_until
-        .insert(sender_user_id.to_owned(), start_at + duration);
+        .insert(sender_user_id.to_owned(), end_time);
     source.start_with_when(start_at)?;
+    let sources = inner
+        .scheduled_sources
+        .entry(sender_user_id.to_owned())
+        .or_default();
+    sources.retain(|source| source.end_time > now);
+    sources.push(ScheduledAudioSource { source, end_time });
 
     Ok(())
 }
@@ -277,6 +356,12 @@ fn copy_options(plane_index: u32) -> JsValue {
 
 fn set_property(object: &Object, name: &str, value: &JsValue) {
     let _ = Reflect::set(object, &JsValue::from_str(name), value);
+}
+
+fn stop_audio_source(source: &AudioBufferSourceNode) -> Result<(), JsValue> {
+    let stop = Reflect::get(source.as_ref(), &JsValue::from_str("stop"))?.dyn_into::<Function>()?;
+    stop.call1(source.as_ref(), &JsValue::from_f64(0.0))
+        .map(|_| ())
 }
 
 fn js_error_message(error: JsValue) -> String {
