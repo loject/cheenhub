@@ -61,6 +61,9 @@ async fn main() -> anyhow::Result<()> {
         auth_store,
         server_store,
         text_chat_store,
+        voice_presence_store: Arc::new(
+            features::voice_chat::infrastructure::InMemoryVoicePresenceStore::default(),
+        ),
         realtime_hub: Arc::new(realtime::hub::RealtimeHub::default()),
         auth_keys,
         access_token_lifetime_minutes: config.access_token_lifetime_minutes,

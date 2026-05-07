@@ -15,5 +15,3 @@ pub(crate) mod server_rail;
 pub(crate) mod server_rail_button;
 pub(crate) mod server_rooms_scope;
 pub(crate) mod user_context_menu;
-pub(crate) mod voice_controls;
-pub(crate) mod voice_stage;

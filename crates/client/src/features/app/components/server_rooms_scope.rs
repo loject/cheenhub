@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 use crate::features::app::api;
 use crate::features::network::RealtimeConnectionStatusIndicator;
 use crate::features::server_settings::ServerSettingsScope;
+use crate::features::voice_chat::SidebarVoiceControls;
 
 use super::app_shell::{ActiveRoom, AppModal, ServerShellState, room_kind_attr};
 use super::room_editor_modal::RoomEditorModal;
@@ -64,16 +65,6 @@ pub(crate) fn ServerRoomsScope(
         _ => None,
     };
     let selected_room = active_room(&current_rooms, active_room_id().as_deref());
-    let active_room_name = selected_room
-        .as_ref()
-        .map(|room| room.name.clone())
-        .unwrap_or_default();
-    let active_voice_label = if active_room_name.is_empty() {
-        "Нет активной комнаты".to_owned()
-    } else {
-        active_room_name
-    };
-
     use_effect(move || {
         if rooms().is_some() {
             return;
@@ -379,52 +370,14 @@ pub(crate) fn ServerRoomsScope(
             }
 
             div { class: "border-t border-zinc-800/80 p-3",
-                div { class: "relative mb-2 rounded-[20px] border border-zinc-800 bg-zinc-900/80 p-2.5",
-                    div { class: "mb-2 flex items-start gap-2",
-                        RealtimeConnectionStatusIndicator {}
-                        div { class: "min-w-0 flex-1",
-                            div { class: "truncate text-[11px] font-medium text-zinc-100", "{server_name}" }
-                            div { class: "mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-500",
-                                svg { class: "h-3.5 w-3.5 shrink-0 text-zinc-600", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 11a7 7 0 0 1-14 0m7 8v3m-4 0h8m-4-18a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V7a3 3 0 0 0-3-3Z" }
-                                }
-                                span { class: "truncate", "{active_voice_label}" }
-                            }
-                        }
-                    }
-                    div { class: "grid grid-cols-4 gap-2",
-                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900", "aria-label": "Выключить микрофон",
-                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 11a7 7 0 0 1-14 0m7 8v3m-4 0h8m-4-18a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V7a3 3 0 0 0-3-3Z" }
-                            }
-                        }
-                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900", "aria-label": "Отключить звук",
-                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25 10.5 4.5v15l-3.75-3.75H3.75A1.5 1.5 0 0 1 2.25 14.25v-4.5A1.5 1.5 0 0 1 3.75 8.25h3Z" }
-                            }
-                        }
-                        button {
-                            r#type: "button",
-                            class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900",
-                            "aria-label": "Параметры сервера",
-                            onclick: move |_| {
-                                let workspace = ServerWorkspace::Settings;
-                                let mut next_mounted_workspaces = mounted_workspaces();
-                                ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
-                                mounted_workspaces.set(next_mounted_workspaces);
-                                active_workspace.set(Some(workspace));
-                            },
-                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m9 6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75m-3 6h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5" }
-                            }
-                        }
-                        button { r#type: "button", class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200", "aria-label": "Выйти из голосового чата",
-                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" }
-                            }
-                        }
+                div { class: "mb-2 flex items-center gap-2 rounded-[16px] border border-zinc-800 bg-zinc-900/70 px-3 py-2",
+                    RealtimeConnectionStatusIndicator {}
+                    div { class: "min-w-0 flex-1",
+                        div { class: "truncate text-[11px] font-medium text-zinc-100", "{server_name}" }
+                        div { class: "truncate text-[11px] text-zinc-500", "realtime соединение" }
                     }
                 }
+                SidebarVoiceControls {}
                 div { class: "flex items-center gap-3 rounded-[20px] border border-zinc-800 bg-zinc-900/80 p-2.5",
                     div { class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[12px] font-bold text-white", "Ч" }
                     div { class: "min-w-0 flex-1",

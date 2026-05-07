@@ -6,6 +6,7 @@ use crate::Route;
 use crate::features::app::components::app_shell::AppShell;
 use crate::features::auth::{TokenRefresher, api};
 use crate::features::realtime::RealtimeProvider;
+use crate::features::voice_chat::VoiceConnectionProvider;
 
 /// Renders the signed-in application home.
 #[component]
@@ -37,7 +38,7 @@ pub(crate) fn AppPage() -> Element {
         });
     });
 
-    let Some(_current_user) = user() else {
+    let Some(current_user) = user() else {
         return rsx! {
             div { class: "grid min-h-screen place-items-center bg-zinc-950 px-5 text-zinc-300",
                 "Открываем CheenHub..."
@@ -52,7 +53,9 @@ pub(crate) fn AppPage() -> Element {
             },
         }
         RealtimeProvider {
-            AppShell {}
+            VoiceConnectionProvider { current_user,
+                AppShell {}
+            }
         }
     }
 }

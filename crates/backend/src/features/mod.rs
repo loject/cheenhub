@@ -3,3 +3,4 @@
 pub(crate) mod auth;
 pub(crate) mod servers;
 pub(crate) mod text_chat;
+pub(crate) mod voice_chat;

@@ -4,9 +4,8 @@ use dioxus::prelude::*;
 
 use super::app_shell::{ActiveRoom, ServerShellState};
 use super::room_header::RoomHeader;
-use super::voice_controls::VoiceControls;
-use super::voice_stage::VoiceStage;
 use crate::features::text_chat::{RoomChatSurface, RoomChatSurfaceMode};
+use crate::features::voice_chat::{VoiceConnectionHandle, VoiceRoomSurface};
 
 /// Renders one room workspace with local UI state scoped to that room.
 #[component]
@@ -21,6 +20,10 @@ pub(crate) fn RoomInstance(
     let room_id = room.id.clone();
     let chat_open = chat_open_for_room(&chat_open_by_room(), &room_id);
     let chat_open_attr = if chat_open { "true" } else { "false" };
+    let voice = use_context::<VoiceConnectionHandle>();
+    let voice_state = voice.state();
+    let voice_room_active = voice_state.is_active_room(&server_id, &room.id);
+    let voice_room_connected = voice_state.is_connected_room(&server_id, &room.id);
     let chat_label = if chat_open {
         "Скрыть текстовый чат"
     } else {
@@ -29,10 +32,17 @@ pub(crate) fn RoomInstance(
 
     rsx! {
         div { class: wrapper_class,
-            section { class: "voice-shell relative flex min-w-0 flex-1 flex-col bg-zinc-950/35",
-                RoomHeader { room: room.clone() }
+            section {
+                class: "room-workspace voice-shell relative flex min-w-0 flex-1 flex-col bg-zinc-950/35",
+                "data-room-kind": super::app_shell::room_kind_attr(room.kind),
+                "data-voice-room-active": if voice_room_active { "true" } else { "false" },
+                "data-voice-connected": if voice_room_connected { "true" } else { "false" },
+                RoomHeader { server_id: server_id.clone(), room: room.clone() }
                 div { class: "content-split flex min-h-0 flex-1 flex-col",
-                    VoiceStage {}
+                    VoiceRoomSurface {
+                        server_id: server_id.clone(),
+                        room: room.clone(),
+                    }
                     RoomChatSurface {
                         server_id: server_id.clone(),
                         room: room.clone(),
@@ -79,7 +89,6 @@ pub(crate) fn RoomInstance(
                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "m18 15-6-6-6 6" }
                     }
                 }
-                VoiceControls {}
             }
         }
     }

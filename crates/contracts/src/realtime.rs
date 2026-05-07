@@ -4,6 +4,7 @@ mod control;
 mod envelope;
 mod network;
 mod text_chat;
+mod voice_chat;
 
 pub use control::{
     Authenticate, Authenticated, ControlAck, ControlKind, ControlText, Rejected, RejectionCode,
@@ -12,6 +13,9 @@ pub use envelope::{RealtimeEnvelope, RealtimeKind, RealtimeModule};
 pub use network::{NetworkKind, Ping, Pong};
 pub use text_chat::{
     LoadRoomHistory, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
+};
+pub use voice_chat::{
+    JoinVoiceRoom, LeaveVoiceRoom, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
 };
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 use web_transport::SendStream;
 
-use crate::features::text_chat;
+use crate::features::{text_chat, voice_chat};
 use crate::state::AppState;
 
 use super::protocol::send_rejection;
@@ -17,6 +17,7 @@ pub(crate) async fn dispatch(
     state: &AppState,
     user: &AuthUser,
     user_id: &Uuid,
+    stream_id: Uuid,
     send: &Mutex<SendStream>,
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<()> {
@@ -26,6 +27,19 @@ pub(crate) async fn dispatch(
         RealtimeModule::TextChat => {
             text_chat::realtime::handle(state, user, user_id, send, envelope).await
         }
+        RealtimeModule::VoiceChat => {
+            voice_chat::realtime::handle(state, user, user_id, stream_id, send, envelope).await
+        }
+    }
+}
+
+/// Runs module-specific cleanup after a reliable stream closes.
+pub(crate) async fn cleanup_stream(state: &AppState, module: RealtimeModule, stream_id: Uuid) {
+    match module {
+        RealtimeModule::VoiceChat => {
+            voice_chat::application::disconnect_realtime_stream(state, stream_id).await;
+        }
+        RealtimeModule::Control | RealtimeModule::Network | RealtimeModule::TextChat => {}
     }
 }
 

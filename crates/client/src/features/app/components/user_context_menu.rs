@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 
 /// Renders a fixed-position user context menu.
 #[component]
-pub(crate) fn UserContextMenu(name: &'static str, volume: &'static str, x: f64, y: f64) -> Element {
+pub(crate) fn UserContextMenu(name: String, volume: &'static str, x: f64, y: f64) -> Element {
     let top = y + 8.0;
     let style = format!(
         "left: clamp(12px, {x}px, calc(100vw - 258px)); top: clamp(12px, {top}px, calc(100vh - 260px));"

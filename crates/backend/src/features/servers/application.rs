@@ -538,6 +538,9 @@ mod tests {
             auth_store: Arc::new(InMemoryAuthStore::default()),
             server_store,
             text_chat_store: Arc::new(InMemoryTextChatStore::default()),
+            voice_presence_store: Arc::new(
+                crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore::default(),
+            ),
             realtime_hub: Arc::new(RealtimeHub::default()),
             auth_keys: AuthKeys::generate_for_tests(),
             access_token_lifetime_minutes: 15,

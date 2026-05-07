@@ -146,6 +146,7 @@ async fn handle_module_stream(
                 &context.state,
                 &context.user,
                 &context.user_id,
+                stream_id,
                 &send,
                 envelope,
             )
@@ -162,6 +163,9 @@ async fn handle_module_stream(
             .realtime_hub
             .unregister_stream(stream_id)
             .await;
+        if let Some(module) = stream_module {
+            router::cleanup_stream(&context.state, module, stream_id).await;
+        }
     }
 
     result

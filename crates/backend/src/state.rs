@@ -6,6 +6,7 @@ use crate::features::auth::infrastructure::AuthStore;
 use crate::features::auth::security::keys::AuthKeys;
 use crate::features::servers::infrastructure::ServerStore;
 use crate::features::text_chat::infrastructure::TextChatStore;
+use crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore;
 use crate::realtime::hub::RealtimeHub;
 
 /// Shared backend application state.
@@ -17,6 +18,8 @@ pub(crate) struct AppState {
     pub(crate) server_store: Arc<dyn ServerStore>,
     /// Text chat storage backend.
     pub(crate) text_chat_store: Arc<dyn TextChatStore>,
+    /// Active voice room presence.
+    pub(crate) voice_presence_store: Arc<InMemoryVoicePresenceStore>,
     /// Shared realtime stream registry and fanout hub.
     pub(crate) realtime_hub: Arc<RealtimeHub>,
     /// Access JWT signing keys.

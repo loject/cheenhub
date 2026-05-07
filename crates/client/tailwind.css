@@ -97,22 +97,18 @@
     display: none;
   }
 
-  #app-shell[data-chat-open="true"] .voice-stage {
+  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .voice-stage {
     padding-bottom: 18px;
   }
 
-  #app-shell[data-chat-open="true"] .embedded-chat {
+  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .embedded-chat {
     height: min(340px, 38vh);
     opacity: 1;
     transform: translateY(0);
     border-top-color: rgba(63, 63, 70, 0.9);
   }
 
-  #app-shell[data-chat-open="true"] .voice-floating-controls {
-    bottom: min(340px, 38vh);
-  }
-
-  #app-shell[data-chat-open="true"] .chat-corner-toggle {
+  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .chat-corner-toggle {
     bottom: calc(min(340px, 38vh) + 20px);
     border-color: rgba(59, 130, 246, 0.32);
     background: rgba(59, 130, 246, 0.1);
@@ -123,35 +119,71 @@
       0 18px 50px rgba(0, 0, 0, 0.38);
   }
 
-  #app-shell[data-chat-open="true"] .chat-corner-toggle svg {
+  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .chat-corner-toggle svg {
     transform: rotate(180deg);
   }
 
-  #app-shell[data-chat-open="true"] .chat-tooltip-open {
+  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .chat-tooltip-open {
     display: none;
   }
 
-  #app-shell[data-chat-open="true"] .chat-tooltip-close {
+  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .chat-tooltip-close {
     display: inline;
   }
 
-  #app-shell[data-room-kind="text"] .content-split,
-  #app-shell[data-room-kind="text"] .voice-floating-controls,
-  #app-shell[data-room-kind="text"] .chat-corner-toggle,
-  #app-shell[data-room-kind="voice"] .chat-corner-toggle,
-  #app-shell[data-room-kind="text_and_voice"] .content-split,
-  #app-shell[data-room-kind="text_and_voice"] .voice-floating-controls,
-  #app-shell[data-room-kind="text_and_voice"] .chat-corner-toggle {
+  .room-workspace[data-room-kind="text"] .content-split,
+  .room-workspace[data-room-kind="text"] .chat-corner-toggle,
+  .room-workspace[data-room-kind="text"] .voice-floating-controls,
+  .room-workspace[data-room-kind="voice"] .chat-corner-toggle,
+  .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="false"] .content-split,
+  .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="false"] .chat-corner-toggle,
+  .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="false"] .voice-floating-controls {
     display: none;
   }
 
-  #app-shell[data-room-kind="text"] .text-room-view,
-  #app-shell[data-room-kind="text_and_voice"] .text-room-view {
+  .room-workspace[data-room-kind="text"] .text-room-view,
+  .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="false"] .text-room-view {
     display: flex;
   }
 
-  #app-shell[data-room-kind="text_and_voice"] .join-voice-button {
-    display: inline-flex;
+  .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="true"] .content-split,
+  .room-workspace[data-room-kind="voice"] .content-split {
+    display: flex;
+  }
+
+  .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="true"] .chat-corner-toggle {
+    display: flex;
+  }
+
+  .sidebar-voice-presence {
+    display: grid;
+    grid-template-rows: 0fr;
+    margin-bottom: 0;
+    opacity: 0;
+    transform: translateY(8px);
+    transition:
+      grid-template-rows 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+      margin-bottom 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 0.18s ease,
+      transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .sidebar-voice-presence[data-sidebar-voice-open="true"] {
+    grid-template-rows: 1fr;
+    margin-bottom: 0.5rem;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .sidebar-voice-presence-inner {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .sidebar-voice-presence[data-sidebar-voice-open="false"] .sidebar-voice-presence-inner {
+    border-width: 0;
+    padding-bottom: 0;
+    padding-top: 0;
   }
 
   .chat-resize-handle::before {
