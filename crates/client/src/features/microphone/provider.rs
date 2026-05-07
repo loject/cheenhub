@@ -17,6 +17,7 @@ pub(crate) struct MicrophoneHandle {
     status: Signal<MicrophoneStatus>,
     level: Signal<MicrophoneLevel>,
     session: Signal<Option<Rc<dyn MicrophoneSession>>>,
+    generation: Signal<u64>,
     backend: Rc<dyn MicrophoneBackend>,
 }
 
@@ -33,20 +34,33 @@ impl MicrophoneHandle {
         let backend = self.backend.clone();
         let mut session = self.session;
         let mut status = self.status;
-        let level = self.level;
+        let mut level = self.level;
+        let mut generation = self.generation;
+        let start_generation = next_generation(&mut generation);
         status.set(MicrophoneStatus::Starting);
+        reset_level(&mut level);
 
         spawn(async move {
             let callbacks = microphone_callbacks(on_frame, level);
             match backend.start(MicrophoneConfig::default(), callbacks).await {
                 Ok(next_session) => {
+                    if generation() != start_generation {
+                        if let Err(error) = next_session.stop().await {
+                            warn!(%error, "failed to stop stale microphone capture after start");
+                        }
+                        return;
+                    }
                     session.set(Some(next_session));
                     status.set(MicrophoneStatus::Live);
                 }
                 Err(error) => {
+                    if generation() != start_generation {
+                        return;
+                    }
                     let next_status = status_from_error(error.clone());
                     warn!(%error, status = ?next_status, "failed to start microphone capture");
                     session.set(None);
+                    reset_level(&mut level);
                     status.set(next_status);
                 }
             }
@@ -55,12 +69,15 @@ impl MicrophoneHandle {
 
     /// Restarts microphone capture with a fresh frame callback.
     pub(crate) fn restart(&self, on_frame: MicrophoneFrameCallback) {
-        let previous_session = (self.session)();
+        let previous_session = self.session.peek().clone();
         let backend = self.backend.clone();
         let mut session = self.session;
         let mut status = self.status;
-        let level = self.level;
+        let mut level = self.level;
+        let mut generation = self.generation;
+        let restart_generation = next_generation(&mut generation);
         status.set(MicrophoneStatus::Starting);
+        reset_level(&mut level);
 
         spawn(async move {
             if let Some(previous_session) = previous_session
@@ -68,17 +85,30 @@ impl MicrophoneHandle {
             {
                 warn!(%error, "failed to stop previous microphone capture before restart");
             }
+            if generation() != restart_generation {
+                return;
+            }
 
             let callbacks = microphone_callbacks(on_frame, level);
             match backend.start(MicrophoneConfig::default(), callbacks).await {
                 Ok(next_session) => {
+                    if generation() != restart_generation {
+                        if let Err(error) = next_session.stop().await {
+                            warn!(%error, "failed to stop stale microphone capture after restart");
+                        }
+                        return;
+                    }
                     session.set(Some(next_session));
                     status.set(MicrophoneStatus::Live);
                 }
                 Err(error) => {
+                    if generation() != restart_generation {
+                        return;
+                    }
                     let next_status = status_from_error(error.clone());
                     warn!(%error, status = ?next_status, "failed to restart microphone capture");
                     session.set(None);
+                    reset_level(&mut level);
                     status.set(next_status);
                 }
             }
@@ -87,19 +117,28 @@ impl MicrophoneHandle {
 
     /// Stops the active microphone session.
     pub(crate) fn stop(&self) {
-        let Some(active_session) = (self.session)() else {
+        let mut generation = self.generation;
+        let stop_generation = next_generation(&mut generation);
+        let Some(active_session) = self.session.peek().clone() else {
             let mut status = self.status;
+            let mut level = self.level;
+            reset_level(&mut level);
             status.set(MicrophoneStatus::Idle);
             return;
         };
 
         let mut session = self.session;
         let mut status = self.status;
+        let mut level = self.level;
         spawn(async move {
             if let Err(error) = active_session.stop().await {
                 warn!(%error, "failed to stop microphone capture cleanly");
             }
+            if generation() != stop_generation {
+                return;
+            }
             session.set(None);
+            reset_level(&mut level);
             status.set(MicrophoneStatus::Idle);
         });
     }
@@ -119,6 +158,11 @@ impl MicrophoneHandle {
     /// Returns the current microphone status.
     pub(crate) fn status(&self) -> MicrophoneStatus {
         (self.status)()
+    }
+
+    /// Returns the current microphone status without creating a reactive subscription.
+    pub(crate) fn status_untracked(&self) -> MicrophoneStatus {
+        self.status.peek().clone()
     }
 
     /// Returns the latest measured microphone input level.
@@ -161,22 +205,38 @@ fn status_from_error(error: super::backend::MicrophoneError) -> MicrophoneStatus
     }
 }
 
-/// Provides microphone capture state to authenticated app components.
-#[component]
-pub(crate) fn MicrophoneProvider(children: Element) -> Element {
-    let status = use_signal(|| MicrophoneStatus::Idle);
-    let level = use_signal(|| MicrophoneLevel {
+fn next_generation(generation: &mut Signal<u64>) -> u64 {
+    let next_generation = generation.peek().saturating_add(1);
+    generation.set(next_generation);
+    next_generation
+}
+
+fn reset_level(level: &mut Signal<MicrophoneLevel>) {
+    level.set(default_level());
+}
+
+fn default_level() -> MicrophoneLevel {
+    MicrophoneLevel {
         rms: 0.0,
         active: false,
         threshold: MicrophoneConfig::default().vad_threshold,
         timestamp_us: 0,
-    });
+    }
+}
+
+/// Provides microphone capture state to authenticated app components.
+#[component]
+pub(crate) fn MicrophoneProvider(children: Element) -> Element {
+    let status = use_signal(|| MicrophoneStatus::Idle);
+    let level = use_signal(default_level);
     let session = use_signal(|| None::<Rc<dyn MicrophoneSession>>);
+    let generation = use_signal(|| 0);
     let backend: Rc<dyn MicrophoneBackend> = Rc::new(BrowserMicrophoneBackend);
     let handle = MicrophoneHandle {
         status,
         level,
         session,
+        generation,
         backend,
     };
     use_context_provider(move || handle.clone());
