@@ -30,6 +30,7 @@ futures-util = "0.3"
 gloo-net = "0.6"
 gloo-timers = { version = "0.3", features = ["futures"] }
 http = "1"
+js-sys = "0.3"
 rand_core = { version = "0.6", features = ["getrandom"] }
 rcgen = "0.13"
 rustls-pki-types = "1"
@@ -47,7 +48,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2"
 uuid = { version = "1", features = ["js", "serde", "v4"] }
 wasm-bindgen-futures = "0.4"
+wasm-bindgen = "0.2"
 web-time = "1"
 web-transport = "0.10"
 web-transport-quinn = "0.11"
+web-sys = "0.3"
 x509-parser = "0.17"

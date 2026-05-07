@@ -17,13 +17,26 @@ futures-channel.workspace = true
 futures-util.workspace = true
 gloo-net.workspace = true
 gloo-timers.workspace = true
+js-sys.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 url.workspace = true
 uuid.workspace = true
+wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
 web-time.workspace = true
 web-transport.workspace = true
+web-sys = { workspace = true, features = [
+    "DomException",
+    "MediaDevices",
+    "MediaStream",
+    "MediaStreamConstraints",
+    "MediaStreamTrack",
+    "MediaTrackConstraints",
+    "Navigator",
+    "Window",
+    "console",
+] }
 
 [build-dependencies]
 dotenvy.workspace = true

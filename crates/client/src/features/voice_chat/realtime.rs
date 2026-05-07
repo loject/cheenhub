@@ -1,12 +1,16 @@
 //! Voice chat realtime helpers.
 
+use bytes::Bytes;
+use cheenhub_contracts::media::{MediaCodec, MediaDatagram, MediaDatagramKind};
 use cheenhub_contracts::realtime::{
     JoinVoiceRoom, LeaveVoiceRoom, RealtimeEnvelope, RealtimeKind, RealtimeModule, VoiceChatKind,
     VoiceRoomSnapshot,
 };
 use futures_channel::mpsc;
 use futures_util::StreamExt;
+use uuid::Uuid;
 
+use crate::features::microphone::{EncodedMicrophoneFrame, MicrophoneCodec};
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
 
 /// Joins one voice-capable room.
@@ -59,6 +63,34 @@ pub(crate) fn subscribe_voice_chat(
     });
 
     receiver
+}
+
+/// Sends one encoded microphone frame to the active voice room.
+pub(crate) async fn send_voice_frame(
+    realtime: &RealtimeHandle,
+    _server_id: &str,
+    room_id: &str,
+    frame: EncodedMicrophoneFrame,
+) -> Result<(), RealtimeError> {
+    let room_id =
+        Uuid::parse_str(room_id).map_err(|_| RealtimeError::new("Voice room id is invalid."))?;
+    let codec = match frame.codec {
+        MicrophoneCodec::Opus => MediaCodec::Opus,
+    };
+    let datagram = MediaDatagram {
+        kind: MediaDatagramKind::VoiceFrame,
+        codec,
+        sequence: frame.sequence,
+        timestamp_us: frame.timestamp_us,
+        duration_us: frame.duration_us,
+        room_id,
+        payload: frame.bytes,
+    };
+    let bytes = datagram
+        .encode()
+        .map_err(|error| RealtimeError::new(format!("Failed to encode voice frame: {error}")))?;
+
+    realtime.send_unreliable_bytes(Bytes::from(bytes)).await
 }
 
 fn decode_participants_changed(envelope: RealtimeEnvelope) -> Option<VoiceRoomSnapshot> {

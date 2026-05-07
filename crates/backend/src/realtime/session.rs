@@ -14,7 +14,7 @@ use crate::state::AppState;
 
 use super::framing;
 use super::protocol::validate_envelope;
-use super::{control, router};
+use super::{control, datagram, router};
 
 /// Handles one accepted WebTransport session.
 pub(crate) async fn handle_session(
@@ -40,6 +40,7 @@ pub(crate) async fn handle_session(
     };
     let user_id = Uuid::parse_str(&user.id).context("authenticated user id is not a uuid")?;
     info!(%session_id, %user_id, "authenticated realtime session");
+    datagram::spawn_reader(session_id, user_id, session.clone());
 
     let state_for_control = state.clone();
     let user_for_control = user.clone();

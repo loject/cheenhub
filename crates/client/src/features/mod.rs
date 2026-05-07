@@ -3,6 +3,7 @@
 pub(crate) mod app;
 pub(crate) mod auth;
 pub(crate) mod landing;
+pub(crate) mod microphone;
 pub(crate) mod network;
 pub(crate) mod realtime;
 pub(crate) mod server_settings;

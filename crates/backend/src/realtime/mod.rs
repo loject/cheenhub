@@ -1,6 +1,7 @@
 //! WebTransport realtime server scaffold.
 
 mod control;
+mod datagram;
 mod framing;
 pub(crate) mod hub;
 mod network;

@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use crate::Route;
 use crate::features::app::components::app_shell::AppShell;
 use crate::features::auth::{TokenRefresher, api};
+use crate::features::microphone::MicrophoneProvider;
 use crate::features::realtime::RealtimeProvider;
 use crate::features::voice_chat::VoiceConnectionProvider;
 
@@ -53,8 +54,10 @@ pub(crate) fn AppPage() -> Element {
             },
         }
         RealtimeProvider {
-            VoiceConnectionProvider { current_user,
-                AppShell {}
+            MicrophoneProvider {
+                VoiceConnectionProvider { current_user,
+                    AppShell {}
+                }
             }
         }
     }

@@ -141,6 +141,21 @@ impl RealtimeHandle {
             })
     }
 
+    /// Sends one raw unreliable datagram message.
+    pub(crate) async fn send_unreliable_bytes(&self, bytes: Bytes) -> Result<(), RealtimeError> {
+        let Some(connected) = self.inner.session.lock().await.clone() else {
+            return Err(RealtimeError::new("Realtime session is not connected."));
+        };
+
+        connected
+            .session
+            .send_datagram(bytes)
+            .await
+            .map_err(|error| {
+                RealtimeError::new(format!("Failed to send realtime datagram: {error}"))
+            })
+    }
+
     /// Subscribes to inbound fire-and-forget realtime events for this tab.
     pub(crate) fn subscribe_events(&self) -> mpsc::UnboundedReceiver<RealtimeEnvelope> {
         let (sender, receiver) = mpsc::unbounded();
