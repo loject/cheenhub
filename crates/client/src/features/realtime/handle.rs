@@ -1,13 +1,13 @@
 //! Realtime connection handle.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use bytes::Bytes;
 use cheenhub_contracts::realtime::{
-    Authenticate, Authenticated, ControlKind, NetworkKind, Ping, Pong, RealtimeEnvelope,
-    RealtimeKind, RealtimeModule, Rejected,
+    Authenticate, Authenticated, ControlKind, RealtimeEnvelope, RealtimeKind, RealtimeModule,
+    Rejected,
 };
 use dioxus::prelude::{debug, info, warn};
 use futures_channel::{mpsc, oneshot};
@@ -19,12 +19,14 @@ use web_transport::{RecvStream, SendStream, Session};
 use super::config;
 use super::error::RealtimeError;
 use super::framing;
+use super::status::RealtimeConnectionStatus;
 use super::task::spawn_task;
 
 type PendingKey = (RealtimeModule, Uuid);
 type PendingRequests = Rc<RefCell<HashMap<PendingKey, oneshot::Sender<RealtimeEnvelope>>>>;
 type ModuleStreams = Rc<Mutex<HashMap<RealtimeModule, Rc<Mutex<SendStream>>>>>;
 type EventListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<RealtimeEnvelope>>>>;
+type StatusListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<RealtimeConnectionStatus>>>>;
 
 /// Cloneable handle exposed by the realtime provider.
 #[derive(Clone)]
@@ -33,11 +35,20 @@ pub(crate) struct RealtimeHandle {
 }
 
 struct RealtimeInner {
-    session: Mutex<Option<Session>>,
+    session: Mutex<Option<ConnectedSession>>,
     streams: ModuleStreams,
     pending: PendingRequests,
     event_listeners: EventListeners,
     inbound: mpsc::UnboundedSender<RealtimeEnvelope>,
+    generation: Cell<u64>,
+    connection_status: Cell<RealtimeConnectionStatus>,
+    status_listeners: StatusListeners,
+}
+
+#[derive(Clone)]
+struct ConnectedSession {
+    generation: u64,
+    session: Session,
 }
 
 impl RealtimeHandle {
@@ -54,19 +65,31 @@ impl RealtimeHandle {
         })?;
 
         info!(%url, "WebTransport transport connected");
+        let generation = self.next_generation();
         self.inner.streams.lock().await.clear();
         self.inner.pending.borrow_mut().clear();
-        self.inner.session.lock().await.replace(session.clone());
+        self.inner.session.lock().await.replace(ConnectedSession {
+            generation,
+            session: session.clone(),
+        });
 
-        let authenticated: Authenticated = self
+        let authenticated = self
             .request(
                 RealtimeModule::Control,
                 RealtimeKind::Control(ControlKind::Authenticate),
                 Authenticate { access_token },
             )
-            .await?;
+            .await;
+        let authenticated: Authenticated = match authenticated {
+            Ok(authenticated) => authenticated,
+            Err(error) => {
+                self.clear_generation(generation).await;
+                return Err(error);
+            }
+        };
         info!(%url, user_id = %authenticated.user.id, "WebTransport realtime authenticated");
-        spawn_connection_logger(url.to_string(), session);
+        self.set_connection_status(RealtimeConnectionStatus::Connected);
+        spawn_connection_watcher(url.to_string(), session, generation, self.clone());
 
         Ok(authenticated)
     }
@@ -105,11 +128,12 @@ impl RealtimeHandle {
         let bytes = serde_json::to_vec(&envelope).map_err(|error| {
             RealtimeError::new(format!("Failed to encode realtime datagram: {error}"))
         })?;
-        let Some(session) = self.inner.session.lock().await.clone() else {
+        let Some(connected) = self.inner.session.lock().await.clone() else {
             return Err(RealtimeError::new("Realtime session is not connected."));
         };
 
-        session
+        connected
+            .session
             .send_datagram(Bytes::from(bytes))
             .await
             .map_err(|error| {
@@ -117,22 +141,26 @@ impl RealtimeHandle {
             })
     }
 
-    /// Sends one reliable network ping and waits for the pong response.
-    pub(crate) async fn ping(&self) -> Result<Pong, RealtimeError> {
-        self.request(
-            RealtimeModule::Network,
-            RealtimeKind::Network(NetworkKind::Ping),
-            Ping {
-                sent_at_ms: now_ms(),
-            },
-        )
-        .await
-    }
-
     /// Subscribes to inbound fire-and-forget realtime events for this tab.
     pub(crate) fn subscribe_events(&self) -> mpsc::UnboundedReceiver<RealtimeEnvelope> {
         let (sender, receiver) = mpsc::unbounded();
         self.inner.event_listeners.borrow_mut().push(sender);
+
+        receiver
+    }
+
+    /// Returns the current realtime connection status.
+    pub(crate) fn connection_status(&self) -> RealtimeConnectionStatus {
+        self.inner.connection_status.get()
+    }
+
+    /// Subscribes to realtime connection status changes for this tab.
+    pub(crate) fn subscribe_connection_status(
+        &self,
+    ) -> mpsc::UnboundedReceiver<RealtimeConnectionStatus> {
+        let (sender, receiver) = mpsc::unbounded();
+        let _ = sender.unbounded_send(self.connection_status());
+        self.inner.status_listeners.borrow_mut().push(sender);
 
         receiver
     }
@@ -154,7 +182,6 @@ impl RealtimeHandle {
             RealtimeEnvelope::new(module, kind, Some(request_id), payload).map_err(|error| {
                 RealtimeError::new(format!("Failed to encode realtime payload: {error}"))
             })?;
-        log_realtime_request(&envelope);
         let (sender, receiver) = oneshot::channel();
         self.inner
             .pending
@@ -179,8 +206,6 @@ impl RealtimeHandle {
                 })?;
             return Err(RealtimeError::new(rejected.message));
         }
-        log_realtime_response(&response);
-
         serde_json::from_value(response.payload).map_err(|error| {
             RealtimeError::new(format!("Failed to decode realtime response: {error}"))
         })
@@ -199,10 +224,10 @@ impl RealtimeHandle {
             return Ok(stream);
         }
 
-        let Some(session) = self.inner.session.lock().await.clone() else {
+        let Some(connected) = self.inner.session.lock().await.clone() else {
             return Err(RealtimeError::new("Realtime session is not connected."));
         };
-        let (send, recv) = session.open_bi().await.map_err(|error| {
+        let (send, recv) = connected.session.open_bi().await.map_err(|error| {
             RealtimeError::new(format!("Failed to open realtime stream: {error}"))
         })?;
         let send = Rc::new(Mutex::new(send));
@@ -211,6 +236,45 @@ impl RealtimeHandle {
         spawn_stream_reader(module, recv, self.inner.inbound.clone());
 
         Ok(send)
+    }
+
+    fn next_generation(&self) -> u64 {
+        let generation = self.inner.generation.get().saturating_add(1);
+        self.inner.generation.set(generation);
+        generation
+    }
+
+    /// Marks the current realtime connection as disconnected.
+    pub(crate) async fn mark_disconnected(&self) {
+        self.inner.session.lock().await.take();
+        self.inner.streams.lock().await.clear();
+        self.inner.pending.borrow_mut().clear();
+        self.set_connection_status(RealtimeConnectionStatus::Disconnected);
+    }
+
+    async fn clear_generation(&self, generation: u64) {
+        let mut session = self.inner.session.lock().await;
+        let should_clear = session
+            .as_ref()
+            .is_some_and(|connected| connected.generation == generation);
+        if should_clear {
+            session.take();
+            drop(session);
+            self.inner.streams.lock().await.clear();
+            self.inner.pending.borrow_mut().clear();
+            self.set_connection_status(RealtimeConnectionStatus::Disconnected);
+        }
+    }
+
+    fn set_connection_status(&self, status: RealtimeConnectionStatus) {
+        if self.inner.connection_status.get() == status {
+            return;
+        }
+        self.inner.connection_status.set(status);
+        self.inner
+            .status_listeners
+            .borrow_mut()
+            .retain(|listener| listener.unbounded_send(status).is_ok());
     }
 }
 
@@ -224,6 +288,9 @@ pub(crate) fn create_handle() -> RealtimeHandle {
             pending: Rc::new(RefCell::new(HashMap::new())),
             event_listeners: Rc::new(RefCell::new(Vec::new())),
             inbound,
+            generation: Cell::new(0),
+            connection_status: Cell::new(RealtimeConnectionStatus::Disconnected),
+            status_listeners: Rc::new(RefCell::new(Vec::new())),
         }),
     };
     spawn_universal_reader(
@@ -273,60 +340,17 @@ fn spawn_stream_reader(
     });
 }
 
-fn spawn_connection_logger(url: String, session: Session) {
+fn spawn_connection_watcher(
+    url: String,
+    session: Session,
+    generation: u64,
+    realtime: RealtimeHandle,
+) {
     spawn_task(async move {
         let error = session.closed().await;
-        info!(%url, %error, "WebTransport realtime session closed");
+        info!(%url, %generation, %error, "WebTransport realtime session closed");
+        realtime.clear_generation(generation).await;
     });
-}
-
-fn log_realtime_request(envelope: &RealtimeEnvelope) {
-    if envelope.kind != RealtimeKind::Network(NetworkKind::Ping) {
-        return;
-    }
-    let Some(request_id) = envelope.request_id else {
-        return;
-    };
-    match serde_json::from_value::<Ping>(envelope.payload.clone()) {
-        Ok(_) => debug!(id = %request_id, "rt ping"),
-        Err(error) => {
-            warn!(%request_id, %error, "failed to decode outgoing realtime ping log payload")
-        }
-    }
-}
-
-fn log_realtime_response(envelope: &RealtimeEnvelope) {
-    if envelope.kind != RealtimeKind::Network(NetworkKind::Pong) {
-        return;
-    }
-    let Some(request_id) = envelope.request_id else {
-        return;
-    };
-    match serde_json::from_value::<Pong>(envelope.payload.clone()) {
-        Ok(payload) => {
-            let received_at = now_ms();
-            debug!(
-                id = %request_id,
-                rtt_ms = received_at.saturating_sub(payload.sent_at_ms),
-                srv_ms = payload
-                    .server_sent_at_ms
-                    .saturating_sub(payload.server_received_at_ms),
-                "rt pong"
-            );
-        }
-        Err(error) => {
-            warn!(%request_id, %error, "failed to decode incoming realtime pong log payload")
-        }
-    }
-}
-
-fn now_ms() -> u64 {
-    web_time::SystemTime::now()
-        .duration_since(web_time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(u64::MAX)
 }
 
 fn spawn_universal_reader(

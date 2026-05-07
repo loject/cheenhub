@@ -1368,6 +1368,10 @@ video {
   min-width: 540px;
 }
 
+.min-w-\[170px\] {
+  min-width: 170px;
+}
+
 .max-w-2xl {
   max-width: 42rem;
 }
@@ -2855,6 +2859,10 @@ video {
   border-color: rgb(39 39 42 / var(--tw-border-opacity, 1));
 }
 
+.hover\:border-red-400\/35:hover {
+  border-color: rgb(248 113 113 / 0.35);
+}
+
 .hover\:bg-\[rgba\(39\2c 39\2c 42\2c \.84\)\]:hover {
   background-color: rgba(39,39,42,.84);
 }
@@ -2898,6 +2906,10 @@ video {
 .hover\:bg-zinc-900:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(24 24 27 / var(--tw-bg-opacity, 1));
+}
+
+.hover\:bg-red-500\/15:hover {
+  background-color: rgb(239 68 68 / 0.15);
 }
 
 .hover\:text-blue-100:hover {
