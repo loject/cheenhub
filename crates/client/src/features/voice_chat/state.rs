@@ -3,10 +3,13 @@
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use cheenhub_contracts::rest::AuthUser;
 use dioxus::prelude::*;
+use gloo_timers::future::TimeoutFuture;
 
 use crate::features::realtime::RealtimeHandle;
 
 use super::realtime;
+
+const SPEAKING_RELEASE_TIMEOUT_MS: u32 = 450;
 
 /// Voice-capable room target.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,19 +60,30 @@ pub(crate) enum VoiceConnectionState {
 pub(crate) struct VoiceConnectionHandle {
     /// Shared voice state signal.
     pub(crate) state: Signal<VoiceConnectionState>,
+    speaking_users: Signal<Vec<SpeakingUserActivity>>,
     realtime: RealtimeHandle,
     current_user: AuthUser,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpeakingUserActivity {
+    /// Participant identifier.
+    user_id: String,
+    /// Monotonic marker generation used to ignore stale release timers.
+    generation: u64,
 }
 
 impl VoiceConnectionHandle {
     /// Builds a voice connection handle.
     pub(crate) fn new(
         state: Signal<VoiceConnectionState>,
+        speaking_users: Signal<Vec<SpeakingUserActivity>>,
         realtime: RealtimeHandle,
         current_user: AuthUser,
     ) -> Self {
         Self {
             state,
+            speaking_users,
             realtime,
             current_user,
         }
@@ -83,6 +97,55 @@ impl VoiceConnectionHandle {
     /// Returns the authenticated current user identifier.
     pub(crate) fn current_user_id(&self) -> &str {
         &self.current_user.id
+    }
+
+    /// Returns user identifiers currently marked as speaking.
+    pub(crate) fn speaking_user_ids(&self) -> Vec<String> {
+        (self.speaking_users)()
+            .into_iter()
+            .map(|activity| activity.user_id)
+            .collect()
+    }
+
+    /// Marks one user as speaking until no new voice frame refreshes the marker.
+    pub(crate) fn mark_user_speaking(&self, user_id: String) {
+        let mut next_users = (self.speaking_users)();
+        let generation = match next_users
+            .iter_mut()
+            .find(|activity| activity.user_id == user_id)
+        {
+            Some(activity) => {
+                activity.generation = activity.generation.saturating_add(1);
+                activity.generation
+            }
+            None => {
+                next_users.push(SpeakingUserActivity {
+                    user_id: user_id.clone(),
+                    generation: 0,
+                });
+                0
+            }
+        };
+        let mut speaking_users = self.speaking_users;
+        speaking_users.set(next_users);
+
+        spawn(async move {
+            TimeoutFuture::new(SPEAKING_RELEASE_TIMEOUT_MS).await;
+            let mut next_users = speaking_users();
+            let previous_len = next_users.len();
+            next_users.retain(|activity| {
+                activity.user_id != user_id || activity.generation != generation
+            });
+            if next_users.len() != previous_len {
+                speaking_users.set(next_users);
+            }
+        });
+    }
+
+    /// Clears all remote speaking indicators.
+    pub(crate) fn clear_speaking_users(&self) {
+        let mut speaking_users = self.speaking_users;
+        speaking_users.set(Vec::new());
     }
 
     /// Joins one room, leaving the previous room first when needed.
