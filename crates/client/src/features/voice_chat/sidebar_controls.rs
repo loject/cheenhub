@@ -21,6 +21,7 @@ pub(crate) fn SidebarVoiceControls() -> Element {
     let mut output_muted = use_signal(|| false);
     let state = voice.state();
     let microphone_status = microphone.status();
+    let microphone_level = microphone.level();
     let visible = state.shows_sidebar_controls();
     let target = state.active_target();
     let room_name = target
@@ -46,6 +47,9 @@ pub(crate) fn SidebarVoiceControls() -> Element {
     };
     let microphone_live = matches!(microphone_status, MicrophoneStatus::Live);
     let microphone_starting = matches!(microphone_status, MicrophoneStatus::Starting);
+    let microphone_speaking = microphone_live && microphone_level.active;
+    let microphone_level_width =
+        (microphone_level.rms / microphone_level.threshold.max(0.001)).clamp(0.08, 1.0) * 100.0;
     let microphone_label = match microphone_status {
         MicrophoneStatus::Idle => "Включить микрофон",
         MicrophoneStatus::Starting => "Запрашиваем микрофон",
@@ -58,7 +62,9 @@ pub(crate) fn SidebarVoiceControls() -> Element {
     } else {
         "Отключить звук"
     };
-    let microphone_button_class = if microphone_live {
+    let microphone_button_class = if microphone_speaking {
+        "relative flex h-9 items-center justify-center overflow-hidden rounded-xl border border-emerald-300/80 bg-emerald-500/20 text-emerald-50 shadow-[0_0_0_1px_rgba(52,211,153,.25),0_10px_28px_rgba(16,185,129,.20)] transition-[background,border-color,color,transform,box-shadow,opacity] duration-150 hover:-translate-y-px hover:border-emerald-300 hover:bg-emerald-500/25 disabled:cursor-wait disabled:opacity-60"
+    } else if microphone_live {
         "flex h-9 items-center justify-center rounded-xl border border-emerald-500/35 bg-emerald-500/15 text-emerald-100 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-emerald-400/45 hover:bg-emerald-500/20 disabled:cursor-wait disabled:opacity-60"
     } else if matches!(
         microphone_status,
@@ -123,7 +129,18 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                             }));
                         },
                         if microphone_live {
-                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                            span {
+                                class: "pointer-events-none absolute inset-x-1.5 bottom-1 h-1 overflow-hidden rounded-full bg-zinc-950/60",
+                                span {
+                                    class: if microphone_speaking {
+                                        "block h-full rounded-full bg-emerald-300 transition-[width] duration-100"
+                                    } else {
+                                        "block h-full rounded-full bg-emerald-700/45 transition-[width] duration-100"
+                                    },
+                                    style: "width: {microphone_level_width}%;",
+                                }
+                            }
+                            svg { class: "relative z-10 h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 11a7 7 0 0 1-14 0m7 8v3m-4 0h8m-4-18a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V7a3 3 0 0 0-3-3Z" }
                             }
                         } else {

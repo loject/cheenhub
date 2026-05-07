@@ -1,0 +1,77 @@
+//! Voice participant tile component.
+
+use cheenhub_contracts::realtime::VoiceRoomParticipant;
+use dioxus::prelude::*;
+
+/// Renders one voice room participant.
+#[component]
+pub(crate) fn VoiceParticipantTile(
+    participant: VoiceRoomParticipant,
+    speaking: bool,
+    on_open_user_menu: EventHandler<(String, f64, f64)>,
+) -> Element {
+    let tile_class = if speaking {
+        "user-tile relative overflow-hidden rounded-[20px] border border-emerald-400/75 bg-[var(--avatar-bg,rgba(24,24,27,.8))] bg-cover bg-center p-4 shadow-[0_0_0_1px_rgba(52,211,153,.24),0_18px_70px_rgba(16,185,129,.18)] transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-emerald-300/80"
+    } else {
+        "user-tile relative overflow-hidden rounded-[20px] border border-accent/25 bg-[var(--avatar-bg,rgba(24,24,27,.8))] bg-cover bg-center p-4 transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-white/15"
+    };
+
+    rsx! {
+        article {
+            key: "{participant.user_id}",
+            "data-avatar": participant_initial(&participant.nickname),
+            "data-speaking": if speaking { "true" } else { "false" },
+            style: "--avatar-bg: rgba(24,24,27,.80);",
+            class: tile_class,
+            oncontextmenu: {
+                let nickname = participant.nickname.clone();
+                move |event| {
+                    event.prevent_default();
+                    event.stop_propagation();
+                    let point = event.client_coordinates();
+                    on_open_user_menu.call((nickname.clone(), point.x, point.y));
+                }
+            },
+            if speaking {
+                div { class: "pointer-events-none absolute inset-0 rounded-[20px] bg-emerald-400/[0.035]" }
+                div { class: "pointer-events-none absolute inset-x-4 bottom-4 z-0 flex h-10 items-end gap-1 text-emerald-300/55",
+                    span { class: "inline-block h-4 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current" }
+                    span { class: "inline-block h-7 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current [animation-delay:.10s]" }
+                    span { class: "inline-block h-5 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current [animation-delay:.20s]" }
+                    span { class: "inline-block h-8 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current [animation-delay:.30s]" }
+                }
+            }
+            div { class: "absolute right-3 top-3 z-20",
+                button {
+                    r#type: "button",
+                    class: "rounded-xl border border-zinc-800 bg-zinc-950 p-2 text-zinc-500 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:text-zinc-200",
+                    "aria-label": "Меню пользователя",
+                    onclick: {
+                        let nickname = participant.nickname.clone();
+                        move |event| {
+                            event.stop_propagation();
+                            let point = event.client_coordinates();
+                            on_open_user_menu.call((nickname.clone(), point.x, point.y));
+                        }
+                    },
+                    svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
+                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" }
+                    }
+                }
+            }
+            div { class: "relative z-10 flex min-h-full flex-col justify-end text-left",
+                div { class: "flex items-center gap-2",
+                    div { class: "text-[14px] font-semibold text-zinc-50", "{participant.nickname}" }
+                }
+            }
+        }
+    }
+}
+
+fn participant_initial(nickname: &str) -> String {
+    nickname
+        .chars()
+        .next()
+        .map(|value| value.to_uppercase().collect())
+        .unwrap_or_else(|| "?".to_owned())
+}

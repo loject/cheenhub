@@ -80,6 +80,11 @@ impl VoiceConnectionHandle {
         (self.state)()
     }
 
+    /// Returns the authenticated current user identifier.
+    pub(crate) fn current_user_id(&self) -> &str {
+        &self.current_user.id
+    }
+
     /// Joins one room, leaving the previous room first when needed.
     pub(crate) fn join(&self, target: VoiceRoomTarget) {
         let current = self.state();

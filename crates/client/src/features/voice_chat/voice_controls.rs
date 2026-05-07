@@ -19,10 +19,14 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
     let realtime_handle = use_context::<RealtimeHandle>();
     let state = voice.state();
     let microphone_status = microphone.status();
+    let microphone_level = microphone.level();
     let is_active_room = state.is_active_room(&server_id, &room_id);
     let is_leaving = matches!(state, VoiceConnectionState::Disconnecting { .. });
     let microphone_live = matches!(microphone_status, MicrophoneStatus::Live);
     let microphone_starting = matches!(microphone_status, MicrophoneStatus::Starting);
+    let microphone_speaking = microphone_live && microphone_level.active;
+    let microphone_level_height =
+        (microphone_level.rms / microphone_level.threshold.max(0.001)).clamp(0.08, 1.0) * 100.0;
     let microphone_label = match microphone_status {
         MicrophoneStatus::Idle => "Включить микрофон",
         MicrophoneStatus::Starting => "Запрашиваем микрофон",
@@ -43,7 +47,9 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                 button {
                     r#type: "button",
                     disabled: microphone_starting,
-                    class: if microphone_live {
+                    class: if microphone_speaking {
+                        "group relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-emerald-300/80 bg-emerald-500/20 text-emerald-50 shadow-[0_0_0_1px_rgba(52,211,153,.25),0_14px_36px_rgba(16,185,129,.22)] transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-500/25 disabled:cursor-wait disabled:opacity-60"
+                    } else if microphone_live {
                         "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-emerald-500/35 bg-emerald-500/15 text-emerald-100 transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-emerald-400/45 hover:bg-emerald-500/20 disabled:cursor-wait disabled:opacity-60"
                     } else {
                         "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-200 transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-zinc-700 hover:bg-zinc-900 disabled:cursor-wait disabled:opacity-60"
@@ -78,7 +84,20 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                     },
                     span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "{microphone_label}" }
                     if microphone_live {
-                        svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                        span {
+                            class: "pointer-events-none absolute inset-x-2 bottom-2 h-1 overflow-hidden rounded-full bg-zinc-950/60",
+                            span {
+                                class: if microphone_speaking {
+                                    "block h-full rounded-full bg-emerald-300 transition-[width] duration-100"
+                                } else {
+                                    "block h-full rounded-full bg-emerald-700/45 transition-[width] duration-100"
+                                },
+                                style: "width: {microphone_level_height}%;",
+                            }
+                        }
+                    }
+                    if microphone_live {
+                        svg { class: "relative z-10 h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 11a7 7 0 0 1-14 0m7 8v3m-4 0h8m-4-18a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V7a3 3 0 0 0-3-3Z" }
                         }
                     } else {

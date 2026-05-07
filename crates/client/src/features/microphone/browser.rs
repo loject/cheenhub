@@ -1,20 +1,21 @@
 //! Browser microphone backend.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use futures_util::FutureExt;
 use futures_util::future::LocalBoxFuture;
-use js_sys::{Function, Object, Promise, Reflect, Uint8Array};
+use js_sys::{Float32Array, Function, Object, Promise, Reflect, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{MediaStream, MediaStreamConstraints, MediaTrackConstraints, window};
 
 use super::backend::{
-    EncodedMicrophoneFrame, MicrophoneBackend, MicrophoneCodec, MicrophoneConfig, MicrophoneError,
-    MicrophoneFrameCallback, MicrophoneSession,
+    EncodedMicrophoneFrame, MicrophoneBackend, MicrophoneCallbacks, MicrophoneCodec,
+    MicrophoneConfig, MicrophoneError, MicrophoneLevel, MicrophoneSession,
 };
+use super::vad::{VoiceActivityDetector, rms_level};
 
 /// Browser microphone implementation backed by getUserMedia and WebCodecs.
 pub(crate) struct BrowserMicrophoneBackend;
@@ -23,9 +24,9 @@ impl MicrophoneBackend for BrowserMicrophoneBackend {
     fn start(
         &self,
         config: MicrophoneConfig,
-        on_frame: MicrophoneFrameCallback,
+        callbacks: MicrophoneCallbacks,
     ) -> LocalBoxFuture<'static, Result<Rc<dyn MicrophoneSession>, MicrophoneError>> {
-        async move { start_browser_session(config, on_frame).await }.boxed_local()
+        async move { start_browser_session(config, callbacks).await }.boxed_local()
     }
 }
 
@@ -65,7 +66,7 @@ impl MicrophoneSession for BrowserMicrophoneSession {
 
 async fn start_browser_session(
     config: MicrophoneConfig,
-    on_frame: MicrophoneFrameCallback,
+    callbacks: MicrophoneCallbacks,
 ) -> Result<Rc<dyn MicrophoneSession>, MicrophoneError> {
     if config.codec != MicrophoneCodec::Opus {
         return Err(MicrophoneError::new("Поддерживается только Opus микрофон."));
@@ -92,7 +93,7 @@ async fn start_browser_session(
 
     let sequence = Rc::new(Cell::new(0_u64));
     let bitrate_bps = Rc::new(Cell::new(config.bitrate_bps));
-    let output_on_frame = on_frame.clone();
+    let output_on_frame = callbacks.on_frame.clone();
     let output_sequence = sequence.clone();
     let output_closure = Closure::wrap(Box::new(move |chunk: EncodedAudioChunk| {
         let byte_length = chunk.byte_length();
@@ -132,7 +133,13 @@ async fn start_browser_session(
     let encoder: JsValue = encoder.into();
 
     let closed = Rc::new(Cell::new(false));
-    spawn_audio_reader(track.clone(), encoder.clone(), closed.clone());
+    spawn_audio_reader(
+        track.clone(),
+        encoder.clone(),
+        closed.clone(),
+        config,
+        callbacks,
+    );
 
     Ok(Rc::new(BrowserMicrophoneSession {
         encoder,
@@ -211,8 +218,15 @@ fn encoder_init(error: &Function, output: &Function) -> Result<JsValue, Micropho
     Ok(object.into())
 }
 
-fn spawn_audio_reader(track: web_sys::MediaStreamTrack, encoder: JsValue, closed: Rc<Cell<bool>>) {
+fn spawn_audio_reader(
+    track: web_sys::MediaStreamTrack,
+    encoder: JsValue,
+    closed: Rc<Cell<bool>>,
+    config: MicrophoneConfig,
+    callbacks: MicrophoneCallbacks,
+) {
     spawn_local(async move {
+        let detector = Rc::new(RefCell::new(VoiceActivityDetector::new(config)));
         let processor = match media_stream_track_processor(&track) {
             Ok(processor) => processor,
             Err(error) => {
@@ -243,12 +257,78 @@ fn spawn_audio_reader(track: web_sys::MediaStreamTrack, encoder: JsValue, closed
             if read.done {
                 break;
             }
+            let should_encode = match voice_gate_allows_audio(&read.value, &detector, &callbacks) {
+                Ok(should_encode) => should_encode,
+                Err(error) => {
+                    console_warn(&format!("failed to measure microphone level: {error}"));
+                    false
+                }
+            };
+            if !should_encode {
+                close_audio_data(&read.value);
+                continue;
+            }
             if encode_audio_data(&encoder, &read.value).is_err() {
                 break;
             }
             close_audio_data(&read.value);
         }
     });
+}
+
+fn voice_gate_allows_audio(
+    value: &JsValue,
+    detector: &Rc<RefCell<VoiceActivityDetector>>,
+    callbacks: &MicrophoneCallbacks,
+) -> Result<bool, MicrophoneError> {
+    let audio = value.unchecked_ref::<AudioData>();
+    let samples = audio_samples(audio)?;
+    let rms = rms_level(&samples);
+    let timestamp_us = audio.audio_data_timestamp().max(0.0) as u64;
+    let duration_us = audio.audio_data_duration().unwrap_or(0.0).max(0.0) as u32;
+    let active = detector.borrow_mut().update(rms, duration_us);
+    (callbacks.on_level)(MicrophoneLevel {
+        rms,
+        active,
+        threshold: detector_threshold(detector),
+        timestamp_us,
+    });
+
+    Ok(active)
+}
+
+fn detector_threshold(detector: &Rc<RefCell<VoiceActivityDetector>>) -> f32 {
+    detector.borrow().config().vad_threshold
+}
+
+fn audio_samples(audio: &AudioData) -> Result<Vec<f32>, MicrophoneError> {
+    let frames = audio.audio_data_number_of_frames();
+    let channels = audio.audio_data_number_of_channels().max(1);
+    if frames == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut samples = Vec::with_capacity(frames as usize * channels as usize);
+    for channel in 0..channels {
+        let channel_samples = Float32Array::new_with_length(frames);
+        audio
+            .audio_data_copy_to(&channel_samples, &copy_options(channel))
+            .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
+        samples.extend(channel_samples.to_vec());
+    }
+
+    Ok(samples)
+}
+
+fn copy_options(plane_index: u32) -> JsValue {
+    let object = Object::new();
+    set_property(&object, "format", &JsValue::from_str("f32-planar"));
+    set_property(
+        &object,
+        "planeIndex",
+        &JsValue::from_f64(f64::from(plane_index)),
+    );
+    object.into()
 }
 
 fn media_stream_track_processor(
@@ -411,6 +491,28 @@ extern "C" {
 
     #[wasm_bindgen(method, catch, js_name = copyTo)]
     fn copy_to(this: &EncodedAudioChunk, destination: &Uint8Array) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(js_name = AudioData)]
+    type AudioData;
+
+    #[wasm_bindgen(method, getter, js_name = numberOfFrames)]
+    fn audio_data_number_of_frames(this: &AudioData) -> u32;
+
+    #[wasm_bindgen(method, getter, js_name = numberOfChannels)]
+    fn audio_data_number_of_channels(this: &AudioData) -> u32;
+
+    #[wasm_bindgen(method, getter, js_name = timestamp)]
+    fn audio_data_timestamp(this: &AudioData) -> f64;
+
+    #[wasm_bindgen(method, getter, js_name = duration)]
+    fn audio_data_duration(this: &AudioData) -> Option<f64>;
+
+    #[wasm_bindgen(method, catch, js_name = copyTo)]
+    fn audio_data_copy_to(
+        this: &AudioData,
+        destination: &Float32Array,
+        options: &JsValue,
+    ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(js_name = MediaStreamTrackProcessor)]
     #[derive(Clone)]

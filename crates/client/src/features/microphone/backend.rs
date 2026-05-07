@@ -8,6 +8,9 @@ use futures_util::future::LocalBoxFuture;
 /// Callback invoked for every encoded microphone frame.
 pub(crate) type MicrophoneFrameCallback = Rc<dyn Fn(EncodedMicrophoneFrame)>;
 
+/// Callback invoked for every measured microphone level sample.
+pub(crate) type MicrophoneLevelCallback = Rc<dyn Fn(MicrophoneLevel)>;
+
 /// Encoded microphone codec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MicrophoneCodec {
@@ -15,8 +18,18 @@ pub(crate) enum MicrophoneCodec {
     Opus,
 }
 
-/// Microphone capture and encoding configuration.
+/// Microphone audio activation behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MicrophoneActivationMode {
+    /// Encode every captured frame while the microphone is live.
+    #[allow(dead_code)]
+    AlwaysActive,
+    /// Encode frames only while voice activation is open.
+    VoiceActivated,
+}
+
+/// Microphone capture and encoding configuration.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct MicrophoneConfig {
     /// Preferred encoded codec.
     pub(crate) codec: MicrophoneCodec,
@@ -26,6 +39,14 @@ pub(crate) struct MicrophoneConfig {
     pub(crate) channels: u8,
     /// Target encoder bitrate in bits per second.
     pub(crate) bitrate_bps: u32,
+    /// Audio activation mode used before encoding.
+    pub(crate) activation_mode: MicrophoneActivationMode,
+    /// RMS level threshold that opens voice activation.
+    pub(crate) vad_threshold: f32,
+    /// Time the level must stay above threshold before activation opens.
+    pub(crate) vad_activation_delay_us: u32,
+    /// Time activation remains open after the level falls below threshold.
+    pub(crate) vad_release_delay_us: u32,
 }
 
 impl Default for MicrophoneConfig {
@@ -35,8 +56,21 @@ impl Default for MicrophoneConfig {
             sample_rate_hz: 48_000,
             channels: 1,
             bitrate_bps: 32_000,
+            activation_mode: MicrophoneActivationMode::VoiceActivated,
+            vad_threshold: 0.02,
+            vad_activation_delay_us: 60_000,
+            vad_release_delay_us: 250_000,
         }
     }
+}
+
+/// Microphone callbacks supplied by the owning feature.
+#[derive(Clone)]
+pub(crate) struct MicrophoneCallbacks {
+    /// Encoded frame callback.
+    pub(crate) on_frame: MicrophoneFrameCallback,
+    /// Measured input level callback.
+    pub(crate) on_level: MicrophoneLevelCallback,
 }
 
 /// One encoded microphone frame.
@@ -56,6 +90,19 @@ pub(crate) struct EncodedMicrophoneFrame {
     pub(crate) channels: u8,
     /// Raw encoded frame bytes.
     pub(crate) bytes: Vec<u8>,
+}
+
+/// Current microphone input level for visualization and threshold tuning.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct MicrophoneLevel {
+    /// Input RMS amplitude normalized to roughly `0.0..=1.0`.
+    pub(crate) rms: f32,
+    /// Whether the activation gate is currently open.
+    pub(crate) active: bool,
+    /// Active threshold used for this measurement.
+    pub(crate) threshold: f32,
+    /// Capture timestamp in microseconds when provided by the backend.
+    pub(crate) timestamp_us: u64,
 }
 
 /// Current microphone capture status.
@@ -92,7 +139,7 @@ pub(crate) trait MicrophoneBackend {
     fn start(
         &self,
         config: MicrophoneConfig,
-        on_frame: MicrophoneFrameCallback,
+        callbacks: MicrophoneCallbacks,
     ) -> LocalBoxFuture<'static, Result<Rc<dyn MicrophoneSession>, MicrophoneError>>;
 }
 

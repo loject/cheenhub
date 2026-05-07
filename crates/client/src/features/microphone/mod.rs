@@ -3,10 +3,12 @@
 mod backend;
 mod browser;
 mod provider;
+mod vad;
 
 #[allow(unused_imports)]
 pub(crate) use backend::{
-    EncodedMicrophoneFrame, MicrophoneBackend, MicrophoneCodec, MicrophoneConfig, MicrophoneError,
-    MicrophoneFrameCallback, MicrophoneSession, MicrophoneStatus,
+    EncodedMicrophoneFrame, MicrophoneActivationMode, MicrophoneBackend, MicrophoneCallbacks,
+    MicrophoneCodec, MicrophoneConfig, MicrophoneError, MicrophoneFrameCallback, MicrophoneLevel,
+    MicrophoneLevelCallback, MicrophoneSession, MicrophoneStatus,
 };
 pub(crate) use provider::{MicrophoneHandle, MicrophoneProvider};

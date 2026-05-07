@@ -4,6 +4,7 @@ use cheenhub_contracts::rest::ServerRoomKind;
 use dioxus::prelude::*;
 
 use crate::features::app::components::app_shell::ActiveRoom;
+use crate::features::microphone::MicrophoneHandle;
 
 use super::participant_grid::VoiceParticipantGrid;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget};
@@ -13,10 +14,17 @@ use super::voice_controls::VoiceControls;
 #[component]
 pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
+    let microphone = use_context::<MicrophoneHandle>();
     let state = voice.state();
     let is_active_room = state.is_active_room(&server_id, &room.id);
     let participants = if is_active_room {
         state.participants().to_vec()
+    } else {
+        Vec::new()
+    };
+    let current_user_id = voice.current_user_id().to_owned();
+    let speaking_user_ids = if is_active_room && microphone.level().active {
+        vec![current_user_id]
     } else {
         Vec::new()
     };
@@ -34,7 +42,7 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
     rsx! {
         div { class: "voice-room-surface relative flex min-h-0 flex-1 flex-col",
             if is_active_room {
-                VoiceParticipantGrid { participants }
+                VoiceParticipantGrid { participants, speaking_user_ids }
             } else {
                 div { class: "voice-stage flex min-h-0 flex-1 items-center justify-center p-6 pb-[108px]",
                     div { class: "max-w-sm text-center",

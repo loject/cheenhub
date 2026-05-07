@@ -1,12 +1,13 @@
 //! Microphone context provider.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
 
 use super::backend::{
-    MicrophoneBackend, MicrophoneConfig, MicrophoneFrameCallback, MicrophoneSession,
-    MicrophoneStatus,
+    MicrophoneBackend, MicrophoneCallbacks, MicrophoneConfig, MicrophoneFrameCallback,
+    MicrophoneLevel, MicrophoneSession, MicrophoneStatus,
 };
 use super::browser::BrowserMicrophoneBackend;
 
@@ -14,6 +15,7 @@ use super::browser::BrowserMicrophoneBackend;
 #[derive(Clone)]
 pub(crate) struct MicrophoneHandle {
     status: Signal<MicrophoneStatus>,
+    level: Signal<MicrophoneLevel>,
     session: Signal<Option<Rc<dyn MicrophoneSession>>>,
     backend: Rc<dyn MicrophoneBackend>,
 }
@@ -31,10 +33,12 @@ impl MicrophoneHandle {
         let backend = self.backend.clone();
         let mut session = self.session;
         let mut status = self.status;
+        let level = self.level;
         status.set(MicrophoneStatus::Starting);
 
         spawn(async move {
-            match backend.start(MicrophoneConfig::default(), on_frame).await {
+            let callbacks = microphone_callbacks(on_frame, level);
+            match backend.start(MicrophoneConfig::default(), callbacks).await {
                 Ok(next_session) => {
                     session.set(Some(next_session));
                     status.set(MicrophoneStatus::Live);
@@ -55,6 +59,7 @@ impl MicrophoneHandle {
         let backend = self.backend.clone();
         let mut session = self.session;
         let mut status = self.status;
+        let level = self.level;
         status.set(MicrophoneStatus::Starting);
 
         spawn(async move {
@@ -64,7 +69,8 @@ impl MicrophoneHandle {
                 warn!(%error, "failed to stop previous microphone capture before restart");
             }
 
-            match backend.start(MicrophoneConfig::default(), on_frame).await {
+            let callbacks = microphone_callbacks(on_frame, level);
+            match backend.start(MicrophoneConfig::default(), callbacks).await {
                 Ok(next_session) => {
                     session.set(Some(next_session));
                     status.set(MicrophoneStatus::Live);
@@ -115,6 +121,12 @@ impl MicrophoneHandle {
         (self.status)()
     }
 
+    /// Returns the latest measured microphone input level.
+    #[allow(dead_code)]
+    pub(crate) fn level(&self) -> MicrophoneLevel {
+        (self.level)()
+    }
+
     /// Updates the active encoder bitrate.
     #[allow(dead_code)]
     pub(crate) fn set_bitrate_bps(&self, bitrate_bps: u32) {
@@ -130,6 +142,17 @@ impl MicrophoneHandle {
     }
 }
 
+fn microphone_callbacks(
+    on_frame: MicrophoneFrameCallback,
+    level: Signal<MicrophoneLevel>,
+) -> MicrophoneCallbacks {
+    let level = Rc::new(RefCell::new(level));
+    MicrophoneCallbacks {
+        on_frame,
+        on_level: Rc::new(move |next_level| level.borrow_mut().set(next_level)),
+    }
+}
+
 fn status_from_error(error: super::backend::MicrophoneError) -> MicrophoneStatus {
     if error.is_permission_denied() {
         MicrophoneStatus::PermissionDenied
@@ -142,10 +165,17 @@ fn status_from_error(error: super::backend::MicrophoneError) -> MicrophoneStatus
 #[component]
 pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let status = use_signal(|| MicrophoneStatus::Idle);
+    let level = use_signal(|| MicrophoneLevel {
+        rms: 0.0,
+        active: false,
+        threshold: MicrophoneConfig::default().vad_threshold,
+        timestamp_us: 0,
+    });
     let session = use_signal(|| None::<Rc<dyn MicrophoneSession>>);
     let backend: Rc<dyn MicrophoneBackend> = Rc::new(BrowserMicrophoneBackend);
     let handle = MicrophoneHandle {
         status,
+        level,
         session,
         backend,
     };
