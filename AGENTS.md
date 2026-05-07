@@ -16,7 +16,7 @@
 - Prefer Dioxus-provided primitives over custom lifecycle state. For async data loading, use `use_resource` before adding manual `use_effect`/`spawn` guards such as `loaded_*` flags.
 - Do not introduce global state, shared state modules, or context providers unless several independent feature boundaries need the same state.
 - Keep component props explicit and small.
-- Keep Dioxus components isolated: a file must not define more than one component.
+- Keep Dioxus components isolated: a file must define exactly one `#[component]`. Helper functions are allowed, but additional components must live in separate files.
 - Prefer a component instance per rendered item over reusing a component instance across multiple items.
 - When UI state belongs to a specific persistent entity, such as the selected server, room, text channel, voice room, or media session, render a keyed per-entity wrapper component and keep that entity-scoped state inside it instead of passing an optional active entity through long-lived siblings.
 - Avoid prop drilling multiple unrelated callbacks through UI-only components. When a child component represents a menu, toolbar, or command surface with several actions, prefer a small feature-local action enum and a single `EventHandler<Action>` prop.
@@ -33,6 +33,12 @@
 - Use Dioxus CLI Tailwind autodetection for the client.
 - Keep Tailwind input files in `crates/client`; do not add root npm scripts, `package.json`, or a local `node_modules` styling pipeline.
 - Do not try to start `dx serve` by default; assume the Dioxus dev server is usually already running in the background unless the user explicitly asks to start or restart it.
+
+## Client Realtime
+
+- Keep `crates/client/src/features/realtime` generic: connection setup, stream management, framing, generic request/send APIs, and generic inbound event subscription.
+- Do not add feature-specific methods such as `send_text_message` or `load_room_history` to `RealtimeHandle`; feature modules should call generic `request`, `send_reliable`, or `send_unreliable` themselves.
+- Feature-specific realtime request helpers and event decoding/filtering belong in the owning client feature, not in the generic realtime handle.
 
 ## Public API Documentation
 
@@ -52,6 +58,15 @@
 - Do not introduce repository traits or service traits just to satisfy layering; use concrete modules/functions until multiple implementations are actually needed.
 - Do not use raw SQL when SeaORM entities, SeaQuery, migration DSL, or another structured database API can express the operation clearly; reserve raw SQL for database-specific queries that the structured APIs cannot represent cleanly, and keep it isolated in infrastructure or migrations.
 - In-memory infrastructure implementations are only for local testing and development; keep them maximally simple, deterministic, and free of production-style indexing, caching, cleanup jobs, or database emulation unless a test explicitly requires it.
+
+## Backend Realtime
+
+- Keep `crates/backend/src/realtime` transport-focused: session lifecycle, stream framing, authentication stream handling, module routing, shared stream registries/fanout, TLS, and protocol helpers only.
+- Do not put product feature behavior in backend `realtime/*` modules. Feature-specific realtime adapters belong under the owning feature, such as `features/text_chat/realtime.rs`.
+- A realtime feature module should expose a message handler for envelopes addressed to that module. Do not add feature-specific bind/unbind lifecycle hooks unless the user explicitly approves the extra lifecycle contract.
+- Shared realtime fanout and stream registries belong in `realtime`, not in a product feature, when the mechanism can serve multiple feature modules.
+- Server-scoped broadcast APIs must require an explicit server identifier and must not broadcast across all servers by default.
+- Room-level or resource-level visibility checks should remain feature policy layered on top of server-scoped realtime recipient filtering.
 
 ## Logging
 
