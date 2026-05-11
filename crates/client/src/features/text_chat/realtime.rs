@@ -14,12 +14,17 @@ pub(crate) async fn load_room_history(
     realtime: &RealtimeHandle,
     server_id: String,
     room_id: String,
+    before_message_id: Option<String>,
 ) -> Result<RoomHistory, RealtimeError> {
     realtime
         .request(
             RealtimeModule::TextChat,
             RealtimeKind::TextChat(TextChatKind::LoadRoomHistory),
-            LoadRoomHistory { server_id, room_id },
+            LoadRoomHistory {
+                server_id,
+                room_id,
+                before_message_id,
+            },
         )
         .await
 }

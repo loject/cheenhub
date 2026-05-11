@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use uuid::Uuid;
 
 use crate::features::text_chat::domain::TextMessage;
-use crate::features::text_chat::infrastructure::{HISTORY_LIMIT, TextChatStore};
+use crate::features::text_chat::infrastructure::{HISTORY_LIMIT, TextChatStore, TextMessagePage};
 
 /// In-memory text chat storage for local runs and tests.
 #[derive(Default)]
@@ -23,7 +23,11 @@ impl TextChatStore for InMemoryTextChatStore {
         Ok(())
     }
 
-    async fn latest_room_messages(&self, room_id: &Uuid) -> anyhow::Result<Vec<TextMessage>> {
+    async fn room_message_page(
+        &self,
+        room_id: &Uuid,
+        before_message_id: Option<&Uuid>,
+    ) -> anyhow::Result<TextMessagePage> {
         let mut messages = self
             .messages
             .lock()
@@ -33,11 +37,24 @@ impl TextChatStore for InMemoryTextChatStore {
             .cloned()
             .collect::<Vec<_>>();
         messages.sort_by_key(|message| (message.created_at, message.id));
+        if let Some(before_message_id) = before_message_id {
+            let Some(cursor_index) = messages
+                .iter()
+                .position(|message| message.id == *before_message_id)
+            else {
+                return Err(anyhow!("message history cursor was not found"));
+            };
+            messages.truncate(cursor_index);
+        }
         let start = messages
             .len()
             .saturating_sub(usize::try_from(HISTORY_LIMIT).unwrap_or(50));
+        let has_more = start > 0;
 
-        Ok(messages.split_off(start))
+        Ok(TextMessagePage {
+            messages: messages.split_off(start),
+            has_more,
+        })
     }
 }
 

@@ -7,6 +7,7 @@ use cheenhub_contracts::realtime::{
 use cheenhub_contracts::rest::AuthUser;
 use cheenhub_contracts::rest::ServerRoomKind;
 use chrono::Utc;
+use tokio::time::{Duration as TokioDuration, sleep};
 use tracing::error;
 use uuid::Uuid;
 
@@ -23,17 +24,30 @@ pub(crate) async fn load_room_history(
 ) -> Result<RoomHistory, TextChatApplicationError> {
     let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
     let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
+    let before_message_id = request
+        .before_message_id
+        .as_deref()
+        .map(|value| parse_id(value, "История сообщений недоступна."))
+        .transpose()?;
     ensure_room_text_available(state, user_id, &server_id, &room_id).await?;
-    let messages = state
+    sleep(TokioDuration::from_millis(700)).await;
+    let page = state
         .text_chat_store
-        .latest_room_messages(&room_id)
+        .room_message_page(&room_id, before_message_id.as_ref())
         .await
-        .map_err(TextChatApplicationError::Internal)?;
+        .map_err(|error| {
+            if before_message_id.is_some() {
+                TextChatApplicationError::BadRequest("История сообщений недоступна.".to_owned())
+            } else {
+                TextChatApplicationError::Internal(error)
+            }
+        })?;
 
     Ok(RoomHistory {
         server_id: server_id.to_string(),
         room_id: room_id.to_string(),
-        messages: messages.iter().map(message_summary).collect(),
+        messages: page.messages.iter().map(message_summary).collect(),
+        has_more: page.has_more,
     })
 }
 
@@ -302,9 +316,17 @@ mod tests {
 
         assert_eq!(accepted.message.body, "hello wt");
         tokio::task::yield_now().await;
-        let history = load_room_history(&state, &user_id, LoadRoomHistory { server_id, room_id })
-            .await
-            .expect("history should load");
+        let history = load_room_history(
+            &state,
+            &user_id,
+            LoadRoomHistory {
+                server_id,
+                room_id,
+                before_message_id: None,
+            },
+        )
+        .await
+        .expect("history should load");
 
         assert_eq!(history.messages.len(), 1);
         assert_eq!(history.messages[0].id, accepted.message.id);
@@ -332,6 +354,7 @@ mod tests {
             LoadRoomHistory {
                 server_id: server_id.clone(),
                 room_id: room_id.clone(),
+                before_message_id: None,
             },
         )
         .await
@@ -460,13 +483,133 @@ mod tests {
             LoadRoomHistory {
                 server_id: server_id_string,
                 room_id: room_id_string,
+                before_message_id: None,
             },
         )
         .await
         .expect("history should load");
 
         assert_eq!(history.messages.len(), 50);
+        assert!(history.has_more);
         assert_eq!(history.messages[0].body, "message 5");
         assert_eq!(history.messages[49].body, "message 54");
+    }
+
+    #[tokio::test]
+    async fn room_history_page_before_cursor_returns_older_messages() {
+        let state = state();
+        let auth = registered_user(&state, "cursor_owner", "cursor-owner@example.com").await;
+        let user_id = Uuid::parse_str(&auth.user.id).expect("user id should be uuid");
+        let (server_id_string, room_id_string) = create_server_room(
+            &state,
+            &user_id,
+            "Cursor History",
+            "general",
+            ServerRoomKind::TextAndVoice,
+        )
+        .await;
+        let server_id = Uuid::parse_str(&server_id_string).expect("server id should be uuid");
+        let room_id = Uuid::parse_str(&room_id_string).expect("room id should be uuid");
+        let base_time = Utc::now();
+
+        for index in 0..75 {
+            state
+                .text_chat_store
+                .insert_text_message(TextMessage {
+                    id: Uuid::new_v4(),
+                    server_id,
+                    room_id,
+                    author_user_id: user_id,
+                    author_nickname: auth.user.nickname.clone(),
+                    body: format!("message {index}"),
+                    created_at: base_time + Duration::seconds(index),
+                })
+                .await
+                .expect("message should insert");
+        }
+
+        let latest = load_room_history(
+            &state,
+            &user_id,
+            LoadRoomHistory {
+                server_id: server_id_string.clone(),
+                room_id: room_id_string.clone(),
+                before_message_id: None,
+            },
+        )
+        .await
+        .expect("latest history should load");
+        let cursor = latest.messages[0].id.clone();
+        let older = load_room_history(
+            &state,
+            &user_id,
+            LoadRoomHistory {
+                server_id: server_id_string,
+                room_id: room_id_string,
+                before_message_id: Some(cursor),
+            },
+        )
+        .await
+        .expect("older history should load");
+
+        assert_eq!(latest.messages[0].body, "message 25");
+        assert_eq!(older.messages.len(), 25);
+        assert!(!older.has_more);
+        assert_eq!(older.messages[0].body, "message 0");
+        assert_eq!(older.messages[24].body, "message 24");
+    }
+
+    #[tokio::test]
+    async fn foreign_history_cursor_is_rejected() {
+        let state = state();
+        let auth = registered_user(&state, "foreign_owner", "foreign-owner@example.com").await;
+        let user_id = Uuid::parse_str(&auth.user.id).expect("user id should be uuid");
+        let (server_id_string, room_id_string) = create_server_room(
+            &state,
+            &user_id,
+            "Foreign Cursor",
+            "general",
+            ServerRoomKind::TextAndVoice,
+        )
+        .await;
+        let (_, other_room_id_string) = create_server_room(
+            &state,
+            &user_id,
+            "Other Cursor",
+            "general",
+            ServerRoomKind::TextAndVoice,
+        )
+        .await;
+        let server_id = Uuid::parse_str(&server_id_string).expect("server id should be uuid");
+        let other_room_id = Uuid::parse_str(&other_room_id_string).expect("room id should be uuid");
+        let foreign_message_id = Uuid::new_v4();
+
+        state
+            .text_chat_store
+            .insert_text_message(TextMessage {
+                id: foreign_message_id,
+                server_id,
+                room_id: other_room_id,
+                author_user_id: user_id,
+                author_nickname: auth.user.nickname.clone(),
+                body: "foreign".to_owned(),
+                created_at: Utc::now(),
+            })
+            .await
+            .expect("message should insert");
+
+        let error = load_room_history(
+            &state,
+            &user_id,
+            LoadRoomHistory {
+                server_id: server_id_string,
+                room_id: room_id_string,
+                before_message_id: Some(foreign_message_id.to_string()),
+            },
+        )
+        .await
+        .expect_err("foreign cursor should fail");
+
+        assert!(matches!(error, TextChatApplicationError::BadRequest(_)));
     }
 }
