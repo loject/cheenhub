@@ -4,7 +4,6 @@ use dioxus::prelude::*;
 
 use crate::features::app::components::app_shell::ActiveRoom;
 
-use super::header::RoomChatHeader;
 use super::panel::ChatRoomPanel;
 
 /// Visual mode for a room chat surface.
@@ -26,7 +25,6 @@ pub(crate) fn RoomChatSurface(
     match mode {
         RoomChatSurfaceMode::Full => rsx! {
             div { id: "text-room-view", class: "text-room-view hidden min-h-0 flex-1 flex-col",
-                RoomChatHeader { room: room.clone() }
                 ChatRoomPanel { server_id, room, compact: false }
             }
         },
