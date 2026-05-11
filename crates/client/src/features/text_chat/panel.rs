@@ -18,6 +18,7 @@ const OLDER_PAGE_SCROLL_THRESHOLD: f64 = 48.0;
 #[derive(Clone, Copy)]
 enum ScrollCommand {
     Bottom,
+    SmoothBottom,
     Preserve { offset_y: f64, height: f64 },
 }
 
@@ -263,6 +264,24 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                     }
                 }
             }
+            div { class: "relative",
+                if !is_near_bottom() && !messages().is_empty() {
+                    div { class: "pointer-events-none absolute bottom-3 right-4 z-20",
+                    button {
+                        r#type: "button",
+                        class: "group pointer-events-auto relative flex h-10 w-10 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950/85 text-blue-200 shadow-[0_8px_22px_rgba(0,0,0,0.35)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-white/15 hover:bg-zinc-900/90 hover:text-blue-100",
+                        "aria-label": "Перейти к последнему сообщению",
+                        onclick: move |_| pending_scroll.set(Some(ScrollCommand::SmoothBottom)),
+                        span { class: "pointer-events-none absolute bottom-[calc(100%+8px)] right-0 whitespace-nowrap rounded-lg border border-zinc-800 bg-zinc-950/95 px-2 py-1 text-[11px] font-medium text-zinc-300 opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] transition-[opacity,transform] duration-150 group-hover:opacity-100",
+                            "К последнему сообщению"
+                        }
+                        svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 5v14m0 0 6-6m-6 6-6-6" }
+                        }
+                    }
+                }
+                }
+            }
             if !status().is_empty() {
                 p { class: "mx-auto w-full max-w-3xl px-4 pb-2 text-[11px] leading-4 text-red-200",
                     "{status()}"
@@ -403,6 +422,17 @@ async fn apply_scroll_command(element: Rc<MountedData>, command: ScrollCommand) 
                 .scroll(
                     PixelsVector2D::new(0.0, scroll_size.height),
                     ScrollBehavior::Instant,
+                )
+                .await;
+        }
+        ScrollCommand::SmoothBottom => {
+            let Ok(scroll_size) = element.get_scroll_size().await else {
+                return;
+            };
+            let _ = element
+                .scroll(
+                    PixelsVector2D::new(0.0, scroll_size.height),
+                    ScrollBehavior::Smooth,
                 )
                 .await;
         }
