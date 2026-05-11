@@ -66,6 +66,7 @@ mod tests {
             LoadRoomHistory {
                 server_id: Uuid::new_v4().to_string(),
                 room_id: Uuid::new_v4().to_string(),
+                before_message_id: None,
             },
         )
         .expect("payload serializes");

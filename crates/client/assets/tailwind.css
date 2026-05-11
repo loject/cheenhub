@@ -1552,6 +1552,16 @@ video {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
 .cursor-default {
   cursor: default;
 }
@@ -1791,6 +1801,10 @@ video {
   border-width: 1px;
 }
 
+.border-2 {
+  border-width: 2px;
+}
+
 .border-b {
   border-bottom-width: 1px;
 }
@@ -1875,6 +1889,15 @@ video {
 
 .border-zinc-800\/80 {
   border-color: rgb(39 39 42 / 0.8);
+}
+
+.border-red-300\/20 {
+  border-color: rgb(252 165 165 / 0.2);
+}
+
+.border-t-blue-400 {
+  --tw-border-opacity: 1;
+  border-top-color: rgb(96 165 250 / var(--tw-border-opacity, 1));
 }
 
 .bg-\[rgba\(39\2c 39\2c 42\2c \.72\)\] {
@@ -2823,6 +2846,12 @@ video {
   transition-duration: 150ms;
 }
 
+.transition-colors {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
 .duration-100 {
   transition-duration: 100ms;
 }
@@ -3053,6 +3082,10 @@ video {
   border-color: rgb(39 39 42 / var(--tw-border-opacity, 1));
 }
 
+.hover\:border-red-200\/40:hover {
+  border-color: rgb(254 202 202 / 0.4);
+}
+
 .hover\:bg-\[rgba\(39\2c 39\2c 42\2c \.84\)\]:hover {
   background-color: rgba(39,39,42,.84);
 }
@@ -3112,6 +3145,10 @@ video {
 .hover\:bg-zinc-900:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(24 24 27 / var(--tw-bg-opacity, 1));
+}
+
+.hover\:bg-red-400\/10:hover {
+  background-color: rgb(248 113 113 / 0.1);
 }
 
 .hover\:text-blue-100:hover {

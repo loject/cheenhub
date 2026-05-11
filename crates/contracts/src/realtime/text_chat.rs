@@ -25,6 +25,8 @@ pub struct LoadRoomHistory {
     pub server_id: String,
     /// Room identifier.
     pub room_id: String,
+    /// Message identifier to load messages before.
+    pub before_message_id: Option<String>,
 }
 
 /// Response payload containing the latest room messages.
@@ -36,6 +38,8 @@ pub struct RoomHistory {
     pub room_id: String,
     /// Latest persisted room messages.
     pub messages: Vec<TextChatMessage>,
+    /// Whether older messages are available before this page.
+    pub has_more: bool,
 }
 
 /// Request payload used to send a room message.
