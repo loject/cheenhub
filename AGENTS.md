@@ -81,4 +81,4 @@
 - Keep local database credentials in `.env`; do not commit local secrets or passwords.
 - Do not add Docker Compose unless explicitly requested.
 
-Использование субагентов - 9/10
+Использование субагентов - 10/10
