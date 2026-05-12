@@ -3,59 +3,25 @@
 use std::rc::Rc;
 
 use cheenhub_contracts::realtime::TextChatMessage;
-use dioxus::prelude::dioxus_elements::geometry::PixelsVector2D;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
 use crate::features::app::components::app_shell::ActiveRoom;
 use crate::features::realtime::RealtimeHandle;
 
+use super::compose::{ComposeState, send_current_message};
+use super::history::{HistoryState, HistoryTarget, load_initial_history, load_older_history};
+use super::message_item::ChatMessageItem;
+use super::messages::{append_message, is_appearing_message};
 use super::realtime;
-
-const BOTTOM_SCROLL_THRESHOLD: f64 = 24.0;
-const OLDER_PAGE_SCROLL_THRESHOLD: f64 = 48.0;
-
-#[derive(Clone, Copy)]
-enum ScrollCommand {
-    Bottom,
-    SmoothBottom,
-    Preserve { offset_y: f64, height: f64 },
-}
-
-#[derive(Clone)]
-struct HistoryTarget {
-    realtime: RealtimeHandle,
-    server_id: String,
-    room_id: String,
-}
-
-#[derive(Clone, Copy)]
-struct HistoryState {
-    messages: Signal<Vec<TextChatMessage>>,
-    has_more: Signal<bool>,
-    initial_loading: Signal<bool>,
-    history_error: Signal<Option<String>>,
-    older_loading: Signal<bool>,
-    older_error: Signal<Option<String>>,
-    list_element: Signal<Option<Rc<MountedData>>>,
-    pending_scroll: Signal<Option<ScrollCommand>>,
-}
-
-#[derive(Clone, Copy)]
-struct ComposeState {
-    draft: Signal<String>,
-    messages: Signal<Vec<TextChatMessage>>,
-    status: Signal<String>,
-    is_sending: Signal<bool>,
-    is_near_bottom: Signal<bool>,
-    pending_scroll: Signal<Option<ScrollCommand>>,
-}
+use super::scroll::{ScrollCommand, apply_scroll_command, update_scroll_state};
 
 /// Renders a realtime text chat panel for one room.
 #[component]
 pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) -> Element {
     let realtime = use_context::<RealtimeHandle>();
     let mut messages = use_signal(Vec::<TextChatMessage>::new);
+    let mut appearing_message_ids = use_signal(Vec::<String>::new);
     let mut draft = use_signal(String::new);
     let status = use_signal(String::new);
     let is_sending = use_signal(|| false);
@@ -90,6 +56,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     };
     let history_state = HistoryState {
         messages,
+        appearing_message_ids,
         has_more,
         initial_loading,
         history_error,
@@ -101,6 +68,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let compose_state = ComposeState {
         draft,
         messages,
+        appearing_message_ids,
         status,
         is_sending,
         is_near_bottom,
@@ -127,6 +95,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     } else {
         "chat-input-wrap mx-auto flex max-w-3xl items-end gap-2 rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.8)] p-2 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
     };
+    let appearing_message_ids_list = appearing_message_ids();
 
     use_hook(move || {
         load_initial_history(history_target, history_state);
@@ -138,7 +107,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
             let mut receiver = realtime::subscribe_text_chat(&realtime);
             while let Some(message) = receiver.next().await {
                 if message.room_id == event_room_id
-                    && append_message(&mut messages, message)
+                    && append_message(&mut messages, &mut appearing_message_ids, message)
                     && is_near_bottom()
                 {
                     pending_scroll.set(Some(ScrollCommand::Bottom));
@@ -246,19 +215,13 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                         }
                     } else {
                         for message in messages() {
-                            div { key: "{message.id}", class: "flex gap-3",
-                                div { class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-800 text-[12px] font-bold text-zinc-100",
-                                    "{initial(&message.author_nickname)}"
-                                }
-                                div { class: "min-w-0 flex-1",
-                                    div { class: "mb-1 flex items-center gap-2",
-                                        span { class: "truncate text-[12px] font-semibold text-zinc-100", "{message.author_nickname}" }
-                                        span { class: "shrink-0 text-[10px] text-zinc-600", "{message_time(&message.created_at)}" }
-                                    }
-                                    div { class: "message-bubble whitespace-pre-wrap break-words rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.72)] px-3 py-2 text-[13px] leading-5 text-zinc-300 transition-[border-color,background] duration-200 hover:border-white/15 hover:bg-[rgba(39,39,42,.84)]",
-                                        "{message.body}"
-                                    }
-                                }
+                            ChatMessageItem {
+                                key: "{message.id}",
+                                animate: is_appearing_message(
+                                    &message.id,
+                                    &appearing_message_ids_list,
+                                ),
+                                message: message.clone(),
                             }
                         }
                     }
@@ -316,211 +279,4 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
             }
         }
     }
-}
-
-fn load_initial_history(target: HistoryTarget, mut state: HistoryState) {
-    state.initial_loading.set(true);
-    state.history_error.set(None);
-    spawn(async move {
-        match realtime::load_room_history(&target.realtime, target.server_id, target.room_id, None)
-            .await
-        {
-            Ok(history) => {
-                state.messages.set(history.messages);
-                state.has_more.set(history.has_more);
-                state.pending_scroll.set(Some(ScrollCommand::Bottom));
-            }
-            Err(error) => state.history_error.set(Some(error.to_string())),
-        }
-        state.initial_loading.set(false);
-    });
-}
-
-fn load_older_history(target: HistoryTarget, mut state: HistoryState) {
-    if (state.older_loading)() || !(state.has_more)() {
-        return;
-    }
-    let Some(before_message_id) = (state.messages)().first().map(|message| message.id.clone())
-    else {
-        return;
-    };
-
-    state.older_loading.set(true);
-    state.older_error.set(None);
-    spawn(async move {
-        let before_scroll = match state.list_element.cloned() {
-            Some(element) => capture_scroll_position(element).await,
-            None => None,
-        };
-
-        match realtime::load_room_history(
-            &target.realtime,
-            target.server_id,
-            target.room_id,
-            Some(before_message_id),
-        )
-        .await
-        {
-            Ok(history) => {
-                prepend_messages(&mut state.messages, history.messages);
-                state.has_more.set(history.has_more);
-                if let Some((offset_y, height)) = before_scroll {
-                    state
-                        .pending_scroll
-                        .set(Some(ScrollCommand::Preserve { offset_y, height }));
-                }
-            }
-            Err(error) => state.older_error.set(Some(error.to_string())),
-        }
-        state.older_loading.set(false);
-    });
-}
-
-async fn update_scroll_state(
-    element: Rc<MountedData>,
-    mut is_near_bottom: Signal<bool>,
-    has_more: Signal<bool>,
-    older_loading: Signal<bool>,
-    initial_loading: Signal<bool>,
-    load_older: Callback,
-) {
-    let Ok(offset) = element.get_scroll_offset().await else {
-        return;
-    };
-    let Ok(scroll_size) = element.get_scroll_size().await else {
-        return;
-    };
-    let Ok(rect) = element.get_client_rect().await else {
-        return;
-    };
-    let bottom_gap = scroll_size.height - rect.size.height - offset.y;
-
-    is_near_bottom.set(bottom_gap <= BOTTOM_SCROLL_THRESHOLD);
-    if offset.y <= OLDER_PAGE_SCROLL_THRESHOLD
-        && has_more()
-        && !older_loading()
-        && !initial_loading()
-    {
-        load_older.call(());
-    }
-}
-
-async fn capture_scroll_position(element: Rc<MountedData>) -> Option<(f64, f64)> {
-    let offset = element.get_scroll_offset().await.ok()?;
-    let scroll_size = element.get_scroll_size().await.ok()?;
-
-    Some((offset.y, scroll_size.height))
-}
-
-async fn apply_scroll_command(element: Rc<MountedData>, command: ScrollCommand) {
-    match command {
-        ScrollCommand::Bottom => {
-            let Ok(scroll_size) = element.get_scroll_size().await else {
-                return;
-            };
-            let _ = element
-                .scroll(
-                    PixelsVector2D::new(0.0, scroll_size.height),
-                    ScrollBehavior::Instant,
-                )
-                .await;
-        }
-        ScrollCommand::SmoothBottom => {
-            let Ok(scroll_size) = element.get_scroll_size().await else {
-                return;
-            };
-            let _ = element
-                .scroll(
-                    PixelsVector2D::new(0.0, scroll_size.height),
-                    ScrollBehavior::Smooth,
-                )
-                .await;
-        }
-        ScrollCommand::Preserve { offset_y, height } => {
-            let Ok(scroll_size) = element.get_scroll_size().await else {
-                return;
-            };
-            let next_offset = offset_y + (scroll_size.height - height);
-            let _ = element
-                .scroll(
-                    PixelsVector2D::new(0.0, next_offset.max(0.0)),
-                    ScrollBehavior::Instant,
-                )
-                .await;
-        }
-    }
-}
-
-fn send_current_message(
-    realtime: RealtimeHandle,
-    server_id: String,
-    room_id: String,
-    mut state: ComposeState,
-) {
-    let body = (state.draft)().trim().to_owned();
-    if body.is_empty() {
-        return;
-    }
-    state.draft.set(String::new());
-    state.status.set(String::new());
-    state.is_sending.set(true);
-
-    spawn(async move {
-        match realtime::send_text_message(&realtime, server_id, room_id, body).await {
-            Ok(accepted) => {
-                if append_message(&mut state.messages, accepted.message) && (state.is_near_bottom)()
-                {
-                    state.pending_scroll.set(Some(ScrollCommand::Bottom));
-                }
-            }
-            Err(error) => state.status.set(error.to_string()),
-        }
-        state.is_sending.set(false);
-    });
-}
-
-fn append_message(messages: &mut Signal<Vec<TextChatMessage>>, message: TextChatMessage) -> bool {
-    let mut next_messages = messages();
-    if next_messages
-        .iter()
-        .any(|saved_message| saved_message.id == message.id)
-    {
-        return false;
-    }
-    next_messages.push(message);
-    messages.set(next_messages);
-
-    true
-}
-
-fn prepend_messages(messages: &mut Signal<Vec<TextChatMessage>>, incoming: Vec<TextChatMessage>) {
-    let saved_messages = messages();
-    let mut next_messages = incoming
-        .into_iter()
-        .filter(|message| {
-            !saved_messages
-                .iter()
-                .any(|saved_message| saved_message.id == message.id)
-        })
-        .collect::<Vec<_>>();
-
-    next_messages.extend(saved_messages);
-    messages.set(next_messages);
-}
-
-fn initial(nickname: &str) -> String {
-    nickname
-        .chars()
-        .next()
-        .map(|letter| letter.to_uppercase().collect())
-        .unwrap_or_else(|| "?".to_owned())
-}
-
-fn message_time(created_at: &str) -> String {
-    created_at
-        .split('T')
-        .nth(1)
-        .and_then(|time| time.get(0..5))
-        .unwrap_or("")
-        .to_owned()
 }

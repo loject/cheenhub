@@ -195,6 +195,11 @@
     transition: width 0.16s ease, background 0.16s ease;
   }
 
+  .chat-message {
+    animation: chat-message-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+    transform-origin: bottom left;
+  }
+
 }
 
 @layer components {
@@ -295,6 +300,18 @@
   }
 }
 
+@keyframes chat-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes pulse-bar {
   0%,
   100% {
@@ -345,5 +362,11 @@
   100% {
     transform: scale(2.2);
     opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-message {
+    animation: none;
   }
 }
