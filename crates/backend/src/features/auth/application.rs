@@ -13,6 +13,17 @@ use crate::features::auth::validation;
 use crate::state::AppState;
 use uuid::Uuid;
 
+mod google;
+mod oauth;
+
+#[cfg(test)]
+mod tests;
+
+pub(crate) use oauth::{
+    complete_google_oauth, google_oauth_callback_url, linked_accounts, register_with_google_oauth,
+    start_google_oauth, unlink_google,
+};
+
 /// Registers a user and creates an authenticated session.
 pub(crate) async fn register(
     state: &AppState,
@@ -33,7 +44,7 @@ pub(crate) async fn register(
             valid.nickname,
             valid.email,
             valid.email_normalized,
-            password_hash,
+            Some(password_hash),
             now,
         )
         .await
@@ -58,7 +69,13 @@ pub(crate) async fn login(
         return Err(invalid_credentials());
     };
 
-    if !password::verify_password(&valid.password, &user.password_hash) {
+    let Some(password_hash) = &user.password_hash else {
+        return Err(AuthError::Unauthorized(
+            "Этот аккаунт создан через внешний вход. Используй Google.".to_owned(),
+        ));
+    };
+
+    if !password::verify_password(&valid.password, password_hash) {
         return Err(invalid_credentials());
     }
 
@@ -147,7 +164,7 @@ pub(crate) async fn me(state: &AppState, access_token: &str) -> Result<AuthUser,
     Ok(auth_user(&user))
 }
 
-async fn create_auth_response(
+pub(super) async fn create_auth_response(
     state: &AppState,
     user: &UserAccount,
 ) -> Result<AuthResponse, AuthError> {
@@ -183,7 +200,7 @@ fn auth_user(user: &UserAccount) -> AuthUser {
     }
 }
 
-fn map_insert_user_error(error: InsertUserError) -> AuthError {
+pub(super) fn map_insert_user_error(error: InsertUserError) -> AuthError {
     match error {
         InsertUserError::Conflict(UserConflict::Nickname) => {
             AuthError::Conflict("Этот никнейм уже занят.".to_owned())
@@ -200,6 +217,6 @@ fn invalid_credentials() -> AuthError {
     AuthError::Unauthorized("Email или пароль указаны неверно.".to_owned())
 }
 
-fn expired_session() -> AuthError {
+pub(super) fn expired_session() -> AuthError {
     AuthError::Unauthorized("Сессия истекла. Войди снова.".to_owned())
 }

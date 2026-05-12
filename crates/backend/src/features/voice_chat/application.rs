@@ -242,6 +242,15 @@ mod tests {
             auth_keys: AuthKeys::generate_for_tests(),
             access_token_lifetime_minutes: 15,
             refresh_token_lifetime_days: 30,
+            google_oauth_client_id: Some("test-google-client".to_owned()),
+            google_oauth_client_secret: Some("test-google-secret".to_owned()),
+            google_oauth_redirect_uri: Some(
+                "http://localhost/api/auth/oauth/google/callback".to_owned(),
+            ),
+            cheenhub_client_base_url: "http://localhost".to_owned(),
+            oauth_state_lifetime_minutes: 10,
+            oauth_handoff_lifetime_minutes: 5,
+            oauth_registration_lifetime_minutes: 15,
         }
     }
 

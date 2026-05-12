@@ -68,6 +68,13 @@ async fn main() -> anyhow::Result<()> {
         auth_keys,
         access_token_lifetime_minutes: config.access_token_lifetime_minutes,
         refresh_token_lifetime_days: config.refresh_token_lifetime_days,
+        google_oauth_client_id: config.google_oauth_client_id.clone(),
+        google_oauth_client_secret: config.google_oauth_client_secret.clone(),
+        google_oauth_redirect_uri: config.google_oauth_redirect_uri.clone(),
+        cheenhub_client_base_url: config.cheenhub_client_base_url.clone(),
+        oauth_state_lifetime_minutes: config.oauth_state_lifetime_minutes,
+        oauth_handoff_lifetime_minutes: config.oauth_handoff_lifetime_minutes,
+        oauth_registration_lifetime_minutes: config.oauth_registration_lifetime_minutes,
     };
     let app = http::router(state.clone());
     let realtime_address = config.webtransport_socket_addr()?;

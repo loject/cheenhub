@@ -1,5 +1,6 @@
 //! Authentication infrastructure layer.
 
+mod conversions;
 mod entities;
 mod in_memory;
 mod postgres;
@@ -8,7 +9,9 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::features::auth::domain::{RefreshSession, UserAccount};
+use crate::features::auth::domain::{
+    OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, OAuthState, RefreshSession, UserAccount,
+};
 
 pub(crate) use in_memory::InMemoryAuthStore;
 pub(crate) use postgres::PostgresAuthStore;
@@ -42,7 +45,7 @@ pub(crate) trait AuthStore: Send + Sync {
         nickname: String,
         email: String,
         email_normalized: String,
-        password_hash: String,
+        password_hash: Option<String>,
         now: DateTime<Utc>,
     ) -> Result<UserAccount, InsertUserError>;
 
@@ -94,4 +97,103 @@ pub(crate) trait AuthStore: Send + Sync {
         session_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<bool>;
+
+    /// Inserts a short-lived OAuth state.
+    async fn insert_oauth_state(
+        &self,
+        state_hash: String,
+        nonce: String,
+        flow_kind: String,
+        user_id: Option<Uuid>,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> anyhow::Result<()>;
+
+    /// Consumes an active OAuth state.
+    async fn consume_oauth_state(
+        &self,
+        state_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<OAuthState>>;
+
+    /// Finds a linked OAuth account by provider subject.
+    async fn find_oauth_account_by_subject(
+        &self,
+        provider: &str,
+        provider_subject: &str,
+    ) -> anyhow::Result<Option<OAuthAccount>>;
+
+    /// Finds a linked OAuth account for a user.
+    async fn find_oauth_account_for_user(
+        &self,
+        provider: &str,
+        user_id: &Uuid,
+    ) -> anyhow::Result<Option<OAuthAccount>>;
+
+    /// Lists linked OAuth accounts for a user.
+    async fn list_oauth_accounts(&self, user_id: &Uuid) -> anyhow::Result<Vec<OAuthAccount>>;
+
+    /// Inserts a linked OAuth account.
+    async fn insert_oauth_account(
+        &self,
+        user_id: &Uuid,
+        provider: String,
+        provider_subject: String,
+        email: String,
+        display_name: Option<String>,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<OAuthAccount>;
+
+    /// Deletes a linked OAuth account for a user.
+    async fn delete_oauth_account(&self, provider: &str, user_id: &Uuid) -> anyhow::Result<bool>;
+
+    /// Inserts a short-lived OAuth frontend handoff.
+    async fn insert_oauth_handoff(
+        &self,
+        code_hash: String,
+        kind: String,
+        user_id: Option<Uuid>,
+        registration_intent_id: Option<Uuid>,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> anyhow::Result<()>;
+
+    /// Finds an active OAuth frontend handoff.
+    async fn find_active_oauth_handoff(
+        &self,
+        code_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<OAuthHandoff>>;
+
+    /// Marks an OAuth frontend handoff as consumed.
+    async fn consume_oauth_handoff(
+        &self,
+        handoff_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()>;
+
+    /// Inserts a short-lived OAuth registration intent.
+    async fn insert_oauth_registration_intent(
+        &self,
+        provider: String,
+        provider_subject: String,
+        email: String,
+        display_name: Option<String>,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> anyhow::Result<OAuthRegistrationIntent>;
+
+    /// Finds an active OAuth registration intent.
+    async fn find_active_oauth_registration_intent(
+        &self,
+        intent_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<OAuthRegistrationIntent>>;
+
+    /// Marks an OAuth registration intent as consumed.
+    async fn consume_oauth_registration_intent(
+        &self,
+        intent_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()>;
 }

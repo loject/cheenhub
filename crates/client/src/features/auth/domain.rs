@@ -20,4 +20,8 @@ impl AuthProvider {
             Self::Discord => "D",
         }
     }
+
+    pub(super) fn is_available(self) -> bool {
+        matches!(self, Self::Google)
+    }
 }

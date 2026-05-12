@@ -2,13 +2,16 @@
 
 use axum::{
     Json,
-    extract::State,
+    extract::{Query, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
 };
 use cheenhub_contracts::rest::{
-    ApiError, AuthResponse, AuthUser, LoginRequest, LogoutRequest, RefreshRequest, RegisterRequest,
+    ApiError, AuthResponse, AuthUser, LinkedAccountsResponse, LoginRequest, LogoutRequest,
+    OAuthCompleteRequest, OAuthCompleteResponse, OAuthRegistrationRequest, OAuthStartRequest,
+    OAuthStartResponse, RefreshRequest, RegisterRequest,
 };
+use serde::Deserialize;
 
 use crate::features::auth::application;
 use crate::features::auth::error::AuthError;
@@ -56,12 +59,84 @@ pub(crate) async fn me(
     application::me(&state, token).await.map(Json)
 }
 
+/// Starts a Google OAuth login or link flow.
+pub(crate) async fn start_google_oauth(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<OAuthStartRequest>,
+) -> Result<Json<OAuthStartResponse>, AuthError> {
+    let token = optional_bearer_token(&headers);
+    application::start_google_oauth(&state, token, request)
+        .await
+        .map(Json)
+}
+
+/// Handles the Google OAuth provider callback.
+pub(crate) async fn google_oauth_callback(
+    State(state): State<AppState>,
+    Query(query): Query<GoogleOAuthCallbackQuery>,
+) -> Redirect {
+    let url =
+        application::google_oauth_callback_url(&state, query.code, query.state, query.error).await;
+    Redirect::to(&url)
+}
+
+/// Completes a Google OAuth frontend handoff.
+pub(crate) async fn complete_google_oauth(
+    State(state): State<AppState>,
+    Json(request): Json<OAuthCompleteRequest>,
+) -> Result<Json<OAuthCompleteResponse>, AuthError> {
+    application::complete_google_oauth(&state, request)
+        .await
+        .map(Json)
+}
+
+/// Finishes registration for a verified Google OAuth identity.
+pub(crate) async fn register_with_google_oauth(
+    State(state): State<AppState>,
+    Json(request): Json<OAuthRegistrationRequest>,
+) -> Result<Json<AuthResponse>, AuthError> {
+    application::register_with_google_oauth(&state, request)
+        .await
+        .map(Json)
+}
+
+/// Lists external accounts linked to the current user.
+pub(crate) async fn linked_accounts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<LinkedAccountsResponse>, AuthError> {
+    let token = bearer_token(&headers)?;
+    application::linked_accounts(&state, token).await.map(Json)
+}
+
+/// Unlinks Google from the current user.
+pub(crate) async fn unlink_google(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<LinkedAccountsResponse>, AuthError> {
+    let token = bearer_token(&headers)?;
+    application::unlink_google(&state, token).await.map(Json)
+}
+
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, "bad_request", message),
             Self::Unauthorized(message) => (StatusCode::UNAUTHORIZED, "unauthorized", message),
             Self::Conflict(message) => (StatusCode::CONFLICT, "conflict", message),
+            Self::Misconfigured {
+                feature,
+                missing,
+                message,
+            } => {
+                tracing::warn!(
+                    feature,
+                    missing_env = ?missing,
+                    "authentication feature is not configured; set the listed environment variables in .env and restart the backend"
+                );
+                (StatusCode::SERVICE_UNAVAILABLE, "misconfigured", message)
+            }
             Self::Internal(error) => {
                 tracing::error!(%error, "authentication request failed");
                 (
@@ -93,4 +168,19 @@ fn bearer_token(headers: &HeaderMap) -> Result<&str, AuthError> {
         .strip_prefix("Bearer ")
         .filter(|token| !token.is_empty())
         .ok_or_else(|| AuthError::Unauthorized("Войди, чтобы продолжить.".to_owned()))
+}
+
+fn optional_bearer_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .filter(|token| !token.is_empty())
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct GoogleOAuthCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
 }

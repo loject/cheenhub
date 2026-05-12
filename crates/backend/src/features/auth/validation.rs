@@ -36,10 +36,10 @@ pub(crate) fn register(
     if !accepts_policies {
         return Err("Нужно принять правила сервиса.");
     }
-    if !valid_nickname(&nickname) {
+    if !is_valid_nickname(&nickname) {
         return Err("Никнейм должен быть длиной 3-32 символа и содержать латиницу, цифры или _.");
     }
-    if !valid_email(&email_normalized) {
+    if !is_valid_email(&email_normalized) {
         return Err("Укажи корректный email.");
     }
     if !(8..=128).contains(&password.chars().count()) {
@@ -58,7 +58,7 @@ pub(crate) fn register(
 pub(crate) fn login(email: String, password: String) -> Result<ValidLogin, &'static str> {
     let email_normalized = email.trim().to_lowercase();
 
-    if !valid_email(&email_normalized) {
+    if !is_valid_email(&email_normalized) {
         return Err("Укажи корректный email.");
     }
     if password.is_empty() {
@@ -71,7 +71,8 @@ pub(crate) fn login(email: String, password: String) -> Result<ValidLogin, &'sta
     })
 }
 
-fn valid_nickname(nickname: &str) -> bool {
+/// Returns whether a nickname satisfies account rules.
+pub(crate) fn is_valid_nickname(nickname: &str) -> bool {
     let len = nickname.chars().count();
     (3..=32).contains(&len)
         && nickname
@@ -79,7 +80,8 @@ fn valid_nickname(nickname: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
-fn valid_email(email: &str) -> bool {
+/// Returns whether an email roughly satisfies account rules.
+pub(crate) fn is_valid_email(email: &str) -> bool {
     let Some((local, domain)) = email.split_once('@') else {
         return false;
     };
