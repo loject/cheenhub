@@ -1,9 +1,12 @@
 //! Authentication API client.
 
 use cheenhub_contracts::rest::{
-    ApiError, AuthResponse, AuthUser, LoginRequest, LogoutRequest, RefreshRequest, RegisterRequest,
+    ApiError, AuthResponse, AuthUser, LoginRequest, LogoutRequest, OAuthFlow,
+    OAuthRegistrationRequest, OAuthStartRequest, RefreshRequest, RegisterRequest,
 };
 use gloo_net::http::Request;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::features::auth::{jwt, storage};
 
@@ -19,6 +22,90 @@ pub(crate) async fn register(request: RegisterRequest) -> Result<AuthUser, Strin
 pub(crate) async fn login(request: LoginRequest) -> Result<AuthUser, String> {
     let response = post_json("/auth/login", &request).await?;
     save_response(response)
+}
+
+/// Starts Google OAuth login and returns the provider authorization URL.
+pub(crate) async fn start_google_oauth(redirect_uri: String) -> Result<String, String> {
+    let _ = redirect_uri;
+    start_oauth("/auth/oauth/google/start", OAuthFlow::Login, None).await
+}
+
+/// Starts Google account linking and returns the provider authorization URL.
+pub(crate) async fn start_google_account_link(redirect_uri: String) -> Result<String, String> {
+    let _ = redirect_uri;
+    let access_token = fresh_access_token().await?;
+    start_oauth(
+        "/auth/oauth/google/start",
+        OAuthFlow::Link,
+        Some(access_token),
+    )
+    .await
+}
+
+/// Completes OAuth login with a backend handoff code.
+pub(crate) async fn complete_google_oauth(
+    handoff_code: String,
+    nickname: Option<String>,
+) -> Result<OAuthCompletion, String> {
+    if let Some(nickname) = nickname {
+        let response = post_json(
+            "/auth/oauth/google/register",
+            &OAuthRegistrationRequest {
+                registration_token: handoff_code,
+                nickname,
+                accepts_policies: true,
+            },
+        )
+        .await?;
+        return save_response(response).map(OAuthCompletion::Authenticated);
+    }
+
+    complete_oauth("/auth/oauth/google/complete", handoff_code).await
+}
+
+/// Completes OAuth account linking with a backend handoff code.
+pub(crate) async fn complete_google_account_link(handoff_code: String) -> Result<(), String> {
+    match complete_oauth("/auth/oauth/google/complete", handoff_code).await? {
+        OAuthCompletion::Authenticated(_) | OAuthCompletion::Linked => Ok(()),
+        OAuthCompletion::RegistrationRequired(_) => {
+            Err("Этот Google аккаунт нужно сначала зарегистрировать.".to_owned())
+        }
+    }
+}
+
+/// Loads linked external accounts for the current user.
+pub(crate) async fn linked_accounts() -> Result<Vec<LinkedAccount>, String> {
+    let access_token = fresh_access_token().await?;
+    let response = Request::get(&url("/auth/linked-accounts"))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if response.ok() {
+        return parse_linked_accounts(response).await;
+    }
+
+    Err(read_error(response).await)
+}
+
+/// Unlinks an external account from the current user.
+pub(crate) async fn unlink_account(provider: &str) -> Result<(), String> {
+    if provider != "google" {
+        return Err("Этот провайдер пока нельзя отключить.".to_owned());
+    }
+    let access_token = fresh_access_token().await?;
+    let response = Request::post(&url("/auth/linked-accounts/google/unlink"))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if response.ok() {
+        Ok(())
+    } else {
+        Err(read_error(response).await)
+    }
 }
 
 /// Returns whether a token pair is available locally.
@@ -119,6 +206,199 @@ pub(crate) async fn refresh_access_token() -> Result<String, String> {
     jwt::verify(&response.access_token)?;
     storage::save(&response.access_token, &response.refresh_token);
     Ok(response.access_token)
+}
+
+/// OAuth completion result returned by the auth API.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum OAuthCompletion {
+    /// OAuth completed with a full auth session.
+    Authenticated(AuthUser),
+    /// OAuth completed, but the user must choose a CheenHub nickname.
+    RegistrationRequired(OAuthRegistrationRequired),
+    /// OAuth account linking completed.
+    Linked,
+}
+
+/// Additional data needed to finish OAuth registration.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct OAuthRegistrationRequired {
+    /// Email address returned by the OAuth provider when available.
+    pub(crate) email: Option<String>,
+    /// Suggested display name returned by the OAuth provider when available.
+    pub(crate) suggested_nickname: Option<String>,
+}
+
+/// Linked external account shown in user settings.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct LinkedAccount {
+    /// OAuth provider identifier such as `google`.
+    pub(crate) provider: String,
+    /// Human-readable provider label.
+    #[serde(default)]
+    pub(crate) provider_label: Option<String>,
+    /// Email address exposed by the provider.
+    #[serde(default)]
+    pub(crate) email: Option<String>,
+    /// Provider account display name.
+    #[serde(default)]
+    pub(crate) display_name: Option<String>,
+    /// Provider-side account identifier, if exposed by the API.
+    #[serde(default)]
+    pub(crate) provider_user_id: Option<String>,
+    /// RFC 3339 link timestamp, if exposed by the API.
+    #[serde(default)]
+    pub(crate) linked_at: Option<String>,
+}
+
+#[derive(Serialize)]
+struct OAuthCompleteRequest {
+    handoff_code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nickname: Option<String>,
+}
+
+async fn start_oauth(
+    path: &str,
+    flow: OAuthFlow,
+    access_token: Option<String>,
+) -> Result<String, String> {
+    let mut request = Request::post(&url(path));
+    if let Some(access_token) = access_token {
+        request = request.header("Authorization", &format!("Bearer {access_token}"));
+    }
+
+    let response = request
+        .json(&OAuthStartRequest { flow })
+        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if !response.ok() {
+        return Err(read_error(response).await);
+    }
+
+    let value = response
+        .json::<Value>()
+        .await
+        .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned())?;
+
+    value
+        .get("authorization_url")
+        .or_else(|| value.get("redirect_url"))
+        .or_else(|| value.get("url"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| "Сервер не вернул ссылку для входа через Google.".to_owned())
+}
+
+async fn complete_oauth(path: &str, handoff_code: String) -> Result<OAuthCompletion, String> {
+    let response = Request::post(&url(path))
+        .json(&OAuthCompleteRequest {
+            handoff_code,
+            nickname: None,
+        })
+        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if !response.ok() {
+        return Err(read_error(response).await);
+    }
+
+    let value = response
+        .json::<Value>()
+        .await
+        .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned())?;
+
+    parse_oauth_completion(value)
+}
+
+fn parse_oauth_completion(value: Value) -> Result<OAuthCompletion, String> {
+    if let Ok(response) = serde_json::from_value::<AuthResponse>(value.clone()) {
+        return save_response(response).map(OAuthCompletion::Authenticated);
+    }
+
+    let kind = value
+        .get("kind")
+        .or_else(|| value.get("status"))
+        .or_else(|| value.get("type"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
+    if kind == "registration_required" || kind == "RegistrationRequired" {
+        return Ok(OAuthCompletion::RegistrationRequired(
+            registration_required_from_value(&value),
+        ));
+    }
+
+    if let Some(response_value) = value
+        .get("auth_response")
+        .or_else(|| value.get("auth"))
+        .or_else(|| value.get("authenticated"))
+    {
+        let response = serde_json::from_value::<AuthResponse>(response_value.clone())
+            .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned())?;
+        return save_response(response).map(OAuthCompletion::Authenticated);
+    }
+
+    if value.get("registration_required").and_then(Value::as_bool) == Some(true) {
+        return Ok(OAuthCompletion::RegistrationRequired(
+            registration_required_from_value(&value),
+        ));
+    }
+
+    if kind == "linked" || value.get("linked").and_then(Value::as_bool) == Some(true) {
+        return Ok(OAuthCompletion::Linked);
+    }
+
+    Err("Сервер вернул неизвестный результат входа через Google.".to_owned())
+}
+
+fn registration_required_from_value(value: &Value) -> OAuthRegistrationRequired {
+    let details = value
+        .get("registration")
+        .or_else(|| value.get("registration_required"))
+        .unwrap_or(value);
+
+    OAuthRegistrationRequired {
+        email: string_field(details, &["email", "provider_email"]),
+        suggested_nickname: string_field(
+            details,
+            &["suggested_nickname", "nickname", "display_name", "name"],
+        ),
+    }
+}
+
+fn string_field(value: &Value, names: &[&str]) -> Option<String> {
+    names
+        .iter()
+        .find_map(|name| value.get(*name).and_then(Value::as_str))
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+async fn parse_linked_accounts(
+    response: gloo_net::http::Response,
+) -> Result<Vec<LinkedAccount>, String> {
+    let value = response
+        .json::<Value>()
+        .await
+        .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned())?;
+
+    if let Ok(accounts) = serde_json::from_value::<Vec<LinkedAccount>>(value.clone()) {
+        return Ok(accounts);
+    }
+
+    let accounts = value
+        .get("accounts")
+        .or_else(|| value.get("linked_accounts"))
+        .cloned()
+        .unwrap_or(Value::Null);
+
+    serde_json::from_value::<Vec<LinkedAccount>>(accounts)
+        .map_err(|_| "Не удалось прочитать список связанных аккаунтов.".to_owned())
 }
 
 fn changed_access_token(tokens: &storage::StoredTokens) -> Option<String> {

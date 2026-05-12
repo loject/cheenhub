@@ -7,6 +7,10 @@ mod m20260505_000003_create_server_invites_table;
 mod m20260505_000004_create_server_members_and_invite_uses_tables;
 mod m20260505_000005_create_server_rooms_table;
 mod m20260505_000006_create_text_messages_table;
+mod m20260512_000007_add_google_oauth_tables;
+mod m20260512_000008_rename_o_auth_tables;
+mod m20260512_000009_allow_passwordless_users;
+mod m20260512_000010_drop_password_hash_not_null;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -23,6 +27,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20260505_000004_create_server_members_and_invite_uses_tables::Migration),
             Box::new(m20260505_000005_create_server_rooms_table::Migration),
             Box::new(m20260505_000006_create_text_messages_table::Migration),
+            Box::new(m20260512_000007_add_google_oauth_tables::Migration),
+            Box::new(m20260512_000008_rename_o_auth_tables::Migration),
+            Box::new(m20260512_000009_allow_passwordless_users::Migration),
+            Box::new(m20260512_000010_drop_password_hash_not_null::Migration),
         ]
     }
 }

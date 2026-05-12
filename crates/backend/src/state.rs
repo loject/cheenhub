@@ -28,4 +28,18 @@ pub(crate) struct AppState {
     pub(crate) access_token_lifetime_minutes: i64,
     /// Refresh token lifetime in days.
     pub(crate) refresh_token_lifetime_days: i64,
+    /// Google OAuth client id.
+    pub(crate) google_oauth_client_id: Option<String>,
+    /// Google OAuth client secret.
+    pub(crate) google_oauth_client_secret: Option<String>,
+    /// Google OAuth redirect URI registered for this backend.
+    pub(crate) google_oauth_redirect_uri: Option<String>,
+    /// Browser client base URL used after OAuth callbacks.
+    pub(crate) cheenhub_client_base_url: String,
+    /// OAuth state lifetime in minutes.
+    pub(crate) oauth_state_lifetime_minutes: i64,
+    /// OAuth handoff lifetime in minutes.
+    pub(crate) oauth_handoff_lifetime_minutes: i64,
+    /// OAuth registration intent lifetime in minutes.
+    pub(crate) oauth_registration_lifetime_minutes: i64,
 }

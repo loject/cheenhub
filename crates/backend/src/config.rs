@@ -23,6 +23,20 @@ pub(crate) struct AppConfig {
     pub(crate) access_token_lifetime_minutes: i64,
     /// Refresh token lifetime in days.
     pub(crate) refresh_token_lifetime_days: i64,
+    /// Google OAuth client id.
+    pub(crate) google_oauth_client_id: Option<String>,
+    /// Google OAuth client secret.
+    pub(crate) google_oauth_client_secret: Option<String>,
+    /// Google OAuth redirect URI registered for this backend.
+    pub(crate) google_oauth_redirect_uri: Option<String>,
+    /// Browser client base URL used after OAuth callbacks.
+    pub(crate) cheenhub_client_base_url: String,
+    /// OAuth state lifetime in minutes.
+    pub(crate) oauth_state_lifetime_minutes: i64,
+    /// OAuth handoff lifetime in minutes.
+    pub(crate) oauth_handoff_lifetime_minutes: i64,
+    /// OAuth registration intent lifetime in minutes.
+    pub(crate) oauth_registration_lifetime_minutes: i64,
     /// Authentication storage backend.
     pub(crate) auth_store: AuthStoreConfig,
     /// Host address used by the WebTransport listener.
@@ -58,6 +72,22 @@ impl AppConfig {
             jwt_key_id: required("JWT_KEY_ID")?,
             access_token_lifetime_minutes: positive_i64("ACCESS_TOKEN_LIFETIME_MINUTES")?,
             refresh_token_lifetime_days: positive_i64("REFRESH_TOKEN_LIFETIME_DAYS")?,
+            google_oauth_client_id: env::var("GOOGLE_OAUTH_CLIENT_ID").ok(),
+            google_oauth_client_secret: env::var("GOOGLE_OAUTH_CLIENT_SECRET").ok(),
+            google_oauth_redirect_uri: env::var("GOOGLE_OAUTH_REDIRECT_URI").ok(),
+            cheenhub_client_base_url: optional("CHEENHUB_CLIENT_BASE_URL", "http://127.0.0.1:8080"),
+            oauth_state_lifetime_minutes: optional_positive_i64(
+                "OAUTH_STATE_LIFETIME_MINUTES",
+                10,
+            )?,
+            oauth_handoff_lifetime_minutes: optional_positive_i64(
+                "OAUTH_HANDOFF_LIFETIME_MINUTES",
+                5,
+            )?,
+            oauth_registration_lifetime_minutes: optional_positive_i64(
+                "OAUTH_REGISTRATION_LIFETIME_MINUTES",
+                15,
+            )?,
             auth_store: auth_store_config(&optional("AUTH_STORE", "postgres"))?,
             webtransport_host: optional("WEBTRANSPORT_HOST", "127.0.0.1"),
             webtransport_port: optional("WEBTRANSPORT_PORT", "4443")
@@ -103,6 +133,18 @@ fn optional(key: &str, default: &str) -> String {
 
 fn positive_i64(key: &str) -> anyhow::Result<i64> {
     let value = required(key)?;
+    let parsed = value
+        .parse()
+        .with_context(|| format!("{key} must be a valid i64"))?;
+    if parsed <= 0 {
+        return Err(anyhow!("{key} must be greater than zero"));
+    }
+
+    Ok(parsed)
+}
+
+fn optional_positive_i64(key: &str, default: i64) -> anyhow::Result<i64> {
+    let value = env::var(key).unwrap_or_else(|_| default.to_string());
     let parsed = value
         .parse()
         .with_context(|| format!("{key} must be a valid i64"))?;

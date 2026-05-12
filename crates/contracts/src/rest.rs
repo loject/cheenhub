@@ -5,7 +5,10 @@ pub mod error;
 pub mod servers;
 
 pub use auth::{
-    AuthResponse, AuthUser, LoginRequest, LogoutRequest, RefreshRequest, RegisterRequest,
+    AuthResponse, AuthUser, LinkedAccount, LinkedAccountsResponse, LoginRequest, LogoutRequest,
+    OAuthCompleteRequest, OAuthCompleteResponse, OAuthFlow, OAuthProvider,
+    OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse, RefreshRequest,
+    RegisterRequest, UnlinkProviderRequest,
 };
 pub use error::ApiError;
 pub use servers::{

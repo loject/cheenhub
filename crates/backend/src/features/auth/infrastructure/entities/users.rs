@@ -16,7 +16,7 @@ pub struct Model {
     /// Normalized email used for lookup and uniqueness.
     pub email_normalized: String,
     /// Stored Argon2 password hash.
-    pub password_hash: String,
+    pub password_hash: Option<String>,
     /// Account registration timestamp.
     pub registered_at: DateTimeUtc,
     // TODO: accepted_terms_at всегда совпадает с временем регистрации, может удалить?
