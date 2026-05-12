@@ -2,6 +2,7 @@
 
 mod backend;
 mod browser;
+mod browser_bindings;
 mod provider;
 mod vad;
 

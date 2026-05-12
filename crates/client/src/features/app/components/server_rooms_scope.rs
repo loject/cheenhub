@@ -1,6 +1,6 @@
 //! Per-server room state and workspace coordination.
 
-use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomSummary, ServerSummary};
+use cheenhub_contracts::rest::{ServerRoomSummary, ServerSummary};
 use dioxus::prelude::*;
 
 use crate::features::app::api;
@@ -8,21 +8,19 @@ use crate::features::network::RealtimeConnectionStatusIndicator;
 use crate::features::server_settings::ServerSettingsScope;
 use crate::features::voice_chat::SidebarVoiceControls;
 
-use super::app_shell::{ActiveRoom, AppModal, ServerShellState, room_kind_attr};
+use super::app_shell::{AppModal, ServerShellState, room_kind_attr};
 use super::room_editor_modal::RoomEditorModal;
 use super::room_instance::RoomInstance;
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
+use super::server_rooms_state::{
+    ServerWorkspace, active_room, chat_open_for_room, ensure_workspace_mounted, room_by_id,
+    room_icon, room_icon_class, upsert_room,
+};
 
 #[derive(Clone, PartialEq)]
 enum RoomModal {
     Create,
     Edit(ServerRoomSummary),
-}
-
-#[derive(Clone, PartialEq, Eq)]
-enum ServerWorkspace {
-    Room(String),
-    Settings,
 }
 
 /// Owns room state for one server and renders the room sidebar and active room.
@@ -477,72 +475,6 @@ pub(crate) fn ServerRoomsScope(
                     ));
                 },
             }
-        }
-    }
-}
-
-fn ensure_workspace_mounted(workspaces: &mut Vec<ServerWorkspace>, workspace: ServerWorkspace) {
-    // TODO: Vec::contains is linear, which is fine for UI workspaces. Use IndexSet if
-    // this grows into many tabs or frequently mounted workspace kinds.
-    if !workspaces.contains(&workspace) {
-        workspaces.push(workspace);
-    }
-}
-
-fn active_room(rooms: &[ServerRoomSummary], active_room_id: Option<&str>) -> Option<ActiveRoom> {
-    let room = active_room_id
-        .and_then(|room_id| rooms.iter().find(|room| room.id == room_id))
-        .or_else(|| rooms.first())?;
-
-    Some(ActiveRoom {
-        id: room.id.clone(),
-        kind: room.kind,
-        name: room.name.clone(),
-    })
-}
-
-fn room_by_id(rooms: &[ServerRoomSummary], room_id: &str) -> Option<ActiveRoom> {
-    let room = rooms.iter().find(|room| room.id == room_id)?;
-
-    Some(ActiveRoom {
-        id: room.id.clone(),
-        kind: room.kind,
-        name: room.name.clone(),
-    })
-}
-
-fn chat_open_for_room(chat_open_by_room: &[(String, bool)], room_id: &str) -> bool {
-    chat_open_by_room
-        .iter()
-        .find_map(|(saved_room_id, chat_open)| (saved_room_id == room_id).then_some(*chat_open))
-        .unwrap_or(false)
-}
-
-fn upsert_room(rooms: &mut Vec<ServerRoomSummary>, room: ServerRoomSummary) {
-    if let Some(saved_room) = rooms.iter_mut().find(|saved_room| saved_room.id == room.id) {
-        *saved_room = room;
-        return;
-    }
-
-    rooms.push(room);
-}
-
-fn room_icon(kind: ServerRoomKind) -> &'static str {
-    match kind {
-        ServerRoomKind::Text => "#",
-        ServerRoomKind::Voice => "~",
-        ServerRoomKind::TextAndVoice => "&",
-    }
-}
-
-fn room_icon_class(kind: ServerRoomKind) -> &'static str {
-    match kind {
-        ServerRoomKind::Text => "w-3.5 shrink-0 text-center text-zinc-600",
-        ServerRoomKind::Voice => {
-            "w-3.5 shrink-0 text-center text-[13px] font-semibold leading-none text-zinc-500"
-        }
-        ServerRoomKind::TextAndVoice => {
-            "w-3.5 shrink-0 text-center text-[13px] font-semibold leading-none text-accent"
         }
     }
 }

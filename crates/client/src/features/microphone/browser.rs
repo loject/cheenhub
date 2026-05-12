@@ -15,6 +15,9 @@ use super::backend::{
     EncodedMicrophoneFrame, MicrophoneBackend, MicrophoneCallbacks, MicrophoneCodec,
     MicrophoneConfig, MicrophoneError, MicrophoneLevel, MicrophoneSession,
 };
+use super::browser_bindings::{
+    AudioData, AudioEncoder, EncodedAudioChunk, MediaStreamTrackProcessor,
+};
 use super::vad::{VoiceActivityDetector, rms_level};
 
 /// Browser microphone implementation backed by getUserMedia and WebCodecs.
@@ -453,74 +456,4 @@ fn is_permission_denied_error(error: &JsValue) -> bool {
         || message.contains("permissiondeniederror")
         || message.contains("denied permission")
         || message.contains("access to the device is not allowed")
-}
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_name = AudioEncoder)]
-    #[derive(Clone)]
-    type AudioEncoder;
-
-    #[wasm_bindgen(constructor, catch, js_class = AudioEncoder)]
-    fn new(init: &JsValue) -> Result<AudioEncoder, JsValue>;
-
-    #[wasm_bindgen(static_method_of = AudioEncoder, js_name = isConfigSupported)]
-    fn is_config_supported(config: &JsValue) -> Promise;
-
-    #[wasm_bindgen(method, catch, js_name = configure)]
-    fn configure(this: &AudioEncoder, config: &JsValue) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(method, catch, js_name = encode)]
-    fn encode(this: &AudioEncoder, data: &JsValue) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(method, catch, js_name = close)]
-    fn close(this: &AudioEncoder) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(js_name = EncodedAudioChunk)]
-    #[derive(Clone)]
-    type EncodedAudioChunk;
-
-    #[wasm_bindgen(method, getter, js_name = byteLength)]
-    fn byte_length(this: &EncodedAudioChunk) -> u32;
-
-    #[wasm_bindgen(method, getter)]
-    fn timestamp(this: &EncodedAudioChunk) -> f64;
-
-    #[wasm_bindgen(method, getter)]
-    fn duration(this: &EncodedAudioChunk) -> Option<f64>;
-
-    #[wasm_bindgen(method, catch, js_name = copyTo)]
-    fn copy_to(this: &EncodedAudioChunk, destination: &Uint8Array) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(js_name = AudioData)]
-    type AudioData;
-
-    #[wasm_bindgen(method, getter, js_name = numberOfFrames)]
-    fn audio_data_number_of_frames(this: &AudioData) -> u32;
-
-    #[wasm_bindgen(method, getter, js_name = numberOfChannels)]
-    fn audio_data_number_of_channels(this: &AudioData) -> u32;
-
-    #[wasm_bindgen(method, getter, js_name = timestamp)]
-    fn audio_data_timestamp(this: &AudioData) -> f64;
-
-    #[wasm_bindgen(method, getter, js_name = duration)]
-    fn audio_data_duration(this: &AudioData) -> Option<f64>;
-
-    #[wasm_bindgen(method, catch, js_name = copyTo)]
-    fn audio_data_copy_to(
-        this: &AudioData,
-        destination: &Float32Array,
-        options: &JsValue,
-    ) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(js_name = MediaStreamTrackProcessor)]
-    #[derive(Clone)]
-    type MediaStreamTrackProcessor;
-
-    #[wasm_bindgen(constructor, catch, js_class = MediaStreamTrackProcessor)]
-    fn new(init: &JsValue) -> Result<MediaStreamTrackProcessor, JsValue>;
-
-    #[wasm_bindgen(method, getter)]
-    fn readable(this: &MediaStreamTrackProcessor) -> JsValue;
 }

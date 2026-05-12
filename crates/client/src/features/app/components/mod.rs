@@ -14,4 +14,5 @@ pub(crate) mod server_instance;
 pub(crate) mod server_rail;
 pub(crate) mod server_rail_button;
 pub(crate) mod server_rooms_scope;
+mod server_rooms_state;
 pub(crate) mod user_context_menu;
