@@ -7,8 +7,8 @@ pub mod servers;
 pub use auth::{
     AuthResponse, AuthUser, LinkedAccount, LinkedAccountsResponse, LoginRequest, LogoutRequest,
     OAuthCompleteRequest, OAuthCompleteResponse, OAuthFlow, OAuthProvider,
-    OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse, RefreshRequest,
-    RegisterRequest, UnlinkProviderRequest,
+    OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse, PasswordResetConfirmRequest,
+    PasswordResetRequest, RefreshRequest, RegisterRequest, UnlinkProviderRequest,
 };
 pub use error::ApiError;
 pub use servers::{

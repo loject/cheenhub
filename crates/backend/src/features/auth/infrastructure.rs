@@ -3,14 +3,19 @@
 mod conversions;
 mod entities;
 mod in_memory;
+mod in_memory_password_reset;
+mod in_memory_refresh;
 mod postgres;
+mod postgres_password_reset;
+mod postgres_refresh;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::features::auth::domain::{
-    OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, OAuthState, RefreshSession, UserAccount,
+    OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, OAuthState, PasswordResetToken,
+    RefreshSession, UserAccount,
 };
 
 pub(crate) use in_memory::InMemoryAuthStore;
@@ -58,6 +63,14 @@ pub(crate) trait AuthStore: Send + Sync {
     /// Finds a user by id.
     async fn find_user_by_id(&self, user_id: &Uuid) -> anyhow::Result<Option<UserAccount>>;
 
+    /// Updates a user's password hash.
+    async fn update_user_password_hash(
+        &self,
+        user_id: &Uuid,
+        password_hash: String,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()>;
+
     /// Creates a session and its initial refresh token row.
     async fn create_session(
         &self,
@@ -97,6 +110,25 @@ pub(crate) trait AuthStore: Send + Sync {
         session_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<bool>;
+
+    /// Revokes every active session owned by a user.
+    async fn revoke_user_sessions(&self, user_id: &Uuid, now: DateTime<Utc>) -> anyhow::Result<()>;
+
+    /// Inserts a short-lived password reset token.
+    async fn insert_password_reset_token(
+        &self,
+        user_id: &Uuid,
+        token_hash: String,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> anyhow::Result<()>;
+
+    /// Consumes an active password reset token.
+    async fn consume_password_reset_token(
+        &self,
+        token_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<PasswordResetToken>>;
 
     /// Inserts a short-lived OAuth state.
     async fn insert_oauth_state(

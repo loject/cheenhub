@@ -82,3 +82,12 @@ pub(crate) struct OAuthHandoff {
     /// Registration intent id for registration handoffs.
     pub(crate) registration_intent_id: Option<Uuid>,
 }
+
+/// Short-lived password reset token data.
+#[derive(Debug, Clone)]
+pub(crate) struct PasswordResetToken {
+    /// Stable password reset token row identifier.
+    pub(crate) id: Uuid,
+    /// User that owns the reset token.
+    pub(crate) user_id: Uuid,
+}

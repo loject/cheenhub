@@ -59,6 +59,13 @@ async fn main() -> anyhow::Result<()> {
 
     let state = state::AppState {
         auth_store,
+        auth_mailer: Arc::new(features::auth::email::SmtpAuthMailer::new(
+            config.smtp_host.clone(),
+            config.smtp_port,
+            config.smtp_username.clone(),
+            config.smtp_password.clone(),
+            config.smtp_from_email.clone(),
+        )?),
         server_store,
         text_chat_store,
         voice_presence_store: Arc::new(
@@ -75,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
         oauth_state_lifetime_minutes: config.oauth_state_lifetime_minutes,
         oauth_handoff_lifetime_minutes: config.oauth_handoff_lifetime_minutes,
         oauth_registration_lifetime_minutes: config.oauth_registration_lifetime_minutes,
+        password_reset_token_lifetime_minutes: config.password_reset_token_lifetime_minutes,
     };
     let app = http::router(state.clone());
     let realtime_address = config.webtransport_socket_addr()?;

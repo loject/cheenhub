@@ -2,7 +2,8 @@
 
 use cheenhub_contracts::rest::{
     ApiError, AuthResponse, AuthUser, LoginRequest, LogoutRequest, OAuthFlow,
-    OAuthRegistrationRequest, OAuthStartRequest, RefreshRequest, RegisterRequest,
+    OAuthRegistrationRequest, OAuthStartRequest, PasswordResetConfirmRequest, PasswordResetRequest,
+    RefreshRequest, RegisterRequest,
 };
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
@@ -22,6 +23,18 @@ pub(crate) async fn register(request: RegisterRequest) -> Result<AuthUser, Strin
 pub(crate) async fn login(request: LoginRequest) -> Result<AuthUser, String> {
     let response = post_json("/auth/login", &request).await?;
     save_response(response)
+}
+
+/// Requests a password reset email for an account.
+pub(crate) async fn request_password_reset(request: PasswordResetRequest) -> Result<(), String> {
+    post_empty("/auth/password-reset/request", &request).await
+}
+
+/// Confirms a password reset token and stores the new password.
+pub(crate) async fn confirm_password_reset(
+    request: PasswordResetConfirmRequest,
+) -> Result<(), String> {
+    post_empty("/auth/password-reset/confirm", &request).await
 }
 
 /// Starts Google OAuth login and returns the provider authorization URL.
@@ -426,6 +439,24 @@ where
             .json::<AuthResponse>()
             .await
             .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned())
+    } else {
+        Err(read_error(response).await)
+    }
+}
+
+async fn post_empty<T>(path: &str, request: &T) -> Result<(), String>
+where
+    T: serde::Serialize,
+{
+    let response = Request::post(&url(path))
+        .json(request)
+        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if response.ok() {
+        Ok(())
     } else {
         Err(read_error(response).await)
     }

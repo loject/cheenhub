@@ -1,10 +1,10 @@
 //! Infrastructure model conversions.
 
 use crate::features::auth::domain::{
-    OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, UserAccount,
+    OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, PasswordResetToken, UserAccount,
 };
 use crate::features::auth::infrastructure::entities::{
-    oauth_accounts, oauth_handoffs, oauth_registration_intents, users,
+    oauth_accounts, oauth_handoffs, oauth_registration_intents, password_reset_tokens, users,
 };
 
 impl From<users::Model> for UserAccount {
@@ -50,6 +50,15 @@ impl From<oauth_registration_intents::Model> for OAuthRegistrationIntent {
             provider_subject: row.provider_subject,
             email: row.email,
             display_name: row.display_name,
+        }
+    }
+}
+
+impl From<password_reset_tokens::Model> for PasswordResetToken {
+    fn from(row: password_reset_tokens::Model) -> Self {
+        Self {
+            id: row.id,
+            user_id: row.user_id,
         }
     }
 }

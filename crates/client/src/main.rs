@@ -6,7 +6,9 @@ use dioxus::prelude::*;
 mod features;
 mod routes;
 
-use routes::{AppHome, Invite, Landing, Login, OAuthCallback, Register};
+use routes::{
+    AppHome, ForgotPassword, Invite, Landing, Login, OAuthCallback, Register, ResetPassword,
+};
 
 static TAILWIND_CSS: Asset = asset!(
     "/assets/tailwind.css",
@@ -25,6 +27,10 @@ enum Route {
     Login {},
     #[route("/register")]
     Register {},
+    #[route("/forgot-password")]
+    ForgotPassword {},
+    #[route("/reset-password?:token")]
+    ResetPassword { token: Option<String> },
     #[route("/auth/oauth/google?:code&:handoff_code&:error")]
     OAuthCallback {
         code: Option<String>,

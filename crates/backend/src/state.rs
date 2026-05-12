@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::features::auth::email::AuthMailer;
 use crate::features::auth::infrastructure::AuthStore;
 use crate::features::auth::security::keys::AuthKeys;
 use crate::features::servers::infrastructure::ServerStore;
@@ -14,6 +15,8 @@ use crate::realtime::hub::RealtimeHub;
 pub(crate) struct AppState {
     /// Authentication storage backend.
     pub(crate) auth_store: Arc<dyn AuthStore>,
+    /// Authentication email sender.
+    pub(crate) auth_mailer: Arc<dyn AuthMailer>,
     /// Server storage backend.
     pub(crate) server_store: Arc<dyn ServerStore>,
     /// Text chat storage backend.
@@ -42,4 +45,6 @@ pub(crate) struct AppState {
     pub(crate) oauth_handoff_lifetime_minutes: i64,
     /// OAuth registration intent lifetime in minutes.
     pub(crate) oauth_registration_lifetime_minutes: i64,
+    /// Password reset token lifetime in minutes.
+    pub(crate) password_reset_token_lifetime_minutes: i64,
 }

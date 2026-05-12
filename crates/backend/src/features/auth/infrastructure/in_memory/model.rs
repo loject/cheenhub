@@ -7,105 +7,124 @@ use crate::features::auth::domain::{OAuthAccount, OAuthRegistrationIntent, UserA
 
 /// In-memory auth store state.
 #[derive(Default)]
-pub(super) struct InMemoryState {
+pub(in crate::features::auth::infrastructure) struct InMemoryState {
     /// User accounts.
-    pub(super) users: Vec<InMemoryUser>,
+    pub(in crate::features::auth::infrastructure) users: Vec<InMemoryUser>,
     /// Login sessions.
-    pub(super) sessions: Vec<InMemorySession>,
+    pub(in crate::features::auth::infrastructure) sessions: Vec<InMemorySession>,
     /// Refresh tokens.
-    pub(super) refresh_tokens: Vec<InMemoryRefreshToken>,
+    pub(in crate::features::auth::infrastructure) refresh_tokens: Vec<InMemoryRefreshToken>,
     /// Linked OAuth accounts.
-    pub(super) oauth_accounts: Vec<OAuthAccount>,
+    pub(in crate::features::auth::infrastructure) oauth_accounts: Vec<OAuthAccount>,
     /// OAuth authorization states.
-    pub(super) oauth_states: Vec<InMemoryOAuthState>,
+    pub(in crate::features::auth::infrastructure) oauth_states: Vec<InMemoryOAuthState>,
     /// OAuth frontend handoffs.
-    pub(super) oauth_handoffs: Vec<InMemoryOAuthHandoff>,
+    pub(in crate::features::auth::infrastructure) oauth_handoffs: Vec<InMemoryOAuthHandoff>,
     /// OAuth registration intents.
-    pub(super) oauth_registration_intents: Vec<InMemoryOAuthRegistrationIntent>,
+    pub(in crate::features::auth::infrastructure) oauth_registration_intents:
+        Vec<InMemoryOAuthRegistrationIntent>,
+    /// Password reset tokens.
+    pub(in crate::features::auth::infrastructure) password_reset_tokens:
+        Vec<InMemoryPasswordResetToken>,
 }
 
 /// In-memory user row.
 #[derive(Debug, Clone)]
-pub(super) struct InMemoryUser {
+pub(in crate::features::auth::infrastructure) struct InMemoryUser {
     /// User account.
-    pub(super) account: UserAccount,
+    pub(in crate::features::auth::infrastructure) account: UserAccount,
     /// Normalized email for lookup.
-    pub(super) email_normalized: String,
+    pub(in crate::features::auth::infrastructure) email_normalized: String,
 }
 
 /// In-memory session row.
 #[derive(Debug, Clone)]
-pub(super) struct InMemorySession {
+pub(in crate::features::auth::infrastructure) struct InMemorySession {
     /// Session id.
-    pub(super) id: Uuid,
+    pub(in crate::features::auth::infrastructure) id: Uuid,
     /// Owner user id.
-    pub(super) user_id: Uuid,
+    pub(in crate::features::auth::infrastructure) user_id: Uuid,
     /// Expiration timestamp.
-    pub(super) expires_at: DateTime<Utc>,
+    pub(in crate::features::auth::infrastructure) expires_at: DateTime<Utc>,
     /// Revocation timestamp.
-    pub(super) revoked_at: Option<DateTime<Utc>>,
+    pub(in crate::features::auth::infrastructure) revoked_at: Option<DateTime<Utc>>,
 }
 
 /// In-memory refresh token row.
 #[derive(Debug, Clone)]
-pub(super) struct InMemoryRefreshToken {
+pub(in crate::features::auth::infrastructure) struct InMemoryRefreshToken {
     /// Refresh token row id.
-    pub(super) id: Uuid,
+    pub(in crate::features::auth::infrastructure) id: Uuid,
     /// Owning session id.
-    pub(super) session_id: Uuid,
+    pub(in crate::features::auth::infrastructure) session_id: Uuid,
     /// Token hash.
-    pub(super) token_hash: String,
+    pub(in crate::features::auth::infrastructure) token_hash: String,
     /// Expiration timestamp.
-    pub(super) expires_at: DateTime<Utc>,
+    pub(in crate::features::auth::infrastructure) expires_at: DateTime<Utc>,
     /// Revocation timestamp.
-    pub(super) revoked_at: Option<DateTime<Utc>>,
+    pub(in crate::features::auth::infrastructure) revoked_at: Option<DateTime<Utc>>,
 }
 
 /// In-memory OAuth state row.
 #[derive(Debug, Clone)]
-pub(super) struct InMemoryOAuthState {
+pub(in crate::features::auth::infrastructure) struct InMemoryOAuthState {
     /// State hash.
-    pub(super) state_hash: String,
+    pub(in crate::features::auth::infrastructure) state_hash: String,
     /// OAuth nonce.
-    pub(super) nonce: String,
+    pub(in crate::features::auth::infrastructure) nonce: String,
     /// Flow kind.
-    pub(super) flow_kind: String,
+    pub(in crate::features::auth::infrastructure) flow_kind: String,
     /// Link flow user id.
-    pub(super) user_id: Option<Uuid>,
+    pub(in crate::features::auth::infrastructure) user_id: Option<Uuid>,
     /// Expiration timestamp.
-    pub(super) expires_at: DateTime<Utc>,
+    pub(in crate::features::auth::infrastructure) expires_at: DateTime<Utc>,
     /// Consumption timestamp.
-    pub(super) consumed_at: Option<DateTime<Utc>>,
+    pub(in crate::features::auth::infrastructure) consumed_at: Option<DateTime<Utc>>,
 }
 
 /// In-memory OAuth handoff row.
 #[derive(Debug, Clone)]
-pub(super) struct InMemoryOAuthHandoff {
+pub(in crate::features::auth::infrastructure) struct InMemoryOAuthHandoff {
     /// Handoff row id.
-    pub(super) id: Uuid,
+    pub(in crate::features::auth::infrastructure) id: Uuid,
     /// Handoff code hash.
-    pub(super) code_hash: String,
+    pub(in crate::features::auth::infrastructure) code_hash: String,
     /// Handoff kind.
-    pub(super) kind: String,
+    pub(in crate::features::auth::infrastructure) kind: String,
     /// User id.
-    pub(super) user_id: Option<Uuid>,
+    pub(in crate::features::auth::infrastructure) user_id: Option<Uuid>,
     /// Registration intent id.
-    pub(super) registration_intent_id: Option<Uuid>,
+    pub(in crate::features::auth::infrastructure) registration_intent_id: Option<Uuid>,
     /// Expiration timestamp.
-    pub(super) expires_at: DateTime<Utc>,
+    pub(in crate::features::auth::infrastructure) expires_at: DateTime<Utc>,
     /// Consumption timestamp.
-    pub(super) consumed_at: Option<DateTime<Utc>>,
+    pub(in crate::features::auth::infrastructure) consumed_at: Option<DateTime<Utc>>,
 }
 
 /// In-memory OAuth registration intent row.
 #[derive(Debug, Clone)]
-pub(super) struct InMemoryOAuthRegistrationIntent {
+pub(in crate::features::auth::infrastructure) struct InMemoryOAuthRegistrationIntent {
     /// Registration intent.
-    pub(super) intent: OAuthRegistrationIntent,
+    pub(in crate::features::auth::infrastructure) intent: OAuthRegistrationIntent,
     /// OAuth provider.
-    pub(super) provider: String,
+    pub(in crate::features::auth::infrastructure) provider: String,
     /// Expiration timestamp.
-    pub(super) expires_at: DateTime<Utc>,
+    pub(in crate::features::auth::infrastructure) expires_at: DateTime<Utc>,
     /// Consumption timestamp.
-    pub(super) consumed_at: Option<DateTime<Utc>>,
+    pub(in crate::features::auth::infrastructure) consumed_at: Option<DateTime<Utc>>,
+}
+
+/// In-memory password reset token row.
+#[derive(Debug, Clone)]
+pub(in crate::features::auth::infrastructure) struct InMemoryPasswordResetToken {
+    /// Reset token row id.
+    pub(in crate::features::auth::infrastructure) id: Uuid,
+    /// Owner user id.
+    pub(in crate::features::auth::infrastructure) user_id: Uuid,
+    /// Reset token hash.
+    pub(in crate::features::auth::infrastructure) token_hash: String,
+    /// Expiration timestamp.
+    pub(in crate::features::auth::infrastructure) expires_at: DateTime<Utc>,
+    /// Consumption timestamp.
+    pub(in crate::features::auth::infrastructure) consumed_at: Option<DateTime<Utc>>,
 }

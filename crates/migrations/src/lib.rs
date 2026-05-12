@@ -11,6 +11,7 @@ mod m20260512_000007_add_google_oauth_tables;
 mod m20260512_000008_rename_o_auth_tables;
 mod m20260512_000009_allow_passwordless_users;
 mod m20260512_000010_drop_password_hash_not_null;
+mod m20260512_000011_create_password_reset_tokens_table;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -31,6 +32,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260512_000008_rename_o_auth_tables::Migration),
             Box::new(m20260512_000009_allow_passwordless_users::Migration),
             Box::new(m20260512_000010_drop_password_hash_not_null::Migration),
+            Box::new(m20260512_000011_create_password_reset_tokens_table::Migration),
         ]
     }
 }
