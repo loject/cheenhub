@@ -8,7 +8,13 @@ use sha2::{Digest, Sha256};
 
 const DEFAULT_DEV_CERT_PATH: &str = "../../target/cheenhub-dev/webtransport-cert.pem";
 
+mod file_lines {
+    include!("../../build_support/file_lines.rs");
+}
+
 fn main() {
+    file_lines::check_workspace_file_lines();
+
     println!("cargo:rerun-if-changed=../../.env");
     println!("cargo:rerun-if-changed={DEFAULT_DEV_CERT_PATH}");
 
