@@ -75,6 +75,21 @@ impl AuthStore for PostgresAuthStore {
             .map(Into::into))
     }
 
+    async fn update_user_password_hash(
+        &self,
+        user_id: &Uuid,
+        password_hash: String,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        super::postgres_password_reset::update_user_password_hash(
+            &self.database,
+            user_id,
+            password_hash,
+            now,
+        )
+        .await
+    }
+
     async fn create_session(
         &self,
         user_id: &Uuid,
@@ -116,35 +131,7 @@ impl AuthStore for PostgresAuthStore {
         token_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<RefreshSession>> {
-        let Some(refresh_token) = refresh_tokens::Entity::find()
-            .filter(refresh_tokens::Column::TokenHash.eq(token_hash))
-            .filter(refresh_tokens::Column::RevokedAt.is_null())
-            .filter(refresh_tokens::Column::ExpiresAt.gt(now))
-            .one(&self.database)
-            .await?
-        else {
-            return Ok(None);
-        };
-        let Some(session) = sessions::Entity::find_by_id(refresh_token.session_id)
-            .filter(sessions::Column::RevokedAt.is_null())
-            .filter(sessions::Column::ExpiresAt.gt(now))
-            .one(&self.database)
-            .await?
-        else {
-            return Ok(None);
-        };
-        let Some(user) = users::Entity::find_by_id(session.user_id)
-            .one(&self.database)
-            .await?
-        else {
-            return Ok(None);
-        };
-
-        Ok(Some(RefreshSession {
-            refresh_token_id: refresh_token.id,
-            session_id: session.id,
-            user: user.into(),
-        }))
+        super::postgres_refresh::find_active_refresh(&self.database, token_hash, now).await
     }
 
     async fn rotate_refresh(
@@ -229,12 +216,41 @@ impl AuthStore for PostgresAuthStore {
         session_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<bool> {
-        Ok(sessions::Entity::find_by_id(session_id.to_owned())
-            .filter(sessions::Column::RevokedAt.is_null())
-            .filter(sessions::Column::ExpiresAt.gt(now))
-            .one(&self.database)
-            .await?
-            .is_some())
+        super::postgres_refresh::session_is_active(&self.database, session_id, now).await
+    }
+
+    async fn revoke_user_sessions(&self, user_id: &Uuid, now: DateTime<Utc>) -> anyhow::Result<()> {
+        super::postgres_password_reset::revoke_user_sessions(&self.database, user_id, now).await
+    }
+
+    async fn insert_password_reset_token(
+        &self,
+        user_id: &Uuid,
+        token_hash: String,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        super::postgres_password_reset::insert_password_reset_token(
+            &self.database,
+            user_id,
+            token_hash,
+            now,
+            expires_at,
+        )
+        .await
+    }
+
+    async fn consume_password_reset_token(
+        &self,
+        token_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<crate::features::auth::domain::PasswordResetToken>> {
+        super::postgres_password_reset::consume_password_reset_token(
+            &self.database,
+            token_hash,
+            now,
+        )
+        .await
     }
 
     async fn insert_oauth_state(

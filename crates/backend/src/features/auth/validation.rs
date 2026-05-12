@@ -22,6 +22,22 @@ pub(crate) struct ValidLogin {
     pub(crate) password: String,
 }
 
+/// Normalized password reset request input.
+#[derive(Debug, Clone)]
+pub(crate) struct ValidPasswordResetRequest {
+    /// Normalized email for lookup.
+    pub(crate) email_normalized: String,
+}
+
+/// Normalized password reset confirmation input.
+#[derive(Debug, Clone)]
+pub(crate) struct ValidPasswordResetConfirm {
+    /// Opaque reset token.
+    pub(crate) token: String,
+    /// New plain password.
+    pub(crate) new_password: String,
+}
+
 /// Validates and normalizes registration input.
 pub(crate) fn register(
     nickname: String,
@@ -68,6 +84,37 @@ pub(crate) fn login(email: String, password: String) -> Result<ValidLogin, &'sta
     Ok(ValidLogin {
         email_normalized,
         password,
+    })
+}
+
+/// Validates and normalizes password reset request input.
+pub(crate) fn password_reset_request(
+    email: String,
+) -> Result<ValidPasswordResetRequest, &'static str> {
+    let email_normalized = email.trim().to_lowercase();
+    if !is_valid_email(&email_normalized) {
+        return Err("Укажи корректный email.");
+    }
+
+    Ok(ValidPasswordResetRequest { email_normalized })
+}
+
+/// Validates and normalizes password reset confirmation input.
+pub(crate) fn password_reset_confirm(
+    token: String,
+    new_password: String,
+) -> Result<ValidPasswordResetConfirm, &'static str> {
+    let token = token.trim().to_owned();
+    if token.is_empty() {
+        return Err("Ссылка для сброса пароля недействительна.");
+    }
+    if !(8..=128).contains(&new_password.chars().count()) {
+        return Err("Пароль должен быть длиной от 8 до 128 символов.");
+    }
+
+    Ok(ValidPasswordResetConfirm {
+        token,
+        new_password,
     })
 }
 

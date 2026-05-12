@@ -24,6 +24,22 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+/// Request body used to start a password reset email.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PasswordResetRequest {
+    /// Email address that should receive a password reset link.
+    pub email: String,
+}
+
+/// Request body used to finish a password reset.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PasswordResetConfirmRequest {
+    /// Opaque reset token from the password reset link.
+    pub token: String,
+    /// New plain password submitted over HTTPS.
+    pub new_password: String,
+}
+
 /// External OAuth provider supported by the REST API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

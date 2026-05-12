@@ -1,11 +1,13 @@
 //! Authentication application flows.
 
 use cheenhub_contracts::rest::{
-    AuthResponse, AuthUser, LoginRequest, LogoutRequest, RefreshRequest, RegisterRequest,
+    AuthResponse, AuthUser, LoginRequest, LogoutRequest, PasswordResetConfirmRequest,
+    PasswordResetRequest, RefreshRequest, RegisterRequest,
 };
 use chrono::{Duration, Utc};
 
 use crate::features::auth::domain::UserAccount;
+use crate::features::auth::email::{EmailError, PasswordResetEmail};
 use crate::features::auth::error::AuthError;
 use crate::features::auth::infrastructure::{InsertUserError, UserConflict};
 use crate::features::auth::security::{jwt, password, refresh_token};
@@ -80,6 +82,93 @@ pub(crate) async fn login(
     }
 
     create_auth_response(state, &user).await
+}
+
+/// Sends a password reset email when the account exists.
+pub(crate) async fn request_password_reset(
+    state: &AppState,
+    request: PasswordResetRequest,
+) -> Result<(), AuthError> {
+    let valid = validation::password_reset_request(request.email)
+        .map_err(|message| AuthError::BadRequest(message.to_owned()))?;
+    let now = Utc::now();
+    let Some(user) = state
+        .auth_store
+        .find_user_by_email(&valid.email_normalized)
+        .await
+        .map_err(AuthError::Internal)?
+    else {
+        tracing::info!("accepted password reset request for unknown account");
+        return Ok(());
+    };
+
+    let reset_token = refresh_token::generate();
+    let reset_token_hash = refresh_token::hash(&reset_token);
+    let expires_at = now + Duration::minutes(state.password_reset_token_lifetime_minutes);
+    state
+        .auth_store
+        .insert_password_reset_token(&user.id, reset_token_hash, now, expires_at)
+        .await
+        .map_err(AuthError::Internal)?;
+
+    let reset_url = format!(
+        "{}/reset-password?token={}",
+        state.cheenhub_client_base_url.trim_end_matches('/'),
+        reset_token
+    );
+    tracing::info!(user_id = %user.id, "sending password reset email");
+    state
+        .auth_mailer
+        .send_password_reset(PasswordResetEmail {
+            to: user.email,
+            reset_url,
+        })
+        .await
+        .map_err(map_email_error)?;
+
+    Ok(())
+}
+
+/// Confirms a password reset token and sets a new password.
+pub(crate) async fn confirm_password_reset(
+    state: &AppState,
+    request: PasswordResetConfirmRequest,
+) -> Result<(), AuthError> {
+    let valid = validation::password_reset_confirm(request.token, request.new_password)
+        .map_err(|message| AuthError::BadRequest(message.to_owned()))?;
+    let now = Utc::now();
+    let token_hash = refresh_token::hash(&valid.token);
+    let Some(reset_token) = state
+        .auth_store
+        .consume_password_reset_token(&token_hash, now)
+        .await
+        .map_err(AuthError::Internal)?
+    else {
+        tracing::warn!("rejected invalid password reset token");
+        return Err(AuthError::Unauthorized(
+            "Ссылка для сброса пароля истекла или уже использована.".to_owned(),
+        ));
+    };
+    tracing::info!(
+        reset_token_id = %reset_token.id,
+        user_id = %reset_token.user_id,
+        "consumed password reset token"
+    );
+
+    let password_hash = password::hash_password(&valid.new_password)?;
+    state
+        .auth_store
+        .update_user_password_hash(&reset_token.user_id, password_hash, now)
+        .await
+        .map_err(AuthError::Internal)?;
+    state
+        .auth_store
+        .revoke_user_sessions(&reset_token.user_id, now)
+        .await
+        .map_err(AuthError::Internal)?;
+    tracing::info!(user_id = %reset_token.user_id, "changed password through reset flow");
+
+    Ok(())
 }
 
 /// Rotates a refresh token and returns a fresh token pair.
@@ -219,4 +308,18 @@ fn invalid_credentials() -> AuthError {
 
 pub(super) fn expired_session() -> AuthError {
     AuthError::Unauthorized("Сессия истекла. Войди снова.".to_owned())
+}
+
+fn map_email_error(error: EmailError) -> AuthError {
+    match error {
+        EmailError::Misconfigured { missing } => AuthError::Misconfigured {
+            feature: "password_reset_email",
+            missing,
+            message: "Сброс пароля по email пока не настроен.".to_owned(),
+        },
+        EmailError::Internal(error) => {
+            tracing::warn!(%error, "failed to send password reset email");
+            AuthError::Internal(error)
+        }
+    }
 }

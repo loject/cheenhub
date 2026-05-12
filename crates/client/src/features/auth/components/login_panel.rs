@@ -76,6 +76,14 @@ pub(crate) fn LoginPanel() -> Element {
                 }
             }
 
+            div { class: "mt-3 text-right text-[12px]",
+                Link {
+                    to: Route::ForgotPassword {},
+                    class: "font-medium text-zinc-400 transition hover:text-white",
+                    "Забыли пароль?"
+                }
+            }
+
             div { class: "my-5 flex items-center gap-3",
                 div { class: "h-px flex-1 bg-zinc-800" }
                 span { class: "text-[11px] uppercase tracking-[0.18em] text-zinc-600", "или" }

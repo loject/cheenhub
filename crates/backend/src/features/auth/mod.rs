@@ -2,6 +2,7 @@
 
 pub(crate) mod application;
 mod domain;
+pub(crate) mod email;
 pub(crate) mod error;
 pub(crate) mod infrastructure;
 pub(crate) mod security;
@@ -20,6 +21,14 @@ pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/register", post(transport::handlers::register))
         .route("/login", post(transport::handlers::login))
+        .route(
+            "/password-reset/request",
+            post(transport::handlers::request_password_reset),
+        )
+        .route(
+            "/password-reset/confirm",
+            post(transport::handlers::confirm_password_reset),
+        )
         .route("/refresh", post(transport::handlers::refresh))
         .route("/logout", post(transport::handlers::logout))
         .route("/me", get(transport::handlers::me))

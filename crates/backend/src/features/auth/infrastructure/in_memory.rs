@@ -7,10 +7,11 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-mod model;
+pub(super) mod model;
 
 use crate::features::auth::domain::{
-    OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, OAuthState, RefreshSession, UserAccount,
+    OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, OAuthState, PasswordResetToken,
+    RefreshSession, UserAccount,
 };
 use crate::features::auth::infrastructure::{AuthStore, InsertUserError, UserConflict};
 use model::{
@@ -89,6 +90,20 @@ impl AuthStore for InMemoryAuthStore {
             .map(|user| user.account.clone()))
     }
 
+    async fn update_user_password_hash(
+        &self,
+        user_id: &Uuid,
+        password_hash: String,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        super::in_memory_password_reset::update_user_password_hash(
+            &self.state,
+            user_id,
+            password_hash,
+            now,
+        )
+    }
+
     async fn create_session(
         &self,
         user_id: &Uuid,
@@ -121,30 +136,7 @@ impl AuthStore for InMemoryAuthStore {
         token_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<RefreshSession>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        let Some(refresh_token) = state.refresh_tokens.iter().find(|refresh_token| {
-            refresh_token.token_hash == token_hash
-                && refresh_token.revoked_at.is_none()
-                && refresh_token.expires_at > now
-        }) else {
-            return Ok(None);
-        };
-        let Some(session) = active_session(&state, &refresh_token.session_id, now) else {
-            return Ok(None);
-        };
-        let Some(user) = state
-            .users
-            .iter()
-            .find(|user| user.account.id == session.user_id)
-        else {
-            return Ok(None);
-        };
-
-        Ok(Some(RefreshSession {
-            refresh_token_id: refresh_token.id,
-            session_id: session.id,
-            user: user.account.clone(),
-        }))
+        super::in_memory_refresh::find_active_refresh(&self.state, token_hash, now)
     }
 
     async fn rotate_refresh(
@@ -213,8 +205,34 @@ impl AuthStore for InMemoryAuthStore {
         session_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<bool> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        Ok(active_session(&state, session_id, now).is_some())
+        super::in_memory_refresh::session_is_active(&self.state, session_id, now)
+    }
+
+    async fn revoke_user_sessions(&self, user_id: &Uuid, now: DateTime<Utc>) -> anyhow::Result<()> {
+        super::in_memory_password_reset::revoke_user_sessions(&self.state, user_id, now)
+    }
+
+    async fn insert_password_reset_token(
+        &self,
+        user_id: &Uuid,
+        token_hash: String,
+        _now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        super::in_memory_password_reset::insert_password_reset_token(
+            &self.state,
+            user_id,
+            token_hash,
+            expires_at,
+        )
+    }
+
+    async fn consume_password_reset_token(
+        &self,
+        token_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<PasswordResetToken>> {
+        super::in_memory_password_reset::consume_password_reset_token(&self.state, token_hash, now)
     }
 
     async fn insert_oauth_state(
@@ -468,16 +486,6 @@ impl AuthStore for InMemoryAuthStore {
 
         Ok(())
     }
-}
-
-fn active_session<'a>(
-    state: &'a InMemoryState,
-    session_id: &Uuid,
-    now: DateTime<Utc>,
-) -> Option<&'a InMemorySession> {
-    state.sessions.iter().find(|session| {
-        session.id == *session_id && session.revoked_at.is_none() && session.expires_at > now
-    })
 }
 
 fn poisoned() -> anyhow::Error {

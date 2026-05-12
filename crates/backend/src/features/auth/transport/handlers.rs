@@ -9,7 +9,8 @@ use axum::{
 use cheenhub_contracts::rest::{
     ApiError, AuthResponse, AuthUser, LinkedAccountsResponse, LoginRequest, LogoutRequest,
     OAuthCompleteRequest, OAuthCompleteResponse, OAuthRegistrationRequest, OAuthStartRequest,
-    OAuthStartResponse, RefreshRequest, RegisterRequest,
+    OAuthStartResponse, PasswordResetConfirmRequest, PasswordResetRequest, RefreshRequest,
+    RegisterRequest,
 };
 use serde::Deserialize;
 
@@ -31,6 +32,24 @@ pub(crate) async fn login(
     Json(request): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AuthError> {
     application::login(&state, request).await.map(Json)
+}
+
+/// Sends a password reset email when the account exists.
+pub(crate) async fn request_password_reset(
+    State(state): State<AppState>,
+    Json(request): Json<PasswordResetRequest>,
+) -> Result<StatusCode, AuthError> {
+    application::request_password_reset(&state, request).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Sets a new password using a password reset token.
+pub(crate) async fn confirm_password_reset(
+    State(state): State<AppState>,
+    Json(request): Json<PasswordResetConfirmRequest>,
+) -> Result<StatusCode, AuthError> {
+    application::confirm_password_reset(&state, request).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Rotates a refresh token and returns a new token pair.

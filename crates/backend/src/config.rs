@@ -37,6 +37,18 @@ pub(crate) struct AppConfig {
     pub(crate) oauth_handoff_lifetime_minutes: i64,
     /// OAuth registration intent lifetime in minutes.
     pub(crate) oauth_registration_lifetime_minutes: i64,
+    /// SMTP host used for password reset emails.
+    pub(crate) smtp_host: Option<String>,
+    /// SMTP port used for password reset emails.
+    pub(crate) smtp_port: u16,
+    /// SMTP username used for password reset emails.
+    pub(crate) smtp_username: Option<String>,
+    /// SMTP password used for password reset emails.
+    pub(crate) smtp_password: Option<String>,
+    /// Sender email address for password reset emails.
+    pub(crate) smtp_from_email: Option<String>,
+    /// Password reset token lifetime in minutes.
+    pub(crate) password_reset_token_lifetime_minutes: i64,
     /// Authentication storage backend.
     pub(crate) auth_store: AuthStoreConfig,
     /// Host address used by the WebTransport listener.
@@ -87,6 +99,17 @@ impl AppConfig {
             oauth_registration_lifetime_minutes: optional_positive_i64(
                 "OAUTH_REGISTRATION_LIFETIME_MINUTES",
                 15,
+            )?,
+            smtp_host: env::var("SMTP_HOST").ok(),
+            smtp_port: optional("SMTP_PORT", "587")
+                .parse()
+                .context("SMTP_PORT must be a valid u16 port")?,
+            smtp_username: env::var("SMTP_USERNAME").ok(),
+            smtp_password: env::var("SMTP_PASSWORD").ok(),
+            smtp_from_email: env::var("SMTP_FROM_EMAIL").ok(),
+            password_reset_token_lifetime_minutes: optional_positive_i64(
+                "PASSWORD_RESET_TOKEN_LIFETIME_MINUTES",
+                30,
             )?,
             auth_store: auth_store_config(&optional("AUTH_STORE", "postgres"))?,
             webtransport_host: optional("WEBTRANSPORT_HOST", "127.0.0.1"),

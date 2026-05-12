@@ -19,6 +19,7 @@ use crate::state::AppState;
 fn state() -> AppState {
     AppState {
         auth_store: Arc::new(InMemoryAuthStore::default()),
+        auth_mailer: Arc::new(crate::features::auth::email::tests::TestAuthMailer::default()),
         server_store: Arc::new(InMemoryServerStore::default()),
         text_chat_store: Arc::new(InMemoryTextChatStore::default()),
         voice_presence_store: Arc::new(
@@ -37,6 +38,7 @@ fn state() -> AppState {
         oauth_state_lifetime_minutes: 10,
         oauth_handoff_lifetime_minutes: 5,
         oauth_registration_lifetime_minutes: 15,
+        password_reset_token_lifetime_minutes: 30,
     }
 }
 
