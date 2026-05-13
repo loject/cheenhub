@@ -31,7 +31,10 @@ pub(crate) fn routes() -> Router<AppState> {
         )
         .route("/refresh", post(transport::handlers::refresh))
         .route("/logout", post(transport::handlers::logout))
-        .route("/me", get(transport::handlers::me))
+        .route(
+            "/me",
+            get(transport::handlers::me).patch(transport::handlers::update_current_user),
+        )
         .route(
             "/oauth/google/start",
             post(transport::handlers::start_google_oauth),

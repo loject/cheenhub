@@ -19,6 +19,8 @@ pub struct Model {
     pub password_hash: Option<String>,
     /// Account registration timestamp.
     pub registered_at: DateTimeUtc,
+    /// Last successful nickname update timestamp.
+    pub nickname_updated_at: DateTimeUtc,
     // TODO: accepted_terms_at всегда совпадает с временем регистрации, может удалить?
     /// Mandatory policy acceptance timestamp.
     pub accepted_terms_at: DateTimeUtc,

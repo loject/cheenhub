@@ -4,13 +4,16 @@ mod conversions;
 mod entities;
 mod in_memory;
 mod in_memory_password_reset;
+mod in_memory_profile;
 mod in_memory_refresh;
 mod postgres;
 mod postgres_password_reset;
+mod postgres_profile;
 mod postgres_refresh;
+mod postgres_user;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use uuid::Uuid;
 
 use crate::features::auth::domain::{
@@ -41,6 +44,22 @@ pub(crate) enum InsertUserError {
     Storage(anyhow::Error),
 }
 
+/// Error returned while updating a user's nickname.
+#[derive(Debug)]
+pub(crate) enum UpdateUserNicknameError {
+    /// Unique field conflict.
+    Conflict(UserConflict),
+    /// Nickname was changed too recently.
+    Cooldown {
+        /// First timestamp when another nickname change is allowed.
+        next_allowed_at: DateTime<Utc>,
+    },
+    /// Unexpected database error.
+    Database(sea_orm::DbErr),
+    /// Unexpected storage error.
+    Storage(anyhow::Error),
+}
+
 /// Authentication storage boundary.
 #[async_trait]
 pub(crate) trait AuthStore: Send + Sync {
@@ -62,6 +81,16 @@ pub(crate) trait AuthStore: Send + Sync {
 
     /// Finds a user by id.
     async fn find_user_by_id(&self, user_id: &Uuid) -> anyhow::Result<Option<UserAccount>>;
+
+    /// Updates a user's public nickname.
+    async fn update_user_nickname(
+        &self,
+        user_id: &Uuid,
+        session_id: &Uuid,
+        nickname: String,
+        now: DateTime<Utc>,
+        cooldown: Duration,
+    ) -> Result<Option<UserAccount>, UpdateUserNicknameError>;
 
     /// Updates a user's password hash.
     async fn update_user_password_hash(

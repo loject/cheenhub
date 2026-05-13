@@ -5,6 +5,7 @@ mod components;
 mod domain;
 pub(crate) mod jwt;
 mod pages;
+mod profile_api;
 mod storage;
 
 pub(crate) use components::token_refresher::TokenRefresher;

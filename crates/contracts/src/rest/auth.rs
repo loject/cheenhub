@@ -115,6 +115,13 @@ pub struct OAuthRegistrationRequest {
     pub accepts_policies: bool,
 }
 
+/// Request body used to update the current authenticated user profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateCurrentUserRequest {
+    /// New public nickname shown to other users.
+    pub nickname: String,
+}
+
 /// Request body used to rotate a refresh token.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RefreshRequest {

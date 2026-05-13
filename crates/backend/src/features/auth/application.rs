@@ -2,14 +2,16 @@
 
 use cheenhub_contracts::rest::{
     AuthResponse, AuthUser, LoginRequest, LogoutRequest, PasswordResetConfirmRequest,
-    PasswordResetRequest, RefreshRequest, RegisterRequest,
+    PasswordResetRequest, RefreshRequest, RegisterRequest, UpdateCurrentUserRequest,
 };
 use chrono::{Duration, Utc};
 
 use crate::features::auth::domain::UserAccount;
 use crate::features::auth::email::{EmailError, PasswordResetEmail};
 use crate::features::auth::error::AuthError;
-use crate::features::auth::infrastructure::{InsertUserError, UserConflict};
+use crate::features::auth::infrastructure::{
+    InsertUserError, UpdateUserNicknameError, UserConflict,
+};
 use crate::features::auth::security::{jwt, password, refresh_token};
 use crate::features::auth::validation;
 use crate::state::AppState;
@@ -17,6 +19,8 @@ use uuid::Uuid;
 
 mod google;
 mod oauth;
+
+const NICKNAME_CHANGE_COOLDOWN_DAYS: i64 = 7;
 
 #[cfg(test)]
 mod tests;
@@ -230,27 +234,44 @@ pub(crate) async fn logout(state: &AppState, request: LogoutRequest) -> Result<(
 
 /// Returns the user for a valid access JWT.
 pub(crate) async fn me(state: &AppState, access_token: &str) -> Result<AuthUser, AuthError> {
-    let claims = jwt::verify_access_token(&state.auth_keys, access_token)?;
-    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| expired_session())?;
-    let session_id = Uuid::parse_str(&claims.session_id).map_err(|_| expired_session())?;
-    if !state
-        .auth_store
-        .session_is_active(&session_id, Utc::now())
-        .await
-        .map_err(AuthError::Internal)?
-    {
-        return Err(expired_session());
-    }
-    let Some(user) = state
-        .auth_store
-        .find_user_by_id(&user_id)
-        .await
-        .map_err(AuthError::Internal)?
-    else {
-        return Err(expired_session());
-    };
+    let (user, _) = require_current_user(state, access_token).await?;
 
     Ok(auth_user(&user))
+}
+
+/// Updates the current user profile.
+pub(crate) async fn update_current_user(
+    state: &AppState,
+    access_token: &str,
+    request: UpdateCurrentUserRequest,
+) -> Result<AuthUser, AuthError> {
+    let (user, session_id) = require_current_user(state, access_token).await?;
+    let valid = validation::current_user_update(request.nickname)
+        .map_err(|message| AuthError::BadRequest(message.to_owned()))?;
+    if valid.nickname == user.nickname {
+        return Ok(auth_user(&user));
+    }
+
+    let now = Utc::now();
+    let cooldown = Duration::days(NICKNAME_CHANGE_COOLDOWN_DAYS);
+
+    tracing::info!(user_id = %user.id, "updating user nickname");
+    let updated_user = state
+        .auth_store
+        .update_user_nickname(&user.id, &session_id, valid.nickname, now, cooldown)
+        .await
+        .map_err(map_update_user_nickname_error)?
+        .ok_or_else(expired_session)?;
+
+    crate::features::voice_chat::application::update_user_nickname(
+        state,
+        &updated_user.id,
+        updated_user.nickname.clone(),
+    )
+    .await;
+    tracing::info!(user_id = %updated_user.id, "updated user nickname");
+
+    Ok(auth_user(&updated_user))
 }
 
 pub(super) async fn create_auth_response(
@@ -280,6 +301,33 @@ pub(super) async fn create_auth_response(
     })
 }
 
+async fn require_current_user(
+    state: &AppState,
+    access_token: &str,
+) -> Result<(UserAccount, Uuid), AuthError> {
+    let claims = jwt::verify_access_token(&state.auth_keys, access_token)?;
+    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| expired_session())?;
+    let session_id = Uuid::parse_str(&claims.session_id).map_err(|_| expired_session())?;
+    if !state
+        .auth_store
+        .session_is_active(&session_id, Utc::now())
+        .await
+        .map_err(AuthError::Internal)?
+    {
+        return Err(expired_session());
+    }
+    let Some(user) = state
+        .auth_store
+        .find_user_by_id(&user_id)
+        .await
+        .map_err(AuthError::Internal)?
+    else {
+        return Err(expired_session());
+    };
+
+    Ok((user, session_id))
+}
+
 fn auth_user(user: &UserAccount) -> AuthUser {
     AuthUser {
         id: user.id.to_string(),
@@ -299,6 +347,23 @@ pub(super) fn map_insert_user_error(error: InsertUserError) -> AuthError {
         }
         InsertUserError::Database(error) => AuthError::Internal(error.into()),
         InsertUserError::Storage(error) => AuthError::Internal(error),
+    }
+}
+
+fn map_update_user_nickname_error(error: UpdateUserNicknameError) -> AuthError {
+    match error {
+        UpdateUserNicknameError::Conflict(UserConflict::Nickname) => {
+            AuthError::Conflict("Этот никнейм уже занят.".to_owned())
+        }
+        UpdateUserNicknameError::Conflict(UserConflict::Email) => {
+            AuthError::Conflict("Этот email уже используется.".to_owned())
+        }
+        UpdateUserNicknameError::Cooldown { next_allowed_at } => AuthError::RateLimited(format!(
+            "Никнейм можно изменить раз в 7 дней. Следующая смена будет доступна {}.",
+            next_allowed_at.format("%d.%m.%Y %H:%M UTC")
+        )),
+        UpdateUserNicknameError::Database(error) => AuthError::Internal(error.into()),
+        UpdateUserNicknameError::Storage(error) => AuthError::Internal(error),
     }
 }
 

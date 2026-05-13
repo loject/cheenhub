@@ -15,6 +15,7 @@ impl From<users::Model> for UserAccount {
             email: row.email,
             password_hash: row.password_hash,
             registered_at: row.registered_at,
+            nickname_updated_at: row.nickname_updated_at,
         }
     }
 }

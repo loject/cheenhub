@@ -2,12 +2,12 @@
 
 use std::rc::Rc;
 
-use cheenhub_contracts::rest::AuthUser;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
+use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::{AudioPlaybackHandle, PlaybackCodec, VoiceFrame};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
@@ -17,7 +17,8 @@ use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 
 /// Provides voice connection state to authenticated app components.
 #[component]
-pub(crate) fn VoiceConnectionProvider(current_user: AuthUser, children: Element) -> Element {
+pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
+    let current_user = use_context::<CurrentUserContext>().require_user();
     let realtime = use_context::<RealtimeHandle>();
     let microphone = use_context::<MicrophoneHandle>();
     let playback = use_context::<AudioPlaybackHandle>();

@@ -1,25 +1,15 @@
-//! Simple in-memory authentication storage.
-
 use std::sync::Mutex;
 
-use anyhow::anyhow;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use uuid::Uuid;
 
 pub(super) mod model;
 
-use crate::features::auth::domain::{
-    OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, OAuthState, PasswordResetToken,
-    RefreshSession, UserAccount,
-};
-use crate::features::auth::infrastructure::{AuthStore, InsertUserError, UserConflict};
-use model::{
-    InMemoryOAuthHandoff, InMemoryOAuthRegistrationIntent, InMemoryOAuthState,
-    InMemoryRefreshToken, InMemorySession, InMemoryState, InMemoryUser,
-};
+use crate::features::auth::domain::*;
+use crate::features::auth::infrastructure::*;
+use model::*;
 
-/// In-memory authentication storage for local runs and tests.
 #[derive(Default)]
 pub(crate) struct InMemoryAuthStore {
     state: Mutex<InMemoryState>,
@@ -60,6 +50,7 @@ impl AuthStore for InMemoryAuthStore {
             email,
             password_hash,
             registered_at: now,
+            nickname_updated_at: now,
         };
         state.users.push(InMemoryUser {
             account: account.clone(),
@@ -88,6 +79,20 @@ impl AuthStore for InMemoryAuthStore {
             .iter()
             .find(|user| user.account.id == *user_id)
             .map(|user| user.account.clone()))
+    }
+
+    #[rustfmt::skip]
+    async fn update_user_nickname(
+        &self, user_id: &Uuid, session_id: &Uuid, nickname: String, now: DateTime<Utc>, cooldown: Duration,
+    ) -> Result<Option<UserAccount>, UpdateUserNicknameError> {
+        super::in_memory_profile::update_user_nickname(
+            &self.state,
+            user_id,
+            session_id,
+            nickname,
+            now,
+            cooldown,
+        )
     }
 
     async fn update_user_password_hash(
@@ -330,14 +335,14 @@ impl AuthStore for InMemoryAuthStore {
         if state.oauth_accounts.iter().any(|account| {
             account.provider == provider && account.provider_subject == provider_subject
         }) {
-            return Err(anyhow!("oauth provider subject is already linked"));
+            return Err(anyhow::anyhow!("oauth provider subject is already linked"));
         }
         if state
             .oauth_accounts
             .iter()
             .any(|account| account.provider == provider && account.user_id == *user_id)
         {
-            return Err(anyhow!("oauth provider is already linked for user"));
+            return Err(anyhow::anyhow!("oauth provider is already linked for user"));
         }
         let account = OAuthAccount {
             user_id: *user_id,
@@ -488,6 +493,6 @@ impl AuthStore for InMemoryAuthStore {
     }
 }
 
-fn poisoned() -> anyhow::Error {
-    anyhow!("in-memory auth store lock poisoned")
+pub(super) fn poisoned() -> anyhow::Error {
+    anyhow::anyhow!("in-memory auth store lock poisoned")
 }

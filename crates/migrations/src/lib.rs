@@ -12,6 +12,8 @@ mod m20260512_000008_rename_o_auth_tables;
 mod m20260512_000009_allow_passwordless_users;
 mod m20260512_000010_drop_password_hash_not_null;
 mod m20260512_000011_create_password_reset_tokens_table;
+mod m20260513_000012_add_user_nickname_updated_at;
+mod m20260513_000013_create_user_nickname_history_table;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -33,6 +35,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260512_000009_allow_passwordless_users::Migration),
             Box::new(m20260512_000010_drop_password_hash_not_null::Migration),
             Box::new(m20260512_000011_create_password_reset_tokens_table::Migration),
+            Box::new(m20260513_000012_add_user_nickname_updated_at::Migration),
+            Box::new(m20260513_000013_create_user_nickname_history_table::Migration),
         ]
     }
 }

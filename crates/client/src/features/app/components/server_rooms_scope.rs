@@ -4,6 +4,7 @@ use cheenhub_contracts::rest::{ServerRoomSummary, ServerSummary};
 use dioxus::prelude::*;
 
 use crate::features::app::api;
+use crate::features::app::current_user::CurrentUserContext;
 use crate::features::network::RealtimeConnectionStatusIndicator;
 use crate::features::server_settings::ServerSettingsScope;
 use crate::features::user_settings::UserSettingsScope;
@@ -17,6 +18,7 @@ use super::server_rooms_state::{
     ServerWorkspace, active_room, chat_open_for_room, ensure_workspace_mounted, room_by_id,
     room_icon, room_icon_class, upsert_room,
 };
+use super::user_initial::user_initial;
 
 #[derive(Clone, PartialEq)]
 enum RoomModal {
@@ -33,6 +35,7 @@ pub(crate) fn ServerRoomsScope(
     on_open_modal: EventHandler<AppModal>,
     on_left_server: EventHandler<String>,
 ) -> Element {
+    let current_user = use_context::<CurrentUserContext>().require_user();
     let mut rooms = use_signal(|| None::<Vec<ServerRoomSummary>>);
     let mut active_room_id = use_signal(|| None::<String>);
     let mut room_action_status = use_signal(String::new);
@@ -51,6 +54,7 @@ pub(crate) fn ServerRoomsScope(
     let modal_server_id = server.id.clone();
     let server_name = server.name.clone();
     let invite_server_name = server_name.clone();
+    let current_user_initial = user_initial(&current_user.nickname);
     let is_owner = server.is_owner;
     let room_load_resource = use_resource(move || {
         let request_server_id = load_server_id.clone();
@@ -379,9 +383,9 @@ pub(crate) fn ServerRoomsScope(
                 }
                 SidebarVoiceControls {}
                 div { class: "flex items-center gap-3 rounded-[20px] border border-zinc-800 bg-zinc-900/80 p-2.5",
-                    div { class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[12px] font-bold text-white", "Ч" }
+                    div { class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[12px] font-bold text-white", "{current_user_initial}" }
                     div { class: "min-w-0 flex-1",
-                        div { class: "truncate text-[12px] font-medium text-zinc-100", "chingiz" }
+                        div { class: "truncate text-[12px] font-medium text-zinc-100", "{current_user.nickname}" }
                         div { class: "truncate text-[11px] text-zinc-500", "в приложении" }
                     }
                     button {

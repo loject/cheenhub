@@ -20,6 +20,8 @@ use crate::features::text_chat::infrastructure::InMemoryTextChatStore;
 use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
 
+mod nickname;
+
 #[tokio::test]
 async fn password_reset_request_sends_email_for_existing_user() {
     let (state, mailer) = state_with_mailer();
@@ -386,7 +388,7 @@ async fn password_account_can_unlink_google() {
     assert!(linked.accounts.is_empty());
 }
 
-async fn registered_user(
+pub(super) async fn registered_user(
     state: &AppState,
     nickname: &str,
     email: &str,
@@ -444,7 +446,7 @@ async fn google_only_user(state: &AppState) -> cheenhub_contracts::rest::AuthRes
     .expect("google registration should succeed")
 }
 
-fn state() -> AppState {
+pub(super) fn state() -> AppState {
     state_with_mailer().0
 }
 

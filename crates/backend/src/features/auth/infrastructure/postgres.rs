@@ -1,21 +1,16 @@
 //! Postgres-backed authentication storage.
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
     Set,
 };
 use uuid::Uuid;
 
-use crate::features::auth::domain::{
-    OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, OAuthState, RefreshSession, UserAccount,
-};
-use crate::features::auth::infrastructure::entities::{
-    oauth_accounts, oauth_handoffs, oauth_registration_intents, oauth_states, refresh_tokens,
-    sessions, users,
-};
-use crate::features::auth::infrastructure::{AuthStore, InsertUserError, UserConflict};
+use crate::features::auth::domain::*;
+use crate::features::auth::infrastructure::entities::*;
+use crate::features::auth::infrastructure::{AuthStore, InsertUserError, UpdateUserNicknameError};
 
 /// Postgres-backed authentication storage.
 pub(crate) struct PostgresAuthStore {
@@ -47,12 +42,13 @@ impl AuthStore for PostgresAuthStore {
             email_normalized: Set(email_normalized),
             password_hash: Set(password_hash),
             registered_at: Set(now),
+            nickname_updated_at: Set(now),
             accepted_terms_at: Set(now),
             updated_at: Set(now),
         }
         .insert(&self.database)
         .await
-        .map_err(map_insert_user_error)?;
+        .map_err(super::postgres_user::map_insert_user_error)?;
 
         Ok(model.into())
     }
@@ -73,6 +69,21 @@ impl AuthStore for PostgresAuthStore {
             .one(&self.database)
             .await?
             .map(Into::into))
+    }
+
+    #[rustfmt::skip]
+    async fn update_user_nickname(
+        &self, user_id: &Uuid, session_id: &Uuid, nickname: String, now: DateTime<Utc>, cooldown: Duration,
+    ) -> Result<Option<UserAccount>, UpdateUserNicknameError> {
+        super::postgres_profile::update_user_nickname(
+            &self.database,
+            user_id,
+            session_id,
+            nickname,
+            now,
+            cooldown,
+        )
+        .await
     }
 
     async fn update_user_password_hash(
@@ -483,16 +494,4 @@ impl AuthStore for PostgresAuthStore {
 
         Ok(())
     }
-}
-
-fn map_insert_user_error(error: sea_orm::DbErr) -> InsertUserError {
-    let message = error.to_string();
-    if message.contains("users_nickname_key") {
-        return InsertUserError::Conflict(UserConflict::Nickname);
-    }
-    if message.contains("users_email_normalized_key") {
-        return InsertUserError::Conflict(UserConflict::Email);
-    }
-
-    InsertUserError::Database(error)
 }
