@@ -122,6 +122,17 @@ pub struct UpdateCurrentUserRequest {
     pub nickname: String,
 }
 
+/// Request body used to change the current user's password.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangeCurrentUserPasswordRequest {
+    /// Current plain password submitted over HTTPS.
+    pub current_password: String,
+    /// New plain password submitted over HTTPS.
+    pub new_password: String,
+    /// Repeated new password submitted to prevent mistyped changes.
+    pub new_password_confirmation: String,
+}
+
 /// Request body used to rotate a refresh token.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RefreshRequest {
@@ -185,4 +196,6 @@ pub struct AuthUser {
     pub email: String,
     /// RFC 3339 registration timestamp.
     pub registered_at: String,
+    /// Whether the account has a local password.
+    pub has_password: bool,
 }

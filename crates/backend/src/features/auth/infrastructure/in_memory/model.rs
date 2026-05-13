@@ -29,6 +29,9 @@ pub(in crate::features::auth::infrastructure) struct InMemoryState {
     /// User nickname change history.
     pub(in crate::features::auth::infrastructure) user_nickname_history:
         Vec<(Uuid, Uuid, Uuid, String, String, DateTime<Utc>)>,
+    /// User password change trace.
+    pub(in crate::features::auth::infrastructure) user_password_change_trace:
+        Vec<(Uuid, Uuid, Uuid, DateTime<Utc>)>,
 }
 
 /// In-memory user row.

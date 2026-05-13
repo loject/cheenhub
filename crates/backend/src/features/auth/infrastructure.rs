@@ -100,6 +100,15 @@ pub(crate) trait AuthStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> anyhow::Result<()>;
 
+    /// Updates a user's password hash and records a profile password change trace.
+    async fn change_user_password(
+        &self,
+        user_id: &Uuid,
+        session_id: &Uuid,
+        password_hash: String,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()>;
+
     /// Creates a session and its initial refresh token row.
     async fn create_session(
         &self,

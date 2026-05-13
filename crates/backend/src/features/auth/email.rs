@@ -14,6 +14,13 @@ pub(crate) struct PasswordResetEmail {
     pub(crate) reset_url: String,
 }
 
+/// Password change notification email content.
+#[derive(Debug, Clone)]
+pub(crate) struct PasswordChangedEmail {
+    /// Destination email address.
+    pub(crate) to: String,
+}
+
 /// Error returned by authentication email delivery.
 #[derive(Debug)]
 pub(crate) enum EmailError {
@@ -31,6 +38,9 @@ pub(crate) enum EmailError {
 pub(crate) trait AuthMailer: Send + Sync {
     /// Sends a password reset email.
     async fn send_password_reset(&self, email: PasswordResetEmail) -> Result<(), EmailError>;
+
+    /// Sends a password change notification email.
+    async fn send_password_changed(&self, email: PasswordChangedEmail) -> Result<(), EmailError>;
 }
 
 /// SMTP-backed authentication email sender.
@@ -113,6 +123,33 @@ impl AuthMailer for SmtpAuthMailer {
             .map(|_| ())
             .map_err(|error| EmailError::Internal(error.into()))
     }
+
+    async fn send_password_changed(&self, email: PasswordChangedEmail) -> Result<(), EmailError> {
+        let Some(transport) = &self.transport else {
+            return Err(EmailError::Misconfigured {
+                missing: self.missing.clone(),
+            });
+        };
+        let from = self
+            .from
+            .as_ref()
+            .ok_or_else(|| EmailError::Misconfigured {
+                missing: vec!["SMTP_FROM_EMAIL"],
+            })?;
+
+        let message = Message::builder()
+            .from(parse_mailbox(from)?)
+            .to(parse_mailbox(&email.to)?)
+            .subject("CheenHub password changed")
+            .body(password_changed_body())
+            .map_err(|error| EmailError::Internal(error.into()))?;
+
+        transport
+            .send(message)
+            .await
+            .map(|_| ())
+            .map_err(|error| EmailError::Internal(error.into()))
+    }
 }
 
 fn missing_smtp_config(
@@ -149,6 +186,10 @@ fn password_reset_body(reset_url: &str) -> String {
     )
 }
 
+fn password_changed_body() -> String {
+    "Привет!\n\nПароль от аккаунта CheenHub был изменен. Если это был не ты, сразу запусти сброс пароля и проверь активные сеансы.\n".to_owned()
+}
+
 /// In-memory email sender for tests.
 #[cfg(test)]
 pub(crate) mod tests {
@@ -156,12 +197,13 @@ pub(crate) mod tests {
 
     use async_trait::async_trait;
 
-    use super::{AuthMailer, EmailError, PasswordResetEmail};
+    use super::{AuthMailer, EmailError, PasswordChangedEmail, PasswordResetEmail};
 
     /// Test auth mailer that records sent reset emails.
     #[derive(Default)]
     pub(crate) struct TestAuthMailer {
         sent: Mutex<Vec<PasswordResetEmail>>,
+        password_changed: Mutex<Vec<PasswordChangedEmail>>,
     }
 
     impl TestAuthMailer {
@@ -169,12 +211,31 @@ pub(crate) mod tests {
         pub(crate) fn sent(&self) -> Vec<PasswordResetEmail> {
             self.sent.lock().expect("test mailer lock").clone()
         }
+
+        /// Returns sent password change notifications.
+        pub(crate) fn password_changed(&self) -> Vec<PasswordChangedEmail> {
+            self.password_changed
+                .lock()
+                .expect("test mailer lock")
+                .clone()
+        }
     }
 
     #[async_trait]
     impl AuthMailer for TestAuthMailer {
         async fn send_password_reset(&self, email: PasswordResetEmail) -> Result<(), EmailError> {
             self.sent.lock().expect("test mailer lock").push(email);
+            Ok(())
+        }
+
+        async fn send_password_changed(
+            &self,
+            email: PasswordChangedEmail,
+        ) -> Result<(), EmailError> {
+            self.password_changed
+                .lock()
+                .expect("test mailer lock")
+                .push(email);
             Ok(())
         }
     }

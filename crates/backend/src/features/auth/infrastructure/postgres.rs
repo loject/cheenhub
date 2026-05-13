@@ -71,9 +71,13 @@ impl AuthStore for PostgresAuthStore {
             .map(Into::into))
     }
 
-    #[rustfmt::skip]
     async fn update_user_nickname(
-        &self, user_id: &Uuid, session_id: &Uuid, nickname: String, now: DateTime<Utc>, cooldown: Duration,
+        &self,
+        user_id: &Uuid,
+        session_id: &Uuid,
+        nickname: String,
+        now: DateTime<Utc>,
+        cooldown: Duration,
     ) -> Result<Option<UserAccount>, UpdateUserNicknameError> {
         super::postgres_profile::update_user_nickname(
             &self.database,
@@ -101,6 +105,23 @@ impl AuthStore for PostgresAuthStore {
         .await
     }
 
+    async fn change_user_password(
+        &self,
+        user_id: &Uuid,
+        session_id: &Uuid,
+        password_hash: String,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        super::postgres_profile::change_user_password(
+            &self.database,
+            user_id,
+            session_id,
+            password_hash,
+            now,
+        )
+        .await
+    }
+
     async fn create_session(
         &self,
         user_id: &Uuid,
@@ -108,33 +129,14 @@ impl AuthStore for PostgresAuthStore {
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<Uuid> {
-        let session_id = Uuid::new_v4();
-        let refresh_id = Uuid::new_v4();
-
-        sessions::ActiveModel {
-            id: Set(session_id),
-            user_id: Set(*user_id),
-            created_at: Set(now),
-            last_seen_at: Set(now),
-            expires_at: Set(expires_at),
-            revoked_at: Set(None),
-        }
-        .insert(&self.database)
-        .await?;
-
-        refresh_tokens::ActiveModel {
-            id: Set(refresh_id),
-            session_id: Set(session_id),
-            token_hash: Set(refresh_hash),
-            created_at: Set(now),
-            rotated_at: Set(None),
-            expires_at: Set(expires_at),
-            revoked_at: Set(None),
-        }
-        .insert(&self.database)
-        .await?;
-
-        Ok(session_id)
+        super::postgres_refresh::create_session(
+            &self.database,
+            user_id,
+            refresh_hash,
+            now,
+            expires_at,
+        )
+        .await
     }
 
     async fn find_active_refresh(
@@ -153,40 +155,15 @@ impl AuthStore for PostgresAuthStore {
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        if let Some(old_refresh) = refresh_tokens::Entity::find_by_id(old_refresh_id.to_owned())
-            .one(&self.database)
-            .await?
-        {
-            let mut old_refresh = old_refresh.into_active_model();
-            old_refresh.rotated_at = Set(Some(now));
-            old_refresh.revoked_at = Set(Some(now));
-            old_refresh.update(&self.database).await?;
-        }
-
-        if let Some(session) = sessions::Entity::find_by_id(session_id.to_owned())
-            .filter(sessions::Column::RevokedAt.is_null())
-            .one(&self.database)
-            .await?
-        {
-            let mut session = session.into_active_model();
-            session.last_seen_at = Set(now);
-            session.expires_at = Set(expires_at);
-            session.update(&self.database).await?;
-        }
-
-        refresh_tokens::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            session_id: Set(*session_id),
-            token_hash: Set(next_hash),
-            created_at: Set(now),
-            rotated_at: Set(None),
-            expires_at: Set(expires_at),
-            revoked_at: Set(None),
-        }
-        .insert(&self.database)
-        .await?;
-
-        Ok(())
+        super::postgres_refresh::rotate_refresh(
+            &self.database,
+            old_refresh_id,
+            session_id,
+            next_hash,
+            now,
+            expires_at,
+        )
+        .await
     }
 
     async fn revoke_refresh_session(
@@ -194,32 +171,7 @@ impl AuthStore for PostgresAuthStore {
         token_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let Some(refresh_token) = refresh_tokens::Entity::find()
-            .filter(refresh_tokens::Column::TokenHash.eq(token_hash))
-            .one(&self.database)
-            .await?
-        else {
-            return Ok(());
-        };
-        let session_id = refresh_token.session_id;
-
-        if refresh_token.revoked_at.is_none() {
-            let mut refresh_token = refresh_token.into_active_model();
-            refresh_token.revoked_at = Set(Some(now));
-            refresh_token.update(&self.database).await?;
-        }
-
-        if let Some(session) = sessions::Entity::find_by_id(session_id)
-            .filter(sessions::Column::RevokedAt.is_null())
-            .one(&self.database)
-            .await?
-        {
-            let mut session = session.into_active_model();
-            session.revoked_at = Set(Some(now));
-            session.update(&self.database).await?;
-        }
-
-        Ok(())
+        super::postgres_refresh::revoke_refresh_session(&self.database, token_hash, now).await
     }
 
     async fn session_is_active(

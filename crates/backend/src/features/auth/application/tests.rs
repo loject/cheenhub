@@ -21,6 +21,7 @@ use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
 
 mod nickname;
+mod password;
 
 #[tokio::test]
 async fn password_reset_request_sends_email_for_existing_user() {
@@ -406,7 +407,7 @@ pub(super) async fn registered_user(
     .expect("registration should succeed")
 }
 
-async fn google_only_user(state: &AppState) -> cheenhub_contracts::rest::AuthResponse {
+pub(super) async fn google_only_user(state: &AppState) -> cheenhub_contracts::rest::AuthResponse {
     let now = Utc::now();
     let handoff_code = refresh_token::generate();
     let intent = state
@@ -450,7 +451,7 @@ pub(super) fn state() -> AppState {
     state_with_mailer().0
 }
 
-fn state_with_mailer() -> (AppState, Arc<TestAuthMailer>) {
+pub(super) fn state_with_mailer() -> (AppState, Arc<TestAuthMailer>) {
     let mailer = Arc::new(TestAuthMailer::default());
     let state = AppState {
         auth_store: Arc::new(InMemoryAuthStore::default()),

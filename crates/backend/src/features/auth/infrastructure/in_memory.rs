@@ -81,9 +81,13 @@ impl AuthStore for InMemoryAuthStore {
             .map(|user| user.account.clone()))
     }
 
-    #[rustfmt::skip]
     async fn update_user_nickname(
-        &self, user_id: &Uuid, session_id: &Uuid, nickname: String, now: DateTime<Utc>, cooldown: Duration,
+        &self,
+        user_id: &Uuid,
+        session_id: &Uuid,
+        nickname: String,
+        now: DateTime<Utc>,
+        cooldown: Duration,
     ) -> Result<Option<UserAccount>, UpdateUserNicknameError> {
         super::in_memory_profile::update_user_nickname(
             &self.state,
@@ -109,6 +113,22 @@ impl AuthStore for InMemoryAuthStore {
         )
     }
 
+    async fn change_user_password(
+        &self,
+        user_id: &Uuid,
+        session_id: &Uuid,
+        password_hash: String,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        super::in_memory_profile::change_user_password(
+            &self.state,
+            user_id,
+            session_id,
+            password_hash,
+            now,
+        )
+    }
+
     async fn create_session(
         &self,
         user_id: &Uuid,
@@ -116,24 +136,7 @@ impl AuthStore for InMemoryAuthStore {
         _now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<Uuid> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let session_id = Uuid::new_v4();
-
-        state.sessions.push(InMemorySession {
-            id: session_id,
-            user_id: *user_id,
-            expires_at,
-            revoked_at: None,
-        });
-        state.refresh_tokens.push(InMemoryRefreshToken {
-            id: Uuid::new_v4(),
-            session_id,
-            token_hash: refresh_hash,
-            expires_at,
-            revoked_at: None,
-        });
-
-        Ok(session_id)
+        super::in_memory_refresh::create_session(&self.state, user_id, refresh_hash, expires_at)
     }
 
     async fn find_active_refresh(
@@ -152,30 +155,14 @@ impl AuthStore for InMemoryAuthStore {
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        if let Some(refresh_token) = state
-            .refresh_tokens
-            .iter_mut()
-            .find(|refresh_token| refresh_token.id == *old_refresh_id)
-        {
-            refresh_token.revoked_at = Some(now);
-        }
-        if let Some(session) = state
-            .sessions
-            .iter_mut()
-            .find(|session| session.id == *session_id && session.revoked_at.is_none())
-        {
-            session.expires_at = expires_at;
-        }
-        state.refresh_tokens.push(InMemoryRefreshToken {
-            id: Uuid::new_v4(),
-            session_id: *session_id,
-            token_hash: next_hash,
+        super::in_memory_refresh::rotate_refresh(
+            &self.state,
+            old_refresh_id,
+            session_id,
+            next_hash,
+            now,
             expires_at,
-            revoked_at: None,
-        });
-
-        Ok(())
+        )
     }
 
     async fn revoke_refresh_session(
@@ -183,26 +170,7 @@ impl AuthStore for InMemoryAuthStore {
         token_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let Some(refresh_token) = state
-            .refresh_tokens
-            .iter_mut()
-            .find(|refresh_token| refresh_token.token_hash == token_hash)
-        else {
-            return Ok(());
-        };
-        refresh_token.revoked_at = Some(now);
-        let session_id = refresh_token.session_id;
-
-        if let Some(session) = state
-            .sessions
-            .iter_mut()
-            .find(|session| session.id == session_id)
-        {
-            session.revoked_at = Some(now);
-        }
-
-        Ok(())
+        super::in_memory_refresh::revoke_refresh_session(&self.state, token_hash, now)
     }
 
     async fn session_is_active(

@@ -8,7 +8,9 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::features::auth::domain::UserAccount;
-use crate::features::auth::infrastructure::entities::{user_nickname_history, users};
+use crate::features::auth::infrastructure::entities::{
+    user_nickname_history, user_password_change_trace, users,
+};
 use crate::features::auth::infrastructure::{UpdateUserNicknameError, UserConflict};
 
 /// Updates a user's public nickname.
@@ -85,6 +87,41 @@ pub(super) async fn update_user_nickname(
     Err(UpdateUserNicknameError::Cooldown {
         next_allowed_at: user.nickname_updated_at + cooldown,
     })
+}
+
+/// Updates a user's password hash and records the password change trace.
+pub(super) async fn change_user_password(
+    database: &DatabaseConnection,
+    user_id: &Uuid,
+    session_id: &Uuid,
+    password_hash: String,
+    now: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let transaction = database.begin().await?;
+    users::Entity::update_many()
+        .col_expr(
+            users::Column::PasswordHash,
+            sea_orm::sea_query::Expr::value(Some(password_hash)),
+        )
+        .col_expr(
+            users::Column::UpdatedAt,
+            sea_orm::sea_query::Expr::value(now),
+        )
+        .filter(users::Column::Id.eq(*user_id))
+        .exec(&transaction)
+        .await?;
+
+    user_password_change_trace::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        user_id: Set(*user_id),
+        session_id: Set(*session_id),
+        changed_at: Set(now),
+    }
+    .insert(&transaction)
+    .await?;
+
+    transaction.commit().await?;
+    Ok(())
 }
 
 fn map_update_user_nickname_error(error: sea_orm::DbErr) -> UpdateUserNicknameError {

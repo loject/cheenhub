@@ -62,3 +62,26 @@ pub(super) fn update_user_nickname(
 
     Ok(Some(account))
 }
+
+/// Updates a user's password hash and records the password change trace.
+pub(super) fn change_user_password(
+    state: &Mutex<InMemoryState>,
+    user_id: &Uuid,
+    session_id: &Uuid,
+    password_hash: String,
+    now: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let mut state = state.lock().map_err(|_| poisoned())?;
+    if let Some(user) = state
+        .users
+        .iter_mut()
+        .find(|user| user.account.id == *user_id)
+    {
+        user.account.password_hash = Some(password_hash);
+    }
+    state
+        .user_password_change_trace
+        .push((Uuid::new_v4(), *user_id, *session_id, now));
+
+    Ok(())
+}

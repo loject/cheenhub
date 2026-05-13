@@ -2,6 +2,7 @@
 
 mod logout_section;
 mod page;
+mod password_section;
 mod profile_section;
 mod scope;
 mod security_section;

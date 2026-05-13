@@ -13,7 +13,7 @@ use crate::features::auth::{jwt, storage};
 
 const DEFAULT_API_BASE_URL: &str = "http://127.0.0.1:3000/api";
 
-pub(crate) use super::profile_api::update_current_user;
+pub(crate) use super::profile_api::{change_current_user_password, update_current_user};
 
 /// Registers a new account and stores the returned tokens.
 pub(crate) async fn register(request: RegisterRequest) -> Result<AuthUser, String> {

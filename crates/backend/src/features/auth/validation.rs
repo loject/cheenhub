@@ -38,6 +38,15 @@ pub(crate) struct ValidPasswordResetConfirm {
     pub(crate) new_password: String,
 }
 
+/// Normalized password change input.
+#[derive(Debug, Clone)]
+pub(crate) struct ValidPasswordChange {
+    /// Current plain password.
+    pub(crate) current_password: String,
+    /// New plain password.
+    pub(crate) new_password: String,
+}
+
 /// Normalized current user update input.
 #[derive(Debug, Clone)]
 pub(crate) struct ValidCurrentUserUpdate {
@@ -121,6 +130,28 @@ pub(crate) fn password_reset_confirm(
 
     Ok(ValidPasswordResetConfirm {
         token,
+        new_password,
+    })
+}
+
+/// Validates and normalizes current user password change input.
+pub(crate) fn password_change(
+    current_password: String,
+    new_password: String,
+    new_password_confirmation: String,
+) -> Result<ValidPasswordChange, &'static str> {
+    if !(8..=128).contains(&new_password.chars().count()) {
+        return Err("Новый пароль должен быть длиной от 8 до 128 символов.");
+    }
+    if new_password != new_password_confirmation {
+        return Err("Новый пароль и подтверждение не совпадают.");
+    }
+    if current_password == new_password {
+        return Err("Новый пароль должен отличаться от текущего.");
+    }
+
+    Ok(ValidPasswordChange {
+        current_password,
         new_password,
     })
 }
