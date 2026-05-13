@@ -7,10 +7,10 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use cheenhub_contracts::rest::{
-    ApiError, AuthResponse, AuthUser, LinkedAccountsResponse, LoginRequest, LogoutRequest,
-    OAuthCompleteRequest, OAuthCompleteResponse, OAuthRegistrationRequest, OAuthStartRequest,
-    OAuthStartResponse, PasswordResetConfirmRequest, PasswordResetRequest, RefreshRequest,
-    RegisterRequest, UpdateCurrentUserRequest,
+    ApiError, AuthResponse, AuthUser, ChangeCurrentUserPasswordRequest, LinkedAccountsResponse,
+    LoginRequest, LogoutRequest, OAuthCompleteRequest, OAuthCompleteResponse,
+    OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse, PasswordResetConfirmRequest,
+    PasswordResetRequest, RefreshRequest, RegisterRequest, UpdateCurrentUserRequest,
 };
 use serde::Deserialize;
 
@@ -88,6 +88,17 @@ pub(crate) async fn update_current_user(
     application::update_current_user(&state, token, request)
         .await
         .map(Json)
+}
+
+/// Changes the current user's password.
+pub(crate) async fn change_current_user_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ChangeCurrentUserPasswordRequest>,
+) -> Result<StatusCode, AuthError> {
+    let token = bearer_token(&headers)?;
+    application::change_current_user_password(&state, token, request).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Starts a Google OAuth login or link flow.

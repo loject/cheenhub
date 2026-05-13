@@ -2,6 +2,8 @@
 
 use dioxus::prelude::*;
 
+use super::password_section::PasswordSettingsSection;
+
 #[derive(Clone, PartialEq)]
 struct AuthorizedDevice {
     id: &'static str,
@@ -23,6 +25,7 @@ pub(crate) fn SecuritySettingsSection() -> Element {
 
     rsx! {
         div { class: "space-y-4",
+            PasswordSettingsSection {}
             div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
                 div { class: "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between",
                     div {

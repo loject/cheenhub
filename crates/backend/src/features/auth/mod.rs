@@ -36,6 +36,10 @@ pub(crate) fn routes() -> Router<AppState> {
             get(transport::handlers::me).patch(transport::handlers::update_current_user),
         )
         .route(
+            "/me/password",
+            post(transport::handlers::change_current_user_password),
+        )
+        .route(
             "/oauth/google/start",
             post(transport::handlers::start_google_oauth),
         )

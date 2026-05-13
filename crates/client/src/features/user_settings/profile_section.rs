@@ -37,7 +37,7 @@ pub(crate) fn ProfileSettingsSection() -> Element {
                     }
                 }
             }
-            div { class: "grid gap-4 lg:grid-cols-2",
+            div { class: "grid gap-4",
                 div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
                     h3 { class: "text-[16px] font-semibold tracking-[-0.03em] text-zinc-50", "Данные профиля" }
                     div { class: "mt-4 space-y-3",
@@ -75,23 +75,6 @@ pub(crate) fn ProfileSettingsSection() -> Element {
                                 class: input_class(),
                             }
                         }
-                    }
-                }
-                div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
-                    h3 { class: "text-[16px] font-semibold tracking-[-0.03em] text-zinc-50", "Смена никнейма" }
-                    p { class: "mt-2 text-[12px] leading-5 text-zinc-500", "Никнейм можно менять раз в 7 дней. Старые сообщения сохранят имя, с которым были отправлены." }
-                    match profile_status() {
-                        ProfileUpdateStatus::Idle | ProfileUpdateStatus::Loading => rsx! {},
-                        ProfileUpdateStatus::Succeeded => rsx! {
-                            p { class: "mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[12px] leading-5 text-emerald-100",
-                                "Никнейм обновлен."
-                            }
-                        },
-                        ProfileUpdateStatus::Failed(error) => rsx! {
-                            p { class: "mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] leading-5 text-red-200",
-                                "{error}"
-                            }
-                        },
                     }
                 }
             }

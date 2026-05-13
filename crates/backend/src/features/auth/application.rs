@@ -1,13 +1,14 @@
 //! Authentication application flows.
 
 use cheenhub_contracts::rest::{
-    AuthResponse, AuthUser, LoginRequest, LogoutRequest, PasswordResetConfirmRequest,
-    PasswordResetRequest, RefreshRequest, RegisterRequest, UpdateCurrentUserRequest,
+    AuthResponse, AuthUser, ChangeCurrentUserPasswordRequest, LoginRequest, LogoutRequest,
+    PasswordResetConfirmRequest, PasswordResetRequest, RefreshRequest, RegisterRequest,
+    UpdateCurrentUserRequest,
 };
 use chrono::{Duration, Utc};
 
 use crate::features::auth::domain::UserAccount;
-use crate::features::auth::email::{EmailError, PasswordResetEmail};
+use crate::features::auth::email::{EmailError, PasswordChangedEmail, PasswordResetEmail};
 use crate::features::auth::error::AuthError;
 use crate::features::auth::infrastructure::{
     InsertUserError, UpdateUserNicknameError, UserConflict,
@@ -274,6 +275,55 @@ pub(crate) async fn update_current_user(
     Ok(auth_user(&updated_user))
 }
 
+/// Changes the current user's password.
+pub(crate) async fn change_current_user_password(
+    state: &AppState,
+    access_token: &str,
+    request: ChangeCurrentUserPasswordRequest,
+) -> Result<(), AuthError> {
+    let (user, session_id) = require_current_user(state, access_token).await?;
+    let valid = validation::password_change(
+        request.current_password,
+        request.new_password,
+        request.new_password_confirmation,
+    )
+    .map_err(|message| AuthError::BadRequest(message.to_owned()))?;
+
+    if let Some(password_hash) = &user.password_hash
+        && !password::verify_password(&valid.current_password, password_hash)
+    {
+        tracing::warn!(user_id = %user.id, "rejected password change with invalid current password");
+        return Err(AuthError::Unauthorized(
+            "Текущий пароль указан неверно.".to_owned(),
+        ));
+    }
+
+    let now = Utc::now();
+    let next_password_hash = password::hash_password(&valid.new_password)?;
+    tracing::info!(user_id = %user.id, session_id = %session_id, "changing current user password");
+    state
+        .auth_store
+        .change_user_password(&user.id, &session_id, next_password_hash, now)
+        .await
+        .map_err(AuthError::Internal)?;
+    tracing::info!(user_id = %user.id, session_id = %session_id, "changed current user password");
+
+    match state
+        .auth_mailer
+        .send_password_changed(PasswordChangedEmail {
+            to: user.email.clone(),
+        })
+        .await
+    {
+        Ok(()) => tracing::info!(user_id = %user.id, "sent password change notification email"),
+        Err(error) => {
+            tracing::warn!(user_id = %user.id, ?error, "failed to send password change notification email")
+        }
+    }
+
+    Ok(())
+}
+
 pub(super) async fn create_auth_response(
     state: &AppState,
     user: &UserAccount,
@@ -334,6 +384,7 @@ fn auth_user(user: &UserAccount) -> AuthUser {
         nickname: user.nickname.clone(),
         email: user.email.clone(),
         registered_at: user.registered_at.to_rfc3339(),
+        has_password: user.password_hash.is_some(),
     }
 }
 
