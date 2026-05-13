@@ -94,7 +94,9 @@ pub(super) fn map_auth_error(error: AuthError) -> ServerError {
         AuthError::BadRequest(message) | AuthError::Unauthorized(message) => {
             ServerError::Unauthorized(message)
         }
-        AuthError::Conflict(message) => ServerError::BadRequest(message),
+        AuthError::Conflict(message) | AuthError::RateLimited(message) => {
+            ServerError::BadRequest(message)
+        }
         AuthError::Misconfigured { message, .. } => ServerError::Internal(anyhow::anyhow!(message)),
         AuthError::Internal(error) => ServerError::Internal(error),
     }

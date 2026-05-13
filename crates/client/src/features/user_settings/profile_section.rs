@@ -1,29 +1,25 @@
 //! User profile settings section.
 
+use cheenhub_contracts::rest::UpdateCurrentUserRequest;
 use dioxus::prelude::*;
 
+use crate::features::app::current_user::CurrentUserContext;
 use crate::features::auth::api::{self, LinkedAccount};
 
 use super::styles::{input_class, primary_button_class};
 
-const MOCK_NICKNAME: &str = "chingiz";
-const MOCK_EMAIL: &str = "chingiz@example.com";
-
 /// Renders profile and account controls.
 #[component]
 pub(crate) fn ProfileSettingsSection() -> Element {
-    let mut nickname = use_signal(|| MOCK_NICKNAME.to_owned());
-    let mut email = use_signal(|| MOCK_EMAIL.to_owned());
-    let mut email_password = use_signal(String::new);
-    let mut current_password = use_signal(String::new);
-    let mut new_password = use_signal(String::new);
-    let mut repeat_new_password = use_signal(String::new);
-    let mut avatar_selected = use_signal(|| false);
-    let profile_changed = nickname() != MOCK_NICKNAME || email() != MOCK_EMAIL || avatar_selected();
-    let password_changed = !current_password().is_empty()
-        || !new_password().is_empty()
-        || !repeat_new_password().is_empty();
-    let has_changes = profile_changed || !email_password().is_empty() || password_changed;
+    let current_user_context = use_context::<CurrentUserContext>();
+    let current_user = current_user_context.require_user();
+    let mut nickname = use_signal(|| current_user.nickname.clone());
+    let mut profile_status = use_signal(ProfileUpdateStatus::default);
+    let trimmed_nickname = nickname().trim().to_owned();
+    let is_profile_busy = matches!(profile_status(), ProfileUpdateStatus::Loading);
+    let has_changes = trimmed_nickname != current_user.nickname;
+    let nickname_valid = is_valid_nickname(&trimmed_nickname);
+    let current_user_initial = profile_initial(&current_user.nickname);
     let mut link_status = use_signal(String::new);
     let mut link_busy = use_signal(|| false);
     let mut unlinking_provider = use_signal(|| None::<String>);
@@ -34,19 +30,10 @@ pub(crate) fn ProfileSettingsSection() -> Element {
         form { class: "space-y-4",
             div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
                 div { class: "flex flex-col gap-4 sm:flex-row sm:items-center",
-                    div { class: "flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-accent text-[28px] font-bold text-white shadow-[0_14px_36px_rgba(59,130,246,.20)]", "Ч" }
+                    div { class: "flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-accent text-[28px] font-bold text-white shadow-[0_14px_36px_rgba(59,130,246,.20)]", "{current_user_initial}" }
                     div { class: "min-w-0 flex-1",
                         h3 { class: "text-[16px] font-semibold tracking-[-0.03em] text-zinc-50", "Аватар" }
-                        p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Загрузи изображение, которое будет отображаться в профиле и списках участников." }
-                        label { class: "mt-3 inline-flex h-9 cursor-pointer items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 px-3 text-[12px] font-medium text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-900",
-                            input {
-                                class: "sr-only",
-                                r#type: "file",
-                                accept: "image/*",
-                                onchange: move |_| avatar_selected.set(true),
-                            }
-                            "Выбрать изображение"
-                        }
+                        p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Аватар будет использовать первую букву текущего никнейма." }
                     }
                 }
             }
@@ -61,74 +48,84 @@ pub(crate) fn ProfileSettingsSection() -> Element {
                                 value: nickname(),
                                 maxlength: "32",
                                 autocomplete: "nickname",
-                                oninput: move |event| nickname.set(event.value()),
+                                oninput: move |event| {
+                                    nickname.set(event.value());
+                                    if !matches!(profile_status(), ProfileUpdateStatus::Idle | ProfileUpdateStatus::Loading) {
+                                        profile_status.set(ProfileUpdateStatus::Idle);
+                                    }
+                                },
                                 class: input_class(),
+                            }
+                            p { class: "mt-1.5 text-[11px] leading-4 text-zinc-500",
+                                "3-32 символа: латиница, цифры или _."
+                            }
+                            if has_changes && !nickname_valid {
+                                p { class: "mt-1 text-[11px] leading-4 text-red-200",
+                                    "Исправь никнейм, чтобы сохранить изменения."
+                                }
                             }
                         }
                         label { class: "block",
                             span { class: "mb-1.5 block text-[12px] font-medium text-zinc-300", "Email" }
                             input {
                                 r#type: "email",
-                                value: email(),
+                                value: current_user.email.clone(),
                                 autocomplete: "email",
-                                oninput: move |event| email.set(event.value()),
-                                class: input_class(),
-                            }
-                        }
-                        label { class: "block",
-                            span { class: "mb-1.5 block text-[12px] font-medium text-zinc-300", "Пароль для смены email" }
-                            input {
-                                r#type: "password",
-                                value: email_password(),
-                                autocomplete: "current-password",
-                                oninput: move |event| email_password.set(event.value()),
+                                readonly: true,
                                 class: input_class(),
                             }
                         }
                     }
                 }
                 div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
-                    h3 { class: "text-[16px] font-semibold tracking-[-0.03em] text-zinc-50", "Пароль" }
-                    div { class: "mt-4 space-y-3",
-                        label { class: "block",
-                            span { class: "mb-1.5 block text-[12px] font-medium text-zinc-300", "Текущий пароль" }
-                            input {
-                                r#type: "password",
-                                value: current_password(),
-                                autocomplete: "current-password",
-                                oninput: move |event| current_password.set(event.value()),
-                                class: input_class(),
+                    h3 { class: "text-[16px] font-semibold tracking-[-0.03em] text-zinc-50", "Смена никнейма" }
+                    p { class: "mt-2 text-[12px] leading-5 text-zinc-500", "Никнейм можно менять раз в 7 дней. Старые сообщения сохранят имя, с которым были отправлены." }
+                    match profile_status() {
+                        ProfileUpdateStatus::Idle | ProfileUpdateStatus::Loading => rsx! {},
+                        ProfileUpdateStatus::Succeeded => rsx! {
+                            p { class: "mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[12px] leading-5 text-emerald-100",
+                                "Никнейм обновлен."
                             }
-                        }
-                        label { class: "block",
-                            span { class: "mb-1.5 block text-[12px] font-medium text-zinc-300", "Новый пароль" }
-                            input {
-                                r#type: "password",
-                                value: new_password(),
-                                autocomplete: "new-password",
-                                oninput: move |event| new_password.set(event.value()),
-                                class: input_class(),
+                        },
+                        ProfileUpdateStatus::Failed(error) => rsx! {
+                            p { class: "mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] leading-5 text-red-200",
+                                "{error}"
                             }
-                        }
-                        label { class: "block",
-                            span { class: "mb-1.5 block text-[12px] font-medium text-zinc-300", "Повторите новый пароль" }
-                            input {
-                                r#type: "password",
-                                value: repeat_new_password(),
-                                autocomplete: "new-password",
-                                oninput: move |event| repeat_new_password.set(event.value()),
-                                class: input_class(),
-                            }
-                        }
+                        },
                     }
                 }
             }
             div { class: "flex justify-end",
                 button {
                     r#type: "button",
-                    disabled: !has_changes,
+                    disabled: is_profile_busy || !has_changes || !nickname_valid,
                     class: primary_button_class(),
-                    "Сохранить профиль"
+                    onclick: move |_| {
+                        if is_profile_busy || !has_changes || !nickname_valid {
+                            return;
+                        }
+
+                        let request = UpdateCurrentUserRequest {
+                            nickname: trimmed_nickname.clone(),
+                        };
+                        profile_status.set(ProfileUpdateStatus::Loading);
+                        info!("updating current user nickname");
+                        spawn(async move {
+                            match api::update_current_user(request).await {
+                                Ok(updated_user) => {
+                                    info!("current user nickname updated");
+                                    nickname.set(updated_user.nickname.clone());
+                                    current_user_context.set_user(updated_user);
+                                    profile_status.set(ProfileUpdateStatus::Succeeded);
+                                }
+                                Err(error) => {
+                                    warn!(%error, "current user nickname update failed");
+                                    profile_status.set(ProfileUpdateStatus::Failed(error));
+                                }
+                            }
+                        });
+                    },
+                    if is_profile_busy { "Сохраняем..." } else { "Сохранить профиль" }
                 }
             }
             div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
@@ -225,6 +222,31 @@ pub(crate) fn ProfileSettingsSection() -> Element {
             }
         }
     }
+}
+
+#[derive(Clone, Default, PartialEq)]
+enum ProfileUpdateStatus {
+    #[default]
+    Idle,
+    Loading,
+    Succeeded,
+    Failed(String),
+}
+
+fn is_valid_nickname(nickname: &str) -> bool {
+    let len = nickname.chars().count();
+    (3..=32).contains(&len)
+        && nickname
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn profile_initial(nickname: &str) -> String {
+    nickname
+        .chars()
+        .next()
+        .map(|character| character.to_uppercase().collect())
+        .unwrap_or_else(|| "?".to_owned())
 }
 
 fn linked_accounts_list(

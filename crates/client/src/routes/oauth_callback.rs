@@ -20,6 +20,7 @@ pub(crate) fn OAuthCallback(
     let mut form_error = use_signal(String::new);
     let mut is_submitting = use_signal(|| false);
     let handoff = handoff_code.or(code).unwrap_or_default();
+    let has_session = api::has_tokens();
     let checkbox_class = if accepts_policies() {
         "flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-accent text-white transition"
     } else {
@@ -34,9 +35,9 @@ pub(crate) fn OAuthCallback(
         started.set(true);
 
         if let Some(error) = error.clone() {
-            state.set(OAuthCallbackState::Failed(format!(
-                "Google не завершил вход: {error}."
-            )));
+            let message = oauth_callback_error_message(&error);
+            warn!(%message, "google oauth callback returned error");
+            state.set(OAuthCallbackState::Failed(message));
             return;
         }
 
@@ -171,21 +172,24 @@ pub(crate) fn OAuthCallback(
                         h1 { class: "text-[20px] font-semibold tracking-[-0.04em] text-zinc-50", "Не удалось войти через Google" }
                         p { class: "mt-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] leading-5 text-red-200", "{error}" }
                         div { class: "mt-5 flex flex-col gap-2 sm:flex-row",
-                            button {
-                                r#type: "button",
-                                class: "flex h-10 flex-1 items-center justify-center rounded-xl bg-accent px-3 text-[12px] font-semibold text-white",
-                                onclick: move |_| {
-                                    let _ = navigator.replace(Route::Login {});
-                                },
-                                "Вернуться ко входу"
-                            }
-                            button {
-                                r#type: "button",
-                                class: "flex h-10 flex-1 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-300",
-                                onclick: move |_| {
-                                    let _ = navigator.replace(Route::AppHome {});
-                                },
-                                "Открыть CheenHub"
+                            if has_session {
+                                button {
+                                    r#type: "button",
+                                    class: "flex h-10 flex-1 items-center justify-center rounded-xl bg-accent px-3 text-[12px] font-semibold text-white",
+                                    onclick: move |_| {
+                                        let _ = navigator.replace(Route::AppHome {});
+                                    },
+                                    "Открыть CheenHub"
+                                }
+                            } else {
+                                button {
+                                    r#type: "button",
+                                    class: "flex h-10 flex-1 items-center justify-center rounded-xl bg-accent px-3 text-[12px] font-semibold text-white",
+                                    onclick: move |_| {
+                                        let _ = navigator.replace(Route::Login {});
+                                    },
+                                    "Вернуться ко входу"
+                                }
                             }
                         }
                     },
@@ -200,4 +204,14 @@ enum OAuthCallbackState {
     Loading,
     RegistrationRequired(OAuthRegistrationRequired),
     Failed(String),
+}
+
+fn oauth_callback_error_message(error: &str) -> String {
+    let error = error.replace('+', " ");
+    let error = error.trim().trim_end_matches('.');
+    if error.is_empty() {
+        return "Google не завершил вход. Попробуй еще раз.".to_owned();
+    }
+
+    format!("Google не завершил вход: {error}.")
 }

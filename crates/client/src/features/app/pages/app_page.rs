@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 
 use crate::Route;
 use crate::features::app::components::app_shell::AppShell;
+use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::AudioPlaybackProvider;
 use crate::features::auth::{TokenRefresher, api};
 use crate::features::microphone::MicrophoneProvider;
@@ -16,6 +17,8 @@ pub(crate) fn AppPage() -> Element {
     let navigator = use_navigator();
     let user = use_signal(|| None);
     let mut loaded_profile = use_signal(|| false);
+    let current_user_context = CurrentUserContext::new(user);
+    use_context_provider(move || current_user_context);
 
     use_effect(move || {
         if !api::has_tokens() {
@@ -40,13 +43,13 @@ pub(crate) fn AppPage() -> Element {
         });
     });
 
-    let Some(current_user) = user() else {
+    if user().is_none() {
         return rsx! {
             div { class: "grid min-h-screen place-items-center bg-zinc-950 px-5 text-zinc-300",
                 "Открываем CheenHub..."
             }
         };
-    };
+    }
 
     rsx! {
         TokenRefresher {
@@ -57,7 +60,7 @@ pub(crate) fn AppPage() -> Element {
         RealtimeProvider {
             AudioPlaybackProvider {
                 MicrophoneProvider {
-                    VoiceConnectionProvider { current_user,
+                    VoiceConnectionProvider {
                         AppShell {}
                     }
                 }

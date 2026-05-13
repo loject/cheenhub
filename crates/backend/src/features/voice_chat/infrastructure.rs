@@ -125,6 +125,26 @@ impl InMemoryVoicePresenceStore {
             .cloned()
     }
 
+    /// Updates active presence nickname rows for one user and returns affected room identifiers.
+    pub(crate) async fn update_user_nickname(
+        &self,
+        user_id: &Uuid,
+        nickname: String,
+    ) -> Vec<(Uuid, Uuid)> {
+        let mut entries = self.entries.lock().await;
+        let mut rooms = Vec::<(Uuid, Uuid)>::new();
+
+        for entry in entries.iter_mut().filter(|entry| &entry.user_id == user_id) {
+            entry.nickname = nickname.clone();
+            let room = (entry.server_id, entry.room_id);
+            if !rooms.contains(&room) {
+                rooms.push(room);
+            }
+        }
+
+        rooms
+    }
+
     /// Lists active media recipients in one room excluding one sender session.
     pub(crate) async fn media_recipient_sessions(
         &self,

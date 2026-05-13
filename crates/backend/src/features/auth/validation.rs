@@ -38,6 +38,13 @@ pub(crate) struct ValidPasswordResetConfirm {
     pub(crate) new_password: String,
 }
 
+/// Normalized current user update input.
+#[derive(Debug, Clone)]
+pub(crate) struct ValidCurrentUserUpdate {
+    /// User nickname.
+    pub(crate) nickname: String,
+}
+
 /// Validates and normalizes registration input.
 pub(crate) fn register(
     nickname: String,
@@ -116,6 +123,18 @@ pub(crate) fn password_reset_confirm(
         token,
         new_password,
     })
+}
+
+/// Validates and normalizes current user update input.
+pub(crate) fn current_user_update(
+    nickname: String,
+) -> Result<ValidCurrentUserUpdate, &'static str> {
+    let nickname = nickname.trim().to_owned();
+    if !is_valid_nickname(&nickname) {
+        return Err("Никнейм должен быть длиной 3-32 символа и содержать латиницу, цифры или _.");
+    }
+
+    Ok(ValidCurrentUserUpdate { nickname })
 }
 
 /// Returns whether a nickname satisfies account rules.

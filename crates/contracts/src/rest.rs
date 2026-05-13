@@ -9,6 +9,7 @@ pub use auth::{
     OAuthCompleteRequest, OAuthCompleteResponse, OAuthFlow, OAuthProvider,
     OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse, PasswordResetConfirmRequest,
     PasswordResetRequest, RefreshRequest, RegisterRequest, UnlinkProviderRequest,
+    UpdateCurrentUserRequest,
 };
 pub use error::ApiError;
 pub use servers::{

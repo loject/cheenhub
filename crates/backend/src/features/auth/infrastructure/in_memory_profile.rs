@@ -1,0 +1,64 @@
+//! In-memory user profile update helpers.
+
+use std::sync::Mutex;
+
+use chrono::{DateTime, Duration, Utc};
+use uuid::Uuid;
+
+use crate::features::auth::domain::UserAccount;
+use crate::features::auth::infrastructure::in_memory::model::InMemoryState;
+use crate::features::auth::infrastructure::{
+    UpdateUserNicknameError, UserConflict, in_memory::poisoned,
+};
+
+/// Updates a user's public nickname.
+pub(super) fn update_user_nickname(
+    state: &Mutex<InMemoryState>,
+    user_id: &Uuid,
+    session_id: &Uuid,
+    nickname: String,
+    now: DateTime<Utc>,
+    cooldown: Duration,
+) -> Result<Option<UserAccount>, UpdateUserNicknameError> {
+    let mut state = state
+        .lock()
+        .map_err(|_| UpdateUserNicknameError::Storage(poisoned()))?;
+    if state
+        .users
+        .iter()
+        .any(|user| user.account.id != *user_id && user.account.nickname == nickname)
+    {
+        return Err(UpdateUserNicknameError::Conflict(UserConflict::Nickname));
+    }
+    let (old_nickname, account) = {
+        let Some(user) = state
+            .users
+            .iter_mut()
+            .find(|user| user.account.id == *user_id)
+        else {
+            return Ok(None);
+        };
+
+        let next_allowed_at = user.account.nickname_updated_at + cooldown;
+        if user.account.nickname != nickname && now < next_allowed_at {
+            return Err(UpdateUserNicknameError::Cooldown { next_allowed_at });
+        }
+
+        let old_nickname = user.account.nickname.clone();
+        user.account.nickname = nickname.clone();
+        user.account.nickname_updated_at = now;
+        (old_nickname, user.account.clone())
+    };
+    if old_nickname != nickname {
+        state.user_nickname_history.push((
+            Uuid::new_v4(),
+            *user_id,
+            *session_id,
+            old_nickname,
+            nickname,
+            now,
+        ));
+    }
+
+    Ok(Some(account))
+}

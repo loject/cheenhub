@@ -1,11 +1,7 @@
 //! Google OAuth application flows.
 
 use anyhow::anyhow;
-use cheenhub_contracts::rest::{
-    AuthResponse, LinkedAccount, LinkedAccountsResponse, OAuthCompleteRequest,
-    OAuthCompleteResponse, OAuthFlow, OAuthProvider, OAuthRegistrationRequest, OAuthStartRequest,
-    OAuthStartResponse,
-};
+use cheenhub_contracts::rest::*;
 use chrono::{Duration, Utc};
 use tracing::{error, info, warn};
 use url::Url;
@@ -13,7 +9,7 @@ use uuid::Uuid;
 
 use super::google::{GoogleIdentity, exchange_google_code, frontend_oauth_url, google_config};
 use super::{create_auth_response, expired_session, map_insert_user_error, me};
-use crate::features::auth::domain::{OAuthAccount, UserAccount};
+use crate::features::auth::domain::*;
 use crate::features::auth::error::AuthError;
 use crate::features::auth::security::refresh_token;
 use crate::features::auth::validation;
@@ -105,8 +101,11 @@ pub(crate) async fn google_oauth_callback_url(
     match google_oauth_callback(state, code, state_value, error).await {
         Ok(code) => frontend_oauth_url(state, &[("code", code.as_str())]),
         Err(error) => {
-            warn!(?error, "google oauth callback failed");
-            frontend_oauth_url(state, &[("error", "Не удалось войти через Google.")])
+            let message = error
+                .user_message()
+                .unwrap_or("Не удалось войти через Google. Попробуй еще раз.");
+            warn!(?error, error_message = %message, "google oauth callback failed");
+            frontend_oauth_url(state, &[("error", message)])
         }
     }
 }

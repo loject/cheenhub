@@ -16,6 +16,8 @@ pub(crate) struct UserAccount {
     pub(crate) password_hash: Option<String>,
     /// Account registration timestamp.
     pub(crate) registered_at: DateTime<Utc>,
+    /// Last successful nickname update timestamp.
+    pub(crate) nickname_updated_at: DateTime<Utc>,
 }
 
 /// Active refresh token session with its owning user.

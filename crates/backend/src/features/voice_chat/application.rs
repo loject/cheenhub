@@ -77,6 +77,27 @@ pub(crate) async fn disconnect_realtime_stream(state: &AppState, realtime_stream
     fanout_removed_rooms(state, removed, None).await;
 }
 
+/// Updates active voice presence snapshots after a profile nickname change.
+pub(crate) async fn update_user_nickname(state: &AppState, user_id: &Uuid, nickname: String) {
+    let rooms = state
+        .voice_presence_store
+        .update_user_nickname(user_id, nickname)
+        .await;
+    if rooms.is_empty() {
+        return;
+    }
+
+    tracing::info!(
+        user_id = %user_id,
+        rooms = rooms.len(),
+        "updated active voice presence nickname"
+    );
+    for (server_id, room_id) in rooms {
+        let snapshot = room_snapshot(state, &server_id, &room_id).await;
+        fanout_snapshot(state, snapshot).await;
+    }
+}
+
 /// Voice chat application error.
 #[derive(Debug)]
 pub(crate) enum VoiceChatApplicationError {
@@ -232,7 +253,9 @@ mod tests {
     use crate::realtime::hub::RealtimeHub;
     use crate::state::AppState;
 
-    fn state() -> AppState {
+    mod nickname;
+
+    pub(super) fn state() -> AppState {
         AppState {
             auth_store: Arc::new(InMemoryAuthStore::default()),
             auth_mailer: Arc::new(crate::features::auth::email::tests::TestAuthMailer::default()),
@@ -256,7 +279,9 @@ mod tests {
         }
     }
 
-    async fn registered_user(state: &AppState) -> (cheenhub_contracts::rest::AuthUser, uuid::Uuid) {
+    pub(super) async fn registered_user(
+        state: &AppState,
+    ) -> (cheenhub_contracts::rest::AuthUser, uuid::Uuid) {
         let auth = auth_application::register(
             state,
             RegisterRequest {
@@ -273,7 +298,7 @@ mod tests {
         (auth.user, user_id)
     }
 
-    async fn create_room(
+    pub(super) async fn create_room(
         state: &AppState,
         user_id: &uuid::Uuid,
         room_name: &str,

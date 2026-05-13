@@ -10,7 +10,7 @@ use cheenhub_contracts::rest::{
     ApiError, AuthResponse, AuthUser, LinkedAccountsResponse, LoginRequest, LogoutRequest,
     OAuthCompleteRequest, OAuthCompleteResponse, OAuthRegistrationRequest, OAuthStartRequest,
     OAuthStartResponse, PasswordResetConfirmRequest, PasswordResetRequest, RefreshRequest,
-    RegisterRequest,
+    RegisterRequest, UpdateCurrentUserRequest,
 };
 use serde::Deserialize;
 
@@ -76,6 +76,18 @@ pub(crate) async fn me(
 ) -> Result<Json<AuthUser>, AuthError> {
     let token = bearer_token(&headers)?;
     application::me(&state, token).await.map(Json)
+}
+
+/// Updates the current user profile.
+pub(crate) async fn update_current_user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateCurrentUserRequest>,
+) -> Result<Json<AuthUser>, AuthError> {
+    let token = bearer_token(&headers)?;
+    application::update_current_user(&state, token, request)
+        .await
+        .map(Json)
 }
 
 /// Starts a Google OAuth login or link flow.
@@ -144,6 +156,7 @@ impl IntoResponse for AuthError {
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, "bad_request", message),
             Self::Unauthorized(message) => (StatusCode::UNAUTHORIZED, "unauthorized", message),
             Self::Conflict(message) => (StatusCode::CONFLICT, "conflict", message),
+            Self::RateLimited(message) => (StatusCode::TOO_MANY_REQUESTS, "rate_limited", message),
             Self::Misconfigured {
                 feature,
                 missing,

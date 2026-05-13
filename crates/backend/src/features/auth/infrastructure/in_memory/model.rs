@@ -26,6 +26,9 @@ pub(in crate::features::auth::infrastructure) struct InMemoryState {
     /// Password reset tokens.
     pub(in crate::features::auth::infrastructure) password_reset_tokens:
         Vec<InMemoryPasswordResetToken>,
+    /// User nickname change history.
+    pub(in crate::features::auth::infrastructure) user_nickname_history:
+        Vec<(Uuid, Uuid, Uuid, String, String, DateTime<Utc>)>,
 }
 
 /// In-memory user row.
