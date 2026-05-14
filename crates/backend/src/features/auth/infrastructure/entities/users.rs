@@ -17,6 +17,8 @@ pub struct Model {
     pub email_normalized: String,
     /// Stored Argon2 password hash.
     pub password_hash: Option<String>,
+    /// Current avatar image identifier.
+    pub avatar_image_id: Option<Uuid>,
     /// Account registration timestamp.
     pub registered_at: DateTimeUtc,
     /// Last successful nickname update timestamp.

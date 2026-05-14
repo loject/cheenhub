@@ -63,6 +63,24 @@ pub(super) fn update_user_nickname(
     Ok(Some(account))
 }
 
+/// Updates a user's current avatar image identifier.
+pub(super) fn update_user_avatar_image_id(
+    state: &Mutex<InMemoryState>,
+    user_id: &Uuid,
+    image_id: Uuid,
+) -> anyhow::Result<Option<UserAccount>> {
+    let mut state = state.lock().map_err(|_| poisoned())?;
+    let Some(user) = state
+        .users
+        .iter_mut()
+        .find(|user| user.account.id == *user_id)
+    else {
+        return Ok(None);
+    };
+    user.account.avatar_image_id = Some(image_id);
+    Ok(Some(user.account.clone()))
+}
+
 /// Updates a user's password hash and records the password change trace.
 pub(super) fn change_user_password(
     state: &Mutex<InMemoryState>,

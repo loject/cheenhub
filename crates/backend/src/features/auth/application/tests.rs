@@ -20,6 +20,7 @@ use crate::features::text_chat::infrastructure::InMemoryTextChatStore;
 use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
 
+mod avatar;
 mod nickname;
 mod password;
 
@@ -458,6 +459,10 @@ pub(super) fn state_with_mailer() -> (AppState, Arc<TestAuthMailer>) {
         auth_mailer: mailer.clone(),
         server_store: Arc::new(InMemoryServerStore::default()),
         text_chat_store: Arc::new(InMemoryTextChatStore::default()),
+        image_store: Arc::new(
+            crate::features::images::infrastructure::InMemoryImageStore::default(),
+        ),
+        image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
         voice_presence_store: Arc::new(
             crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore::default(),
         ),
@@ -471,6 +476,7 @@ pub(super) fn state_with_mailer() -> (AppState, Arc<TestAuthMailer>) {
             "http://localhost/api/auth/oauth/google/callback".to_owned(),
         ),
         cheenhub_client_base_url: "http://localhost".to_owned(),
+        cheenhub_api_base_url: "http://localhost/api".to_owned(),
         oauth_state_lifetime_minutes: 10,
         oauth_handoff_lifetime_minutes: 5,
         oauth_registration_lifetime_minutes: 15,

@@ -11,6 +11,10 @@ use uuid::Uuid;
 use crate::features::voice_chat::infrastructure::VoicePresence;
 use crate::state::AppState;
 
+mod avatar;
+
+pub(crate) use avatar::update_user_avatar;
+
 /// Joins one voice-capable room and returns the current participant snapshot.
 pub(crate) async fn join_room(
     state: &AppState,
@@ -32,6 +36,7 @@ pub(crate) async fn join_room(
             room_id,
             user_id: *user_id,
             nickname: user.nickname.clone(),
+            avatar_url: user.avatar_url.clone(),
             joined_at: Utc::now(),
         })
         .await;
@@ -232,6 +237,7 @@ fn participant_summary(presence: &VoicePresence) -> VoiceRoomParticipant {
     VoiceRoomParticipant {
         user_id: presence.user_id.to_string(),
         nickname: presence.nickname.clone(),
+        avatar_url: presence.avatar_url.clone(),
         joined_at: presence.joined_at.to_rfc3339(),
     }
 }
@@ -261,6 +267,10 @@ mod tests {
             auth_mailer: Arc::new(crate::features::auth::email::tests::TestAuthMailer::default()),
             server_store: Arc::new(InMemoryServerStore::default()),
             text_chat_store: Arc::new(InMemoryTextChatStore::default()),
+            image_store: Arc::new(
+                crate::features::images::infrastructure::InMemoryImageStore::default(),
+            ),
+            image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
             voice_presence_store: Arc::new(InMemoryVoicePresenceStore::default()),
             realtime_hub: Arc::new(RealtimeHub::default()),
             auth_keys: AuthKeys::generate_for_tests(),
@@ -276,6 +286,7 @@ mod tests {
             oauth_handoff_lifetime_minutes: 5,
             oauth_registration_lifetime_minutes: 15,
             password_reset_token_lifetime_minutes: 30,
+            cheenhub_api_base_url: "http://localhost/api".to_owned(),
         }
     }
 

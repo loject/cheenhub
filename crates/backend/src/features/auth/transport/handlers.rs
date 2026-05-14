@@ -2,6 +2,7 @@
 
 use axum::{
     Json,
+    body::Bytes,
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
@@ -99,6 +100,18 @@ pub(crate) async fn change_current_user_password(
     let token = bearer_token(&headers)?;
     application::change_current_user_password(&state, token, request).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Updates the current user's avatar.
+pub(crate) async fn update_current_user_avatar(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> Result<Json<AuthUser>, AuthError> {
+    let token = bearer_token(&headers)?;
+    application::update_current_user_avatar(&state, token, bytes)
+        .await
+        .map(Json)
 }
 
 /// Starts a Google OAuth login or link flow.

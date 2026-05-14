@@ -14,6 +14,8 @@ pub(crate) struct UserAccount {
     pub(crate) email: String,
     /// Stored Argon2 password hash.
     pub(crate) password_hash: Option<String>,
+    /// Current avatar image identifier.
+    pub(crate) avatar_image_id: Option<Uuid>,
     /// Account registration timestamp.
     pub(crate) registered_at: DateTime<Utc>,
     /// Last successful nickname update timestamp.

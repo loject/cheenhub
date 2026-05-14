@@ -31,6 +31,8 @@ pub(crate) struct AppConfig {
     pub(crate) google_oauth_redirect_uri: Option<String>,
     /// Browser client base URL used after OAuth callbacks.
     pub(crate) cheenhub_client_base_url: String,
+    /// Public REST API base URL used for generated asset links.
+    pub(crate) cheenhub_api_base_url: String,
     /// OAuth state lifetime in minutes.
     pub(crate) oauth_state_lifetime_minutes: i64,
     /// OAuth handoff lifetime in minutes.
@@ -88,6 +90,7 @@ impl AppConfig {
             google_oauth_client_secret: env::var("GOOGLE_OAUTH_CLIENT_SECRET").ok(),
             google_oauth_redirect_uri: env::var("GOOGLE_OAUTH_REDIRECT_URI").ok(),
             cheenhub_client_base_url: optional("CHEENHUB_CLIENT_BASE_URL", "http://127.0.0.1:8080"),
+            cheenhub_api_base_url: optional("CHEENHUB_API_BASE_URL", "http://127.0.0.1:3000/api"),
             oauth_state_lifetime_minutes: optional_positive_i64(
                 "OAUTH_STATE_LIFETIME_MINUTES",
                 10,

@@ -3,6 +3,8 @@
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;
 
+use crate::features::app::components::avatar::UserAvatar;
+
 /// Renders one text chat message row.
 #[component]
 pub(super) fn ChatMessageItem(message: TextChatMessage, animate: bool) -> Element {
@@ -14,8 +16,10 @@ pub(super) fn ChatMessageItem(message: TextChatMessage, animate: bool) -> Elemen
 
     rsx! {
         div { class,
-            div { class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-800 text-[12px] font-bold text-zinc-100",
-                "{initial(&message.author_nickname)}"
+            UserAvatar {
+                nickname: message.author_nickname.clone(),
+                avatar_url: message.author_avatar_url.clone(),
+                class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-800 text-[12px] font-bold text-zinc-100".to_owned(),
             }
             div { class: "min-w-0 flex-1",
                 div { class: "mb-1 flex items-center gap-2",
@@ -28,14 +32,6 @@ pub(super) fn ChatMessageItem(message: TextChatMessage, animate: bool) -> Elemen
             }
         }
     }
-}
-
-fn initial(nickname: &str) -> String {
-    nickname
-        .chars()
-        .next()
-        .map(|letter| letter.to_uppercase().collect())
-        .unwrap_or_else(|| "?".to_owned())
 }
 
 fn message_time(created_at: &str) -> String {

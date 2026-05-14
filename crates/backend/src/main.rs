@@ -14,6 +14,13 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
 
+type Stores = (
+    Arc<dyn features::auth::infrastructure::AuthStore>,
+    Arc<dyn features::servers::infrastructure::ServerStore>,
+    Arc<dyn features::text_chat::infrastructure::TextChatStore>,
+    Arc<dyn features::images::infrastructure::ImageStore>,
+);
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
@@ -29,11 +36,7 @@ async fn main() -> anyhow::Result<()> {
         &config.jwt_private_key_base64,
         config.jwt_key_id.clone(),
     )?;
-    let (auth_store, server_store, text_chat_store): (
-        Arc<dyn features::auth::infrastructure::AuthStore>,
-        Arc<dyn features::servers::infrastructure::ServerStore>,
-        Arc<dyn features::text_chat::infrastructure::TextChatStore>,
-    ) = match config.auth_store {
+    let (auth_store, server_store, text_chat_store, image_store): Stores = match config.auth_store {
         config::AuthStoreConfig::Postgres => {
             let database = db::connect(&config.database_url).await?;
             (
@@ -43,13 +46,21 @@ async fn main() -> anyhow::Result<()> {
                 Arc::new(features::servers::infrastructure::PostgresServerStore::new(
                     database.clone(),
                 )),
-                Arc::new(features::text_chat::infrastructure::PostgresTextChatStore::new(database)),
+                Arc::new(
+                    features::text_chat::infrastructure::PostgresTextChatStore::new(
+                        database.clone(),
+                    ),
+                ),
+                Arc::new(features::images::infrastructure::PostgresImageStore::new(
+                    database,
+                )),
             )
         }
         config::AuthStoreConfig::InMemory => (
             Arc::new(features::auth::infrastructure::InMemoryAuthStore::default()),
             Arc::new(features::servers::infrastructure::InMemoryServerStore::default()),
             Arc::new(features::text_chat::infrastructure::InMemoryTextChatStore::default()),
+            Arc::new(features::images::infrastructure::InMemoryImageStore::default()),
         ),
     };
     let realtime_tls = realtime::ensure_tls_config(
@@ -68,6 +79,8 @@ async fn main() -> anyhow::Result<()> {
         )?),
         server_store,
         text_chat_store,
+        image_store,
+        image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
         voice_presence_store: Arc::new(
             features::voice_chat::infrastructure::InMemoryVoicePresenceStore::default(),
         ),
@@ -79,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
         google_oauth_client_secret: config.google_oauth_client_secret.clone(),
         google_oauth_redirect_uri: config.google_oauth_redirect_uri.clone(),
         cheenhub_client_base_url: config.cheenhub_client_base_url.clone(),
+        cheenhub_api_base_url: config.cheenhub_api_base_url.clone(),
         oauth_state_lifetime_minutes: config.oauth_state_lifetime_minutes,
         oauth_handoff_lifetime_minutes: config.oauth_handoff_lifetime_minutes,
         oauth_registration_lifetime_minutes: config.oauth_registration_lifetime_minutes,

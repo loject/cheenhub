@@ -18,14 +18,15 @@ use crate::features::auth::validation;
 use crate::state::AppState;
 use uuid::Uuid;
 
+mod avatar;
 mod google;
 mod oauth;
 
 const NICKNAME_CHANGE_COOLDOWN_DAYS: i64 = 7;
-
 #[cfg(test)]
 mod tests;
 
+pub(crate) use avatar::update_current_user_avatar;
 pub(crate) use oauth::{
     complete_google_oauth, google_oauth_callback_url, linked_accounts, register_with_google_oauth,
     start_google_oauth, unlink_google,
@@ -217,7 +218,7 @@ pub(crate) async fn refresh(
             &refresh_session.session_id,
         )?,
         refresh_token: next_refresh,
-        user: auth_user(&refresh_session.user),
+        user: auth_user(state, &refresh_session.user),
     })
 }
 
@@ -237,7 +238,7 @@ pub(crate) async fn logout(state: &AppState, request: LogoutRequest) -> Result<(
 pub(crate) async fn me(state: &AppState, access_token: &str) -> Result<AuthUser, AuthError> {
     let (user, _) = require_current_user(state, access_token).await?;
 
-    Ok(auth_user(&user))
+    Ok(auth_user(state, &user))
 }
 
 /// Updates the current user profile.
@@ -250,7 +251,7 @@ pub(crate) async fn update_current_user(
     let valid = validation::current_user_update(request.nickname)
         .map_err(|message| AuthError::BadRequest(message.to_owned()))?;
     if valid.nickname == user.nickname {
-        return Ok(auth_user(&user));
+        return Ok(auth_user(state, &user));
     }
 
     let now = Utc::now();
@@ -272,7 +273,7 @@ pub(crate) async fn update_current_user(
     .await;
     tracing::info!(user_id = %updated_user.id, "updated user nickname");
 
-    Ok(auth_user(&updated_user))
+    Ok(auth_user(state, &updated_user))
 }
 
 /// Changes the current user's password.
@@ -347,7 +348,7 @@ pub(super) async fn create_auth_response(
             &session_id,
         )?,
         refresh_token: refresh,
-        user: auth_user(user),
+        user: auth_user(state, user),
     })
 }
 
@@ -378,13 +379,16 @@ async fn require_current_user(
     Ok((user, session_id))
 }
 
-fn auth_user(user: &UserAccount) -> AuthUser {
+pub(crate) fn auth_user(state: &AppState, user: &UserAccount) -> AuthUser {
     AuthUser {
         id: user.id.to_string(),
         nickname: user.nickname.clone(),
         email: user.email.clone(),
         registered_at: user.registered_at.to_rfc3339(),
         has_password: user.password_hash.is_some(),
+        avatar_url: user
+            .avatar_image_id
+            .map(|image_id| crate::features::images::application::avatar_url(state, &image_id)),
     }
 }
 

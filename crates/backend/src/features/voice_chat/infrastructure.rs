@@ -25,6 +25,8 @@ pub(crate) struct VoicePresence {
     pub(crate) user_id: Uuid,
     /// User nickname snapshot.
     pub(crate) nickname: String,
+    /// Public avatar URL snapshot.
+    pub(crate) avatar_url: Option<String>,
     /// Join timestamp.
     pub(crate) joined_at: DateTime<Utc>,
 }
@@ -145,6 +147,26 @@ impl InMemoryVoicePresenceStore {
         rooms
     }
 
+    /// Updates active presence avatar URLs for one user and returns affected room identifiers.
+    pub(crate) async fn update_user_avatar(
+        &self,
+        user_id: &Uuid,
+        avatar_url: Option<String>,
+    ) -> Vec<(Uuid, Uuid)> {
+        let mut entries = self.entries.lock().await;
+        let mut rooms = Vec::<(Uuid, Uuid)>::new();
+
+        for entry in entries.iter_mut().filter(|entry| &entry.user_id == user_id) {
+            entry.avatar_url = avatar_url.clone();
+            let room = (entry.server_id, entry.room_id);
+            if !rooms.contains(&room) {
+                rooms.push(room);
+            }
+        }
+
+        rooms
+    }
+
     /// Lists active media recipients in one room excluding one sender session.
     pub(crate) async fn media_recipient_sessions(
         &self,
@@ -182,6 +204,7 @@ mod tests {
             room_id,
             user_id,
             nickname: "voice_user".to_owned(),
+            avatar_url: None,
             joined_at: Utc::now(),
         }
     }
