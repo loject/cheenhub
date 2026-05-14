@@ -16,6 +16,7 @@
 - Prefer Dioxus-provided primitives over custom lifecycle state. For async data loading, use `use_resource` before adding manual `use_effect`/`spawn` guards such as `loaded_*` flags.
 - Do not introduce global state, shared state modules, or context providers unless several independent feature boundaries need the same state.
 - Keep component props explicit and small.
+- Do not add props only to pass contextual render metadata through generic UI components. Prefer a narrow Dioxus context/provider for values such as current user identity, avatar seed/color, or feature-local ambient state when several UI components need the same value.
 - Keep Dioxus components isolated: a file must define exactly one `#[component]`. Helper functions are allowed, but additional components must live in separate files.
 - Prefer a component instance per rendered item over reusing a component instance across multiple items.
 - When UI state belongs to a specific persistent entity, such as the selected server, room, text channel, voice room, or media session, render a keyed per-entity wrapper component and keep that entity-scoped state inside it instead of passing an optional active entity through long-lived siblings.

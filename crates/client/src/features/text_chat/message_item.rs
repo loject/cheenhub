@@ -3,11 +3,12 @@
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;
 
-use crate::features::app::components::avatar::UserAvatar;
+use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 
 /// Renders one text chat message row.
 #[component]
 pub(super) fn ChatMessageItem(message: TextChatMessage, animate: bool) -> Element {
+    use_avatar_seed(message.author_user_id.clone());
     let class = if animate {
         "chat-message flex gap-3"
     } else {
