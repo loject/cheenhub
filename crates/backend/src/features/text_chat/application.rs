@@ -10,6 +10,7 @@ use chrono::Utc;
 use tracing::error;
 use uuid::Uuid;
 
+use crate::features::images::application as image_application;
 use crate::features::text_chat::domain::TextMessage;
 use crate::features::text_chat::policy;
 use crate::features::text_chat::validation;
@@ -42,10 +43,23 @@ pub(crate) async fn load_room_history(
             }
         })?;
 
+    let avatar_urls = image_application::avatar_urls_by_user_ids(
+        state,
+        page.messages.iter().map(|message| message.author_user_id),
+    )
+    .await
+    .map_err(TextChatApplicationError::Internal)?;
+
     Ok(RoomHistory {
         server_id: server_id.to_string(),
         room_id: room_id.to_string(),
-        messages: page.messages.iter().map(message_summary).collect(),
+        messages: page
+            .messages
+            .iter()
+            .map(|message| {
+                message_summary(message, avatar_urls.get(&message.author_user_id).cloned())
+            })
+            .collect(),
         has_more: page.has_more,
     })
 }
@@ -71,7 +85,7 @@ pub(crate) async fn send_message(
         body: valid.body,
         created_at: Utc::now(),
     };
-    let payload = message_summary(&message);
+    let payload = message_summary(&message, user.avatar_url.clone());
     let state_for_insert = state.clone();
     let message_for_insert = message.clone();
 
@@ -195,13 +209,14 @@ fn parse_id(value: &str, message: &str) -> Result<Uuid, TextChatApplicationError
     Uuid::parse_str(value).map_err(|_| TextChatApplicationError::BadRequest(message.to_owned()))
 }
 
-fn message_summary(message: &TextMessage) -> TextChatMessage {
+fn message_summary(message: &TextMessage, author_avatar_url: Option<String>) -> TextChatMessage {
     TextChatMessage {
         id: message.id.to_string(),
         server_id: message.server_id.to_string(),
         room_id: message.room_id.to_string(),
         author_user_id: message.author_user_id.to_string(),
         author_nickname: message.author_nickname.clone(),
+        author_avatar_url,
         body: message.body.clone(),
         created_at: message.created_at.to_rfc3339(),
     }

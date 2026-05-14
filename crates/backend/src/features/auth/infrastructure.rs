@@ -14,6 +14,7 @@ mod postgres_user;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::features::auth::domain::{
@@ -91,6 +92,20 @@ pub(crate) trait AuthStore: Send + Sync {
         now: DateTime<Utc>,
         cooldown: Duration,
     ) -> Result<Option<UserAccount>, UpdateUserNicknameError>;
+
+    /// Updates a user's current avatar image identifier.
+    async fn update_user_avatar_image_id(
+        &self,
+        user_id: &Uuid,
+        image_id: Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<UserAccount>>;
+
+    /// Finds current avatar image identifiers for users.
+    async fn avatar_image_ids_by_user_ids(
+        &self,
+        user_ids: &[Uuid],
+    ) -> anyhow::Result<HashMap<Uuid, Uuid>>;
 
     /// Updates a user's password hash.
     async fn update_user_password_hash(

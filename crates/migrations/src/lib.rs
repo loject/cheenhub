@@ -15,6 +15,7 @@ mod m20260512_000011_create_password_reset_tokens_table;
 mod m20260513_000012_add_user_nickname_updated_at;
 mod m20260513_000013_create_user_nickname_history_table;
 mod m20260513_000014_create_user_password_change_trace_table;
+mod m20260513_000015_create_images_and_user_avatars;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -39,6 +40,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260513_000012_add_user_nickname_updated_at::Migration),
             Box::new(m20260513_000013_create_user_nickname_history_table::Migration),
             Box::new(m20260513_000014_create_user_password_change_trace_table::Migration),
+            Box::new(m20260513_000015_create_images_and_user_avatars::Migration),
         ]
     }
 }

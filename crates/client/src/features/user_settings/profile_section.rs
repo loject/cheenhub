@@ -3,6 +3,7 @@
 use cheenhub_contracts::rest::UpdateCurrentUserRequest;
 use dioxus::prelude::*;
 
+use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::auth::api::{self, LinkedAccount};
 
@@ -15,11 +16,12 @@ pub(crate) fn ProfileSettingsSection() -> Element {
     let current_user = current_user_context.require_user();
     let mut nickname = use_signal(|| current_user.nickname.clone());
     let mut profile_status = use_signal(ProfileUpdateStatus::default);
+    let mut avatar_status = use_signal(AvatarUpdateStatus::default);
     let trimmed_nickname = nickname().trim().to_owned();
     let is_profile_busy = matches!(profile_status(), ProfileUpdateStatus::Loading);
     let has_changes = trimmed_nickname != current_user.nickname;
     let nickname_valid = is_valid_nickname(&trimmed_nickname);
-    let current_user_initial = profile_initial(&current_user.nickname);
+    let is_avatar_busy = matches!(avatar_status(), AvatarUpdateStatus::Loading);
     let mut link_status = use_signal(String::new);
     let mut link_busy = use_signal(|| false);
     let mut unlinking_provider = use_signal(|| None::<String>);
@@ -30,10 +32,80 @@ pub(crate) fn ProfileSettingsSection() -> Element {
         form { class: "space-y-4",
             div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
                 div { class: "flex flex-col gap-4 sm:flex-row sm:items-center",
-                    div { class: "flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-accent text-[28px] font-bold text-white shadow-[0_14px_36px_rgba(59,130,246,.20)]", "{current_user_initial}" }
+                    UserAvatar {
+                        nickname: current_user.nickname.clone(),
+                        avatar_url: current_user.avatar_url.clone(),
+                        class: "flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-accent text-[28px] font-bold text-white shadow-[0_14px_36px_rgba(59,130,246,.20)]".to_owned(),
+                    }
                     div { class: "min-w-0 flex-1",
                         h3 { class: "text-[16px] font-semibold tracking-[-0.03em] text-zinc-50", "Аватар" }
-                        p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Аватар будет использовать первую букву текущего никнейма." }
+                        p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "PNG, JPG, GIF или WebP до 8 МБ. После загрузки изображение станет квадратным 512×512." }
+                        div { class: "mt-3 flex flex-wrap items-center gap-2",
+                            label {
+                                class: "inline-flex h-9 cursor-pointer items-center justify-center rounded-xl border border-accent/25 bg-accent/10 px-3 text-[12px] font-medium text-blue-100 transition hover:border-accent/45 hover:bg-accent/15",
+                                input {
+                                    class: "sr-only",
+                                    r#type: "file",
+                                    accept: "image/png,image/jpeg,image/gif,image/webp,image/*",
+                                    disabled: is_avatar_busy,
+                                    onchange: move |event| {
+                                        if is_avatar_busy {
+                                            return;
+                                        }
+                                        let Some(file) = event.files().into_iter().next() else {
+                                            return;
+                                        };
+                                        if file.size() > 8 * 1024 * 1024 {
+                                            avatar_status.set(AvatarUpdateStatus::Failed(
+                                                "Изображение слишком большое. Загрузи файл до 8 МБ.".to_owned(),
+                                            ));
+                                            return;
+                                        }
+
+                                        avatar_status.set(AvatarUpdateStatus::Loading);
+                                        info!(
+                                            file_name = %file.name(),
+                                            file_size = file.size(),
+                                            "uploading current user avatar"
+                                        );
+                                        spawn(async move {
+                                            match file.read_bytes().await {
+                                                Ok(bytes) => match api::update_current_user_avatar(bytes.to_vec()).await {
+                                                    Ok(updated_user) => {
+                                                        info!("current user avatar updated");
+                                                        current_user_context.set_user(updated_user);
+                                                        avatar_status.set(AvatarUpdateStatus::Succeeded);
+                                                    }
+                                                    Err(error) => {
+                                                        warn!(%error, "current user avatar update failed");
+                                                        avatar_status.set(AvatarUpdateStatus::Failed(error));
+                                                    }
+                                                },
+                                                Err(error) => {
+                                                    warn!(?error, "failed to read selected avatar file");
+                                                    avatar_status.set(AvatarUpdateStatus::Failed(
+                                                        "Не удалось прочитать выбранный файл.".to_owned(),
+                                                    ));
+                                                }
+                                            }
+                                        });
+                                    },
+                                }
+                                if is_avatar_busy { "Загружаем..." } else { "Загрузить аватар" }
+                            }
+                        }
+                        match avatar_status() {
+                            AvatarUpdateStatus::Idle => rsx! {},
+                            AvatarUpdateStatus::Loading => rsx! {
+                                p { class: "mt-2 text-[12px] leading-5 text-zinc-400", "Обрабатываем изображение..." }
+                            },
+                            AvatarUpdateStatus::Succeeded => rsx! {
+                                p { class: "mt-2 text-[12px] leading-5 text-emerald-200", "Аватар обновлен." }
+                            },
+                            AvatarUpdateStatus::Failed(error) => rsx! {
+                                p { class: "mt-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] leading-5 text-red-200", "{error}" }
+                            },
+                        }
                     }
                 }
             }
@@ -216,20 +288,21 @@ enum ProfileUpdateStatus {
     Failed(String),
 }
 
+#[derive(Clone, Default, PartialEq)]
+enum AvatarUpdateStatus {
+    #[default]
+    Idle,
+    Loading,
+    Succeeded,
+    Failed(String),
+}
+
 fn is_valid_nickname(nickname: &str) -> bool {
     let len = nickname.chars().count();
     (3..=32).contains(&len)
         && nickname
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-}
-
-fn profile_initial(nickname: &str) -> String {
-    nickname
-        .chars()
-        .next()
-        .map(|character| character.to_uppercase().collect())
-        .unwrap_or_else(|| "?".to_owned())
 }
 
 fn linked_accounts_list(

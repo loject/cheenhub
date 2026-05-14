@@ -73,6 +73,8 @@ pub struct TextChatMessage {
     pub author_user_id: String,
     /// Author nickname snapshot.
     pub author_nickname: String,
+    /// Public author avatar image URL when configured.
+    pub author_avatar_url: Option<String>,
     /// Message body.
     pub body: String,
     /// Message creation timestamp in RFC3339 format.

@@ -30,6 +30,7 @@ futures-util = "0.3"
 gloo-net = "0.6"
 gloo-timers = { version = "0.3", features = ["futures"] }
 http = "1"
+image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 js-sys = "0.3"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
 rand_core = { version = "0.6", features = ["getrandom"] }

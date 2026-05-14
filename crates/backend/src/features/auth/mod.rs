@@ -11,7 +11,8 @@ mod validation;
 
 use axum::{
     Router,
-    routing::{get, post},
+    extract::DefaultBodyLimit,
+    routing::{get, post, put},
 };
 
 use crate::state::AppState;
@@ -38,6 +39,11 @@ pub(crate) fn routes() -> Router<AppState> {
         .route(
             "/me/password",
             post(transport::handlers::change_current_user_password),
+        )
+        .route(
+            "/me/avatar",
+            put(transport::handlers::update_current_user_avatar)
+                .layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
         )
         .route(
             "/oauth/google/start",

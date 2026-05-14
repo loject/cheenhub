@@ -82,4 +82,34 @@ mod tests {
         );
         assert!(decoded.has_matching_module_kind());
     }
+
+    #[test]
+    fn avatar_fields_round_trip_in_realtime_payloads() {
+        let message = TextChatMessage {
+            id: Uuid::new_v4().to_string(),
+            server_id: Uuid::new_v4().to_string(),
+            room_id: Uuid::new_v4().to_string(),
+            author_user_id: Uuid::new_v4().to_string(),
+            author_nickname: "avatar_user".to_owned(),
+            author_avatar_url: Some("http://localhost/api/images/avatar".to_owned()),
+            body: "hello".to_owned(),
+            created_at: "2026-05-13T00:00:00Z".to_owned(),
+        };
+        let decoded: TextChatMessage =
+            serde_json::from_str(&serde_json::to_string(&message).expect("message serializes"))
+                .expect("message decodes");
+        assert_eq!(decoded.author_avatar_url, message.author_avatar_url);
+
+        let participant = VoiceRoomParticipant {
+            user_id: Uuid::new_v4().to_string(),
+            nickname: "voice_user".to_owned(),
+            avatar_url: Some("http://localhost/api/images/avatar".to_owned()),
+            joined_at: "2026-05-13T00:00:00Z".to_owned(),
+        };
+        let decoded: VoiceRoomParticipant = serde_json::from_str(
+            &serde_json::to_string(&participant).expect("participant serializes"),
+        )
+        .expect("participant decodes");
+        assert_eq!(decoded.avatar_url, participant.avatar_url);
+    }
 }

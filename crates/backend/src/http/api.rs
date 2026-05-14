@@ -2,13 +2,14 @@
 
 use axum::{Router, http::StatusCode};
 
-use crate::features::{auth, servers};
+use crate::features::{auth, images, servers};
 use crate::state::AppState;
 
 /// Builds the REST API router.
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::routes())
+        .nest("/images", images::routes())
         .nest("/servers", servers::routes())
         .fallback(not_found)
 }

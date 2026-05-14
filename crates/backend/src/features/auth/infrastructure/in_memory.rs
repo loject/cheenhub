@@ -1,7 +1,7 @@
-use std::sync::Mutex;
-
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
+use std::collections::HashMap;
+use std::sync::Mutex;
 use uuid::Uuid;
 
 pub(super) mod model;
@@ -49,6 +49,7 @@ impl AuthStore for InMemoryAuthStore {
             nickname,
             email,
             password_hash,
+            avatar_image_id: None,
             registered_at: now,
             nickname_updated_at: now,
         };
@@ -97,6 +98,32 @@ impl AuthStore for InMemoryAuthStore {
             now,
             cooldown,
         )
+    }
+
+    async fn update_user_avatar_image_id(
+        &self,
+        user_id: &Uuid,
+        image_id: Uuid,
+        _now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<UserAccount>> {
+        super::in_memory_profile::update_user_avatar_image_id(&self.state, user_id, image_id)
+    }
+
+    async fn avatar_image_ids_by_user_ids(
+        &self,
+        user_ids: &[Uuid],
+    ) -> anyhow::Result<HashMap<Uuid, Uuid>> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+        Ok(state
+            .users
+            .iter()
+            .filter(|user| user_ids.contains(&user.account.id))
+            .filter_map(|user| {
+                user.account
+                    .avatar_image_id
+                    .map(|image_id| (user.account.id, image_id))
+            })
+            .collect())
     }
 
     async fn update_user_password_hash(

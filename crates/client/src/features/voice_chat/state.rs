@@ -347,6 +347,7 @@ fn ensure_current_user_present(participants: &mut Vec<VoiceRoomParticipant>, use
     participants.push(VoiceRoomParticipant {
         user_id: user.id.clone(),
         nickname: user.nickname.clone(),
+        avatar_url: user.avatar_url.clone(),
         joined_at: String::new(),
     });
 }

@@ -6,6 +6,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
     Set,
 };
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::features::auth::domain::*;
@@ -41,6 +42,7 @@ impl AuthStore for PostgresAuthStore {
             email: Set(email),
             email_normalized: Set(email_normalized),
             password_hash: Set(password_hash),
+            avatar_image_id: Set(None),
             registered_at: Set(now),
             nickname_updated_at: Set(now),
             accepted_terms_at: Set(now),
@@ -88,6 +90,41 @@ impl AuthStore for PostgresAuthStore {
             cooldown,
         )
         .await
+    }
+
+    async fn update_user_avatar_image_id(
+        &self,
+        user_id: &Uuid,
+        image_id: Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<UserAccount>> {
+        let Some(user) = users::Entity::find_by_id(*user_id)
+            .one(&self.database)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let mut user = user.into_active_model();
+        user.avatar_image_id = Set(Some(image_id));
+        user.updated_at = Set(now);
+        Ok(Some(user.update(&self.database).await?.into()))
+    }
+
+    async fn avatar_image_ids_by_user_ids(
+        &self,
+        user_ids: &[Uuid],
+    ) -> anyhow::Result<HashMap<Uuid, Uuid>> {
+        if user_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        Ok(users::Entity::find()
+            .filter(users::Column::Id.is_in(user_ids.iter().copied()))
+            .all(&self.database)
+            .await?
+            .into_iter()
+            .filter_map(|user| user.avatar_image_id.map(|image_id| (user.id, image_id)))
+            .collect())
     }
 
     async fn update_user_password_hash(

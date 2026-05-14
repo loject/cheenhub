@@ -198,4 +198,6 @@ pub struct AuthUser {
     pub registered_at: String,
     /// Whether the account has a local password.
     pub has_password: bool,
+    /// Public avatar image URL when the user configured one.
+    pub avatar_url: Option<String>,
 }

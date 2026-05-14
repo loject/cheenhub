@@ -22,6 +22,10 @@ fn state() -> AppState {
         auth_mailer: Arc::new(crate::features::auth::email::tests::TestAuthMailer::default()),
         server_store: Arc::new(InMemoryServerStore::default()),
         text_chat_store: Arc::new(InMemoryTextChatStore::default()),
+        image_store: Arc::new(
+            crate::features::images::infrastructure::InMemoryImageStore::default(),
+        ),
+        image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
         voice_presence_store: Arc::new(
             crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore::default(),
         ),
@@ -35,6 +39,7 @@ fn state() -> AppState {
             "http://localhost/api/auth/oauth/google/callback".to_owned(),
         ),
         cheenhub_client_base_url: "http://localhost".to_owned(),
+        cheenhub_api_base_url: "http://localhost/api".to_owned(),
         oauth_state_lifetime_minutes: 10,
         oauth_handoff_lifetime_minutes: 5,
         oauth_registration_lifetime_minutes: 15,

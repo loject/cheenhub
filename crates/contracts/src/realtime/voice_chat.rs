@@ -52,6 +52,8 @@ pub struct VoiceRoomParticipant {
     pub user_id: String,
     /// User nickname snapshot.
     pub nickname: String,
+    /// Public avatar image URL when configured.
+    pub avatar_url: Option<String>,
     /// RFC3339 timestamp for when this participant joined.
     pub joined_at: String,
 }

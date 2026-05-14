@@ -3,6 +3,8 @@
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use dioxus::prelude::*;
 
+use crate::features::app::components::avatar::UserAvatar;
+
 /// Renders one voice room participant.
 #[component]
 pub(crate) fn VoiceParticipantTile(
@@ -19,7 +21,7 @@ pub(crate) fn VoiceParticipantTile(
     rsx! {
         article {
             key: "{participant.user_id}",
-            "data-avatar": participant_initial(&participant.nickname),
+            "data-avatar": "",
             "data-speaking": if speaking { "true" } else { "false" },
             style: "--avatar-bg: rgba(24,24,27,.80);",
             class: tile_class,
@@ -34,7 +36,7 @@ pub(crate) fn VoiceParticipantTile(
             },
             if speaking {
                 div { class: "pointer-events-none absolute inset-0 rounded-[20px] bg-emerald-400/[0.035]" }
-                div { class: "pointer-events-none absolute inset-x-4 bottom-4 z-0 flex h-10 items-end gap-1 text-emerald-300/55",
+                div { class: "pointer-events-none absolute inset-x-4 bottom-12 z-0 flex h-10 justify-center items-end gap-1 text-emerald-300/55",
                     span { class: "inline-block h-4 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current" }
                     span { class: "inline-block h-7 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current [animation-delay:.10s]" }
                     span { class: "inline-block h-5 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current [animation-delay:.20s]" }
@@ -59,19 +61,18 @@ pub(crate) fn VoiceParticipantTile(
                     }
                 }
             }
-            div { class: "relative z-10 flex min-h-full flex-col justify-end text-left",
-                div { class: "flex items-center gap-2",
-                    div { class: "text-[14px] font-semibold text-zinc-50", "{participant.nickname}" }
+            div { class: "relative z-10 flex min-h-full flex-col items-center justify-center text-center",
+                UserAvatar {
+                    nickname: participant.nickname.clone(),
+                    avatar_url: participant.avatar_url.clone(),
+                    class: "flex h-20 w-20 items-center justify-center rounded-full border border-white/10 bg-zinc-900/80 text-[26px] font-bold text-zinc-100 shadow-[0_16px_36px_rgba(0,0,0,.24)]".to_owned(),
+                }
+            }
+            div { class: "absolute inset-x-4 bottom-4 z-20 flex justify-center",
+                div { class: "max-w-full rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-1.5 text-[13px] font-semibold text-zinc-100 shadow-[0_12px_30px_rgba(0,0,0,.32)] backdrop-blur-xl",
+                    div { class: "truncate", "{participant.nickname}" }
                 }
             }
         }
     }
-}
-
-fn participant_initial(nickname: &str) -> String {
-    nickname
-        .chars()
-        .next()
-        .map(|value| value.to_uppercase().collect())
-        .unwrap_or_else(|| "?".to_owned())
 }
