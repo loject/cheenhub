@@ -3,7 +3,7 @@
 use cheenhub_contracts::rest::UpdateCurrentUserRequest;
 use dioxus::prelude::*;
 
-use crate::features::app::components::avatar::UserAvatar;
+use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::auth::api::{self, LinkedAccount};
 
@@ -14,6 +14,7 @@ use super::styles::{input_class, primary_button_class};
 pub(crate) fn ProfileSettingsSection() -> Element {
     let current_user_context = use_context::<CurrentUserContext>();
     let current_user = current_user_context.require_user();
+    use_avatar_seed(current_user.id.clone());
     let mut nickname = use_signal(|| current_user.nickname.clone());
     let mut profile_status = use_signal(ProfileUpdateStatus::default);
     let mut avatar_status = use_signal(AvatarUpdateStatus::default);

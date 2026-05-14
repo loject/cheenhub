@@ -11,7 +11,7 @@ use crate::features::user_settings::UserSettingsScope;
 use crate::features::voice_chat::SidebarVoiceControls;
 
 use super::app_shell::{AppModal, ServerShellState, room_kind_attr};
-use super::avatar::UserAvatar;
+use super::avatar::{UserAvatar, use_avatar_seed};
 use super::room_editor_modal::RoomEditorModal;
 use super::room_instance::RoomInstance;
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
@@ -36,6 +36,7 @@ pub(crate) fn ServerRoomsScope(
     on_left_server: EventHandler<String>,
 ) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
+    use_avatar_seed(current_user.id.clone());
     let mut rooms = use_signal(|| None::<Vec<ServerRoomSummary>>);
     let mut active_room_id = use_signal(|| None::<String>);
     let mut room_action_status = use_signal(String::new);

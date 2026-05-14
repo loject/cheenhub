@@ -3,7 +3,7 @@
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use dioxus::prelude::*;
 
-use crate::features::app::components::avatar::UserAvatar;
+use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 
 /// Renders one voice room participant.
 #[component]
@@ -12,6 +12,7 @@ pub(crate) fn VoiceParticipantTile(
     speaking: bool,
     on_open_user_menu: EventHandler<(String, f64, f64)>,
 ) -> Element {
+    use_avatar_seed(participant.user_id.clone());
     let tile_class = if speaking {
         "user-tile relative overflow-hidden rounded-[20px] border border-emerald-400/75 bg-[var(--avatar-bg,rgba(24,24,27,.8))] bg-cover bg-center p-4 shadow-[0_0_0_1px_rgba(52,211,153,.24),0_18px_70px_rgba(16,185,129,.18)] transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-emerald-300/80"
     } else {
