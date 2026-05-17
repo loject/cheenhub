@@ -8,7 +8,9 @@ mod network;
 pub(crate) mod protocol;
 mod router;
 mod session;
+mod sink;
 mod tls;
+pub(crate) mod websocket;
 
 use std::net::SocketAddr;
 
@@ -20,6 +22,7 @@ use web_transport_quinn::{Server, ServerBuilder};
 
 use crate::state::AppState;
 
+pub(crate) use sink::EnvelopeSink;
 pub(crate) use tls::ensure_tls_config;
 
 const REALTIME_PATH: &str = "/realtime";

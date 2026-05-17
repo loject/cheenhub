@@ -8,12 +8,13 @@ use cheenhub_contracts::rest::AuthUser;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
 use uuid::Uuid;
-use web_transport::{RecvStream, SendStream, Session};
+use web_transport::{RecvStream, Session};
 
 use crate::state::AppState;
 
 use super::framing;
 use super::protocol::validate_envelope;
+use super::sink::{DatagramSink, EnvelopeSink};
 use super::{control, datagram, router};
 
 /// Handles one accepted WebTransport session.
@@ -27,7 +28,7 @@ pub(crate) async fn handle_session(
         .accept_bi()
         .await
         .context("failed to accept auth stream")?;
-    let send = Arc::new(Mutex::new(send));
+    let send = EnvelopeSink::webtransport(Arc::new(Mutex::new(send)));
     let mut recv = recv;
 
     let envelope = framing::read_envelope(&mut recv)
@@ -42,7 +43,11 @@ pub(crate) async fn handle_session(
     info!(%session_id, %user_id, "authenticated realtime session");
     state
         .realtime_hub
-        .register_session(session_id, user_id, session.clone())
+        .register_session(
+            session_id,
+            user_id,
+            DatagramSink::webtransport(session.clone()),
+        )
         .await;
     datagram::spawn_reader(state.clone(), session_id, user_id, session.clone());
 
@@ -93,7 +98,7 @@ pub(crate) async fn handle_session(
                     session_id,
                     stream_kind: "module",
                 },
-                Arc::new(Mutex::new(send)),
+                EnvelopeSink::webtransport(Arc::new(Mutex::new(send))),
                 recv,
                 None,
             )
@@ -115,7 +120,7 @@ struct ModuleStreamContext {
 
 async fn handle_module_stream(
     context: ModuleStreamContext,
-    send: Arc<Mutex<SendStream>>,
+    send: EnvelopeSink,
     mut recv: RecvStream,
     mut stream_module: Option<RealtimeModule>,
 ) -> anyhow::Result<()> {

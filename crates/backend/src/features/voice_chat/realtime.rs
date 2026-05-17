@@ -5,11 +5,10 @@ use cheenhub_contracts::realtime::{
     VoiceChatKind,
 };
 use cheenhub_contracts::rest::AuthUser;
-use tokio::sync::Mutex;
 use uuid::Uuid;
-use web_transport::SendStream;
 
 use crate::features::voice_chat::application::{self, VoiceChatApplicationError};
+use crate::realtime::EnvelopeSink;
 use crate::realtime::protocol::{
     decode_payload, require_request_id, send_rejection, write_envelope,
 };
@@ -22,7 +21,7 @@ pub(crate) async fn handle(
     user_id: &Uuid,
     realtime_stream_id: Uuid,
     session_id: Uuid,
-    send: &Mutex<SendStream>,
+    send: &EnvelopeSink,
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<()> {
     match envelope.kind {
@@ -91,7 +90,7 @@ pub(crate) async fn handle(
 }
 
 async fn reject_application_error(
-    send: &Mutex<SendStream>,
+    send: &EnvelopeSink,
     request_id: Option<Uuid>,
     error: VoiceChatApplicationError,
 ) -> anyhow::Result<()> {

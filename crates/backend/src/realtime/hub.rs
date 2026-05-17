@@ -1,17 +1,15 @@
 //! Shared realtime stream registry and fanout.
 
-use std::sync::Arc;
-
 use cheenhub_contracts::realtime::{RealtimeKind, RealtimeModule};
 use serde::Serialize;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use uuid::Uuid;
-use web_transport::{SendStream, Session};
 
 use crate::state::AppState;
 
 use super::protocol;
+use super::sink::{DatagramSink, EnvelopeSink};
 
 /// Shared registry for active module-bound realtime streams.
 #[derive(Default)]
@@ -25,14 +23,14 @@ struct RealtimeStream {
     id: Uuid,
     module: RealtimeModule,
     user_id: Uuid,
-    send: Arc<Mutex<SendStream>>,
+    send: EnvelopeSink,
 }
 
 #[derive(Clone)]
 struct RealtimeSession {
     id: Uuid,
     user_id: Uuid,
-    session: Session,
+    datagrams: DatagramSink,
 }
 
 /// Public stream identity used by feature-level fanout policies.
@@ -51,7 +49,7 @@ impl RealtimeHub {
         stream_id: Uuid,
         module: RealtimeModule,
         user_id: Uuid,
-        send: Arc<Mutex<SendStream>>,
+        send: EnvelopeSink,
     ) {
         let mut streams = self.streams.lock().await;
         if streams.iter().any(|stream| stream.id == stream_id) {
@@ -67,7 +65,12 @@ impl RealtimeHub {
     }
 
     /// Registers an authenticated WebTransport session for datagram fanout.
-    pub(crate) async fn register_session(&self, session_id: Uuid, user_id: Uuid, session: Session) {
+    pub(crate) async fn register_session(
+        &self,
+        session_id: Uuid,
+        user_id: Uuid,
+        datagrams: DatagramSink,
+    ) {
         let mut sessions = self.sessions.lock().await;
         if sessions.iter().any(|session| session.id == session_id) {
             return;
@@ -75,7 +78,7 @@ impl RealtimeHub {
         sessions.push(RealtimeSession {
             id: session_id,
             user_id,
-            session,
+            datagrams,
         });
         debug!(%session_id, %user_id, "registered realtime session");
     }
@@ -103,7 +106,7 @@ impl RealtimeHub {
             .collect::<Vec<_>>();
 
         for session in sessions {
-            if let Err(error) = session.session.send_datagram(bytes.clone()).await {
+            if let Err(error) = session.datagrams.send_datagram(bytes.clone()).await {
                 warn!(
                     session_id = %session.id,
                     user_id = %session.user_id,
