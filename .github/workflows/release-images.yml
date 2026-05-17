@@ -75,8 +75,10 @@ jobs:
           push: true
           tags: ${{ steps.backend-meta.outputs.tags }}
           labels: ${{ steps.backend-meta.outputs.labels }}
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,scope=backend,mode=max
+          cache-from: |
+            type=registry,ref=${{ steps.images.outputs.backend }}:buildcache
+            type=registry,ref=${{ steps.images.outputs.web }}:buildcache
+          cache-to: type=registry,ref=${{ steps.images.outputs.backend }}:buildcache,mode=max
 
       - name: Build and push web image
         uses: docker/build-push-action@v6
@@ -92,8 +94,10 @@ jobs:
             CHEENHUB_JWT_PUBLIC_KEY_BASE64=${{ env.CHEENHUB_JWT_PUBLIC_KEY_BASE64 }}
             CHEENHUB_REALTIME_URL=${{ env.CHEENHUB_REALTIME_URL }}
             CHEENHUB_REALTIME_CERT_SHA256=${{ env.CHEENHUB_REALTIME_CERT_SHA256 }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,scope=web,mode=max
+          cache-from: |
+            type=registry,ref=${{ steps.images.outputs.web }}:buildcache
+            type=registry,ref=${{ steps.images.outputs.backend }}:buildcache
+          cache-to: type=registry,ref=${{ steps.images.outputs.web }}:buildcache,mode=max
 
       - name: Export release image archives
         if: startsWith(github.ref, 'refs/tags/')
