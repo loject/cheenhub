@@ -1,5 +1,10 @@
 /.env
+/.env.*
+!/.env.example
 /target/
 /dist/
 /crates/client/dist/
 /crates/client/assets/tailwind.css.map
+/deploy/secrets/
+/deploy/web-public/
+/deploy/bin/

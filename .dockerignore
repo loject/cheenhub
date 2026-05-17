@@ -1,0 +1,6 @@
+/target
+/dist
+/crates/client/dist
+/.env
+/.env.*
+/.git
