@@ -5,11 +5,10 @@ use cheenhub_contracts::realtime::{
     TextChatKind,
 };
 use cheenhub_contracts::rest::AuthUser;
-use tokio::sync::Mutex;
 use uuid::Uuid;
-use web_transport::SendStream;
 
 use crate::features::text_chat::application::{self, TextChatApplicationError};
+use crate::realtime::EnvelopeSink;
 use crate::realtime::protocol::{
     decode_payload, require_request_id, send_rejection, write_envelope,
 };
@@ -20,7 +19,7 @@ pub(crate) async fn handle(
     state: &AppState,
     user: &AuthUser,
     user_id: &Uuid,
-    send: &Mutex<SendStream>,
+    send: &EnvelopeSink,
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<()> {
     match envelope.kind {
@@ -80,7 +79,7 @@ pub(crate) async fn handle(
 }
 
 async fn reject_application_error(
-    send: &Mutex<SendStream>,
+    send: &EnvelopeSink,
     request_id: Option<Uuid>,
     error: TextChatApplicationError,
 ) -> anyhow::Result<()> {

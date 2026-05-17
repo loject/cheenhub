@@ -5,18 +5,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use cheenhub_contracts::realtime::{
     NetworkKind, Ping, Pong, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
 };
-use tokio::sync::Mutex;
 use tracing::debug;
-use web_transport::SendStream;
 
 use crate::state::AppState;
 
 use super::protocol::{decode_payload, require_request_id, send_rejection, write_envelope};
+use super::sink::EnvelopeSink;
 
 /// Handles one network module envelope.
 pub(crate) async fn handle(
     _state: &AppState,
-    send: &Mutex<SendStream>,
+    send: &EnvelopeSink,
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<()> {
     match envelope.kind {

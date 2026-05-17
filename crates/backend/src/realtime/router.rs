@@ -2,14 +2,13 @@
 
 use cheenhub_contracts::realtime::{RealtimeEnvelope, RealtimeModule, RejectionCode};
 use cheenhub_contracts::rest::AuthUser;
-use tokio::sync::Mutex;
 use uuid::Uuid;
-use web_transport::SendStream;
 
 use crate::features::{text_chat, voice_chat};
 use crate::state::AppState;
 
 use super::protocol::send_rejection;
+use super::sink::EnvelopeSink;
 use super::{control, network};
 
 /// Dispatches a realtime envelope to the module that owns it.
@@ -19,7 +18,7 @@ pub(crate) async fn dispatch(
     user_id: &Uuid,
     stream_id: Uuid,
     session_id: Uuid,
-    send: &Mutex<SendStream>,
+    send: &EnvelopeSink,
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<()> {
     match envelope.module {
@@ -49,7 +48,7 @@ pub(crate) async fn cleanup_stream(state: &AppState, module: RealtimeModule, str
 
 /// Rejects a reliable stream message when it changes module ownership.
 pub(crate) async fn reject_module_change(
-    send: &Mutex<SendStream>,
+    send: &EnvelopeSink,
     envelope: &RealtimeEnvelope,
 ) -> anyhow::Result<()> {
     send_rejection(

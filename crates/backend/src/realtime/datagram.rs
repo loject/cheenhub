@@ -41,7 +41,12 @@ pub(crate) fn spawn_reader(state: AppState, session_id: Uuid, user_id: Uuid, ses
     });
 }
 
-async fn dispatch(state: &AppState, session_id: Uuid, user_id: Uuid, datagram: MediaDatagram) {
+pub(crate) async fn dispatch(
+    state: &AppState,
+    session_id: Uuid,
+    user_id: Uuid,
+    datagram: MediaDatagram,
+) {
     match datagram.kind {
         MediaDatagramKind::VoiceFrame => {
             voice_chat::media::handle_voice_frame(state, session_id, user_id, datagram).await;

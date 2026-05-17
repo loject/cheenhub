@@ -6,11 +6,9 @@ use cheenhub_contracts::realtime::{
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use tokio::sync::Mutex;
 use uuid::Uuid;
-use web_transport::SendStream;
 
-use super::framing;
+use super::sink::EnvelopeSink;
 
 /// Ensures an envelope has a matching module/kind pair.
 pub(crate) fn validate_envelope(envelope: &RealtimeEnvelope) -> anyhow::Result<()> {
@@ -38,7 +36,7 @@ where
 
 /// Sends a typed rejection envelope.
 pub(crate) async fn send_rejection(
-    send: &Mutex<SendStream>,
+    send: &EnvelopeSink,
     request_id: Option<Uuid>,
     code: RejectionCode,
     message: &str,
@@ -58,7 +56,7 @@ pub(crate) async fn send_rejection(
 
 /// Writes a typed payload as a realtime envelope.
 pub(crate) async fn write_envelope<T>(
-    send: &Mutex<SendStream>,
+    send: &EnvelopeSink,
     module: RealtimeModule,
     kind: RealtimeKind,
     request_id: Option<Uuid>,
@@ -68,5 +66,5 @@ where
     T: Serialize,
 {
     let envelope = RealtimeEnvelope::new(module, kind, request_id, payload)?;
-    framing::write_envelope(send, &envelope).await
+    send.send_envelope(&envelope).await
 }

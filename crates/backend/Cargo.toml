@@ -18,6 +18,7 @@ cheenhub_contracts = { path = "../contracts" }
 chrono.workspace = true
 dotenvy.workspace = true
 ed25519-dalek.workspace = true
+futures-util.workspace = true
 http.workspace = true
 image.workspace = true
 lettre.workspace = true

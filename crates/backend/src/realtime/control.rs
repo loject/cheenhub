@@ -5,9 +5,7 @@ use cheenhub_contracts::realtime::{
     RealtimeKind, RealtimeModule, RejectionCode,
 };
 use cheenhub_contracts::rest::AuthUser;
-use tokio::sync::Mutex;
 use tracing::{info, warn};
-use web_transport::SendStream;
 
 use crate::features::auth::application as auth_application;
 use crate::state::AppState;
@@ -15,11 +13,12 @@ use crate::state::AppState;
 use super::protocol::{
     decode_payload, require_request_id, send_rejection, validate_envelope, write_envelope,
 };
+use super::sink::EnvelopeSink;
 
 /// Authenticates the first stream of a realtime session.
 pub(crate) async fn authenticate_session(
     state: &AppState,
-    send: &Mutex<SendStream>,
+    send: &EnvelopeSink,
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<Option<AuthUser>> {
     validate_envelope(&envelope)?;
@@ -72,7 +71,7 @@ pub(crate) async fn authenticate_session(
 /// Handles one control module envelope.
 pub(crate) async fn handle(
     _state: &AppState,
-    send: &Mutex<SendStream>,
+    send: &EnvelopeSink,
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<()> {
     match envelope.kind {
