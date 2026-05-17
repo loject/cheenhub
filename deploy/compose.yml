@@ -1,0 +1,82 @@
+name: cheenhub
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  migrate:
+    image: ${CHEENHUB_BACKEND_IMAGE:-cheenhub-backend}:${CHEENHUB_IMAGE_TAG:-latest}
+    restart: "no"
+    env_file:
+      - ../.env.production
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    command: ["cheenhub_migrations", "up"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backend:
+    image: ${CHEENHUB_BACKEND_IMAGE:-cheenhub-backend}:${CHEENHUB_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - ../.env.production
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 3000
+      WEBTRANSPORT_HOST: 0.0.0.0
+      WEBTRANSPORT_PORT: 4443
+      WEBTRANSPORT_TLS_CERT_PATH: /etc/letsencrypt/live/cheenhub.ru/fullchain.pem
+      WEBTRANSPORT_TLS_KEY_PATH: /etc/letsencrypt/live/cheenhub.ru/privkey.pem
+    volumes:
+      - letsencrypt:/etc/letsencrypt:ro
+    expose:
+      - "3000"
+    ports:
+      - "443:4443/udp"
+      - "4443:4443/tcp"
+      - "4443:4443/udp"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    image: ${CHEENHUB_WEB_IMAGE:-cheenhub-web}:${CHEENHUB_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot:ro
+
+  certbot:
+    image: certbot/certbot:v3.1.0
+    restart: unless-stopped
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    entrypoint:
+      - /bin/sh
+      - -c
+      - trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done
+
+volumes:
+  postgres-data:
+  letsencrypt:
+    external: true
+    name: cheenhub_letsencrypt
+  certbot-webroot:

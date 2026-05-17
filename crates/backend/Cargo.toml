@@ -1,6 +1,7 @@
 [package]
 name = "cheenhub_backend"
 version = "0.1.0"
+default-run = "cheenhub_backend"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

@@ -1,0 +1,21 @@
+services:
+  migrate:
+    build:
+      context: ..
+      target: backend-runtime
+
+  backend:
+    build:
+      context: ..
+      target: backend-runtime
+
+  web:
+    build:
+      context: ..
+      target: web-runtime
+      args:
+        CHEENHUB_API_BASE_URL: ${CHEENHUB_API_BASE_URL}
+        CHEENHUB_JWT_KEY_ID: ${CHEENHUB_JWT_KEY_ID}
+        CHEENHUB_JWT_PUBLIC_KEY_BASE64: ${CHEENHUB_JWT_PUBLIC_KEY_BASE64}
+        CHEENHUB_REALTIME_URL: ${CHEENHUB_REALTIME_URL}
+        CHEENHUB_REALTIME_CERT_SHA256: ${CHEENHUB_REALTIME_CERT_SHA256}

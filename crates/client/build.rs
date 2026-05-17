@@ -21,6 +21,7 @@ fn main() {
     dotenvy::from_filename("../../.env").ok();
 
     forward_env("CHEENHUB_JWT_PUBLIC_KEY_BASE64");
+    forward_env("CHEENHUB_API_BASE_URL");
     forward_env("CHEENHUB_REALTIME_URL");
     if !forward_env("CHEENHUB_REALTIME_CERT_SHA256") {
         forward_webtransport_cert_hash();
@@ -37,6 +38,7 @@ fn main() {
 }
 
 fn forward_env(key: &str) -> bool {
+    println!("cargo:rerun-if-env-changed={key}");
     if let Ok(value) = env::var(key) {
         println!("cargo:rustc-env={key}={value}");
         true

@@ -1,0 +1,124 @@
+name: Release Docker images
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  CHEENHUB_DOMAIN: ${{ vars.CHEENHUB_DOMAIN || 'cheenhub.ru' }}
+  CHEENHUB_API_BASE_URL: ${{ vars.CHEENHUB_API_BASE_URL || 'https://cheenhub.ru/api' }}
+  CHEENHUB_REALTIME_URL: ${{ vars.CHEENHUB_REALTIME_URL || 'https://cheenhub.ru/realtime' }}
+  CHEENHUB_REALTIME_CERT_SHA256: ${{ vars.CHEENHUB_REALTIME_CERT_SHA256 || '' }}
+  CHEENHUB_JWT_KEY_ID: ${{ vars.CHEENHUB_JWT_KEY_ID || 'prod-ed25519-1' }}
+  CHEENHUB_JWT_PUBLIC_KEY_BASE64: ${{ vars.CHEENHUB_JWT_PUBLIC_KEY_BASE64 || '' }}
+
+jobs:
+  build-publish:
+    name: Build and publish images
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve image names
+        id: images
+        shell: bash
+        run: |
+          repo="${GITHUB_REPOSITORY,,}"
+          echo "backend=ghcr.io/${repo}/backend" >> "$GITHUB_OUTPUT"
+          echo "web=ghcr.io/${repo}/web" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Backend image metadata
+        id: backend-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.images.outputs.backend }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Web image metadata
+        id: web-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.images.outputs.web }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: backend-runtime
+          push: true
+          tags: ${{ steps.backend-meta.outputs.tags }}
+          labels: ${{ steps.backend-meta.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: web-runtime
+          push: true
+          tags: ${{ steps.web-meta.outputs.tags }}
+          labels: ${{ steps.web-meta.outputs.labels }}
+          build-args: |
+            CHEENHUB_API_BASE_URL=${{ env.CHEENHUB_API_BASE_URL }}
+            CHEENHUB_JWT_KEY_ID=${{ env.CHEENHUB_JWT_KEY_ID }}
+            CHEENHUB_JWT_PUBLIC_KEY_BASE64=${{ env.CHEENHUB_JWT_PUBLIC_KEY_BASE64 }}
+            CHEENHUB_REALTIME_URL=${{ env.CHEENHUB_REALTIME_URL }}
+            CHEENHUB_REALTIME_CERT_SHA256=${{ env.CHEENHUB_REALTIME_CERT_SHA256 }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+      - name: Export release image archives
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          mkdir -p dist
+          docker pull "${{ steps.images.outputs.backend }}:${GITHUB_REF_NAME}"
+          docker pull "${{ steps.images.outputs.web }}:${GITHUB_REF_NAME}"
+          docker save "${{ steps.images.outputs.backend }}:${GITHUB_REF_NAME}" | gzip -9 > "dist/cheenhub-backend-${GITHUB_REF_NAME}.docker-image.tar.gz"
+          docker save "${{ steps.images.outputs.web }}:${GITHUB_REF_NAME}" | gzip -9 > "dist/cheenhub-web-${GITHUB_REF_NAME}.docker-image.tar.gz"
+
+      - name: Create or update GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          notes="Docker images:
+          - ${{ steps.images.outputs.backend }}:${GITHUB_REF_NAME}
+          - ${{ steps.images.outputs.web }}:${GITHUB_REF_NAME}"
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.docker-image.tar.gz --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.docker-image.tar.gz --title "$GITHUB_REF_NAME" --notes "$notes"
+          fi
