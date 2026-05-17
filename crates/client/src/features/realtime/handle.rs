@@ -14,19 +14,21 @@ use futures_channel::{mpsc, oneshot};
 use futures_util::{StreamExt, lock::Mutex};
 use serde::{Serialize, de::DeserializeOwned};
 use uuid::Uuid;
-use web_transport::{RecvStream, SendStream, Session};
+use web_transport::{SendStream, Session};
 
 use super::config;
 use super::error::RealtimeError;
 use super::framing;
-use super::status::RealtimeConnectionStatus;
+use super::status::{RealtimeConnectionStatus, RealtimeTransportKind};
 use super::task::spawn_task;
+use super::websocket::{self, WebSocketOutbound, WebSocketOutboundSender};
+use super::webtransport;
 
 type PendingKey = (RealtimeModule, Uuid);
 type PendingRequests = Rc<RefCell<HashMap<PendingKey, oneshot::Sender<RealtimeEnvelope>>>>;
 type ModuleStreams = Rc<Mutex<HashMap<RealtimeModule, Rc<Mutex<SendStream>>>>>;
 type EventListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<RealtimeEnvelope>>>>;
-type DatagramListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<Bytes>>>>;
+pub(super) type DatagramListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<Bytes>>>>;
 type StatusListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<RealtimeConnectionStatus>>>>;
 
 /// Cloneable handle exposed by the realtime provider.
@@ -50,12 +52,38 @@ struct RealtimeInner {
 #[derive(Clone)]
 struct ConnectedSession {
     generation: u64,
-    session: Session,
+    transport: ConnectedTransport,
+}
+
+#[derive(Clone)]
+enum ConnectedTransport {
+    WebTransport(Rc<Session>),
+    WebSocket(WebSocketOutboundSender),
 }
 
 impl RealtimeHandle {
     /// Opens and authenticates the realtime session.
     pub(crate) async fn connect(
+        &self,
+        access_token: String,
+    ) -> Result<Authenticated, RealtimeError> {
+        match self.connect_webtransport(access_token.clone()).await {
+            Ok(authenticated) => Ok(authenticated),
+            Err(webtransport_error) => {
+                warn!(
+                    %webtransport_error,
+                    "WebTransport realtime connection failed; trying WebSocket fallback"
+                );
+                self.connect_websocket(access_token).await.map_err(|websocket_error| {
+                    RealtimeError::new(format!(
+                        "Failed to connect realtime session: WebTransport error: {webtransport_error}; WebSocket fallback error: {websocket_error}"
+                    ))
+                })
+            }
+        }
+    }
+
+    async fn connect_webtransport(
         &self,
         access_token: String,
     ) -> Result<Authenticated, RealtimeError> {
@@ -72,7 +100,7 @@ impl RealtimeHandle {
         self.inner.pending.borrow_mut().clear();
         self.inner.session.lock().await.replace(ConnectedSession {
             generation,
-            session: session.clone(),
+            transport: ConnectedTransport::WebTransport(Rc::new(session.clone())),
         });
 
         let authenticated = self
@@ -90,13 +118,68 @@ impl RealtimeHandle {
             }
         };
         info!(%url, user_id = %authenticated.user.id, "WebTransport realtime authenticated");
-        self.set_connection_status(RealtimeConnectionStatus::Connected);
-        spawn_datagram_reader(
+        self.set_connection_status(RealtimeConnectionStatus::Connected(
+            RealtimeTransportKind::WebTransport,
+        ));
+        webtransport::spawn_datagram_reader(
             session.clone(),
             generation,
             self.inner.datagram_listeners.clone(),
         );
-        spawn_connection_watcher(url.to_string(), session, generation, self.clone());
+        webtransport::spawn_connection_watcher(url.to_string(), session, generation, self.clone());
+
+        Ok(authenticated)
+    }
+
+    async fn connect_websocket(
+        &self,
+        access_token: String,
+    ) -> Result<Authenticated, RealtimeError> {
+        let url = config::realtime_websocket_url()?;
+        info!(%url, "connecting WebSocket realtime fallback session");
+        let (writer, reader) = websocket::split(url.as_str())?;
+        let (sender, receiver) = mpsc::unbounded();
+        let generation = self.next_generation();
+        self.inner.streams.lock().await.clear();
+        self.inner.pending.borrow_mut().clear();
+        self.inner.session.lock().await.replace(ConnectedSession {
+            generation,
+            transport: ConnectedTransport::WebSocket(sender),
+        });
+        websocket::spawn_writer(
+            url.to_string(),
+            generation,
+            writer,
+            receiver,
+            Some(self.clone()),
+        );
+        websocket::spawn_reader(
+            url.to_string(),
+            generation,
+            reader,
+            self.inner.inbound.clone(),
+            self.inner.datagram_listeners.clone(),
+            self.clone(),
+        );
+
+        let authenticated = self
+            .request(
+                RealtimeModule::Control,
+                RealtimeKind::Control(ControlKind::Authenticate),
+                Authenticate { access_token },
+            )
+            .await;
+        let authenticated: Authenticated = match authenticated {
+            Ok(authenticated) => authenticated,
+            Err(error) => {
+                self.clear_generation(generation).await;
+                return Err(error);
+            }
+        };
+        info!(%url, user_id = %authenticated.user.id, "WebSocket realtime fallback authenticated");
+        self.set_connection_status(RealtimeConnectionStatus::Connected(
+            RealtimeTransportKind::WebSocketFallback,
+        ));
 
         Ok(authenticated)
     }
@@ -132,20 +215,26 @@ impl RealtimeHandle {
         let envelope = RealtimeEnvelope::new(module, kind, None, payload).map_err(|error| {
             RealtimeError::new(format!("Failed to encode realtime payload: {error}"))
         })?;
-        let bytes = serde_json::to_vec(&envelope).map_err(|error| {
-            RealtimeError::new(format!("Failed to encode realtime datagram: {error}"))
-        })?;
         let Some(connected) = self.inner.session.lock().await.clone() else {
             return Err(RealtimeError::new("Realtime session is not connected."));
         };
 
-        connected
-            .session
-            .send_datagram(Bytes::from(bytes))
-            .await
-            .map_err(|error| {
-                RealtimeError::new(format!("Failed to send realtime datagram: {error}"))
-            })
+        match connected.transport {
+            ConnectedTransport::WebTransport(session) => {
+                let bytes = serde_json::to_vec(&envelope).map_err(|error| {
+                    RealtimeError::new(format!("Failed to encode realtime datagram: {error}"))
+                })?;
+                session
+                    .send_datagram(Bytes::from(bytes))
+                    .await
+                    .map_err(|error| {
+                        RealtimeError::new(format!("Failed to send realtime datagram: {error}"))
+                    })
+            }
+            ConnectedTransport::WebSocket(sender) => sender
+                .unbounded_send(WebSocketOutbound::Envelope(envelope))
+                .map_err(|_| RealtimeError::new("Realtime WebSocket fallback writer is closed.")),
+        }
     }
 
     /// Sends one raw unreliable datagram message.
@@ -154,13 +243,16 @@ impl RealtimeHandle {
             return Err(RealtimeError::new("Realtime session is not connected."));
         };
 
-        connected
-            .session
-            .send_datagram(bytes)
-            .await
-            .map_err(|error| {
-                RealtimeError::new(format!("Failed to send realtime datagram: {error}"))
-            })
+        match connected.transport {
+            ConnectedTransport::WebTransport(session) => {
+                session.send_datagram(bytes).await.map_err(|error| {
+                    RealtimeError::new(format!("Failed to send realtime datagram: {error}"))
+                })
+            }
+            ConnectedTransport::WebSocket(sender) => sender
+                .unbounded_send(WebSocketOutbound::Datagram(bytes))
+                .map_err(|_| RealtimeError::new("Realtime WebSocket fallback writer is closed.")),
+        }
     }
 
     /// Subscribes to inbound fire-and-forget realtime events for this tab.
@@ -242,28 +334,37 @@ impl RealtimeHandle {
     }
 
     async fn write_envelope(&self, envelope: RealtimeEnvelope) -> Result<(), RealtimeError> {
-        let stream = self.stream_for(envelope.module).await?;
-        framing::write_envelope(&stream, &envelope).await
+        let Some(connected) = self.inner.session.lock().await.clone() else {
+            return Err(RealtimeError::new("Realtime session is not connected."));
+        };
+
+        match connected.transport {
+            ConnectedTransport::WebTransport(session) => {
+                let stream = self.stream_for(envelope.module, (*session).clone()).await?;
+                framing::write_envelope(&stream, &envelope).await
+            }
+            ConnectedTransport::WebSocket(sender) => sender
+                .unbounded_send(WebSocketOutbound::Envelope(envelope))
+                .map_err(|_| RealtimeError::new("Realtime WebSocket fallback writer is closed.")),
+        }
     }
 
     async fn stream_for(
         &self,
         module: RealtimeModule,
+        session: Session,
     ) -> Result<Rc<Mutex<SendStream>>, RealtimeError> {
         if let Some(stream) = self.inner.streams.lock().await.get(&module).cloned() {
             return Ok(stream);
         }
 
-        let Some(connected) = self.inner.session.lock().await.clone() else {
-            return Err(RealtimeError::new("Realtime session is not connected."));
-        };
-        let (send, recv) = connected.session.open_bi().await.map_err(|error| {
+        let (send, recv) = session.open_bi().await.map_err(|error| {
             RealtimeError::new(format!("Failed to open realtime stream: {error}"))
         })?;
         let send = Rc::new(Mutex::new(send));
         self.inner.streams.lock().await.insert(module, send.clone());
         debug!(module = ?module, "opened WebTransport realtime stream");
-        spawn_stream_reader(module, recv, self.inner.inbound.clone());
+        webtransport::spawn_stream_reader(module, recv, self.inner.inbound.clone());
 
         Ok(send)
     }
@@ -282,7 +383,7 @@ impl RealtimeHandle {
         self.set_connection_status(RealtimeConnectionStatus::Disconnected);
     }
 
-    async fn clear_generation(&self, generation: u64) {
+    pub(super) async fn clear_generation(&self, generation: u64) {
         let mut session = self.inner.session.lock().await;
         let should_clear = session
             .as_ref()
@@ -331,74 +432,6 @@ pub(crate) fn create_handle() -> RealtimeHandle {
     );
 
     handle
-}
-
-fn spawn_datagram_reader(session: Session, generation: u64, datagram_listeners: DatagramListeners) {
-    spawn_task(async move {
-        loop {
-            let bytes = match session.recv_datagram().await {
-                Ok(bytes) => bytes,
-                Err(error) => {
-                    debug!(%generation, %error, "WebTransport datagram reader closed");
-                    break;
-                }
-            };
-            datagram_listeners
-                .borrow_mut()
-                .retain(|listener| listener.unbounded_send(bytes.clone()).is_ok());
-        }
-    });
-}
-
-fn spawn_stream_reader(
-    module: RealtimeModule,
-    mut recv: RecvStream,
-    inbound: mpsc::UnboundedSender<RealtimeEnvelope>,
-) {
-    spawn_task(async move {
-        loop {
-            let envelope = match framing::read_envelope(&mut recv).await {
-                Ok(Some(envelope)) => envelope,
-                Ok(None) => {
-                    debug!(module = ?module, "WebTransport realtime stream closed by peer");
-                    break;
-                }
-                Err(error) => {
-                    warn!(module = ?module, %error, "WebTransport realtime stream read failed");
-                    break;
-                }
-            };
-
-            if !envelope.has_matching_module_kind()
-                || (envelope.module != module && !is_rejection(&envelope))
-            {
-                warn!(
-                    module = ?module,
-                    envelope_module = ?envelope.module,
-                    envelope_kind = ?envelope.kind,
-                    "closing realtime stream after mismatched envelope"
-                );
-                break;
-            }
-            if inbound.unbounded_send(envelope).is_err() {
-                debug!(module = ?module, "realtime inbound dispatcher closed");
-                break;
-            }
-        }
-    });
-}
-
-fn spawn_connection_watcher(
-    url: String,
-    session: Session,
-    generation: u64,
-    realtime: RealtimeHandle,
-) {
-    spawn_task(async move {
-        let error = session.closed().await;
-        info!(%url, %generation, %error, "WebTransport realtime session closed");
-        realtime.clear_generation(generation).await;
-    });
 }
 
 fn spawn_universal_reader(

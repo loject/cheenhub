@@ -2014,6 +2014,10 @@ video {
   border-color: rgb(39 39 42 / 0.8);
 }
 
+.border-amber-500\/25 {
+  border-color: rgb(245 158 11 / 0.25);
+}
+
 .border-t-blue-300 {
   --tw-border-opacity: 1;
   border-top-color: rgb(147 197 253 / var(--tw-border-opacity, 1));
@@ -2799,6 +2803,11 @@ video {
   color: rgb(147 197 253 / var(--tw-text-opacity, 1));
 }
 
+.text-amber-300 {
+  --tw-text-opacity: 1;
+  color: rgb(252 211 77 / var(--tw-text-opacity, 1));
+}
+
 .accent-blue-500 {
   accent-color: #3b82f6;
 }
@@ -3427,6 +3436,10 @@ video {
   border-color: rgb(39 39 42 / var(--tw-border-opacity, 1));
 }
 
+.hover\:border-amber-400\/40:hover {
+  border-color: rgb(251 191 36 / 0.4);
+}
+
 .hover\:bg-\[rgba\(39\2c 39\2c 42\2c \.84\)\]:hover {
   background-color: rgba(39,39,42,.84);
 }
@@ -3499,6 +3512,10 @@ video {
 
 .hover\:bg-zinc-900\/90:hover {
   background-color: rgb(24 24 27 / 0.9);
+}
+
+.hover\:bg-amber-500\/15:hover {
+  background-color: rgb(245 158 11 / 0.15);
 }
 
 .hover\:text-blue-100:hover {

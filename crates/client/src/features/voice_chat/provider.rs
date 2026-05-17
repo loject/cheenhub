@@ -81,7 +81,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         spawn(async move {
             let mut statuses = status_realtime.subscribe_connection_status();
             while let Some(status) = statuses.next().await {
-                if status == RealtimeConnectionStatus::Disconnected {
+                if matches!(status, RealtimeConnectionStatus::Disconnected) {
                     let mut state = state;
                     state.set(VoiceConnectionState::Disconnected);
                     status_handle.clear_speaking_users();
