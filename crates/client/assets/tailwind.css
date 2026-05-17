@@ -777,6 +777,27 @@ video {
   animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both 0.48s;
 }
 
+.bar {
+  display: inline-block;
+  width: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: pulse-bar 0.85s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+.bar:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.bar:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.bar:nth-child(4) {
+  animation-delay: 0.45s;
+}
+
 .glow-ring {
   position: absolute;
   inset: -3px;
@@ -986,6 +1007,10 @@ video {
 
 .top-full {
   top: 100%;
+}
+
+.top-16 {
+  top: 4rem;
 }
 
 .z-0 {
@@ -1279,6 +1304,10 @@ video {
   height: 100vh;
 }
 
+.h-\[520px\] {
+  height: 520px;
+}
+
 .max-h-0 {
   max-height: 0px;
 }
@@ -1462,6 +1491,10 @@ video {
 .w-max {
   width: -moz-max-content;
   width: max-content;
+}
+
+.w-\[820px\] {
+  width: 820px;
 }
 
 .min-w-0 {
@@ -1734,6 +1767,10 @@ video {
 
 .gap-8 {
   gap: 2rem;
+}
+
+.gap-10 {
+  gap: 2.5rem;
 }
 
 .space-y-1 > :not([hidden]) ~ :not([hidden]) {
@@ -2191,6 +2228,10 @@ video {
   background-color: rgb(9 9 11 / 0.95);
 }
 
+.bg-zinc-950\/75 {
+  background-color: rgb(9 9 11 / 0.75);
+}
+
 .bg-gradient-to-r {
   background-image: linear-gradient(to right, var(--tw-gradient-stops));
 }
@@ -2353,6 +2394,11 @@ video {
   padding-bottom: 2rem;
 }
 
+.py-12 {
+  padding-top: 3rem;
+  padding-bottom: 3rem;
+}
+
 .pb-16 {
   padding-bottom: 4rem;
 }
@@ -2407,6 +2453,14 @@ video {
 
 .pt-6 {
   padding-top: 1.5rem;
+}
+
+.pb-4 {
+  padding-bottom: 1rem;
+}
+
+.pt-4 {
+  padding-top: 1rem;
 }
 
 .text-left {
@@ -2738,6 +2792,11 @@ video {
 .text-zinc-950 {
   --tw-text-opacity: 1;
   color: rgb(9 9 11 / var(--tw-text-opacity, 1));
+}
+
+.text-blue-300 {
+  --tw-text-opacity: 1;
+  color: rgb(147 197 253 / var(--tw-text-opacity, 1));
 }
 
 .accent-blue-500 {
@@ -3698,6 +3757,11 @@ video {
     font-size: 3rem;
     line-height: 1;
   }
+
+  .sm\:text-6xl {
+    font-size: 3.75rem;
+    line-height: 1;
+  }
 }
 
 @media (min-width: 768px) {
@@ -3743,6 +3807,10 @@ video {
     grid-template-columns: minmax(0,1fr) 420px;
   }
 
+  .lg\:grid-cols-\[minmax\(0\2c 1fr\)_360px\] {
+    grid-template-columns: minmax(0,1fr) 360px;
+  }
+
   .lg\:items-center {
     align-items: center;
   }
@@ -3770,5 +3838,9 @@ video {
 
   .lg\:text-\[60px\] {
     font-size: 60px;
+  }
+
+  .lg\:text-\[80px\] {
+    font-size: 80px;
   }
 }

@@ -7,7 +7,8 @@ mod features;
 mod routes;
 
 use routes::{
-    AppHome, ForgotPassword, Invite, Landing, Login, OAuthCallback, Register, ResetPassword,
+    AppHome, ForgotPassword, Invite, Landing, Login, NotFound, OAuthCallback, Register,
+    ResetPassword,
 };
 
 static TAILWIND_CSS: Asset = asset!(
@@ -41,6 +42,8 @@ enum Route {
     AppHome {},
     #[route("/invite/:code")]
     Invite { code: String },
+    #[route("/:..route")]
+    NotFound { route: Vec<String> },
 }
 
 #[component]
