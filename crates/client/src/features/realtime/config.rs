@@ -5,12 +5,43 @@ use web_transport::ClientBuilder;
 
 use super::error::RealtimeError;
 
+const DEFAULT_API_BASE_URL: &str = "http://127.0.0.1:3000/api";
 const DEFAULT_REALTIME_URL: &str = "https://127.0.0.1:4443/realtime";
 
 /// Returns the configured realtime endpoint URL.
 pub(crate) fn realtime_url() -> Result<Url, RealtimeError> {
     Url::parse(option_env!("CHEENHUB_REALTIME_URL").unwrap_or(DEFAULT_REALTIME_URL))
         .map_err(|error| RealtimeError::new(format!("Invalid realtime URL: {error}")))
+}
+
+/// Returns the configured WebSocket fallback realtime endpoint URL.
+pub(crate) fn realtime_websocket_url() -> Result<Url, RealtimeError> {
+    if let Some(value) = option_env!("CHEENHUB_REALTIME_WS_URL") {
+        return Url::parse(value).map_err(|error| {
+            RealtimeError::new(format!("Invalid realtime WebSocket URL: {error}"))
+        });
+    }
+
+    let mut url = Url::parse(option_env!("CHEENHUB_API_BASE_URL").unwrap_or(DEFAULT_API_BASE_URL))
+        .map_err(|error| RealtimeError::new(format!("Invalid API base URL: {error}")))?;
+    let scheme = match url.scheme() {
+        "http" => "ws",
+        "https" => "wss",
+        scheme => {
+            return Err(RealtimeError::new(format!(
+                "Cannot derive realtime WebSocket URL from {scheme} API URL"
+            )));
+        }
+    };
+    url.set_scheme(scheme).map_err(|_| {
+        RealtimeError::new("Failed to derive realtime WebSocket URL from API base URL")
+    })?;
+    let path = format!("{}/realtime/ws", url.path().trim_end_matches('/'));
+    url.set_path(&path);
+    url.set_query(None);
+    url.set_fragment(None);
+
+    Ok(url)
 }
 
 /// Builds a WebTransport client using either system roots or a configured cert hash.

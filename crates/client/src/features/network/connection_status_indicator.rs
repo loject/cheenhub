@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
-use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
+use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle, RealtimeTransportKind};
 
 /// Renders the current WebTransport connection state.
 #[component]
@@ -22,10 +22,15 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
     });
 
     let (label, tooltip, class) = match status() {
-        RealtimeConnectionStatus::Connected => (
+        RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebTransport) => (
             "Подключен",
-            "Соединение подключено",
+            "Соединение установлено",
             "border-emerald-500/20 bg-emerald-500/10 text-emerald-300 hover:border-emerald-400/35 hover:bg-emerald-500/15",
+        ),
+        RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebSocketFallback) => (
+            "Fallback",
+            "Используется более медленный WebSocket fallback",
+            "border-amber-500/25 bg-amber-500/10 text-amber-300 hover:border-amber-400/40 hover:bg-amber-500/15",
         ),
         RealtimeConnectionStatus::Disconnected => (
             "Отключен",

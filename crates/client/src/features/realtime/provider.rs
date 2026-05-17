@@ -24,14 +24,14 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
         spawn(async move {
             let mut reconnect_delay_ms = RECONNECT_INITIAL_DELAY_MS;
             loop {
-                info!("opening WebTransport realtime session");
+                info!("opening realtime session");
                 let access_token = match auth_api::fresh_access_token().await {
                     Ok(access_token) => access_token,
                     Err(error) => {
                         warn!(
                             %error,
                             delay_ms = reconnect_delay_ms,
-                            "skipping WebTransport connection without access token"
+                            "skipping realtime connection without access token"
                         );
                         TimeoutFuture::new(reconnect_delay_ms).await;
                         reconnect_delay_ms = next_reconnect_delay(reconnect_delay_ms);
@@ -43,12 +43,12 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                     Ok(authenticated) => {
                         info!(
                             user_id = %authenticated.user.id,
-                            "WebTransport realtime session connected"
+                            "realtime session connected"
                         );
                         reconnect_delay_ms = RECONNECT_INITIAL_DELAY_MS;
                         info!(
                             interval_ms = PING_INTERVAL_MS,
-                            "starting WebTransport realtime ping loop"
+                            "starting realtime ping loop"
                         );
                         loop {
                             TimeoutFuture::new(PING_INTERVAL_MS).await;
@@ -57,7 +57,7 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                                 warn!(
                                     %error,
                                     delay_ms = reconnect_delay_ms,
-                                    "WebTransport realtime ping failed; reconnecting"
+                                    "realtime ping failed; reconnecting"
                                 );
                                 break;
                             }
@@ -67,7 +67,7 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                         warn!(
                             %error,
                             delay_ms = reconnect_delay_ms,
-                            "failed to connect WebTransport realtime session"
+                            "failed to connect realtime session"
                         );
                     }
                 }
