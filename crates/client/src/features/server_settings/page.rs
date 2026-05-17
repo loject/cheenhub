@@ -2,11 +2,15 @@
 
 use dioxus::prelude::*;
 
+use super::invites_section::ServerInvitesSettingsSection;
+
 /// Server settings sections shown in the mock settings menu.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ServerSettingsSection {
     /// Server overview section.
     Overview,
+    /// Server invite-link management section.
+    Invites,
     /// Member management section.
     Members,
     /// Role management section.
@@ -29,6 +33,11 @@ const SETTINGS_SECTIONS: &[SettingsSectionMeta] = &[
         kind: ServerSettingsSection::Overview,
         label: "Обзор",
         description: "Название, иконка и базовые сведения",
+    },
+    SettingsSectionMeta {
+        kind: ServerSettingsSection::Invites,
+        label: "Инвайты",
+        description: "Ссылки входа и ограничения",
     },
     SettingsSectionMeta {
         kind: ServerSettingsSection::Members,
@@ -101,25 +110,32 @@ pub(crate) fn ServerSettingsPage(
                         }
                     }
                 }
-                div { class: "mx-auto flex min-h-[calc(100vh-72px)] w-full max-w-[920px] flex-col px-6 py-8",
-                    div { class: "rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-6 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
-                        div { class: "flex items-start justify-between gap-4",
-                            div { class: "min-w-0",
-                                h3 { class: "text-[22px] font-semibold tracking-[-0.04em] text-zinc-50", "{section_label}" }
-                                p { class: "mt-2 max-w-xl text-[13px] leading-6 text-zinc-500", "{section_description}" }
+                div { class: section_container_class(active_section),
+                    match active_section {
+                        ServerSettingsSection::Invites => rsx! {
+                            ServerInvitesSettingsSection { server_name: server_name.clone() }
+                        },
+                        _ => rsx! {
+                            div { class: "rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-6 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
+                                div { class: "flex items-start justify-between gap-4",
+                                    div { class: "min-w-0",
+                                        h3 { class: "text-[22px] font-semibold tracking-[-0.04em] text-zinc-50", "{section_label}" }
+                                        p { class: "mt-2 max-w-xl text-[13px] leading-6 text-zinc-500", "{section_description}" }
+                                    }
+                                    span { class: "shrink-0 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] font-medium text-blue-200", "Макет" }
+                                }
+                                div { class: "mt-6 grid gap-3 sm:grid-cols-2",
+                                    div { class: "rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4",
+                                        p { class: "text-[12px] font-semibold text-zinc-100", "Основной блок" }
+                                        p { class: "mt-2 text-[12px] leading-5 text-zinc-500", "Здесь будет форма с ключевыми настройками выбранной секции." }
+                                    }
+                                    div { class: "rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4",
+                                        p { class: "text-[12px] font-semibold text-zinc-100", "Быстрые действия" }
+                                        p { class: "mt-2 text-[12px] leading-5 text-zinc-500", "Здесь появятся действия, которые администратор выполняет чаще всего." }
+                                    }
+                                }
                             }
-                            span { class: "shrink-0 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] font-medium text-blue-200", "Макет" }
-                        }
-                        div { class: "mt-6 grid gap-3 sm:grid-cols-2",
-                            div { class: "rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4",
-                                p { class: "text-[12px] font-semibold text-zinc-100", "Основной блок" }
-                                p { class: "mt-2 text-[12px] leading-5 text-zinc-500", "Здесь будет форма с ключевыми настройками выбранной секции." }
-                            }
-                            div { class: "rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4",
-                                p { class: "text-[12px] font-semibold text-zinc-100", "Быстрые действия" }
-                                p { class: "mt-2 text-[12px] leading-5 text-zinc-500", "Здесь появятся действия, которые администратор выполняет чаще всего." }
-                            }
-                        }
+                        },
                     }
                 }
             }
@@ -138,6 +154,7 @@ fn settings_item_class(active: bool) -> &'static str {
 fn settings_section_label(section: ServerSettingsSection) -> &'static str {
     match section {
         ServerSettingsSection::Overview => "Обзор",
+        ServerSettingsSection::Invites => "Инвайты",
         ServerSettingsSection::Members => "Участники",
         ServerSettingsSection::Roles => "Роли",
         ServerSettingsSection::Moderation => "Модерация",
@@ -149,6 +166,9 @@ fn settings_section_description(section: ServerSettingsSection) -> &'static str 
     match section {
         ServerSettingsSection::Overview => {
             "Макет секции для общего управления сервером: название, визуальные настройки и короткое описание."
+        }
+        ServerSettingsSection::Invites => {
+            "Просмотр активных приглашений, лимитов использования и быстрые действия со ссылками."
         }
         ServerSettingsSection::Members => {
             "Макет секции для просмотра участников, поиска людей и будущих действий модерации."
@@ -162,5 +182,14 @@ fn settings_section_description(section: ServerSettingsSection) -> &'static str 
         ServerSettingsSection::Voice => {
             "Макет секции для параметров голосовых комнат, качества соединения и лимитов участников."
         }
+    }
+}
+
+fn section_container_class(section: ServerSettingsSection) -> &'static str {
+    match section {
+        ServerSettingsSection::Invites => {
+            "mx-auto min-h-[calc(100vh-72px)] w-full max-w-[1180px] px-6 py-6"
+        }
+        _ => "mx-auto flex min-h-[calc(100vh-72px)] w-full max-w-[920px] flex-col px-6 py-8",
     }
 }
