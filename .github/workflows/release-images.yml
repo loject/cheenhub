@@ -11,6 +11,7 @@ permissions:
   packages: write
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   CHEENHUB_DOMAIN: ${{ vars.CHEENHUB_DOMAIN || 'cheenhub.ru' }}
   CHEENHUB_API_BASE_URL: ${{ vars.CHEENHUB_API_BASE_URL || 'https://cheenhub.ru/api' }}
   CHEENHUB_REALTIME_URL: ${{ vars.CHEENHUB_REALTIME_URL || 'https://cheenhub.ru/realtime' }}
@@ -34,6 +35,14 @@ jobs:
           repo="${GITHUB_REPOSITORY,,}"
           echo "backend=ghcr.io/${repo}/backend" >> "$GITHUB_OUTPUT"
           echo "web=ghcr.io/${repo}/web" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release configuration
+        shell: bash
+        run: |
+          if [[ -z "${CHEENHUB_JWT_PUBLIC_KEY_BASE64}" ]]; then
+            echo "CHEENHUB_JWT_PUBLIC_KEY_BASE64 repository variable is required for production frontend builds." >&2
+            exit 1
+          fi
 
       - name: Login to GHCR
         uses: docker/login-action@v3
