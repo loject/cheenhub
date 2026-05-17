@@ -4,6 +4,7 @@ FROM rust:1.92-bookworm AS source
 WORKDIR /app
 
 FROM source AS backend-builder
+COPY .cargo ./.cargo
 COPY Cargo.toml Cargo.lock Dioxus.toml ./
 COPY build_support ./build_support
 COPY crates ./crates
@@ -22,6 +23,7 @@ RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/regist
     && CARGO_TARGET_DIR=/tmp/dioxus-cli-target cargo install dioxus-cli --version 0.7.5 --locked
 
 FROM web-tools AS web-builder
+COPY .cargo ./.cargo
 COPY Cargo.toml Cargo.lock Dioxus.toml ./
 COPY build_support ./build_support
 COPY crates ./crates
