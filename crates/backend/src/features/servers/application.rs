@@ -19,7 +19,12 @@ use self::support::{
     server_for_member_or_owner, server_summary,
 };
 
+mod invite_settings;
 mod support;
+
+pub(crate) use invite_settings::{
+    kick_server_invite_member, list_server_invites, revoke_server_invite,
+};
 
 /// Creates a server owned by the current user.
 pub(crate) async fn create(
@@ -149,6 +154,9 @@ pub(crate) async fn invite_info(
             "Срок действия приглашения истек.".to_owned(),
         ));
     }
+    if invite.revoked_at.is_some() {
+        return Err(ServerError::BadRequest("Приглашение отозвано.".to_owned()));
+    }
 
     let Some(server) = state
         .server_store
@@ -211,6 +219,9 @@ pub(crate) async fn accept_invite(
         return Err(ServerError::BadRequest(
             "Срок действия приглашения истек.".to_owned(),
         ));
+    }
+    if invite.revoked_at.is_some() {
+        return Err(ServerError::BadRequest("Приглашение отозвано.".to_owned()));
     }
 
     let Some(server) = state

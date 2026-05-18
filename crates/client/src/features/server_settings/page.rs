@@ -64,6 +64,7 @@ const SETTINGS_SECTIONS: &[SettingsSectionMeta] = &[
 /// Renders a mock server settings workspace.
 #[component]
 pub(crate) fn ServerSettingsPage(
+    server_id: String,
     server_name: String,
     active_section: ServerSettingsSection,
     on_select_section: EventHandler<ServerSettingsSection>,
@@ -113,7 +114,10 @@ pub(crate) fn ServerSettingsPage(
                 div { class: section_container_class(active_section),
                     match active_section {
                         ServerSettingsSection::Invites => rsx! {
-                            ServerInvitesSettingsSection { server_name: server_name.clone() }
+                            ServerInvitesSettingsSection {
+                                server_id: server_id.clone(),
+                                server_name: server_name.clone(),
+                            }
                         },
                         _ => rsx! {
                             div { class: "rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-6 shadow-[0_18px_60px_rgba(0,0,0,.22)]",

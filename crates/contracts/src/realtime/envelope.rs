@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use super::control::ControlKind;
 use super::network::NetworkKind;
+use super::server::ServerKind;
 use super::text_chat::TextChatKind;
 use super::voice_chat::VoiceChatKind;
 
@@ -17,6 +18,8 @@ pub enum RealtimeModule {
     Control,
     /// Connection quality measurement messages.
     Network,
+    /// Server management messages and events.
+    Server,
     /// Text chat messages and events.
     TextChat,
     /// Voice chat presence messages and events.
@@ -30,6 +33,8 @@ pub enum RealtimeKind {
     Control(ControlKind),
     /// Network module message kind.
     Network(NetworkKind),
+    /// Server management module message kind.
+    Server(ServerKind),
     /// Text chat module message kind.
     TextChat(TextChatKind),
     /// Voice chat presence module message kind.
@@ -42,6 +47,7 @@ impl RealtimeKind {
         match self {
             Self::Control(_) => RealtimeModule::Control,
             Self::Network(_) => RealtimeModule::Network,
+            Self::Server(_) => RealtimeModule::Server,
             Self::TextChat(_) => RealtimeModule::TextChat,
             Self::VoiceChat(_) => RealtimeModule::VoiceChat,
         }
@@ -56,6 +62,7 @@ impl Serialize for RealtimeKind {
         match self {
             Self::Control(kind) => kind.serialize(serializer),
             Self::Network(kind) => kind.serialize(serializer),
+            Self::Server(kind) => kind.serialize(serializer),
             Self::TextChat(kind) => kind.serialize(serializer),
             Self::VoiceChat(kind) => kind.serialize(serializer),
         }
@@ -74,6 +81,9 @@ impl<'de> Deserialize<'de> for RealtimeKind {
         }
         if let Ok(kind) = NetworkKind::deserialize(value.clone()) {
             return Ok(Self::Network(kind));
+        }
+        if let Ok(kind) = ServerKind::deserialize(value.clone()) {
+            return Ok(Self::Server(kind));
         }
         if let Ok(kind) = TextChatKind::deserialize(value.clone()) {
             return Ok(Self::TextChat(kind));

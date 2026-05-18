@@ -111,6 +111,7 @@ impl ServerStore for InMemoryServerStore {
             max_uses,
             expires_at,
             created_at: Utc::now(),
+            revoked_at: None,
         };
 
         state.invites.push(invite.clone());
@@ -126,6 +127,55 @@ impl ServerStore for InMemoryServerStore {
             .iter()
             .find(|invite| invite.id == *code)
             .cloned())
+    }
+
+    async fn list_server_invites(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerInvite>> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+        let mut invites = state
+            .invites
+            .iter()
+            .filter(|invite| invite.server_id == *server_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        invites.sort_by_key(|invite| std::cmp::Reverse(invite.created_at));
+
+        Ok(invites)
+    }
+
+    async fn list_server_invite_uses(
+        &self,
+        invite_ids: &[Uuid],
+    ) -> anyhow::Result<Vec<ServerInviteUse>> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+        let mut uses = state
+            .invite_uses
+            .iter()
+            .filter(|invite_use| invite_ids.contains(&invite_use.invite_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        uses.sort_by_key(|invite_use| std::cmp::Reverse(invite_use.used_at));
+
+        Ok(uses)
+    }
+
+    async fn revoke_server_invite(
+        &self,
+        server_id: &Uuid,
+        invite_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerInvite>> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+        let Some(invite) = state
+            .invites
+            .iter_mut()
+            .find(|invite| invite.server_id == *server_id && invite.id == *invite_id)
+        else {
+            return Ok(None);
+        };
+        if invite.revoked_at.is_none() {
+            invite.revoked_at = Some(Utc::now());
+        }
+
+        Ok(Some(invite.clone()))
     }
 
     async fn find_server(&self, server_id: &Uuid) -> anyhow::Result<Option<Server>> {

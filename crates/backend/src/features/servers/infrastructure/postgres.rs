@@ -116,6 +116,7 @@ impl ServerStore for PostgresServerStore {
             max_uses: Set(max_uses.map(|value| value as i32)),
             expires_at: Set(expires_at),
             created_at: Set(created_at),
+            revoked_at: Set(None),
         }
         .insert(&self.database)
         .await?;
@@ -128,6 +129,57 @@ impl ServerStore for PostgresServerStore {
             .one(&self.database)
             .await?
             .map(Into::into))
+    }
+
+    async fn list_server_invites(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerInvite>> {
+        Ok(server_invites::Entity::find()
+            .filter(server_invites::Column::ServerId.eq(*server_id))
+            .order_by_desc(server_invites::Column::CreatedAt)
+            .all(&self.database)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    async fn list_server_invite_uses(
+        &self,
+        invite_ids: &[Uuid],
+    ) -> anyhow::Result<Vec<ServerInviteUse>> {
+        if invite_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        Ok(server_invite_uses::Entity::find()
+            .filter(server_invite_uses::Column::InviteId.is_in(invite_ids.iter().copied()))
+            .order_by_desc(server_invite_uses::Column::UsedAt)
+            .all(&self.database)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    async fn revoke_server_invite(
+        &self,
+        server_id: &Uuid,
+        invite_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerInvite>> {
+        let Some(invite) = server_invites::Entity::find()
+            .filter(server_invites::Column::ServerId.eq(*server_id))
+            .filter(server_invites::Column::Id.eq(*invite_id))
+            .one(&self.database)
+            .await?
+        else {
+            return Ok(None);
+        };
+        if invite.revoked_at.is_some() {
+            return Ok(Some(invite.into()));
+        }
+
+        let mut invite = invite.into_active_model();
+        invite.revoked_at = Set(Some(Utc::now()));
+        Ok(Some(invite.update(&self.database).await?.into()))
     }
 
     async fn find_server(&self, server_id: &Uuid) -> anyhow::Result<Option<Server>> {
@@ -366,6 +418,7 @@ impl From<server_invites::Model> for ServerInvite {
             max_uses: row.max_uses.map(|value| value as u32),
             expires_at: row.expires_at,
             created_at: row.created_at,
+            revoked_at: row.revoked_at,
         }
     }
 }

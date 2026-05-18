@@ -7,15 +7,8 @@ use super::invites_data::{InviteLink, InviteStatus};
 /// User intent emitted by an invite list item.
 #[derive(Clone, PartialEq)]
 pub(super) enum InviteListItemAction {
-    /// Copy the invite code.
-    CopyLink {
-        /// Invite code shown in the UI.
-        invite_code: String,
-    },
-    /// Toggle invite availability.
-    ToggleStatus {
-        /// Stable invite row id.
-        invite_id: String,
+    /// Copy the invite link.
+    CopyInvite {
         /// Invite code shown in the UI.
         invite_code: String,
     },
@@ -70,6 +63,24 @@ pub(super) fn InviteListItem(
                     div { class: "min-w-0",
                         div { class: "flex flex-wrap items-center gap-2",
                             p { class: "break-all font-mono text-[13px] font-semibold text-zinc-100", "{invite.code}" }
+                            button {
+                                r#type: "button",
+                                class: "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-500 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-200",
+                                "aria-label": "Скопировать ссылку приглашения",
+                                onclick: {
+                                    let invite_code = invite.code.clone();
+                                    move |event| {
+                                        event.stop_propagation();
+                                        on_action.call(InviteListItemAction::CopyInvite {
+                                            invite_code: invite_code.clone(),
+                                        });
+                                    }
+                                },
+                                svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                                    rect { x: "8", y: "8", width: "11", height: "11", rx: "2", ry: "2" }
+                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" }
+                                }
+                            }
                             span { class: status_badge_class(invite.status), "{status_label(invite.status)}" }
                         }
                         p { class: "mt-1 text-[11px] leading-4 text-zinc-500",
@@ -80,40 +91,23 @@ pub(super) fn InviteListItem(
                 div { class: "flex shrink-0 flex-wrap gap-2",
                     button {
                         r#type: "button",
-                        class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100",
-                        onclick: {
-                            let invite_code = invite.code.clone();
-                            move |_| on_action.call(InviteListItemAction::CopyLink {
-                                invite_code: invite_code.clone(),
-                            })
-                        },
-                        "Копировать"
-                    }
-                    button {
-                        r#type: "button",
-                        class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100",
+                        disabled: invite.status == InviteStatus::Revoked,
+                        class: revoke_button_class(invite.status),
                         onclick: {
                             let invite_id = invite.id.clone();
                             let invite_code = invite.code.clone();
-                            move |_| on_action.call(InviteListItemAction::ToggleStatus {
-                                invite_id: invite_id.clone(),
-                                invite_code: invite_code.clone(),
-                            })
+                            let invite_status = invite.status;
+                            move |_| {
+                                if invite_status == InviteStatus::Revoked {
+                                    return;
+                                }
+                                on_action.call(InviteListItemAction::RemoveInvite {
+                                    invite_id: invite_id.clone(),
+                                    invite_code: invite_code.clone(),
+                                });
+                            }
                         },
-                        "{toggle_label(invite.status)}"
-                    }
-                    button {
-                        r#type: "button",
-                        class: "flex h-9 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/10 px-3 text-[12px] font-medium text-red-200 transition hover:border-red-500/35 hover:bg-red-500/15",
-                        onclick: {
-                            let invite_id = invite.id.clone();
-                            let invite_code = invite.code.clone();
-                            move |_| on_action.call(InviteListItemAction::RemoveInvite {
-                                invite_id: invite_id.clone(),
-                                invite_code: invite_code.clone(),
-                            })
-                        },
-                        "Отозвать"
+                        "{revoke_button_label(invite.status)}"
                     }
                 }
             }
@@ -149,22 +143,28 @@ pub(super) fn InviteListItem(
                         }
                     } else {
                         div { class: "mt-3 max-h-64 space-y-2 overflow-y-auto pr-1",
-                            for member in invite.joined_members {
+                            for member in invite.joined_members.iter() {
                                 div {
                                     key: "{member.id}",
                                     class: "flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/45 px-3 py-2",
                                     oncontextmenu: {
                                         let invite_id = invite.id.clone();
                                         let invite_code = invite.code.clone();
+                                        let member_id = member.id.clone();
+                                        let member_name = member.name.clone();
+                                        let is_active_member = member.is_active_member;
                                         move |event| {
+                                            if !is_active_member {
+                                                return;
+                                            }
                                             event.prevent_default();
                                             event.stop_propagation();
                                             let point = event.client_coordinates();
                                             on_action.call(InviteListItemAction::OpenMemberMenu {
                                                 invite_id: invite_id.clone(),
                                                 invite_code: invite_code.clone(),
-                                                member_id: member.id.to_owned(),
-                                                member_name: member.name.to_owned(),
+                                                member_id: member_id.clone(),
+                                                member_name: member_name.clone(),
                                                 x: point.x,
                                                 y: point.y,
                                             });
@@ -176,29 +176,35 @@ pub(super) fn InviteListItem(
                                     }
                                     div { class: "flex shrink-0 items-center gap-2",
                                         p { class: "text-right text-[11px] text-zinc-500", "{member.joined_at}" }
-                                        button {
-                                            r#type: "button",
-                                            class: "flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-200",
-                                            "aria-label": "Меню участника",
-                                            onclick: {
-                                                let invite_id = invite.id.clone();
-                                                let invite_code = invite.code.clone();
-                                                move |event| {
-                                                    event.stop_propagation();
-                                                    let point = event.client_coordinates();
-                                                    on_action.call(InviteListItemAction::OpenMemberMenu {
-                                                        invite_id: invite_id.clone(),
-                                                        invite_code: invite_code.clone(),
-                                                        member_id: member.id.to_owned(),
-                                                        member_name: member.name.to_owned(),
-                                                        x: point.x,
-                                                        y: point.y,
-                                                    });
+                                        if member.is_active_member {
+                                            button {
+                                                r#type: "button",
+                                                class: "flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-200",
+                                                "aria-label": "Меню участника",
+                                                onclick: {
+                                                    let invite_id = invite.id.clone();
+                                                    let invite_code = invite.code.clone();
+                                                    let member_id = member.id.clone();
+                                                    let member_name = member.name.clone();
+                                                    move |event| {
+                                                        event.stop_propagation();
+                                                        let point = event.client_coordinates();
+                                                        on_action.call(InviteListItemAction::OpenMemberMenu {
+                                                            invite_id: invite_id.clone(),
+                                                            invite_code: invite_code.clone(),
+                                                            member_id: member_id.clone(),
+                                                            member_name: member_name.clone(),
+                                                            x: point.x,
+                                                            y: point.y,
+                                                        });
+                                                    }
+                                                },
+                                                svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
+                                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" }
                                                 }
-                                            },
-                                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
-                                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" }
                                             }
+                                        } else {
+                                            span { class: "rounded-full border border-zinc-800 bg-zinc-950 px-2 py-1 text-[10px] font-medium text-zinc-500", "Исключен" }
                                         }
                                     }
                                 }
@@ -233,7 +239,7 @@ fn invite_icon_class(status: InviteStatus) -> &'static str {
         InviteStatus::Active => {
             "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-blue-200"
         }
-        InviteStatus::Paused => {
+        InviteStatus::Revoked => {
             "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500"
         }
     }
@@ -244,7 +250,7 @@ fn status_badge_class(status: InviteStatus) -> &'static str {
         InviteStatus::Active => {
             "rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-200"
         }
-        InviteStatus::Paused => {
+        InviteStatus::Revoked => {
             "rounded-full border border-zinc-700 bg-zinc-950 px-2 py-0.5 text-[10px] font-medium text-zinc-400"
         }
     }
@@ -253,14 +259,25 @@ fn status_badge_class(status: InviteStatus) -> &'static str {
 fn status_label(status: InviteStatus) -> &'static str {
     match status {
         InviteStatus::Active => "Активна",
-        InviteStatus::Paused => "Приостановлена",
+        InviteStatus::Revoked => "Отозвана",
     }
 }
 
-fn toggle_label(status: InviteStatus) -> &'static str {
+fn revoke_button_class(status: InviteStatus) -> &'static str {
     match status {
-        InviteStatus::Active => "Пауза",
-        InviteStatus::Paused => "Возобновить",
+        InviteStatus::Active => {
+            "flex h-9 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/10 px-3 text-[12px] font-medium text-red-200 transition hover:border-red-500/35 hover:bg-red-500/15"
+        }
+        InviteStatus::Revoked => {
+            "flex h-9 cursor-not-allowed items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-500"
+        }
+    }
+}
+
+fn revoke_button_label(status: InviteStatus) -> &'static str {
+    match status {
+        InviteStatus::Active => "Отозвать",
+        InviteStatus::Revoked => "Восстановить",
     }
 }
 
@@ -281,6 +298,6 @@ fn remaining_text(uses: u32, max_uses: Option<u32>) -> String {
 fn access_text(status: InviteStatus) -> String {
     match status {
         InviteStatus::Active => "доступна для входа".to_owned(),
-        InviteStatus::Paused => "вход закрыт".to_owned(),
+        InviteStatus::Revoked => "отозвана".to_owned(),
     }
 }

@@ -9,8 +9,9 @@ use cheenhub_contracts::rest::{
 use uuid::Uuid;
 
 use super::{
-    accept_invite, create, create_invite, create_room, delete_room, invite_info, leave, list,
-    list_rooms, update_room,
+    accept_invite, create, create_invite, create_room, delete_room, invite_info,
+    kick_server_invite_member, leave, list, list_rooms, list_server_invites, revoke_server_invite,
+    update_room,
 };
 use crate::features::auth::application as auth_application;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
@@ -22,6 +23,7 @@ use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
 
 mod invite_errors;
+mod invite_settings;
 mod invites;
 mod rooms_and_list;
 

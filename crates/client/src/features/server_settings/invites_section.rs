@@ -3,7 +3,9 @@
 use dioxus::prelude::*;
 
 use super::invite_list_item::{InviteListItem, InviteListItemAction};
-use super::invites_data::{InviteStatus, mock_invites};
+use super::invites_data::{InviteLink, InviteStatus, invite_from_realtime};
+use super::realtime;
+use crate::features::realtime::RealtimeHandle;
 
 #[derive(Clone, PartialEq)]
 struct MemberMenuState {
@@ -17,18 +19,66 @@ struct MemberMenuState {
 
 /// Renders server invite-link viewing and management controls.
 #[component]
-pub(crate) fn ServerInvitesSettingsSection(server_name: String) -> Element {
-    let mut invites = use_signal(mock_invites);
+pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: String) -> Element {
+    let realtime_handle = use_context::<RealtimeHandle>();
+    let mut invites = use_signal(|| None::<Vec<InviteLink>>);
     let mut only_active = use_signal(|| true);
-    let mut status_message = use_signal(String::new);
+    let mut load_error = use_signal(String::new);
+    let mut pending_action = use_signal(|| None::<String>);
+    let mut refresh_requested = use_signal(|| false);
     let mut expanded_usage_invite = use_signal(|| None::<String>);
     let mut open_member_menu = use_signal(|| None::<MemberMenuState>);
-    let all_invites = invites();
+    let load_server_id = server_id.clone();
+    let load_realtime_handle = realtime_handle.clone();
+    let mut invite_load = use_resource(move || {
+        let realtime_handle = load_realtime_handle.clone();
+        let request_server_id = load_server_id.clone();
+
+        async move { realtime::list_server_invites(&realtime_handle, request_server_id).await }
+    });
+    let invite_load_result = invite_load.read().clone();
+    use_effect(move || {
+        if invites().is_some() {
+            return;
+        }
+
+        let Some(result) = invite_load.read().clone() else {
+            return;
+        };
+
+        match result {
+            Ok(response) => {
+                invites.set(Some(
+                    response
+                        .invites
+                        .into_iter()
+                        .map(invite_from_realtime)
+                        .collect(),
+                ));
+                if refresh_requested() {
+                    // TODO: show invite list refresh success in a toast when toasts are available.
+                    info!(
+                        server_id = %response.server_id,
+                        "refreshed server invite links in settings ui"
+                    );
+                }
+                refresh_requested.set(false);
+                load_error.set(String::new());
+            }
+            Err(error) => {
+                load_error.set(error.to_string());
+                refresh_requested.set(false);
+            }
+        }
+    });
+
+    let all_invites = invites().unwrap_or_default();
+    let is_loading = invites().is_none() && invite_load_result.is_none();
     let active_count = all_invites
         .iter()
         .filter(|invite| invite.status == InviteStatus::Active)
         .count();
-    let paused_count = all_invites.len().saturating_sub(active_count);
+    let revoked_count = all_invites.len().saturating_sub(active_count);
     let visible_invites = all_invites
         .iter()
         .filter(|invite| !only_active() || invite.status == InviteStatus::Active)
@@ -53,8 +103,8 @@ pub(crate) fn ServerInvitesSettingsSection(server_name: String) -> Element {
                             p { class: "mt-0.5 text-[16px] font-semibold text-zinc-100", "{active_count}" }
                         }
                         div { class: "rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 py-2",
-                            p { class: "text-[11px] text-zinc-500", "Приостановлены" }
-                            p { class: "mt-0.5 text-[16px] font-semibold text-zinc-100", "{paused_count}" }
+                            p { class: "text-[11px] text-zinc-500", "Отозваны" }
+                            p { class: "mt-0.5 text-[16px] font-semibold text-zinc-100", "{revoked_count}" }
                         }
                     }
                 }
@@ -66,18 +116,52 @@ pub(crate) fn ServerInvitesSettingsSection(server_name: String) -> Element {
                         h4 { class: "text-[15px] font-semibold text-zinc-50", "Действующие приглашения" }
                         p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Отслеживай использование и отключай ссылки, которые больше не нужны." }
                     }
-                    label { class: "flex min-h-9 cursor-pointer items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 text-[12px] font-medium text-zinc-300",
-                        input {
-                            r#type: "checkbox",
-                            checked: only_active(),
-                            onchange: move |event| only_active.set(event.checked()),
-                            class: "h-4 w-4 rounded bg-zinc-950 accent-blue-500"
+                    div { class: "flex flex-wrap items-center gap-2",
+                        button {
+                            r#type: "button",
+                            disabled: is_loading || pending_action().is_some(),
+                            class: refresh_button_class(is_loading || pending_action().is_some()),
+                            onclick: move |_| {
+                                if is_loading || pending_action().is_some() {
+                                    return;
+                                }
+
+                                load_error.set(String::new());
+                                refresh_requested.set(true);
+                                invites.set(None);
+                                open_member_menu.set(None);
+                                invite_load.clear();
+                                invite_load.restart();
+                                info!("refreshing server invite links in settings ui");
+                            },
+                            svg { class: if is_loading { "h-4 w-4 animate-spin" } else { "h-4 w-4" }, fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" }
+                            }
+                            "Обновить"
                         }
-                        span { "Только активные" }
+                        label { class: "flex min-h-9 cursor-pointer items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 text-[12px] font-medium text-zinc-300",
+                            input {
+                                r#type: "checkbox",
+                                checked: only_active(),
+                                onchange: move |event| only_active.set(event.checked()),
+                                class: "h-4 w-4 rounded bg-zinc-950 accent-blue-500"
+                            }
+                            span { "Только активные" }
+                        }
                     }
                 }
 
-                if visible_invites.is_empty() {
+                if is_loading {
+                    div { class: "mt-4 space-y-2",
+                        div { class: "h-[104px] animate-pulse rounded-2xl border border-zinc-800 bg-zinc-900/55" }
+                        div { class: "h-[104px] animate-pulse rounded-2xl border border-zinc-800 bg-zinc-900/40" }
+                    }
+                } else if !load_error().is_empty() && invites().is_none() {
+                    div { class: "mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-4",
+                        p { class: "text-[13px] font-medium text-red-100", "Не удалось загрузить приглашения" }
+                        p { class: "mt-1 text-[12px] leading-5 text-red-200", "{load_error()}" }
+                    }
+                } else if visible_invites.is_empty() {
                     div { class: "mt-4 rounded-2xl border border-zinc-800 bg-zinc-900/45 p-5",
                         div { class: "flex max-w-lg flex-col gap-3",
                             span { class: "flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500",
@@ -98,60 +182,87 @@ pub(crate) fn ServerInvitesSettingsSection(server_name: String) -> Element {
                                 key: "{invite.id}",
                                 invite: invite.clone(),
                                 usage_expanded: expanded_usage_invite().as_deref() == Some(invite.id.as_str()),
-                                on_action: move |action| {
+                                on_action: {
+                                    let action_realtime_handle = realtime_handle.clone();
+                                    let action_server_id = server_id.clone();
+                                    move |action| {
                                     match action {
-                                        InviteListItemAction::CopyLink { invite_code } => {
-                                            status_message.set(format!("Ссылка {invite_code} готова для копирования."));
-                                            info!(
-                                                invite_code = %invite_code,
-                                                "selected server invite link for copying in settings ui"
-                                            );
-                                        }
-                                        InviteListItemAction::ToggleStatus { invite_id, invite_code } => {
-                                            let next_status = invites()
-                                                .into_iter()
-                                                .find(|existing| existing.id == invite_id)
-                                                .map(|existing| {
-                                                    if existing.status == InviteStatus::Active {
-                                                        InviteStatus::Paused
-                                                    } else {
-                                                        InviteStatus::Active
-                                                    }
-                                                })
-                                                .unwrap_or(InviteStatus::Active);
-                                            invites.set(
-                                                invites()
-                                                    .into_iter()
-                                                    .map(|mut existing| {
-                                                        if existing.id == invite_id {
-                                                            existing.status = next_status;
+                                        InviteListItemAction::CopyInvite { invite_code } => {
+                                            match clipboard_copy_invite_link(invite_code.clone()) {
+                                                Ok(copy) => {
+                                                    spawn(async move {
+                                                        match copy.await {
+                                                            Ok(()) => {
+                                                                // TODO: show invite copy success in a toast when toasts are available.
+                                                                info!(
+                                                                    invite_code = %invite_code,
+                                                                    "copied server invite link in settings ui"
+                                                                );
+                                                            }
+                                                            Err(error) => {
+                                                                // TODO: show invite copy failure in a toast when toasts are available.
+                                                                warn!(
+                                                                    %error,
+                                                                    invite_code = %invite_code,
+                                                                    "failed to copy server invite link in settings ui"
+                                                                );
+                                                            }
                                                         }
-                                                        existing
-                                                    })
-                                                    .collect::<Vec<_>>(),
-                                            );
-                                            status_message.set(format!(
-                                                "Статус ссылки {invite_code}: {}.",
-                                                status_label(next_status)
-                                            ));
-                                            info!(
-                                                invite_code = %invite_code,
-                                                status = status_label(next_status),
-                                                "changed local server invite link status in settings ui"
-                                            );
+                                                    });
+                                                }
+                                                Err(error) => {
+                                                    // TODO: show invite copy preparation failure in a toast when toasts are available.
+                                                    warn!(
+                                                        %error,
+                                                        invite_code = %invite_code,
+                                                        "failed to prepare server invite link copying in settings ui"
+                                                    );
+                                                }
+                                            }
                                         }
                                         InviteListItemAction::RemoveInvite { invite_id, invite_code } => {
-                                            invites.set(
-                                                invites()
-                                                    .into_iter()
-                                                    .filter(|existing| existing.id != invite_id)
-                                                    .collect::<Vec<_>>(),
-                                            );
-                                            status_message.set(format!("Ссылка {invite_code} отозвана."));
-                                            info!(
-                                                invite_code = %invite_code,
-                                                "removed local server invite link in settings ui"
-                                            );
+                                            if pending_action().is_some() {
+                                                return;
+                                            }
+
+                                            pending_action.set(Some(format!("Отзываем ссылку {invite_code}...")));
+                                            let action_realtime = action_realtime_handle.clone();
+                                            let action_server_id = action_server_id.clone();
+                                            let revoked_invite_id = invite_id.clone();
+                                            let revoked_invite_code = invite_code.clone();
+                                            spawn(async move {
+                                                match realtime::revoke_server_invite(
+                                                    &action_realtime,
+                                                    action_server_id,
+                                                    revoked_invite_code.clone(),
+                                                )
+                                                .await
+                                                {
+                                                    Ok(response) => {
+                                                        invites.set(Some(
+                                                            invites()
+                                                                .unwrap_or_default()
+                                                                .into_iter()
+                                                                .filter(|existing| existing.id != revoked_invite_id)
+                                                                .collect::<Vec<_>>(),
+                                                        ));
+                                                        pending_action.set(None);
+                                                        // TODO: show invite revoke success in a toast when toasts are available.
+                                                        info!(
+                                                            invite_code = %response.code,
+                                                            "revoked server invite link in settings ui"
+                                                        );
+                                                    }
+                                                    Err(error) => {
+                                                        pending_action.set(None);
+                                                        // TODO: show invite revoke failure in a toast when toasts are available.
+                                                        warn!(
+                                                            %error,
+                                                            "failed to revoke server invite link in settings ui"
+                                                        );
+                                                    }
+                                                }
+                                            });
                                         }
                                         InviteListItemAction::ToggleUsage { invite_id, invite_code } => {
                                             if expanded_usage_invite().as_deref() == Some(invite_id.as_str()) {
@@ -186,17 +297,19 @@ pub(crate) fn ServerInvitesSettingsSection(server_name: String) -> Element {
                                             }));
                                         }
                                     }
+                                    }
                                 },
                             }
                         }
                     }
                 }
 
-                if !status_message().is_empty() {
-                    p { class: "mt-4 rounded-xl border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-[12px] leading-5 text-zinc-300",
-                        "{status_message()}"
+                if let Some(action) = pending_action() {
+                    p { class: "mt-4 rounded-xl border border-accent/20 bg-accent/10 px-3 py-2 text-[12px] leading-5 text-blue-100",
+                        "{action}"
                     }
                 }
+
             }
 
             if let Some(menu) = open_member_menu() {
@@ -218,32 +331,72 @@ pub(crate) fn ServerInvitesSettingsSection(server_name: String) -> Element {
                         r#type: "button",
                         class: "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:bg-red-500/10 hover:text-red-200",
                         onclick: {
+                            let action_realtime_handle = realtime_handle.clone();
+                            let action_server_id = server_id.clone();
                             let invite_id = menu.invite_id.clone();
                             let invite_code = menu.invite_code.clone();
                             let member_id = menu.member_id.clone();
                             let member_name = menu.member_name.clone();
                             move |_| {
-                                invites.set(
-                                    invites()
-                                        .into_iter()
-                                        .map(|mut invite| {
-                                            if invite.id == invite_id {
-                                                invite
-                                                    .joined_members
-                                                    .retain(|member| member.id != member_id.as_str());
-                                            }
-                                            invite
-                                        })
-                                        .collect::<Vec<_>>(),
-                                );
-                                status_message.set(format!("{member_name} исключен с сервера."));
+                                if pending_action().is_some() {
+                                    return;
+                                }
+
+                                pending_action.set(Some(format!("Исключаем {member_name}...")));
                                 open_member_menu.set(None);
-                                info!(
-                                    invite_code = %invite_code,
-                                    member_id = %member_id,
-                                    member_name = %member_name,
-                                    "kicked server invite member in settings ui"
-                                );
+                                let action_realtime = action_realtime_handle.clone();
+                                let action_server_id = action_server_id.clone();
+                                let kicked_invite_id = invite_id.clone();
+                                let kicked_invite_code = invite_code.clone();
+                                let kicked_member_id = member_id.clone();
+                                let kicked_member_name = member_name.clone();
+                                spawn(async move {
+                                    match realtime::kick_server_invite_member(
+                                        &action_realtime,
+                                        action_server_id,
+                                        kicked_invite_code.clone(),
+                                        kicked_member_id.clone(),
+                                    )
+                                    .await
+                                    {
+                                        Ok(response) => {
+                                            invites.set(Some(
+                                                invites()
+                                                    .unwrap_or_default()
+                                                    .into_iter()
+                                                    .map(|mut invite| {
+                                                        if invite.id == kicked_invite_id {
+                                                            for member in &mut invite.joined_members {
+                                                                if member.id == response.user_id {
+                                                                    member.is_active_member = false;
+                                                                }
+                                                            }
+                                                        }
+                                                        invite
+                                                    })
+                                                    .collect::<Vec<_>>(),
+                                            ));
+                                            pending_action.set(None);
+                                            // TODO: show invite member kick success in a toast when toasts are available.
+                                            info!(
+                                                invite_code = %response.invite_code,
+                                                member_id = %response.user_id,
+                                                member_name = %kicked_member_name,
+                                                "kicked server invite member in settings ui"
+                                            );
+                                        }
+                                        Err(error) => {
+                                            pending_action.set(None);
+                                            // TODO: show invite member kick failure in a toast when toasts are available.
+                                            warn!(
+                                                %error,
+                                                invite_code = %kicked_invite_code,
+                                                member_id = %kicked_member_id,
+                                                "failed to kick server invite member in settings ui"
+                                            );
+                                        }
+                                    }
+                                });
                             }
                         },
                         span { "Кикнуть с сервера" }
@@ -261,9 +414,33 @@ fn member_menu_style(x: f64, y: f64) -> String {
     )
 }
 
-fn status_label(status: InviteStatus) -> &'static str {
-    match status {
-        InviteStatus::Active => "Активна",
-        InviteStatus::Paused => "Приостановлена",
+fn refresh_button_class(disabled: bool) -> &'static str {
+    if disabled {
+        "flex min-h-9 cursor-wait items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 text-[12px] font-medium text-zinc-500"
+    } else {
+        "flex min-h-9 items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 text-[12px] font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100"
     }
+}
+
+fn clipboard_copy_invite_link(
+    code: String,
+) -> Result<impl std::future::Future<Output = Result<(), String>>, String> {
+    let compact_code = code.replace('-', "");
+    let eval = document::eval(
+        r#"
+        const compactCode = await dioxus.recv();
+        const origin = window.location.origin.replace(/\/$/, "");
+        await navigator.clipboard.writeText(`${origin}/invite/${compactCode}`);
+        return true;
+        "#,
+    );
+    eval.send(compact_code)
+        .map_err(|_| "Не удалось подготовить копирование.".to_owned())?;
+
+    Ok(async move {
+        eval.join::<bool>()
+            .await
+            .map(|_| ())
+            .map_err(|_| "Браузер не разрешил скопировать ссылку.".to_owned())
+    })
 }
