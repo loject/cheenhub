@@ -2,6 +2,7 @@
 
 use axum::{
     Json,
+    body::Bytes,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
@@ -10,7 +11,8 @@ use cheenhub_contracts::rest::{
     AcceptServerInviteResponse, ApiError, CreateServerInviteRequest, CreateServerInviteResponse,
     CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
     ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse,
-    UpdateServerRoomRequest, UpdateServerRoomResponse,
+    UpdateServerAvatarResponse, UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest,
+    UpdateServerRoomResponse,
 };
 
 use crate::features::servers::application;
@@ -34,6 +36,32 @@ pub(crate) async fn list(
 ) -> Result<Json<ListServersResponse>, ServerError> {
     let token = bearer_token(&headers)?;
     application::list(&state, token).await.map(Json)
+}
+
+/// Updates a server owned by the current user.
+pub(crate) async fn update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+    Json(request): Json<UpdateServerRequest>,
+) -> Result<Json<UpdateServerResponse>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::update(&state, token, server_id, request)
+        .await
+        .map(Json)
+}
+
+/// Updates a server avatar owned by the current user.
+pub(crate) async fn update_avatar(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+    bytes: Bytes,
+) -> Result<Json<UpdateServerAvatarResponse>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::update_avatar(&state, token, server_id, bytes)
+        .await
+        .map(Json)
 }
 
 /// Creates an invite for a server owned by the current user.

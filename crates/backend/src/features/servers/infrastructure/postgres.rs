@@ -37,6 +37,7 @@ impl ServerStore for PostgresServerStore {
             id: Set(Uuid::new_v4()),
             owner_user_id: Set(*owner_user_id),
             name: Set(name),
+            avatar_image_id: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         }
@@ -99,6 +100,48 @@ impl ServerStore for PostgresServerStore {
             .one(&self.database)
             .await?
             .map(Into::into))
+    }
+
+    async fn update_server_name(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        name: String,
+    ) -> anyhow::Result<Option<Server>> {
+        let Some(server) = servers::Entity::find()
+            .filter(servers::Column::Id.eq(*server_id))
+            .filter(servers::Column::OwnerUserId.eq(*owner_user_id))
+            .one(&self.database)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let mut server = server.into_active_model();
+        server.name = Set(name);
+        server.updated_at = Set(Utc::now());
+
+        Ok(Some(server.update(&self.database).await?.into()))
+    }
+
+    async fn update_server_avatar_image_id(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        avatar_image_id: Uuid,
+    ) -> anyhow::Result<Option<Server>> {
+        let Some(server) = servers::Entity::find()
+            .filter(servers::Column::Id.eq(*server_id))
+            .filter(servers::Column::OwnerUserId.eq(*owner_user_id))
+            .one(&self.database)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let mut server = server.into_active_model();
+        server.avatar_image_id = Set(Some(avatar_image_id));
+        server.updated_at = Set(Utc::now());
+
+        Ok(Some(server.update(&self.database).await?.into()))
     }
 
     async fn insert_server_invite(
@@ -403,6 +446,7 @@ impl From<servers::Model> for Server {
             id: row.id,
             owner_user_id: row.owner_user_id,
             name: row.name,
+            avatar_image_id: row.avatar_image_id,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }

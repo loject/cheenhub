@@ -37,6 +37,7 @@ impl ServerStore for InMemoryServerStore {
             id: Uuid::new_v4(),
             owner_user_id: *owner_user_id,
             name,
+            avatar_image_id: None,
             created_at: now,
             updated_at: now,
         };
@@ -94,6 +95,48 @@ impl ServerStore for InMemoryServerStore {
             .iter()
             .find(|server| server.id == *server_id && server.owner_user_id == *owner_user_id)
             .cloned())
+    }
+
+    async fn update_server_name(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        name: String,
+    ) -> anyhow::Result<Option<Server>> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+        let Some(server) = state
+            .servers
+            .iter_mut()
+            .find(|server| server.id == *server_id && server.owner_user_id == *owner_user_id)
+        else {
+            return Ok(None);
+        };
+
+        server.name = name;
+        server.updated_at = Utc::now();
+
+        Ok(Some(server.clone()))
+    }
+
+    async fn update_server_avatar_image_id(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        avatar_image_id: Uuid,
+    ) -> anyhow::Result<Option<Server>> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+        let Some(server) = state
+            .servers
+            .iter_mut()
+            .find(|server| server.id == *server_id && server.owner_user_id == *owner_user_id)
+        else {
+            return Ok(None);
+        };
+
+        server.avatar_image_id = Some(avatar_image_id);
+        server.updated_at = Utc::now();
+
+        Ok(Some(server.clone()))
     }
 
     async fn insert_server_invite(

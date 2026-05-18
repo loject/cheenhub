@@ -5,14 +5,23 @@ use uuid::Uuid;
 
 use crate::features::auth::application as auth_application;
 use crate::features::auth::error::AuthError;
+use crate::features::images::application as image_application;
 use crate::features::servers::domain::{Server, ServerRoom};
 use crate::features::servers::error::ServerError;
 use crate::state::AppState;
 
-pub(super) fn server_summary(server: &Server, user_id: &Uuid, is_member: bool) -> ServerSummary {
+pub(super) fn server_summary(
+    state: &AppState,
+    server: &Server,
+    user_id: &Uuid,
+    is_member: bool,
+) -> ServerSummary {
     ServerSummary {
         id: server.id.to_string(),
         name: server.name.clone(),
+        avatar_url: server
+            .avatar_image_id
+            .map(|image_id| image_application::avatar_url(state, &image_id)),
         is_owner: server.owner_user_id == *user_id,
         is_member,
     }

@@ -16,8 +16,8 @@ pub use servers::{
     AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,
     CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
     ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse, ServerInviteSummary,
-    ServerRoomKind, ServerRoomSummary, ServerSummary, UpdateServerRoomRequest,
-    UpdateServerRoomResponse,
+    ServerRoomKind, ServerRoomSummary, ServerSummary, UpdateServerAvatarResponse,
+    UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest, UpdateServerRoomResponse,
 };
 
 #[cfg(test)]

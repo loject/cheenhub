@@ -3,6 +3,8 @@
 use cheenhub_contracts::rest::ServerSummary;
 use dioxus::prelude::*;
 
+use super::server_avatar::ServerAvatar;
+
 /// Renders a server switcher button.
 #[component]
 pub(crate) fn ServerRailButton(
@@ -15,7 +17,6 @@ pub(crate) fn ServerRailButton(
     } else {
         "transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900/80 text-sm font-semibold text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800"
     };
-    let label = initials(&server.name);
     let server_id = server.id.clone();
 
     rsx! {
@@ -27,22 +28,11 @@ pub(crate) fn ServerRailButton(
             if active {
                 span { class: "absolute -left-3 h-7 w-1 rounded-r-full bg-accent" }
             }
-            "{label}"
+            ServerAvatar {
+                name: server.name.clone(),
+                avatar_url: server.avatar_url.clone(),
+                class: "flex h-full w-full items-center justify-center overflow-hidden rounded-2xl text-sm font-semibold".to_owned(),
+            }
         }
     }
-}
-
-fn initials(name: &str) -> String {
-    let mut initials = name
-        .split_whitespace()
-        .filter_map(|part| part.chars().next())
-        .take(2)
-        .collect::<String>()
-        .to_uppercase();
-
-    if initials.is_empty() {
-        initials = name.chars().take(2).collect::<String>().to_uppercase();
-    }
-
-    initials
 }

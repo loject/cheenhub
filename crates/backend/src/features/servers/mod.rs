@@ -22,6 +22,11 @@ pub(crate) fn routes() -> Router<AppState> {
             "/",
             get(transport::handlers::list).post(transport::handlers::create),
         )
+        .route("/{server_id}", put(transport::handlers::update))
+        .route(
+            "/{server_id}/avatar",
+            put(transport::handlers::update_avatar),
+        )
         .route(
             "/{server_id}/invites",
             post(transport::handlers::create_invite),

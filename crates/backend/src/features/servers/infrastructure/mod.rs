@@ -32,6 +32,22 @@ pub(crate) trait ServerStore: Send + Sync {
         owner_user_id: &Uuid,
     ) -> anyhow::Result<Option<Server>>;
 
+    /// Updates a server name owned by a user.
+    async fn update_server_name(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        name: String,
+    ) -> anyhow::Result<Option<Server>>;
+
+    /// Updates a server avatar image owned by a user.
+    async fn update_server_avatar_image_id(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        avatar_image_id: Uuid,
+    ) -> anyhow::Result<Option<Server>>;
+
     /// Inserts a new server invite.
     async fn insert_server_invite(
         &self,

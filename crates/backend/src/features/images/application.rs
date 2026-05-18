@@ -13,6 +13,7 @@ use crate::features::images::domain::{NewStoredImage, StoredImage};
 use crate::state::AppState;
 
 const USER_AVATAR_KIND: &str = "user_avatar";
+const SERVER_AVATAR_KIND: &str = "server_avatar";
 const PNG_CONTENT_TYPE: &str = "image/png";
 const DATABASE_STORAGE_BACKEND: &str = "database";
 const AVATAR_SIZE_PX: u32 = 512;
@@ -31,10 +32,28 @@ impl ProcessedUserAvatar {
 
     /// Converts this processed avatar into a database image row payload.
     pub(crate) fn into_new_stored_image(self, id: Uuid, owner_user_id: Uuid) -> NewStoredImage {
+        self.into_new_stored_image_with_kind(id, owner_user_id, USER_AVATAR_KIND)
+    }
+
+    /// Converts this processed avatar into a server avatar image row payload.
+    pub(crate) fn into_new_server_avatar_image(
+        self,
+        id: Uuid,
+        owner_user_id: Uuid,
+    ) -> NewStoredImage {
+        self.into_new_stored_image_with_kind(id, owner_user_id, SERVER_AVATAR_KIND)
+    }
+
+    fn into_new_stored_image_with_kind(
+        self,
+        id: Uuid,
+        owner_user_id: Uuid,
+        kind: &str,
+    ) -> NewStoredImage {
         NewStoredImage {
             id,
             owner_user_id,
-            kind: USER_AVATAR_KIND.to_owned(),
+            kind: kind.to_owned(),
             content_type: PNG_CONTENT_TYPE.to_owned(),
             width: i32::try_from(AVATAR_SIZE_PX).unwrap_or(512),
             height: i32::try_from(AVATAR_SIZE_PX).unwrap_or(512),
@@ -75,6 +94,34 @@ pub(crate) async fn process_user_avatar(
     processed
 }
 
+/// Processes a server avatar upload through the global image processing queue.
+pub(crate) async fn process_server_avatar(
+    state: &AppState,
+    server_id: Uuid,
+    bytes: &[u8],
+) -> Result<ProcessedUserAvatar, AuthError> {
+    tracing::debug!(
+        server_id = %server_id,
+        input_bytes = bytes.len(),
+        "waiting for image processing queue"
+    );
+    let _permit = state
+        .image_processing_queue
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|error| AuthError::Internal(error.into()))?;
+    tracing::debug!(
+        server_id = %server_id,
+        input_bytes = bytes.len(),
+        "entered image processing queue"
+    );
+    let processed = process_avatar(bytes);
+    tracing::debug!(server_id = %server_id, "leaving image processing queue");
+
+    processed
+}
+
 /// Loads a public image by identifier.
 pub(crate) async fn public_image(
     state: &AppState,
@@ -88,7 +135,9 @@ pub(crate) async fn public_image(
     else {
         return Err(AuthError::BadRequest("Изображение не найдено.".to_owned()));
     };
-    if image.kind != USER_AVATAR_KIND || image.content_type != PNG_CONTENT_TYPE {
+    if !matches!(image.kind.as_str(), USER_AVATAR_KIND | SERVER_AVATAR_KIND)
+        || image.content_type != PNG_CONTENT_TYPE
+    {
         return Err(AuthError::BadRequest("Изображение не найдено.".to_owned()));
     }
 

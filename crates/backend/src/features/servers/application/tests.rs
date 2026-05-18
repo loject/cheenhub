@@ -2,16 +2,17 @@
 
 use std::sync::Arc;
 
+use bytes::Bytes;
 use cheenhub_contracts::rest::{
     CreateServerInviteRequest, CreateServerRequest, CreateServerRoomRequest, RegisterRequest,
-    ServerRoomKind, UpdateServerRoomRequest,
+    ServerRoomKind, UpdateServerRequest, UpdateServerRoomRequest,
 };
 use uuid::Uuid;
 
 use super::{
     accept_invite, create, create_invite, create_room, delete_room, invite_info,
     kick_server_invite_member, leave, list, list_rooms, list_server_invites, revoke_server_invite,
-    update_room,
+    update, update_avatar, update_room,
 };
 use crate::features::auth::application as auth_application;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
@@ -26,6 +27,7 @@ mod invite_errors;
 mod invite_settings;
 mod invites;
 mod rooms_and_list;
+mod server_profile;
 
 fn state() -> AppState {
     state_with_store(Arc::new(InMemoryServerStore::default()))

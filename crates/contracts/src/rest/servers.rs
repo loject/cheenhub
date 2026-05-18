@@ -16,6 +16,8 @@ pub struct ServerSummary {
     pub id: String,
     /// Human-readable server name.
     pub name: String,
+    /// Public avatar image URL when configured.
+    pub avatar_url: Option<String>,
     /// Whether the current user owns the server.
     pub is_owner: bool,
     /// Whether the current user is an active server member.
@@ -26,6 +28,27 @@ pub struct ServerSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateServerResponse {
     /// Created server.
+    pub server: ServerSummary,
+}
+
+/// Request body used to update a server profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateServerRequest {
+    /// Human-readable server name.
+    pub name: String,
+}
+
+/// Successful server profile update response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateServerResponse {
+    /// Updated server.
+    pub server: ServerSummary,
+}
+
+/// Successful server avatar update response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateServerAvatarResponse {
+    /// Updated server.
     pub server: ServerSummary,
 }
 
