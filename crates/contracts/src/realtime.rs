@@ -3,6 +3,7 @@
 mod control;
 mod envelope;
 mod network;
+mod server;
 mod text_chat;
 mod voice_chat;
 
@@ -11,6 +12,10 @@ pub use control::{
 };
 pub use envelope::{RealtimeEnvelope, RealtimeKind, RealtimeModule};
 pub use network::{NetworkKind, Ping, Pong};
+pub use server::{
+    KickServerInviteMember, ListServerInvites, RevokeServerInvite, ServerInviteJoinedMember,
+    ServerInviteLink, ServerInviteList, ServerInviteMemberKicked, ServerInviteRevoked, ServerKind,
+};
 pub use text_chat::{
     LoadRoomHistory, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
 };
@@ -79,6 +84,30 @@ mod tests {
         assert_eq!(
             decoded.kind,
             RealtimeKind::TextChat(TextChatKind::LoadRoomHistory)
+        );
+        assert!(decoded.has_matching_module_kind());
+    }
+
+    #[test]
+    fn server_invites_envelope_round_trips() {
+        let envelope = RealtimeEnvelope::new(
+            RealtimeModule::Server,
+            RealtimeKind::Server(ServerKind::ListServerInvites),
+            Some(Uuid::new_v4()),
+            ListServerInvites {
+                server_id: Uuid::new_v4().to_string(),
+            },
+        )
+        .expect("payload serializes");
+
+        let json = serde_json::to_string(&envelope).expect("envelope serializes");
+        assert!(json.contains("\"module\":\"server\""));
+        assert!(json.contains("\"kind\":\"list_server_invites\""));
+        let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+
+        assert_eq!(
+            decoded.kind,
+            RealtimeKind::Server(ServerKind::ListServerInvites)
         );
         assert!(decoded.has_matching_module_kind());
     }

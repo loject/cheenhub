@@ -1312,6 +1312,10 @@ video {
   height: 100vh;
 }
 
+.h-\[104px\] {
+  height: 104px;
+}
+
 .max-h-0 {
   max-height: 0px;
 }
@@ -2038,6 +2042,10 @@ video {
   border-color: rgb(39 39 42 / 0.8);
 }
 
+.border-accent\/20 {
+  border-color: rgb(59 130 246 / 0.2);
+}
+
 .border-t-blue-300 {
   --tw-border-opacity: 1;
   border-top-color: rgb(147 197 253 / var(--tw-border-opacity, 1));
@@ -2254,6 +2262,14 @@ video {
 
 .bg-zinc-950\/95 {
   background-color: rgb(9 9 11 / 0.95);
+}
+
+.bg-zinc-900\/55 {
+  background-color: rgb(24 24 27 / 0.55);
+}
+
+.bg-zinc-900\/50 {
+  background-color: rgb(24 24 27 / 0.5);
 }
 
 .bg-gradient-to-r {

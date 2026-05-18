@@ -44,6 +44,22 @@ pub(crate) trait ServerStore: Send + Sync {
     /// Finds a server invite by code.
     async fn find_server_invite(&self, code: &Uuid) -> anyhow::Result<Option<ServerInvite>>;
 
+    /// Lists server invites in newest-first order.
+    async fn list_server_invites(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerInvite>>;
+
+    /// Lists successful invite uses for invite ids in newest-first order.
+    async fn list_server_invite_uses(
+        &self,
+        invite_ids: &[Uuid],
+    ) -> anyhow::Result<Vec<ServerInviteUse>>;
+
+    /// Marks a server invite as revoked.
+    async fn revoke_server_invite(
+        &self,
+        server_id: &Uuid,
+        invite_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerInvite>>;
+
     /// Finds a server by id.
     async fn find_server(&self, server_id: &Uuid) -> anyhow::Result<Option<Server>>;
 

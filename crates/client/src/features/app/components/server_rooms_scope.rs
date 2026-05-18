@@ -423,6 +423,7 @@ pub(crate) fn ServerRoomsScope(
         if mounted_workspaces().contains(&ServerWorkspace::Settings) {
             ServerSettingsScope {
                 key: "{server.id}:settings",
+                server_id: server.id.clone(),
                 server_name: server.name.clone(),
                 active: active && matches!(active_workspace(), Some(ServerWorkspace::Settings)),
                 on_close: move |_| {

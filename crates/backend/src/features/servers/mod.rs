@@ -4,6 +4,7 @@ mod application;
 mod domain;
 mod error;
 pub(crate) mod infrastructure;
+pub(crate) mod realtime;
 mod transport;
 mod validation;
 

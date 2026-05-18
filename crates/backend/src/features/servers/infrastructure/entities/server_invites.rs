@@ -19,6 +19,8 @@ pub struct Model {
     pub expires_at: Option<DateTimeUtc>,
     /// Invite creation timestamp.
     pub created_at: DateTimeUtc,
+    /// Invite revocation timestamp.
+    pub revoked_at: Option<DateTimeUtc>,
 }
 
 /// Server invite relations.

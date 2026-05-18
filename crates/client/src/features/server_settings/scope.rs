@@ -7,6 +7,7 @@ use super::page::{ServerSettingsPage, ServerSettingsSection};
 /// Keeps server-settings UI state inside the settings feature boundary.
 #[component]
 pub(crate) fn ServerSettingsScope(
+    server_id: String,
     server_name: String,
     active: bool,
     on_close: EventHandler<()>,
@@ -17,6 +18,7 @@ pub(crate) fn ServerSettingsScope(
     rsx! {
         div { class: wrapper_class,
             ServerSettingsPage {
+                server_id,
                 server_name,
                 active_section: active_section(),
                 on_select_section: move |section: ServerSettingsSection| {
