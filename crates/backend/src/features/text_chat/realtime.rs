@@ -1,8 +1,8 @@
 //! Text chat realtime adapter.
 
 use cheenhub_contracts::realtime::{
-    LoadRoomHistory, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode, SendMessage,
-    TextChatKind,
+    DeleteMessage, LoadRoomHistory, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
+    SendMessage, TextChatKind,
 };
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
@@ -49,6 +49,23 @@ pub(crate) async fn handle(
                         send,
                         RealtimeModule::TextChat,
                         RealtimeKind::TextChat(TextChatKind::SendMessageAccepted),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::TextChat(TextChatKind::DeleteMessage) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: DeleteMessage = decode_payload(&envelope)?;
+            match application::delete_message(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::TextChat,
+                        RealtimeKind::TextChat(TextChatKind::DeleteMessageAccepted),
                         Some(request_id),
                         response,
                     )

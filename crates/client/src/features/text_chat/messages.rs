@@ -43,6 +43,15 @@ pub(super) fn prepend_messages(
     messages.set(next_messages);
 }
 
+/// Removes a message from the list by id.
+pub(super) fn remove_message(messages: &mut Signal<Vec<TextChatMessage>>, message_id: &str) {
+    let next = messages()
+        .into_iter()
+        .filter(|m| m.id != message_id)
+        .collect();
+    messages.set(next);
+}
+
 pub(super) fn is_appearing_message(message_id: &str, appearing_message_ids: &[String]) -> bool {
     appearing_message_ids
         .iter()

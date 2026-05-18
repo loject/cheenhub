@@ -21,6 +21,8 @@ pub struct Model {
     pub body: String,
     /// Message creation timestamp.
     pub created_at: DateTimeUtc,
+    /// Soft-delete timestamp; set when the author deletes their message.
+    pub deleted_at: Option<DateTimeUtc>,
 }
 
 /// Text message relations.

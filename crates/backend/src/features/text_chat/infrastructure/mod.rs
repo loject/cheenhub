@@ -34,4 +34,14 @@ pub(crate) trait TextChatStore: Send + Sync {
         room_id: &Uuid,
         before_message_id: Option<&Uuid>,
     ) -> anyhow::Result<TextMessagePage>;
+
+    /// Soft-deletes a message owned by `author_user_id`.
+    ///
+    /// Returns `Some(updated_message)` when the message was found and deleted,
+    /// or `None` when it does not exist, belongs to another user, or was already deleted.
+    async fn soft_delete_message(
+        &self,
+        message_id: &Uuid,
+        author_user_id: &Uuid,
+    ) -> anyhow::Result<Option<TextMessage>>;
 }
