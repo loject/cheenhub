@@ -34,6 +34,7 @@ pub(crate) fn ServerRoomsScope(
     on_state_change: EventHandler<(String, ServerShellState)>,
     on_open_modal: EventHandler<AppModal>,
     on_left_server: EventHandler<String>,
+    on_server_updated: EventHandler<ServerSummary>,
 ) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
     use_avatar_seed(current_user.id.clone());
@@ -58,7 +59,6 @@ pub(crate) fn ServerRoomsScope(
     let is_owner = server.is_owner;
     let room_load_resource = use_resource(move || {
         let request_server_id = load_server_id.clone();
-
         async move { api::list_server_rooms(request_server_id).await }
     });
     let room_load_result = room_load_resource.read().clone();
@@ -423,9 +423,9 @@ pub(crate) fn ServerRoomsScope(
         if mounted_workspaces().contains(&ServerWorkspace::Settings) {
             ServerSettingsScope {
                 key: "{server.id}:settings",
-                server_id: server.id.clone(),
-                server_name: server.name.clone(),
+                server: server.clone(),
                 active: active && matches!(active_workspace(), Some(ServerWorkspace::Settings)),
+                on_server_updated,
                 on_close: move |_| {
                     if let Some(room_id) = active_room_id() {
                         let workspace = ServerWorkspace::Room(room_id);

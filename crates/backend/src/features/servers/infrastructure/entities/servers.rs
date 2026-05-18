@@ -13,6 +13,8 @@ pub struct Model {
     pub owner_user_id: Uuid,
     /// Human-readable server name.
     pub name: String,
+    /// Stored server avatar image identifier.
+    pub avatar_image_id: Option<Uuid>,
     /// Server creation timestamp.
     pub created_at: DateTimeUtc,
     /// Last server update timestamp.

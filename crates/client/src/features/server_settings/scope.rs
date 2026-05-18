@@ -1,5 +1,6 @@
 //! Server settings feature state scope.
 
+use cheenhub_contracts::rest::ServerSummary;
 use dioxus::prelude::*;
 
 use super::page::{ServerSettingsPage, ServerSettingsSection};
@@ -7,9 +8,9 @@ use super::page::{ServerSettingsPage, ServerSettingsSection};
 /// Keeps server-settings UI state inside the settings feature boundary.
 #[component]
 pub(crate) fn ServerSettingsScope(
-    server_id: String,
-    server_name: String,
+    server: ServerSummary,
     active: bool,
+    on_server_updated: EventHandler<ServerSummary>,
     on_close: EventHandler<()>,
 ) -> Element {
     let mut active_section = use_signal(|| ServerSettingsSection::Overview);
@@ -18,12 +19,12 @@ pub(crate) fn ServerSettingsScope(
     rsx! {
         div { class: wrapper_class,
             ServerSettingsPage {
-                server_id,
-                server_name,
+                server,
                 active_section: active_section(),
                 on_select_section: move |section: ServerSettingsSection| {
                     active_section.set(section);
                 },
+                on_server_updated,
                 on_close,
             }
         }

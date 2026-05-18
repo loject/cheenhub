@@ -20,11 +20,13 @@ use self::support::{
 };
 
 mod invite_settings;
+mod profile;
 mod support;
 
 pub(crate) use invite_settings::{
     kick_server_invite_member, list_server_invites, revoke_server_invite,
 };
+pub(crate) use profile::{update, update_avatar};
 
 /// Creates a server owned by the current user.
 pub(crate) async fn create(
@@ -56,7 +58,7 @@ pub(crate) async fn create(
         .map_err(ServerError::Internal)?;
 
     Ok(CreateServerResponse {
-        server: server_summary(&server, &owner_user_id, true),
+        server: server_summary(state, &server, &owner_user_id, true),
     })
 }
 
@@ -79,7 +81,7 @@ pub(crate) async fn list(
     Ok(ListServersResponse {
         servers: servers
             .iter()
-            .map(|access| server_summary(&access.server, &user_id, access.is_member))
+            .map(|access| server_summary(state, &access.server, &user_id, access.is_member))
             .collect(),
     })
 }
@@ -186,7 +188,7 @@ pub(crate) async fn invite_info(
             max_uses: invite.max_uses,
             expires_at: invite.expires_at.map(|expires_at| expires_at.to_rfc3339()),
         },
-        server: server_summary(&server, &user_id, is_member),
+        server: server_summary(state, &server, &user_id, is_member),
     })
 }
 
@@ -243,7 +245,7 @@ pub(crate) async fn accept_invite(
 
     if is_owner || active_member {
         return Ok(AcceptServerInviteResponse {
-            server: server_summary(&server, &user_id, true),
+            server: server_summary(state, &server, &user_id, true),
             already_member: true,
         });
     }
@@ -271,7 +273,7 @@ pub(crate) async fn accept_invite(
         .map_err(ServerError::Internal)?;
 
     Ok(AcceptServerInviteResponse {
-        server: server_summary(&server, &user_id, true),
+        server: server_summary(state, &server, &user_id, true),
         already_member: false,
     })
 }

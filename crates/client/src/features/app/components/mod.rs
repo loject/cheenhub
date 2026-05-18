@@ -10,6 +10,7 @@ pub(crate) mod modal;
 pub(crate) mod room_editor_modal;
 pub(crate) mod room_header;
 pub(crate) mod room_instance;
+pub(crate) mod server_avatar;
 pub(crate) mod server_context_menu;
 pub(crate) mod server_instance;
 pub(crate) mod server_rail;

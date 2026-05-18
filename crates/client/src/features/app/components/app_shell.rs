@@ -141,6 +141,12 @@ pub(crate) fn AppShell() -> Element {
                             shell_state.set(next_shell_state);
                             server_status.set(String::new());
                         },
+                        on_server_updated: move |server: ServerSummary| {
+                            let mut next_servers = servers();
+                            upsert_server_summary(&mut next_servers, server);
+                            servers.set(next_servers);
+                            server_status.set(String::new());
+                        },
                     }
                 }
             }

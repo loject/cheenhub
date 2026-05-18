@@ -13,6 +13,8 @@ pub(crate) struct Server {
     pub(crate) owner_user_id: Uuid,
     /// Human-readable server name.
     pub(crate) name: String,
+    /// Stored server avatar image identifier.
+    pub(crate) avatar_image_id: Option<Uuid>,
     /// Server creation timestamp.
     #[allow(dead_code)]
     pub(crate) created_at: DateTime<Utc>,

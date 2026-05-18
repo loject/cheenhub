@@ -1,10 +1,12 @@
-//! Mock server settings page.
+//! Server settings page.
 
+use cheenhub_contracts::rest::ServerSummary;
 use dioxus::prelude::*;
 
 use super::invites_section::ServerInvitesSettingsSection;
+use super::overview_section::ServerOverviewSettingsSection;
 
-/// Server settings sections shown in the mock settings menu.
+/// Server settings sections shown in the settings menu.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ServerSettingsSection {
     /// Server overview section.
@@ -61,17 +63,18 @@ const SETTINGS_SECTIONS: &[SettingsSectionMeta] = &[
     },
 ];
 
-/// Renders a mock server settings workspace.
+/// Renders a server settings workspace.
 #[component]
 pub(crate) fn ServerSettingsPage(
-    server_id: String,
-    server_name: String,
+    server: ServerSummary,
     active_section: ServerSettingsSection,
     on_select_section: EventHandler<ServerSettingsSection>,
+    on_server_updated: EventHandler<ServerSummary>,
     on_close: EventHandler<()>,
 ) -> Element {
     let section_label = settings_section_label(active_section);
     let section_description = settings_section_description(active_section);
+    let server_name = server.name.clone();
 
     rsx! {
         section { class: "flex min-w-0 flex-1 bg-zinc-950/35",
@@ -113,9 +116,15 @@ pub(crate) fn ServerSettingsPage(
                 }
                 div { class: section_container_class(active_section),
                     match active_section {
+                        ServerSettingsSection::Overview => rsx! {
+                            ServerOverviewSettingsSection {
+                                server: server.clone(),
+                                on_server_updated,
+                            }
+                        },
                         ServerSettingsSection::Invites => rsx! {
                             ServerInvitesSettingsSection {
-                                server_id: server_id.clone(),
+                                server_id: server.id.clone(),
                                 server_name: server_name.clone(),
                             }
                         },
