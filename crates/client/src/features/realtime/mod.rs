@@ -1,5 +1,4 @@
 //! Realtime WebTransport client scaffold.
-#![allow(dead_code)]
 
 mod config;
 mod error;
