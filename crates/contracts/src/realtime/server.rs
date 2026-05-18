@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerKind {
+    /// Load members for a server.
+    ListServerMembers,
+    /// Server-member list response.
+    ServerMemberList,
     /// Load invite links for a server.
     ListServerInvites,
     /// Invite-link list response.
@@ -18,6 +22,43 @@ pub enum ServerKind {
     KickServerInviteMember,
     /// Acknowledges that an invite member was kicked.
     ServerInviteMemberKicked,
+    /// Kick an active server member.
+    KickServerMember,
+    /// Acknowledges that a server member was kicked.
+    ServerMemberKicked,
+}
+
+/// Request payload used to load server members.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListServerMembers {
+    /// Server identifier.
+    pub server_id: String,
+}
+
+/// Response payload containing active server members.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerMemberList {
+    /// Server identifier.
+    pub server_id: String,
+    /// Active members visible to the current administrator.
+    pub members: Vec<ServerMemberEntry>,
+}
+
+/// Active server member shown in settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerMemberEntry {
+    /// Stable user identifier.
+    pub user_id: String,
+    /// Current user nickname.
+    pub nickname: String,
+    /// Whether this member owns the server.
+    pub is_owner: bool,
+    /// Membership start timestamp in RFC3339 format.
+    pub joined_at: String,
+    /// Invite link used by this member, when available.
+    pub invite_code: Option<String>,
+    /// Invite-use timestamp in RFC3339 format, when available.
+    pub invite_used_at: Option<String>,
 }
 
 /// Request payload used to load server invite links.
@@ -112,4 +153,26 @@ pub struct ServerInviteMemberKicked {
     pub invite_code: String,
     /// Kicked user identifier.
     pub user_id: String,
+}
+
+/// Request payload used to kick an active server member.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KickServerMember {
+    /// Server identifier.
+    pub server_id: String,
+    /// User identifier to kick.
+    pub user_id: String,
+    /// Optional rejoin block duration in seconds.
+    pub exclusion_duration_seconds: Option<u64>,
+}
+
+/// Response payload returned after kicking a server member.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerMemberKicked {
+    /// Server identifier.
+    pub server_id: String,
+    /// Kicked user identifier.
+    pub user_id: String,
+    /// Timestamp until which the user cannot rejoin, in RFC3339 format.
+    pub excluded_until: Option<String>,
 }

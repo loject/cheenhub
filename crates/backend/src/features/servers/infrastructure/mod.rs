@@ -3,6 +3,7 @@
 mod entities;
 mod in_memory;
 mod postgres;
+mod postgres_conversions;
 
 use async_trait::async_trait;
 use cheenhub_contracts::rest::ServerRoomKind;
@@ -10,7 +11,8 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::features::servers::domain::{
-    Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerRoom,
+    Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
+    ServerRoom,
 };
 
 pub(crate) use in_memory::InMemoryServerStore;
@@ -93,8 +95,31 @@ pub(crate) trait ServerStore: Send + Sync {
         user_id: &Uuid,
     ) -> anyhow::Result<Option<ServerMember>>;
 
+    /// Lists active server members in oldest-first join order.
+    async fn list_active_server_members(
+        &self,
+        server_id: &Uuid,
+    ) -> anyhow::Result<Vec<ServerMember>>;
+
     /// Marks an active server membership as left.
     async fn leave_server(&self, server_id: &Uuid, user_id: &Uuid) -> anyhow::Result<()>;
+
+    /// Inserts a temporary server-member exclusion.
+    async fn insert_server_member_exclusion(
+        &self,
+        server_id: &Uuid,
+        user_id: &Uuid,
+        initiator_user_id: &Uuid,
+        expires_at: chrono::DateTime<Utc>,
+    ) -> anyhow::Result<ServerMemberExclusion>;
+
+    /// Finds an active server-member exclusion.
+    async fn find_active_server_member_exclusion(
+        &self,
+        server_id: &Uuid,
+        user_id: &Uuid,
+        now: chrono::DateTime<Utc>,
+    ) -> anyhow::Result<Option<ServerMemberExclusion>>;
 
     /// Inserts a successful invite use row.
     async fn insert_server_invite_use(

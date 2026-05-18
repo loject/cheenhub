@@ -1,8 +1,9 @@
 //! Server settings realtime helpers.
 
 use cheenhub_contracts::realtime::{
-    KickServerInviteMember, ListServerInvites, RealtimeKind, RealtimeModule, RevokeServerInvite,
-    ServerInviteList, ServerInviteMemberKicked, ServerInviteRevoked, ServerKind,
+    KickServerInviteMember, KickServerMember, ListServerInvites, ListServerMembers, RealtimeKind,
+    RealtimeModule, RevokeServerInvite, ServerInviteList, ServerInviteMemberKicked,
+    ServerInviteRevoked, ServerKind, ServerMemberKicked, ServerMemberList,
 };
 
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
@@ -17,6 +18,20 @@ pub(super) async fn list_server_invites(
             RealtimeModule::Server,
             RealtimeKind::Server(ServerKind::ListServerInvites),
             ListServerInvites { server_id },
+        )
+        .await
+}
+
+/// Loads server members through the realtime session.
+pub(super) async fn list_server_members(
+    realtime: &RealtimeHandle,
+    server_id: String,
+) -> Result<ServerMemberList, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::Server,
+            RealtimeKind::Server(ServerKind::ListServerMembers),
+            ListServerMembers { server_id },
         )
         .await
 }
@@ -51,6 +66,26 @@ pub(super) async fn kick_server_invite_member(
                 server_id,
                 invite_code,
                 user_id,
+            },
+        )
+        .await
+}
+
+/// Kicks an active server member.
+pub(super) async fn kick_server_member(
+    realtime: &RealtimeHandle,
+    server_id: String,
+    user_id: String,
+    exclusion_duration_seconds: Option<u64>,
+) -> Result<ServerMemberKicked, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::Server,
+            RealtimeKind::Server(ServerKind::KickServerMember),
+            KickServerMember {
+                server_id,
+                user_id,
+                exclusion_duration_seconds,
             },
         )
         .await

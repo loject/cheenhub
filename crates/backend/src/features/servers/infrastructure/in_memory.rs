@@ -9,7 +9,8 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::features::servers::domain::{
-    Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerRoom,
+    Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
+    ServerRoom,
 };
 use crate::features::servers::infrastructure::ServerStore;
 
@@ -24,6 +25,7 @@ struct InMemoryState {
     servers: Vec<Server>,
     invites: Vec<ServerInvite>,
     members: Vec<ServerMember>,
+    exclusions: Vec<ServerMemberExclusion>,
     invite_uses: Vec<ServerInviteUse>,
     rooms: Vec<ServerRoom>,
 }
@@ -268,6 +270,22 @@ impl ServerStore for InMemoryServerStore {
             .cloned())
     }
 
+    async fn list_active_server_members(
+        &self,
+        server_id: &Uuid,
+    ) -> anyhow::Result<Vec<ServerMember>> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+        let mut members = state
+            .members
+            .iter()
+            .filter(|member| member.server_id == *server_id && member.left_at.is_none())
+            .cloned()
+            .collect::<Vec<_>>();
+        members.sort_by_key(|member| member.joined_at);
+
+        Ok(members)
+    }
+
     async fn leave_server(&self, server_id: &Uuid, user_id: &Uuid) -> anyhow::Result<()> {
         let mut state = self.state.lock().map_err(|_| poisoned())?;
 
@@ -278,6 +296,48 @@ impl ServerStore for InMemoryServerStore {
         }
 
         Ok(())
+    }
+
+    async fn insert_server_member_exclusion(
+        &self,
+        server_id: &Uuid,
+        user_id: &Uuid,
+        initiator_user_id: &Uuid,
+        expires_at: DateTime<Utc>,
+    ) -> anyhow::Result<ServerMemberExclusion> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+        let exclusion = ServerMemberExclusion {
+            id: Uuid::new_v4(),
+            server_id: *server_id,
+            user_id: *user_id,
+            initiator_user_id: *initiator_user_id,
+            expires_at,
+            created_at: Utc::now(),
+        };
+
+        state.exclusions.push(exclusion.clone());
+
+        Ok(exclusion)
+    }
+
+    async fn find_active_server_member_exclusion(
+        &self,
+        server_id: &Uuid,
+        user_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<ServerMemberExclusion>> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+
+        Ok(state
+            .exclusions
+            .iter()
+            .filter(|exclusion| {
+                exclusion.server_id == *server_id
+                    && exclusion.user_id == *user_id
+                    && exclusion.expires_at > now
+            })
+            .max_by_key(|exclusion| exclusion.expires_at)
+            .cloned())
     }
 
     async fn insert_server_invite_use(
