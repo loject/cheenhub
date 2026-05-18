@@ -22,7 +22,7 @@ struct CustomRole {
 pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: String) -> Element {
     let realtime_handle = use_context::<RealtimeHandle>();
     let mut members = use_signal(|| None::<Vec<ServerMemberRow>>);
-    let mut custom_roles = use_signal(|| Vec::<CustomRole>::new());
+    let mut custom_roles = use_signal(Vec::<CustomRole>::new);
     let mut load_error = use_signal(String::new);
     let mut refresh_requested = use_signal(|| false);
     let mut pending_kick = use_signal(|| None::<KickMemberTarget>);

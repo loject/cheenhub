@@ -1,10 +1,12 @@
 //! Room text chat panel component.
 
 use std::rc::Rc;
+use std::time::Duration;
 
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
+use gloo_timers::future::sleep;
 
 use crate::features::app::components::app_shell::ActiveRoom;
 use crate::features::realtime::RealtimeHandle;
@@ -12,8 +14,8 @@ use crate::features::realtime::RealtimeHandle;
 use super::compose::{ComposeState, send_current_message};
 use super::history::{HistoryState, HistoryTarget, load_initial_history, load_older_history};
 use super::message_item::ChatMessageItem;
-use super::messages::{append_message, is_appearing_message};
-use super::realtime;
+use super::messages::{append_message, is_appearing_message, remove_message};
+use super::realtime::{self, TextChatEvent};
 use super::scroll::{ScrollCommand, apply_scroll_command, update_scroll_state};
 
 /// Renders a realtime text chat panel for one room.
@@ -22,6 +24,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let realtime = use_context::<RealtimeHandle>();
     let mut messages = use_signal(Vec::<TextChatMessage>::new);
     let mut appearing_message_ids = use_signal(Vec::<String>::new);
+    let mut removing_message_ids = use_signal(Vec::<String>::new);
     let mut draft = use_signal(String::new);
     let status = use_signal(String::new);
     let is_sending = use_signal(|| false);
@@ -40,6 +43,9 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let older_room_id = room.id.clone();
     let send_server_id = server_id.clone();
     let send_room_id = room.id.clone();
+    let delete_server_id = server_id.clone();
+    let delete_room_id = room.id.clone();
+    let delete_realtime = realtime.clone();
     let history_realtime = realtime.clone();
     let event_realtime = realtime.clone();
     let older_realtime = realtime.clone();
@@ -96,6 +102,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         "chat-input-wrap mx-auto flex max-w-3xl items-end gap-2 rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.8)] p-2 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
     };
     let appearing_message_ids_list = appearing_message_ids();
+    let removing_message_ids_list = removing_message_ids();
 
     use_hook(move || {
         load_initial_history(history_target, history_state);
@@ -105,12 +112,33 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         let realtime = event_realtime.clone();
         spawn(async move {
             let mut receiver = realtime::subscribe_text_chat(&realtime);
-            while let Some(message) = receiver.next().await {
-                if message.room_id == event_room_id
-                    && append_message(&mut messages, &mut appearing_message_ids, message)
-                    && is_near_bottom()
-                {
-                    pending_scroll.set(Some(ScrollCommand::Bottom));
+            while let Some(event) = receiver.next().await {
+                match event {
+                    TextChatEvent::MessageCreated(message) => {
+                        if message.room_id == event_room_id
+                            && append_message(
+                                &mut messages,
+                                &mut appearing_message_ids,
+                                message,
+                            )
+                            && is_near_bottom()
+                        {
+                            pending_scroll.set(Some(ScrollCommand::Bottom));
+                        }
+                    }
+                    TextChatEvent::MessageDeleted(payload) => {
+                        if payload.room_id == event_room_id {
+                            let message_id = payload.message_id.clone();
+                            removing_message_ids.write().push(message_id.clone());
+                            spawn(async move {
+                                sleep(Duration::from_millis(220)).await;
+                                remove_message(&mut messages, &message_id);
+                                removing_message_ids
+                                    .write()
+                                    .retain(|id| id != &message_id);
+                            });
+                        }
+                    }
                 }
             }
         });
@@ -144,6 +172,22 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     });
     let load_older = use_callback(move |_| {
         load_older_history(older_target.clone(), history_state);
+    });
+    let on_delete_message = use_callback(move |message_id: String| {
+        let realtime = delete_realtime.clone();
+        let server_id = delete_server_id.clone();
+        let room_id = delete_room_id.clone();
+        removing_message_ids.write().push(message_id.clone());
+        spawn(async move {
+            let _ =
+                realtime::delete_text_message(&realtime, server_id, room_id, message_id.clone())
+                    .await;
+            sleep(Duration::from_millis(220)).await;
+            remove_message(&mut messages, &message_id);
+            removing_message_ids
+                .write()
+                .retain(|id| id != &message_id);
+        });
     });
 
     rsx! {
@@ -221,7 +265,9 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                                     &message.id,
                                     &appearing_message_ids_list,
                                 ),
+                                removing: removing_message_ids_list.contains(&message.id),
                                 message: message.clone(),
+                                on_delete: move |id| on_delete_message.call(id),
                             }
                         }
                     }

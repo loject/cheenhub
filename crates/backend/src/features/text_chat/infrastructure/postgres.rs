@@ -1,6 +1,7 @@
 //! Postgres-backed text chat storage.
 
 use async_trait::async_trait;
+use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
     QueryOrder, QuerySelect, Set,
@@ -34,6 +35,7 @@ impl TextChatStore for PostgresTextChatStore {
             author_nickname: Set(message.author_nickname),
             body: Set(message.body),
             created_at: Set(message.created_at),
+            deleted_at: Set(None),
         }
         .insert(&self.database)
         .await?;
@@ -57,7 +59,9 @@ impl TextChatStore for PostgresTextChatStore {
             ),
             None => None,
         };
-        let mut filter = Condition::all().add(text_messages::Column::RoomId.eq(*room_id));
+        let mut filter = Condition::all()
+            .add(text_messages::Column::RoomId.eq(*room_id))
+            .add(text_messages::Column::DeletedAt.is_null());
 
         if let Some(message) = before_message {
             filter = filter.add(
@@ -91,6 +95,30 @@ impl TextChatStore for PostgresTextChatStore {
 
         Ok(TextMessagePage { messages, has_more })
     }
+
+    async fn soft_delete_message(
+        &self,
+        message_id: &Uuid,
+        author_user_id: &Uuid,
+    ) -> anyhow::Result<Option<TextMessage>> {
+        // NOTE: soft delete необходим для модерации удаленных сообщений в дальнейшем
+        let Some(row) = text_messages::Entity::find()
+            .filter(text_messages::Column::Id.eq(*message_id))
+            .filter(text_messages::Column::AuthorUserId.eq(*author_user_id))
+            .filter(text_messages::Column::DeletedAt.is_null())
+            .one(&self.database)
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        let deleted_at = Utc::now();
+        let mut active: text_messages::ActiveModel = row.into();
+        active.deleted_at = Set(Some(deleted_at));
+        let updated = active.update(&self.database).await?;
+
+        Ok(Some(updated.into()))
+    }
 }
 
 impl From<text_messages::Model> for TextMessage {
@@ -103,6 +131,7 @@ impl From<text_messages::Model> for TextMessage {
             author_nickname: row.author_nickname,
             body: row.body,
             created_at: row.created_at,
+            deleted_at: row.deleted_at,
         }
     }
 }

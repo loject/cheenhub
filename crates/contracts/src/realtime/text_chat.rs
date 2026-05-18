@@ -16,6 +16,12 @@ pub enum TextChatKind {
     SendMessageAccepted,
     /// A newly created message event.
     MessageCreated,
+    /// Delete one of the user's own messages.
+    DeleteMessage,
+    /// Acknowledges that a message deletion was accepted.
+    DeleteMessageAccepted,
+    /// A message was deleted by its author; recipients should remove it.
+    MessageDeleted,
 }
 
 /// Request payload used to load room history.
@@ -58,6 +64,35 @@ pub struct SendMessage {
 pub struct SendMessageAccepted {
     /// Accepted message.
     pub message: TextChatMessage,
+}
+
+/// Request payload used to soft-delete one of the user's own messages.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeleteMessage {
+    /// Server identifier.
+    pub server_id: String,
+    /// Room identifier.
+    pub room_id: String,
+    /// Identifier of the message to delete.
+    pub message_id: String,
+}
+
+/// Response payload returned after accepting a message deletion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeleteMessageAccepted {
+    /// Identifier of the deleted message.
+    pub message_id: String,
+}
+
+/// Broadcast payload notifying room members that a message was removed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageDeletedPayload {
+    /// Server identifier.
+    pub server_id: String,
+    /// Room identifier.
+    pub room_id: String,
+    /// Identifier of the removed message.
+    pub message_id: String,
 }
 
 /// Text chat message payload.

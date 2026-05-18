@@ -1,8 +1,8 @@
 //! Text chat application flows.
 
 use cheenhub_contracts::realtime::{
-    LoadRoomHistory, RealtimeKind, RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted,
-    TextChatKind, TextChatMessage,
+    DeleteMessage, DeleteMessageAccepted, LoadRoomHistory, MessageDeletedPayload, RealtimeKind,
+    RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
 };
 use cheenhub_contracts::rest::AuthUser;
 use cheenhub_contracts::rest::ServerRoomKind;
@@ -84,6 +84,7 @@ pub(crate) async fn send_message(
         author_nickname: user.nickname.clone(),
         body: valid.body,
         created_at: Utc::now(),
+        deleted_at: None,
     };
     let payload = message_summary(&message, user.avatar_url.clone());
     let state_for_insert = state.clone();
@@ -118,6 +119,46 @@ pub(crate) async fn send_message(
     });
 
     Ok(SendMessageAccepted { message: payload })
+}
+
+/// Soft-deletes a message authored by the requesting user.
+pub(crate) async fn delete_message(
+    state: &AppState,
+    user_id: &Uuid,
+    request: DeleteMessage,
+) -> Result<DeleteMessageAccepted, TextChatApplicationError> {
+    let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
+    let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
+    let message_id = parse_id(&request.message_id, "Сообщение не найдено.")?;
+    ensure_room_text_available(state, user_id, &server_id, &room_id).await?;
+
+    let Some(message) = state
+        .text_chat_store
+        .soft_delete_message(&message_id, user_id)
+        .await
+        .map_err(TextChatApplicationError::Internal)?
+    else {
+        return Err(TextChatApplicationError::NotFound(
+            "Сообщение не найдено или уже удалено.".to_owned(),
+        ));
+    };
+
+    let deleted_payload = MessageDeletedPayload {
+        server_id: message.server_id.to_string(),
+        room_id: message.room_id.to_string(),
+        message_id: message.id.to_string(),
+    };
+
+    if let Err(error) = fanout_message_deleted(state, deleted_payload).await {
+        error!(
+            message_id = %message.id,
+            user_id = %user_id,
+            %error,
+            "failed to schedule text chat delete fanout"
+        );
+    }
+
+    Ok(DeleteMessageAccepted { message_id: message.id.to_string() })
 }
 
 /// Text chat application error.
@@ -197,6 +238,48 @@ async fn fanout_message_created(state: &AppState, message: TextChatMessage) -> a
             RealtimeModule::TextChat,
             &server_id,
             RealtimeKind::TextChat(TextChatKind::MessageCreated),
+            &stream_ids,
+            message,
+        )
+        .await;
+
+    Ok(())
+}
+
+async fn fanout_message_deleted(
+    state: &AppState,
+    message: MessageDeletedPayload,
+) -> anyhow::Result<()> {
+    let server_id = Uuid::parse_str(&message.server_id)?;
+    let room_id = Uuid::parse_str(&message.room_id)?;
+    let candidates = state
+        .realtime_hub
+        .recipients(state, RealtimeModule::TextChat, &server_id)
+        .await;
+    let mut stream_ids = Vec::new();
+
+    for candidate in candidates {
+        match policy::can_receive_room_event(state, &candidate.user_id, &server_id, &room_id).await
+        {
+            Ok(true) => stream_ids.push(candidate.stream_id),
+            Ok(false) => {}
+            Err(error) => {
+                tracing::warn!(
+                    stream_id = %candidate.stream_id,
+                    user_id = %candidate.user_id,
+                    %error,
+                    "failed to evaluate text chat delete fanout policy"
+                );
+            }
+        }
+    }
+
+    state
+        .realtime_hub
+        .fanout_to_streams(
+            RealtimeModule::TextChat,
+            &server_id,
+            RealtimeKind::TextChat(TextChatKind::MessageDeleted),
             &stream_ids,
             message,
         )

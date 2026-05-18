@@ -4,6 +4,7 @@ use std::sync::Mutex;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
+use chrono::Utc;
 use uuid::Uuid;
 
 use crate::features::text_chat::domain::TextMessage;
@@ -33,7 +34,7 @@ impl TextChatStore for InMemoryTextChatStore {
             .lock()
             .map_err(|_| poisoned())?
             .iter()
-            .filter(|message| message.room_id == *room_id)
+            .filter(|message| message.room_id == *room_id && message.deleted_at.is_none())
             .cloned()
             .collect::<Vec<_>>();
         messages.sort_by_key(|message| (message.created_at, message.id));
@@ -55,6 +56,22 @@ impl TextChatStore for InMemoryTextChatStore {
             messages: messages.split_off(start),
             has_more,
         })
+    }
+
+    async fn soft_delete_message(
+        &self,
+        message_id: &Uuid,
+        author_user_id: &Uuid,
+    ) -> anyhow::Result<Option<TextMessage>> {
+        let mut messages = self.messages.lock().map_err(|_| poisoned())?;
+        let Some(message) = messages.iter_mut().find(|m| {
+            m.id == *message_id && m.author_user_id == *author_user_id && m.deleted_at.is_none()
+        }) else {
+            return Ok(None);
+        };
+        message.deleted_at = Some(Utc::now());
+
+        Ok(Some(message.clone()))
     }
 }
 

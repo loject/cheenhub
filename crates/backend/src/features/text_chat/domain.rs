@@ -20,4 +20,6 @@ pub(crate) struct TextMessage {
     pub(crate) body: String,
     /// Message creation timestamp.
     pub(crate) created_at: DateTime<Utc>,
+    /// Soft-delete timestamp; set when the author deletes their message.
+    pub(crate) deleted_at: Option<DateTime<Utc>>,
 }

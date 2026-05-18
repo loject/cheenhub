@@ -22,7 +22,8 @@ pub use server::{
     ServerRolesSaved,
 };
 pub use text_chat::{
-    LoadRoomHistory, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
+    DeleteMessage, DeleteMessageAccepted, LoadRoomHistory, MessageDeletedPayload, RoomHistory,
+    SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
 };
 pub use voice_chat::{
     JoinVoiceRoom, LeaveVoiceRoom, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
