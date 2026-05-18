@@ -1,10 +1,12 @@
 //! Server settings realtime helpers.
 
 use cheenhub_contracts::realtime::{
-    KickServerInviteMember, KickServerMember, ListServerInvites, ListServerMembers,
-    ListServerRoles, RealtimeKind, RealtimeModule, RevokeServerInvite, SaveServerRoles,
-    ServerInviteList, ServerInviteMemberKicked, ServerInviteRevoked, ServerKind,
-    ServerMemberKicked, ServerMemberList, ServerRoleDraft, ServerRoleList, ServerRolesSaved,
+    AssignServerMemberRole, KickServerInviteMember, KickServerMember, ListServerInvites,
+    ListServerMembers, ListServerRoles, RealtimeKind, RealtimeModule, RevokeServerInvite,
+    RevokeServerMemberRole, SaveServerRoles, ServerInviteList, ServerInviteMemberKicked,
+    ServerInviteRevoked, ServerKind, ServerMemberKicked, ServerMemberList,
+    ServerMemberRoleAssigned, ServerMemberRoleRevoked, ServerRoleDraft, ServerRoleList,
+    ServerRolesSaved,
 };
 
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
@@ -117,6 +119,46 @@ pub(super) async fn save_server_roles(
             RealtimeModule::Server,
             RealtimeKind::Server(ServerKind::SaveServerRoles),
             SaveServerRoles { server_id, roles },
+        )
+        .await
+}
+
+/// Assigns a custom role to a server member.
+pub(super) async fn assign_server_member_role(
+    realtime: &RealtimeHandle,
+    server_id: String,
+    user_id: String,
+    role_id: String,
+) -> Result<ServerMemberRoleAssigned, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::Server,
+            RealtimeKind::Server(ServerKind::AssignServerMemberRole),
+            AssignServerMemberRole {
+                server_id,
+                user_id,
+                role_id,
+            },
+        )
+        .await
+}
+
+/// Revokes a custom role from a server member.
+pub(super) async fn revoke_server_member_role(
+    realtime: &RealtimeHandle,
+    server_id: String,
+    user_id: String,
+    role_id: String,
+) -> Result<ServerMemberRoleRevoked, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::Server,
+            RealtimeKind::Server(ServerKind::RevokeServerMemberRole),
+            RevokeServerMemberRole {
+                server_id,
+                user_id,
+                role_id,
+            },
         )
         .await
 }

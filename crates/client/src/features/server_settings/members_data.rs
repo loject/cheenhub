@@ -17,6 +17,8 @@ pub(super) struct ServerMemberRow {
     pub(super) invite_code: Option<String>,
     /// Human-readable invite use time.
     pub(super) invite_used_at: Option<String>,
+    /// Custom role ids currently held by this member.
+    pub(super) role_ids: Vec<String>,
 }
 
 /// Member selected for a kick confirmation.
@@ -37,5 +39,6 @@ pub(super) fn member_from_realtime(member: ServerMemberEntry) -> ServerMemberRow
         joined_at: member.joined_at,
         invite_code: member.invite_code,
         invite_used_at: member.invite_used_at,
+        role_ids: member.role_ids,
     }
 }
