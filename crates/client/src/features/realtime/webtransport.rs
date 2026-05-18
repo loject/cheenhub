@@ -1,11 +1,15 @@
 //! WebTransport client transport helpers.
 
+use std::rc::Rc;
+
 use cheenhub_contracts::realtime::{ControlKind, RealtimeEnvelope, RealtimeKind, RealtimeModule};
 use dioxus::prelude::{debug, info, warn};
 use futures_channel::mpsc;
-use web_transport::{RecvStream, Session};
+use futures_util::lock::Mutex;
+use web_transport::{RecvStream, SendStream, Session};
 
 use super::framing;
+use super::guards::{ModuleStreams, remove_cached_stream};
 use super::handle::{DatagramListeners, RealtimeHandle};
 use super::task::spawn_task;
 
@@ -34,6 +38,7 @@ pub(super) fn spawn_stream_reader(
     module: RealtimeModule,
     mut recv: RecvStream,
     inbound: mpsc::UnboundedSender<RealtimeEnvelope>,
+    cached_stream: Option<(ModuleStreams, Rc<Mutex<SendStream>>)>,
 ) {
     spawn_task(async move {
         loop {
@@ -64,6 +69,13 @@ pub(super) fn spawn_stream_reader(
                 debug!(module = ?module, "realtime inbound dispatcher closed");
                 break;
             }
+        }
+        if let Some((streams, stream)) = cached_stream {
+            remove_cached_stream(streams, module, stream).await;
+            debug!(
+                module = ?module,
+                "removed closed WebTransport realtime stream from cache"
+            );
         }
     });
 }

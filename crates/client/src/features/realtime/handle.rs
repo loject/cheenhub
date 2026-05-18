@@ -11,7 +11,7 @@ use cheenhub_contracts::realtime::{
 };
 use dioxus::prelude::{debug, info, warn};
 use futures_channel::{mpsc, oneshot};
-use futures_util::{StreamExt, lock::Mutex};
+use futures_util::lock::Mutex;
 use serde::{Serialize, de::DeserializeOwned};
 use uuid::Uuid;
 use web_transport::{SendStream, Session};
@@ -19,15 +19,14 @@ use web_transport::{SendStream, Session};
 use super::config;
 use super::error::RealtimeError;
 use super::framing;
+use super::guards::{
+    ModuleStreams, PendingRequestGuard, PendingRequests, StreamWriteGuard, remove_cached_stream,
+};
+use super::inbound::{EventListeners, spawn_universal_reader};
 use super::status::{RealtimeConnectionStatus, RealtimeTransportKind};
-use super::task::spawn_task;
 use super::websocket::{self, WebSocketOutbound, WebSocketOutboundSender};
 use super::webtransport;
 
-type PendingKey = (RealtimeModule, Uuid);
-type PendingRequests = Rc<RefCell<HashMap<PendingKey, oneshot::Sender<RealtimeEnvelope>>>>;
-type ModuleStreams = Rc<Mutex<HashMap<RealtimeModule, Rc<Mutex<SendStream>>>>>;
-type EventListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<RealtimeEnvelope>>>>;
 pub(super) type DatagramListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<Bytes>>>>;
 type StatusListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<RealtimeConnectionStatus>>>>;
 
@@ -309,18 +308,15 @@ impl RealtimeHandle {
             .pending
             .borrow_mut()
             .insert((module, request_id), sender);
+        let pending_guard =
+            PendingRequestGuard::new(self.inner.pending.clone(), (module, request_id));
 
-        if let Err(error) = self.write_envelope(envelope).await {
-            self.inner
-                .pending
-                .borrow_mut()
-                .remove(&(module, request_id));
-            return Err(error);
-        }
+        self.write_envelope(envelope).await?;
 
         let response = receiver
             .await
             .map_err(|_| RealtimeError::new("Realtime response channel closed."))?;
+        pending_guard.disarm();
         if response.kind == RealtimeKind::Control(ControlKind::Rejected) {
             let rejected =
                 serde_json::from_value::<Rejected>(response.payload).map_err(|error| {
@@ -340,13 +336,85 @@ impl RealtimeHandle {
 
         match connected.transport {
             ConnectedTransport::WebTransport(session) => {
-                let stream = self.stream_for(envelope.module, (*session).clone()).await?;
-                framing::write_envelope(&stream, &envelope).await
+                if uses_cached_stream(envelope.module) {
+                    self.write_webtransport_envelope(envelope, (*session).clone())
+                        .await
+                } else {
+                    self.write_webtransport_one_shot(envelope, (*session).clone())
+                        .await
+                }
             }
             ConnectedTransport::WebSocket(sender) => sender
                 .unbounded_send(WebSocketOutbound::Envelope(envelope))
                 .map_err(|_| RealtimeError::new("Realtime WebSocket fallback writer is closed.")),
         }
+    }
+
+    async fn write_webtransport_envelope(
+        &self,
+        envelope: RealtimeEnvelope,
+        session: Session,
+    ) -> Result<(), RealtimeError> {
+        let module = envelope.module;
+        let mut last_error = None;
+
+        for attempt in 0..2 {
+            let stream = self.stream_for(module, session.clone()).await?;
+            let write_guard =
+                StreamWriteGuard::new(module, self.inner.streams.clone(), stream.clone());
+            match framing::write_envelope(&stream, &envelope).await {
+                Ok(()) => {
+                    write_guard.disarm();
+                    return Ok(());
+                }
+                Err(error) => {
+                    remove_cached_stream(self.inner.streams.clone(), module, stream).await;
+                    write_guard.disarm();
+                    warn!(
+                        module = ?module,
+                        attempt,
+                        %error,
+                        "failed to write WebTransport realtime frame; dropped cached module stream"
+                    );
+                    last_error = Some(error);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| RealtimeError::new("Failed to write realtime frame.")))
+    }
+
+    async fn write_webtransport_one_shot(
+        &self,
+        envelope: RealtimeEnvelope,
+        session: Session,
+    ) -> Result<(), RealtimeError> {
+        let module = envelope.module;
+        let mut last_error = None;
+
+        for attempt in 0..2 {
+            let (send, recv) = session.open_bi().await.map_err(|error| {
+                RealtimeError::new(format!("Failed to open realtime stream: {error}"))
+            })?;
+            let send = Rc::new(Mutex::new(send));
+            debug!(module = ?module, "opened one-shot WebTransport realtime stream");
+            webtransport::spawn_stream_reader(module, recv, self.inner.inbound.clone(), None);
+
+            match framing::write_envelope(&send, &envelope).await {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    warn!(
+                        module = ?module,
+                        attempt,
+                        %error,
+                        "failed to write one-shot WebTransport realtime frame"
+                    );
+                    last_error = Some(error);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| RealtimeError::new("Failed to write realtime frame.")))
     }
 
     async fn stream_for(
@@ -364,7 +432,12 @@ impl RealtimeHandle {
         let send = Rc::new(Mutex::new(send));
         self.inner.streams.lock().await.insert(module, send.clone());
         debug!(module = ?module, "opened WebTransport realtime stream");
-        webtransport::spawn_stream_reader(module, recv, self.inner.inbound.clone());
+        webtransport::spawn_stream_reader(
+            module,
+            recv,
+            self.inner.inbound.clone(),
+            Some((self.inner.streams.clone(), send.clone())),
+        );
 
         Ok(send)
     }
@@ -434,50 +507,6 @@ pub(crate) fn create_handle() -> RealtimeHandle {
     handle
 }
 
-fn spawn_universal_reader(
-    pending: PendingRequests,
-    event_listeners: EventListeners,
-    mut receiver: mpsc::UnboundedReceiver<RealtimeEnvelope>,
-) {
-    spawn_task(async move {
-        while let Some(envelope) = receiver.next().await {
-            if envelope.request_id.is_none() {
-                dispatch_event(&event_listeners, envelope);
-                continue;
-            }
-            let Some(request_id) = envelope.request_id else {
-                continue;
-            };
-            let key = (envelope.module, request_id);
-            if let Some(sender) = pending.borrow_mut().remove(&key) {
-                let _ = sender.send(envelope);
-            } else if is_rejection(&envelope) {
-                let key = pending
-                    .borrow()
-                    .keys()
-                    .find(|(_, pending_request_id)| *pending_request_id == request_id)
-                    .copied();
-                if let Some(key) = key
-                    && let Some(sender) = pending.borrow_mut().remove(&key)
-                {
-                    let _ = sender.send(envelope);
-                }
-            }
-        }
-    });
-}
-
-fn dispatch_event(event_listeners: &EventListeners, envelope: RealtimeEnvelope) {
-    event_listeners
-        .borrow_mut()
-        .retain(|listener| listener.unbounded_send(envelope.clone()).is_ok());
-}
-
-fn is_rejection(envelope: &RealtimeEnvelope) -> bool {
-    envelope.module == RealtimeModule::Control
-        && envelope.kind == RealtimeKind::Control(ControlKind::Rejected)
-}
-
 fn validate_module_kind(module: RealtimeModule, kind: RealtimeKind) -> Result<(), RealtimeError> {
     if kind.module() == module {
         Ok(())
@@ -486,4 +515,14 @@ fn validate_module_kind(module: RealtimeModule, kind: RealtimeKind) -> Result<()
             "Realtime module and kind do not belong together.",
         ))
     }
+}
+
+fn uses_cached_stream(module: RealtimeModule) -> bool {
+    matches!(
+        module,
+        RealtimeModule::Control
+            | RealtimeModule::Network
+            | RealtimeModule::TextChat
+            | RealtimeModule::VoiceChat
+    )
 }
