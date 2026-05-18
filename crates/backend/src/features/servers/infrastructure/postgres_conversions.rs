@@ -1,13 +1,15 @@
 //! Postgres row conversion helpers for server infrastructure.
 
+use cheenhub_contracts::realtime::ServerRoleKind;
 use cheenhub_contracts::rest::ServerRoomKind;
 
 use crate::features::servers::domain::{
-    Server, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion, ServerRoom,
+    Server, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion, ServerRole,
+    ServerRoom,
 };
 use crate::features::servers::infrastructure::entities::{
-    server_invite_uses, server_invites, server_member_exclusions, server_members, server_rooms,
-    servers,
+    server_invite_uses, server_invites, server_member_exclusions, server_members, server_roles,
+    server_rooms, servers,
 };
 
 pub(super) fn server_room_from_model(row: server_rooms::Model) -> anyhow::Result<ServerRoom> {
@@ -32,12 +34,83 @@ pub(super) fn room_kind_as_str(kind: ServerRoomKind) -> &'static str {
     }
 }
 
+pub(super) fn server_role_from_model(
+    row: server_roles::Model,
+    permissions: Vec<cheenhub_contracts::realtime::ServerRolePermission>,
+) -> anyhow::Result<ServerRole> {
+    let position = row.position.try_into().unwrap_or(0);
+
+    Ok(ServerRole {
+        id: row.id,
+        server_id: row.server_id,
+        name: row.name,
+        color: row.color,
+        kind: role_kind_from_str(&row.kind)?,
+        position,
+        permissions,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+pub(super) fn role_kind_as_str(kind: ServerRoleKind) -> &'static str {
+    match kind {
+        ServerRoleKind::Owner => "owner",
+        ServerRoleKind::Member => "member",
+        ServerRoleKind::Custom => "custom",
+    }
+}
+
+pub(super) fn role_permission_as_str(
+    permission: cheenhub_contracts::realtime::ServerRolePermission,
+) -> &'static str {
+    match permission {
+        cheenhub_contracts::realtime::ServerRolePermission::CreateInviteLinks => {
+            "create_invite_links"
+        }
+        cheenhub_contracts::realtime::ServerRolePermission::KickServerMembers => {
+            "kick_server_members"
+        }
+        cheenhub_contracts::realtime::ServerRolePermission::ManageRoles => "manage_roles",
+        cheenhub_contracts::realtime::ServerRolePermission::KickVoiceMembers => {
+            "kick_voice_members"
+        }
+    }
+}
+
 fn room_kind_from_str(kind: &str) -> anyhow::Result<ServerRoomKind> {
     match kind {
         "text" => Ok(ServerRoomKind::Text),
         "voice" => Ok(ServerRoomKind::Voice),
         "text_and_voice" => Ok(ServerRoomKind::TextAndVoice),
         other => Err(anyhow::anyhow!("unknown server room kind: {other}")),
+    }
+}
+
+fn role_kind_from_str(kind: &str) -> anyhow::Result<ServerRoleKind> {
+    match kind {
+        "owner" => Ok(ServerRoleKind::Owner),
+        "member" => Ok(ServerRoleKind::Member),
+        "custom" => Ok(ServerRoleKind::Custom),
+        other => Err(anyhow::anyhow!("unknown server role kind: {other}")),
+    }
+}
+
+pub(super) fn role_permission_from_str(
+    permission: &str,
+) -> anyhow::Result<cheenhub_contracts::realtime::ServerRolePermission> {
+    match permission {
+        "create_invite_links" => {
+            Ok(cheenhub_contracts::realtime::ServerRolePermission::CreateInviteLinks)
+        }
+        "kick_server_members" => {
+            Ok(cheenhub_contracts::realtime::ServerRolePermission::KickServerMembers)
+        }
+        "manage_roles" => Ok(cheenhub_contracts::realtime::ServerRolePermission::ManageRoles),
+        "kick_voice_members" => {
+            Ok(cheenhub_contracts::realtime::ServerRolePermission::KickVoiceMembers)
+        }
+        other => Err(anyhow::anyhow!("unknown server role permission: {other}")),
     }
 }
 

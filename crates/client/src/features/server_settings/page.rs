@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 use super::invites_section::ServerInvitesSettingsSection;
 use super::members_section::ServerMembersSettingsSection;
 use super::overview_section::ServerOverviewSettingsSection;
+use super::roles_section::ServerRolesSettingsSection;
 
 /// Server settings sections shown in the settings menu.
 #[derive(Clone, Copy, PartialEq)]
@@ -79,10 +80,10 @@ pub(crate) fn ServerSettingsPage(
 
     rsx! {
         section { class: "flex min-w-0 flex-1 bg-zinc-950/35",
-            nav { class: "flex w-[292px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/60 p-4",
+            nav { class: "group/settings-nav relative z-20 flex w-[292px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/60 p-4 transition-[width] duration-200 ease-out max-[1440px]:w-[76px] max-[1440px]:hover:w-[292px] max-[1440px]:focus-within:w-[292px]",
                 div { class: "mb-5 min-w-0 px-1",
-                    p { class: "text-[11px] font-medium uppercase tracking-[0.22em] text-zinc-600", "Параметры сервера" }
-                    h1 { class: "mt-2 truncate text-[18px] font-semibold tracking-[-0.03em] text-zinc-50", "{server_name}" }
+                    p { class: "overflow-hidden whitespace-nowrap text-[11px] font-medium uppercase tracking-[0.22em] text-zinc-600 transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/settings-nav:opacity-100 max-[1440px]:group-focus-within/settings-nav:opacity-100", "Параметры сервера" }
+                    h1 { class: "mt-2 truncate text-[18px] font-semibold tracking-[-0.03em] text-zinc-50 transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/settings-nav:opacity-100 max-[1440px]:group-focus-within/settings-nav:opacity-100", "{server_name}" }
                 }
                 div { class: "space-y-1",
                     for section in SETTINGS_SECTIONS {
@@ -92,8 +93,11 @@ pub(crate) fn ServerSettingsPage(
                             class: settings_item_class(active_section == section.kind),
                             "aria-current": if active_section == section.kind { "page" } else { "false" },
                             onclick: move |_| on_select_section.call(section.kind),
-                            span { class: "block text-[13px] font-medium", "{section.label}" }
-                            span { class: "mt-0.5 block text-[11px] leading-4 text-zinc-500", "{section.description}" }
+                            span { class: settings_badge_class(active_section == section.kind), "{settings_section_short_label(section.kind)}" }
+                            span { class: "min-w-0 flex-1 overflow-hidden transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/settings-nav:opacity-100 max-[1440px]:group-focus-within/settings-nav:opacity-100",
+                                span { class: "block truncate text-[13px] font-medium", "{section.label}" }
+                                span { class: "mt-0.5 block truncate text-[11px] leading-4 text-zinc-500", "{section.description}" }
+                            }
                         }
                     }
                 }
@@ -135,6 +139,12 @@ pub(crate) fn ServerSettingsPage(
                                 server_name: server_name.clone(),
                             }
                         },
+                        ServerSettingsSection::Roles => rsx! {
+                            ServerRolesSettingsSection {
+                                server_id: server.id.clone(),
+                                server_name: server_name.clone(),
+                            }
+                        },
                         _ => rsx! {
                             div { class: "rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-6 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
                                 div { class: "flex items-start justify-between gap-4",
@@ -142,16 +152,16 @@ pub(crate) fn ServerSettingsPage(
                                         h3 { class: "text-[22px] font-semibold tracking-[-0.04em] text-zinc-50", "{section_label}" }
                                         p { class: "mt-2 max-w-xl text-[13px] leading-6 text-zinc-500", "{section_description}" }
                                     }
-                                    span { class: "shrink-0 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] font-medium text-blue-200", "Макет" }
+                                    span { class: "shrink-0 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] font-medium text-blue-200", "Настройки" }
                                 }
                                 div { class: "mt-6 grid gap-3 sm:grid-cols-2",
                                     div { class: "rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4",
-                                        p { class: "text-[12px] font-semibold text-zinc-100", "Основной блок" }
-                                        p { class: "mt-2 text-[12px] leading-5 text-zinc-500", "Здесь будет форма с ключевыми настройками выбранной секции." }
+                                        p { class: "text-[12px] font-semibold text-zinc-100", "Параметры" }
+                                        p { class: "mt-2 text-[12px] leading-5 text-zinc-500", "Ключевые настройки выбранной секции." }
                                     }
                                     div { class: "rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4",
                                         p { class: "text-[12px] font-semibold text-zinc-100", "Быстрые действия" }
-                                        p { class: "mt-2 text-[12px] leading-5 text-zinc-500", "Здесь появятся действия, которые администратор выполняет чаще всего." }
+                                        p { class: "mt-2 text-[12px] leading-5 text-zinc-500", "Частые действия администратора для выбранной секции." }
                                     }
                                 }
                             }
@@ -165,9 +175,28 @@ pub(crate) fn ServerSettingsPage(
 
 fn settings_item_class(active: bool) -> &'static str {
     if active {
-        "flex w-full flex-col rounded-xl border border-accent/25 bg-accent/10 px-3 py-2.5 text-left text-blue-100"
+        "flex w-full items-center gap-3 rounded-xl border border-accent/25 bg-accent/10 px-3 py-2.5 text-left text-blue-100"
     } else {
-        "flex w-full flex-col rounded-xl border border-transparent px-3 py-2.5 text-left text-zinc-300 transition hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-100"
+        "flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left text-zinc-300 transition hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-100"
+    }
+}
+
+fn settings_badge_class(active: bool) -> &'static str {
+    if active {
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/15 text-[12px] font-semibold text-blue-100"
+    } else {
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/70 text-[12px] font-semibold text-zinc-500"
+    }
+}
+
+fn settings_section_short_label(section: ServerSettingsSection) -> &'static str {
+    match section {
+        ServerSettingsSection::Overview => "О",
+        ServerSettingsSection::Invites => "И",
+        ServerSettingsSection::Members => "У",
+        ServerSettingsSection::Roles => "Р",
+        ServerSettingsSection::Moderation => "М",
+        ServerSettingsSection::Voice => "Г",
     }
 }
 
@@ -185,7 +214,7 @@ fn settings_section_label(section: ServerSettingsSection) -> &'static str {
 fn settings_section_description(section: ServerSettingsSection) -> &'static str {
     match section {
         ServerSettingsSection::Overview => {
-            "Макет секции для общего управления сервером: название, визуальные настройки и короткое описание."
+            "Общее управление сервером: название, визуальные настройки и короткое описание."
         }
         ServerSettingsSection::Invites => {
             "Просмотр активных приглашений, лимитов использования и быстрые действия со ссылками."
@@ -194,20 +223,22 @@ fn settings_section_description(section: ServerSettingsSection) -> &'static str 
             "Просмотр участников, инвайтов входа и быстрые действия модерации."
         }
         ServerSettingsSection::Roles => {
-            "Макет секции для ролей, прав доступа и порядка отображения групп на сервере."
+            "Управление ролями, правами доступа и цветами групп на сервере."
         }
         ServerSettingsSection::Moderation => {
-            "Макет секции для правил, журнала событий и настроек безопасности сообщества."
+            "Правила, журнал событий и настройки безопасности сообщества."
         }
         ServerSettingsSection::Voice => {
-            "Макет секции для параметров голосовых комнат, качества соединения и лимитов участников."
+            "Параметры голосовых комнат, качество соединения и лимиты участников."
         }
     }
 }
 
 fn section_container_class(section: ServerSettingsSection) -> &'static str {
     match section {
-        ServerSettingsSection::Invites | ServerSettingsSection::Members => {
+        ServerSettingsSection::Invites
+        | ServerSettingsSection::Members
+        | ServerSettingsSection::Roles => {
             "mx-auto min-h-[calc(100vh-72px)] w-full max-w-[1180px] px-6 py-6"
         }
         _ => "mx-auto flex min-h-[calc(100vh-72px)] w-full max-w-[920px] flex-col px-6 py-8",

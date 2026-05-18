@@ -10,6 +10,9 @@ mod members_section;
 mod overview_section;
 mod page;
 mod realtime;
+mod role_save_bar;
+mod roles_data;
+mod roles_section;
 mod scope;
 
 pub(crate) use scope::ServerSettingsScope;

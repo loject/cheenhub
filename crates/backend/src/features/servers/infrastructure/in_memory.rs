@@ -1,33 +1,31 @@
 //! Simple in-memory server storage.
-
-use std::sync::Mutex;
-
 use anyhow::anyhow;
 use async_trait::async_trait;
 use cheenhub_contracts::rest::ServerRoomKind;
 use chrono::{DateTime, Utc};
+use std::sync::Mutex;
 use uuid::Uuid;
 
 use crate::features::servers::domain::{
     Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
-    ServerRoom,
+    ServerRole, ServerRoom,
 };
 use crate::features::servers::infrastructure::ServerStore;
-
 /// In-memory server storage for local runs and tests.
 #[derive(Default)]
 pub(crate) struct InMemoryServerStore {
-    state: Mutex<InMemoryState>,
+    pub(super) state: Mutex<InMemoryState>,
 }
 
 #[derive(Default)]
-struct InMemoryState {
+pub(super) struct InMemoryState {
     servers: Vec<Server>,
     invites: Vec<ServerInvite>,
     members: Vec<ServerMember>,
     exclusions: Vec<ServerMemberExclusion>,
     invite_uses: Vec<ServerInviteUse>,
     rooms: Vec<ServerRoom>,
+    pub(super) roles: Vec<ServerRole>,
 }
 
 #[async_trait]
@@ -45,7 +43,6 @@ impl ServerStore for InMemoryServerStore {
         };
 
         state.servers.push(server.clone());
-
         Ok(server)
     }
 
@@ -69,7 +66,6 @@ impl ServerStore for InMemoryServerStore {
             .map(|member| member.server_id)
             .filter(|server_id| !result.iter().any(|access| access.server.id == *server_id))
             .collect::<Vec<_>>();
-
         result.extend(
             state
                 .servers
@@ -81,7 +77,6 @@ impl ServerStore for InMemoryServerStore {
                     is_member: true,
                 }),
         );
-
         Ok(result)
     }
 
@@ -91,7 +86,6 @@ impl ServerStore for InMemoryServerStore {
         owner_user_id: &Uuid,
     ) -> anyhow::Result<Option<Server>> {
         let state = self.state.lock().map_err(|_| poisoned())?;
-
         Ok(state
             .servers
             .iter()
@@ -116,7 +110,6 @@ impl ServerStore for InMemoryServerStore {
 
         server.name = name;
         server.updated_at = Utc::now();
-
         Ok(Some(server.clone()))
     }
 
@@ -137,7 +130,6 @@ impl ServerStore for InMemoryServerStore {
 
         server.avatar_image_id = Some(avatar_image_id);
         server.updated_at = Utc::now();
-
         Ok(Some(server.clone()))
     }
 
@@ -158,15 +150,12 @@ impl ServerStore for InMemoryServerStore {
             created_at: Utc::now(),
             revoked_at: None,
         };
-
         state.invites.push(invite.clone());
-
         Ok(invite)
     }
 
     async fn find_server_invite(&self, code: &Uuid) -> anyhow::Result<Option<ServerInvite>> {
         let state = self.state.lock().map_err(|_| poisoned())?;
-
         Ok(state
             .invites
             .iter()
@@ -183,7 +172,6 @@ impl ServerStore for InMemoryServerStore {
             .cloned()
             .collect::<Vec<_>>();
         invites.sort_by_key(|invite| std::cmp::Reverse(invite.created_at));
-
         Ok(invites)
     }
 
@@ -470,6 +458,18 @@ impl ServerStore for InMemoryServerStore {
             .count()
             .try_into()
             .unwrap_or(u32::MAX))
+    }
+
+    async fn list_server_roles(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRole>> {
+        super::in_memory_roles::list_server_roles(&self.state, server_id)
+    }
+
+    async fn replace_server_roles(
+        &self,
+        server_id: &Uuid,
+        roles: Vec<ServerRole>,
+    ) -> anyhow::Result<Vec<ServerRole>> {
+        super::in_memory_roles::replace_server_roles(&self.state, server_id, roles)
     }
 }
 

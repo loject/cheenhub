@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::features::servers::domain::{
     Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
-    ServerRoom,
+    ServerRole, ServerRoom,
 };
 use crate::features::servers::infrastructure::ServerStore;
 use crate::features::servers::infrastructure::entities::{
@@ -21,6 +21,7 @@ use crate::features::servers::infrastructure::entities::{
 use crate::features::servers::infrastructure::postgres_conversions::{
     room_kind_as_str, server_room_from_model,
 };
+use crate::features::servers::infrastructure::postgres_roles;
 
 /// Postgres-backed server storage.
 pub(crate) struct PostgresServerStore {
@@ -463,5 +464,17 @@ impl ServerStore for PostgresServerStore {
             .await?;
 
         Ok(count.try_into().unwrap_or(u32::MAX))
+    }
+
+    async fn list_server_roles(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRole>> {
+        postgres_roles::list_server_roles(&self.database, server_id).await
+    }
+
+    async fn replace_server_roles(
+        &self,
+        server_id: &Uuid,
+        roles: Vec<ServerRole>,
+    ) -> anyhow::Result<Vec<ServerRole>> {
+        postgres_roles::replace_server_roles(&self.database, server_id, roles).await
     }
 }

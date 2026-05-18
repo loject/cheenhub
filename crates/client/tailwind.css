@@ -23,6 +23,117 @@
 }
 
 @layer components {
+  @keyframes role-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes role-expand {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes role-pop {
+    0% {
+      transform: scale(0.96);
+    }
+
+    65% {
+      transform: scale(1.035);
+    }
+
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  @keyframes role-save-in {
+    from {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .role-settings-panel {
+    animation: role-fade-in 220ms ease-out both;
+  }
+
+  .role-editor-surface {
+    animation: role-fade-in 180ms ease-out both;
+  }
+
+  .role-card[aria-selected="true"] {
+    animation: role-pop 220ms ease-out both;
+  }
+
+  .role-details {
+    animation: role-expand 180ms ease-out both;
+  }
+
+  .role-stat-tile {
+    transition:
+      border-color 160ms ease,
+      background 160ms ease,
+      transform 160ms ease;
+  }
+
+  .role-stat-tile:hover {
+    border-color: rgba(59, 130, 246, 0.22);
+    background: rgba(59, 130, 246, 0.06);
+    transform: translateY(-1px);
+  }
+
+  .role-color-preview {
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      transform 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .role-color-preview:hover {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+  }
+
+  .role-save-bar-inner {
+    animation: role-save-in 180ms ease-out both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .role-settings-panel,
+    .role-editor-surface,
+    .role-card[aria-selected="true"],
+    .role-details,
+    .role-save-bar-inner {
+      animation: none;
+    }
+
+    .role-stat-tile,
+    .role-color-preview {
+      transition: none;
+    }
+  }
+
   .voice-shell::before {
     content: "";
     position: absolute;
