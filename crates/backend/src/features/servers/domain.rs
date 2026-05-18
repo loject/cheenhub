@@ -88,6 +88,26 @@ pub(crate) struct ServerMember {
     pub(crate) left_at: Option<DateTime<Utc>>,
 }
 
+/// Temporary server exclusion that blocks a kicked user from rejoining.
+#[derive(Debug, Clone)]
+pub(crate) struct ServerMemberExclusion {
+    /// Stable exclusion row identifier.
+    #[allow(dead_code)]
+    pub(crate) id: Uuid,
+    /// Server the exclusion belongs to.
+    pub(crate) server_id: Uuid,
+    /// User blocked from rejoining.
+    pub(crate) user_id: Uuid,
+    /// User or system actor that created the exclusion.
+    #[allow(dead_code)]
+    pub(crate) initiator_user_id: Uuid,
+    /// Timestamp until which the user cannot rejoin.
+    pub(crate) expires_at: DateTime<Utc>,
+    /// Exclusion creation timestamp.
+    #[allow(dead_code)]
+    pub(crate) created_at: DateTime<Utc>,
+}
+
 /// Server invite use data used by server flows.
 #[derive(Debug, Clone)]
 pub(crate) struct ServerInviteUse {

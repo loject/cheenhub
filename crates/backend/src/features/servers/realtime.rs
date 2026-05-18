@@ -1,8 +1,8 @@
 //! Server management realtime adapter.
 
 use cheenhub_contracts::realtime::{
-    KickServerInviteMember, ListServerInvites, RealtimeEnvelope, RealtimeKind, RealtimeModule,
-    RejectionCode, RevokeServerInvite, ServerKind,
+    KickServerInviteMember, KickServerMember, ListServerInvites, ListServerMembers,
+    RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode, RevokeServerInvite, ServerKind,
 };
 use uuid::Uuid;
 
@@ -22,6 +22,23 @@ pub(crate) async fn handle(
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<()> {
     match envelope.kind {
+        RealtimeKind::Server(ServerKind::ListServerMembers) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: ListServerMembers = decode_payload(&envelope)?;
+            match application::list_server_members(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::Server,
+                        RealtimeKind::Server(ServerKind::ServerMemberList),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_server_error(send, Some(request_id), error).await,
+            }
+        }
         RealtimeKind::Server(ServerKind::ListServerInvites) => {
             let request_id = require_request_id(&envelope)?;
             let payload: ListServerInvites = decode_payload(&envelope)?;
@@ -65,6 +82,23 @@ pub(crate) async fn handle(
                         send,
                         RealtimeModule::Server,
                         RealtimeKind::Server(ServerKind::ServerInviteMemberKicked),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_server_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::Server(ServerKind::KickServerMember) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: KickServerMember = decode_payload(&envelope)?;
+            match application::kick_server_member(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::Server,
+                        RealtimeKind::Server(ServerKind::ServerMemberKicked),
                         Some(request_id),
                         response,
                     )

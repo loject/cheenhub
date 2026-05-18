@@ -4,6 +4,7 @@ use cheenhub_contracts::rest::ServerSummary;
 use dioxus::prelude::*;
 
 use super::invites_section::ServerInvitesSettingsSection;
+use super::members_section::ServerMembersSettingsSection;
 use super::overview_section::ServerOverviewSettingsSection;
 
 /// Server settings sections shown in the settings menu.
@@ -128,6 +129,12 @@ pub(crate) fn ServerSettingsPage(
                                 server_name: server_name.clone(),
                             }
                         },
+                        ServerSettingsSection::Members => rsx! {
+                            ServerMembersSettingsSection {
+                                server_id: server.id.clone(),
+                                server_name: server_name.clone(),
+                            }
+                        },
                         _ => rsx! {
                             div { class: "rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-6 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
                                 div { class: "flex items-start justify-between gap-4",
@@ -184,7 +191,7 @@ fn settings_section_description(section: ServerSettingsSection) -> &'static str 
             "Просмотр активных приглашений, лимитов использования и быстрые действия со ссылками."
         }
         ServerSettingsSection::Members => {
-            "Макет секции для просмотра участников, поиска людей и будущих действий модерации."
+            "Просмотр участников, инвайтов входа и быстрые действия модерации."
         }
         ServerSettingsSection::Roles => {
             "Макет секции для ролей, прав доступа и порядка отображения групп на сервере."
@@ -200,7 +207,7 @@ fn settings_section_description(section: ServerSettingsSection) -> &'static str 
 
 fn section_container_class(section: ServerSettingsSection) -> &'static str {
     match section {
-        ServerSettingsSection::Invites => {
+        ServerSettingsSection::Invites | ServerSettingsSection::Members => {
             "mx-auto min-h-[calc(100vh-72px)] w-full max-w-[1180px] px-6 py-6"
         }
         _ => "mx-auto flex min-h-[calc(100vh-72px)] w-full max-w-[920px] flex-col px-6 py-8",

@@ -13,8 +13,10 @@ pub use control::{
 pub use envelope::{RealtimeEnvelope, RealtimeKind, RealtimeModule};
 pub use network::{NetworkKind, Ping, Pong};
 pub use server::{
-    KickServerInviteMember, ListServerInvites, RevokeServerInvite, ServerInviteJoinedMember,
-    ServerInviteLink, ServerInviteList, ServerInviteMemberKicked, ServerInviteRevoked, ServerKind,
+    KickServerInviteMember, KickServerMember, ListServerInvites, ListServerMembers,
+    RevokeServerInvite, ServerInviteJoinedMember, ServerInviteLink, ServerInviteList,
+    ServerInviteMemberKicked, ServerInviteRevoked, ServerKind, ServerMemberEntry,
+    ServerMemberKicked, ServerMemberList,
 };
 pub use text_chat::{
     LoadRoomHistory, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,

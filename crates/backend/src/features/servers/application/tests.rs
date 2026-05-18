@@ -11,8 +11,8 @@ use uuid::Uuid;
 
 use super::{
     accept_invite, create, create_invite, create_room, delete_room, invite_info,
-    kick_server_invite_member, leave, list, list_rooms, list_server_invites, revoke_server_invite,
-    update, update_avatar, update_room,
+    kick_server_invite_member, kick_server_member, leave, list, list_rooms, list_server_invites,
+    list_server_members, revoke_server_invite, update, update_avatar, update_room,
 };
 use crate::features::auth::application as auth_application;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
@@ -26,6 +26,7 @@ use crate::state::AppState;
 mod invite_errors;
 mod invite_settings;
 mod invites;
+mod members_settings;
 mod rooms_and_list;
 mod server_profile;
 

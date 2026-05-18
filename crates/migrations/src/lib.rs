@@ -18,6 +18,7 @@ mod m20260513_000014_create_user_password_change_trace_table;
 mod m20260513_000015_create_images_and_user_avatars;
 mod m20260518_000016_add_server_invite_revoked_at;
 mod m20260518_000017_add_server_avatar_image;
+mod m20260518_000018_create_server_member_exclusions_table;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -45,6 +46,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260513_000015_create_images_and_user_avatars::Migration),
             Box::new(m20260518_000016_add_server_invite_revoked_at::Migration),
             Box::new(m20260518_000017_add_server_avatar_image::Migration),
+            Box::new(m20260518_000018_create_server_member_exclusions_table::Migration),
         ]
     }
 }

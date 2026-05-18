@@ -20,12 +20,14 @@ use self::support::{
 };
 
 mod invite_settings;
+mod members_settings;
 mod profile;
 mod support;
 
 pub(crate) use invite_settings::{
     kick_server_invite_member, list_server_invites, revoke_server_invite,
 };
+pub(crate) use members_settings::{kick_server_member, list_server_members};
 pub(crate) use profile::{update, update_avatar};
 
 /// Creates a server owned by the current user.
@@ -180,6 +182,24 @@ pub(crate) async fn invite_info(
             .await
             .map_err(ServerError::Internal)?
             .is_some();
+    if !is_member
+        && let Some(exclusion) = state
+            .server_store
+            .find_active_server_member_exclusion(&server.id, &user_id, Utc::now())
+            .await
+            .map_err(ServerError::Internal)?
+    {
+        tracing::debug!(
+            server_id = %server.id,
+            user_id = %user_id,
+            excluded_until = %exclusion.expires_at,
+            "blocked invite lookup for excluded server member"
+        );
+        return Err(ServerError::BadRequest(format!(
+            "Ты временно исключен с сервера до {}.",
+            exclusion.expires_at.to_rfc3339()
+        )));
+    }
 
     Ok(ServerInviteInfoResponse {
         invite: ServerInviteSummary {
@@ -248,6 +268,23 @@ pub(crate) async fn accept_invite(
             server: server_summary(state, &server, &user_id, true),
             already_member: true,
         });
+    }
+    if let Some(exclusion) = state
+        .server_store
+        .find_active_server_member_exclusion(&server.id, &user_id, Utc::now())
+        .await
+        .map_err(ServerError::Internal)?
+    {
+        tracing::warn!(
+            server_id = %server.id,
+            user_id = %user_id,
+            excluded_until = %exclusion.expires_at,
+            "blocked invite acceptance for excluded server member"
+        );
+        return Err(ServerError::BadRequest(format!(
+            "Ты временно исключен с сервера до {}.",
+            exclusion.expires_at.to_rfc3339()
+        )));
     }
 
     let uses = state
