@@ -235,6 +235,8 @@ pub enum ServerRolePermission {
     ManageRoles,
     /// Allows kicking members from voice rooms.
     KickVoiceMembers,
+    /// Allows deleting any message in text rooms.
+    DeleteMessages,
 }
 
 /// Server role shown in settings.

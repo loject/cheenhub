@@ -143,6 +143,7 @@ pub(crate) fn ServerSettingsPage(
                             ServerRolesSettingsSection {
                                 server_id: server.id.clone(),
                                 server_name: server_name.clone(),
+                                is_owner: server.is_owner,
                             }
                         },
                         _ => rsx! {

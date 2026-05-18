@@ -36,6 +36,7 @@ impl TextChatStore for PostgresTextChatStore {
             body: Set(message.body),
             created_at: Set(message.created_at),
             deleted_at: Set(None),
+            deleted_by_user_id: Set(None),
         }
         .insert(&self.database)
         .await?;
@@ -99,22 +100,24 @@ impl TextChatStore for PostgresTextChatStore {
     async fn soft_delete_message(
         &self,
         message_id: &Uuid,
-        author_user_id: &Uuid,
+        deleted_by_user_id: &Uuid,
+        require_authorship: bool,
     ) -> anyhow::Result<Option<TextMessage>> {
         // NOTE: soft delete необходим для модерации удаленных сообщений в дальнейшем
-        let Some(row) = text_messages::Entity::find()
+        let mut query = text_messages::Entity::find()
             .filter(text_messages::Column::Id.eq(*message_id))
-            .filter(text_messages::Column::AuthorUserId.eq(*author_user_id))
-            .filter(text_messages::Column::DeletedAt.is_null())
-            .one(&self.database)
-            .await?
-        else {
+            .filter(text_messages::Column::DeletedAt.is_null());
+        if require_authorship {
+            query = query.filter(text_messages::Column::AuthorUserId.eq(*deleted_by_user_id));
+        }
+        let Some(row) = query.one(&self.database).await? else {
             return Ok(None);
         };
 
         let deleted_at = Utc::now();
         let mut active: text_messages::ActiveModel = row.into();
         active.deleted_at = Set(Some(deleted_at));
+        active.deleted_by_user_id = Set(Some(*deleted_by_user_id));
         let updated = active.update(&self.database).await?;
 
         Ok(Some(updated.into()))
@@ -132,6 +135,7 @@ impl From<text_messages::Model> for TextMessage {
             body: row.body,
             created_at: row.created_at,
             deleted_at: row.deleted_at,
+            deleted_by_user_id: row.deleted_by_user_id,
         }
     }
 }

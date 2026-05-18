@@ -12,7 +12,11 @@ use crate::features::realtime::RealtimeHandle;
 use dioxus::prelude::*;
 /// Renders a role management UI.
 #[component]
-pub(crate) fn ServerRolesSettingsSection(server_id: String, server_name: String) -> Element {
+pub(crate) fn ServerRolesSettingsSection(
+    server_id: String,
+    server_name: String,
+    is_owner: bool,
+) -> Element {
     let realtime_handle = use_context::<RealtimeHandle>();
     let mut roles = use_signal(|| None::<Vec<RoleDraft>>);
     let mut selected_role_id = use_signal(|| OWNER_ROLE_ID.to_owned());
@@ -92,6 +96,8 @@ pub(crate) fn ServerRolesSettingsSection(server_id: String, server_name: String)
     let selected_role_color = role.color.clone();
     let selected_role_locked = role.is_required;
     let selected_role_owner = role.is_owner();
+    let perm_locked = selected_role_owner || !is_owner;
+    let edit_locked = !is_owner;
     rsx! {
         div { class: "role-settings-panel space-y-4 pb-24 xl:pb-0",
             div { class: "role-editor-surface rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,.22)] transition-[border-color,background,box-shadow] duration-200 hover:border-zinc-700/80 hover:bg-zinc-950/80",
@@ -115,9 +121,13 @@ pub(crate) fn ServerRolesSettingsSection(server_id: String, server_name: String)
                             }
                             button {
                                 r#type: "button",
-                                class: "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_4px_18px_rgba(59,130,246,0.16)] transition-[background,box-shadow,transform] duration-150 hover:-translate-y-px hover:bg-blue-400 hover:shadow-[0_0_0_4px_rgba(59,130,246,0.14),0_10px_28px_rgba(59,130,246,0.18)]",
+                                disabled: edit_locked,
+                                class: if edit_locked { "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent/40 text-white/40 cursor-not-allowed" } else { "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_4px_18px_rgba(59,130,246,0.16)] transition-[background,box-shadow,transform] duration-150 hover:-translate-y-px hover:bg-blue-400 hover:shadow-[0_0_0_4px_rgba(59,130,246,0.14),0_10px_28px_rgba(59,130,246,0.18)]" },
                                 "aria-label": "Создать роль",
                                 onclick: move |_| {
+                                    if edit_locked {
+                                        return;
+                                    }
                                     let Some(mut next_roles) = roles() else {
                                         return;
                                     };
@@ -251,10 +261,10 @@ pub(crate) fn ServerRolesSettingsSection(server_id: String, server_name: String)
                             }
                             button {
                                 r#type: "button",
-                                disabled: selected_role_locked,
-                                class: delete_button_class(selected_role_locked),
+                                disabled: selected_role_locked || edit_locked,
+                                class: delete_button_class(selected_role_locked || edit_locked),
                                 onclick: move |_| {
-                                    if selected_role_locked {
+                                    if selected_role_locked || edit_locked {
                                         return;
                                     }
                                     let current_id = selected_role_id();
@@ -292,14 +302,16 @@ pub(crate) fn ServerRolesSettingsSection(server_id: String, server_name: String)
                                             r#type: "text",
                                             value: "{role.name}",
                                             maxlength: "32",
+                                            disabled: edit_locked,
                                             oninput: move |event| {
+                                                if edit_locked { return; }
                                                 let value = non_empty_role_name(event.value());
                                                 update_selected_role(&mut roles, &selected_role_id(), |role| {
                                                     role.name = value.clone();
                                                 });
                                                 dirty.set(true);
                                             },
-                                            class: "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 text-[13px] text-zinc-200 outline-none transition-[background,border-color,box-shadow] duration-150 placeholder:text-zinc-600 focus:border-zinc-700 focus:shadow-[0_0_0_4px_rgba(59,130,246,0.08)]",
+                                            class: if edit_locked { "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-900/40 px-3 text-[13px] text-zinc-500 outline-none cursor-not-allowed" } else { "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 text-[13px] text-zinc-200 outline-none transition-[background,border-color,box-shadow] duration-150 placeholder:text-zinc-600 focus:border-zinc-700 focus:shadow-[0_0_0_4px_rgba(59,130,246,0.08)]" },
                                         }
                                     }
                                 }
@@ -313,11 +325,13 @@ pub(crate) fn ServerRolesSettingsSection(server_id: String, server_name: String)
                                             button {
                                                 key: "{color}",
                                                 r#type: "button",
-                                                class: color_button_class(role.color.eq_ignore_ascii_case(color)),
+                                                disabled: edit_locked,
+                                                class: if edit_locked { "grid h-9 w-9 place-items-center rounded-xl border border-zinc-800 bg-zinc-900 opacity-40 cursor-not-allowed" } else { color_button_class(role.color.eq_ignore_ascii_case(color)) },
                                                 "aria-label": "Выбрать цвет {color}",
                                                 onclick: {
                                                     let next_color = (*color).to_owned();
                                                     move |_| {
+                                                        if edit_locked { return; }
                                                         update_selected_role(&mut roles, &selected_role_id(), |role| {
                                                             role.color = next_color.clone();
                                                         });
@@ -337,14 +351,16 @@ pub(crate) fn ServerRolesSettingsSection(server_id: String, server_name: String)
                                                 value: "{custom_hex}",
                                                 maxlength: "7",
                                                 placeholder: "#3b82f6",
+                                                disabled: edit_locked,
                                                 oninput: move |event| {
+                                                    if edit_locked { return; }
                                                     let value = normalize_hex_input(event.value());
                                                     update_selected_role(&mut roles, &selected_role_id(), |role| {
                                                         role.color = value.clone();
                                                     });
                                                     dirty.set(true);
                                                 },
-                                                class: hex_input_class(custom_hex_valid),
+                                                class: if edit_locked { "h-11 min-w-0 flex-1 rounded-xl border border-zinc-800 bg-zinc-900/40 px-3 font-mono text-[13px] text-zinc-500 outline-none cursor-not-allowed" } else { hex_input_class(custom_hex_valid) },
                                             }
                                             span {
                                                 class: "role-color-preview h-11 w-11 shrink-0 rounded-xl border border-zinc-800",
@@ -369,6 +385,8 @@ pub(crate) fn ServerRolesSettingsSection(server_id: String, server_name: String)
                                         p { class: "mt-1 text-[13px] leading-5 text-zinc-500",
                                             if selected_role_owner {
                                                 "Владелец всегда имеет все права, поэтому переключатели заблокированы."
+                                            } else if !is_owner {
+                                                "Только владелец сервера может изменять права ролей."
                                             } else {
                                                 "Включай только те права, которые нужны выбранной роли."
                                             }
@@ -396,7 +414,7 @@ pub(crate) fn ServerRolesSettingsSection(server_id: String, server_name: String)
                                         for permission in visible_permissions {
                                             label {
                                                 key: "{permission.key()}",
-                                                class: permission_row_class(selected_role_owner),
+                                                class: permission_row_class(perm_locked),
                                                 span { class: "min-w-0",
                                                     span { class: "block text-[13px] font-medium text-zinc-200", "{permission.label()}" }
                                                     span { class: "mt-0.5 block text-[12px] leading-5 text-zinc-500", "{permission.hint()}" }
@@ -406,9 +424,9 @@ pub(crate) fn ServerRolesSettingsSection(server_id: String, server_name: String)
                                                         class: "peer sr-only",
                                                         r#type: "checkbox",
                                                         checked: role.has_permission(permission),
-                                                        disabled: selected_role_owner,
+                                                        disabled: perm_locked,
                                                         onchange: move |event| {
-                                                            if selected_role_owner {
+                                                            if perm_locked {
                                                                 return;
                                                             }
                                                             let checked = event.checked();
@@ -423,7 +441,7 @@ pub(crate) fn ServerRolesSettingsSection(server_id: String, server_name: String)
                                                             );
                                                         },
                                                     }
-                                                    span { class: toggle_track_class(role.has_permission(permission), selected_role_owner),
+                                                    span { class: toggle_track_class(role.has_permission(permission), perm_locked),
                                                         i { class: toggle_knob_class(role.has_permission(permission)) }
                                                     }
                                                 }

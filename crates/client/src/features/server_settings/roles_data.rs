@@ -71,6 +71,7 @@ pub(super) enum RolePermission {
     KickServerMembers,
     ManageRoles,
     KickVoiceMembers,
+    DeleteMessages,
 }
 
 impl RolePermission {
@@ -80,6 +81,7 @@ impl RolePermission {
             RolePermission::KickServerMembers,
             RolePermission::ManageRoles,
             RolePermission::KickVoiceMembers,
+            RolePermission::DeleteMessages,
         ]
     }
 
@@ -89,6 +91,7 @@ impl RolePermission {
             RolePermission::KickServerMembers => "kick_server_members",
             RolePermission::ManageRoles => "manage_roles",
             RolePermission::KickVoiceMembers => "kick_voice_members",
+            RolePermission::DeleteMessages => "delete_messages",
         }
     }
 
@@ -98,6 +101,7 @@ impl RolePermission {
             RolePermission::KickServerMembers => "Кикать с сервера",
             RolePermission::ManageRoles => "Управлять ролями",
             RolePermission::KickVoiceMembers => "Кикать из голосовой комнаты",
+            RolePermission::DeleteMessages => "Удалять чужие сообщения",
         }
     }
 
@@ -109,6 +113,9 @@ impl RolePermission {
             }
             RolePermission::ManageRoles => "Создание, удаление и изменение ролей ниже своей.",
             RolePermission::KickVoiceMembers => "Отключение участника от голосовой комнаты.",
+            RolePermission::DeleteMessages => {
+                "Удаление любых сообщений в текстовых комнатах сервера."
+            }
         }
     }
 
@@ -118,6 +125,7 @@ impl RolePermission {
             ServerRolePermission::KickServerMembers => RolePermission::KickServerMembers,
             ServerRolePermission::ManageRoles => RolePermission::ManageRoles,
             ServerRolePermission::KickVoiceMembers => RolePermission::KickVoiceMembers,
+            ServerRolePermission::DeleteMessages => RolePermission::DeleteMessages,
         }
     }
 
@@ -127,6 +135,7 @@ impl RolePermission {
             RolePermission::KickServerMembers => ServerRolePermission::KickServerMembers,
             RolePermission::ManageRoles => ServerRolePermission::ManageRoles,
             RolePermission::KickVoiceMembers => ServerRolePermission::KickVoiceMembers,
+            RolePermission::DeleteMessages => ServerRolePermission::DeleteMessages,
         }
     }
 }

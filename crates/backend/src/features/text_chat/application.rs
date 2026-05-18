@@ -85,6 +85,7 @@ pub(crate) async fn send_message(
         body: valid.body,
         created_at: Utc::now(),
         deleted_at: None,
+        deleted_by_user_id: None,
     };
     let payload = message_summary(&message, user.avatar_url.clone());
     let state_for_insert = state.clone();
@@ -121,7 +122,8 @@ pub(crate) async fn send_message(
     Ok(SendMessageAccepted { message: payload })
 }
 
-/// Soft-deletes a message authored by the requesting user.
+/// Soft-deletes a message: the author can always delete their own; moderators with
+/// `DeleteMessages` permission (or the server owner) can delete any message.
 pub(crate) async fn delete_message(
     state: &AppState,
     user_id: &Uuid,
@@ -132,15 +134,33 @@ pub(crate) async fn delete_message(
     let message_id = parse_id(&request.message_id, "Сообщение не найдено.")?;
     ensure_room_text_available(state, user_id, &server_id, &room_id).await?;
 
-    let Some(message) = state
+    let own_delete = state
         .text_chat_store
-        .soft_delete_message(&message_id, user_id)
+        .soft_delete_message(&message_id, user_id, true)
         .await
-        .map_err(TextChatApplicationError::Internal)?
-    else {
-        return Err(TextChatApplicationError::NotFound(
-            "Сообщение не найдено или уже удалено.".to_owned(),
-        ));
+        .map_err(TextChatApplicationError::Internal)?;
+
+    let message = if let Some(msg) = own_delete {
+        msg
+    } else {
+        let can_moderate = policy::can_delete_any_message(state, user_id, &server_id)
+            .await
+            .map_err(TextChatApplicationError::Internal)?;
+        if !can_moderate {
+            return Err(TextChatApplicationError::NotFound(
+                "Сообщение не найдено или уже удалено.".to_owned(),
+            ));
+        }
+        state
+            .text_chat_store
+            .soft_delete_message(&message_id, user_id, false)
+            .await
+            .map_err(TextChatApplicationError::Internal)?
+            .ok_or_else(|| {
+                TextChatApplicationError::NotFound(
+                    "Сообщение не найдено или уже удалено.".to_owned(),
+                )
+            })?
     };
 
     let deleted_payload = MessageDeletedPayload {
