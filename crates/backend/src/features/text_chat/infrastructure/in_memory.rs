@@ -61,15 +61,19 @@ impl TextChatStore for InMemoryTextChatStore {
     async fn soft_delete_message(
         &self,
         message_id: &Uuid,
-        author_user_id: &Uuid,
+        deleted_by_user_id: &Uuid,
+        require_authorship: bool,
     ) -> anyhow::Result<Option<TextMessage>> {
         let mut messages = self.messages.lock().map_err(|_| poisoned())?;
         let Some(message) = messages.iter_mut().find(|m| {
-            m.id == *message_id && m.author_user_id == *author_user_id && m.deleted_at.is_none()
+            m.id == *message_id
+                && m.deleted_at.is_none()
+                && (!require_authorship || m.author_user_id == *deleted_by_user_id)
         }) else {
             return Ok(None);
         };
         message.deleted_at = Some(Utc::now());
+        message.deleted_by_user_id = Some(*deleted_by_user_id);
 
         Ok(Some(message.clone()))
     }

@@ -35,13 +35,19 @@ pub(crate) trait TextChatStore: Send + Sync {
         before_message_id: Option<&Uuid>,
     ) -> anyhow::Result<TextMessagePage>;
 
-    /// Soft-deletes a message owned by `author_user_id`.
+    /// Soft-deletes a message, recording who deleted it.
     ///
-    /// Returns `Some(updated_message)` when the message was found and deleted,
-    /// or `None` when it does not exist, belongs to another user, or was already deleted.
+    /// When `require_authorship` is `true` the delete is rejected unless
+    /// `deleted_by_user_id` matches the message author (own-message delete).
+    /// When `false`, any non-deleted message is deleted regardless of author
+    /// (moderation delete).
+    ///
+    /// Returns `Some(updated_message)` on success, `None` when the message
+    /// does not exist, is already deleted, or authorship check fails.
     async fn soft_delete_message(
         &self,
         message_id: &Uuid,
-        author_user_id: &Uuid,
+        deleted_by_user_id: &Uuid,
+        require_authorship: bool,
     ) -> anyhow::Result<Option<TextMessage>>;
 }

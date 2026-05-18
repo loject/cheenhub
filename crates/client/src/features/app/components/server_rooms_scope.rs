@@ -10,6 +10,8 @@ use crate::features::server_settings::ServerSettingsScope;
 use crate::features::user_settings::UserSettingsScope;
 use crate::features::voice_chat::SidebarVoiceControls;
 
+use crate::features::app::server_permissions::ServerPermissionsContext;
+
 use super::app_shell::{AppModal, ServerShellState, room_kind_attr};
 use super::avatar::{UserAvatar, use_avatar_seed};
 use super::room_editor_modal::RoomEditorModal;
@@ -57,6 +59,7 @@ pub(crate) fn ServerRoomsScope(
     let server_name = server.name.clone();
     let invite_server_name = server_name.clone();
     let is_owner = server.is_owner;
+    use_context_provider(|| ServerPermissionsContext { can_moderate: is_owner });
     let room_load_resource = use_resource(move || {
         let request_server_id = load_server_id.clone();
         async move { api::list_server_rooms(request_server_id).await }

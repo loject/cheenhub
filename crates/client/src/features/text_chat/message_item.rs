@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 
 use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
+use crate::features::app::server_permissions::ServerPermissionsContext;
 
 /// Renders one text chat message row.
 #[component]
@@ -16,7 +17,9 @@ pub(super) fn ChatMessageItem(
 ) -> Element {
     use_avatar_seed(message.author_user_id.clone());
     let current_user = use_context::<CurrentUserContext>().require_user();
+    let permissions = use_context::<ServerPermissionsContext>();
     let is_own = message.author_user_id == current_user.id;
+    let can_delete = is_own || permissions.can_moderate;
     let mut menu_pos = use_signal(|| None::<(f64, f64)>);
 
     let outer_class = match (animate, removing) {
@@ -29,7 +32,7 @@ pub(super) fn ChatMessageItem(
         div {
             class: outer_class,
             oncontextmenu: move |event| {
-                if !is_own {
+                if !can_delete {
                     return;
                 }
                 event.prevent_default();

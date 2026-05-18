@@ -22,6 +22,7 @@ mod m20260518_000018_create_server_member_exclusions_table;
 mod m20260519_000019_create_server_roles_table;
 mod m20260519_000020_create_server_member_roles_table;
 mod m20260519_000021_add_text_message_deleted_at;
+mod m20260519_000022_add_text_message_deleted_by_user_id;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -53,6 +54,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260519_000019_create_server_roles_table::Migration),
             Box::new(m20260519_000020_create_server_member_roles_table::Migration),
             Box::new(m20260519_000021_add_text_message_deleted_at::Migration),
+            Box::new(m20260519_000022_add_text_message_deleted_by_user_id::Migration),
         ]
     }
 }
