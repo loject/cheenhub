@@ -175,4 +175,27 @@ pub(crate) trait ServerStore: Send + Sync {
         server_id: &Uuid,
         roles: Vec<ServerRole>,
     ) -> anyhow::Result<Vec<ServerRole>>;
+
+    /// Lists all (user_id, role_id) role assignments for a server.
+    async fn list_server_member_roles(
+        &self,
+        server_id: &Uuid,
+    ) -> anyhow::Result<Vec<(Uuid, Uuid)>>;
+
+    /// Assigns a custom role to a server member. Idempotent.
+    async fn assign_server_member_role(
+        &self,
+        server_id: &Uuid,
+        user_id: &Uuid,
+        role_id: &Uuid,
+        granted_by_user_id: &Uuid,
+    ) -> anyhow::Result<()>;
+
+    /// Revokes a custom role from a server member.
+    async fn revoke_server_member_role(
+        &self,
+        server_id: &Uuid,
+        user_id: &Uuid,
+        role_id: &Uuid,
+    ) -> anyhow::Result<()>;
 }

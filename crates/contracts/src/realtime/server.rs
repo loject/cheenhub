@@ -34,6 +34,14 @@ pub enum ServerKind {
     SaveServerRoles,
     /// Acknowledges that server roles were saved.
     ServerRolesSaved,
+    /// Assign a custom role to a server member.
+    AssignServerMemberRole,
+    /// Acknowledges that a role was assigned.
+    ServerMemberRoleAssigned,
+    /// Revoke a custom role from a server member.
+    RevokeServerMemberRole,
+    /// Acknowledges that a role was revoked.
+    ServerMemberRoleRevoked,
 }
 
 /// Request payload used to load server members.
@@ -67,6 +75,8 @@ pub struct ServerMemberEntry {
     pub invite_code: Option<String>,
     /// Invite-use timestamp in RFC3339 format, when available.
     pub invite_used_at: Option<String>,
+    /// Custom role identifiers currently assigned to this member.
+    pub role_ids: Vec<String>,
 }
 
 /// Request payload used to load server invite links.
@@ -277,4 +287,48 @@ pub struct ServerRolesSaved {
     pub server_id: String,
     /// Saved roles ordered from highest to lowest priority.
     pub roles: Vec<ServerRoleEntry>,
+}
+
+/// Request payload used to assign a custom role to a server member.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssignServerMemberRole {
+    /// Server identifier.
+    pub server_id: String,
+    /// Target user identifier.
+    pub user_id: String,
+    /// Custom role identifier to assign.
+    pub role_id: String,
+}
+
+/// Response payload returned after assigning a role to a server member.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerMemberRoleAssigned {
+    /// Server identifier.
+    pub server_id: String,
+    /// User that received the role.
+    pub user_id: String,
+    /// Role that was assigned.
+    pub role_id: String,
+}
+
+/// Request payload used to revoke a custom role from a server member.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RevokeServerMemberRole {
+    /// Server identifier.
+    pub server_id: String,
+    /// Target user identifier.
+    pub user_id: String,
+    /// Custom role identifier to revoke.
+    pub role_id: String,
+}
+
+/// Response payload returned after revoking a role from a server member.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerMemberRoleRevoked {
+    /// Server identifier.
+    pub server_id: String,
+    /// User that lost the role.
+    pub user_id: String,
+    /// Role that was revoked.
+    pub role_id: String,
 }

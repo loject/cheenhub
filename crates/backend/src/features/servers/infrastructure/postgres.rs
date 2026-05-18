@@ -477,4 +477,38 @@ impl ServerStore for PostgresServerStore {
     ) -> anyhow::Result<Vec<ServerRole>> {
         postgres_roles::replace_server_roles(&self.database, server_id, roles).await
     }
+
+    async fn list_server_member_roles(
+        &self,
+        server_id: &Uuid,
+    ) -> anyhow::Result<Vec<(Uuid, Uuid)>> {
+        postgres_roles::list_server_member_roles(&self.database, server_id).await
+    }
+
+    async fn assign_server_member_role(
+        &self,
+        server_id: &Uuid,
+        user_id: &Uuid,
+        role_id: &Uuid,
+        granted_by_user_id: &Uuid,
+    ) -> anyhow::Result<()> {
+        postgres_roles::assign_server_member_role(
+            &self.database,
+            server_id,
+            user_id,
+            role_id,
+            granted_by_user_id,
+        )
+        .await
+    }
+
+    async fn revoke_server_member_role(
+        &self,
+        server_id: &Uuid,
+        user_id: &Uuid,
+        role_id: &Uuid,
+    ) -> anyhow::Result<()> {
+        postgres_roles::revoke_server_member_role(&self.database, server_id, user_id, role_id)
+            .await
+    }
 }

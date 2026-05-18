@@ -3,7 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use cheenhub_contracts::realtime::{
-    KickServerMember, ListServerMembers, ServerMemberEntry, ServerMemberKicked, ServerMemberList,
+    AssignServerMemberRole, KickServerMember, ListServerMembers, RevokeServerMemberRole,
+    ServerMemberEntry, ServerMemberKicked, ServerMemberList, ServerMemberRoleAssigned,
+    ServerMemberRoleRevoked, ServerRoleKind,
 };
 use chrono::{Duration, Utc};
 use uuid::Uuid;
@@ -33,7 +35,19 @@ pub(crate) async fn list_server_members(
     let invite_codes = invite_codes_by_member(state, &server.id).await?;
     let user_ids = members.iter().map(|member| member.user_id).collect();
     let users = users_by_id(state, user_ids).await?;
-    let entries = member_entries(&server.owner_user_id, members, invite_codes, users);
+    let member_roles = state
+        .server_store
+        .list_server_member_roles(&server.id)
+        .await
+        .map_err(ServerError::Internal)?;
+    let roles_by_member = roles_by_member_id(member_roles);
+    let entries = member_entries(
+        &server.owner_user_id,
+        members,
+        invite_codes,
+        users,
+        roles_by_member,
+    );
 
     tracing::debug!(
         server_id = %server.id,
@@ -44,6 +58,116 @@ pub(crate) async fn list_server_members(
     Ok(ServerMemberList {
         server_id: server.id.to_string(),
         members: entries,
+    })
+}
+
+/// Assigns a custom role to a server member.
+pub(crate) async fn assign_server_member_role(
+    state: &AppState,
+    owner_user_id: &Uuid,
+    request: AssignServerMemberRole,
+) -> Result<ServerMemberRoleAssigned, ServerError> {
+    let server_id = parse_server_id(request.server_id)?;
+    let target_user_id = Uuid::parse_str(&request.user_id)
+        .map_err(|_| ServerError::BadRequest("Пользователь не найден.".to_owned()))?;
+    let role_id = Uuid::parse_str(&request.role_id)
+        .map_err(|_| ServerError::BadRequest("Роль не найдена.".to_owned()))?;
+    let server = owned_server(state, &server_id, owner_user_id).await?;
+
+    if state
+        .server_store
+        .find_active_server_member(&server.id, &target_user_id)
+        .await
+        .map_err(ServerError::Internal)?
+        .is_none()
+    {
+        return Err(ServerError::BadRequest(
+            "Пользователь не является участником сервера.".to_owned(),
+        ));
+    }
+
+    let roles = state
+        .server_store
+        .list_server_roles(&server.id)
+        .await
+        .map_err(ServerError::Internal)?;
+    let role = roles
+        .iter()
+        .find(|r| r.id == role_id)
+        .ok_or_else(|| ServerError::BadRequest("Роль не найдена.".to_owned()))?;
+
+    if role.kind != ServerRoleKind::Custom {
+        return Err(ServerError::BadRequest(
+            "Нельзя вручную назначать системные роли.".to_owned(),
+        ));
+    }
+
+    state
+        .server_store
+        .assign_server_member_role(&server.id, &target_user_id, &role_id, owner_user_id)
+        .await
+        .map_err(ServerError::Internal)?;
+
+    tracing::info!(
+        server_id = %server.id,
+        user_id = %target_user_id,
+        role_id = %role_id,
+        "assigned server member role"
+    );
+
+    Ok(ServerMemberRoleAssigned {
+        server_id: server.id.to_string(),
+        user_id: target_user_id.to_string(),
+        role_id: role_id.to_string(),
+    })
+}
+
+/// Revokes a custom role from a server member.
+pub(crate) async fn revoke_server_member_role(
+    state: &AppState,
+    owner_user_id: &Uuid,
+    request: RevokeServerMemberRole,
+) -> Result<ServerMemberRoleRevoked, ServerError> {
+    let server_id = parse_server_id(request.server_id)?;
+    let target_user_id = Uuid::parse_str(&request.user_id)
+        .map_err(|_| ServerError::BadRequest("Пользователь не найден.".to_owned()))?;
+    let role_id = Uuid::parse_str(&request.role_id)
+        .map_err(|_| ServerError::BadRequest("Роль не найдена.".to_owned()))?;
+    let server = owned_server(state, &server_id, owner_user_id).await?;
+
+    let roles = state
+        .server_store
+        .list_server_roles(&server.id)
+        .await
+        .map_err(ServerError::Internal)?;
+    let role = roles
+        .iter()
+        .find(|r| r.id == role_id)
+        .ok_or_else(|| ServerError::BadRequest("Роль не найдена.".to_owned()))?;
+
+    if role.kind != ServerRoleKind::Custom {
+        return Err(ServerError::BadRequest(
+            "Нельзя забирать системные роли.".to_owned(),
+        ));
+    }
+
+    state
+        .server_store
+        .revoke_server_member_role(&server.id, &target_user_id, &role_id)
+        .await
+        .map_err(ServerError::Internal)?;
+
+    tracing::info!(
+        server_id = %server.id,
+        user_id = %target_user_id,
+        role_id = %role_id,
+        "revoked server member role"
+    );
+
+    Ok(ServerMemberRoleRevoked {
+        server_id: server.id.to_string(),
+        user_id: target_user_id.to_string(),
+        role_id: role_id.to_string(),
     })
 }
 
@@ -181,16 +305,31 @@ async fn users_by_id(
     Ok(users)
 }
 
+fn roles_by_member_id(pairs: Vec<(Uuid, Uuid)>) -> HashMap<Uuid, Vec<Uuid>> {
+    let mut result: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    for (user_id, role_id) in pairs {
+        result.entry(user_id).or_default().push(role_id);
+    }
+    result
+}
+
 fn member_entries(
     owner_user_id: &Uuid,
     members: Vec<ServerMember>,
     mut invite_codes: HashMap<Uuid, (String, String)>,
     users: HashMap<Uuid, String>,
+    mut roles_by_member: HashMap<Uuid, Vec<Uuid>>,
 ) -> Vec<ServerMemberEntry> {
     members
         .into_iter()
         .map(|member| {
             let invite = invite_codes.remove(&member.user_id);
+            let role_ids = roles_by_member
+                .remove(&member.user_id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|id| id.to_string())
+                .collect();
             ServerMemberEntry {
                 user_id: member.user_id.to_string(),
                 nickname: users
@@ -201,6 +340,7 @@ fn member_entries(
                 joined_at: member.joined_at.to_rfc3339(),
                 invite_code: invite.as_ref().map(|(code, _)| code.clone()),
                 invite_used_at: invite.map(|(_, used_at)| used_at),
+                role_ids,
             }
         })
         .collect()

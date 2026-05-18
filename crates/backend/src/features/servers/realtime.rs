@@ -1,9 +1,9 @@
 //! Server management realtime adapter.
 
 use cheenhub_contracts::realtime::{
-    KickServerInviteMember, KickServerMember, ListServerInvites, ListServerMembers,
-    ListServerRoles, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
-    RevokeServerInvite, SaveServerRoles, ServerKind,
+    AssignServerMemberRole, KickServerInviteMember, KickServerMember, ListServerInvites,
+    ListServerMembers, ListServerRoles, RealtimeEnvelope, RealtimeKind, RealtimeModule,
+    RejectionCode, RevokeServerInvite, RevokeServerMemberRole, SaveServerRoles, ServerKind,
 };
 use uuid::Uuid;
 
@@ -134,6 +134,40 @@ pub(crate) async fn handle(
                         send,
                         RealtimeModule::Server,
                         RealtimeKind::Server(ServerKind::ServerRolesSaved),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_server_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::Server(ServerKind::AssignServerMemberRole) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: AssignServerMemberRole = decode_payload(&envelope)?;
+            match application::assign_server_member_role(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::Server,
+                        RealtimeKind::Server(ServerKind::ServerMemberRoleAssigned),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_server_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::Server(ServerKind::RevokeServerMemberRole) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: RevokeServerMemberRole = decode_payload(&envelope)?;
+            match application::revoke_server_member_role(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::Server,
+                        RealtimeKind::Server(ServerKind::ServerMemberRoleRevoked),
                         Some(request_id),
                         response,
                     )

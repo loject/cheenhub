@@ -20,6 +20,7 @@ mod m20260518_000016_add_server_invite_revoked_at;
 mod m20260518_000017_add_server_avatar_image;
 mod m20260518_000018_create_server_member_exclusions_table;
 mod m20260519_000019_create_server_roles_table;
+mod m20260519_000020_create_server_member_roles_table;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -49,6 +50,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260518_000017_add_server_avatar_image::Migration),
             Box::new(m20260518_000018_create_server_member_exclusions_table::Migration),
             Box::new(m20260519_000019_create_server_roles_table::Migration),
+            Box::new(m20260519_000020_create_server_member_roles_table::Migration),
         ]
     }
 }

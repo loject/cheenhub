@@ -26,6 +26,8 @@ pub(super) struct InMemoryState {
     invite_uses: Vec<ServerInviteUse>,
     rooms: Vec<ServerRoom>,
     pub(super) roles: Vec<ServerRole>,
+    /// (server_id, user_id, role_id, granted_by_user_id)
+    pub(super) member_roles: Vec<(Uuid, Uuid, Uuid, Uuid)>,
 }
 
 #[async_trait]
@@ -470,6 +472,38 @@ impl ServerStore for InMemoryServerStore {
         roles: Vec<ServerRole>,
     ) -> anyhow::Result<Vec<ServerRole>> {
         super::in_memory_roles::replace_server_roles(&self.state, server_id, roles)
+    }
+
+    async fn list_server_member_roles(
+        &self,
+        server_id: &Uuid,
+    ) -> anyhow::Result<Vec<(Uuid, Uuid)>> {
+        super::in_memory_roles::list_server_member_roles(&self.state, server_id)
+    }
+
+    async fn assign_server_member_role(
+        &self,
+        server_id: &Uuid,
+        user_id: &Uuid,
+        role_id: &Uuid,
+        granted_by_user_id: &Uuid,
+    ) -> anyhow::Result<()> {
+        super::in_memory_roles::assign_server_member_role(
+            &self.state,
+            server_id,
+            user_id,
+            role_id,
+            granted_by_user_id,
+        )
+    }
+
+    async fn revoke_server_member_role(
+        &self,
+        server_id: &Uuid,
+        user_id: &Uuid,
+        role_id: &Uuid,
+    ) -> anyhow::Result<()> {
+        super::in_memory_roles::revoke_server_member_role(&self.state, server_id, user_id, role_id)
     }
 }
 

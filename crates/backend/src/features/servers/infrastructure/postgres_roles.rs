@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
     TransactionTrait,
@@ -9,7 +10,9 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::features::servers::domain::ServerRole;
-use crate::features::servers::infrastructure::entities::{server_role_permissions, server_roles};
+use crate::features::servers::infrastructure::entities::{
+    server_member_roles, server_role_permissions, server_roles,
+};
 use crate::features::servers::infrastructure::postgres_conversions::{
     role_kind_as_str, role_permission_as_str, role_permission_from_str, server_role_from_model,
 };
@@ -46,6 +49,62 @@ pub(super) async fn list_server_roles(
             server_role_from_model(row, permissions)
         })
         .collect()
+}
+
+pub(super) async fn list_server_member_roles(
+    database: &DatabaseConnection,
+    server_id: &Uuid,
+) -> anyhow::Result<Vec<(Uuid, Uuid)>> {
+    let rows = server_member_roles::Entity::find()
+        .filter(server_member_roles::Column::ServerId.eq(*server_id))
+        .all(database)
+        .await?;
+
+    Ok(rows.into_iter().map(|row| (row.user_id, row.role_id)).collect())
+}
+
+pub(super) async fn assign_server_member_role(
+    database: &DatabaseConnection,
+    server_id: &Uuid,
+    user_id: &Uuid,
+    role_id: &Uuid,
+    granted_by_user_id: &Uuid,
+) -> anyhow::Result<()> {
+    let existing = server_member_roles::Entity::find()
+        .filter(server_member_roles::Column::ServerId.eq(*server_id))
+        .filter(server_member_roles::Column::UserId.eq(*user_id))
+        .filter(server_member_roles::Column::RoleId.eq(*role_id))
+        .one(database)
+        .await?;
+    if existing.is_none() {
+        server_member_roles::ActiveModel {
+            server_id: Set(*server_id),
+            user_id: Set(*user_id),
+            role_id: Set(*role_id),
+            granted_by_user_id: Set(*granted_by_user_id),
+            assigned_at: Set(Utc::now()),
+        }
+        .insert(database)
+        .await?;
+    }
+
+    Ok(())
+}
+
+pub(super) async fn revoke_server_member_role(
+    database: &DatabaseConnection,
+    server_id: &Uuid,
+    user_id: &Uuid,
+    role_id: &Uuid,
+) -> anyhow::Result<()> {
+    server_member_roles::Entity::delete_many()
+        .filter(server_member_roles::Column::ServerId.eq(*server_id))
+        .filter(server_member_roles::Column::UserId.eq(*user_id))
+        .filter(server_member_roles::Column::RoleId.eq(*role_id))
+        .exec(database)
+        .await?;
+
+    Ok(())
 }
 
 pub(super) async fn replace_server_roles(

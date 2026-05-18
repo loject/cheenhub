@@ -28,7 +28,9 @@ mod support;
 pub(crate) use invite_settings::{
     kick_server_invite_member, list_server_invites, revoke_server_invite,
 };
-pub(crate) use members_settings::{kick_server_member, list_server_members};
+pub(crate) use members_settings::{
+    assign_server_member_role, kick_server_member, list_server_members, revoke_server_member_role,
+};
 pub(crate) use profile::{update, update_avatar};
 pub(crate) use role_settings::{list_server_roles, save_server_roles};
 
