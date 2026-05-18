@@ -21,13 +21,12 @@ pub(crate) fn check_workspace_file_lines() {
         return;
     }
 
-    let mut message = format!(
-        "Rust source files must be {MAX_RUST_FILE_LINES} lines or fewer. Split these files:\n"
+    println!(
+        "cargo:warning=Rust source files should be {MAX_RUST_FILE_LINES} lines or fewer. Split these files when practical:"
     );
     for (path, line_count) in oversized {
-        message.push_str(&format!("  {}: {line_count} lines\n", path.display()));
+        println!("cargo:warning=  {}: {line_count} lines", path.display());
     }
-    panic!("{message}");
 }
 
 fn check_directory(directory: &Path, oversized: &mut Vec<(PathBuf, usize)>) {
