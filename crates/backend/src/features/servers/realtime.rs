@@ -2,7 +2,8 @@
 
 use cheenhub_contracts::realtime::{
     KickServerInviteMember, KickServerMember, ListServerInvites, ListServerMembers,
-    RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode, RevokeServerInvite, ServerKind,
+    ListServerRoles, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
+    RevokeServerInvite, SaveServerRoles, ServerKind,
 };
 use uuid::Uuid;
 
@@ -99,6 +100,40 @@ pub(crate) async fn handle(
                         send,
                         RealtimeModule::Server,
                         RealtimeKind::Server(ServerKind::ServerMemberKicked),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_server_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::Server(ServerKind::ListServerRoles) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: ListServerRoles = decode_payload(&envelope)?;
+            match application::list_server_roles(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::Server,
+                        RealtimeKind::Server(ServerKind::ServerRoleList),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_server_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::Server(ServerKind::SaveServerRoles) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: SaveServerRoles = decode_payload(&envelope)?;
+            match application::save_server_roles(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::Server,
+                        RealtimeKind::Server(ServerKind::ServerRolesSaved),
                         Some(request_id),
                         response,
                     )

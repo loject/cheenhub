@@ -26,6 +26,14 @@ pub enum ServerKind {
     KickServerMember,
     /// Acknowledges that a server member was kicked.
     ServerMemberKicked,
+    /// Load roles for a server.
+    ListServerRoles,
+    /// Server-role list response.
+    ServerRoleList,
+    /// Save server roles.
+    SaveServerRoles,
+    /// Acknowledges that server roles were saved.
+    ServerRolesSaved,
 }
 
 /// Request payload used to load server members.
@@ -175,4 +183,98 @@ pub struct ServerMemberKicked {
     pub user_id: String,
     /// Timestamp until which the user cannot rejoin, in RFC3339 format.
     pub excluded_until: Option<String>,
+}
+
+/// Request payload used to load server roles.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListServerRoles {
+    /// Server identifier.
+    pub server_id: String,
+}
+
+/// Response payload containing server roles.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerRoleList {
+    /// Server identifier.
+    pub server_id: String,
+    /// Roles ordered from highest to lowest priority.
+    pub roles: Vec<ServerRoleEntry>,
+}
+
+/// Server role kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServerRoleKind {
+    /// Mandatory owner role.
+    Owner,
+    /// Mandatory default member role.
+    Member,
+    /// User-created role.
+    Custom,
+}
+
+/// Server role permission flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServerRolePermission {
+    /// Allows creating server invite links.
+    CreateInviteLinks,
+    /// Allows kicking members from the server.
+    KickServerMembers,
+    /// Allows managing server roles.
+    ManageRoles,
+    /// Allows kicking members from voice rooms.
+    KickVoiceMembers,
+}
+
+/// Server role shown in settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerRoleEntry {
+    /// Stable role identifier.
+    pub role_id: String,
+    /// Human-readable role name.
+    pub name: String,
+    /// Hex role color.
+    pub color: String,
+    /// Number of members that currently have this role.
+    pub members: u32,
+    /// Whether this role is mandatory and cannot be deleted.
+    pub is_required: bool,
+    /// Role kind.
+    pub kind: ServerRoleKind,
+    /// Effective role permissions.
+    pub permissions: Vec<ServerRolePermission>,
+}
+
+/// Request payload used to save server roles.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SaveServerRoles {
+    /// Server identifier.
+    pub server_id: String,
+    /// Roles ordered from highest to lowest priority.
+    pub roles: Vec<ServerRoleDraft>,
+}
+
+/// Server role draft sent from settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerRoleDraft {
+    /// Existing role identifier. Missing ids create new custom roles.
+    pub role_id: Option<String>,
+    /// Human-readable role name.
+    pub name: String,
+    /// Hex role color.
+    pub color: String,
+    /// Role kind.
+    pub kind: ServerRoleKind,
+    /// Enabled role permissions.
+    pub permissions: Vec<ServerRolePermission>,
+}
+
+/// Response payload returned after saving server roles.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerRolesSaved {
+    /// Server identifier.
+    pub server_id: String,
+    /// Saved roles ordered from highest to lowest priority.
+    pub roles: Vec<ServerRoleEntry>,
 }

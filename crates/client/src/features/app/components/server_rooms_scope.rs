@@ -105,7 +105,7 @@ pub(crate) fn ServerRoomsScope(
 
     rsx! {
         aside {
-            class: "flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 backdrop-blur-xl",
+            class: "group/rooms relative z-30 flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 backdrop-blur-xl transition-[width] duration-200 ease-out max-[1440px]:w-[68px] max-[1440px]:hover:w-[284px] max-[1440px]:focus-within:w-[284px]",
             onclick: move |_| is_server_menu_open.set(false),
             div { class: "relative border-b border-zinc-800/80 p-4",
                 button {
@@ -117,13 +117,13 @@ pub(crate) fn ServerRoomsScope(
                         event.stop_propagation();
                         is_server_menu_open.set(!is_server_menu_open());
                     },
-                    span {
+                    span { class: "min-w-0 flex-1 overflow-hidden transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:opacity-100",
                         span { class: "block text-[13px] font-semibold tracking-[-0.02em] text-zinc-100", "{server_name}" }
                         span { class: "mt-0.5 block text-[11px] text-zinc-500",
                             if is_owner { "Владелец сервера" } else { "Участник сервера" }
                         }
                     }
-                    svg { class: "h-4 w-4 text-zinc-500", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
+                    svg { class: "h-4 w-4 shrink-0 text-zinc-500 transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:opacity-100", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "m6 9 6 6 6-6" }
                     }
                 }
@@ -159,7 +159,7 @@ pub(crate) fn ServerRoomsScope(
 
             div { class: "min-h-0 flex-1 overflow-y-auto p-3",
                 div { class: "mb-1.5 flex items-center justify-between px-1 text-[10px] font-medium uppercase tracking-[0.22em] text-zinc-600",
-                    span { "Комнаты" }
+                    span { class: "overflow-hidden whitespace-nowrap transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:opacity-100", "Комнаты" }
                     if is_owner {
                         button {
                             r#type: "button",
@@ -239,10 +239,10 @@ pub(crate) fn ServerRoomsScope(
                                         }
                                     },
                                     span { class: room_icon_class(room.kind), "{room_icon(room.kind)}" }
-                                    span { class: "truncate text-[12px] font-medium", "{room.name}" }
+                                    span { class: "truncate text-[12px] font-medium transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:opacity-100", "{room.name}" }
                                 }
                                 if is_owner {
-                                    span { class: "ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100",
+                                    span { class: "ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 max-[1440px]:hidden max-[1440px]:group-hover/rooms:flex max-[1440px]:group-focus-within/rooms:flex",
                                         button {
                                             r#type: "button",
                                             class: "rounded-md p-1 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-200",
@@ -372,23 +372,24 @@ pub(crate) fn ServerRoomsScope(
                     }
                 }
             }
-
             div { class: "border-t border-zinc-800/80 p-3",
-                div { class: "mb-2 flex items-center gap-2 rounded-[16px] border border-zinc-800 bg-zinc-900/70 px-3 py-2",
+                div { class: "mb-2 flex items-center gap-2 overflow-hidden rounded-[16px] border border-zinc-800 bg-zinc-900/70 px-3 py-2 max-[1440px]:justify-center max-[1440px]:group-hover/rooms:justify-start max-[1440px]:group-focus-within/rooms:justify-start",
                     RealtimeConnectionStatusIndicator {}
-                    div { class: "min-w-0 flex-1",
+                    div { class: "min-w-0 flex-1 transition-[opacity] duration-150 max-[1440px]:hidden max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:block max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:block max-[1440px]:group-focus-within/rooms:opacity-100",
                         div { class: "truncate text-[11px] font-medium text-zinc-100", "{server_name}" }
                         div { class: "truncate text-[11px] text-zinc-500", "realtime соединение" }
                     }
                 }
-                SidebarVoiceControls {}
-                div { class: "flex items-center gap-3 rounded-[20px] border border-zinc-800 bg-zinc-900/80 p-2.5",
+                div { class: "overflow-hidden transition-[opacity] duration-150 max-[1440px]:hidden max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:block max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:block max-[1440px]:group-focus-within/rooms:opacity-100",
+                    SidebarVoiceControls {}
+                }
+                div { class: "flex items-center gap-3 overflow-hidden rounded-[20px] border border-zinc-800 bg-zinc-900/80 p-2.5 max-[1440px]:justify-center max-[1440px]:group-hover/rooms:justify-start max-[1440px]:group-focus-within/rooms:justify-start",
                     UserAvatar {
                         nickname: current_user.nickname.clone(),
                         avatar_url: current_user.avatar_url.clone(),
                         class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[12px] font-bold text-white".to_owned(),
                     }
-                    div { class: "min-w-0 flex-1",
+                    div { class: "min-w-0 flex-1 transition-[opacity] duration-150 max-[1440px]:hidden max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:block max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:block max-[1440px]:group-focus-within/rooms:opacity-100",
                         div { class: "truncate text-[12px] font-medium text-zinc-100", "{current_user.nickname}" }
                         div { class: "truncate text-[11px] text-zinc-500", "в приложении" }
                     }
@@ -405,7 +406,6 @@ pub(crate) fn ServerRoomsScope(
                 }
             }
         }
-
         for workspace in mounted_workspaces() {
             if let ServerWorkspace::Room(room_id) = workspace {
                 if let Some(room) = room_by_id(&current_rooms, &room_id) {
@@ -492,9 +492,7 @@ pub(crate) fn ServerRoomsScope(
             }
         }
         if is_user_settings_open() {
-            UserSettingsScope {
-                on_close: move |_| is_user_settings_open.set(false),
-            }
+            UserSettingsScope { on_close: move |_| is_user_settings_open.set(false) }
         }
     }
 }

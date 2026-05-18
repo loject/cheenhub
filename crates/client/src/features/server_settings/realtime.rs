@@ -1,9 +1,10 @@
 //! Server settings realtime helpers.
 
 use cheenhub_contracts::realtime::{
-    KickServerInviteMember, KickServerMember, ListServerInvites, ListServerMembers, RealtimeKind,
-    RealtimeModule, RevokeServerInvite, ServerInviteList, ServerInviteMemberKicked,
-    ServerInviteRevoked, ServerKind, ServerMemberKicked, ServerMemberList,
+    KickServerInviteMember, KickServerMember, ListServerInvites, ListServerMembers,
+    ListServerRoles, RealtimeKind, RealtimeModule, RevokeServerInvite, SaveServerRoles,
+    ServerInviteList, ServerInviteMemberKicked, ServerInviteRevoked, ServerKind,
+    ServerMemberKicked, ServerMemberList, ServerRoleDraft, ServerRoleList, ServerRolesSaved,
 };
 
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
@@ -87,6 +88,35 @@ pub(super) async fn kick_server_member(
                 user_id,
                 exclusion_duration_seconds,
             },
+        )
+        .await
+}
+
+/// Loads server roles through the realtime session.
+pub(super) async fn list_server_roles(
+    realtime: &RealtimeHandle,
+    server_id: String,
+) -> Result<ServerRoleList, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::Server,
+            RealtimeKind::Server(ServerKind::ListServerRoles),
+            ListServerRoles { server_id },
+        )
+        .await
+}
+
+/// Saves server roles through the realtime session.
+pub(super) async fn save_server_roles(
+    realtime: &RealtimeHandle,
+    server_id: String,
+    roles: Vec<ServerRoleDraft>,
+) -> Result<ServerRolesSaved, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::Server,
+            RealtimeKind::Server(ServerKind::SaveServerRoles),
+            SaveServerRoles { server_id, roles },
         )
         .await
 }

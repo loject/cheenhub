@@ -1,5 +1,6 @@
 //! Server domain models.
 
+use cheenhub_contracts::realtime::{ServerRoleKind, ServerRolePermission};
 use cheenhub_contracts::rest::ServerRoomKind;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -49,6 +50,31 @@ pub(crate) struct ServerRoom {
     #[allow(dead_code)]
     pub(crate) created_at: DateTime<Utc>,
     /// Last room update timestamp.
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+/// Server role data used by server settings flows.
+#[derive(Debug, Clone)]
+pub(crate) struct ServerRole {
+    /// Stable role identifier.
+    pub(crate) id: Uuid,
+    /// Server the role belongs to.
+    pub(crate) server_id: Uuid,
+    /// Human-readable role name.
+    pub(crate) name: String,
+    /// Hex role color.
+    pub(crate) color: String,
+    /// Role kind.
+    pub(crate) kind: ServerRoleKind,
+    /// Ordering position inside the server.
+    pub(crate) position: u32,
+    /// Enabled permissions.
+    pub(crate) permissions: Vec<ServerRolePermission>,
+    /// Role creation timestamp.
+    #[allow(dead_code)]
+    pub(crate) created_at: DateTime<Utc>,
+    /// Last role update timestamp.
+    #[allow(dead_code)]
     pub(crate) updated_at: DateTime<Utc>,
 }
 

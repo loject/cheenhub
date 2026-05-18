@@ -22,6 +22,7 @@ use self::support::{
 mod invite_settings;
 mod members_settings;
 mod profile;
+mod role_settings;
 mod support;
 
 pub(crate) use invite_settings::{
@@ -29,6 +30,7 @@ pub(crate) use invite_settings::{
 };
 pub(crate) use members_settings::{kick_server_member, list_server_members};
 pub(crate) use profile::{update, update_avatar};
+pub(crate) use role_settings::{list_server_roles, save_server_roles};
 
 /// Creates a server owned by the current user.
 pub(crate) async fn create(

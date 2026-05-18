@@ -2,8 +2,10 @@
 
 mod entities;
 mod in_memory;
+mod in_memory_roles;
 mod postgres;
 mod postgres_conversions;
+mod postgres_roles;
 
 use async_trait::async_trait;
 use cheenhub_contracts::rest::ServerRoomKind;
@@ -12,7 +14,7 @@ use uuid::Uuid;
 
 use crate::features::servers::domain::{
     Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
-    ServerRoom,
+    ServerRole, ServerRoom,
 };
 
 pub(crate) use in_memory::InMemoryServerStore;
@@ -163,4 +165,14 @@ pub(crate) trait ServerStore: Send + Sync {
 
     /// Counts rooms that belong to a server.
     async fn count_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<u32>;
+
+    /// Lists roles for a server in display order.
+    async fn list_server_roles(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRole>>;
+
+    /// Replaces all roles for a server.
+    async fn replace_server_roles(
+        &self,
+        server_id: &Uuid,
+        roles: Vec<ServerRole>,
+    ) -> anyhow::Result<Vec<ServerRole>>;
 }
