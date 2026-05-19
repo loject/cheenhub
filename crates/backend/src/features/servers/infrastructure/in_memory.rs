@@ -24,7 +24,7 @@ pub(super) struct InMemoryState {
     members: Vec<ServerMember>,
     exclusions: Vec<ServerMemberExclusion>,
     invite_uses: Vec<ServerInviteUse>,
-    rooms: Vec<ServerRoom>,
+    pub(super) rooms: Vec<ServerRoom>,
     pub(super) roles: Vec<ServerRole>,
     /// (server_id, user_id, role_id, granted_by_user_id)
     pub(super) member_roles: Vec<(Uuid, Uuid, Uuid, Uuid)>,
@@ -366,42 +366,11 @@ impl ServerStore for InMemoryServerStore {
         name: String,
         kind: ServerRoomKind,
     ) -> anyhow::Result<ServerRoom> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let position = state
-            .rooms
-            .iter()
-            .filter(|room| room.server_id == *server_id)
-            .map(|room| room.position)
-            .max()
-            .map(|position| position.saturating_add(1))
-            .unwrap_or(0);
-        let now = Utc::now();
-        let room = ServerRoom {
-            id: Uuid::new_v4(),
-            server_id: *server_id,
-            name,
-            kind,
-            position,
-            created_at: now,
-            updated_at: now,
-        };
-
-        state.rooms.push(room.clone());
-
-        Ok(room)
+        super::in_memory_rooms::insert_server_room(&self.state, server_id, name, kind)
     }
 
     async fn list_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRoom>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        let mut rooms = state
-            .rooms
-            .iter()
-            .filter(|room| room.server_id == *server_id)
-            .cloned()
-            .collect::<Vec<_>>();
-        rooms.sort_by_key(|room| room.position);
-
-        Ok(rooms)
+        super::in_memory_rooms::list_server_rooms(&self.state, server_id)
     }
 
     async fn find_server_room(
@@ -409,13 +378,7 @@ impl ServerStore for InMemoryServerStore {
         server_id: &Uuid,
         room_id: &Uuid,
     ) -> anyhow::Result<Option<ServerRoom>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-
-        Ok(state
-            .rooms
-            .iter()
-            .find(|room| room.server_id == *server_id && room.id == *room_id)
-            .cloned())
+        super::in_memory_rooms::find_server_room(&self.state, server_id, room_id)
     }
 
     async fn update_server_room(
@@ -425,41 +388,15 @@ impl ServerStore for InMemoryServerStore {
         name: String,
         kind: ServerRoomKind,
     ) -> anyhow::Result<Option<ServerRoom>> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let Some(room) = state
-            .rooms
-            .iter_mut()
-            .find(|room| room.server_id == *server_id && room.id == *room_id)
-        else {
-            return Ok(None);
-        };
-
-        room.name = name;
-        room.kind = kind;
-        room.updated_at = Utc::now();
-
-        Ok(Some(room.clone()))
+        super::in_memory_rooms::update_server_room(&self.state, server_id, room_id, name, kind)
     }
 
     async fn delete_server_room(&self, server_id: &Uuid, room_id: &Uuid) -> anyhow::Result<()> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        state
-            .rooms
-            .retain(|room| room.server_id != *server_id || room.id != *room_id);
-
-        Ok(())
+        super::in_memory_rooms::delete_server_room(&self.state, server_id, room_id)
     }
 
     async fn count_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<u32> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-
-        Ok(state
-            .rooms
-            .iter()
-            .filter(|room| room.server_id == *server_id)
-            .count()
-            .try_into()
-            .unwrap_or(u32::MAX))
+        super::in_memory_rooms::count_server_rooms(&self.state, server_id)
     }
 
     async fn list_server_roles(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRole>> {

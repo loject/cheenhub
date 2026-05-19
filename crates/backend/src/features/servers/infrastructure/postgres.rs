@@ -7,6 +7,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
     PaginatorTrait, QueryFilter, QueryOrder, Set,
 };
+
 use uuid::Uuid;
 
 use crate::features::servers::domain::{
@@ -15,13 +16,10 @@ use crate::features::servers::domain::{
 };
 use crate::features::servers::infrastructure::ServerStore;
 use crate::features::servers::infrastructure::entities::{
-    server_invite_uses, server_invites, server_member_exclusions, server_members, server_rooms,
-    servers,
-};
-use crate::features::servers::infrastructure::postgres_conversions::{
-    room_kind_as_str, server_room_from_model,
+    server_invite_uses, server_invites, server_member_exclusions, server_members, servers,
 };
 use crate::features::servers::infrastructure::postgres_roles;
+use crate::features::servers::infrastructure::postgres_rooms;
 
 /// Postgres-backed server storage.
 pub(crate) struct PostgresServerStore {
@@ -371,37 +369,11 @@ impl ServerStore for PostgresServerStore {
         name: String,
         kind: ServerRoomKind,
     ) -> anyhow::Result<ServerRoom> {
-        let position = server_rooms::Entity::find()
-            .filter(server_rooms::Column::ServerId.eq(*server_id))
-            .order_by_desc(server_rooms::Column::Position)
-            .one(&self.database)
-            .await?
-            .map(|room| room.position.saturating_add(1))
-            .unwrap_or(0);
-        let now = Utc::now();
-        let model = server_rooms::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            server_id: Set(*server_id),
-            name: Set(name),
-            kind: Set(room_kind_as_str(kind).to_owned()),
-            position: Set(position),
-            created_at: Set(now),
-            updated_at: Set(now),
-        }
-        .insert(&self.database)
-        .await?;
-
-        server_room_from_model(model)
+        postgres_rooms::insert_server_room(&self.database, server_id, name, kind).await
     }
 
     async fn list_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRoom>> {
-        let rows = server_rooms::Entity::find()
-            .filter(server_rooms::Column::ServerId.eq(*server_id))
-            .order_by_asc(server_rooms::Column::Position)
-            .all(&self.database)
-            .await?;
-
-        rows.into_iter().map(server_room_from_model).collect()
+        postgres_rooms::list_server_rooms(&self.database, server_id).await
     }
 
     async fn find_server_room(
@@ -409,13 +381,7 @@ impl ServerStore for PostgresServerStore {
         server_id: &Uuid,
         room_id: &Uuid,
     ) -> anyhow::Result<Option<ServerRoom>> {
-        server_rooms::Entity::find()
-            .filter(server_rooms::Column::ServerId.eq(*server_id))
-            .filter(server_rooms::Column::Id.eq(*room_id))
-            .one(&self.database)
-            .await?
-            .map(server_room_from_model)
-            .transpose()
+        postgres_rooms::find_server_room(&self.database, server_id, room_id).await
     }
 
     async fn update_server_room(
@@ -425,45 +391,15 @@ impl ServerStore for PostgresServerStore {
         name: String,
         kind: ServerRoomKind,
     ) -> anyhow::Result<Option<ServerRoom>> {
-        let Some(room) = server_rooms::Entity::find()
-            .filter(server_rooms::Column::ServerId.eq(*server_id))
-            .filter(server_rooms::Column::Id.eq(*room_id))
-            .one(&self.database)
-            .await?
-        else {
-            return Ok(None);
-        };
-        let mut room = room.into_active_model();
-        room.name = Set(name);
-        room.kind = Set(room_kind_as_str(kind).to_owned());
-        room.updated_at = Set(Utc::now());
-        let room = room.update(&self.database).await?;
-
-        server_room_from_model(room).map(Some)
+        postgres_rooms::update_server_room(&self.database, server_id, room_id, name, kind).await
     }
 
     async fn delete_server_room(&self, server_id: &Uuid, room_id: &Uuid) -> anyhow::Result<()> {
-        if let Some(room) = server_rooms::Entity::find()
-            .filter(server_rooms::Column::ServerId.eq(*server_id))
-            .filter(server_rooms::Column::Id.eq(*room_id))
-            .one(&self.database)
-            .await?
-        {
-            server_rooms::Entity::delete_by_id(room.id)
-                .exec(&self.database)
-                .await?;
-        }
-
-        Ok(())
+        postgres_rooms::delete_server_room(&self.database, server_id, room_id).await
     }
 
     async fn count_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<u32> {
-        let count = server_rooms::Entity::find()
-            .filter(server_rooms::Column::ServerId.eq(*server_id))
-            .count(&self.database)
-            .await?;
-
-        Ok(count.try_into().unwrap_or(u32::MAX))
+        postgres_rooms::count_server_rooms(&self.database, server_id).await
     }
 
     async fn list_server_roles(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRole>> {

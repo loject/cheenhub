@@ -1,12 +1,12 @@
 //! Server role settings section.
 use super::realtime;
+use super::role_permissions_card::RolePermissionsCard;
 use super::role_save_bar::RoleSaveBar;
 use super::roles_data::{
     OWNER_ROLE_ID, ROLE_COLORS, RoleDraft, RolePermission, color_button_class, delete_button_class,
     hex_input_class, hex_to_rgb, initial_roles, is_hex_color, non_empty_role_name,
-    normalize_hex_input, permission_row_class, preview_color, role_card_class, role_initial,
-    roles_from_realtime, roles_to_realtime, selected_role, toggle_knob_class, toggle_track_class,
-    update_selected_role,
+    normalize_hex_input, preview_color, role_card_class, role_initial, roles_from_realtime,
+    roles_to_realtime, selected_role, update_selected_role,
 };
 use crate::features::realtime::RealtimeHandle;
 use dioxus::prelude::*;
@@ -21,7 +21,6 @@ pub(crate) fn ServerRolesSettingsSection(
     let mut roles = use_signal(|| None::<Vec<RoleDraft>>);
     let mut selected_role_id = use_signal(|| OWNER_ROLE_ID.to_owned());
     let mut role_search = use_signal(String::new);
-    let mut permission_search = use_signal(String::new);
     let mut dirty = use_signal(|| false);
     let mut load_error = use_signal(String::new);
     let mut save_error = use_signal(String::new);
@@ -77,16 +76,6 @@ pub(crate) fn ServerRolesSettingsSection(
             query.is_empty() || role.name.to_lowercase().contains(&query)
         })
         .cloned()
-        .collect::<Vec<_>>();
-    let visible_permissions = RolePermission::all()
-        .iter()
-        .copied()
-        .filter(|permission| {
-            let query = permission_search().trim().to_lowercase();
-            query.is_empty()
-                || permission.label().to_lowercase().contains(&query)
-                || permission.hint().to_lowercase().contains(&query)
-        })
         .collect::<Vec<_>>();
     let custom_hex = role.color.clone();
     let custom_hex_valid = is_hex_color(&custom_hex);
@@ -374,81 +363,23 @@ pub(crate) fn ServerRolesSettingsSection(
                                     }
                                 }
                             }
-                            div { key: "{role.id}:permissions", class: "role-editor-surface rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5 transition-[border-color,background,box-shadow] duration-200 hover:border-zinc-700/80 hover:bg-zinc-950/80",
-                                div { class: "mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between",
-                                    div {
-                                        p { class: "mb-2 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/80 px-3 py-1 text-[10px] uppercase tracking-[0.24em] text-zinc-500",
-                                            span { class: "h-1.5 w-1.5 rounded-full bg-zinc-600" }
-                                            "Права"
-                                        }
-                                        h5 { class: "text-sm font-semibold text-zinc-50", "Права роли" }
-                                        p { class: "mt-1 text-[13px] leading-5 text-zinc-500",
-                                            if selected_role_owner {
-                                                "Владелец всегда имеет все права, поэтому переключатели заблокированы."
-                                            } else if !is_owner {
-                                                "Только владелец сервера может изменять права ролей."
-                                            } else {
-                                                "Включай только те права, которые нужны выбранной роли."
-                                            }
-                                        }
-                                    }
-                                    label { class: "flex h-10 min-w-0 items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-3 text-[13px] text-zinc-500 transition-[background,border-color,box-shadow] duration-150 focus-within:border-zinc-700 focus-within:shadow-[0_0_0_4px_rgba(255,255,255,0.03)]",
-                                        svg { class: "h-4 w-4 shrink-0", fill: "none", stroke: "currentColor", stroke_width: "1.8", view_box: "0 0 24 24", "aria-hidden": "true",
-                                            path { stroke_linecap: "round", d: "m21 21-4.3-4.3M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z" }
-                                        }
-                                        input {
-                                            r#type: "search",
-                                            value: permission_search(),
-                                            placeholder: "Найти право",
-                                            oninput: move |event| permission_search.set(event.value()),
-                                            class: "w-40 bg-transparent text-zinc-200 outline-none placeholder:text-zinc-600",
-                                        }
-                                    }
-                                }
-                                if visible_permissions.is_empty() {
-                                    div { class: "rounded-2xl border border-zinc-800 bg-zinc-900/45 p-5 text-center text-[13px] text-zinc-500",
-                                        "Права с таким названием не найдены."
-                                    }
-                                } else {
-                                    div { class: "divide-y divide-zinc-800/50 rounded-2xl border border-zinc-800 bg-zinc-900/45 px-4",
-                                        for permission in visible_permissions {
-                                            label {
-                                                key: "{permission.key()}",
-                                                class: permission_row_class(perm_locked),
-                                                span { class: "min-w-0",
-                                                    span { class: "block text-[13px] font-medium text-zinc-200", "{permission.label()}" }
-                                                    span { class: "mt-0.5 block text-[12px] leading-5 text-zinc-500", "{permission.hint()}" }
-                                                }
-                                                span { class: "relative inline-flex shrink-0 items-center",
-                                                    input {
-                                                        class: "peer sr-only",
-                                                        r#type: "checkbox",
-                                                        checked: role.has_permission(permission),
-                                                        disabled: perm_locked,
-                                                        onchange: move |event| {
-                                                            if perm_locked {
-                                                                return;
-                                                            }
-                                                            let checked = event.checked();
-                                                            update_selected_role(&mut roles, &selected_role_id(), |role| {
-                                                                role.set_permission(permission, checked);
-                                                            });
-                                                            dirty.set(true);
-                                                            info!(
-                                                                permission = permission.key(),
-                                                                enabled = checked,
-                                                                "changed server role permission in settings ui"
-                                                            );
-                                                        },
-                                                    }
-                                                    span { class: toggle_track_class(role.has_permission(permission), perm_locked),
-                                                        i { class: toggle_knob_class(role.has_permission(permission)) }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                            RolePermissionsCard {
+                                key: "{role.id}:permissions",
+                                role: role.clone(),
+                                perm_locked,
+                                selected_role_owner,
+                                is_owner,
+                                on_permission_change: move |(permission, checked): (RolePermission, bool)| {
+                                    update_selected_role(&mut roles, &selected_role_id(), |role| {
+                                        role.set_permission(permission, checked);
+                                    });
+                                    dirty.set(true);
+                                    info!(
+                                        permission = permission.key(),
+                                        enabled = checked,
+                                        "changed server role permission in settings ui"
+                                    );
+                                },
                             }
                     }
                 }
