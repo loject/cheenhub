@@ -2348,6 +2348,11 @@ video {
   border-top-color: rgb(96 165 250 / var(--tw-border-opacity, 1));
 }
 
+.border-t-accent {
+  --tw-border-opacity: 1;
+  border-top-color: rgb(59 130 246 / var(--tw-border-opacity, 1));
+}
+
 .bg-\[rgba\(39\2c 39\2c 42\2c \.72\)\] {
   background-color: rgba(39,39,42,.72);
 }
