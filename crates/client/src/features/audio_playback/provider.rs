@@ -11,6 +11,9 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{AudioBufferSourceNode, AudioContext};
 
+const INITIAL_PLAYBACK_BUFFER_SECONDS: f64 = 0.12;
+const CONTINUOUS_PLAYBACK_MARGIN_SECONDS: f64 = 0.02;
+
 /// Encoded playback codec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlaybackCodec {
@@ -321,12 +324,20 @@ fn schedule_audio_data(
 
     let now = context.current_time();
     let mut inner = inner.borrow_mut();
-    let start_at = inner
-        .scheduled_until
-        .get(sender_user_id)
-        .copied()
-        .unwrap_or(now)
-        .max(now + 0.02);
+    let previous_until = inner.scheduled_until.get(sender_user_id).copied();
+    let start_at = match previous_until {
+        Some(previous_until) if previous_until > now => {
+            previous_until.max(now + CONTINUOUS_PLAYBACK_MARGIN_SECONDS)
+        }
+        _ => {
+            debug!(
+                %sender_user_id,
+                buffer_ms = INITIAL_PLAYBACK_BUFFER_SECONDS * 1000.0,
+                "priming inbound voice playback buffer"
+            );
+            now + INITIAL_PLAYBACK_BUFFER_SECONDS
+        }
+    };
     let duration = f64::from(frames) / f64::from(sample_rate);
     let end_time = start_at + duration;
     inner
