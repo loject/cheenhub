@@ -3,9 +3,11 @@
 mod entities;
 mod in_memory;
 mod in_memory_roles;
+mod in_memory_rooms;
 mod postgres;
 mod postgres_conversions;
 mod postgres_roles;
+mod postgres_rooms;
 
 use async_trait::async_trait;
 use cheenhub_contracts::rest::ServerRoomKind;

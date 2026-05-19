@@ -2,6 +2,14 @@
 
 use cheenhub_contracts::realtime::ServerMemberEntry;
 
+/// Compact custom role summary used in the members section.
+#[derive(Clone, PartialEq)]
+pub(super) struct CustomRole {
+    pub(super) id: String,
+    pub(super) name: String,
+    pub(super) color: String,
+}
+
 /// Active server member shown in settings.
 #[derive(Clone, PartialEq)]
 pub(super) struct ServerMemberRow {
