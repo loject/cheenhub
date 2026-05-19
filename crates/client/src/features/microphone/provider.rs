@@ -11,6 +11,8 @@ use super::backend::{
 };
 use super::browser::BrowserMicrophoneBackend;
 
+const MICROPHONE_LEVEL_UPDATE_INTERVAL_US: u64 = 33_000;
+
 /// Context handle used by features that need microphone input.
 #[derive(Clone)]
 pub(crate) struct MicrophoneHandle {
@@ -19,6 +21,12 @@ pub(crate) struct MicrophoneHandle {
     session: Signal<Option<Rc<dyn MicrophoneSession>>>,
     generation: Signal<u64>,
     backend: Rc<dyn MicrophoneBackend>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LevelEmissionState {
+    timestamp_us: u64,
+    active: bool,
 }
 
 impl MicrophoneHandle {
@@ -191,10 +199,45 @@ fn microphone_callbacks(
     level: Signal<MicrophoneLevel>,
 ) -> MicrophoneCallbacks {
     let level = Rc::new(RefCell::new(level));
+    let emission = Rc::new(RefCell::new(None::<LevelEmissionState>));
     MicrophoneCallbacks {
         on_frame,
-        on_level: Rc::new(move |next_level| level.borrow_mut().set(next_level)),
+        on_level: Rc::new(move |next_level| {
+            if should_emit_level(&emission, next_level) {
+                level.borrow_mut().set(next_level);
+            }
+        }),
     }
+}
+
+fn should_emit_level(
+    emission: &Rc<RefCell<Option<LevelEmissionState>>>,
+    next_level: MicrophoneLevel,
+) -> bool {
+    let mut emission = emission.borrow_mut();
+    let Some(previous) = *emission else {
+        *emission = Some(LevelEmissionState {
+            timestamp_us: next_level.timestamp_us,
+            active: next_level.active,
+        });
+        return true;
+    };
+
+    let active_changed = previous.active != next_level.active;
+    let interval_elapsed = next_level.timestamp_us > previous.timestamp_us
+        && next_level
+            .timestamp_us
+            .saturating_sub(previous.timestamp_us)
+            >= MICROPHONE_LEVEL_UPDATE_INTERVAL_US;
+    if !active_changed && !interval_elapsed {
+        return false;
+    }
+
+    *emission = Some(LevelEmissionState {
+        timestamp_us: next_level.timestamp_us,
+        active: next_level.active,
+    });
+    true
 }
 
 fn status_from_error(error: super::backend::MicrophoneError) -> MicrophoneStatus {

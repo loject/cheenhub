@@ -2,6 +2,8 @@
 
 use super::backend::{MicrophoneActivationMode, MicrophoneConfig};
 
+const VAD_RELEASE_THRESHOLD_RATIO: f32 = 0.65;
+
 /// Stateful voice activation gate.
 #[derive(Debug, Clone)]
 pub(crate) struct VoiceActivityDetector {
@@ -44,8 +46,26 @@ impl VoiceActivityDetector {
         self.config
     }
 
+    /// Returns whether the detector currently passes audio.
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
+    }
+
     fn update_voice_activation(&mut self, rms: f32, duration_us: u32) {
-        if rms >= self.config.vad_threshold {
+        let open_threshold = self.config.vad_threshold;
+        let release_threshold = open_threshold * VAD_RELEASE_THRESHOLD_RATIO;
+
+        if self.active {
+            if rms >= release_threshold {
+                self.below_threshold_us = 0;
+            } else {
+                self.below_threshold_us = self.below_threshold_us.saturating_add(duration_us);
+                self.above_threshold_us = 0;
+                if self.below_threshold_us >= self.config.vad_release_delay_us {
+                    self.active = false;
+                }
+            }
+        } else if rms >= open_threshold {
             self.above_threshold_us = self.above_threshold_us.saturating_add(duration_us);
             self.below_threshold_us = 0;
             if self.above_threshold_us >= self.config.vad_activation_delay_us {
@@ -54,9 +74,6 @@ impl VoiceActivityDetector {
         } else {
             self.below_threshold_us = self.below_threshold_us.saturating_add(duration_us);
             self.above_threshold_us = 0;
-            if self.below_threshold_us >= self.config.vad_release_delay_us {
-                self.active = false;
-            }
         }
     }
 }
@@ -115,6 +132,17 @@ mod tests {
         assert!(detector.update(0.3, 40_000));
         assert!(detector.update(0.1, 40_000));
         assert!(!detector.update(0.1, 40_000));
+    }
+
+    #[test]
+    fn voice_activation_uses_release_hysteresis() {
+        let mut detector = VoiceActivityDetector::new(config());
+
+        assert!(detector.update(0.3, 40_000));
+        assert!(detector.update(0.15, 80_000));
+        assert!(detector.is_active());
+        assert!(detector.update(0.12, 40_000));
+        assert!(!detector.update(0.12, 40_000));
     }
 
     #[test]
