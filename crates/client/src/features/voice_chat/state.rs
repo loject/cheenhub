@@ -1,5 +1,9 @@
 //! Shared voice connection state.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use cheenhub_contracts::rest::AuthUser;
 use dioxus::prelude::*;
@@ -63,6 +67,7 @@ pub(crate) struct VoiceConnectionHandle {
     /// Shared voice state signal.
     pub(crate) state: Signal<VoiceConnectionState>,
     speaking_users: Signal<Vec<SpeakingUserActivity>>,
+    speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
     realtime: RealtimeHandle,
     current_user: AuthUser,
 }
@@ -71,8 +76,6 @@ pub(crate) struct VoiceConnectionHandle {
 pub(crate) struct SpeakingUserActivity {
     /// Participant identifier.
     user_id: String,
-    /// Monotonic marker generation used to ignore stale release timers.
-    generation: u64,
 }
 
 impl VoiceConnectionHandle {
@@ -80,12 +83,14 @@ impl VoiceConnectionHandle {
     pub(crate) fn new(
         state: Signal<VoiceConnectionState>,
         speaking_users: Signal<Vec<SpeakingUserActivity>>,
+        speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
         realtime: RealtimeHandle,
         current_user: AuthUser,
     ) -> Self {
         Self {
             state,
             speaking_users,
+            speaking_generations,
             realtime,
             current_user,
         }
@@ -111,41 +116,55 @@ impl VoiceConnectionHandle {
 
     /// Marks one user as speaking until no new voice frame refreshes the marker.
     pub(crate) fn mark_user_speaking(&self, user_id: String) {
-        let mut next_users = (self.speaking_users)();
-        let generation = match next_users
-            .iter_mut()
-            .find(|activity| activity.user_id == user_id)
-        {
-            Some(activity) => {
-                activity.generation = activity.generation.saturating_add(1);
-                activity.generation
-            }
-            None => {
-                next_users.push(SpeakingUserActivity {
-                    user_id: user_id.clone(),
-                    generation: 0,
-                });
-                0
-            }
+        let generation = {
+            let mut generations = self.speaking_generations.borrow_mut();
+            let generation = generations.entry(user_id.clone()).or_insert(0);
+            *generation = generation.saturating_add(1);
+            *generation
         };
+
+        let mut next_users = (self.speaking_users)();
+        if next_users
+            .iter()
+            .any(|activity| activity.user_id == user_id)
+        {
+            return;
+        }
+        next_users.push(SpeakingUserActivity {
+            user_id: user_id.clone(),
+        });
         let mut speaking_users = self.speaking_users;
         speaking_users.set(next_users);
 
+        let speaking_generations = self.speaking_generations.clone();
         spawn(async move {
-            TimeoutFuture::new(SPEAKING_RELEASE_TIMEOUT_MS).await;
-            let mut next_users = speaking_users();
-            let previous_len = next_users.len();
-            next_users.retain(|activity| {
-                activity.user_id != user_id || activity.generation != generation
-            });
-            if next_users.len() != previous_len {
-                speaking_users.set(next_users);
+            let mut observed_generation = generation;
+            loop {
+                TimeoutFuture::new(SPEAKING_RELEASE_TIMEOUT_MS).await;
+                let latest_generation = speaking_generations.borrow().get(&user_id).copied();
+                match latest_generation {
+                    Some(latest_generation) if latest_generation != observed_generation => {
+                        observed_generation = latest_generation;
+                    }
+                    Some(_) => {
+                        speaking_generations.borrow_mut().remove(&user_id);
+                        let mut next_users = speaking_users();
+                        let previous_len = next_users.len();
+                        next_users.retain(|activity| activity.user_id != user_id);
+                        if next_users.len() != previous_len {
+                            speaking_users.set(next_users);
+                        }
+                        break;
+                    }
+                    None => break,
+                }
             }
         });
     }
 
     /// Clears all remote speaking indicators.
     pub(crate) fn clear_speaking_users(&self) {
+        self.speaking_generations.borrow_mut().clear();
         let mut speaking_users = self.speaking_users;
         speaking_users.set(Vec::new());
     }

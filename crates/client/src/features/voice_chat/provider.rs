@@ -1,5 +1,7 @@
 //! Voice connection context provider.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
@@ -24,11 +26,13 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let playback = use_context::<AudioPlaybackHandle>();
     let state = use_signal(|| VoiceConnectionState::Disconnected);
     let speaking_users = use_signal(Vec::new);
+    let speaking_generations = use_hook(|| Rc::new(RefCell::new(HashMap::<String, u64>::new())));
     let mut microphone_target_room = use_signal(|| None::<String>);
     let mut mic_paused_by_mute = use_signal(|| false);
     let handle = VoiceConnectionHandle::new(
         state,
         speaking_users,
+        speaking_generations,
         realtime.clone(),
         current_user.clone(),
     );
