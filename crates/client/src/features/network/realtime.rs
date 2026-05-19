@@ -1,31 +1,37 @@
 //! Network realtime helpers.
 
 use cheenhub_contracts::realtime::{NetworkKind, Ping, Pong, RealtimeKind, RealtimeModule};
-use dioxus::prelude::{debug, warn};
+use dioxus::prelude::warn;
+use web_time::Instant;
 
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
 
+/// Completed network ping-pong measurement.
+pub(crate) struct PingMeasurement {
+    /// Client timestamp when the pong arrived.
+    pub(crate) received_at_ms: u64,
+    /// Client-measured round-trip time in milliseconds.
+    pub(crate) rtt_ms: f64,
+}
+
 /// Sends one reliable network ping and waits for the pong response.
-pub(crate) async fn ping(realtime: &RealtimeHandle) -> Result<Pong, RealtimeError> {
+pub(crate) async fn ping(realtime: &RealtimeHandle) -> Result<PingMeasurement, RealtimeError> {
     let sent_at_ms = now_ms();
-    debug!("rt ping");
-    let pong: Pong = realtime
+    let sent_at = Instant::now();
+    let _: Pong = realtime
         .request(
             RealtimeModule::Network,
             RealtimeKind::Network(NetworkKind::Ping),
             Ping { sent_at_ms },
         )
         .await?;
-    let received_at = now_ms();
-    debug!(
-        rtt_ms = received_at.saturating_sub(pong.sent_at_ms),
-        srv_ms = pong
-            .server_sent_at_ms
-            .saturating_sub(pong.server_received_at_ms),
-        "rt pong"
-    );
+    let received_at_ms = now_ms();
+    let rtt_ms = sent_at.elapsed().as_secs_f64() * 1_000.0;
 
-    Ok(pong)
+    Ok(PingMeasurement {
+        received_at_ms,
+        rtt_ms,
+    })
 }
 
 fn now_ms() -> u64 {
