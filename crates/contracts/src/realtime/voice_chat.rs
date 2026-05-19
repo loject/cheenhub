@@ -10,6 +10,8 @@ pub enum VoiceChatKind {
     JoinVoiceRoom,
     /// Leave one voice-capable room.
     LeaveVoiceRoom,
+    /// Kick one participant from a voice room.
+    KickVoiceMember,
     /// Current voice room participant snapshot.
     VoiceRoomSnapshot,
     /// Voice room participant list changed event.
@@ -43,6 +45,17 @@ pub struct VoiceRoomSnapshot {
     pub room_id: String,
     /// Participants currently present in the room.
     pub participants: Vec<VoiceRoomParticipant>,
+}
+
+/// Request payload used to kick a participant from a voice room.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KickVoiceMember {
+    /// Server identifier.
+    pub server_id: String,
+    /// Room identifier.
+    pub room_id: String,
+    /// User identifier to kick.
+    pub user_id: String,
 }
 
 /// Voice room participant payload.

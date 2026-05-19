@@ -66,6 +66,8 @@ pub(crate) enum VoiceConnectionState {
 pub(crate) struct VoiceConnectionHandle {
     /// Shared voice state signal.
     pub(crate) state: Signal<VoiceConnectionState>,
+    /// Room name the user was kicked from, set when a kick is detected.
+    pub(crate) kicked_from_room: Signal<Option<String>>,
     speaking_users: Signal<Vec<SpeakingUserActivity>>,
     speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
     realtime: RealtimeHandle,
@@ -82,6 +84,7 @@ impl VoiceConnectionHandle {
     /// Builds a voice connection handle.
     pub(crate) fn new(
         state: Signal<VoiceConnectionState>,
+        kicked_from_room: Signal<Option<String>>,
         speaking_users: Signal<Vec<SpeakingUserActivity>>,
         speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
         realtime: RealtimeHandle,
@@ -89,11 +92,18 @@ impl VoiceConnectionHandle {
     ) -> Self {
         Self {
             state,
+            kicked_from_room,
             speaking_users,
             speaking_generations,
             realtime,
             current_user,
         }
+    }
+
+    /// Clears the kick notification after the user acknowledges it.
+    pub(crate) fn dismiss_kick_notification(&self) {
+        let mut kicked = self.kicked_from_room;
+        kicked.set(None);
     }
 
     /// Reads the current voice connection state.
@@ -258,6 +268,18 @@ impl VoiceConnectionHandle {
         });
     }
 
+    /// Kicks one participant from the active voice room.
+    pub(crate) fn kick_member(&self, server_id: String, room_id: String, user_id: String) {
+        let realtime = self.realtime.clone();
+        spawn(async move {
+            if let Err(error) =
+                realtime::kick_voice_member(&realtime, server_id, room_id, user_id).await
+            {
+                warn!(%error, "failed to kick voice member");
+            }
+        });
+    }
+
     /// Leaves the active voice room.
     pub(crate) fn leave(&self) {
         let current = self.state();
@@ -305,15 +327,28 @@ impl VoiceConnectionHandle {
             return;
         }
 
+        let current_user_id = &self.current_user.id;
         let mut state = self.state;
         state.set(match current {
             VoiceConnectionState::Connecting { target } => {
                 VoiceConnectionState::Connecting { target }
             }
-            VoiceConnectionState::Connected { target, .. } => VoiceConnectionState::Connected {
-                target,
-                participants: snapshot.participants,
-            },
+            VoiceConnectionState::Connected { target, .. } => {
+                if snapshot
+                    .participants
+                    .iter()
+                    .any(|p| &p.user_id == current_user_id)
+                {
+                    VoiceConnectionState::Connected {
+                        target,
+                        participants: snapshot.participants,
+                    }
+                } else {
+                    let mut kicked = self.kicked_from_room;
+                    kicked.set(Some(target.room_name.clone()));
+                    VoiceConnectionState::Disconnected
+                }
+            }
             VoiceConnectionState::Disconnecting { target, .. } => {
                 VoiceConnectionState::Disconnecting {
                     target,

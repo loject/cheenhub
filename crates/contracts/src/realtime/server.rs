@@ -239,6 +239,17 @@ pub enum ServerRolePermission {
     DeleteMessages,
 }
 
+/// Minimal server role summary embedded in server-level responses for client-side permission checks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerRoleSummary {
+    /// Stable role identifier.
+    pub role_id: String,
+    /// Role kind (owner / member / custom).
+    pub kind: ServerRoleKind,
+    /// Permissions granted by this role.
+    pub permissions: Vec<ServerRolePermission>,
+}
+
 /// Server role shown in settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerRoleEntry {

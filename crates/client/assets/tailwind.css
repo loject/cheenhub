@@ -1246,6 +1246,10 @@ video {
   z-index: 999;
 }
 
+.z-\[200\] {
+  z-index: 200;
+}
+
 .m-80 {
   margin: 20rem;
 }
@@ -1829,6 +1833,10 @@ video {
 
 .max-w-xl {
   max-width: 36rem;
+}
+
+.max-w-\[380px\] {
+  max-width: 380px;
 }
 
 .flex-1 {
@@ -3370,6 +3378,11 @@ video {
 .text-zinc-700 {
   --tw-text-opacity: 1;
   color: rgb(63 63 70 / var(--tw-text-opacity, 1));
+}
+
+.text-red-400 {
+  --tw-text-opacity: 1;
+  color: rgb(248 113 113 / var(--tw-text-opacity, 1));
 }
 
 .accent-blue-500 {

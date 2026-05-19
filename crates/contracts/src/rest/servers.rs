@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::realtime::ServerRoleSummary;
+
 /// Request body used to create a new server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateServerRequest {
@@ -22,6 +24,10 @@ pub struct ServerSummary {
     pub is_owner: bool,
     /// Whether the current user is an active server member.
     pub is_member: bool,
+    /// All roles defined on this server with their permissions.
+    pub roles: Vec<ServerRoleSummary>,
+    /// Role identifiers currently assigned to the current user on this server.
+    pub member_role_ids: Vec<String>,
 }
 
 /// Successful server creation response.

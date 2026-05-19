@@ -1,5 +1,6 @@
 //! Per-server room state and workspace coordination.
 
+use cheenhub_contracts::realtime::{ServerRoleKind, ServerRolePermission};
 use cheenhub_contracts::rest::{ServerRoomSummary, ServerSummary};
 use dioxus::prelude::*;
 
@@ -63,8 +64,16 @@ pub(crate) fn ServerRoomsScope(
     let server_name = server.name.clone();
     let invite_server_name = server_name.clone();
     let is_owner = server.is_owner;
+    let can_kick_voice = is_owner
+        || server.roles.iter().any(|role| {
+                server.member_role_ids.contains(&role.role_id)
+                && role
+                    .permissions
+                    .contains(&ServerRolePermission::KickVoiceMembers)
+        });
     use_context_provider(|| ServerPermissionsContext {
         can_moderate: is_owner,
+        can_kick_voice,
     });
     let room_load_resource = use_resource(move || {
         let request_server_id = load_server_id.clone();

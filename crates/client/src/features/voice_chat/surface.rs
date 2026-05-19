@@ -68,6 +68,8 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
         div { class: "voice-room-surface relative flex min-h-0 flex-1 flex-col",
             if is_active_room {
                 VoiceParticipantGrid {
+                    server_id: server_id.clone(),
+                    room_id: room.id.clone(),
                     participants,
                     speaking_user_ids,
                     status: grid_status,

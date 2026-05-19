@@ -1,8 +1,8 @@
 //! Voice chat realtime adapter.
 
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, LeaveVoiceRoom, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
-    VoiceChatKind,
+    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, RealtimeEnvelope, RealtimeKind,
+    RealtimeModule, RejectionCode, VoiceChatKind,
 };
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
@@ -55,6 +55,23 @@ pub(crate) async fn handle(
             let request_id = require_request_id(&envelope)?;
             let payload: LeaveVoiceRoom = decode_payload(&envelope)?;
             match application::leave_room(state, realtime_stream_id, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::VoiceRoomSnapshot),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::KickVoiceMember) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: KickVoiceMember = decode_payload(&envelope)?;
+            match application::kick_member(state, user_id, payload).await {
                 Ok(response) => {
                     write_envelope(
                         send,

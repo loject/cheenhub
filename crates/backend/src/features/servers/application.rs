@@ -64,7 +64,7 @@ pub(crate) async fn create(
         .map_err(ServerError::Internal)?;
 
     Ok(CreateServerResponse {
-        server: server_summary(state, &server, &owner_user_id, true),
+        server: server_summary(state, &server, &owner_user_id, true).await,
     })
 }
 
@@ -84,12 +84,13 @@ pub(crate) async fn list(
         .await
         .map_err(ServerError::Internal)?;
 
-    Ok(ListServersResponse {
-        servers: servers
-            .iter()
-            .map(|access| server_summary(state, &access.server, &user_id, access.is_member))
-            .collect(),
-    })
+    let mut summaries = Vec::with_capacity(servers.len());
+    for access in &servers {
+        summaries.push(
+            server_summary(state, &access.server, &user_id, access.is_member).await,
+        );
+    }
+    Ok(ListServersResponse { servers: summaries })
 }
 
 /// Creates an invite for a server owned by the current user.
@@ -212,7 +213,7 @@ pub(crate) async fn invite_info(
             max_uses: invite.max_uses,
             expires_at: invite.expires_at.map(|expires_at| expires_at.to_rfc3339()),
         },
-        server: server_summary(state, &server, &user_id, is_member),
+        server: server_summary(state, &server, &user_id, is_member).await,
     })
 }
 
@@ -269,7 +270,7 @@ pub(crate) async fn accept_invite(
 
     if is_owner || active_member {
         return Ok(AcceptServerInviteResponse {
-            server: server_summary(state, &server, &user_id, true),
+            server: server_summary(state, &server, &user_id, true).await,
             already_member: true,
         });
     }
@@ -314,7 +315,7 @@ pub(crate) async fn accept_invite(
         .map_err(ServerError::Internal)?;
 
     Ok(AcceptServerInviteResponse {
-        server: server_summary(state, &server, &user_id, true),
+        server: server_summary(state, &server, &user_id, true).await,
         already_member: false,
     })
 }
