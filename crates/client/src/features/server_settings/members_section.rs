@@ -53,7 +53,11 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
         match result {
             Ok(response) => {
                 members.set(Some(
-                    response.members.into_iter().map(member_from_realtime).collect(),
+                    response
+                        .members
+                        .into_iter()
+                        .map(member_from_realtime)
+                        .collect(),
                 ));
                 if refresh_requested() {
                     info!(server_id = %response.server_id, "refreshed server members in settings ui");
@@ -93,7 +97,10 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
     let all_members = members().unwrap_or_default();
     let is_loading = members().is_none() && member_load_result.is_none();
     let member_count = all_members.len();
-    let invited_count = all_members.iter().filter(|m| m.invite_code.is_some()).count();
+    let invited_count = all_members
+        .iter()
+        .filter(|m| m.invite_code.is_some())
+        .count();
 
     rsx! {
         div { class: "space-y-4",

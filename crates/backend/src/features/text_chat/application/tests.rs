@@ -3,9 +3,11 @@ use std::sync::Arc;
 use cheenhub_contracts::realtime::{LoadRoomHistory, SendMessage};
 use cheenhub_contracts::rest::{RegisterRequest, ServerRoomKind};
 use chrono::{Duration, Utc};
+use image::ImageEncoder;
+use image::codecs::png::PngEncoder;
 use uuid::Uuid;
 
-use super::{load_room_history, send_message};
+use super::{chat_image, load_room_history, send_message, upload_chat_image};
 use crate::features::auth::application as auth_application;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
 use crate::features::auth::security::keys::AuthKeys;
@@ -22,6 +24,11 @@ fn state() -> AppState {
         auth_mailer: Arc::new(crate::features::auth::email::tests::TestAuthMailer::default()),
         server_store: Arc::new(InMemoryServerStore::default()),
         text_chat_store: Arc::new(InMemoryTextChatStore::default()),
+        chat_attachment_object_store: Arc::new(
+            crate::features::text_chat::infrastructure::InMemoryChatAttachmentObjectStore::new(
+                "test-chat-images",
+            ),
+        ),
         image_store: Arc::new(
             crate::features::images::infrastructure::InMemoryImageStore::default(),
         ),
@@ -113,6 +120,7 @@ async fn owner_can_send_and_load_room_messages() {
             server_id: server_id.clone(),
             room_id: room_id.clone(),
             body: "  hello wt  ".to_owned(),
+            attachment_ids: Vec::new(),
         },
     )
     .await
@@ -171,6 +179,7 @@ async fn non_member_cannot_load_or_send() {
             server_id,
             room_id,
             body: "hello".to_owned(),
+            attachment_ids: Vec::new(),
         },
     )
     .await
@@ -208,6 +217,7 @@ async fn voice_room_rejects_text_chat() {
             server_id,
             room_id,
             body: "hello".to_owned(),
+            attachment_ids: Vec::new(),
         },
     )
     .await
@@ -239,6 +249,7 @@ async fn message_body_is_required_and_limited() {
                 server_id: server_id.clone(),
                 room_id: room_id.clone(),
                 body,
+                attachment_ids: Vec::new(),
             },
         )
         .await
@@ -275,7 +286,10 @@ async fn room_history_returns_latest_fifty_oldest_to_newest() {
                 author_user_id: user_id,
                 author_nickname: auth.user.nickname.clone(),
                 body: format!("message {index}"),
+                attachments: Vec::new(),
                 created_at: base_time + Duration::seconds(index),
+                deleted_at: None,
+                deleted_by_user_id: None,
             })
             .await
             .expect("message should insert");
@@ -326,7 +340,10 @@ async fn room_history_page_before_cursor_returns_older_messages() {
                 author_user_id: user_id,
                 author_nickname: auth.user.nickname.clone(),
                 body: format!("message {index}"),
+                attachments: Vec::new(),
                 created_at: base_time + Duration::seconds(index),
+                deleted_at: None,
+                deleted_by_user_id: None,
             })
             .await
             .expect("message should insert");
@@ -397,7 +414,10 @@ async fn foreign_history_cursor_is_rejected() {
             author_user_id: user_id,
             author_nickname: auth.user.nickname.clone(),
             body: "foreign".to_owned(),
+            attachments: Vec::new(),
             created_at: Utc::now(),
+            deleted_at: None,
+            deleted_by_user_id: None,
         })
         .await
         .expect("message should insert");
@@ -415,4 +435,51 @@ async fn foreign_history_cursor_is_rejected() {
     .expect_err("foreign cursor should fail");
 
     assert!(matches!(error, TextChatApplicationError::BadRequest(_)));
+}
+
+#[tokio::test]
+async fn chat_image_upload_is_stored_and_served_through_proxy_flow() {
+    let state = state();
+    let auth = registered_user(&state, "image_owner", "image-owner@example.com").await;
+    let user_id = Uuid::parse_str(&auth.user.id).expect("user id should be uuid");
+    let (server_id, room_id) = create_server_room(
+        &state,
+        &user_id,
+        "Images",
+        "general",
+        ServerRoomKind::TextAndVoice,
+    )
+    .await;
+    let bytes = tiny_png();
+
+    let uploaded = upload_chat_image(
+        &state,
+        &user_id,
+        server_id.clone(),
+        room_id.clone(),
+        Some("pixel.png".to_owned()),
+        &bytes,
+    )
+    .await
+    .expect("chat image should upload");
+
+    assert_eq!(uploaded.server_id, server_id);
+    assert_eq!(uploaded.room_id, room_id);
+    assert_eq!(uploaded.content_type, "image/png");
+    assert_eq!(uploaded.width, 1);
+    assert_eq!(uploaded.height, 1);
+
+    let (attachment, served) = chat_image(&state, &user_id, uploaded.id)
+        .await
+        .expect("chat image should serve");
+    assert_eq!(attachment.content_type, "image/png");
+    assert_eq!(served, bytes);
+}
+
+fn tiny_png() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    PngEncoder::new(&mut bytes)
+        .write_image(&[255, 255, 255, 255], 1, 1, image::ExtendedColorType::Rgba8)
+        .expect("test png should encode");
+    bytes
 }

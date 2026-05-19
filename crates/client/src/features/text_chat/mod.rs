@@ -2,6 +2,7 @@
 
 mod compose;
 mod history;
+mod image_attachment;
 mod message_item;
 mod messages;
 mod panel;

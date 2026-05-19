@@ -56,9 +56,10 @@ pub(super) fn assign_server_member_role(
     granted_by_user_id: &Uuid,
 ) -> anyhow::Result<()> {
     let mut state = state.lock().map_err(|_| poisoned())?;
-    let already_exists = state.member_roles.iter().any(|(sid, uid, rid, _)| {
-        *sid == *server_id && *uid == *user_id && *rid == *role_id
-    });
+    let already_exists = state
+        .member_roles
+        .iter()
+        .any(|(sid, uid, rid, _)| *sid == *server_id && *uid == *user_id && *rid == *role_id);
     if !already_exists {
         state
             .member_roles

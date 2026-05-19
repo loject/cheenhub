@@ -14,6 +14,14 @@ pub enum TextChatKind {
     SendMessage,
     /// Acknowledges that a message send was accepted for fanout and persistence.
     SendMessageAccepted,
+    /// Upload a chat image attachment.
+    UploadImage,
+    /// Acknowledges that a chat image was uploaded.
+    UploadImageAccepted,
+    /// Load a chat image attachment through realtime.
+    LoadImage,
+    /// Response containing one chat image attachment.
+    ImageLoaded,
     /// A newly created message event.
     MessageCreated,
     /// Delete one of the user's own messages.
@@ -57,6 +65,9 @@ pub struct SendMessage {
     pub room_id: String,
     /// Message body.
     pub body: String,
+    /// Uploaded image attachment ids to include in the message.
+    #[serde(default)]
+    pub attachment_ids: Vec<String>,
 }
 
 /// Response payload returned after accepting a message send.
@@ -64,6 +75,71 @@ pub struct SendMessage {
 pub struct SendMessageAccepted {
     /// Accepted message.
     pub message: TextChatMessage,
+}
+
+/// Request payload used to upload one chat image attachment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UploadChatImage {
+    /// Server identifier.
+    pub server_id: String,
+    /// Room identifier.
+    pub room_id: String,
+    /// Optional original filename.
+    pub original_filename: Option<String>,
+    /// Base64-encoded image bytes.
+    pub data_base64: String,
+}
+
+/// Response returned after a chat image upload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatImageUploadResponse {
+    /// Stable attachment identifier.
+    pub id: String,
+    /// Server identifier.
+    pub server_id: String,
+    /// Room identifier.
+    pub room_id: String,
+    /// Validated image content type.
+    pub content_type: String,
+    /// Uploaded byte length.
+    pub byte_size: i64,
+    /// Image width in pixels.
+    pub width: i32,
+    /// Image height in pixels.
+    pub height: i32,
+}
+
+/// Image attachment metadata included in a text chat message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextChatImageAttachment {
+    /// Stable attachment identifier.
+    pub id: String,
+    /// Validated image content type.
+    pub content_type: String,
+    /// Uploaded byte length.
+    pub byte_size: i64,
+    /// Image width in pixels.
+    pub width: i32,
+    /// Image height in pixels.
+    pub height: i32,
+}
+
+/// Request payload used to load one chat image attachment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LoadChatImage {
+    /// Stable attachment identifier.
+    pub attachment_id: String,
+}
+
+/// Response payload containing one chat image attachment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatImageLoadedResponse {
+    /// Stable attachment identifier.
+    pub id: String,
+    /// Validated image content type.
+    pub content_type: String,
+    /// Base64-encoded image bytes.
+    pub data_base64: String,
 }
 
 /// Request payload used to soft-delete one of the user's own messages.
@@ -112,6 +188,9 @@ pub struct TextChatMessage {
     pub author_avatar_url: Option<String>,
     /// Message body.
     pub body: String,
+    /// Image attachments included in the message.
+    #[serde(default)]
+    pub attachments: Vec<TextChatImageAttachment>,
     /// Message creation timestamp in RFC3339 format.
     pub created_at: String,
 }

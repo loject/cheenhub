@@ -111,9 +111,7 @@ pub(super) fn role_permission_from_str(
         "kick_voice_members" => {
             Ok(cheenhub_contracts::realtime::ServerRolePermission::KickVoiceMembers)
         }
-        "delete_messages" => {
-            Ok(cheenhub_contracts::realtime::ServerRolePermission::DeleteMessages)
-        }
+        "delete_messages" => Ok(cheenhub_contracts::realtime::ServerRolePermission::DeleteMessages),
         other => Err(anyhow::anyhow!("unknown server role permission: {other}")),
     }
 }

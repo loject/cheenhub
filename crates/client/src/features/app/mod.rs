@@ -3,8 +3,8 @@
 pub(crate) mod api;
 pub(crate) mod components;
 pub(crate) mod current_user;
-pub(crate) mod server_permissions;
 mod pages;
+pub(crate) mod server_permissions;
 
 pub(crate) use pages::app_page::AppPage;
 pub(crate) use pages::invite_page::InvitePage;

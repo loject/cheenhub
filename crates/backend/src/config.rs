@@ -61,6 +61,25 @@ pub(crate) struct AppConfig {
     pub(crate) webtransport_tls_cert_path: Option<String>,
     /// Optional PEM private key path used by the WebTransport listener.
     pub(crate) webtransport_tls_key_path: Option<String>,
+    /// Optional S3-compatible object storage configuration for chat images.
+    pub(crate) chat_images_s3: Option<S3Config>,
+}
+
+/// S3-compatible object storage configuration.
+#[derive(Debug, Clone)]
+pub(crate) struct S3Config {
+    /// S3 API endpoint URL.
+    pub(crate) endpoint: String,
+    /// S3 signing region.
+    pub(crate) region: String,
+    /// Bucket used to store chat image objects.
+    pub(crate) bucket: String,
+    /// Access key id.
+    pub(crate) access_key_id: String,
+    /// Secret access key.
+    pub(crate) secret_access_key: String,
+    /// Whether to force path-style addressing.
+    pub(crate) force_path_style: bool,
 }
 
 /// Authentication storage backend configuration.
@@ -121,6 +140,7 @@ impl AppConfig {
                 .context("WEBTRANSPORT_PORT must be a valid u16 port")?,
             webtransport_tls_cert_path: env::var("WEBTRANSPORT_TLS_CERT_PATH").ok(),
             webtransport_tls_key_path: env::var("WEBTRANSPORT_TLS_KEY_PATH").ok(),
+            chat_images_s3: optional_s3_config()?,
         })
     }
 
@@ -186,5 +206,50 @@ fn auth_store_config(value: &str) -> anyhow::Result<AuthStoreConfig> {
         "postgres" => Ok(AuthStoreConfig::Postgres),
         "inmemory" | "in-memory" => Ok(AuthStoreConfig::InMemory),
         _ => Err(anyhow!("AUTH_STORE must be either postgres or inmemory")),
+    }
+}
+
+fn optional_s3_config() -> anyhow::Result<Option<S3Config>> {
+    let keys = [
+        "CHAT_IMAGES_S3_ENDPOINT",
+        "CHAT_IMAGES_S3_REGION",
+        "CHAT_IMAGES_S3_BUCKET",
+        "CHAT_IMAGES_S3_ACCESS_KEY_ID",
+        "CHAT_IMAGES_S3_SECRET_ACCESS_KEY",
+    ];
+    let present = keys
+        .iter()
+        .filter(|key| {
+            env::var(key)
+                .map(|value| !value.trim().is_empty())
+                .unwrap_or(false)
+        })
+        .count();
+    if present == 0 {
+        return Ok(None);
+    }
+    if present != keys.len() {
+        return Err(anyhow!(
+            "chat image S3 storage is partially configured; set all of {}",
+            keys.join(", ")
+        ));
+    }
+
+    Ok(Some(S3Config {
+        endpoint: required("CHAT_IMAGES_S3_ENDPOINT")?,
+        region: required("CHAT_IMAGES_S3_REGION")?,
+        bucket: required("CHAT_IMAGES_S3_BUCKET")?,
+        access_key_id: required("CHAT_IMAGES_S3_ACCESS_KEY_ID")?,
+        secret_access_key: required("CHAT_IMAGES_S3_SECRET_ACCESS_KEY")?,
+        force_path_style: optional_bool("CHAT_IMAGES_S3_FORCE_PATH_STYLE", true)?,
+    }))
+}
+
+fn optional_bool(key: &str, default: bool) -> anyhow::Result<bool> {
+    let value = env::var(key).unwrap_or_else(|_| default.to_string());
+    match value.trim().to_lowercase().as_str() {
+        "true" | "1" | "yes" | "y" => Ok(true),
+        "false" | "0" | "no" | "n" => Ok(false),
+        _ => Err(anyhow!("{key} must be a boolean")),
     }
 }

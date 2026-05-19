@@ -2,14 +2,20 @@
 
 mod entities;
 mod in_memory;
+mod object_storage;
 mod postgres;
 
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::features::text_chat::domain::TextMessage;
+use crate::features::text_chat::domain::{ChatAttachment, NewChatAttachment, TextMessage};
 
 pub(crate) use in_memory::InMemoryTextChatStore;
+#[cfg(test)]
+pub(crate) use object_storage::InMemoryChatAttachmentObjectStore;
+pub(crate) use object_storage::{
+    ChatAttachmentObjectStore, DisabledChatAttachmentObjectStore, S3ChatAttachmentObjectStore,
+};
 pub(crate) use postgres::PostgresTextChatStore;
 
 const HISTORY_LIMIT: u64 = 50;
@@ -27,6 +33,15 @@ pub(crate) struct TextMessagePage {
 pub(crate) trait TextChatStore: Send + Sync {
     /// Inserts a prebuilt text message.
     async fn insert_text_message(&self, message: TextMessage) -> anyhow::Result<()>;
+
+    /// Inserts chat attachment metadata.
+    async fn insert_chat_attachment(&self, attachment: NewChatAttachment) -> anyhow::Result<()>;
+
+    /// Finds chat attachment metadata by id.
+    async fn find_chat_attachment(
+        &self,
+        attachment_id: &Uuid,
+    ) -> anyhow::Result<Option<ChatAttachment>>;
 
     /// Loads one room message page, oldest-to-newest.
     async fn room_message_page(

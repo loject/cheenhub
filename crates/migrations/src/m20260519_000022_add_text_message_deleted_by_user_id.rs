@@ -13,11 +13,7 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(TextMessages::Table)
-                    .add_column(
-                        ColumnDef::new(TextMessages::DeletedByUserId)
-                            .uuid()
-                            .null(),
-                    )
+                    .add_column(ColumnDef::new(TextMessages::DeletedByUserId).uuid().null())
                     .to_owned(),
             )
             .await
