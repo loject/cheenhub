@@ -32,6 +32,8 @@ web-sys = { workspace = true, features = [
     "AudioContext",
     "AudioDestinationNode",
     "AudioNode",
+    "AudioParam",
+    "GainNode",
     "DomException",
     "MediaDevices",
     "MediaStream",

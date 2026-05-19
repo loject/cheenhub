@@ -9,7 +9,7 @@ use js_sys::{Float32Array, Function, Object, Promise, Reflect, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
-use web_sys::{AudioBufferSourceNode, AudioContext};
+use web_sys::{AudioBufferSourceNode, AudioContext, GainNode};
 
 const INITIAL_PLAYBACK_BUFFER_SECONDS: f64 = 0.12;
 const CONTINUOUS_PLAYBACK_MARGIN_SECONDS: f64 = 0.02;
@@ -52,6 +52,9 @@ struct AudioPlaybackInner {
     senders: HashMap<String, SenderPlayback>,
     scheduled_sources: HashMap<String, Vec<ScheduledAudioSource>>,
     scheduled_until: HashMap<String, f64>,
+    /// Per-user gain values (0.0–2.0, default 1.0). Persisted so volumes set
+    /// before the first frame are applied when the sender is first created.
+    user_volumes: HashMap<String, f64>,
 }
 
 struct ScheduledAudioSource {
@@ -61,6 +64,7 @@ struct ScheduledAudioSource {
 
 struct SenderPlayback {
     decoder: AudioDecoder,
+    gain_node: GainNode,
     _output_closure: Closure<dyn FnMut(AudioData)>,
     _error_closure: Closure<dyn FnMut(JsValue)>,
 }
@@ -104,6 +108,18 @@ impl AudioPlaybackHandle {
             self.stop_all();
         } else {
             self.resume();
+        }
+    }
+
+    /// Sets per-user playback volume (0–200, where 100 = 100%).
+    pub(crate) fn set_user_volume(&self, sender_user_id: &str, volume_percent: u32) {
+        let gain = f64::from(volume_percent) / 100.0;
+        let mut inner = self.inner.borrow_mut();
+        inner
+            .user_volumes
+            .insert(sender_user_id.to_owned(), gain);
+        if let Some(sender) = inner.senders.get(sender_user_id) {
+            sender.gain_node.gain().set_value(gain as f32);
         }
     }
 
@@ -185,10 +201,16 @@ impl AudioPlaybackHandle {
             return Ok(());
         }
         if !inner.senders.contains_key(&frame.sender_user_id) {
+            let initial_gain = inner
+                .user_volumes
+                .get(&frame.sender_user_id)
+                .copied()
+                .unwrap_or(1.0);
             let sender = create_sender_playback(
                 frame.sender_user_id.clone(),
                 context.clone(),
                 self.inner.clone(),
+                initial_gain,
             )?;
             inner.senders.insert(frame.sender_user_id.clone(), sender);
         }
@@ -222,6 +244,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             senders: HashMap::new(),
             scheduled_sources: HashMap::new(),
             scheduled_until: HashMap::new(),
+            user_volumes: HashMap::new(),
         })),
     };
     use_context_provider(move || handle.clone());
@@ -235,7 +258,12 @@ fn create_sender_playback(
     sender_user_id: String,
     context: AudioContext,
     inner: Rc<RefCell<AudioPlaybackInner>>,
+    initial_gain: f64,
 ) -> Result<SenderPlayback, JsValue> {
+    let gain_node = context.create_gain()?;
+    gain_node.gain().set_value(initial_gain as f32);
+    gain_node.connect_with_audio_node(&context.destination())?;
+
     let output_sender_id = sender_user_id.clone();
     let output_closure = Closure::wrap(Box::new(move |audio: AudioData| {
         if let Err(error) = schedule_audio_data(&context, &inner, &output_sender_id, &audio) {
@@ -263,6 +291,7 @@ fn create_sender_playback(
 
     Ok(SenderPlayback {
         decoder,
+        gain_node,
         _output_closure: output_closure,
         _error_closure: error_closure,
     })
@@ -320,7 +349,15 @@ fn schedule_audio_data(
 
     let source = context.create_buffer_source()?;
     source.set_buffer(Some(&buffer));
-    source.connect_with_audio_node(&context.destination())?;
+    let gain_node = inner
+        .borrow()
+        .senders
+        .get(sender_user_id)
+        .map(|s| s.gain_node.clone());
+    match gain_node {
+        Some(gain) => source.connect_with_audio_node(&gain)?,
+        None => source.connect_with_audio_node(&context.destination())?,
+    };
 
     let now = context.current_time();
     let mut inner = inner.borrow_mut();
