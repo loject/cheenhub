@@ -14,7 +14,7 @@ pub(crate) fn WebButton(large: bool) -> Element {
 
     rsx! {
         a {
-            href: "https://cheenhub.ru/web",
+            href: "https://cheenhub.ru/app",
             target: "_blank",
             rel: "noopener",
             class: "{class_name}",
