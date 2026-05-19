@@ -3,6 +3,7 @@
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use cheenhub_contracts::rest::AuthUser;
 use dioxus::prelude::*;
+use futures_util::future::{Either, FutureExt, select};
 use gloo_timers::future::TimeoutFuture;
 
 use crate::features::realtime::RealtimeHandle;
@@ -10,6 +11,7 @@ use crate::features::realtime::RealtimeHandle;
 use super::realtime;
 
 const SPEAKING_RELEASE_TIMEOUT_MS: u32 = 450;
+const JOIN_RESPONSE_TIMEOUT_MS: u32 = 12_000;
 
 /// Voice-capable room target.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,6 +164,11 @@ impl VoiceConnectionHandle {
         state.set(VoiceConnectionState::Connecting {
             target: target.clone(),
         });
+        info!(
+            server_id = %target.server_id,
+            room_id = %target.room_id,
+            "joining voice room"
+        );
 
         spawn(async move {
             if let Some(previous) = previous
@@ -181,17 +188,28 @@ impl VoiceConnectionHandle {
                 );
             }
 
-            match realtime::join_room(&realtime, target.server_id.clone(), target.room_id.clone())
-                .await
+            let join =
+                realtime::join_room(&realtime, target.server_id.clone(), target.room_id.clone());
+            match select(
+                join.boxed_local(),
+                TimeoutFuture::new(JOIN_RESPONSE_TIMEOUT_MS).boxed_local(),
+            )
+            .await
             {
-                Ok(mut snapshot) => {
+                Either::Left((Ok(mut snapshot), _)) => {
                     ensure_current_user_present(&mut snapshot.participants, &user);
+                    info!(
+                        server_id = %target.server_id,
+                        room_id = %target.room_id,
+                        participants = snapshot.participants.len(),
+                        "joined voice room"
+                    );
                     state.set(VoiceConnectionState::Connected {
                         target,
                         participants: snapshot.participants,
                     });
                 }
-                Err(error) => {
+                Either::Left((Err(error), _)) => {
                     warn!(
                         %error,
                         server_id = %target.server_id,
@@ -200,7 +218,21 @@ impl VoiceConnectionHandle {
                     );
                     state.set(VoiceConnectionState::Error {
                         target: Some(target),
-                        message: error.to_string(),
+                        message: "Не удалось подключиться к голосовой комнате. Проверь соединение и попробуй ещё раз."
+                            .to_owned(),
+                    });
+                }
+                Either::Right((_, _)) => {
+                    warn!(
+                        timeout_ms = JOIN_RESPONSE_TIMEOUT_MS,
+                        server_id = %target.server_id,
+                        room_id = %target.room_id,
+                        "voice room join request timed out"
+                    );
+                    state.set(VoiceConnectionState::Error {
+                        target: Some(target),
+                        message: "Сервер долго не отвечает. Проверь соединение и попробуй ещё раз."
+                            .to_owned(),
                     });
                 }
             }

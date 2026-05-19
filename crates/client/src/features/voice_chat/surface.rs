@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 use crate::features::app::components::app_shell::ActiveRoom;
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 
-use super::participant_grid::VoiceParticipantGrid;
+use super::participant_grid::{VoiceParticipantGrid, VoiceParticipantGridStatus};
 use super::state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget};
 use super::voice_controls::VoiceControls;
 
@@ -21,6 +21,17 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
         state.participants().to_vec()
     } else {
         Vec::new()
+    };
+    let grid_status = match &state {
+        VoiceConnectionState::Connecting { .. } if is_active_room => {
+            VoiceParticipantGridStatus::Connecting
+        }
+        VoiceConnectionState::Error { message, .. } if is_active_room => {
+            VoiceParticipantGridStatus::Error {
+                message: message.clone(),
+            }
+        }
+        _ => VoiceParticipantGridStatus::Empty,
     };
     let mut speaking_user_ids = if is_active_room {
         voice.speaking_user_ids()
@@ -47,11 +58,21 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
     } else {
         "Войти в голосовую комнату"
     };
+    let retry_target = VoiceRoomTarget {
+        server_id: server_id.clone(),
+        room_id: room.id.clone(),
+        room_name: room.name.clone(),
+    };
 
     rsx! {
         div { class: "voice-room-surface relative flex min-h-0 flex-1 flex-col",
             if is_active_room {
-                VoiceParticipantGrid { participants, speaking_user_ids }
+                VoiceParticipantGrid {
+                    participants,
+                    speaking_user_ids,
+                    status: grid_status,
+                    on_retry: move |_| voice.join(retry_target.clone()),
+                }
             } else {
                 div { class: "voice-stage flex min-h-0 flex-1 items-center justify-center p-6 pb-[108px]",
                     div { class: "max-w-sm text-center",
