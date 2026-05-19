@@ -2,7 +2,8 @@
 
 use cheenhub_contracts::realtime::{
     DeleteMessage, DeleteMessageAccepted, LoadRoomHistory, MessageDeletedPayload, RealtimeKind,
-    RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
+    RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted, TextChatImageAttachment,
+    TextChatKind, TextChatMessage,
 };
 use cheenhub_contracts::rest::AuthUser;
 use cheenhub_contracts::rest::ServerRoomKind;
@@ -15,6 +16,10 @@ use crate::features::text_chat::domain::TextMessage;
 use crate::features::text_chat::policy;
 use crate::features::text_chat::validation;
 use crate::state::AppState;
+
+mod attachments;
+
+pub(crate) use attachments::{chat_image, upload_chat_image};
 
 /// Loads the latest text messages for a room.
 pub(crate) async fn load_room_history(
@@ -74,15 +79,29 @@ pub(crate) async fn send_message(
     let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
     let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
     ensure_room_text_available(state, user_id, &server_id, &room_id).await?;
-    let valid = validation::message_body(request.body)
-        .map_err(|message| TextChatApplicationError::BadRequest(message.to_owned()))?;
+    let attachments = load_message_attachments(
+        state,
+        user_id,
+        &server_id,
+        &room_id,
+        &request.attachment_ids,
+    )
+    .await?;
+    let body = if request.body.trim().is_empty() && !attachments.is_empty() {
+        String::new()
+    } else {
+        validation::message_body(request.body)
+            .map_err(|message| TextChatApplicationError::BadRequest(message.to_owned()))?
+            .body
+    };
     let message = TextMessage {
         id: Uuid::new_v4(),
         server_id,
         room_id,
         author_user_id: *user_id,
         author_nickname: user.nickname.clone(),
-        body: valid.body,
+        body,
+        attachments,
         created_at: Utc::now(),
         deleted_at: None,
         deleted_by_user_id: None,
@@ -178,7 +197,9 @@ pub(crate) async fn delete_message(
         );
     }
 
-    Ok(DeleteMessageAccepted { message_id: message.id.to_string() })
+    Ok(DeleteMessageAccepted {
+        message_id: message.id.to_string(),
+    })
 }
 
 /// Text chat application error.
@@ -190,11 +211,20 @@ pub(crate) enum TextChatApplicationError {
     Unauthorized(String),
     /// Resource was not found.
     NotFound(String),
+    /// Required integration is not configured.
+    Misconfigured {
+        /// Integration or feature name.
+        feature: &'static str,
+        /// Missing environment variable names.
+        missing: Vec<&'static str>,
+        /// User-facing message.
+        message: String,
+    },
     /// Unexpected internal failure.
     Internal(anyhow::Error),
 }
 
-async fn ensure_room_text_available(
+pub(super) async fn ensure_room_text_available(
     state: &AppState,
     user_id: &Uuid,
     server_id: &Uuid,
@@ -308,8 +338,47 @@ async fn fanout_message_deleted(
     Ok(())
 }
 
-fn parse_id(value: &str, message: &str) -> Result<Uuid, TextChatApplicationError> {
+pub(super) fn parse_id(value: &str, message: &str) -> Result<Uuid, TextChatApplicationError> {
     Uuid::parse_str(value).map_err(|_| TextChatApplicationError::BadRequest(message.to_owned()))
+}
+
+async fn load_message_attachments(
+    state: &AppState,
+    user_id: &Uuid,
+    server_id: &Uuid,
+    room_id: &Uuid,
+    attachment_ids: &[String],
+) -> Result<Vec<crate::features::text_chat::domain::ChatAttachment>, TextChatApplicationError> {
+    if attachment_ids.len() > 1 {
+        return Err(TextChatApplicationError::BadRequest(
+            "К сообщению можно прикрепить только одно изображение.".to_owned(),
+        ));
+    }
+
+    let mut attachments = Vec::new();
+    for attachment_id in attachment_ids {
+        let attachment_id = parse_id(attachment_id, "Изображение не найдено.")?;
+        let attachment = state
+            .text_chat_store
+            .find_chat_attachment(&attachment_id)
+            .await
+            .map_err(TextChatApplicationError::Internal)?
+            .ok_or_else(|| {
+                TextChatApplicationError::BadRequest("Изображение не найдено.".to_owned())
+            })?;
+        if attachment.server_id != *server_id
+            || attachment.room_id != *room_id
+            || attachment.uploader_user_id != *user_id
+            || attachment.message_id.is_some()
+        {
+            return Err(TextChatApplicationError::BadRequest(
+                "Изображение недоступно для этого сообщения.".to_owned(),
+            ));
+        }
+        attachments.push(attachment);
+    }
+
+    Ok(attachments)
 }
 
 fn message_summary(message: &TextMessage, author_avatar_url: Option<String>) -> TextChatMessage {
@@ -321,6 +390,17 @@ fn message_summary(message: &TextMessage, author_avatar_url: Option<String>) -> 
         author_nickname: message.author_nickname.clone(),
         author_avatar_url,
         body: message.body.clone(),
+        attachments: message
+            .attachments
+            .iter()
+            .map(|attachment| TextChatImageAttachment {
+                id: attachment.id.to_string(),
+                content_type: attachment.content_type.clone(),
+                byte_size: attachment.byte_size,
+                width: attachment.width,
+                height: attachment.height,
+            })
+            .collect(),
         created_at: message.created_at.to_rfc3339(),
     }
 }

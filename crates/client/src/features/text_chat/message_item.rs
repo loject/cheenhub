@@ -7,6 +7,8 @@ use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::app::server_permissions::ServerPermissionsContext;
 
+use super::image_attachment::ChatImageAttachment;
+
 /// Renders one text chat message row.
 #[component]
 pub(super) fn ChatMessageItem(
@@ -54,8 +56,16 @@ pub(super) fn ChatMessageItem(
                         "{message_time(&message.created_at)}"
                     }
                 }
-                div { class: "message-bubble whitespace-pre-wrap break-words rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.72)] px-3 py-2 text-[13px] leading-5 text-zinc-300 transition-[border-color,background] duration-200 hover:border-white/15 hover:bg-[rgba(39,39,42,.84)]",
-                    "{message.body}"
+                if !message.body.is_empty() {
+                    div { class: "message-bubble whitespace-pre-wrap break-words rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.72)] px-3 py-2 text-[13px] leading-5 text-zinc-300 transition-[border-color,background] duration-200 hover:border-white/15 hover:bg-[rgba(39,39,42,.84)]",
+                        "{message.body}"
+                    }
+                }
+                for attachment in message.attachments.iter().cloned() {
+                    ChatImageAttachment {
+                        key: "{attachment.id}",
+                        attachment,
+                    }
                 }
             }
         }

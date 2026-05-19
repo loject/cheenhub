@@ -1,7 +1,7 @@
 //! Text chat event delivery policy.
 
-use cheenhub_contracts::realtime::ServerRolePermission;
 use cheenhub_contracts::realtime::ServerRoleKind;
+use cheenhub_contracts::realtime::ServerRolePermission;
 use cheenhub_contracts::rest::ServerRoomKind;
 use uuid::Uuid;
 
@@ -21,7 +21,10 @@ pub(crate) async fn can_delete_any_message(
     }
 
     let roles = state.server_store.list_server_roles(server_id).await?;
-    let member_roles = state.server_store.list_server_member_roles(server_id).await?;
+    let member_roles = state
+        .server_store
+        .list_server_member_roles(server_id)
+        .await?;
     let user_role_ids: Vec<_> = member_roles
         .iter()
         .filter(|(uid, _)| uid == user_id)
@@ -31,7 +34,9 @@ pub(crate) async fn can_delete_any_message(
     Ok(roles.iter().any(|role| {
         role.kind != ServerRoleKind::Member
             && user_role_ids.contains(&role.id)
-            && role.permissions.contains(&ServerRolePermission::DeleteMessages)
+            && role
+                .permissions
+                .contains(&ServerRolePermission::DeleteMessages)
     }))
 }
 

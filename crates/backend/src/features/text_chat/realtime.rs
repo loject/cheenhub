@@ -1,8 +1,10 @@
 //! Text chat realtime adapter.
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use cheenhub_contracts::realtime::{
-    DeleteMessage, LoadRoomHistory, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
-    SendMessage, TextChatKind,
+    ChatImageLoadedResponse, DeleteMessage, LoadChatImage, LoadRoomHistory, RealtimeEnvelope,
+    RealtimeKind, RealtimeModule, RejectionCode, SendMessage, TextChatKind, UploadChatImage,
 };
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
@@ -51,6 +53,84 @@ pub(crate) async fn handle(
                         RealtimeKind::TextChat(TextChatKind::SendMessageAccepted),
                         Some(request_id),
                         response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::TextChat(TextChatKind::UploadImage) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: UploadChatImage = decode_payload(&envelope)?;
+            let bytes = match BASE64.decode(payload.data_base64.as_bytes()) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    tracing::warn!(
+                        request_id = %request_id,
+                        user_id = %user_id,
+                        %error,
+                        "rejected malformed text chat image upload payload"
+                    );
+                    return send_rejection(
+                        send,
+                        Some(request_id),
+                        RejectionCode::BadRequest,
+                        "Не удалось прочитать изображение.",
+                    )
+                    .await;
+                }
+            };
+            tracing::debug!(
+                request_id = %request_id,
+                user_id = %user_id,
+                input_bytes = bytes.len(),
+                "received text chat image upload over realtime"
+            );
+            match application::upload_chat_image(
+                state,
+                user_id,
+                payload.server_id,
+                payload.room_id,
+                payload.original_filename,
+                &bytes,
+            )
+            .await
+            {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::TextChat,
+                        RealtimeKind::TextChat(TextChatKind::UploadImageAccepted),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::TextChat(TextChatKind::LoadImage) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: LoadChatImage = decode_payload(&envelope)?;
+            match application::chat_image(state, user_id, payload.attachment_id).await {
+                Ok((attachment, bytes)) => {
+                    tracing::debug!(
+                        request_id = %request_id,
+                        user_id = %user_id,
+                        attachment_id = %attachment.id,
+                        byte_size = bytes.len(),
+                        "loaded text chat image over realtime"
+                    );
+                    write_envelope(
+                        send,
+                        RealtimeModule::TextChat,
+                        RealtimeKind::TextChat(TextChatKind::ImageLoaded),
+                        Some(request_id),
+                        ChatImageLoadedResponse {
+                            id: attachment.id.to_string(),
+                            content_type: attachment.content_type,
+                            data_base64: BASE64.encode(bytes),
+                        },
                     )
                     .await
                 }
@@ -109,6 +189,18 @@ async fn reject_application_error(
         }
         TextChatApplicationError::NotFound(message) => {
             send_rejection(send, request_id, RejectionCode::BadRequest, &message).await
+        }
+        TextChatApplicationError::Misconfigured {
+            feature,
+            missing,
+            message,
+        } => {
+            tracing::warn!(
+                feature,
+                missing_env = ?missing,
+                "text chat realtime feature is not configured"
+            );
+            send_rejection(send, request_id, RejectionCode::InternalError, &message).await
         }
         TextChatApplicationError::Internal(error) => {
             tracing::error!(%error, "text chat realtime request failed");

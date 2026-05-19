@@ -267,6 +267,11 @@ mod tests {
             auth_mailer: Arc::new(crate::features::auth::email::tests::TestAuthMailer::default()),
             server_store: Arc::new(InMemoryServerStore::default()),
             text_chat_store: Arc::new(InMemoryTextChatStore::default()),
+            chat_attachment_object_store: Arc::new(
+                crate::features::text_chat::infrastructure::InMemoryChatAttachmentObjectStore::new(
+                    "test-chat-images",
+                ),
+            ),
             image_store: Arc::new(
                 crate::features::images::infrastructure::InMemoryImageStore::default(),
             ),

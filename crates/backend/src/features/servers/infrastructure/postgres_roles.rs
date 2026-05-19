@@ -60,7 +60,10 @@ pub(super) async fn list_server_member_roles(
         .all(database)
         .await?;
 
-    Ok(rows.into_iter().map(|row| (row.user_id, row.role_id)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.user_id, row.role_id))
+        .collect())
 }
 
 pub(super) async fn assign_server_member_role(

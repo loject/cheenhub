@@ -47,7 +47,11 @@
 - Every crate must include crate-level documentation.
 - Every public module, type, function, trait, enum, constant, and field must have `///` documentation when it is introduced.
 - Crates use `#![warn(missing_docs)]`; warnings are acceptable during early development, but new public API should not add missing-doc warnings.
-- Run `cargo clippy --workspace --all-targets` before handing off code.
+- Run `cargo clippy --workspace --all-targets` and `cargo fmt` before handing off code.
+
+## Verification
+
+- Before completing any task, verify that all tests pass. If tests cannot be run, explain the blocker and the remaining risk before handing off.
 
 ## Backend
 

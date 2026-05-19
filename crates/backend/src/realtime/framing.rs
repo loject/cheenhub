@@ -6,7 +6,7 @@ use cheenhub_contracts::realtime::RealtimeEnvelope;
 use tokio::sync::Mutex;
 use web_transport::{RecvStream, SendStream};
 
-const MAX_FRAME_BYTES: usize = 64 * 1024;
+const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
 /// Writes one realtime JSON envelope frame to a reliable stream.
 pub(crate) async fn write_envelope(

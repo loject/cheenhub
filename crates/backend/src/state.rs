@@ -9,7 +9,7 @@ use crate::features::auth::infrastructure::AuthStore;
 use crate::features::auth::security::keys::AuthKeys;
 use crate::features::images::infrastructure::ImageStore;
 use crate::features::servers::infrastructure::ServerStore;
-use crate::features::text_chat::infrastructure::TextChatStore;
+use crate::features::text_chat::infrastructure::{ChatAttachmentObjectStore, TextChatStore};
 use crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore;
 use crate::realtime::hub::RealtimeHub;
 
@@ -24,6 +24,8 @@ pub(crate) struct AppState {
     pub(crate) server_store: Arc<dyn ServerStore>,
     /// Text chat storage backend.
     pub(crate) text_chat_store: Arc<dyn TextChatStore>,
+    /// Text chat attachment object storage backend.
+    pub(crate) chat_attachment_object_store: Arc<dyn ChatAttachmentObjectStore>,
     /// Image storage backend.
     pub(crate) image_store: Arc<dyn ImageStore>,
     /// Process-wide queue limiting image processing concurrency.

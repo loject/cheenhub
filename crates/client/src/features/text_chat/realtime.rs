@@ -1,9 +1,12 @@
 //! Text chat realtime helpers.
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use cheenhub_contracts::realtime::{
-    DeleteMessage, DeleteMessageAccepted, LoadRoomHistory, MessageDeletedPayload, RealtimeEnvelope,
-    RealtimeKind, RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind,
-    TextChatMessage,
+    ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
+    LoadChatImage, LoadRoomHistory, MessageDeletedPayload, RealtimeEnvelope, RealtimeKind,
+    RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
+    UploadChatImage,
 };
 use futures_channel::mpsc;
 use futures_util::StreamExt;
@@ -53,7 +56,65 @@ pub(crate) async fn send_text_message(
                 server_id,
                 room_id,
                 body,
+                attachment_ids: Vec::new(),
             },
+        )
+        .await
+}
+
+/// Sends one text chat message with a previously uploaded image attachment.
+pub(crate) async fn send_image_message(
+    realtime: &RealtimeHandle,
+    server_id: String,
+    room_id: String,
+    attachment_id: String,
+) -> Result<SendMessageAccepted, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::TextChat,
+            RealtimeKind::TextChat(TextChatKind::SendMessage),
+            SendMessage {
+                server_id,
+                room_id,
+                body: String::new(),
+                attachment_ids: vec![attachment_id],
+            },
+        )
+        .await
+}
+
+/// Uploads one image attachment over realtime.
+pub(crate) async fn upload_chat_image(
+    realtime: &RealtimeHandle,
+    server_id: String,
+    room_id: String,
+    original_filename: Option<String>,
+    bytes: Vec<u8>,
+) -> Result<ChatImageUploadResponse, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::TextChat,
+            RealtimeKind::TextChat(TextChatKind::UploadImage),
+            UploadChatImage {
+                server_id,
+                room_id,
+                original_filename,
+                data_base64: BASE64.encode(bytes),
+            },
+        )
+        .await
+}
+
+/// Loads one chat image attachment over realtime.
+pub(crate) async fn load_chat_image(
+    realtime: &RealtimeHandle,
+    attachment_id: String,
+) -> Result<ChatImageLoadedResponse, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::TextChat,
+            RealtimeKind::TextChat(TextChatKind::LoadImage),
+            LoadChatImage { attachment_id },
         )
         .await
 }
@@ -110,8 +171,7 @@ fn decode_text_chat_event(envelope: RealtimeEnvelope) -> Option<TextChatEvent> {
             Some(TextChatEvent::MessageCreated(message))
         }
         RealtimeKind::TextChat(TextChatKind::MessageDeleted) => {
-            let payload =
-                serde_json::from_value::<MessageDeletedPayload>(envelope.payload).ok()?;
+            let payload = serde_json::from_value::<MessageDeletedPayload>(envelope.payload).ok()?;
             Some(TextChatEvent::MessageDeleted(payload))
         }
         _ => None,

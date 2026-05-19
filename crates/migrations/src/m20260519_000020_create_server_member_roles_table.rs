@@ -19,16 +19,8 @@ impl MigrationTrait for Migration {
                             .uuid()
                             .not_null(),
                     )
-                    .col(
-                        ColumnDef::new(ServerMemberRoles::UserId)
-                            .uuid()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(ServerMemberRoles::RoleId)
-                            .uuid()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(ServerMemberRoles::UserId).uuid().not_null())
+                    .col(ColumnDef::new(ServerMemberRoles::RoleId).uuid().not_null())
                     .col(
                         ColumnDef::new(ServerMemberRoles::GrantedByUserId)
                             .uuid()

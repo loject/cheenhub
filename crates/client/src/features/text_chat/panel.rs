@@ -26,8 +26,9 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let mut appearing_message_ids = use_signal(Vec::<String>::new);
     let mut removing_message_ids = use_signal(Vec::<String>::new);
     let mut draft = use_signal(String::new);
-    let status = use_signal(String::new);
+    let mut status = use_signal(String::new);
     let is_sending = use_signal(|| false);
+    let mut is_uploading_image = use_signal(|| false);
     let initial_loading = use_signal(|| true);
     let older_loading = use_signal(|| false);
     let history_error = use_signal(|| None::<String>);
@@ -116,11 +117,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 match event {
                     TextChatEvent::MessageCreated(message) => {
                         if message.room_id == event_room_id
-                            && append_message(
-                                &mut messages,
-                                &mut appearing_message_ids,
-                                message,
-                            )
+                            && append_message(&mut messages, &mut appearing_message_ids, message)
                             && is_near_bottom()
                         {
                             pending_scroll.set(Some(ScrollCommand::Bottom));
@@ -133,9 +130,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             spawn(async move {
                                 sleep(Duration::from_millis(220)).await;
                                 remove_message(&mut messages, &message_id);
-                                removing_message_ids
-                                    .write()
-                                    .retain(|id| id != &message_id);
+                                removing_message_ids.write().retain(|id| id != &message_id);
                             });
                         }
                     }
@@ -159,13 +154,16 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         });
     });
 
-    let can_send = !is_sending() && !draft().trim().is_empty();
+    let can_send = !is_sending() && !is_uploading_image() && !draft().trim().is_empty();
+    let submit_realtime = send_realtime.clone();
+    let submit_server_id = send_server_id.clone();
+    let submit_room_id = send_room_id.clone();
     let submit_message = use_callback(move |_| {
         if !is_sending() && !draft().trim().is_empty() {
             send_current_message(
-                send_realtime.clone(),
-                send_server_id.clone(),
-                send_room_id.clone(),
+                submit_realtime.clone(),
+                submit_server_id.clone(),
+                submit_room_id.clone(),
                 compose_state,
             );
         }
@@ -184,9 +182,73 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                     .await;
             sleep(Duration::from_millis(220)).await;
             remove_message(&mut messages, &message_id);
-            removing_message_ids
-                .write()
-                .retain(|id| id != &message_id);
+            removing_message_ids.write().retain(|id| id != &message_id);
+        });
+    });
+    let upload_image = use_callback(move |event: Event<FormData>| {
+        if is_uploading_image() {
+            return;
+        }
+        let Some(file) = event.files().into_iter().next() else {
+            return;
+        };
+        if file.size() > 10 * 1024 * 1024 {
+            status.set("Изображение слишком большое. Загрузи файл до 10 МБ.".to_owned());
+            return;
+        }
+
+        let realtime = send_realtime.clone();
+        let server_id = send_server_id.clone();
+        let room_id = send_room_id.clone();
+        let original_filename = Some(file.name());
+        is_uploading_image.set(true);
+        status.set(String::new());
+        info!(
+            file_name = original_filename.as_deref().unwrap_or(""),
+            file_size = file.size(),
+            "uploading text chat image over realtime"
+        );
+        spawn(async move {
+            let result = match file.read_bytes().await {
+                Ok(bytes) => {
+                    match realtime::upload_chat_image(
+                        &realtime,
+                        server_id.clone(),
+                        room_id.clone(),
+                        original_filename,
+                        bytes.to_vec(),
+                    )
+                    .await
+                    {
+                        Ok(uploaded) => {
+                            realtime::send_image_message(&realtime, server_id, room_id, uploaded.id)
+                                .await
+                        }
+                        Err(error) => Err(error),
+                    }
+                }
+                Err(error) => {
+                    warn!(?error, "failed to read selected text chat image");
+                    Err(crate::features::realtime::RealtimeError::new(
+                        "Не удалось прочитать выбранный файл.",
+                    ))
+                }
+            };
+
+            match result {
+                Ok(accepted) => {
+                    if append_message(&mut messages, &mut appearing_message_ids, accepted.message)
+                        && is_near_bottom()
+                    {
+                        pending_scroll.set(Some(ScrollCommand::Bottom));
+                    }
+                }
+                Err(error) => {
+                    warn!(%error, "text chat image send failed");
+                    status.set(error.to_string());
+                }
+            }
+            is_uploading_image.set(false);
         });
     });
 
@@ -298,6 +360,24 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
             }
             div { class: input_outer_class,
                 div { class: input_wrap_class,
+                    label {
+                        class: "flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-white/15 hover:bg-zinc-800 hover:text-zinc-100 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-45 has-[:disabled]:hover:translate-y-0",
+                        title: "Прикрепить изображение",
+                        input {
+                            class: "sr-only",
+                            r#type: "file",
+                            accept: "image/png,image/jpeg,image/gif,image/webp,image/*",
+                            disabled: is_sending() || is_uploading_image(),
+                            onchange: move |event| upload_image.call(event),
+                        }
+                        if is_uploading_image() {
+                            span { class: "h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-300" }
+                        } else {
+                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94a3 3 0 1 1 4.243 4.243L8.552 18.32a1.5 1.5 0 1 1-2.121-2.121l9.879-9.879" }
+                            }
+                        }
+                    }
                     textarea {
                         rows: "1",
                         value: "{draft()}",

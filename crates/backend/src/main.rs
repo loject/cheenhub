@@ -18,6 +18,7 @@ type Stores = (
     Arc<dyn features::auth::infrastructure::AuthStore>,
     Arc<dyn features::servers::infrastructure::ServerStore>,
     Arc<dyn features::text_chat::infrastructure::TextChatStore>,
+    Arc<dyn features::text_chat::infrastructure::ChatAttachmentObjectStore>,
     Arc<dyn features::images::infrastructure::ImageStore>,
 );
 
@@ -36,7 +37,40 @@ async fn main() -> anyhow::Result<()> {
         &config.jwt_private_key_base64,
         config.jwt_key_id.clone(),
     )?;
-    let (auth_store, server_store, text_chat_store, image_store): Stores = match config.auth_store {
+    let chat_attachment_object_store: Arc<
+        dyn features::text_chat::infrastructure::ChatAttachmentObjectStore,
+    > = match &config.chat_images_s3 {
+        Some(s3_config) => {
+            tracing::info!(
+                bucket = %s3_config.bucket,
+                endpoint = %s3_config.endpoint,
+                region = %s3_config.region,
+                force_path_style = s3_config.force_path_style,
+                "configured chat image S3 storage"
+            );
+            Arc::new(
+                features::text_chat::infrastructure::S3ChatAttachmentObjectStore::from_config(
+                    s3_config,
+                )
+                .await,
+            )
+        }
+        None => {
+            tracing::warn!(
+                missing_env = ?[
+                    "CHAT_IMAGES_S3_ENDPOINT",
+                    "CHAT_IMAGES_S3_REGION",
+                    "CHAT_IMAGES_S3_BUCKET",
+                    "CHAT_IMAGES_S3_ACCESS_KEY_ID",
+                    "CHAT_IMAGES_S3_SECRET_ACCESS_KEY",
+                ],
+                "chat image uploads are disabled until S3 storage is configured"
+            );
+            Arc::new(features::text_chat::infrastructure::DisabledChatAttachmentObjectStore)
+        }
+    };
+    let (auth_store, server_store, text_chat_store, chat_attachment_object_store, image_store): Stores =
+        match config.auth_store {
         config::AuthStoreConfig::Postgres => {
             let database = db::connect(&config.database_url).await?;
             (
@@ -51,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
                         database.clone(),
                     ),
                 ),
+                chat_attachment_object_store.clone(),
                 Arc::new(features::images::infrastructure::PostgresImageStore::new(
                     database,
                 )),
@@ -60,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
             Arc::new(features::auth::infrastructure::InMemoryAuthStore::default()),
             Arc::new(features::servers::infrastructure::InMemoryServerStore::default()),
             Arc::new(features::text_chat::infrastructure::InMemoryTextChatStore::default()),
+            chat_attachment_object_store,
             Arc::new(features::images::infrastructure::InMemoryImageStore::default()),
         ),
     };
@@ -79,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
         )?),
         server_store,
         text_chat_store,
+        chat_attachment_object_store,
         image_store,
         image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
         voice_presence_store: Arc::new(

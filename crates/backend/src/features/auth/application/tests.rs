@@ -459,6 +459,11 @@ pub(super) fn state_with_mailer() -> (AppState, Arc<TestAuthMailer>) {
         auth_mailer: mailer.clone(),
         server_store: Arc::new(InMemoryServerStore::default()),
         text_chat_store: Arc::new(InMemoryTextChatStore::default()),
+        chat_attachment_object_store: Arc::new(
+            crate::features::text_chat::infrastructure::InMemoryChatAttachmentObjectStore::new(
+                "test-chat-images",
+            ),
+        ),
         image_store: Arc::new(
             crate::features::images::infrastructure::InMemoryImageStore::default(),
         ),

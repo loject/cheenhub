@@ -16,8 +16,8 @@ use super::app_shell::{AppModal, ServerShellState, room_kind_attr};
 use super::avatar::{UserAvatar, use_avatar_seed};
 use super::room_editor_modal::RoomEditorModal;
 use super::room_instance::RoomInstance;
-use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
 use super::room_list_item::RoomListItem;
+use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
 use super::server_rooms_state::{
     ServerWorkspace, active_room, chat_open_for_room, ensure_workspace_mounted, room_by_id,
     upsert_room,
@@ -60,7 +60,9 @@ pub(crate) fn ServerRoomsScope(
     let server_name = server.name.clone();
     let invite_server_name = server_name.clone();
     let is_owner = server.is_owner;
-    use_context_provider(|| ServerPermissionsContext { can_moderate: is_owner });
+    use_context_provider(|| ServerPermissionsContext {
+        can_moderate: is_owner,
+    });
     let room_load_resource = use_resource(move || {
         let request_server_id = load_server_id.clone();
         async move { api::list_server_rooms(request_server_id).await }

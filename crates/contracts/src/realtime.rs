@@ -22,8 +22,9 @@ pub use server::{
     ServerRolesSaved,
 };
 pub use text_chat::{
-    DeleteMessage, DeleteMessageAccepted, LoadRoomHistory, MessageDeletedPayload, RoomHistory,
-    SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
+    ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
+    LoadChatImage, LoadRoomHistory, MessageDeletedPayload, RoomHistory, SendMessage,
+    SendMessageAccepted, TextChatImageAttachment, TextChatKind, TextChatMessage, UploadChatImage,
 };
 pub use voice_chat::{
     JoinVoiceRoom, LeaveVoiceRoom, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
@@ -128,6 +129,7 @@ mod tests {
             author_nickname: "avatar_user".to_owned(),
             author_avatar_url: Some("http://localhost/api/images/avatar".to_owned()),
             body: "hello".to_owned(),
+            attachments: Vec::new(),
             created_at: "2026-05-13T00:00:00Z".to_owned(),
         };
         let decoded: TextChatMessage =

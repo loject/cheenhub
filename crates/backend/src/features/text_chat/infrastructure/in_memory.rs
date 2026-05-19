@@ -7,21 +7,73 @@ use async_trait::async_trait;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::features::text_chat::domain::TextMessage;
+use crate::features::text_chat::domain::{ChatAttachment, NewChatAttachment, TextMessage};
 use crate::features::text_chat::infrastructure::{HISTORY_LIMIT, TextChatStore, TextMessagePage};
 
 /// In-memory text chat storage for local runs and tests.
 #[derive(Default)]
 pub(crate) struct InMemoryTextChatStore {
     messages: Mutex<Vec<TextMessage>>,
+    attachments: Mutex<Vec<ChatAttachment>>,
 }
 
 #[async_trait]
 impl TextChatStore for InMemoryTextChatStore {
     async fn insert_text_message(&self, message: TextMessage) -> anyhow::Result<()> {
+        let attachment_ids = message
+            .attachments
+            .iter()
+            .map(|attachment| attachment.id)
+            .collect::<Vec<_>>();
+        {
+            let mut attachments = self.attachments.lock().map_err(|_| poisoned())?;
+            for attachment in attachments
+                .iter_mut()
+                .filter(|attachment| attachment_ids.contains(&attachment.id))
+            {
+                attachment.message_id = Some(message.id);
+            }
+        }
         self.messages.lock().map_err(|_| poisoned())?.push(message);
 
         Ok(())
+    }
+
+    async fn insert_chat_attachment(&self, attachment: NewChatAttachment) -> anyhow::Result<()> {
+        self.attachments
+            .lock()
+            .map_err(|_| poisoned())?
+            .push(ChatAttachment {
+                id: attachment.id,
+                server_id: attachment.server_id,
+                room_id: attachment.room_id,
+                uploader_user_id: attachment.uploader_user_id,
+                message_id: attachment.message_id,
+                bucket: attachment.bucket,
+                object_key: attachment.object_key,
+                content_type: attachment.content_type,
+                byte_size: attachment.byte_size,
+                width: attachment.width,
+                height: attachment.height,
+                sha256: attachment.sha256,
+                original_filename: attachment.original_filename,
+                created_at: Utc::now(),
+            });
+
+        Ok(())
+    }
+
+    async fn find_chat_attachment(
+        &self,
+        attachment_id: &Uuid,
+    ) -> anyhow::Result<Option<ChatAttachment>> {
+        Ok(self
+            .attachments
+            .lock()
+            .map_err(|_| poisoned())?
+            .iter()
+            .find(|attachment| attachment.id == *attachment_id)
+            .cloned())
     }
 
     async fn room_message_page(
@@ -37,6 +89,14 @@ impl TextChatStore for InMemoryTextChatStore {
             .filter(|message| message.room_id == *room_id && message.deleted_at.is_none())
             .cloned()
             .collect::<Vec<_>>();
+        let attachments = self.attachments.lock().map_err(|_| poisoned())?.clone();
+        for message in &mut messages {
+            message.attachments = attachments
+                .iter()
+                .filter(|attachment| attachment.message_id == Some(message.id))
+                .cloned()
+                .collect();
+        }
         messages.sort_by_key(|message| (message.created_at, message.id));
         if let Some(before_message_id) = before_message_id {
             let Some(cursor_index) = messages

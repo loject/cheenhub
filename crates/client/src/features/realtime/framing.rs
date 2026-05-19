@@ -8,7 +8,7 @@ use web_transport::{RecvStream, SendStream};
 
 use super::error::RealtimeError;
 
-const MAX_FRAME_BYTES: usize = 64 * 1024;
+const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
 /// Writes one JSON envelope frame to a reliable stream.
 pub(crate) async fn write_envelope(

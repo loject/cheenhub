@@ -40,6 +40,11 @@ fn state_with_store(server_store: Arc<InMemoryServerStore>) -> AppState {
         auth_mailer: Arc::new(crate::features::auth::email::tests::TestAuthMailer::default()),
         server_store,
         text_chat_store: Arc::new(InMemoryTextChatStore::default()),
+        chat_attachment_object_store: Arc::new(
+            crate::features::text_chat::infrastructure::InMemoryChatAttachmentObjectStore::new(
+                "test-chat-images",
+            ),
+        ),
         image_store: Arc::new(
             crate::features::images::infrastructure::InMemoryImageStore::default(),
         ),
