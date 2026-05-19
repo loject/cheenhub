@@ -18,6 +18,7 @@ use super::room_editor_modal::RoomEditorModal;
 use super::room_instance::RoomInstance;
 use super::room_list_item::RoomListItem;
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
+use super::server_rooms_sidebar_styles as sidebar_styles;
 use super::server_rooms_state::{
     ServerWorkspace, active_room, chat_open_for_room, ensure_workspace_mounted, room_by_id,
     upsert_room,
@@ -57,6 +58,8 @@ pub(crate) fn ServerRoomsScope(
     let save_server_id = server.id.clone();
     let invite_server_id = server.id.clone();
     let modal_server_id = server.id.clone();
+    let open_settings_log_server_id = server.id.clone();
+    let close_settings_log_server_id = server.id.clone();
     let server_name = server.name.clone();
     let invite_server_name = server_name.clone();
     let is_owner = server.is_owner;
@@ -75,6 +78,21 @@ pub(crate) fn ServerRoomsScope(
         _ => None,
     };
     let selected_room = active_room(&current_rooms, active_room_id().as_deref());
+    let settings_workspace_active = matches!(active_workspace(), Some(ServerWorkspace::Settings));
+    let sidebar_class = sidebar_styles::rooms_sidebar_class(settings_workspace_active);
+    let sidebar_header_text_class =
+        sidebar_styles::rooms_sidebar_header_text_class(settings_workspace_active);
+    let sidebar_header_icon_class =
+        sidebar_styles::rooms_sidebar_header_icon_class(settings_workspace_active);
+    let room_section_title_class =
+        sidebar_styles::room_section_title_class(settings_workspace_active);
+    let connection_status_class =
+        sidebar_styles::connection_status_class(settings_workspace_active);
+    let connection_details_class =
+        sidebar_styles::connection_details_class(settings_workspace_active);
+    let sidebar_voice_class = sidebar_styles::sidebar_voice_class(settings_workspace_active);
+    let user_bar_class = sidebar_styles::user_bar_class(settings_workspace_active);
+    let user_details_class = sidebar_styles::user_details_class(settings_workspace_active);
     use_effect(move || {
         if rooms().is_some() {
             return;
@@ -111,7 +129,7 @@ pub(crate) fn ServerRoomsScope(
 
     rsx! {
         aside {
-            class: "group/rooms relative z-30 flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 backdrop-blur-xl transition-[width] duration-200 ease-out max-[1440px]:w-[68px] max-[1440px]:hover:w-[284px] max-[1440px]:focus-within:w-[284px]",
+            class: sidebar_class,
             onclick: move |_| is_server_menu_open.set(false),
             div { class: "relative border-b border-zinc-800/80 p-4",
                 button {
@@ -123,13 +141,13 @@ pub(crate) fn ServerRoomsScope(
                         event.stop_propagation();
                         is_server_menu_open.set(!is_server_menu_open());
                     },
-                    span { class: "min-w-0 flex-1 overflow-hidden transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:opacity-100",
+                    span { class: sidebar_header_text_class,
                         span { class: "block text-[13px] font-semibold tracking-[-0.02em] text-zinc-100", "{server_name}" }
                         span { class: "mt-0.5 block text-[11px] text-zinc-500",
                             if is_owner { "Владелец сервера" } else { "Участник сервера" }
                         }
                     }
-                    svg { class: "h-4 w-4 shrink-0 text-zinc-500 transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:opacity-100", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
+                    svg { class: sidebar_header_icon_class, fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "m6 9 6 6 6-6" }
                     }
                 }
@@ -142,6 +160,10 @@ pub(crate) fn ServerRoomsScope(
 
                             match action {
                                 ServerMenuAction::OpenSettings => {
+                                    info!(
+                                        server_id = %open_settings_log_server_id,
+                                        "opened server settings workspace"
+                                    );
                                     let workspace = ServerWorkspace::Settings;
                                     let mut next_mounted_workspaces = mounted_workspaces();
                                     ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
@@ -165,7 +187,7 @@ pub(crate) fn ServerRoomsScope(
 
             div { class: "min-h-0 flex-1 overflow-y-auto p-3",
                 div { class: "mb-1.5 flex items-center justify-between px-1 text-[10px] font-medium uppercase tracking-[0.22em] text-zinc-600",
-                    span { class: "overflow-hidden whitespace-nowrap transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:opacity-100", "Комнаты" }
+                    span { class: room_section_title_class, "Комнаты" }
                     if is_owner {
                         button {
                             r#type: "button",
@@ -216,6 +238,7 @@ pub(crate) fn ServerRoomsScope(
                                 room: room.clone(),
                                 is_active: matches!(active_workspace(), Some(ServerWorkspace::Room(ref id)) if id == &room.id),
                                 is_owner,
+                                compact_when_settings_active: settings_workspace_active,
                                 on_select: {
                                     let room = room.clone();
                                     let select_server_id = select_server_id.clone();
@@ -301,23 +324,23 @@ pub(crate) fn ServerRoomsScope(
                 }
             }
             div { class: "relative z-40 border-t border-zinc-800/80 p-3",
-                div { class: "mb-2 flex items-center gap-2 overflow-visible rounded-[16px] border border-zinc-800 bg-zinc-900/70 px-3 py-2 max-[1440px]:justify-center max-[1440px]:group-hover/rooms:justify-start max-[1440px]:group-focus-within/rooms:justify-start",
+                div { class: connection_status_class,
                     RealtimeConnectionStatusIndicator {}
-                    div { class: "min-w-0 flex-1 transition-[opacity] duration-150 max-[1440px]:hidden max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:block max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:block max-[1440px]:group-focus-within/rooms:opacity-100",
+                    div { class: connection_details_class,
                         div { class: "truncate text-[11px] font-medium text-zinc-100", "{server_name}" }
                         div { class: "truncate text-[11px] text-zinc-500", "realtime соединение" }
                     }
                 }
-                div { class: "overflow-hidden transition-[opacity] duration-150 max-[1440px]:hidden max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:block max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:block max-[1440px]:group-focus-within/rooms:opacity-100",
+                div { class: sidebar_voice_class,
                     SidebarVoiceControls {}
                 }
-                div { class: "flex items-center gap-3 overflow-hidden rounded-[20px] border border-zinc-800 bg-zinc-900/80 p-2.5 max-[1440px]:justify-center max-[1440px]:group-hover/rooms:justify-start max-[1440px]:group-focus-within/rooms:justify-start",
+                div { class: user_bar_class,
                     UserAvatar {
                         nickname: current_user.nickname.clone(),
                         avatar_url: current_user.avatar_url.clone(),
                         class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[12px] font-bold text-white".to_owned(),
                     }
-                    div { class: "min-w-0 flex-1 transition-[opacity] duration-150 max-[1440px]:hidden max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:block max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:block max-[1440px]:group-focus-within/rooms:opacity-100",
+                    div { class: user_details_class,
                         div { class: "truncate text-[12px] font-medium text-zinc-100", "{current_user.nickname}" }
                         div { class: "truncate text-[11px] text-zinc-500", "в приложении" }
                     }
@@ -355,6 +378,10 @@ pub(crate) fn ServerRoomsScope(
                 active: active && matches!(active_workspace(), Some(ServerWorkspace::Settings)),
                 on_server_updated,
                 on_close: move |_| {
+                    info!(
+                        server_id = %close_settings_log_server_id,
+                        "closed server settings workspace"
+                    );
                     if let Some(room_id) = active_room_id() {
                         let workspace = ServerWorkspace::Room(room_id);
                         let mut next_mounted_workspaces = mounted_workspaces();

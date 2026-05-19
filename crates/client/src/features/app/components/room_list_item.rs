@@ -10,10 +10,14 @@ pub(super) fn RoomListItem(
     room: ServerRoomSummary,
     is_active: bool,
     is_owner: bool,
+    compact_when_settings_active: bool,
     on_select: EventHandler<()>,
     on_edit: EventHandler<()>,
     on_delete: EventHandler<()>,
 ) -> Element {
+    let room_name_class = room_name_class(compact_when_settings_active);
+    let room_actions_class = room_actions_class(compact_when_settings_active);
+
     rsx! {
         div {
             "data-active": if is_active { "true" } else { "false" },
@@ -24,10 +28,10 @@ pub(super) fn RoomListItem(
                 "aria-label": "Открыть комнату {room.name}",
                 onclick: move |_| on_select(()),
                 span { class: room_icon_class(room.kind), "{room_icon(room.kind)}" }
-                span { class: "truncate text-[12px] font-medium transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:opacity-100", "{room.name}" }
+                span { class: room_name_class, "{room.name}" }
             }
             if is_owner {
-                span { class: "ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 max-[1440px]:hidden max-[1440px]:group-hover/rooms:flex max-[1440px]:group-focus-within/rooms:flex",
+                span { class: room_actions_class,
                     button {
                         r#type: "button",
                         class: "rounded-md p-1 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-200",
@@ -49,5 +53,21 @@ pub(super) fn RoomListItem(
                 }
             }
         }
+    }
+}
+
+fn room_name_class(compact_when_settings_active: bool) -> &'static str {
+    if compact_when_settings_active {
+        "truncate text-[12px] font-medium transition-[opacity] duration-150 max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:opacity-100"
+    } else {
+        "truncate text-[12px] font-medium transition-[opacity] duration-150"
+    }
+}
+
+fn room_actions_class(compact_when_settings_active: bool) -> &'static str {
+    if compact_when_settings_active {
+        "ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 max-[1440px]:hidden max-[1440px]:group-hover/rooms:flex max-[1440px]:group-focus-within/rooms:flex"
+    } else {
+        "ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100"
     }
 }
