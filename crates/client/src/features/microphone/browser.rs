@@ -3,6 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use dioxus::prelude::debug;
 use futures_util::FutureExt;
 use futures_util::future::LocalBoxFuture;
 use js_sys::{Float32Array, Function, Object, Promise, Reflect, Uint8Array};
@@ -289,7 +290,17 @@ fn voice_gate_allows_audio(
     let rms = rms_level(&samples);
     let timestamp_us = audio.audio_data_timestamp().max(0.0) as u64;
     let duration_us = audio.audio_data_duration().unwrap_or(0.0).max(0.0) as u32;
+    let previous_active = detector.borrow().is_active();
     let active = detector.borrow_mut().update(rms, duration_us);
+    if active != previous_active {
+        debug!(
+            rms,
+            active,
+            threshold = detector_threshold(detector),
+            timestamp_us,
+            "microphone voice activation changed"
+        );
+    }
     (callbacks.on_level)(MicrophoneLevel {
         rms,
         active,
