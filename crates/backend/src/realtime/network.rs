@@ -5,7 +5,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use cheenhub_contracts::realtime::{
     NetworkKind, Ping, Pong, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
 };
-use tracing::debug;
 
 use crate::state::AppState;
 
@@ -24,11 +23,6 @@ pub(crate) async fn handle(
             let received_at = now_ms();
             let payload: Ping = decode_payload(&envelope)?;
             let server_sent_at = now_ms();
-            debug!(
-                id = %request_id,
-                srv_ms = server_sent_at.saturating_sub(received_at),
-                "rt ping->pong"
-            );
             write_envelope(
                 send,
                 RealtimeModule::Network,

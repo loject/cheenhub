@@ -300,8 +300,8 @@ pub(crate) fn ServerRoomsScope(
                     }
                 }
             }
-            div { class: "border-t border-zinc-800/80 p-3",
-                div { class: "mb-2 flex items-center gap-2 overflow-hidden rounded-[16px] border border-zinc-800 bg-zinc-900/70 px-3 py-2 max-[1440px]:justify-center max-[1440px]:group-hover/rooms:justify-start max-[1440px]:group-focus-within/rooms:justify-start",
+            div { class: "relative z-40 border-t border-zinc-800/80 p-3",
+                div { class: "mb-2 flex items-center gap-2 overflow-visible rounded-[16px] border border-zinc-800 bg-zinc-900/70 px-3 py-2 max-[1440px]:justify-center max-[1440px]:group-hover/rooms:justify-start max-[1440px]:group-focus-within/rooms:justify-start",
                     RealtimeConnectionStatusIndicator {}
                     div { class: "min-w-0 flex-1 transition-[opacity] duration-150 max-[1440px]:hidden max-[1440px]:opacity-0 max-[1440px]:group-hover/rooms:block max-[1440px]:group-hover/rooms:opacity-100 max-[1440px]:group-focus-within/rooms:block max-[1440px]:group-focus-within/rooms:opacity-100",
                         div { class: "truncate text-[11px] font-medium text-zinc-100", "{server_name}" }

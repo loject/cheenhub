@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use gloo_timers::future::TimeoutFuture;
 
 use crate::features::auth::api as auth_api;
-use crate::features::network::realtime as network_realtime;
+use crate::features::network::{NetworkQualityHandle, realtime as network_realtime};
 
 use super::handle::create_handle;
 
@@ -19,8 +19,12 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
     let realtime = handle();
     let context_realtime = realtime.clone();
     use_context_provider(move || context_realtime.clone());
+    let network_quality_state = use_signal(Default::default);
+    let network_quality = NetworkQualityHandle::new(network_quality_state);
+    use_context_provider(move || network_quality);
 
     use_hook(move || {
+        let mut network_quality = network_quality;
         spawn(async move {
             let mut reconnect_delay_ms = RECONNECT_INITIAL_DELAY_MS;
             loop {
@@ -46,24 +50,30 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                             "realtime session connected"
                         );
                         reconnect_delay_ms = RECONNECT_INITIAL_DELAY_MS;
-                        info!(
-                            interval_ms = PING_INTERVAL_MS,
-                            "starting realtime ping loop"
-                        );
                         loop {
                             TimeoutFuture::new(PING_INTERVAL_MS).await;
-                            if let Err(error) = network_realtime::ping(&realtime).await {
-                                realtime.mark_disconnected().await;
-                                warn!(
-                                    %error,
-                                    delay_ms = reconnect_delay_ms,
-                                    "realtime ping failed; reconnecting"
-                                );
-                                break;
+                            match network_realtime::ping(&realtime).await {
+                                Ok(measurement) => {
+                                    network_quality.record_ping(
+                                        measurement.received_at_ms,
+                                        measurement.rtt_ms,
+                                    );
+                                }
+                                Err(error) => {
+                                    network_quality.clear();
+                                    realtime.mark_disconnected().await;
+                                    warn!(
+                                        %error,
+                                        delay_ms = reconnect_delay_ms,
+                                        "realtime ping failed; reconnecting"
+                                    );
+                                    break;
+                                }
                             }
                         }
                     }
                     Err(error) => {
+                        network_quality.clear();
                         warn!(
                             %error,
                             delay_ms = reconnect_delay_ms,
