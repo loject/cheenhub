@@ -1,8 +1,8 @@
 //! Voice chat presence application flows.
 
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, LeaveVoiceRoom, RealtimeKind, RealtimeModule, VoiceChatKind,
-    VoiceRoomParticipant, VoiceRoomSnapshot,
+    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, RealtimeKind, RealtimeModule,
+    ServerRoleKind, ServerRolePermission, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
 };
 use cheenhub_contracts::rest::{AuthUser, ServerRoomKind};
 use chrono::Utc;
@@ -65,6 +65,48 @@ pub(crate) async fn leave_room(
     if removed.is_empty() {
         ensure_room_voice_available(state, user_id, &server_id, &room_id).await?;
         return Ok(room_snapshot(state, &server_id, &room_id).await);
+    }
+
+    let snapshot = room_snapshot(state, &server_id, &room_id).await;
+    fanout_snapshot(state, snapshot.clone()).await;
+
+    Ok(snapshot)
+}
+
+/// Kicks one participant from a voice room if the requesting user has permission.
+pub(crate) async fn kick_member(
+    state: &AppState,
+    kicker_user_id: &Uuid,
+    request: KickVoiceMember,
+) -> Result<VoiceRoomSnapshot, VoiceChatApplicationError> {
+    let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
+    let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
+    let target_user_id = parse_id(&request.user_id, "Пользователь не найден.")?;
+
+    if *kicker_user_id == target_user_id {
+        return Err(VoiceChatApplicationError::BadRequest(
+            "Нельзя кикнуть самого себя.".to_owned(),
+        ));
+    }
+
+    if !user_can_kick_voice(state, kicker_user_id, &server_id)
+        .await
+        .map_err(VoiceChatApplicationError::Internal)?
+    {
+        return Err(VoiceChatApplicationError::Unauthorized(
+            "Недостаточно прав для кика из голосовой комнаты.".to_owned(),
+        ));
+    }
+
+    let removed = state
+        .voice_presence_store
+        .kick_user_from_room(&target_user_id, &server_id, &room_id)
+        .await;
+
+    if removed.is_empty() {
+        return Err(VoiceChatApplicationError::NotFound(
+            "Пользователь не находится в этой голосовой комнате.".to_owned(),
+        ));
     }
 
     let snapshot = room_snapshot(state, &server_id, &room_id).await;
@@ -147,6 +189,38 @@ async fn ensure_room_voice_available(
             "Нет доступа к этой комнате.".to_owned(),
         ))
     }
+}
+
+async fn user_can_kick_voice(
+    state: &AppState,
+    user_id: &Uuid,
+    server_id: &Uuid,
+) -> anyhow::Result<bool> {
+    let Some(server) = state.server_store.find_server(server_id).await? else {
+        return Ok(false);
+    };
+    if server.owner_user_id == *user_id {
+        return Ok(true);
+    }
+
+    let roles = state.server_store.list_server_roles(server_id).await?;
+    let member_roles = state
+        .server_store
+        .list_server_member_roles(server_id)
+        .await?;
+    let user_role_ids: Vec<_> = member_roles
+        .iter()
+        .filter(|(uid, _)| uid == user_id)
+        .map(|(_, rid)| *rid)
+        .collect();
+
+    Ok(roles.iter().any(|role| {
+        role.kind != ServerRoleKind::Member
+            && user_role_ids.contains(&role.id)
+            && role
+                .permissions
+                .contains(&ServerRolePermission::KickVoiceMembers)
+    }))
 }
 
 async fn user_has_server_access(

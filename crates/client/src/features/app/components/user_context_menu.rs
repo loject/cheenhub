@@ -7,10 +7,12 @@ use dioxus::prelude::*;
 pub(crate) fn UserContextMenu(
     name: String,
     is_self: bool,
+    can_kick_voice: bool,
     volume: u32,
     x: f64,
     y: f64,
     on_volume_change: EventHandler<u32>,
+    on_kick_voice: EventHandler<()>,
 ) -> Element {
     let top = y + 8.0;
     let pos_style = format!(
@@ -103,19 +105,15 @@ pub(crate) fn UserContextMenu(
                     }
                 }
 
-                div { class: "mx-1 my-1 border-t border-zinc-800/70" }
+                if can_kick_voice {
+                    div { class: "mx-1 my-1 border-t border-zinc-800/70" }
 
-                button {
-                    r#type: "button",
-                    class: "flex w-full items-center justify-between rounded-[10px] px-2.5 py-2 text-left text-[13px] text-zinc-300 transition-[background,color] duration-100 hover:bg-zinc-900 hover:text-zinc-100",
-                    span { "Кикнуть из голоса" }
-                    span { class: "text-[10px] text-zinc-700", "админ" }
-                }
-                button {
-                    r#type: "button",
-                    class: "flex w-full items-center justify-between rounded-[10px] px-2.5 py-2 text-left text-[13px] text-red-400/80 transition-[background,color] duration-100 hover:bg-red-500/10 hover:text-red-300",
-                    span { "Кикнуть с сервера" }
-                    span { class: "text-[10px] text-red-500/40", "админ" }
+                    button {
+                        r#type: "button",
+                        class: "flex w-full items-center justify-between rounded-[10px] px-2.5 py-2 text-left text-[13px] text-zinc-300 transition-[background,color] duration-100 hover:bg-zinc-900 hover:text-zinc-100",
+                        onclick: move |_| on_kick_voice.call(()),
+                        span { "Кикнуть из голоса" }
+                    }
                 }
             }
         }

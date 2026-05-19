@@ -76,6 +76,21 @@ impl InMemoryVoicePresenceStore {
         .await
     }
 
+    /// Removes all presence entries for one user in one room (kick).
+    pub(crate) async fn kick_user_from_room(
+        &self,
+        user_id: &Uuid,
+        server_id: &Uuid,
+        room_id: &Uuid,
+    ) -> Vec<VoicePresence> {
+        self.remove_presence(|entry| {
+            &entry.user_id == user_id
+                && &entry.server_id == server_id
+                && &entry.room_id == room_id
+        })
+        .await
+    }
+
     async fn remove_presence(
         &self,
         should_remove: impl Fn(&VoicePresence) -> bool,

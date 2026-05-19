@@ -7,9 +7,11 @@ use dioxus::prelude::*;
 
 use crate::features::app::components::user_context_menu::UserContextMenu;
 use crate::features::app::current_user::CurrentUserContext;
+use crate::features::app::server_permissions::ServerPermissionsContext;
 use crate::features::audio_playback::AudioPlaybackHandle;
 
 use super::participant_tile::VoiceParticipantTile;
+use super::state::VoiceConnectionHandle;
 
 /// Empty or transient display state for the voice participant grid.
 #[derive(Clone, PartialEq, Eq)]
@@ -36,6 +38,8 @@ struct UserMenuState {
 /// Renders voice room participants.
 #[component]
 pub(crate) fn VoiceParticipantGrid(
+    server_id: String,
+    room_id: String,
     participants: Vec<VoiceRoomParticipant>,
     speaking_user_ids: Vec<String>,
     status: VoiceParticipantGridStatus,
@@ -44,7 +48,9 @@ pub(crate) fn VoiceParticipantGrid(
     let mut open_user_menu = use_signal(|| None::<UserMenuState>);
     let mut user_volumes = use_signal(HashMap::<String, u32>::new);
     let playback = use_context::<AudioPlaybackHandle>();
+    let voice = use_context::<VoiceConnectionHandle>();
     let current_user_id = use_context::<CurrentUserContext>().require_user().id;
+    let can_kick_voice = use_context::<ServerPermissionsContext>().can_kick_voice;
     let count = participants.len().clamp(1, 12);
     let (title, body) = match &status {
         VoiceParticipantGridStatus::Connecting => (
@@ -66,6 +72,9 @@ pub(crate) fn VoiceParticipantGrid(
     };
     let is_connecting = matches!(status, VoiceParticipantGridStatus::Connecting);
     let can_retry = matches!(status, VoiceParticipantGridStatus::Error { .. });
+    let kick_user_id = open_user_menu().map(|m| m.user_id.clone());
+    let kick_server_id = server_id.clone();
+    let kick_room_id = room_id.clone();
 
     rsx! {
         div {
@@ -114,12 +123,23 @@ pub(crate) fn VoiceParticipantGrid(
                 UserContextMenu {
                     name: menu.name,
                     is_self: menu.user_id == current_user_id,
+                    can_kick_voice,
                     volume: user_volumes().get(&menu.user_id).copied().unwrap_or(100),
                     x: menu.x,
                     y: menu.y,
                     on_volume_change: move |vol: u32| {
                         user_volumes.write().insert(menu.user_id.clone(), vol);
                         playback.set_user_volume(&menu.user_id, vol);
+                    },
+                    on_kick_voice: move |_| {
+                        if let Some(ref uid) = kick_user_id {
+                            open_user_menu.set(None);
+                            voice.kick_member(
+                                kick_server_id.clone(),
+                                kick_room_id.clone(),
+                                uid.clone(),
+                            );
+                        }
                     },
                 }
             }

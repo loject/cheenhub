@@ -3,8 +3,8 @@
 use bytes::Bytes;
 use cheenhub_contracts::media::{MediaCodec, MediaDatagram, MediaDatagramKind};
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, LeaveVoiceRoom, RealtimeEnvelope, RealtimeKind, RealtimeModule, VoiceChatKind,
-    VoiceRoomSnapshot,
+    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, RealtimeEnvelope, RealtimeKind,
+    RealtimeModule, VoiceChatKind, VoiceRoomSnapshot,
 };
 use futures_channel::mpsc;
 use futures_util::StreamExt;
@@ -56,6 +56,26 @@ pub(crate) async fn leave_room(
             RealtimeModule::VoiceChat,
             RealtimeKind::VoiceChat(VoiceChatKind::LeaveVoiceRoom),
             LeaveVoiceRoom { server_id, room_id },
+        )
+        .await
+}
+
+/// Kicks one participant from a voice room.
+pub(crate) async fn kick_voice_member(
+    realtime: &RealtimeHandle,
+    server_id: String,
+    room_id: String,
+    user_id: String,
+) -> Result<VoiceRoomSnapshot, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::KickVoiceMember),
+            KickVoiceMember {
+                server_id,
+                room_id,
+                user_id,
+            },
         )
         .await
 }

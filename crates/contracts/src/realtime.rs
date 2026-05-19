@@ -19,7 +19,7 @@ pub use server::{
     ServerInviteMemberKicked, ServerInviteRevoked, ServerKind, ServerMemberEntry,
     ServerMemberKicked, ServerMemberList, ServerMemberRoleAssigned, ServerMemberRoleRevoked,
     ServerRoleDraft, ServerRoleEntry, ServerRoleKind, ServerRoleList, ServerRolePermission,
-    ServerRolesSaved,
+    ServerRoleSummary, ServerRolesSaved,
 };
 pub use text_chat::{
     ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
@@ -27,7 +27,8 @@ pub use text_chat::{
     SendMessageAccepted, TextChatImageAttachment, TextChatKind, TextChatMessage, UploadChatImage,
 };
 pub use voice_chat::{
-    JoinVoiceRoom, LeaveVoiceRoom, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
+    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, VoiceChatKind, VoiceRoomParticipant,
+    VoiceRoomSnapshot,
 };
 
 #[cfg(test)]

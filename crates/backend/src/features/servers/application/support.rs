@@ -1,5 +1,6 @@
 //! Shared server application helpers.
 
+use cheenhub_contracts::realtime::{ServerRoleKind, ServerRoleSummary};
 use cheenhub_contracts::rest::{ServerRoomSummary, ServerSummary};
 use uuid::Uuid;
 
@@ -10,21 +11,53 @@ use crate::features::servers::domain::{Server, ServerRoom};
 use crate::features::servers::error::ServerError;
 use crate::state::AppState;
 
-pub(super) fn server_summary(
+pub(super) async fn server_summary(
     state: &AppState,
     server: &Server,
     user_id: &Uuid,
     is_member: bool,
 ) -> ServerSummary {
+    let is_owner = server.owner_user_id == *user_id;
+    let (roles, member_role_ids) = fetch_role_data(state, &server.id, user_id).await;
     ServerSummary {
         id: server.id.to_string(),
         name: server.name.clone(),
         avatar_url: server
             .avatar_image_id
             .map(|image_id| image_application::avatar_url(state, &image_id)),
-        is_owner: server.owner_user_id == *user_id,
+        is_owner,
         is_member,
+        roles,
+        member_role_ids,
     }
+}
+
+async fn fetch_role_data(
+    state: &AppState,
+    server_id: &Uuid,
+    user_id: &Uuid,
+) -> (Vec<ServerRoleSummary>, Vec<String>) {
+    let roles = match state.server_store.list_server_roles(server_id).await {
+        Ok(roles) => roles
+            .into_iter()
+            .map(|role| ServerRoleSummary {
+                role_id: role.id.to_string(),
+                kind: role.kind,
+                permissions: role.permissions,
+            })
+            .filter(|role| role.kind != ServerRoleKind::Owner)
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    let member_role_ids = match state.server_store.list_server_member_roles(server_id).await {
+        Ok(pairs) => pairs
+            .into_iter()
+            .filter(|(uid, _)| uid == user_id)
+            .map(|(_, rid)| rid.to_string())
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    (roles, member_role_ids)
 }
 
 pub(super) fn room_summary(room: &ServerRoom) -> ServerRoomSummary {

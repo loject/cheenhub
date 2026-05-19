@@ -48,7 +48,7 @@ pub(crate) async fn update(
     );
 
     Ok(UpdateServerResponse {
-        server: server_summary(state, &server, &owner_user_id, true),
+        server: server_summary(state, &server, &owner_user_id, true).await,
     })
 }
 
@@ -119,7 +119,7 @@ pub(crate) async fn update_avatar(
     );
 
     Ok(UpdateServerAvatarResponse {
-        server: server_summary(state, &server, &owner_user_id, true),
+        server: server_summary(state, &server, &owner_user_id, true).await,
     })
 }
 

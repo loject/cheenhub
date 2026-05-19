@@ -14,6 +14,7 @@ use crate::features::audio_playback::{AudioPlaybackHandle, PlaybackCodec, VoiceF
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 
+use super::kicked_modal::KickedFromVoiceModal;
 use super::realtime;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 
@@ -25,12 +26,14 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let microphone = use_context::<MicrophoneHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
     let state = use_signal(|| VoiceConnectionState::Disconnected);
+    let kicked_from_room = use_signal(|| None::<String>);
     let speaking_users = use_signal(Vec::new);
     let speaking_generations = use_hook(|| Rc::new(RefCell::new(HashMap::<String, u64>::new())));
     let mut microphone_target_room = use_signal(|| None::<String>);
     let mut mic_paused_by_mute = use_signal(|| false);
     let handle = VoiceConnectionHandle::new(
         state,
+        kicked_from_room,
         speaking_users,
         speaking_generations,
         realtime.clone(),
@@ -150,6 +153,12 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
 
     rsx! {
         {children}
+        if let Some(room_name) = kicked_from_room() {
+            KickedFromVoiceModal {
+                room_name,
+                on_close: move |_| handle.dismiss_kick_notification(),
+            }
+        }
     }
 }
 
