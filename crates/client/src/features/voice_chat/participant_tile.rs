@@ -10,7 +10,7 @@ use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 pub(crate) fn VoiceParticipantTile(
     participant: VoiceRoomParticipant,
     speaking: bool,
-    on_open_user_menu: EventHandler<(String, f64, f64)>,
+    on_open_user_menu: EventHandler<(String, String, f64, f64)>,
 ) -> Element {
     use_avatar_seed(participant.user_id.clone());
     let tile_class = if speaking {
@@ -28,11 +28,12 @@ pub(crate) fn VoiceParticipantTile(
             class: tile_class,
             oncontextmenu: {
                 let nickname = participant.nickname.clone();
+                let user_id = participant.user_id.clone();
                 move |event| {
                     event.prevent_default();
                     event.stop_propagation();
                     let point = event.client_coordinates();
-                    on_open_user_menu.call((nickname.clone(), point.x, point.y));
+                    on_open_user_menu.call((nickname.clone(), user_id.clone(), point.x, point.y));
                 }
             },
             if speaking {
@@ -51,10 +52,11 @@ pub(crate) fn VoiceParticipantTile(
                     "aria-label": "Меню пользователя",
                     onclick: {
                         let nickname = participant.nickname.clone();
+                        let user_id = participant.user_id.clone();
                         move |event| {
                             event.stop_propagation();
                             let point = event.client_coordinates();
-                            on_open_user_menu.call((nickname.clone(), point.x, point.y));
+                            on_open_user_menu.call((nickname.clone(), user_id.clone(), point.x, point.y));
                         }
                     },
                     svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",

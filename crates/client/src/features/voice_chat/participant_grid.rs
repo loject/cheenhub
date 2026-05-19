@@ -1,9 +1,13 @@
 //! Voice participant grid component.
 
+use std::collections::HashMap;
+
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use dioxus::prelude::*;
 
 use crate::features::app::components::user_context_menu::UserContextMenu;
+use crate::features::app::current_user::CurrentUserContext;
+use crate::features::audio_playback::AudioPlaybackHandle;
 
 use super::participant_tile::VoiceParticipantTile;
 
@@ -24,6 +28,7 @@ pub(crate) enum VoiceParticipantGridStatus {
 #[derive(Clone, PartialEq)]
 struct UserMenuState {
     name: String,
+    user_id: String,
     x: f64,
     y: f64,
 }
@@ -37,6 +42,9 @@ pub(crate) fn VoiceParticipantGrid(
     on_retry: EventHandler<()>,
 ) -> Element {
     let mut open_user_menu = use_signal(|| None::<UserMenuState>);
+    let mut user_volumes = use_signal(HashMap::<String, u32>::new);
+    let playback = use_context::<AudioPlaybackHandle>();
+    let current_user_id = use_context::<CurrentUserContext>().require_user().id;
     let count = participants.len().clamp(1, 12);
     let (title, body) = match &status {
         VoiceParticipantGridStatus::Connecting => (
@@ -95,8 +103,8 @@ pub(crate) fn VoiceParticipantGrid(
                             key: "{participant.user_id}",
                             speaking: speaking_user_ids.iter().any(|user_id| user_id == &participant.user_id),
                             participant,
-                            on_open_user_menu: move |(name, x, y)| {
-                                open_user_menu.set(Some(UserMenuState { name, x, y }));
+                            on_open_user_menu: move |(name, user_id, x, y)| {
+                                open_user_menu.set(Some(UserMenuState { name, user_id, x, y }));
                             },
                         }
                     }
@@ -105,9 +113,14 @@ pub(crate) fn VoiceParticipantGrid(
             if let Some(menu) = open_user_menu() {
                 UserContextMenu {
                     name: menu.name,
-                    volume: "100",
+                    is_self: menu.user_id == current_user_id,
+                    volume: user_volumes().get(&menu.user_id).copied().unwrap_or(100),
                     x: menu.x,
                     y: menu.y,
+                    on_volume_change: move |vol: u32| {
+                        user_volumes.write().insert(menu.user_id.clone(), vol);
+                        playback.set_user_volume(&menu.user_id, vol);
+                    },
                 }
             }
         }
