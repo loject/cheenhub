@@ -2504,6 +2504,14 @@ video {
   border-color: rgb(39 39 42 / 0.8);
 }
 
+.border-amber-500\/35 {
+  border-color: rgb(245 158 11 / 0.35);
+}
+
+.border-sky-400\/45 {
+  border-color: rgb(56 189 248 / 0.45);
+}
+
 .border-t-accent {
   --tw-border-opacity: 1;
   border-top-color: rgb(59 130 246 / var(--tw-border-opacity, 1));
@@ -2816,6 +2824,10 @@ video {
 
 .bg-zinc-950\/95 {
   background-color: rgb(9 9 11 / 0.95);
+}
+
+.bg-sky-500\/15 {
+  background-color: rgb(14 165 233 / 0.15);
 }
 
 .bg-\[radial-gradient\(circle_at_center\2c rgba\(255\2c 255\2c 255\2c 0\.08\)\2c transparent_42\%\)\] {
@@ -3491,6 +3503,11 @@ video {
   color: rgb(9 9 11 / var(--tw-text-opacity, 1));
 }
 
+.text-sky-100 {
+  --tw-text-opacity: 1;
+  color: rgb(224 242 254 / var(--tw-text-opacity, 1));
+}
+
 .accent-blue-500 {
   accent-color: #3b82f6;
 }
@@ -3738,6 +3755,12 @@ video {
 .shadow-xl {
   --tw-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
   --tw-shadow-colored: 0 20px 25px -5px var(--tw-shadow-color), 0 8px 10px -6px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+.shadow-\[0_0_0_1px_rgba\(56\2c 189\2c 248\2c \.16\)\2c 0_14px_36px_rgba\(14\2c 165\2c 233\2c \.14\)\] {
+  --tw-shadow: 0 0 0 1px rgba(56,189,248,.16),0 14px 36px rgba(14,165,233,.14);
+  --tw-shadow-colored: 0 0 0 1px var(--tw-shadow-color), 0 14px 36px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
@@ -4352,6 +4375,14 @@ video {
   border-color: rgb(39 39 42 / var(--tw-border-opacity, 1));
 }
 
+.hover\:border-amber-400\/45:hover {
+  border-color: rgb(251 191 36 / 0.45);
+}
+
+.hover\:border-sky-300\/55:hover {
+  border-color: rgb(125 211 252 / 0.55);
+}
+
 .hover\:bg-\[rgba\(39\2c 39\2c 42\2c \.84\)\]:hover {
   background-color: rgba(39,39,42,.84);
 }
@@ -4464,6 +4495,10 @@ video {
 
 .hover\:bg-zinc-950\/80:hover {
   background-color: rgb(9 9 11 / 0.8);
+}
+
+.hover\:bg-sky-500\/20:hover {
+  background-color: rgb(14 165 233 / 0.2);
 }
 
 .hover\:text-blue-100:hover {

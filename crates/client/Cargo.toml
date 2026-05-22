@@ -35,6 +35,7 @@ web-sys = { workspace = true, features = [
     "AudioParam",
     "GainNode",
     "DomException",
+    "DisplayMediaStreamConstraints",
     "MediaDevices",
     "MediaStream",
     "MediaStreamConstraints",

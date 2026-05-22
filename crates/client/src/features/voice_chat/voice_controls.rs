@@ -8,6 +8,7 @@ use wasm_bindgen_futures::spawn_local;
 use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
+use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 
 use super::realtime;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
@@ -17,10 +18,12 @@ use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
     let microphone = use_context::<MicrophoneHandle>();
+    let screen_share = use_context::<ScreenShareHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
     let realtime_handle = use_context::<RealtimeHandle>();
     let state = voice.state();
     let microphone_status = microphone.status();
+    let screen_share_status = screen_share.status();
     let microphone_level = microphone.level();
     let is_active_room = state.is_active_room(&server_id, &room_id);
     let is_leaving = matches!(state, VoiceConnectionState::Disconnecting { .. });
@@ -28,6 +31,8 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
     let microphone_live = matches!(microphone_status, MicrophoneStatus::Live);
     let microphone_starting = matches!(microphone_status, MicrophoneStatus::Starting);
     let microphone_speaking = microphone_live && microphone_level.active;
+    let screen_share_live = matches!(screen_share_status, ScreenShareStatus::Live);
+    let screen_share_starting = matches!(screen_share_status, ScreenShareStatus::Starting);
     let microphone_level_height =
         (microphone_level.rms / microphone_level.threshold.max(0.001)).clamp(0.08, 1.0) * 100.0;
     let microphone_label = match microphone_status {
@@ -42,8 +47,17 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
     } else {
         microphone_label
     };
+    let screen_share_label = match screen_share_status {
+        ScreenShareStatus::Idle => "Начать демонстрацию экрана",
+        ScreenShareStatus::Starting => "Запрашиваем демонстрацию экрана",
+        ScreenShareStatus::Live => "Остановить демонстрацию экрана",
+        ScreenShareStatus::PermissionDenied => "Доступ к экрану запрещен",
+        ScreenShareStatus::Error(_) => "Демонстрация экрана недоступна",
+    };
     let toggle_microphone = microphone.clone();
+    let toggle_screen_share = screen_share.clone();
     let leave_microphone = microphone.clone();
+    let leave_screen_share = screen_share.clone();
     let unmute_playback = playback.clone();
 
     if !is_active_room {
@@ -120,12 +134,22 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                 }
                 button {
                     r#type: "button",
-                    class: "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-200 transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-zinc-700 hover:bg-zinc-900",
-                    "aria-label": "Экран",
-                    span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "Экран" }
+                    disabled: screen_share_starting,
+                    class: if screen_share_live {
+                        "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-sky-400/45 bg-sky-500/15 text-sky-100 shadow-[0_0_0_1px_rgba(56,189,248,.16),0_14px_36px_rgba(14,165,233,.14)] transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-sky-300/55 hover:bg-sky-500/20 disabled:cursor-wait disabled:opacity-60"
+                    } else if matches!(screen_share_status, ScreenShareStatus::PermissionDenied | ScreenShareStatus::Error(_)) {
+                        "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-100 transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-amber-400/45 hover:bg-amber-500/15 disabled:cursor-wait disabled:opacity-60"
+                    } else {
+                        "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-200 transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-zinc-700 hover:bg-zinc-900 disabled:cursor-wait disabled:opacity-60"
+                    },
+                    "aria-label": screen_share_label,
+                    onclick: move |_| {
+                        toggle_screen_share.toggle(Rc::new(|_| {}));
+                    },
+                    span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "{screen_share_label}" }
                     svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                         rect { x: "3", y: "4", width: "18", height: "12", rx: "2" }
-                        path { stroke_linecap: "round", d: "M8 20h8m-4-4v4" }
+                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M8 20h8m-4-4v-9m0 0-3 3m3-3 3 3" }
                     }
                 }
                 button {
@@ -135,6 +159,7 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                     "aria-label": "Выйти из голосовой комнаты",
                     onclick: move |_| {
                         leave_microphone.stop();
+                        leave_screen_share.stop();
                         voice.leave();
                     },
                     span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "Выйти" }

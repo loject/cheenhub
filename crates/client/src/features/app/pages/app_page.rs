@@ -9,6 +9,7 @@ use crate::features::audio_playback::AudioPlaybackProvider;
 use crate::features::auth::{TokenRefresher, api};
 use crate::features::microphone::MicrophoneProvider;
 use crate::features::realtime::RealtimeProvider;
+use crate::features::screen_share::ScreenShareProvider;
 use crate::features::voice_chat::VoiceConnectionProvider;
 
 /// Renders the signed-in application home.
@@ -60,8 +61,10 @@ pub(crate) fn AppPage() -> Element {
         RealtimeProvider {
             AudioPlaybackProvider {
                 MicrophoneProvider {
-                    VoiceConnectionProvider {
-                        AppShell {}
+                    ScreenShareProvider {
+                        VoiceConnectionProvider {
+                            AppShell {}
+                        }
                     }
                 }
             }

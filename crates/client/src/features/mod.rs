@@ -7,6 +7,7 @@ pub(crate) mod landing;
 pub(crate) mod microphone;
 pub(crate) mod network;
 pub(crate) mod realtime;
+pub(crate) mod screen_share;
 pub(crate) mod server_settings;
 pub(crate) mod text_chat;
 pub(crate) mod toast;
