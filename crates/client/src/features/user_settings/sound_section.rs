@@ -1,5 +1,7 @@
 //! User sound settings section.
 
+use std::rc::Rc;
+
 use dioxus::prelude::*;
 
 use crate::features::audio_playback::{
@@ -7,24 +9,25 @@ use crate::features::audio_playback::{
     enumerate_audio_output_devices,
 };
 use crate::features::microphone::{
-    AudioInputDevice, AudioInputDevicesResult, MicrophoneHandle, enumerate_audio_input_devices,
-    request_microphone_permission,
+    AudioInputDevice, AudioInputDevicesResult, MicrophoneActivationMode, MicrophoneHandle,
+    enumerate_audio_input_devices, request_microphone_permission,
 };
 
 use super::sound_devices::{input_device_widget, output_device_widget};
 use super::styles::{parse_percent, parse_percent_range};
-
-#[derive(Clone, Copy, PartialEq)]
-enum ActivationMode {
-    AlwaysOn,
-    VoiceActivation,
-}
 
 /// Renders sound input, output, and voice activation controls.
 #[component]
 pub(crate) fn SoundSettingsSection() -> Element {
     let mic = use_context::<MicrophoneHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
+    let preview_mic = mic.clone();
+    let _preview_guard = use_hook(move || {
+        preview_mic.start_level_preview();
+        Rc::new(MicrophonePreviewGuard {
+            mic: preview_mic.clone(),
+        })
+    });
 
     // Read the stored device preference — this creates a reactive subscription so the
     // select re-renders whenever the stored value changes.
@@ -37,9 +40,10 @@ pub(crate) fn SoundSettingsSection() -> Element {
 
     let input_volume = mic.input_volume_percent();
     let output_volume = playback.output_volume_percent();
-    let mut activation_mode = use_signal(|| ActivationMode::AlwaysOn);
-    let mut activation_level = use_signal(|| 45);
-    let live_level = 58;
+    let activation_mode = mic.activation_mode();
+    let activation_level = mic.vad_threshold_percent();
+    let mic_level = mic.level();
+    let live_level = level_percent(mic_level.rms);
 
     // Enumerate real devices once on mount. Only auto-selects the first device when
     // no valid preference is already stored in the microphone handle context.
@@ -131,6 +135,11 @@ pub(crate) fn SoundSettingsSection() -> Element {
         );
     };
 
+    let mic_volume_change = mic.clone();
+    let mic_always_active = mic.clone();
+    let mic_voice_activation = mic.clone();
+    let mic_threshold_change = mic.clone();
+
     rsx! {
         div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
             div {
@@ -152,7 +161,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
                             on_input_retry,
                         )}
                     }
-                    {volume_slider("Громкость микрофона", input_volume, move |value| mic.set_input_volume_percent(value))}
+                    {volume_slider("Громкость микрофона", input_volume, move |value| mic_volume_change.set_input_volume_percent(value))}
                 }
 
                 // Output device column (mock for now).
@@ -178,16 +187,16 @@ pub(crate) fn SoundSettingsSection() -> Element {
                     div { class: "grid gap-3 md:grid-cols-3",
                         button {
                             r#type: "button",
-                            class: activation_button_class(activation_mode() == ActivationMode::AlwaysOn),
-                            onclick: move |_| activation_mode.set(ActivationMode::AlwaysOn),
+                            class: activation_button_class(activation_mode == MicrophoneActivationMode::AlwaysActive),
+                            onclick: move |_| mic_always_active.set_activation_mode(MicrophoneActivationMode::AlwaysActive),
                             div { class: "font-medium", "Всегда включен" }
                             div { class: "mt-1 text-[12px] leading-4 text-zinc-400", "Микрофон активен постоянно." }
                         }
 
                         button {
                             r#type: "button",
-                            class: activation_button_class(activation_mode() == ActivationMode::VoiceActivation),
-                            onclick: move |_| activation_mode.set(ActivationMode::VoiceActivation),
+                            class: activation_button_class(activation_mode == MicrophoneActivationMode::VoiceActivated),
+                            onclick: move |_| mic_voice_activation.set_activation_mode(MicrophoneActivationMode::VoiceActivated),
                             div { class: "font-medium", "Активация по голосу" }
                             div { class: "mt-1 text-[12px] leading-4 text-zinc-400", "Включение при превышении порога." }
                         }
@@ -208,7 +217,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
                 }
 
                 div {
-                    "data-open": if activation_mode() == ActivationMode::VoiceActivation { "true" } else { "false" },
+                    "data-open": if activation_mode == MicrophoneActivationMode::VoiceActivated { "true" } else { "false" },
                     class: "mt-0 max-h-0 overflow-hidden opacity-0 transition-[max-height,opacity,transform,margin] duration-300 ease-out -translate-y-2 pointer-events-none data-[open=true]:mt-4 data-[open=true]:max-h-[280px] data-[open=true]:translate-y-0 data-[open=true]:opacity-100 data-[open=true]:pointer-events-auto",
                     div { class: "rounded-2xl border border-zinc-800 bg-zinc-900/45 p-4",
                         div { class: "mb-4 flex items-center justify-between gap-4",
@@ -216,9 +225,9 @@ pub(crate) fn SoundSettingsSection() -> Element {
                                 h4 { class: "text-[14px] font-semibold text-zinc-100", "Уровень активации" }
                                 p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Настройте чувствительность голосовой активации." }
                             }
-                            div { class: "text-right",
-                                div { class: "text-[11px] text-zinc-500", "Порог" }
-                                div { class: "text-[13px] font-medium text-zinc-200", "{activation_level()}%" }
+                                div { class: "text-right",
+                                    div { class: "text-[11px] text-zinc-500", "Порог" }
+                                div { class: "text-[13px] font-medium text-zinc-200", "{activation_level}%" }
                             }
                         }
 
@@ -226,16 +235,16 @@ pub(crate) fn SoundSettingsSection() -> Element {
                             div {
                                 div { class: "mb-2 flex items-center justify-between",
                                     span { class: "text-[12px] text-zinc-300", "Текущая громкость" }
-                                    span { class: "text-[12px] text-zinc-500", "{live_level}%" }
+                                    span { class: level_value_class(mic_level.active), "{live_level}%" }
                                 }
                                 div { class: "relative h-3 overflow-hidden rounded-full bg-zinc-950/80 ring-1 ring-zinc-800",
                                     div {
-                                        class: "h-full rounded-full bg-gradient-to-r from-emerald-500 via-yellow-400 to-red-500 transition-all duration-100",
+                                        class: level_bar_class(mic_level.active),
                                         style: "width: {live_level}%;",
                                     }
                                     div {
                                         class: "absolute top-0 h-full w-1 bg-blue-100 shadow-[0_0_10px_rgba(147,197,253,0.75)]",
-                                        style: "left: {activation_level()}%;",
+                                        style: "left: {activation_level}%;",
                                     }
                                 }
                             }
@@ -248,8 +257,8 @@ pub(crate) fn SoundSettingsSection() -> Element {
                                     r#type: "range",
                                     min: "0",
                                     max: "100",
-                                    value: activation_level(),
-                                    oninput: move |event| activation_level.set(parse_percent(&event.value(), activation_level())),
+                                    value: activation_level,
+                                    oninput: move |event| mic_threshold_change.set_vad_threshold_percent(parse_percent(&event.value(), activation_level as i32) as u32),
                                     class: "w-full cursor-pointer accent-blue-500",
                                 }
                             }
@@ -374,5 +383,35 @@ fn activation_button_class(active: bool) -> &'static str {
         "relative rounded-2xl border border-accent/30 bg-accent/10 px-4 py-4 text-left transition hover:border-blue-400/45"
     } else {
         "relative rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-left transition hover:border-zinc-500"
+    }
+}
+
+fn level_percent(rms: f32) -> u32 {
+    ((rms.max(0.0) * 1000.0).round() as u32).min(100)
+}
+
+fn level_bar_class(active: bool) -> &'static str {
+    if active {
+        "h-full rounded-full bg-gradient-to-r from-emerald-500 via-lime-400 to-yellow-300 transition-all duration-100"
+    } else {
+        "h-full rounded-full bg-gradient-to-r from-sky-500 via-emerald-400 to-yellow-400 transition-all duration-100"
+    }
+}
+
+fn level_value_class(active: bool) -> &'static str {
+    if active {
+        "text-[12px] font-medium text-emerald-300"
+    } else {
+        "text-[12px] text-zinc-500"
+    }
+}
+
+struct MicrophonePreviewGuard {
+    mic: MicrophoneHandle,
+}
+
+impl Drop for MicrophonePreviewGuard {
+    fn drop(&mut self) {
+        self.mic.stop_level_preview();
     }
 }

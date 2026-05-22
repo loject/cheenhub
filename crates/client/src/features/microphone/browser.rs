@@ -22,6 +22,7 @@ use super::browser_capture::{
     first_audio_track, log_selected_audio_track, request_microphone_stream,
 };
 use super::browser_errors::js_error_message;
+use super::browser_gain::{apply_input_gain, encode_value_with_gain};
 use super::vad::{VoiceActivityDetector, rms_level};
 
 /// Browser microphone implementation backed by getUserMedia and WebCodecs.
@@ -263,7 +264,8 @@ fn voice_gate_allows_audio(
     callbacks: &MicrophoneCallbacks,
 ) -> Result<bool, MicrophoneError> {
     let audio = value.unchecked_ref::<AudioData>();
-    let samples = audio_samples(audio)?;
+    let mut samples = audio_samples(audio)?;
+    apply_input_gain(&mut samples, detector.borrow().config().input_gain);
     let rms = rms_level(&samples);
     let timestamp_us = audio.audio_data_timestamp().max(0.0) as u64;
     let duration_us = audio.audio_data_duration().unwrap_or(0.0).max(0.0) as u32;
@@ -309,96 +311,6 @@ fn audio_samples(audio: &AudioData) -> Result<Vec<f32>, MicrophoneError> {
     }
 
     Ok(samples)
-}
-
-struct EncodedAudioValue {
-    value: JsValue,
-    owned_audio: Option<AudioData>,
-}
-
-impl EncodedAudioValue {
-    fn borrowed(value: &JsValue) -> Self {
-        Self {
-            value: value.clone(),
-            owned_audio: None,
-        }
-    }
-
-    fn owned(audio: AudioData) -> Self {
-        Self {
-            value: audio.clone().into(),
-            owned_audio: Some(audio),
-        }
-    }
-
-    fn value(&self) -> &JsValue {
-        &self.value
-    }
-
-    fn close(self) {
-        if let Some(audio) = self.owned_audio {
-            close_audio_data(audio.as_ref());
-        }
-    }
-}
-
-fn encode_value_with_gain(value: &JsValue, input_gain: f32) -> Result<EncodedAudioValue, String> {
-    if (input_gain - 1.0).abs() < f32::EPSILON {
-        return Ok(EncodedAudioValue::borrowed(value));
-    }
-
-    let audio = value.unchecked_ref::<AudioData>();
-    let samples = amplified_audio_samples(audio, input_gain).map_err(|error| error.to_string())?;
-    let amplified_audio = amplified_audio_data(audio, samples).map_err(js_error_message)?;
-    Ok(EncodedAudioValue::owned(amplified_audio))
-}
-
-fn amplified_audio_samples(
-    audio: &AudioData,
-    input_gain: f32,
-) -> Result<Float32Array, MicrophoneError> {
-    let frames = audio.audio_data_number_of_frames();
-    let channels = audio.audio_data_number_of_channels().max(1);
-    let samples = Float32Array::new_with_length(frames.saturating_mul(channels));
-    for channel in 0..channels {
-        let channel_samples = Float32Array::new_with_length(frames);
-        audio
-            .audio_data_copy_to(&channel_samples, &copy_options(channel))
-            .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
-        for frame in 0..frames {
-            let sample = (channel_samples.get_index(frame) * input_gain).clamp(-1.0, 1.0);
-            samples.set_index(channel.saturating_mul(frames).saturating_add(frame), sample);
-        }
-    }
-
-    Ok(samples)
-}
-
-fn amplified_audio_data(audio: &AudioData, samples: Float32Array) -> Result<AudioData, JsValue> {
-    let init = Object::new();
-    set_property(&init, "format", &JsValue::from_str("f32-planar"));
-    set_property(
-        &init,
-        "sampleRate",
-        &JsValue::from_f64(audio.audio_data_sample_rate()),
-    );
-    set_property(
-        &init,
-        "numberOfFrames",
-        &JsValue::from_f64(f64::from(audio.audio_data_number_of_frames())),
-    );
-    set_property(
-        &init,
-        "numberOfChannels",
-        &JsValue::from_f64(f64::from(audio.audio_data_number_of_channels().max(1))),
-    );
-    set_property(
-        &init,
-        "timestamp",
-        &JsValue::from_f64(audio.audio_data_timestamp()),
-    );
-    set_property(&init, "data", samples.as_ref());
-    AudioData::new(&init.into())
 }
 
 fn copy_options(plane_index: u32) -> JsValue {

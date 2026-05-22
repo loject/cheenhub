@@ -1,45 +1,90 @@
 //! Microphone context provider.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
 
 use super::backend::{
-    MicrophoneBackend, MicrophoneCallbacks, MicrophoneConfig, MicrophoneFrameCallback,
+    MicrophoneActivationMode, MicrophoneBackend, MicrophoneConfig, MicrophoneFrameCallback,
     MicrophoneLevel, MicrophoneSession, MicrophoneStatus,
 };
-use super::browser::BrowserMicrophoneBackend;
 use super::input_devices::AudioInputDevice;
+use super::provider_runtime::{
+    gain_from_percent, microphone_callbacks, next_generation, reset_level, status_from_error,
+    threshold_from_percent,
+};
 use super::storage;
 
-const MICROPHONE_LEVEL_UPDATE_INTERVAL_US: u64 = 33_000;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ActiveCapture {
+    None,
+    Preview,
+    Voice,
+}
 
 /// Context handle used by features that need microphone input.
 #[derive(Clone)]
 pub(crate) struct MicrophoneHandle {
-    status: Signal<MicrophoneStatus>,
-    level: Signal<MicrophoneLevel>,
-    session: Signal<Option<Rc<dyn MicrophoneSession>>>,
-    generation: Signal<u64>,
-    backend: Rc<dyn MicrophoneBackend>,
-    selected_input_device_id: Signal<Option<String>>,
-    selected_input_device_label: Signal<Option<String>>,
-    input_volume_percent: Signal<u32>,
+    pub(super) status: Signal<MicrophoneStatus>,
+    pub(super) level: Signal<MicrophoneLevel>,
+    pub(super) session: Signal<Option<Rc<dyn MicrophoneSession>>>,
+    pub(super) generation: Signal<u64>,
+    pub(super) backend: Rc<dyn MicrophoneBackend>,
+    pub(super) selected_input_device_id: Signal<Option<String>>,
+    pub(super) selected_input_device_label: Signal<Option<String>>,
+    pub(super) input_volume_percent: Signal<u32>,
+    pub(super) activation_mode: Signal<MicrophoneActivationMode>,
+    pub(super) vad_threshold_percent: Signal<u32>,
+    pub(super) active_capture: Signal<ActiveCapture>,
     /// Last on_frame callback used to start/restart capture.
     /// Kept so that device changes during an active session can trigger a restart.
-    active_on_frame: Signal<Option<MicrophoneFrameCallback>>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct LevelEmissionState {
-    timestamp_us: u64,
-    active: bool,
+    pub(super) active_on_frame: Signal<Option<MicrophoneFrameCallback>>,
 }
 
 impl MicrophoneHandle {
     /// Starts microphone capture with the default configuration.
     pub(crate) fn start(&self, on_frame: MicrophoneFrameCallback) {
+        let active_capture = *self.active_capture.peek();
+        match active_capture {
+            ActiveCapture::Preview => {
+                self.restart_capture(on_frame, ActiveCapture::Voice);
+            }
+            ActiveCapture::Voice
+                if matches!(
+                    self.status(),
+                    MicrophoneStatus::Starting | MicrophoneStatus::Live
+                ) => {}
+            _ => {
+                self.start_capture(on_frame, ActiveCapture::Voice);
+            }
+        }
+    }
+
+    /// Starts microphone capture for settings level preview when no voice capture is active.
+    pub(crate) fn start_level_preview(&self) {
+        let active_capture = *self.active_capture.peek();
+        if !matches!(self.status_untracked(), MicrophoneStatus::Idle)
+            || active_capture != ActiveCapture::None
+        {
+            return;
+        }
+
+        info!("starting microphone level preview capture");
+        self.start_capture(Rc::new(|_| {}), ActiveCapture::Preview);
+    }
+
+    /// Stops microphone capture only when it is owned by the settings level preview.
+    pub(crate) fn stop_level_preview(&self) {
+        let active_capture = *self.active_capture.peek();
+        if active_capture != ActiveCapture::Preview {
+            return;
+        }
+
+        info!("stopping microphone level preview capture");
+        self.stop();
+    }
+
+    fn start_capture(&self, on_frame: MicrophoneFrameCallback, capture: ActiveCapture) {
         if matches!(
             self.status(),
             MicrophoneStatus::Starting | MicrophoneStatus::Live
@@ -52,11 +97,15 @@ impl MicrophoneHandle {
         let mut status = self.status;
         let mut level = self.level;
         let mut generation = self.generation;
+        let mut active_capture = self.active_capture;
         let mut active_on_frame = self.active_on_frame;
         let device_id = self.selected_input_device_id.peek().clone();
         let input_gain = gain_from_percent(*self.input_volume_percent.peek());
+        let activation_mode = *self.activation_mode.peek();
+        let vad_threshold = threshold_from_percent(*self.vad_threshold_percent.peek());
         let start_generation = next_generation(&mut generation);
         status.set(MicrophoneStatus::Starting);
+        active_capture.set(capture);
         active_on_frame.set(Some(on_frame.clone()));
         reset_level(&mut level);
 
@@ -65,6 +114,8 @@ impl MicrophoneHandle {
             let config = MicrophoneConfig {
                 device_id,
                 input_gain,
+                activation_mode,
+                vad_threshold,
                 ..MicrophoneConfig::default()
             };
             match backend.start(config, callbacks).await {
@@ -77,6 +128,7 @@ impl MicrophoneHandle {
                     }
                     session.set(Some(next_session));
                     status.set(MicrophoneStatus::Live);
+                    active_capture.set(capture);
                     active_on_frame.set(Some(on_frame));
                 }
                 Err(error) => {
@@ -88,6 +140,7 @@ impl MicrophoneHandle {
                     session.set(None);
                     reset_level(&mut level);
                     status.set(next_status);
+                    active_capture.set(ActiveCapture::None);
                     active_on_frame.set(None);
                 }
             }
@@ -96,17 +149,25 @@ impl MicrophoneHandle {
 
     /// Restarts microphone capture with a fresh frame callback.
     pub(crate) fn restart(&self, on_frame: MicrophoneFrameCallback) {
+        self.restart_capture(on_frame, ActiveCapture::Voice);
+    }
+
+    fn restart_capture(&self, on_frame: MicrophoneFrameCallback, capture: ActiveCapture) {
         let previous_session = self.session.peek().clone();
         let backend = self.backend.clone();
         let mut session = self.session;
         let mut status = self.status;
         let mut level = self.level;
         let mut generation = self.generation;
+        let mut active_capture = self.active_capture;
         let mut active_on_frame = self.active_on_frame;
         let device_id = self.selected_input_device_id.peek().clone();
         let input_gain = gain_from_percent(*self.input_volume_percent.peek());
+        let activation_mode = *self.activation_mode.peek();
+        let vad_threshold = threshold_from_percent(*self.vad_threshold_percent.peek());
         let restart_generation = next_generation(&mut generation);
         status.set(MicrophoneStatus::Starting);
+        active_capture.set(capture);
         active_on_frame.set(Some(on_frame.clone()));
         reset_level(&mut level);
 
@@ -124,6 +185,8 @@ impl MicrophoneHandle {
             let config = MicrophoneConfig {
                 device_id,
                 input_gain,
+                activation_mode,
+                vad_threshold,
                 ..MicrophoneConfig::default()
             };
             match backend.start(config, callbacks).await {
@@ -136,6 +199,7 @@ impl MicrophoneHandle {
                     }
                     session.set(Some(next_session));
                     status.set(MicrophoneStatus::Live);
+                    active_capture.set(capture);
                     active_on_frame.set(Some(on_frame));
                 }
                 Err(error) => {
@@ -147,6 +211,7 @@ impl MicrophoneHandle {
                     session.set(None);
                     reset_level(&mut level);
                     status.set(next_status);
+                    active_capture.set(ActiveCapture::None);
                     active_on_frame.set(None);
                 }
             }
@@ -160,9 +225,11 @@ impl MicrophoneHandle {
         let Some(active_session) = self.session.peek().clone() else {
             let mut status = self.status;
             let mut level = self.level;
+            let mut active_capture = self.active_capture;
             let mut active_on_frame = self.active_on_frame;
             reset_level(&mut level);
             status.set(MicrophoneStatus::Idle);
+            active_capture.set(ActiveCapture::None);
             active_on_frame.set(None);
             return;
         };
@@ -170,6 +237,7 @@ impl MicrophoneHandle {
         let mut session = self.session;
         let mut status = self.status;
         let mut level = self.level;
+        let mut active_capture = self.active_capture;
         let mut active_on_frame = self.active_on_frame;
         spawn(async move {
             if let Err(error) = active_session.stop().await {
@@ -181,19 +249,29 @@ impl MicrophoneHandle {
             session.set(None);
             reset_level(&mut level);
             status.set(MicrophoneStatus::Idle);
+            active_capture.set(ActiveCapture::None);
             active_on_frame.set(None);
         });
     }
 
     /// Toggles microphone capture.
     pub(crate) fn toggle(&self, on_frame: MicrophoneFrameCallback) {
-        if matches!(
-            self.status(),
-            MicrophoneStatus::Live | MicrophoneStatus::Starting
-        ) {
-            self.stop();
-        } else {
-            self.start(on_frame);
+        let active_capture = *self.active_capture.peek();
+        match active_capture {
+            ActiveCapture::Preview => {
+                self.restart_capture(on_frame, ActiveCapture::Voice);
+            }
+            ActiveCapture::Voice
+                if matches!(
+                    self.status(),
+                    MicrophoneStatus::Live | MicrophoneStatus::Starting
+                ) =>
+            {
+                self.stop();
+            }
+            _ => {
+                self.start(on_frame);
+            }
         }
     }
 
@@ -274,11 +352,12 @@ impl MicrophoneHandle {
             };
 
         if let Some(on_frame) = restart_on_frame {
+            let active_capture = *self.active_capture.peek();
             info!(
                 ?status,
                 next_has_device, "restarting microphone capture after input device change"
             );
-            self.restart(on_frame);
+            self.restart_capture(on_frame, active_capture);
         }
     }
 
@@ -316,11 +395,73 @@ impl MicrophoneHandle {
                 None
             };
         if let Some(on_frame) = restart_on_frame {
+            let active_capture = *self.active_capture.peek();
             info!(
                 ?status,
                 "restarting microphone capture after input volume change"
             );
-            self.restart(on_frame);
+            self.restart_capture(on_frame, active_capture);
+        }
+    }
+
+    /// Returns the current microphone activation mode.
+    pub(crate) fn activation_mode(&self) -> MicrophoneActivationMode {
+        (self.activation_mode)()
+    }
+
+    /// Updates the microphone activation mode.
+    pub(crate) fn set_activation_mode(&self, mode: MicrophoneActivationMode) {
+        if *self.activation_mode.peek() == mode {
+            return;
+        }
+
+        let status = self.status_untracked();
+        info!(
+            ?status,
+            ?mode,
+            "microphone activation mode preference changed"
+        );
+        storage::save_activation_mode(mode);
+        let mut activation_mode = self.activation_mode;
+        activation_mode.set(mode);
+        self.restart_if_active(status, "microphone activation mode change");
+    }
+
+    /// Returns the current voice activation threshold percentage.
+    pub(crate) fn vad_threshold_percent(&self) -> u32 {
+        (self.vad_threshold_percent)()
+    }
+
+    /// Updates the voice activation threshold percentage.
+    pub(crate) fn set_vad_threshold_percent(&self, threshold_percent: u32) {
+        let threshold_percent = threshold_percent.min(100);
+        if *self.vad_threshold_percent.peek() == threshold_percent {
+            return;
+        }
+
+        let status = self.status_untracked();
+        info!(
+            ?status,
+            threshold = threshold_percent,
+            "microphone vad threshold preference changed"
+        );
+        storage::save_vad_threshold_percent(threshold_percent);
+        let mut vad_threshold = self.vad_threshold_percent;
+        vad_threshold.set(threshold_percent);
+        self.restart_if_active(status, "microphone vad threshold change");
+    }
+
+    fn restart_if_active(&self, status: MicrophoneStatus, reason: &'static str) {
+        let restart_on_frame =
+            if matches!(status, MicrophoneStatus::Live | MicrophoneStatus::Starting) {
+                self.active_on_frame.peek().clone()
+            } else {
+                None
+            };
+        if let Some(on_frame) = restart_on_frame {
+            let active_capture = *self.active_capture.peek();
+            info!(?status, reason, "restarting microphone capture");
+            self.restart_capture(on_frame, active_capture);
         }
     }
 
@@ -336,122 +477,6 @@ impl MicrophoneHandle {
                 warn!(%error, bitrate_bps, "failed to update microphone bitrate");
             }
         });
-    }
-}
-
-fn microphone_callbacks(
-    on_frame: MicrophoneFrameCallback,
-    level: Signal<MicrophoneLevel>,
-) -> MicrophoneCallbacks {
-    let level = Rc::new(RefCell::new(level));
-    let emission = Rc::new(RefCell::new(None::<LevelEmissionState>));
-    MicrophoneCallbacks {
-        on_frame,
-        on_level: Rc::new(move |next_level| {
-            if should_emit_level(&emission, next_level) {
-                level.borrow_mut().set(next_level);
-            }
-        }),
-    }
-}
-
-fn should_emit_level(
-    emission: &Rc<RefCell<Option<LevelEmissionState>>>,
-    next_level: MicrophoneLevel,
-) -> bool {
-    let mut emission = emission.borrow_mut();
-    let Some(previous) = *emission else {
-        *emission = Some(LevelEmissionState {
-            timestamp_us: next_level.timestamp_us,
-            active: next_level.active,
-        });
-        return true;
-    };
-
-    let active_changed = previous.active != next_level.active;
-    let interval_elapsed = next_level.timestamp_us > previous.timestamp_us
-        && next_level
-            .timestamp_us
-            .saturating_sub(previous.timestamp_us)
-            >= MICROPHONE_LEVEL_UPDATE_INTERVAL_US;
-    if !active_changed && !interval_elapsed {
-        return false;
-    }
-
-    *emission = Some(LevelEmissionState {
-        timestamp_us: next_level.timestamp_us,
-        active: next_level.active,
-    });
-    true
-}
-
-fn status_from_error(error: super::backend::MicrophoneError) -> MicrophoneStatus {
-    if error.is_permission_denied() {
-        MicrophoneStatus::PermissionDenied
-    } else {
-        MicrophoneStatus::Error(error.to_string())
-    }
-}
-
-fn next_generation(generation: &mut Signal<u64>) -> u64 {
-    let next_generation = generation.peek().saturating_add(1);
-    generation.set(next_generation);
-    next_generation
-}
-
-fn reset_level(level: &mut Signal<MicrophoneLevel>) {
-    level.set(default_level());
-}
-
-fn default_level() -> MicrophoneLevel {
-    MicrophoneLevel {
-        rms: 0.0,
-        active: false,
-        threshold: MicrophoneConfig::default().vad_threshold,
-        timestamp_us: 0,
-    }
-}
-
-fn gain_from_percent(volume_percent: u32) -> f32 {
-    volume_percent.min(200) as f32 / 100.0
-}
-
-/// Provides microphone capture state to authenticated app components.
-#[component]
-pub(crate) fn MicrophoneProvider(children: Element) -> Element {
-    let status = use_signal(|| MicrophoneStatus::Idle);
-    let level = use_signal(default_level);
-    let session = use_signal(|| None::<Rc<dyn MicrophoneSession>>);
-    let generation = use_signal(|| 0);
-    let stored_input_device = storage::load_input_device();
-    let selected_input_device_id = use_signal({
-        let stored_input_device = stored_input_device.clone();
-        move || {
-            stored_input_device
-                .as_ref()
-                .map(|device| device.device_id.clone())
-        }
-    });
-    let selected_input_device_label =
-        use_signal(move || stored_input_device.and_then(|device| device.label));
-    let input_volume_percent = use_signal(storage::load_input_volume_percent);
-    let active_on_frame = use_signal(|| None::<MicrophoneFrameCallback>);
-    let backend: Rc<dyn MicrophoneBackend> = Rc::new(BrowserMicrophoneBackend);
-    let handle = MicrophoneHandle {
-        status,
-        level,
-        session,
-        generation,
-        backend,
-        selected_input_device_id,
-        selected_input_device_label,
-        input_volume_percent,
-        active_on_frame,
-    };
-    use_context_provider(move || handle.clone());
-
-    rsx! {
-        {children}
     }
 }
 
