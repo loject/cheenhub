@@ -2,12 +2,17 @@
 
 use dioxus::prelude::*;
 
+use crate::features::audio_playback::{
+    AudioOutputDevice, AudioOutputDevicesResult, AudioPlaybackHandle,
+    enumerate_audio_output_devices,
+};
 use crate::features::microphone::{
     AudioInputDevice, AudioInputDevicesResult, MicrophoneHandle, enumerate_audio_input_devices,
     request_microphone_permission,
 };
 
-use super::styles::{parse_percent, select_class};
+use super::sound_devices::{input_device_widget, output_device_widget};
+use super::styles::parse_percent;
 
 #[derive(Clone, Copy, PartialEq)]
 enum ActivationMode {
@@ -19,15 +24,17 @@ enum ActivationMode {
 #[component]
 pub(crate) fn SoundSettingsSection() -> Element {
     let mic = use_context::<MicrophoneHandle>();
+    let playback = use_context::<AudioPlaybackHandle>();
 
     // Read the stored device preference — this creates a reactive subscription so the
     // select re-renders whenever the stored value changes.
-    let selected_device_id = mic.input_device_id();
+    let selected_input_device_id = mic.input_device_id();
+    let selected_output_device_id = playback.output_device_id();
 
-    let mut devices_state = use_signal(|| Option::<AudioInputDevicesResult>::None);
-    let mut requesting_permission = use_signal(|| false);
+    let mut input_devices_state = use_signal(|| Option::<AudioInputDevicesResult>::None);
+    let mut output_devices_state = use_signal(|| Option::<AudioOutputDevicesResult>::None);
+    let requesting_permission = use_signal(|| false);
 
-    let mut output_device = use_signal(|| "SteelSeries Arctis 7".to_owned());
     let mut input_volume = use_signal(|| 75);
     let mut output_volume = use_signal(|| 60);
     let mut activation_mode = use_signal(|| ActivationMode::AlwaysOn);
@@ -41,54 +48,87 @@ pub(crate) fn SoundSettingsSection() -> Element {
         let mic = mic_effect.clone();
         spawn(async move {
             let result = enumerate_audio_input_devices().await;
-            if let AudioInputDevicesResult::Available(ref devices) = result
-                && mic.input_device_id().is_none()
-            {
-                select_first_input_device(&mic, devices);
-            } else if let AudioInputDevicesResult::Available(ref devices) = result {
-                mic.reconcile_input_devices(devices);
+            if let AudioInputDevicesResult::Available(ref devices) = result {
+                if mic.input_device_id().is_none() {
+                    select_first_input_device(&mic, devices);
+                } else {
+                    mic.reconcile_input_devices(devices);
+                }
             }
-            devices_state.set(Some(result));
+            input_devices_state.set(Some(result));
+        });
+    });
+
+    let playback_effect = playback.clone();
+    use_effect(move || {
+        let playback = playback_effect.clone();
+        spawn(async move {
+            let result = enumerate_audio_output_devices().await;
+            if let AudioOutputDevicesResult::Available(ref devices) = result {
+                if playback.output_device_id().is_none() {
+                    select_first_output_device(&playback, devices);
+                } else {
+                    playback.reconcile_output_devices(devices);
+                }
+            }
+            output_devices_state.set(Some(result));
         });
     });
 
     let mic_change = mic.clone();
-    let on_change = move |device: AudioInputDevice| {
+    let on_input_change = move |device: AudioInputDevice| {
         mic_change.set_input_device(&device);
     };
 
-    let mic_permission = mic.clone();
-    let on_request_permission = move |_: Event<MouseData>| {
-        requesting_permission.set(true);
-        let mic = mic_permission.clone();
-        spawn(async move {
-            let result = request_microphone_permission().await;
-            if let AudioInputDevicesResult::Available(ref devices) = result
-                && mic.input_device_id().is_none()
-            {
-                select_first_input_device(&mic, devices);
-            } else if let AudioInputDevicesResult::Available(ref devices) = result {
-                mic.reconcile_input_devices(devices);
-            }
-            devices_state.set(Some(result));
-            requesting_permission.set(false);
-        });
+    let playback_change = playback.clone();
+    let on_output_change = move |device: AudioOutputDevice| {
+        playback_change.set_output_device(&device);
     };
 
-    let on_retry = move |_: Event<MouseData>| {
-        devices_state.set(None);
-        let mic = mic.clone();
-        spawn(async move {
-            let result = enumerate_audio_input_devices().await;
-            if let AudioInputDevicesResult::Available(ref devices) = result
-                && mic.input_device_id().is_none()
-            {
-                select_first_input_device(&mic, devices);
-            } else if let AudioInputDevicesResult::Available(ref devices) = result {
-                mic.reconcile_input_devices(devices);
-            }
-            devices_state.set(Some(result));
-        });
+    let mic_input_permission = mic.clone();
+    let playback_input_permission = playback.clone();
+    let on_input_request_permission = move |_: Event<MouseData>| {
+        refresh_devices_after_permission(
+            mic_input_permission.clone(),
+            playback_input_permission.clone(),
+            input_devices_state,
+            output_devices_state,
+            requesting_permission,
+        );
+    };
+
+    let mic_output_permission = mic.clone();
+    let playback_output_permission = playback.clone();
+    let on_output_request_permission = move |_: Event<MouseData>| {
+        refresh_devices_after_permission(
+            mic_output_permission.clone(),
+            playback_output_permission.clone(),
+            input_devices_state,
+            output_devices_state,
+            requesting_permission,
+        );
+    };
+
+    let retry_input_mic = mic.clone();
+    let retry_input_playback = playback.clone();
+    let on_input_retry = move |_: Event<MouseData>| {
+        refresh_devices(
+            retry_input_mic.clone(),
+            retry_input_playback.clone(),
+            input_devices_state,
+            output_devices_state,
+        );
+    };
+
+    let retry_output_mic = mic.clone();
+    let retry_output_playback = playback.clone();
+    let on_output_retry = move |_: Event<MouseData>| {
+        refresh_devices(
+            retry_output_mic.clone(),
+            retry_output_playback.clone(),
+            input_devices_state,
+            output_devices_state,
+        );
     };
 
     rsx! {
@@ -104,12 +144,12 @@ pub(crate) fn SoundSettingsSection() -> Element {
                     div { class: "block",
                         span { class: "mb-2 block text-[13px] font-medium text-zinc-300", "Устройство ввода" }
                         {input_device_widget(
-                            devices_state(),
+                            input_devices_state(),
                             requesting_permission(),
-                            selected_device_id,
-                            on_change,
-                            on_request_permission,
-                            on_retry,
+                            selected_input_device_id,
+                            on_input_change,
+                            on_input_request_permission,
+                            on_input_retry,
                         )}
                     }
                     {volume_slider("Громкость микрофона", input_volume(), move |value| input_volume.set(value))}
@@ -117,16 +157,16 @@ pub(crate) fn SoundSettingsSection() -> Element {
 
                 // Output device column (mock for now).
                 div { class: "space-y-4",
-                    label { class: "block",
+                    div { class: "block",
                         span { class: "mb-2 block text-[13px] font-medium text-zinc-300", "Устройство вывода" }
-                        select {
-                            value: output_device(),
-                            onchange: move |event| output_device.set(event.value()),
-                            class: select_class(),
-                            option { value: "SteelSeries Arctis 7", "SteelSeries Arctis 7" }
-                            option { value: "Realtek Speakers", "Realtek Speakers" }
-                            option { value: "HDMI Output", "HDMI Output" }
-                        }
+                        {output_device_widget(
+                            output_devices_state(),
+                            requesting_permission(),
+                            selected_output_device_id,
+                            on_output_change,
+                            on_output_request_permission,
+                            on_output_retry,
+                        )}
                     }
                     {volume_slider("Громкость вывода", output_volume(), move |value| output_volume.set(value))}
                 }
@@ -221,140 +261,89 @@ pub(crate) fn SoundSettingsSection() -> Element {
     }
 }
 
-fn input_device_widget(
-    state: Option<AudioInputDevicesResult>,
-    requesting_permission: bool,
-    selected: Option<String>,
-    mut on_change: impl FnMut(AudioInputDevice) + 'static,
-    on_request_permission: impl FnMut(Event<MouseData>) + 'static,
-    on_retry: impl FnMut(Event<MouseData>) + 'static,
-) -> Element {
-    match state {
-        None => rsx! {
-            div { class: "flex h-10 items-center gap-2 text-[13px] text-zinc-500",
-                span { class: "inline-block h-3 w-3 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" }
-                "Загрузка устройств…"
-            }
-        },
-
-        Some(AudioInputDevicesResult::Available(devices)) => rsx! {
-            {
-                let change_devices = devices.clone();
-                rsx! {
-            select {
-                value: selected.as_deref().unwrap_or_default(),
-                oninput: move |event| {
-                    let device_id = event.value();
-                    info!("selected microphone input device in settings ui");
-                    let device = change_devices
-                        .iter()
-                        .find(|device| device.device_id == device_id)
-                        .cloned()
-                        .unwrap_or_else(|| AudioInputDevice {
-                            device_id,
-                            label: String::new(),
-                        });
-                    on_change(device);
-                },
-                class: select_class(),
-                if selected_device_is_unavailable(selected.as_deref(), &devices) {
-                    option {
-                        value: selected.as_deref().unwrap_or_default(),
-                        selected: true,
-                        "Сохранённое устройство недоступно"
-                    }
-                }
-                for device in devices {
-                    option {
-                        value: device.device_id.clone(),
-                        selected: selected.as_deref() == Some(device.device_id.as_str()),
-                        {device_display_label(&device)}
-                    }
-                }
-            }
-                }
-            }
-        },
-
-        Some(AudioInputDevicesResult::PermissionRequired) => rsx! {
-            div { class: "space-y-2",
-                div { class: "flex items-start gap-2 rounded-xl border border-blue-500/20 bg-blue-500/8 px-3 py-2.5",
-                    span { class: "mt-px shrink-0 text-blue-400", "🎙" }
-                    p { class: "text-[12px] leading-5 text-blue-300",
-                        "Для выбора устройства разрешите доступ к микрофону."
-                    }
-                }
-                button {
-                    r#type: "button",
-                    disabled: requesting_permission,
-                    onclick: on_request_permission,
-                    class: "flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 text-[12px] font-medium text-blue-300 transition hover:border-blue-400/50 hover:bg-blue-500/15 disabled:cursor-not-allowed disabled:opacity-50",
-                    if requesting_permission {
-                        span { class: "inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-500/40 border-t-blue-400" }
-                        "Запрос доступа…"
-                    } else {
-                        "Разрешить доступ"
-                    }
-                }
-            }
-        },
-
-        Some(AudioInputDevicesResult::PermissionDenied) => rsx! {
-            div { class: "flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2.5",
-                span { class: "mt-px shrink-0 text-red-400", "⊘" }
-                p { class: "text-[12px] leading-5 text-red-300",
-                    "Доступ к микрофону запрещён. Разрешите его в настройках браузера и обновите страницу."
-                }
-            }
-        },
-
-        Some(AudioInputDevicesResult::NoDevices) => rsx! {
-            div { class: "space-y-2",
-                div { class: "flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-2.5",
-                    span { class: "mt-px shrink-0 text-amber-400", "⚠" }
-                    p { class: "text-[12px] leading-5 text-amber-300",
-                        "Устройства ввода не обнаружены. Подключите микрофон и повторите."
-                    }
-                }
-                button {
-                    r#type: "button",
-                    onclick: on_retry,
-                    class: "flex h-9 w-full items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-4 text-[12px] font-medium text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100",
-                    "Обновить список"
-                }
-            }
-        },
-
-        Some(AudioInputDevicesResult::NotSupported) => rsx! {
-            div { class: "flex items-start gap-2 rounded-xl border border-zinc-700/50 bg-zinc-900/50 px-3 py-2.5",
-                span { class: "mt-px shrink-0 text-zinc-500", "⊘" }
-                p { class: "text-[12px] leading-5 text-zinc-500",
-                    "Браузер не поддерживает выбор устройств аудиовхода."
-                }
-            }
-        },
-    }
-}
-
 fn select_first_input_device(mic: &MicrophoneHandle, devices: &[AudioInputDevice]) {
     if let Some(first) = devices.first() {
         mic.set_input_device(first);
     }
 }
 
-fn selected_device_is_unavailable(selected: Option<&str>, devices: &[AudioInputDevice]) -> bool {
-    selected
-        .filter(|selected| !selected.is_empty())
-        .is_some_and(|selected| !devices.iter().any(|device| device.device_id == selected))
+fn select_first_output_device(playback: &AudioPlaybackHandle, devices: &[AudioOutputDevice]) {
+    if let Some(first) = devices.first() {
+        playback.set_output_device(first);
+    }
 }
 
-fn device_display_label(device: &AudioInputDevice) -> String {
-    if device.label.is_empty() {
-        let preview: String = device.device_id.chars().take(8).collect();
-        format!("Устройство ({preview}…)")
+fn refresh_devices_after_permission(
+    mic: MicrophoneHandle,
+    playback: AudioPlaybackHandle,
+    input_devices_state: Signal<Option<AudioInputDevicesResult>>,
+    output_devices_state: Signal<Option<AudioOutputDevicesResult>>,
+    mut requesting_permission: Signal<bool>,
+) {
+    requesting_permission.set(true);
+    spawn(async move {
+        refresh_devices_inner(
+            mic,
+            playback,
+            input_devices_state,
+            output_devices_state,
+            true,
+        )
+        .await;
+        requesting_permission.set(false);
+    });
+}
+
+fn refresh_devices(
+    mic: MicrophoneHandle,
+    playback: AudioPlaybackHandle,
+    mut input_devices_state: Signal<Option<AudioInputDevicesResult>>,
+    mut output_devices_state: Signal<Option<AudioOutputDevicesResult>>,
+) {
+    input_devices_state.set(None);
+    output_devices_state.set(None);
+    spawn(async move {
+        refresh_devices_inner(
+            mic,
+            playback,
+            input_devices_state,
+            output_devices_state,
+            false,
+        )
+        .await;
+    });
+}
+
+async fn refresh_devices_inner(
+    mic: MicrophoneHandle,
+    playback: AudioPlaybackHandle,
+    mut input_devices_state: Signal<Option<AudioInputDevicesResult>>,
+    mut output_devices_state: Signal<Option<AudioOutputDevicesResult>>,
+    request_permission: bool,
+) {
+    let input_result = if request_permission {
+        request_microphone_permission().await
     } else {
-        device.label.clone()
+        enumerate_audio_input_devices().await
+    };
+    if let AudioInputDevicesResult::Available(ref devices) = input_result {
+        if mic.input_device_id().is_none() {
+            select_first_input_device(&mic, devices);
+        } else {
+            mic.reconcile_input_devices(devices);
+        }
     }
+    input_devices_state.set(Some(input_result));
+
+    let output_result = enumerate_audio_output_devices().await;
+    if let AudioOutputDevicesResult::Available(ref devices) = output_result {
+        if playback.output_device_id().is_none() {
+            select_first_output_device(&playback, devices);
+        } else {
+            playback.reconcile_output_devices(devices);
+        }
+    }
+    output_devices_state.set(Some(output_result));
 }
 
 fn volume_slider(

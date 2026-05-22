@@ -5,15 +5,20 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use js_sys::{Float32Array, Function, Object, Promise, Reflect, Uint8Array};
-use wasm_bindgen::JsCast;
+use js_sys::{Float32Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{AudioBufferSourceNode, AudioContext, GainNode};
 
+use super::browser_bindings::{AudioData, AudioDecoder, EncodedAudioChunk};
+use super::browser_helpers::{
+    apply_output_device_to_context, js_error_message, set_property, stop_audio_source,
+};
+use super::output_devices::AudioOutputDevice;
+use super::storage;
+
 const INITIAL_PLAYBACK_BUFFER_SECONDS: f64 = 0.12;
 const CONTINUOUS_PLAYBACK_MARGIN_SECONDS: f64 = 0.02;
-
 /// Encoded playback codec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlaybackCodec {
@@ -43,6 +48,8 @@ pub(crate) struct VoiceFrame {
 #[derive(Clone)]
 pub(crate) struct AudioPlaybackHandle {
     muted: Signal<bool>,
+    selected_output_device_id: Signal<Option<String>>,
+    selected_output_device_label: Signal<Option<String>>,
     inner: Rc<RefCell<AudioPlaybackInner>>,
 }
 
@@ -119,6 +126,42 @@ impl AudioPlaybackHandle {
         if let Some(sender) = inner.senders.get(sender_user_id) {
             sender.gain_node.gain().set_value(gain as f32);
         }
+    }
+
+    /// Stores the preferred audio output device and applies it to the active context.
+    pub(crate) fn set_output_device(&self, device: &AudioOutputDevice) {
+        self.set_output_device_preference(
+            Some(device.device_id.clone()),
+            Some(device.label.clone()),
+        );
+    }
+
+    /// Reconciles a stored output device preference against enumerated devices.
+    pub(crate) fn reconcile_output_devices(&self, devices: &[AudioOutputDevice]) {
+        let Some(selected_id) = self.selected_output_device_id.peek().clone() else {
+            return;
+        };
+        if devices.iter().any(|device| device.device_id == selected_id) {
+            return;
+        }
+
+        let Some(selected_label) = self.selected_output_device_label.peek().clone() else {
+            return;
+        };
+        let Some(recovered) = devices
+            .iter()
+            .find(|device| !device.label.is_empty() && device.label == selected_label)
+        else {
+            return;
+        };
+
+        info!("recovered audio output device preference from stored label");
+        self.set_output_device(recovered);
+    }
+
+    /// Returns the currently preferred audio output device ID.
+    pub(crate) fn output_device_id(&self) -> Option<String> {
+        (self.selected_output_device_id)()
     }
 
     /// Stops playback state for one sender.
@@ -225,8 +268,35 @@ impl AudioPlaybackHandle {
         }
 
         let context = AudioContext::new()?;
+        if let Some(device_id) = self.selected_output_device_id.peek().clone() {
+            apply_output_device_to_context(context.clone(), device_id);
+        }
         self.inner.borrow_mut().context = Some(context.clone());
         Ok(context)
+    }
+
+    fn set_output_device_preference(&self, device_id: Option<String>, label: Option<String>) {
+        if self.selected_output_device_id.peek().as_deref() == device_id.as_deref()
+            && self.selected_output_device_label.peek().as_deref() == label.as_deref()
+        {
+            return;
+        }
+
+        let next_has_device = device_id.as_ref().is_some_and(|id| !id.is_empty());
+        info!(next_has_device, "audio output device preference changed");
+        persist_output_device(device_id.as_deref(), label.as_deref());
+
+        let mut id_signal = self.selected_output_device_id;
+        let mut label_signal = self.selected_output_device_label;
+        id_signal.set(device_id.clone());
+        label_signal.set(label);
+
+        let Some(context) = self.inner.borrow().context.clone() else {
+            return;
+        };
+        if let Some(device_id) = device_id {
+            apply_output_device_to_context(context, device_id);
+        }
     }
 }
 
@@ -234,8 +304,21 @@ impl AudioPlaybackHandle {
 #[component]
 pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
     let muted = use_signal(|| false);
+    let stored_output_device = storage::load_output_device();
+    let selected_output_device_id = use_signal({
+        let stored_output_device = stored_output_device.clone();
+        move || {
+            stored_output_device
+                .as_ref()
+                .map(|device| device.device_id.clone())
+        }
+    });
+    let selected_output_device_label =
+        use_signal(move || stored_output_device.and_then(|device| device.label));
     let handle = AudioPlaybackHandle {
         muted,
+        selected_output_device_id,
+        selected_output_device_label,
         inner: Rc::new(RefCell::new(AudioPlaybackInner {
             context: None,
             muted: false,
@@ -249,6 +332,22 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
 
     rsx! {
         {children}
+    }
+}
+
+fn persist_output_device(device_id: Option<&str>, label: Option<&str>) {
+    match device_id {
+        Some(device_id) if !device_id.is_empty() => {
+            storage::save_output_device(device_id, label);
+            info!(
+                has_device = true,
+                "persisted audio output device preference"
+            );
+        }
+        _ => {
+            storage::clear_output_device();
+            info!(has_device = false, "cleared audio output device preference");
+        }
     }
 }
 
@@ -398,75 +497,4 @@ fn copy_options(plane_index: u32) -> JsValue {
         &JsValue::from_f64(f64::from(plane_index)),
     );
     options.into()
-}
-
-fn set_property(object: &Object, name: &str, value: &JsValue) {
-    let _ = Reflect::set(object, &JsValue::from_str(name), value);
-}
-
-fn stop_audio_source(source: &AudioBufferSourceNode) -> Result<(), JsValue> {
-    let stop = Reflect::get(source.as_ref(), &JsValue::from_str("stop"))?.dyn_into::<Function>()?;
-    stop.call1(source.as_ref(), &JsValue::from_f64(0.0))
-        .map(|_| ())
-}
-
-fn js_error_message(error: JsValue) -> String {
-    error
-        .dyn_ref::<js_sys::Error>()
-        .map(js_sys::Error::message)
-        .and_then(|message| message.as_string())
-        .filter(|message| !message.is_empty())
-        .or_else(|| error.as_string())
-        .unwrap_or_else(|| "unknown browser audio error".to_owned())
-}
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_name = AudioDecoder)]
-    #[derive(Clone)]
-    type AudioDecoder;
-
-    #[wasm_bindgen(constructor, catch, js_class = AudioDecoder)]
-    fn new(init: &JsValue) -> Result<AudioDecoder, JsValue>;
-
-    #[wasm_bindgen(static_method_of = AudioDecoder, js_name = isConfigSupported)]
-    #[allow(dead_code)]
-    fn is_config_supported(config: &JsValue) -> Promise;
-
-    #[wasm_bindgen(method, catch, js_name = configure)]
-    fn configure(this: &AudioDecoder, config: &JsValue) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(method, catch, js_name = decode)]
-    fn decode(this: &AudioDecoder, chunk: &EncodedAudioChunk) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(method, catch, js_name = close)]
-    fn close(this: &AudioDecoder) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(js_name = EncodedAudioChunk)]
-    type EncodedAudioChunk;
-
-    #[wasm_bindgen(constructor, catch, js_class = EncodedAudioChunk)]
-    fn new(init: &JsValue) -> Result<EncodedAudioChunk, JsValue>;
-
-    #[wasm_bindgen(js_name = AudioData)]
-    type AudioData;
-
-    #[wasm_bindgen(method, getter, js_name = numberOfFrames)]
-    fn number_of_frames(this: &AudioData) -> u32;
-
-    #[wasm_bindgen(method, getter, js_name = numberOfChannels)]
-    fn number_of_channels(this: &AudioData) -> u32;
-
-    #[wasm_bindgen(method, getter, js_name = sampleRate)]
-    fn sample_rate(this: &AudioData) -> f64;
-
-    #[wasm_bindgen(method, catch, js_name = copyTo)]
-    fn copy_to(
-        this: &AudioData,
-        destination: &Float32Array,
-        options: &JsValue,
-    ) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(method, catch, js_name = close)]
-    fn close(this: &AudioData) -> Result<(), JsValue>;
 }
