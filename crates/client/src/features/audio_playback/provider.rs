@@ -115,9 +115,7 @@ impl AudioPlaybackHandle {
     pub(crate) fn set_user_volume(&self, sender_user_id: &str, volume_percent: u32) {
         let gain = f64::from(volume_percent) / 100.0;
         let mut inner = self.inner.borrow_mut();
-        inner
-            .user_volumes
-            .insert(sender_user_id.to_owned(), gain);
+        inner.user_volumes.insert(sender_user_id.to_owned(), gain);
         if let Some(sender) = inner.senders.get(sender_user_id) {
             sender.gain_node.gain().set_value(gain as f32);
         }

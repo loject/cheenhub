@@ -19,9 +19,8 @@ pub(crate) fn UserContextMenu(
         "left: clamp(12px, {x}px, calc(100vw - 258px)); top: clamp(12px, {top}px, calc(100vh - 240px));"
     );
     let fill = (volume as f64) / 2.0;
-    let slider_bg = format!(
-        "background: linear-gradient(to right, #3b82f6 {fill:.1}%, #27272a {fill:.1}%);"
-    );
+    let slider_bg =
+        format!("background: linear-gradient(to right, #3b82f6 {fill:.1}%, #27272a {fill:.1}%);");
     let muted = volume == 0;
 
     rsx! {

@@ -1,6 +1,6 @@
 //! Per-server room state and workspace coordination.
 
-use cheenhub_contracts::realtime::{ServerRoleKind, ServerRolePermission};
+use cheenhub_contracts::realtime::ServerRolePermission;
 use cheenhub_contracts::rest::{ServerRoomSummary, ServerSummary};
 use dioxus::prelude::*;
 
@@ -66,7 +66,7 @@ pub(crate) fn ServerRoomsScope(
     let is_owner = server.is_owner;
     let can_kick_voice = is_owner
         || server.roles.iter().any(|role| {
-                server.member_role_ids.contains(&role.role_id)
+            server.member_role_ids.contains(&role.role_id)
                 && role
                     .permissions
                     .contains(&ServerRolePermission::KickVoiceMembers)

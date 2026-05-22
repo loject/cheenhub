@@ -86,9 +86,7 @@ pub(crate) async fn list(
 
     let mut summaries = Vec::with_capacity(servers.len());
     for access in &servers {
-        summaries.push(
-            server_summary(state, &access.server, &user_id, access.is_member).await,
-        );
+        summaries.push(server_summary(state, &access.server, &user_id, access.is_member).await);
     }
     Ok(ListServersResponse { servers: summaries })
 }

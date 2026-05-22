@@ -84,9 +84,7 @@ impl InMemoryVoicePresenceStore {
         room_id: &Uuid,
     ) -> Vec<VoicePresence> {
         self.remove_presence(|entry| {
-            &entry.user_id == user_id
-                && &entry.server_id == server_id
-                && &entry.room_id == room_id
+            &entry.user_id == user_id && &entry.server_id == server_id && &entry.room_id == room_id
         })
         .await
     }

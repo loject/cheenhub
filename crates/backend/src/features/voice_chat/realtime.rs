@@ -1,8 +1,8 @@
 //! Voice chat realtime adapter.
 
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, RealtimeEnvelope, RealtimeKind,
-    RealtimeModule, RejectionCode, VoiceChatKind,
+    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, RealtimeEnvelope, RealtimeKind, RealtimeModule,
+    RejectionCode, VoiceChatKind,
 };
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;

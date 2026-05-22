@@ -1,8 +1,8 @@
 //! Voice chat presence application flows.
 
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, RealtimeKind, RealtimeModule,
-    ServerRoleKind, ServerRolePermission, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
+    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, RealtimeKind, RealtimeModule, ServerRoleKind,
+    ServerRolePermission, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
 };
 use cheenhub_contracts::rest::{AuthUser, ServerRoomKind};
 use chrono::Utc;
