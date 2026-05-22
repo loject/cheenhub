@@ -9,5 +9,6 @@ pub(crate) mod network;
 pub(crate) mod realtime;
 pub(crate) mod server_settings;
 pub(crate) mod text_chat;
+pub(crate) mod toast;
 pub(crate) mod user_settings;
 pub(crate) mod voice_chat;

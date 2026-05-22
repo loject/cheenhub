@@ -23,6 +23,60 @@
 }
 
 @layer components {
+  @keyframes toast-enter {
+    from {
+      opacity: 0;
+      transform: translate3d(0, -10px, 0) scale(0.98);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes toast-exit {
+    from {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    to {
+      opacity: 0;
+      transform: translate3d(0, -8px, 0) scale(0.98);
+    }
+  }
+
+  @keyframes toast-progress {
+    from {
+      transform: scaleX(1);
+    }
+
+    to {
+      transform: scaleX(0);
+    }
+  }
+
+  .toast-item {
+    position: relative;
+    transform-origin: top right;
+    animation: toast-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    transition:
+      transform 160ms ease,
+      opacity 160ms ease;
+  }
+
+  .toast-item-exiting {
+    pointer-events: none;
+    animation: toast-exit 180ms ease-in both;
+  }
+
+  .toast-progress {
+    transform-origin: left center;
+    animation: toast-progress 4200ms linear forwards;
+    opacity: 0.9;
+  }
+
   @keyframes role-fade-in {
     from {
       opacity: 0;
@@ -124,7 +178,10 @@
     .role-editor-surface,
     .role-card[aria-selected="true"],
     .role-details,
-    .role-save-bar-inner {
+    .role-save-bar-inner,
+    .toast-item,
+    .toast-item-exiting,
+    .toast-progress {
       animation: none;
     }
 

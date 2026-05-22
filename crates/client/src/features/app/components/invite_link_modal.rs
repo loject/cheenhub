@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 use gloo_timers::future::TimeoutFuture;
 
 use crate::features::app::api;
+use crate::features::toast::ToastHandle;
 
 use super::modal::Modal;
 
@@ -14,6 +15,7 @@ pub(crate) fn InviteLinkModal(
     server_name: String,
     on_close: EventHandler<()>,
 ) -> Element {
+    let toast = use_context::<ToastHandle>();
     let mut has_usage_limit = use_signal(|| false);
     let mut usage_limit = use_signal(|| "30".to_owned());
     let mut has_expiration = use_signal(|| false);
@@ -171,17 +173,24 @@ pub(crate) fn InviteLinkModal(
                                                         let next_generation = copy_generation() + 1;
                                                         copy_generation.set(next_generation);
                                                         is_copied.set(true);
+                                                        toast.success("Ссылка скопирована.");
                                                         TimeoutFuture::new(1400).await;
 
                                                         if copy_generation() == next_generation {
                                                             is_copied.set(false);
                                                         }
                                                     }
-                                                    Err(error) => status.set(error),
+                                                    Err(error) => {
+                                                        toast.error(error.clone());
+                                                        status.set(error);
+                                                    }
                                                 }
                                             });
                                         }
-                                        Err(error) => status.set(error),
+                                        Err(error) => {
+                                            toast.error(error.clone());
+                                            status.set(error);
+                                        }
                                     }
                                 },
                                 span { class: "absolute inset-0 flex items-center justify-center transition-[opacity,transform] duration-200 ease-out {copy_icon_class}", style: copy_icon_style, "aria-hidden": "true",
@@ -263,11 +272,17 @@ pub(crate) fn InviteLinkModal(
                                     Ok(code) => match current_invite_url(code).await {
                                         Ok(link) => {
                                             generated_link.set(Some(link));
-                                            // TODO: show invite creation success in a toast when toasts are available.
+                                            toast.success("Ссылка приглашения создана.");
                                         }
-                                        Err(error) => status.set(error),
+                                        Err(error) => {
+                                            toast.error(error.clone());
+                                            status.set(error);
+                                        }
                                     },
-                                    Err(error) => status.set(error),
+                                    Err(error) => {
+                                        toast.error(error.clone());
+                                        status.set(error);
+                                    }
                                 }
                                 is_busy.set(false);
                             });

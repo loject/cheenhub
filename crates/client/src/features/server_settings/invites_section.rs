@@ -6,6 +6,7 @@ use super::invite_list_item::{InviteListItem, InviteListItemAction};
 use super::invites_data::{InviteLink, InviteStatus, invite_from_realtime};
 use super::realtime;
 use crate::features::realtime::RealtimeHandle;
+use crate::features::toast::ToastHandle;
 
 #[derive(Clone, PartialEq)]
 struct MemberMenuState {
@@ -21,6 +22,7 @@ struct MemberMenuState {
 #[component]
 pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: String) -> Element {
     let realtime_handle = use_context::<RealtimeHandle>();
+    let toast = use_context::<ToastHandle>();
     let mut invites = use_signal(|| None::<Vec<InviteLink>>);
     let mut only_active = use_signal(|| true);
     let mut load_error = use_signal(String::new);
@@ -56,7 +58,7 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                         .collect(),
                 ));
                 if refresh_requested() {
-                    // TODO: show invite list refresh success in a toast when toasts are available.
+                    toast.success("Список приглашений обновлен.");
                     info!(
                         server_id = %response.server_id,
                         "refreshed server invite links in settings ui"
@@ -66,6 +68,9 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                 load_error.set(String::new());
             }
             Err(error) => {
+                if refresh_requested() {
+                    toast.error(error.to_string());
+                }
                 load_error.set(error.to_string());
                 refresh_requested.set(false);
             }
@@ -193,14 +198,14 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                                                     spawn(async move {
                                                         match copy.await {
                                                             Ok(()) => {
-                                                                // TODO: show invite copy success in a toast when toasts are available.
+                                                                toast.success("Ссылка приглашения скопирована.");
                                                                 info!(
                                                                     invite_code = %invite_code,
                                                                     "copied server invite link in settings ui"
                                                                 );
                                                             }
                                                             Err(error) => {
-                                                                // TODO: show invite copy failure in a toast when toasts are available.
+                                                                toast.error(error.clone());
                                                                 warn!(
                                                                     %error,
                                                                     invite_code = %invite_code,
@@ -211,7 +216,7 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                                                     });
                                                 }
                                                 Err(error) => {
-                                                    // TODO: show invite copy preparation failure in a toast when toasts are available.
+                                                    toast.error(error.clone());
                                                     warn!(
                                                         %error,
                                                         invite_code = %invite_code,
@@ -247,7 +252,7 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                                                                 .collect::<Vec<_>>(),
                                                         ));
                                                         pending_action.set(None);
-                                                        // TODO: show invite revoke success in a toast when toasts are available.
+                                                        toast.success("Ссылка приглашения отозвана.");
                                                         info!(
                                                             invite_code = %response.code,
                                                             "revoked server invite link in settings ui"
@@ -255,7 +260,7 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                                                     }
                                                     Err(error) => {
                                                         pending_action.set(None);
-                                                        // TODO: show invite revoke failure in a toast when toasts are available.
+                                                        toast.error(error.to_string());
                                                         warn!(
                                                             %error,
                                                             "failed to revoke server invite link in settings ui"
@@ -377,7 +382,7 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                                                     .collect::<Vec<_>>(),
                                             ));
                                             pending_action.set(None);
-                                            // TODO: show invite member kick success in a toast when toasts are available.
+                                            toast.warning(format!("{kicked_member_name} исключен с сервера."));
                                             info!(
                                                 invite_code = %response.invite_code,
                                                 member_id = %response.user_id,
@@ -387,7 +392,7 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                                         }
                                         Err(error) => {
                                             pending_action.set(None);
-                                            // TODO: show invite member kick failure in a toast when toasts are available.
+                                            toast.error(error.to_string());
                                             warn!(
                                                 %error,
                                                 invite_code = %kicked_invite_code,

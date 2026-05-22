@@ -9,6 +9,7 @@ use super::roles_data::{
     roles_to_realtime, selected_role, update_selected_role,
 };
 use crate::features::realtime::RealtimeHandle;
+use crate::features::toast::ToastHandle;
 use dioxus::prelude::*;
 /// Renders a role management UI.
 #[component]
@@ -18,6 +19,7 @@ pub(crate) fn ServerRolesSettingsSection(
     is_owner: bool,
 ) -> Element {
     let realtime_handle = use_context::<RealtimeHandle>();
+    let toast = use_context::<ToastHandle>();
     let mut roles = use_signal(|| None::<Vec<RoleDraft>>);
     let mut selected_role_id = use_signal(|| OWNER_ROLE_ID.to_owned());
     let mut role_search = use_signal(String::new);
@@ -395,7 +397,7 @@ pub(crate) fn ServerRolesSettingsSection(
                     save_error.set(String::new());
                     role_load.clear();
                     role_load.restart();
-                    // TODO: integrate the shared toast system for reset feedback.
+                    toast.info("Изменения ролей сброшены.");
                     info!("reset server role changes in settings ui");
                 },
                 on_save: move |_| {
@@ -428,7 +430,7 @@ pub(crate) fn ServerRolesSettingsSection(
                                 selected_role_id.set(next_selected);
                                 is_saving.set(false);
                                 dirty.set(false);
-                                // TODO: integrate the shared toast system for save feedback.
+                                toast.success("Роли сохранены.");
                                 info!(
                                     server_id = %response.server_id,
                                     "saved server role changes in settings ui"
@@ -437,6 +439,7 @@ pub(crate) fn ServerRolesSettingsSection(
                             Err(error) => {
                                 warn!(%error, "failed to save server role changes in settings ui");
                                 is_saving.set(false);
+                                toast.error(error.to_string());
                                 save_error.set(error.to_string());
                             }
                         }
