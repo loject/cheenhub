@@ -19,3 +19,8 @@ pub(crate) fn primary_button_class() -> &'static str {
 pub(crate) fn parse_percent(value: &str, fallback: i32) -> i32 {
     value.parse::<i32>().unwrap_or(fallback).clamp(0, 100)
 }
+
+/// Parses a percentage-like value and clamps it to a custom slider range.
+pub(crate) fn parse_percent_range(value: &str, fallback: u32, max: u32) -> u32 {
+    value.parse::<u32>().unwrap_or(fallback).min(max)
+}

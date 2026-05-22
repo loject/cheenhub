@@ -12,7 +12,7 @@ use crate::features::microphone::{
 };
 
 use super::sound_devices::{input_device_widget, output_device_widget};
-use super::styles::parse_percent;
+use super::styles::{parse_percent, parse_percent_range};
 
 #[derive(Clone, Copy, PartialEq)]
 enum ActivationMode {
@@ -35,8 +35,8 @@ pub(crate) fn SoundSettingsSection() -> Element {
     let mut output_devices_state = use_signal(|| Option::<AudioOutputDevicesResult>::None);
     let requesting_permission = use_signal(|| false);
 
-    let mut input_volume = use_signal(|| 75);
-    let mut output_volume = use_signal(|| 60);
+    let input_volume = mic.input_volume_percent();
+    let output_volume = playback.output_volume_percent();
     let mut activation_mode = use_signal(|| ActivationMode::AlwaysOn);
     let mut activation_level = use_signal(|| 45);
     let live_level = 58;
@@ -152,7 +152,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
                             on_input_retry,
                         )}
                     }
-                    {volume_slider("Громкость микрофона", input_volume(), move |value| input_volume.set(value))}
+                    {volume_slider("Громкость микрофона", input_volume, move |value| mic.set_input_volume_percent(value))}
                 }
 
                 // Output device column (mock for now).
@@ -168,7 +168,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
                             on_output_retry,
                         )}
                     }
-                    {volume_slider("Громкость вывода", output_volume(), move |value| output_volume.set(value))}
+                    {volume_slider("Громкость вывода", output_volume, move |value| playback.set_output_volume_percent(value))}
                 }
             }
 
@@ -348,8 +348,8 @@ async fn refresh_devices_inner(
 
 fn volume_slider(
     label: &'static str,
-    value: i32,
-    mut on_change: impl FnMut(i32) + 'static,
+    value: u32,
+    mut on_change: impl FnMut(u32) + 'static,
 ) -> Element {
     rsx! {
         div {
@@ -360,9 +360,9 @@ fn volume_slider(
             input {
                 r#type: "range",
                 min: "0",
-                max: "100",
+                max: "200",
                 value,
-                oninput: move |event| on_change(parse_percent(&event.value(), value)),
+                oninput: move |event| on_change(parse_percent_range(&event.value(), value, 200)),
                 class: "w-full cursor-pointer accent-blue-500",
             }
         }

@@ -49,6 +49,8 @@ pub(crate) struct MicrophoneConfig {
     pub(crate) vad_release_delay_us: u32,
     /// Browser deviceId to request via getUserMedia; None uses the default device.
     pub(crate) device_id: Option<String>,
+    /// Linear input gain applied before voice activation and encoding.
+    pub(crate) input_gain: f32,
 }
 
 impl Default for MicrophoneConfig {
@@ -63,6 +65,7 @@ impl Default for MicrophoneConfig {
             vad_activation_delay_us: 60_000,
             vad_release_delay_us: 250_000,
             device_id: None,
+            input_gain: 1.0,
         }
     }
 }

@@ -44,13 +44,20 @@ extern "C" {
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(js_name = AudioData)]
+    #[derive(Clone)]
     pub(super) type AudioData;
+
+    #[wasm_bindgen(constructor, catch, js_class = AudioData)]
+    pub(super) fn new(init: &JsValue) -> Result<AudioData, JsValue>;
 
     #[wasm_bindgen(method, getter, js_name = numberOfFrames)]
     pub(super) fn audio_data_number_of_frames(this: &AudioData) -> u32;
 
     #[wasm_bindgen(method, getter, js_name = numberOfChannels)]
     pub(super) fn audio_data_number_of_channels(this: &AudioData) -> u32;
+
+    #[wasm_bindgen(method, getter, js_name = sampleRate)]
+    pub(super) fn audio_data_sample_rate(this: &AudioData) -> f64;
 
     #[wasm_bindgen(method, getter, js_name = timestamp)]
     pub(super) fn audio_data_timestamp(this: &AudioData) -> f64;

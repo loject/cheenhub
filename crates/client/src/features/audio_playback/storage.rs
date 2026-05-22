@@ -5,6 +5,8 @@ use dioxus_sdk_storage::{LocalStorage, StorageBacking};
 
 const OUTPUT_DEVICE_ID_KEY: &str = "cheenhub.audio_playback.output_device_id";
 const OUTPUT_DEVICE_LABEL_KEY: &str = "cheenhub.audio_playback.output_device_label";
+const OUTPUT_VOLUME_PERCENT_KEY: &str = "cheenhub.audio_playback.output_volume_percent";
+const DEFAULT_OUTPUT_VOLUME_PERCENT: u32 = 100;
 
 /// Stored audio output device preference.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +51,30 @@ pub(crate) fn save_output_device(device_id: &str, label: Option<&str>) {
 pub(crate) fn clear_output_device() {
     remove::<LocalStorage>(OUTPUT_DEVICE_ID_KEY);
     remove::<LocalStorage>(OUTPUT_DEVICE_LABEL_KEY);
+}
+
+/// Loads the preferred audio output volume percentage.
+pub(crate) fn load_output_volume_percent() -> u32 {
+    let volume = get::<LocalStorage>(OUTPUT_VOLUME_PERCENT_KEY)
+        .and_then(|value| value.parse::<u32>().ok())
+        .map(clamp_volume_percent)
+        .unwrap_or(DEFAULT_OUTPUT_VOLUME_PERCENT);
+    info!(volume, "loaded audio output volume preference");
+    volume
+}
+
+/// Saves the preferred audio output volume percentage.
+pub(crate) fn save_output_volume_percent(volume_percent: u32) {
+    let volume_percent = clamp_volume_percent(volume_percent);
+    set::<LocalStorage>(OUTPUT_VOLUME_PERCENT_KEY, &volume_percent.to_string());
+    info!(
+        volume = volume_percent,
+        "saved audio output volume preference"
+    );
+}
+
+fn clamp_volume_percent(volume_percent: u32) -> u32 {
+    volume_percent.min(200)
 }
 
 fn get<S>(key: &str) -> Option<String>

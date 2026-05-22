@@ -5,20 +5,17 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use js_sys::{Float32Array, Object, Reflect, Uint8Array};
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
-use web_sys::{AudioBufferSourceNode, AudioContext, GainNode};
+use web_sys::AudioContext;
 
-use super::browser_bindings::{AudioData, AudioDecoder, EncodedAudioChunk};
-use super::browser_helpers::{
-    apply_output_device_to_context, js_error_message, set_property, stop_audio_source,
-};
+use super::browser_helpers::{apply_output_device_to_context, js_error_message, stop_audio_source};
 use super::output_devices::AudioOutputDevice;
+use super::playback_pipeline::{
+    ScheduledAudioSource, SenderPlayback, create_sender_playback, encoded_audio_chunk,
+};
 use super::storage;
 
-const INITIAL_PLAYBACK_BUFFER_SECONDS: f64 = 0.12;
-const CONTINUOUS_PLAYBACK_MARGIN_SECONDS: f64 = 0.02;
 /// Encoded playback codec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlaybackCodec {
@@ -50,30 +47,20 @@ pub(crate) struct AudioPlaybackHandle {
     muted: Signal<bool>,
     selected_output_device_id: Signal<Option<String>>,
     selected_output_device_label: Signal<Option<String>>,
+    output_volume_percent: Signal<u32>,
     inner: Rc<RefCell<AudioPlaybackInner>>,
 }
 
-struct AudioPlaybackInner {
-    context: Option<AudioContext>,
-    muted: bool,
-    senders: HashMap<String, SenderPlayback>,
-    scheduled_sources: HashMap<String, Vec<ScheduledAudioSource>>,
-    scheduled_until: HashMap<String, f64>,
+pub(super) struct AudioPlaybackInner {
+    pub(super) context: Option<AudioContext>,
+    pub(super) muted: bool,
+    pub(super) senders: HashMap<String, SenderPlayback>,
+    pub(super) scheduled_sources: HashMap<String, Vec<ScheduledAudioSource>>,
+    pub(super) scheduled_until: HashMap<String, f64>,
     /// Per-user gain values (0.0–2.0, default 1.0). Persisted so volumes set
     /// before the first frame are applied when the sender is first created.
-    user_volumes: HashMap<String, f64>,
-}
-
-struct ScheduledAudioSource {
-    source: AudioBufferSourceNode,
-    end_time: f64,
-}
-
-struct SenderPlayback {
-    decoder: AudioDecoder,
-    gain_node: GainNode,
-    _output_closure: Closure<dyn FnMut(AudioData)>,
-    _error_closure: Closure<dyn FnMut(JsValue)>,
+    pub(super) user_volumes: HashMap<String, f64>,
+    pub(super) output_gain: f64,
 }
 
 impl AudioPlaybackHandle {
@@ -120,11 +107,47 @@ impl AudioPlaybackHandle {
 
     /// Sets per-user playback volume (0–200, where 100 = 100%).
     pub(crate) fn set_user_volume(&self, sender_user_id: &str, volume_percent: u32) {
-        let gain = f64::from(volume_percent) / 100.0;
+        let gain = gain_from_percent(volume_percent);
         let mut inner = self.inner.borrow_mut();
         inner.user_volumes.insert(sender_user_id.to_owned(), gain);
+        let effective_gain = gain * inner.output_gain;
         if let Some(sender) = inner.senders.get(sender_user_id) {
-            sender.gain_node.gain().set_value(gain as f32);
+            sender.gain_node.gain().set_value(effective_gain as f32);
+        }
+    }
+
+    /// Returns the current master output volume percentage.
+    pub(crate) fn output_volume_percent(&self) -> u32 {
+        (self.output_volume_percent)()
+    }
+
+    /// Updates the master output volume percentage.
+    pub(crate) fn set_output_volume_percent(&self, volume_percent: u32) {
+        let volume_percent = volume_percent.min(200);
+        if *self.output_volume_percent.peek() == volume_percent {
+            return;
+        }
+
+        info!(
+            volume = volume_percent,
+            "audio output volume preference changed"
+        );
+        storage::save_output_volume_percent(volume_percent);
+        let mut volume_signal = self.output_volume_percent;
+        volume_signal.set(volume_percent);
+        let next_gain = gain_from_percent(volume_percent);
+        let mut inner = self.inner.borrow_mut();
+        inner.output_gain = next_gain;
+        for (sender_user_id, sender) in &inner.senders {
+            let sender_gain = inner
+                .user_volumes
+                .get(sender_user_id)
+                .copied()
+                .unwrap_or(1.0);
+            sender
+                .gain_node
+                .gain()
+                .set_value((sender_gain * next_gain) as f32);
         }
     }
 
@@ -246,7 +269,8 @@ impl AudioPlaybackHandle {
                 .user_volumes
                 .get(&frame.sender_user_id)
                 .copied()
-                .unwrap_or(1.0);
+                .unwrap_or(1.0)
+                * inner.output_gain;
             let sender = create_sender_playback(
                 frame.sender_user_id.clone(),
                 context.clone(),
@@ -305,6 +329,7 @@ impl AudioPlaybackHandle {
 pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
     let muted = use_signal(|| false);
     let stored_output_device = storage::load_output_device();
+    let output_volume_value = storage::load_output_volume_percent();
     let selected_output_device_id = use_signal({
         let stored_output_device = stored_output_device.clone();
         move || {
@@ -315,10 +340,13 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
     });
     let selected_output_device_label =
         use_signal(move || stored_output_device.and_then(|device| device.label));
+    let output_volume_percent = use_signal(move || output_volume_value);
+    let output_gain = gain_from_percent(output_volume_value);
     let handle = AudioPlaybackHandle {
         muted,
         selected_output_device_id,
         selected_output_device_label,
+        output_volume_percent,
         inner: Rc::new(RefCell::new(AudioPlaybackInner {
             context: None,
             muted: false,
@@ -326,6 +354,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             scheduled_sources: HashMap::new(),
             scheduled_until: HashMap::new(),
             user_volumes: HashMap::new(),
+            output_gain,
         })),
     };
     use_context_provider(move || handle.clone());
@@ -351,150 +380,6 @@ fn persist_output_device(device_id: Option<&str>, label: Option<&str>) {
     }
 }
 
-fn create_sender_playback(
-    sender_user_id: String,
-    context: AudioContext,
-    inner: Rc<RefCell<AudioPlaybackInner>>,
-    initial_gain: f64,
-) -> Result<SenderPlayback, JsValue> {
-    let gain_node = context.create_gain()?;
-    gain_node.gain().set_value(initial_gain as f32);
-    gain_node.connect_with_audio_node(&context.destination())?;
-
-    let output_sender_id = sender_user_id.clone();
-    let output_closure = Closure::wrap(Box::new(move |audio: AudioData| {
-        if let Err(error) = schedule_audio_data(&context, &inner, &output_sender_id, &audio) {
-            warn!(
-                error = %js_error_message(error),
-                sender_user_id = %output_sender_id,
-                "failed to schedule decoded audio"
-            );
-        }
-        let _ = audio.close();
-    }) as Box<dyn FnMut(AudioData)>);
-    let error_sender_id = sender_user_id.clone();
-    let error_closure = Closure::wrap(Box::new(move |error: JsValue| {
-        warn!(
-            error = %js_error_message(error),
-            sender_user_id = %error_sender_id,
-            "audio decoder failed"
-        );
-    }) as Box<dyn FnMut(JsValue)>);
-    let init = Object::new();
-    Reflect::set(&init, &JsValue::from_str("output"), output_closure.as_ref())?;
-    Reflect::set(&init, &JsValue::from_str("error"), error_closure.as_ref())?;
-    let decoder = AudioDecoder::new(&init.into())?;
-    decoder.configure(&decoder_config())?;
-
-    Ok(SenderPlayback {
-        decoder,
-        gain_node,
-        _output_closure: output_closure,
-        _error_closure: error_closure,
-    })
-}
-
-fn decoder_config() -> JsValue {
-    let object = Object::new();
-    set_property(&object, "codec", &JsValue::from_str("opus"));
-    set_property(&object, "sampleRate", &JsValue::from_f64(48_000.0));
-    set_property(&object, "numberOfChannels", &JsValue::from_f64(1.0));
-    object.into()
-}
-
-fn encoded_audio_chunk(frame: &VoiceFrame) -> Result<EncodedAudioChunk, JsValue> {
-    let data = Uint8Array::from(frame.bytes.as_slice());
-    let init = Object::new();
-    Reflect::set(&init, &JsValue::from_str("type"), &JsValue::from_str("key"))?;
-    Reflect::set(
-        &init,
-        &JsValue::from_str("timestamp"),
-        &JsValue::from_f64(frame.timestamp_us as f64),
-    )?;
-    Reflect::set(
-        &init,
-        &JsValue::from_str("duration"),
-        &JsValue::from_f64(f64::from(frame.duration_us)),
-    )?;
-    Reflect::set(&init, &JsValue::from_str("data"), data.as_ref())?;
-    EncodedAudioChunk::new(&init.into())
-}
-
-fn schedule_audio_data(
-    context: &AudioContext,
-    inner: &Rc<RefCell<AudioPlaybackInner>>,
-    sender_user_id: &str,
-    audio: &AudioData,
-) -> Result<(), JsValue> {
-    if inner.borrow().muted {
-        return Ok(());
-    }
-
-    let frames = audio.number_of_frames();
-    if frames == 0 {
-        return Ok(());
-    }
-    let channels = audio.number_of_channels().max(1);
-    let sample_rate = audio.sample_rate().max(1.0) as f32;
-    let buffer = context.create_buffer(channels, frames, sample_rate)?;
-
-    for channel in 0..channels {
-        let samples = Float32Array::new_with_length(frames);
-        audio.copy_to(&samples, &copy_options(channel))?;
-        buffer.copy_to_channel_with_f32_array(&samples, channel as i32)?;
-    }
-
-    let source = context.create_buffer_source()?;
-    source.set_buffer(Some(&buffer));
-    let gain_node = inner
-        .borrow()
-        .senders
-        .get(sender_user_id)
-        .map(|s| s.gain_node.clone());
-    match gain_node {
-        Some(gain) => source.connect_with_audio_node(&gain)?,
-        None => source.connect_with_audio_node(&context.destination())?,
-    };
-
-    let now = context.current_time();
-    let mut inner = inner.borrow_mut();
-    let previous_until = inner.scheduled_until.get(sender_user_id).copied();
-    let start_at = match previous_until {
-        Some(previous_until) if previous_until > now => {
-            previous_until.max(now + CONTINUOUS_PLAYBACK_MARGIN_SECONDS)
-        }
-        _ => {
-            debug!(
-                %sender_user_id,
-                buffer_ms = INITIAL_PLAYBACK_BUFFER_SECONDS * 1000.0,
-                "priming inbound voice playback buffer"
-            );
-            now + INITIAL_PLAYBACK_BUFFER_SECONDS
-        }
-    };
-    let duration = f64::from(frames) / f64::from(sample_rate);
-    let end_time = start_at + duration;
-    inner
-        .scheduled_until
-        .insert(sender_user_id.to_owned(), end_time);
-    source.start_with_when(start_at)?;
-    let sources = inner
-        .scheduled_sources
-        .entry(sender_user_id.to_owned())
-        .or_default();
-    sources.retain(|source| source.end_time > now);
-    sources.push(ScheduledAudioSource { source, end_time });
-
-    Ok(())
-}
-
-fn copy_options(plane_index: u32) -> JsValue {
-    let options = Object::new();
-    set_property(&options, "format", &JsValue::from_str("f32-planar"));
-    set_property(
-        &options,
-        "planeIndex",
-        &JsValue::from_f64(f64::from(plane_index)),
-    );
-    options.into()
+fn gain_from_percent(volume_percent: u32) -> f64 {
+    f64::from(volume_percent.min(200)) / 100.0
 }

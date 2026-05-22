@@ -3,6 +3,7 @@
 mod browser_bindings;
 mod browser_helpers;
 mod output_devices;
+mod playback_pipeline;
 mod provider;
 mod storage;
 

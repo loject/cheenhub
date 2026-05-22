@@ -25,6 +25,7 @@ pub(crate) struct MicrophoneHandle {
     backend: Rc<dyn MicrophoneBackend>,
     selected_input_device_id: Signal<Option<String>>,
     selected_input_device_label: Signal<Option<String>>,
+    input_volume_percent: Signal<u32>,
     /// Last on_frame callback used to start/restart capture.
     /// Kept so that device changes during an active session can trigger a restart.
     active_on_frame: Signal<Option<MicrophoneFrameCallback>>,
@@ -53,6 +54,7 @@ impl MicrophoneHandle {
         let mut generation = self.generation;
         let mut active_on_frame = self.active_on_frame;
         let device_id = self.selected_input_device_id.peek().clone();
+        let input_gain = gain_from_percent(*self.input_volume_percent.peek());
         let start_generation = next_generation(&mut generation);
         status.set(MicrophoneStatus::Starting);
         active_on_frame.set(Some(on_frame.clone()));
@@ -62,6 +64,7 @@ impl MicrophoneHandle {
             let callbacks = microphone_callbacks(on_frame.clone(), level);
             let config = MicrophoneConfig {
                 device_id,
+                input_gain,
                 ..MicrophoneConfig::default()
             };
             match backend.start(config, callbacks).await {
@@ -101,6 +104,7 @@ impl MicrophoneHandle {
         let mut generation = self.generation;
         let mut active_on_frame = self.active_on_frame;
         let device_id = self.selected_input_device_id.peek().clone();
+        let input_gain = gain_from_percent(*self.input_volume_percent.peek());
         let restart_generation = next_generation(&mut generation);
         status.set(MicrophoneStatus::Starting);
         active_on_frame.set(Some(on_frame.clone()));
@@ -119,6 +123,7 @@ impl MicrophoneHandle {
             let callbacks = microphone_callbacks(on_frame.clone(), level);
             let config = MicrophoneConfig {
                 device_id,
+                input_gain,
                 ..MicrophoneConfig::default()
             };
             match backend.start(config, callbacks).await {
@@ -282,6 +287,43 @@ impl MicrophoneHandle {
         (self.selected_input_device_id)()
     }
 
+    /// Returns the current microphone input volume percentage.
+    pub(crate) fn input_volume_percent(&self) -> u32 {
+        (self.input_volume_percent)()
+    }
+
+    /// Updates the microphone input volume percentage.
+    pub(crate) fn set_input_volume_percent(&self, volume_percent: u32) {
+        let volume_percent = volume_percent.min(200);
+        if *self.input_volume_percent.peek() == volume_percent {
+            return;
+        }
+
+        let status = self.status_untracked();
+        info!(
+            ?status,
+            volume = volume_percent,
+            "microphone input volume preference changed"
+        );
+        storage::save_input_volume_percent(volume_percent);
+        let mut input_volume = self.input_volume_percent;
+        input_volume.set(volume_percent);
+
+        let restart_on_frame =
+            if matches!(status, MicrophoneStatus::Live | MicrophoneStatus::Starting) {
+                self.active_on_frame.peek().clone()
+            } else {
+                None
+            };
+        if let Some(on_frame) = restart_on_frame {
+            info!(
+                ?status,
+                "restarting microphone capture after input volume change"
+            );
+            self.restart(on_frame);
+        }
+    }
+
     /// Updates the active encoder bitrate.
     #[allow(dead_code)]
     pub(crate) fn set_bitrate_bps(&self, bitrate_bps: u32) {
@@ -370,6 +412,10 @@ fn default_level() -> MicrophoneLevel {
     }
 }
 
+fn gain_from_percent(volume_percent: u32) -> f32 {
+    volume_percent.min(200) as f32 / 100.0
+}
+
 /// Provides microphone capture state to authenticated app components.
 #[component]
 pub(crate) fn MicrophoneProvider(children: Element) -> Element {
@@ -388,6 +434,7 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     });
     let selected_input_device_label =
         use_signal(move || stored_input_device.and_then(|device| device.label));
+    let input_volume_percent = use_signal(storage::load_input_volume_percent);
     let active_on_frame = use_signal(|| None::<MicrophoneFrameCallback>);
     let backend: Rc<dyn MicrophoneBackend> = Rc::new(BrowserMicrophoneBackend);
     let handle = MicrophoneHandle {
@@ -398,6 +445,7 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         backend,
         selected_input_device_id,
         selected_input_device_label,
+        input_volume_percent,
         active_on_frame,
     };
     use_context_provider(move || handle.clone());

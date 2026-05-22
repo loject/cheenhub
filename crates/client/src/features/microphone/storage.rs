@@ -5,6 +5,8 @@ use dioxus_sdk_storage::{LocalStorage, StorageBacking};
 
 const INPUT_DEVICE_ID_KEY: &str = "cheenhub.microphone.input_device_id";
 const INPUT_DEVICE_LABEL_KEY: &str = "cheenhub.microphone.input_device_label";
+const INPUT_VOLUME_PERCENT_KEY: &str = "cheenhub.microphone.input_volume_percent";
+const DEFAULT_INPUT_VOLUME_PERCENT: u32 = 100;
 
 /// Stored microphone input device preference.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +56,30 @@ pub(crate) fn save_input_device(device_id: &str, label: Option<&str>) {
 pub(crate) fn clear_input_device_id() {
     remove::<LocalStorage>(INPUT_DEVICE_ID_KEY);
     remove::<LocalStorage>(INPUT_DEVICE_LABEL_KEY);
+}
+
+/// Loads the preferred microphone input volume percentage.
+pub(crate) fn load_input_volume_percent() -> u32 {
+    let volume = get::<LocalStorage>(INPUT_VOLUME_PERCENT_KEY)
+        .and_then(|value| value.parse::<u32>().ok())
+        .map(clamp_volume_percent)
+        .unwrap_or(DEFAULT_INPUT_VOLUME_PERCENT);
+    info!(volume, "loaded microphone input volume preference");
+    volume
+}
+
+/// Saves the preferred microphone input volume percentage.
+pub(crate) fn save_input_volume_percent(volume_percent: u32) {
+    let volume_percent = clamp_volume_percent(volume_percent);
+    set::<LocalStorage>(INPUT_VOLUME_PERCENT_KEY, &volume_percent.to_string());
+    info!(
+        volume = volume_percent,
+        "saved microphone input volume preference"
+    );
+}
+
+fn clamp_volume_percent(volume_percent: u32) -> u32 {
+    volume_percent.min(200)
 }
 
 fn get<S>(key: &str) -> Option<String>
