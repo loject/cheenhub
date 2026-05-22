@@ -41,22 +41,20 @@ pub(crate) fn SoundSettingsSection() -> Element {
         let mic = mic_effect.clone();
         spawn(async move {
             let result = enumerate_audio_input_devices().await;
-            if let AudioInputDevicesResult::Available(ref devices) = result {
-                let existing_id = mic.input_device_id();
-                let existing_is_valid = existing_id
-                    .as_ref()
-                    .is_some_and(|id| devices.iter().any(|d| &d.device_id == id));
-                if !existing_is_valid && let Some(first) = devices.first() {
-                    mic.set_input_device_id(Some(first.device_id.clone()));
-                }
+            if let AudioInputDevicesResult::Available(ref devices) = result
+                && mic.input_device_id().is_none()
+            {
+                select_first_input_device(&mic, devices);
+            } else if let AudioInputDevicesResult::Available(ref devices) = result {
+                mic.reconcile_input_devices(devices);
             }
             devices_state.set(Some(result));
         });
     });
 
     let mic_change = mic.clone();
-    let on_change = move |device_id: String| {
-        mic_change.set_input_device_id(Some(device_id));
+    let on_change = move |device: AudioInputDevice| {
+        mic_change.set_input_device(&device);
     };
 
     let mic_permission = mic.clone();
@@ -65,14 +63,12 @@ pub(crate) fn SoundSettingsSection() -> Element {
         let mic = mic_permission.clone();
         spawn(async move {
             let result = request_microphone_permission().await;
-            if let AudioInputDevicesResult::Available(ref devices) = result {
-                let existing_id = mic.input_device_id();
-                let existing_is_valid = existing_id
-                    .as_ref()
-                    .is_some_and(|id| devices.iter().any(|d| &d.device_id == id));
-                if !existing_is_valid && let Some(first) = devices.first() {
-                    mic.set_input_device_id(Some(first.device_id.clone()));
-                }
+            if let AudioInputDevicesResult::Available(ref devices) = result
+                && mic.input_device_id().is_none()
+            {
+                select_first_input_device(&mic, devices);
+            } else if let AudioInputDevicesResult::Available(ref devices) = result {
+                mic.reconcile_input_devices(devices);
             }
             devices_state.set(Some(result));
             requesting_permission.set(false);
@@ -84,14 +80,12 @@ pub(crate) fn SoundSettingsSection() -> Element {
         let mic = mic.clone();
         spawn(async move {
             let result = enumerate_audio_input_devices().await;
-            if let AudioInputDevicesResult::Available(ref devices) = result {
-                let existing_id = mic.input_device_id();
-                let existing_is_valid = existing_id
-                    .as_ref()
-                    .is_some_and(|id| devices.iter().any(|d| &d.device_id == id));
-                if !existing_is_valid && let Some(first) = devices.first() {
-                    mic.set_input_device_id(Some(first.device_id.clone()));
-                }
+            if let AudioInputDevicesResult::Available(ref devices) = result
+                && mic.input_device_id().is_none()
+            {
+                select_first_input_device(&mic, devices);
+            } else if let AudioInputDevicesResult::Available(ref devices) = result {
+                mic.reconcile_input_devices(devices);
             }
             devices_state.set(Some(result));
         });
@@ -231,7 +225,7 @@ fn input_device_widget(
     state: Option<AudioInputDevicesResult>,
     requesting_permission: bool,
     selected: Option<String>,
-    mut on_change: impl FnMut(String) + 'static,
+    mut on_change: impl FnMut(AudioInputDevice) + 'static,
     on_request_permission: impl FnMut(Event<MouseData>) + 'static,
     on_retry: impl FnMut(Event<MouseData>) + 'static,
 ) -> Element {
@@ -244,15 +238,40 @@ fn input_device_widget(
         },
 
         Some(AudioInputDevicesResult::Available(devices)) => rsx! {
+            {
+                let change_devices = devices.clone();
+                rsx! {
             select {
-                value: selected.unwrap_or_default(),
-                onchange: move |event| on_change(event.value()),
+                value: selected.as_deref().unwrap_or_default(),
+                oninput: move |event| {
+                    let device_id = event.value();
+                    info!("selected microphone input device in settings ui");
+                    let device = change_devices
+                        .iter()
+                        .find(|device| device.device_id == device_id)
+                        .cloned()
+                        .unwrap_or_else(|| AudioInputDevice {
+                            device_id,
+                            label: String::new(),
+                        });
+                    on_change(device);
+                },
                 class: select_class(),
+                if selected_device_is_unavailable(selected.as_deref(), &devices) {
+                    option {
+                        value: selected.as_deref().unwrap_or_default(),
+                        selected: true,
+                        "Сохранённое устройство недоступно"
+                    }
+                }
                 for device in devices {
                     option {
-                        value: "{device.device_id}",
+                        value: device.device_id.clone(),
+                        selected: selected.as_deref() == Some(device.device_id.as_str()),
                         {device_display_label(&device)}
                     }
+                }
+            }
                 }
             }
         },
@@ -315,6 +334,18 @@ fn input_device_widget(
             }
         },
     }
+}
+
+fn select_first_input_device(mic: &MicrophoneHandle, devices: &[AudioInputDevice]) {
+    if let Some(first) = devices.first() {
+        mic.set_input_device(first);
+    }
+}
+
+fn selected_device_is_unavailable(selected: Option<&str>, devices: &[AudioInputDevice]) -> bool {
+    selected
+        .filter(|selected| !selected.is_empty())
+        .is_some_and(|selected| !devices.iter().any(|device| device.device_id == selected))
 }
 
 fn device_display_label(device: &AudioInputDevice) -> String {

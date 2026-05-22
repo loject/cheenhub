@@ -10,6 +10,7 @@ use super::backend::{
     MicrophoneLevel, MicrophoneSession, MicrophoneStatus,
 };
 use super::browser::BrowserMicrophoneBackend;
+use super::input_devices::AudioInputDevice;
 use super::storage;
 
 const MICROPHONE_LEVEL_UPDATE_INTERVAL_US: u64 = 33_000;
@@ -23,6 +24,7 @@ pub(crate) struct MicrophoneHandle {
     generation: Signal<u64>,
     backend: Rc<dyn MicrophoneBackend>,
     selected_input_device_id: Signal<Option<String>>,
+    selected_input_device_label: Signal<Option<String>>,
     /// Last on_frame callback used to start/restart capture.
     /// Kept so that device changes during an active session can trigger a restart.
     active_on_frame: Signal<Option<MicrophoneFrameCallback>>,
@@ -206,23 +208,58 @@ impl MicrophoneHandle {
         (self.level)()
     }
 
-    /// Stores the preferred input device ID.
+    /// Stores the preferred input device.
     ///
-    /// If the microphone is currently live the session is restarted on the new
-    /// device immediately, keeping the same on_frame callback.
-    pub(crate) fn set_input_device_id(&self, device_id: Option<String>) {
-        if self.selected_input_device_id.peek().as_deref() == device_id.as_deref() {
+    /// The label is persisted so a later browser session can recover if the
+    /// device ID changes but the same physical device is still present.
+    pub(crate) fn set_input_device(&self, device: &AudioInputDevice) {
+        self.set_input_device_preference(
+            Some(device.device_id.clone()),
+            Some(device.label.clone()),
+        );
+    }
+
+    /// Reconciles a stored device preference against the currently enumerated devices.
+    pub(crate) fn reconcile_input_devices(&self, devices: &[AudioInputDevice]) {
+        let Some(selected_id) = self.selected_input_device_id.peek().clone() else {
+            return;
+        };
+        if devices.iter().any(|device| device.device_id == selected_id) {
             return;
         }
+
+        let Some(selected_label) = self.selected_input_device_label.peek().clone() else {
+            return;
+        };
+        let Some(recovered) = devices
+            .iter()
+            .find(|device| !device.label.is_empty() && device.label == selected_label)
+        else {
+            return;
+        };
+
+        info!("recovered microphone input device preference from stored label");
+        self.set_input_device(recovered);
+    }
+
+    fn set_input_device_preference(&self, device_id: Option<String>, label: Option<String>) {
+        if self.selected_input_device_id.peek().as_deref() == device_id.as_deref()
+            && self.selected_input_device_label.peek().as_deref() == label.as_deref()
+        {
+            return;
+        }
+
         let next_has_device = device_id.as_ref().is_some_and(|id| !id.is_empty());
         let status = self.status_untracked();
-        debug!(
+        info!(
             ?status,
             next_has_device, "microphone input device preference changed"
         );
-        persist_input_device_id(device_id.as_deref());
-        let mut signal = self.selected_input_device_id;
-        signal.set(device_id);
+        persist_input_device(device_id.as_deref(), label.as_deref());
+        let mut id_signal = self.selected_input_device_id;
+        let mut label_signal = self.selected_input_device_label;
+        id_signal.set(device_id);
+        label_signal.set(label);
 
         let restart_on_frame =
             if matches!(status, MicrophoneStatus::Live | MicrophoneStatus::Starting) {
@@ -232,7 +269,7 @@ impl MicrophoneHandle {
             };
 
         if let Some(on_frame) = restart_on_frame {
-            debug!(
+            info!(
                 ?status,
                 next_has_device, "restarting microphone capture after input device change"
             );
@@ -340,7 +377,17 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let level = use_signal(default_level);
     let session = use_signal(|| None::<Rc<dyn MicrophoneSession>>);
     let generation = use_signal(|| 0);
-    let selected_input_device_id = use_signal(storage::load_input_device_id);
+    let stored_input_device = storage::load_input_device();
+    let selected_input_device_id = use_signal({
+        let stored_input_device = stored_input_device.clone();
+        move || {
+            stored_input_device
+                .as_ref()
+                .map(|device| device.device_id.clone())
+        }
+    });
+    let selected_input_device_label =
+        use_signal(move || stored_input_device.and_then(|device| device.label));
     let active_on_frame = use_signal(|| None::<MicrophoneFrameCallback>);
     let backend: Rc<dyn MicrophoneBackend> = Rc::new(BrowserMicrophoneBackend);
     let handle = MicrophoneHandle {
@@ -350,6 +397,7 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         generation,
         backend,
         selected_input_device_id,
+        selected_input_device_label,
         active_on_frame,
     };
     use_context_provider(move || handle.clone());
@@ -359,18 +407,18 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     }
 }
 
-fn persist_input_device_id(device_id: Option<&str>) {
+fn persist_input_device(device_id: Option<&str>, label: Option<&str>) {
     match device_id {
         Some(device_id) if !device_id.is_empty() => {
-            storage::save_input_device_id(device_id);
-            debug!(
+            storage::save_input_device(device_id, label);
+            info!(
                 has_device = true,
                 "persisted microphone input device preference"
             );
         }
         _ => {
             storage::clear_input_device_id();
-            debug!(
+            info!(
                 has_device = false,
                 "cleared microphone input device preference"
             );
