@@ -16,12 +16,13 @@ pub(crate) struct VoiceActivityDetector {
 impl VoiceActivityDetector {
     /// Builds a detector from microphone configuration.
     pub(crate) fn new(config: MicrophoneConfig) -> Self {
+        let initial_active = matches!(
+            config.activation_mode,
+            MicrophoneActivationMode::AlwaysActive
+        );
         Self {
             config,
-            active: matches!(
-                config.activation_mode,
-                MicrophoneActivationMode::AlwaysActive
-            ),
+            active: initial_active,
             above_threshold_us: 0,
             below_threshold_us: 0,
         }
@@ -42,8 +43,8 @@ impl VoiceActivityDetector {
     }
 
     /// Returns the detector configuration.
-    pub(crate) fn config(&self) -> MicrophoneConfig {
-        self.config
+    pub(crate) fn config(&self) -> &MicrophoneConfig {
+        &self.config
     }
 
     /// Returns whether the detector currently passes audio.

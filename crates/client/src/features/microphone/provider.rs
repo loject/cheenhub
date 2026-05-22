@@ -10,6 +10,7 @@ use super::backend::{
     MicrophoneLevel, MicrophoneSession, MicrophoneStatus,
 };
 use super::browser::BrowserMicrophoneBackend;
+use super::storage;
 
 const MICROPHONE_LEVEL_UPDATE_INTERVAL_US: u64 = 33_000;
 
@@ -21,6 +22,10 @@ pub(crate) struct MicrophoneHandle {
     session: Signal<Option<Rc<dyn MicrophoneSession>>>,
     generation: Signal<u64>,
     backend: Rc<dyn MicrophoneBackend>,
+    selected_input_device_id: Signal<Option<String>>,
+    /// Last on_frame callback used to start/restart capture.
+    /// Kept so that device changes during an active session can trigger a restart.
+    active_on_frame: Signal<Option<MicrophoneFrameCallback>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -44,13 +49,20 @@ impl MicrophoneHandle {
         let mut status = self.status;
         let mut level = self.level;
         let mut generation = self.generation;
+        let mut active_on_frame = self.active_on_frame;
+        let device_id = self.selected_input_device_id.peek().clone();
         let start_generation = next_generation(&mut generation);
         status.set(MicrophoneStatus::Starting);
+        active_on_frame.set(Some(on_frame.clone()));
         reset_level(&mut level);
 
         spawn(async move {
-            let callbacks = microphone_callbacks(on_frame, level);
-            match backend.start(MicrophoneConfig::default(), callbacks).await {
+            let callbacks = microphone_callbacks(on_frame.clone(), level);
+            let config = MicrophoneConfig {
+                device_id,
+                ..MicrophoneConfig::default()
+            };
+            match backend.start(config, callbacks).await {
                 Ok(next_session) => {
                     if generation() != start_generation {
                         if let Err(error) = next_session.stop().await {
@@ -60,6 +72,7 @@ impl MicrophoneHandle {
                     }
                     session.set(Some(next_session));
                     status.set(MicrophoneStatus::Live);
+                    active_on_frame.set(Some(on_frame));
                 }
                 Err(error) => {
                     if generation() != start_generation {
@@ -70,6 +83,7 @@ impl MicrophoneHandle {
                     session.set(None);
                     reset_level(&mut level);
                     status.set(next_status);
+                    active_on_frame.set(None);
                 }
             }
         });
@@ -83,8 +97,11 @@ impl MicrophoneHandle {
         let mut status = self.status;
         let mut level = self.level;
         let mut generation = self.generation;
+        let mut active_on_frame = self.active_on_frame;
+        let device_id = self.selected_input_device_id.peek().clone();
         let restart_generation = next_generation(&mut generation);
         status.set(MicrophoneStatus::Starting);
+        active_on_frame.set(Some(on_frame.clone()));
         reset_level(&mut level);
 
         spawn(async move {
@@ -97,8 +114,12 @@ impl MicrophoneHandle {
                 return;
             }
 
-            let callbacks = microphone_callbacks(on_frame, level);
-            match backend.start(MicrophoneConfig::default(), callbacks).await {
+            let callbacks = microphone_callbacks(on_frame.clone(), level);
+            let config = MicrophoneConfig {
+                device_id,
+                ..MicrophoneConfig::default()
+            };
+            match backend.start(config, callbacks).await {
                 Ok(next_session) => {
                     if generation() != restart_generation {
                         if let Err(error) = next_session.stop().await {
@@ -108,6 +129,7 @@ impl MicrophoneHandle {
                     }
                     session.set(Some(next_session));
                     status.set(MicrophoneStatus::Live);
+                    active_on_frame.set(Some(on_frame));
                 }
                 Err(error) => {
                     if generation() != restart_generation {
@@ -118,6 +140,7 @@ impl MicrophoneHandle {
                     session.set(None);
                     reset_level(&mut level);
                     status.set(next_status);
+                    active_on_frame.set(None);
                 }
             }
         });
@@ -130,14 +153,17 @@ impl MicrophoneHandle {
         let Some(active_session) = self.session.peek().clone() else {
             let mut status = self.status;
             let mut level = self.level;
+            let mut active_on_frame = self.active_on_frame;
             reset_level(&mut level);
             status.set(MicrophoneStatus::Idle);
+            active_on_frame.set(None);
             return;
         };
 
         let mut session = self.session;
         let mut status = self.status;
         let mut level = self.level;
+        let mut active_on_frame = self.active_on_frame;
         spawn(async move {
             if let Err(error) = active_session.stop().await {
                 warn!(%error, "failed to stop microphone capture cleanly");
@@ -148,6 +174,7 @@ impl MicrophoneHandle {
             session.set(None);
             reset_level(&mut level);
             status.set(MicrophoneStatus::Idle);
+            active_on_frame.set(None);
         });
     }
 
@@ -177,6 +204,45 @@ impl MicrophoneHandle {
     #[allow(dead_code)]
     pub(crate) fn level(&self) -> MicrophoneLevel {
         (self.level)()
+    }
+
+    /// Stores the preferred input device ID.
+    ///
+    /// If the microphone is currently live the session is restarted on the new
+    /// device immediately, keeping the same on_frame callback.
+    pub(crate) fn set_input_device_id(&self, device_id: Option<String>) {
+        if self.selected_input_device_id.peek().as_deref() == device_id.as_deref() {
+            return;
+        }
+        let next_has_device = device_id.as_ref().is_some_and(|id| !id.is_empty());
+        let status = self.status_untracked();
+        debug!(
+            ?status,
+            next_has_device, "microphone input device preference changed"
+        );
+        persist_input_device_id(device_id.as_deref());
+        let mut signal = self.selected_input_device_id;
+        signal.set(device_id);
+
+        let restart_on_frame =
+            if matches!(status, MicrophoneStatus::Live | MicrophoneStatus::Starting) {
+                self.active_on_frame.peek().clone()
+            } else {
+                None
+            };
+
+        if let Some(on_frame) = restart_on_frame {
+            debug!(
+                ?status,
+                next_has_device, "restarting microphone capture after input device change"
+            );
+            self.restart(on_frame);
+        }
+    }
+
+    /// Returns the currently preferred input device ID.
+    pub(crate) fn input_device_id(&self) -> Option<String> {
+        (self.selected_input_device_id)()
     }
 
     /// Updates the active encoder bitrate.
@@ -274,6 +340,8 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let level = use_signal(default_level);
     let session = use_signal(|| None::<Rc<dyn MicrophoneSession>>);
     let generation = use_signal(|| 0);
+    let selected_input_device_id = use_signal(storage::load_input_device_id);
+    let active_on_frame = use_signal(|| None::<MicrophoneFrameCallback>);
     let backend: Rc<dyn MicrophoneBackend> = Rc::new(BrowserMicrophoneBackend);
     let handle = MicrophoneHandle {
         status,
@@ -281,10 +349,31 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         session,
         generation,
         backend,
+        selected_input_device_id,
+        active_on_frame,
     };
     use_context_provider(move || handle.clone());
 
     rsx! {
         {children}
+    }
+}
+
+fn persist_input_device_id(device_id: Option<&str>) {
+    match device_id {
+        Some(device_id) if !device_id.is_empty() => {
+            storage::save_input_device_id(device_id);
+            debug!(
+                has_device = true,
+                "persisted microphone input device preference"
+            );
+        }
+        _ => {
+            storage::clear_input_device_id();
+            debug!(
+                has_device = false,
+                "cleared microphone input device preference"
+            );
+        }
     }
 }

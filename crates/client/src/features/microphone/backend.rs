@@ -29,7 +29,7 @@ pub(crate) enum MicrophoneActivationMode {
 }
 
 /// Microphone capture and encoding configuration.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct MicrophoneConfig {
     /// Preferred encoded codec.
     pub(crate) codec: MicrophoneCodec,
@@ -47,6 +47,8 @@ pub(crate) struct MicrophoneConfig {
     pub(crate) vad_activation_delay_us: u32,
     /// Time activation remains open after the level falls below threshold.
     pub(crate) vad_release_delay_us: u32,
+    /// Browser deviceId to request via getUserMedia; None uses the default device.
+    pub(crate) device_id: Option<String>,
 }
 
 impl Default for MicrophoneConfig {
@@ -60,6 +62,7 @@ impl Default for MicrophoneConfig {
             vad_threshold: 0.02,
             vad_activation_delay_us: 60_000,
             vad_release_delay_us: 250_000,
+            device_id: None,
         }
     }
 }

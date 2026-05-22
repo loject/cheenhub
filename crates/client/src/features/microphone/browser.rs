@@ -10,7 +10,6 @@ use js_sys::{Float32Array, Function, Object, Promise, Reflect, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
-use web_sys::{MediaStream, MediaStreamConstraints, MediaTrackConstraints, window};
 
 use super::backend::{
     EncodedMicrophoneFrame, MicrophoneBackend, MicrophoneCallbacks, MicrophoneCodec,
@@ -19,6 +18,10 @@ use super::backend::{
 use super::browser_bindings::{
     AudioData, AudioEncoder, EncodedAudioChunk, MediaStreamTrackProcessor,
 };
+use super::browser_capture::{
+    first_audio_track, log_selected_audio_track, request_microphone_stream,
+};
+use super::browser_errors::js_error_message;
 use super::vad::{VoiceActivityDetector, rms_level};
 
 /// Browser microphone implementation backed by getUserMedia and WebCodecs.
@@ -79,9 +82,10 @@ async fn start_browser_session(
         return Err(MicrophoneError::new("Поддерживается только моно микрофон."));
     }
 
-    let stream = request_microphone_stream(config).await?;
+    let stream = request_microphone_stream(config.clone()).await?;
     let track = first_audio_track(&stream)?;
-    let encoder_config = encoder_config(config);
+    log_selected_audio_track(&track, config.device_id.as_deref());
+    let encoder_config = encoder_config(config.clone());
     let support = JsFuture::from(AudioEncoder::is_config_supported(&encoder_config))
         .await
         .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
@@ -153,43 +157,6 @@ async fn start_browser_session(
         _error_closure: error_closure,
         bitrate_bps,
     }))
-}
-
-async fn request_microphone_stream(
-    config: MicrophoneConfig,
-) -> Result<MediaStream, MicrophoneError> {
-    let window = window().ok_or_else(|| MicrophoneError::new("Окно браузера недоступно."))?;
-    let media_devices = window
-        .navigator()
-        .media_devices()
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
-    let audio = MediaTrackConstraints::new();
-    audio.set_channel_count(&JsValue::from_f64(f64::from(config.channels)));
-    audio.set_echo_cancellation(&JsValue::TRUE);
-    audio.set_noise_suppression(&JsValue::TRUE);
-    audio.set_auto_gain_control(&JsValue::TRUE);
-
-    let constraints = MediaStreamConstraints::new();
-    constraints.set_audio(&audio);
-    constraints.set_video(&JsValue::FALSE);
-
-    let promise = media_devices
-        .get_user_media_with_constraints(&constraints)
-        .map_err(microphone_error)?;
-    let stream = JsFuture::from(promise).await.map_err(microphone_error)?;
-
-    stream
-        .dyn_into::<MediaStream>()
-        .map_err(|_| MicrophoneError::new("Браузер вернул некорректный поток микрофона."))
-}
-
-fn first_audio_track(stream: &MediaStream) -> Result<web_sys::MediaStreamTrack, MicrophoneError> {
-    let tracks = stream.get_audio_tracks();
-    let Some(track) = tracks.get(0).dyn_into::<web_sys::MediaStreamTrack>().ok() else {
-        return Err(MicrophoneError::new("Микрофон не вернул аудиодорожку."));
-    };
-
-    Ok(track)
 }
 
 fn encoder_config(config: MicrophoneConfig) -> JsValue {
@@ -423,48 +390,4 @@ fn encode_audio_data(encoder: &JsValue, value: &JsValue) -> Result<(), JsValue> 
 
 fn set_property(object: &Object, name: &str, value: &JsValue) {
     let _ = Reflect::set(object, &JsValue::from_str(name), value);
-}
-
-fn js_error_message(error: JsValue) -> String {
-    error
-        .dyn_ref::<js_sys::Error>()
-        .map(js_sys::Error::message)
-        .and_then(|message| message.as_string())
-        .filter(|message| !message.is_empty())
-        .or_else(|| error.as_string())
-        .unwrap_or_else(|| "unknown browser microphone error".to_owned())
-}
-
-fn microphone_error(error: JsValue) -> MicrophoneError {
-    if is_permission_denied_error(&error) {
-        MicrophoneError::permission_denied("Доступ к микрофону запрещен.")
-    } else {
-        MicrophoneError::new(js_error_message(error))
-    }
-}
-
-fn is_permission_denied_error(error: &JsValue) -> bool {
-    let name_denied = error
-        .dyn_ref::<web_sys::DomException>()
-        .map(web_sys::DomException::name)
-        .or_else(|| {
-            Reflect::get(error, &JsValue::from_str("name"))
-                .ok()
-                .and_then(|name| name.as_string())
-        })
-        .is_some_and(|name| {
-            name == "NotAllowedError" || name == "PermissionDeniedError" || name == "SecurityError"
-        });
-    if name_denied {
-        return true;
-    }
-
-    let message = js_error_message(error.clone()).to_ascii_lowercase();
-    message.contains("permission denied")
-        || message.contains("permission dismissed")
-        || message.contains("permission denied by system")
-        || message.contains("notallowederror")
-        || message.contains("permissiondeniederror")
-        || message.contains("denied permission")
-        || message.contains("access to the device is not allowed")
 }

@@ -2,6 +2,11 @@
 
 use dioxus::prelude::*;
 
+use crate::features::microphone::{
+    AudioInputDevice, AudioInputDevicesResult, MicrophoneHandle, enumerate_audio_input_devices,
+    request_microphone_permission,
+};
+
 use super::styles::{parse_percent, select_class};
 
 #[derive(Clone, Copy, PartialEq)]
@@ -10,16 +15,87 @@ enum ActivationMode {
     VoiceActivation,
 }
 
-/// Renders mock sound input, output, and voice activation controls.
+/// Renders sound input, output, and voice activation controls.
 #[component]
 pub(crate) fn SoundSettingsSection() -> Element {
-    let mut input_device = use_signal(|| "HyperX QuadCast".to_owned());
+    let mic = use_context::<MicrophoneHandle>();
+
+    // Read the stored device preference — this creates a reactive subscription so the
+    // select re-renders whenever the stored value changes.
+    let selected_device_id = mic.input_device_id();
+
+    let mut devices_state = use_signal(|| Option::<AudioInputDevicesResult>::None);
+    let mut requesting_permission = use_signal(|| false);
+
     let mut output_device = use_signal(|| "SteelSeries Arctis 7".to_owned());
     let mut input_volume = use_signal(|| 75);
     let mut output_volume = use_signal(|| 60);
     let mut activation_mode = use_signal(|| ActivationMode::AlwaysOn);
     let mut activation_level = use_signal(|| 45);
     let live_level = 58;
+
+    // Enumerate real devices once on mount. Only auto-selects the first device when
+    // no valid preference is already stored in the microphone handle context.
+    let mic_effect = mic.clone();
+    use_effect(move || {
+        let mic = mic_effect.clone();
+        spawn(async move {
+            let result = enumerate_audio_input_devices().await;
+            if let AudioInputDevicesResult::Available(ref devices) = result {
+                let existing_id = mic.input_device_id();
+                let existing_is_valid = existing_id
+                    .as_ref()
+                    .is_some_and(|id| devices.iter().any(|d| &d.device_id == id));
+                if !existing_is_valid && let Some(first) = devices.first() {
+                    mic.set_input_device_id(Some(first.device_id.clone()));
+                }
+            }
+            devices_state.set(Some(result));
+        });
+    });
+
+    let mic_change = mic.clone();
+    let on_change = move |device_id: String| {
+        mic_change.set_input_device_id(Some(device_id));
+    };
+
+    let mic_permission = mic.clone();
+    let on_request_permission = move |_: Event<MouseData>| {
+        requesting_permission.set(true);
+        let mic = mic_permission.clone();
+        spawn(async move {
+            let result = request_microphone_permission().await;
+            if let AudioInputDevicesResult::Available(ref devices) = result {
+                let existing_id = mic.input_device_id();
+                let existing_is_valid = existing_id
+                    .as_ref()
+                    .is_some_and(|id| devices.iter().any(|d| &d.device_id == id));
+                if !existing_is_valid && let Some(first) = devices.first() {
+                    mic.set_input_device_id(Some(first.device_id.clone()));
+                }
+            }
+            devices_state.set(Some(result));
+            requesting_permission.set(false);
+        });
+    };
+
+    let on_retry = move |_: Event<MouseData>| {
+        devices_state.set(None);
+        let mic = mic.clone();
+        spawn(async move {
+            let result = enumerate_audio_input_devices().await;
+            if let AudioInputDevicesResult::Available(ref devices) = result {
+                let existing_id = mic.input_device_id();
+                let existing_is_valid = existing_id
+                    .as_ref()
+                    .is_some_and(|id| devices.iter().any(|d| &d.device_id == id));
+                if !existing_is_valid && let Some(first) = devices.first() {
+                    mic.set_input_device_id(Some(first.device_id.clone()));
+                }
+            }
+            devices_state.set(Some(result));
+        });
+    };
 
     rsx! {
         div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
@@ -29,21 +105,23 @@ pub(crate) fn SoundSettingsSection() -> Element {
             }
 
             div { class: "mt-4 grid gap-4 md:grid-cols-2",
+                // Input device column.
                 div { class: "space-y-4",
-                    label { class: "block",
+                    div { class: "block",
                         span { class: "mb-2 block text-[13px] font-medium text-zinc-300", "Устройство ввода" }
-                        select {
-                            value: input_device(),
-                            onchange: move |event| input_device.set(event.value()),
-                            class: select_class(),
-                            option { value: "HyperX QuadCast", "HyperX QuadCast" }
-                            option { value: "Blue Yeti", "Blue Yeti" }
-                            option { value: "USB Audio Device", "USB Audio Device" }
-                        }
+                        {input_device_widget(
+                            devices_state(),
+                            requesting_permission(),
+                            selected_device_id,
+                            on_change,
+                            on_request_permission,
+                            on_retry,
+                        )}
                     }
                     {volume_slider("Громкость микрофона", input_volume(), move |value| input_volume.set(value))}
                 }
 
+                // Output device column (mock for now).
                 div { class: "space-y-4",
                     label { class: "block",
                         span { class: "mb-2 block text-[13px] font-medium text-zinc-300", "Устройство вывода" }
@@ -146,6 +224,105 @@ pub(crate) fn SoundSettingsSection() -> Element {
                 }
             }
         }
+    }
+}
+
+fn input_device_widget(
+    state: Option<AudioInputDevicesResult>,
+    requesting_permission: bool,
+    selected: Option<String>,
+    mut on_change: impl FnMut(String) + 'static,
+    on_request_permission: impl FnMut(Event<MouseData>) + 'static,
+    on_retry: impl FnMut(Event<MouseData>) + 'static,
+) -> Element {
+    match state {
+        None => rsx! {
+            div { class: "flex h-10 items-center gap-2 text-[13px] text-zinc-500",
+                span { class: "inline-block h-3 w-3 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" }
+                "Загрузка устройств…"
+            }
+        },
+
+        Some(AudioInputDevicesResult::Available(devices)) => rsx! {
+            select {
+                value: selected.unwrap_or_default(),
+                onchange: move |event| on_change(event.value()),
+                class: select_class(),
+                for device in devices {
+                    option {
+                        value: "{device.device_id}",
+                        {device_display_label(&device)}
+                    }
+                }
+            }
+        },
+
+        Some(AudioInputDevicesResult::PermissionRequired) => rsx! {
+            div { class: "space-y-2",
+                div { class: "flex items-start gap-2 rounded-xl border border-blue-500/20 bg-blue-500/8 px-3 py-2.5",
+                    span { class: "mt-px shrink-0 text-blue-400", "🎙" }
+                    p { class: "text-[12px] leading-5 text-blue-300",
+                        "Для выбора устройства разрешите доступ к микрофону."
+                    }
+                }
+                button {
+                    r#type: "button",
+                    disabled: requesting_permission,
+                    onclick: on_request_permission,
+                    class: "flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 text-[12px] font-medium text-blue-300 transition hover:border-blue-400/50 hover:bg-blue-500/15 disabled:cursor-not-allowed disabled:opacity-50",
+                    if requesting_permission {
+                        span { class: "inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-500/40 border-t-blue-400" }
+                        "Запрос доступа…"
+                    } else {
+                        "Разрешить доступ"
+                    }
+                }
+            }
+        },
+
+        Some(AudioInputDevicesResult::PermissionDenied) => rsx! {
+            div { class: "flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2.5",
+                span { class: "mt-px shrink-0 text-red-400", "⊘" }
+                p { class: "text-[12px] leading-5 text-red-300",
+                    "Доступ к микрофону запрещён. Разрешите его в настройках браузера и обновите страницу."
+                }
+            }
+        },
+
+        Some(AudioInputDevicesResult::NoDevices) => rsx! {
+            div { class: "space-y-2",
+                div { class: "flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-2.5",
+                    span { class: "mt-px shrink-0 text-amber-400", "⚠" }
+                    p { class: "text-[12px] leading-5 text-amber-300",
+                        "Устройства ввода не обнаружены. Подключите микрофон и повторите."
+                    }
+                }
+                button {
+                    r#type: "button",
+                    onclick: on_retry,
+                    class: "flex h-9 w-full items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-4 text-[12px] font-medium text-zinc-300 transition hover:border-zinc-500 hover:text-zinc-100",
+                    "Обновить список"
+                }
+            }
+        },
+
+        Some(AudioInputDevicesResult::NotSupported) => rsx! {
+            div { class: "flex items-start gap-2 rounded-xl border border-zinc-700/50 bg-zinc-900/50 px-3 py-2.5",
+                span { class: "mt-px shrink-0 text-zinc-500", "⊘" }
+                p { class: "text-[12px] leading-5 text-zinc-500",
+                    "Браузер не поддерживает выбор устройств аудиовхода."
+                }
+            }
+        },
+    }
+}
+
+fn device_display_label(device: &AudioInputDevice) -> String {
+    if device.label.is_empty() {
+        let preview: String = device.device_id.chars().take(8).collect();
+        format!("Устройство ({preview}…)")
+    } else {
+        device.label.clone()
     }
 }
 
