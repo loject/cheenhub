@@ -12,6 +12,7 @@ use serde_json::Value;
 use crate::features::auth::{jwt, storage};
 
 const DEFAULT_API_BASE_URL: &str = "http://127.0.0.1:3000/api";
+const NETWORK_ERROR_MESSAGE: &str = "Не удалось связаться с сервером.";
 
 pub(crate) use super::profile_api::{
     change_current_user_password, update_current_user, update_current_user_avatar,
@@ -130,6 +131,11 @@ pub(crate) fn has_tokens() -> bool {
     storage::load().is_some()
 }
 
+/// Returns whether an API error was caused by a failed network request.
+pub(crate) fn is_network_error(error: &str) -> bool {
+    error == NETWORK_ERROR_MESSAGE
+}
+
 /// Loads the current authenticated user, refreshing access token when needed.
 pub(crate) async fn current_user() -> Result<AuthUser, String> {
     let access_token = fresh_access_token().await?;
@@ -137,7 +143,7 @@ pub(crate) async fn current_user() -> Result<AuthUser, String> {
         .header("Authorization", &format!("Bearer {access_token}"))
         .send()
         .await
-        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+        .map_err(|_| NETWORK_ERROR_MESSAGE.to_owned())?;
 
     if response.status() == 401 {
         let access_token = refresh_access_token().await?;
@@ -145,7 +151,7 @@ pub(crate) async fn current_user() -> Result<AuthUser, String> {
             .header("Authorization", &format!("Bearer {access_token}"))
             .send()
             .await
-            .map_err(|_| "Не удалось связаться с сервером.".to_owned())?
+            .map_err(|_| NETWORK_ERROR_MESSAGE.to_owned())?
             .json::<AuthUser>()
             .await
             .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned());
@@ -215,7 +221,9 @@ pub(crate) async fn refresh_access_token() -> Result<String, String> {
             if let Some(access_token) = changed_access_token(&tokens) {
                 return Ok(access_token);
             }
-            storage::clear();
+            if !is_network_error(&error) {
+                storage::clear();
+            }
             return Err(error);
         }
     };
@@ -436,7 +444,7 @@ where
         .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
-        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+        .map_err(|_| NETWORK_ERROR_MESSAGE.to_owned())?;
 
     if response.ok() {
         response
