@@ -44,6 +44,7 @@ struct RealtimeInner {
     pending: PendingRequests,
     event_listeners: EventListeners,
     datagram_listeners: DatagramListeners,
+    datagram_writes: Mutex<()>,
     inbound: mpsc::UnboundedSender<RealtimeEnvelope>,
     generation: Cell<u64>,
     connection_status: Cell<RealtimeConnectionStatus>,
@@ -193,6 +194,7 @@ impl RealtimeHandle {
 
         match connected.transport {
             ConnectedTransport::WebTransport(session) => {
+                let _write_guard = self.inner.datagram_writes.lock().await;
                 session.send_datagram(bytes).await.map_err(|error| {
                     RealtimeError::new(format!("Failed to send realtime datagram: {error}"))
                 })
@@ -441,6 +443,7 @@ pub(crate) fn create_handle() -> RealtimeHandle {
             pending: Rc::new(RefCell::new(HashMap::new())),
             event_listeners: Rc::new(RefCell::new(Vec::new())),
             datagram_listeners: Rc::new(RefCell::new(Vec::new())),
+            datagram_writes: Mutex::new(()),
             inbound,
             generation: Cell::new(0),
             connection_status: Cell::new(RealtimeConnectionStatus::Disconnected),

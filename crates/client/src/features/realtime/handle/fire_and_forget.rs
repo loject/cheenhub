@@ -52,6 +52,7 @@ impl RealtimeHandle {
                 let bytes = serde_json::to_vec(&envelope).map_err(|error| {
                     RealtimeError::new(format!("Failed to encode realtime datagram: {error}"))
                 })?;
+                let _write_guard = self.inner.datagram_writes.lock().await;
                 session
                     .send_datagram(Bytes::from(bytes))
                     .await
