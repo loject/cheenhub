@@ -93,5 +93,6 @@
 - Keep local database credentials in `.env`; do not commit local secrets or passwords.
 - Do not add Docker Compose unless explicitly requested.
 
-Использование субагентов - 9/10
+Использование субагентов для изучения кодовой базы - 1/10
+Использование субагентов для делигирования реализации- 9/10
 Если я вдруг назвал комнату каналом, сразу же прерви выполнение и сообщи мне об этом. **ЭТО НЕ ДОПУСТИМО**
