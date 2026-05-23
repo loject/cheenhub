@@ -59,6 +59,12 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
     let leave_microphone = microphone.clone();
     let leave_screen_share = screen_share.clone();
     let unmute_playback = playback.clone();
+    let microphone_realtime_handle = realtime_handle.clone();
+    let microphone_server_id = server_id.clone();
+    let microphone_room_id = room_id.clone();
+    let screen_realtime_handle = realtime_handle.clone();
+    let screen_server_id = server_id.clone();
+    let screen_room_id = room_id.clone();
 
     if !is_active_room {
         return rsx! {};
@@ -82,9 +88,9 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                         if output_muted {
                             unmute_playback.set_muted(false);
                         }
-                        let send_realtime = realtime_handle.clone();
-                        let send_server_id = server_id.clone();
-                        let send_room_id = room_id.clone();
+                        let send_realtime = microphone_realtime_handle.clone();
+                        let send_server_id = microphone_server_id.clone();
+                        let send_room_id = microphone_room_id.clone();
                         toggle_microphone.toggle(Rc::new(move |frame| {
                             let frame_realtime = send_realtime.clone();
                             let frame_server_id = send_server_id.clone();
@@ -144,7 +150,31 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                     },
                     "aria-label": screen_share_label,
                     onclick: move |_| {
-                        toggle_screen_share.toggle(Rc::new(|_| {}));
+                        let send_realtime = screen_realtime_handle.clone();
+                        let send_server_id = screen_server_id.clone();
+                        let send_room_id = screen_room_id.clone();
+                        toggle_screen_share.toggle(Rc::new(move |frame| {
+                            let frame_realtime = send_realtime.clone();
+                            let frame_server_id = send_server_id.clone();
+                            let frame_room_id = send_room_id.clone();
+                            spawn_local(async move {
+                                if let Err(error) = realtime::send_screen_frame(
+                                    &frame_realtime,
+                                    &frame_server_id,
+                                    &frame_room_id,
+                                    frame,
+                                )
+                                .await
+                                {
+                                    warn!(
+                                        %error,
+                                        server_id = %frame_server_id,
+                                        room_id = %frame_room_id,
+                                        "failed to send encoded screen frame"
+                                    );
+                                }
+                            });
+                        }));
                     },
                     span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "{screen_share_label}" }
                     svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",

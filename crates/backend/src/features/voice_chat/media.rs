@@ -12,18 +12,39 @@ pub(crate) async fn handle_voice_frame(
     state: &AppState,
     session_id: Uuid,
     user_id: Uuid,
+    datagram: MediaDatagram,
+) {
+    handle_room_media_frame(state, session_id, user_id, datagram, "voice").await;
+}
+
+/// Handles one decoded screen sharing media datagram.
+pub(crate) async fn handle_screen_frame(
+    state: &AppState,
+    session_id: Uuid,
+    user_id: Uuid,
+    datagram: MediaDatagram,
+) {
+    handle_room_media_frame(state, session_id, user_id, datagram, "screen").await;
+}
+
+async fn handle_room_media_frame(
+    state: &AppState,
+    session_id: Uuid,
+    user_id: Uuid,
     mut datagram: MediaDatagram,
+    media_kind: &'static str,
 ) {
     debug!(
         %session_id,
         %user_id,
         room_id = %datagram.room_id,
+        media_kind,
         sequence = datagram.sequence,
         timestamp_us = datagram.timestamp_us,
         duration_us = datagram.duration_us,
         payload_bytes = datagram.payload.len(),
         codec = ?datagram.codec,
-        "received voice media datagram"
+        "received voice room media datagram"
     );
 
     let Some(presence) = state
@@ -35,7 +56,8 @@ pub(crate) async fn handle_voice_frame(
             %session_id,
             %user_id,
             room_id = %datagram.room_id,
-            "dropping voice media datagram from user outside target room"
+            media_kind,
+            "dropping media datagram from user outside target room"
         );
         return;
     };
@@ -45,7 +67,8 @@ pub(crate) async fn handle_voice_frame(
             expected_session_id = %presence.session_id,
             %user_id,
             room_id = %datagram.room_id,
-            "dropping voice media datagram from stale session"
+            media_kind,
+            "dropping media datagram from stale session"
         );
         return;
     }
@@ -66,8 +89,9 @@ pub(crate) async fn handle_voice_frame(
                 %session_id,
                 %user_id,
                 room_id = %datagram.room_id,
+                media_kind,
                 %error,
-                "failed to encode relayed voice media datagram"
+                "failed to encode relayed media datagram"
             );
             return;
         }

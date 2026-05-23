@@ -11,28 +11,34 @@ const HEADER_LEN: usize = 64;
 pub enum MediaDatagramKind {
     /// Encoded microphone audio frame.
     VoiceFrame = 1,
+    /// Encoded screen sharing video frame.
+    ScreenFrame = 2,
 }
 
 impl MediaDatagramKind {
     fn from_u8(value: u8) -> Result<Self, MediaDatagramError> {
         match value {
             1 => Ok(Self::VoiceFrame),
+            2 => Ok(Self::ScreenFrame),
             _ => Err(MediaDatagramError::UnknownKind(value)),
         }
     }
 }
 
-/// Encoded audio codec carried by a media datagram.
+/// Encoded media codec carried by a media datagram.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaCodec {
     /// Opus audio.
     Opus = 1,
+    /// VP9 video.
+    Vp9 = 2,
 }
 
 impl MediaCodec {
     fn from_u8(value: u8) -> Result<Self, MediaDatagramError> {
         match value {
             1 => Ok(Self::Opus),
+            2 => Ok(Self::Vp9),
             _ => Err(MediaDatagramError::UnknownCodec(value)),
         }
     }
@@ -185,6 +191,25 @@ mod tests {
             room_id: Uuid::new_v4(),
             sender_user_id: Uuid::new_v4(),
             payload: vec![1, 2, 3, 4],
+        };
+
+        let encoded = datagram.encode().expect("datagram encodes");
+        let decoded = MediaDatagram::decode(&encoded).expect("datagram decodes");
+
+        assert_eq!(decoded, datagram);
+    }
+
+    #[test]
+    fn screen_media_datagram_round_trips() {
+        let datagram = MediaDatagram {
+            kind: MediaDatagramKind::ScreenFrame,
+            codec: MediaCodec::Vp9,
+            sequence: 84,
+            timestamp_us: 654_321,
+            duration_us: 33_333,
+            room_id: Uuid::new_v4(),
+            sender_user_id: Uuid::new_v4(),
+            payload: vec![9, 8, 7, 6],
         };
 
         let encoded = datagram.encode().expect("datagram encodes");

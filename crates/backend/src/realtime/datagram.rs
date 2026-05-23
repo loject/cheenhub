@@ -1,6 +1,6 @@
 //! WebTransport unreliable datagram receive loop.
 
-use cheenhub_contracts::media::{MediaDatagram, MediaDatagramKind};
+use cheenhub_contracts::media::{MediaCodec, MediaDatagram, MediaDatagramKind};
 use tracing::debug;
 use uuid::Uuid;
 use web_transport::Session;
@@ -48,8 +48,20 @@ pub(crate) async fn dispatch(
     datagram: MediaDatagram,
 ) {
     match datagram.kind {
-        MediaDatagramKind::VoiceFrame => {
+        MediaDatagramKind::VoiceFrame if datagram.codec == MediaCodec::Opus => {
             voice_chat::media::handle_voice_frame(state, session_id, user_id, datagram).await;
+        }
+        MediaDatagramKind::ScreenFrame if datagram.codec == MediaCodec::Vp9 => {
+            voice_chat::media::handle_screen_frame(state, session_id, user_id, datagram).await;
+        }
+        _ => {
+            debug!(
+                %session_id,
+                %user_id,
+                kind = ?datagram.kind,
+                codec = ?datagram.codec,
+                "dropping media datagram with unsupported kind/codec combination"
+            );
         }
     }
 }

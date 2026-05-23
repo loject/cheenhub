@@ -13,6 +13,7 @@ use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::{AudioPlaybackHandle, PlaybackCodec, VoiceFrame};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
+use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 
 use super::kicked_modal::KickedFromVoiceModal;
 use super::realtime;
@@ -24,12 +25,14 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
     let realtime = use_context::<RealtimeHandle>();
     let microphone = use_context::<MicrophoneHandle>();
+    let screen_share = use_context::<ScreenShareHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
     let state = use_signal(|| VoiceConnectionState::Disconnected);
     let kicked_from_room = use_signal(|| None::<String>);
     let speaking_users = use_signal(Vec::new);
     let speaking_generations = use_hook(|| Rc::new(RefCell::new(HashMap::<String, u64>::new())));
     let mut microphone_target_room = use_signal(|| None::<String>);
+    let mut screen_share_target_room = use_signal(|| None::<String>);
     let mut mic_paused_by_mute = use_signal(|| false);
     let handle = VoiceConnectionHandle::new(
         state,
@@ -81,6 +84,33 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             }
         })
     });
+    let screen_datagram_realtime = realtime.clone();
+    let screen_datagram_current_user_id = current_user.id.clone();
+    use_hook(move || {
+        spawn(async move {
+            let mut frames = realtime::subscribe_screen_frames(&screen_datagram_realtime);
+            while let Some(frame) = frames.next().await {
+                let current = state();
+                let Some(target) = current.active_target() else {
+                    continue;
+                };
+                if frame.room_id != target.room_id
+                    || frame.sender_user_id == screen_datagram_current_user_id
+                {
+                    continue;
+                }
+                debug!(
+                    sender_user_id = %frame.sender_user_id,
+                    room_id = %frame.room_id,
+                    sequence = frame.sequence,
+                    timestamp_us = frame.timestamp_us,
+                    duration_us = frame.duration_us,
+                    payload_bytes = frame.bytes.len(),
+                    "received relayed screen sharing frame"
+                );
+            }
+        })
+    });
     let status_realtime = realtime.clone();
     let status_playback = playback.clone();
     let status_handle = handle.clone();
@@ -100,6 +130,11 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let effect_handle = handle.clone();
     use_effect(move || match state() {
         VoiceConnectionState::Connected { target, .. } => {
+            reconcile_screen_share_target(
+                screen_share.clone(),
+                &mut screen_share_target_room,
+                target.room_id.as_str(),
+            );
             if playback.is_muted() {
                 if !mic_paused_by_mute()
                     && matches!(
@@ -141,6 +176,10 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         | VoiceConnectionState::Connecting { .. }
         | VoiceConnectionState::Disconnecting { .. }
         | VoiceConnectionState::Error { .. } => {
+            if screen_share_target_room().is_some() {
+                screen_share_target_room.set(None);
+                screen_share.stop();
+            }
             if microphone_target_room().is_some() {
                 microphone_target_room.set(None);
                 mic_paused_by_mute.set(false);
@@ -159,6 +198,32 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 on_close: move |_| handle.dismiss_kick_notification(),
             }
         }
+    }
+}
+
+fn reconcile_screen_share_target(
+    screen_share: ScreenShareHandle,
+    target_room_signal: &mut Signal<Option<String>>,
+    active_room_id: &str,
+) {
+    if !matches!(
+        screen_share.status(),
+        ScreenShareStatus::Live | ScreenShareStatus::Starting
+    ) {
+        if target_room_signal().is_some() {
+            target_room_signal.set(None);
+        }
+        return;
+    }
+
+    match target_room_signal().as_deref() {
+        Some(room_id) if room_id == active_room_id => {}
+        Some(_) => {
+            info!("stopping screen sharing capture after active voice room changed");
+            target_room_signal.set(None);
+            screen_share.stop();
+        }
+        None => target_room_signal.set(Some(active_room_id.to_owned())),
     }
 }
 

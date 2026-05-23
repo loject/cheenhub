@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::features::microphone::{EncodedMicrophoneFrame, MicrophoneCodec};
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
+use crate::features::screen_share::{EncodedScreenShareFrame, ScreenShareCodec};
 
 /// Inbound relayed voice frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +28,23 @@ pub(crate) struct InboundVoiceFrame {
     /// Frame duration in microseconds.
     pub(crate) duration_us: u32,
     /// Raw encoded frame bytes.
+    pub(crate) bytes: Vec<u8>,
+}
+
+/// Inbound relayed screen sharing frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InboundScreenFrame {
+    /// Target room identifier.
+    pub(crate) room_id: String,
+    /// Authenticated sender identifier.
+    pub(crate) sender_user_id: String,
+    /// Sender-local packet sequence.
+    pub(crate) sequence: u64,
+    /// Capture or encode timestamp in microseconds.
+    pub(crate) timestamp_us: u64,
+    /// Frame duration in microseconds.
+    pub(crate) duration_us: u32,
+    /// Raw encoded VP9 frame bytes.
     pub(crate) bytes: Vec<u8>,
 }
 
@@ -124,6 +142,28 @@ pub(crate) fn subscribe_voice_frames(
     receiver
 }
 
+/// Subscribes to inbound relayed screen sharing frames for this tab.
+pub(crate) fn subscribe_screen_frames(
+    realtime: &RealtimeHandle,
+) -> mpsc::UnboundedReceiver<InboundScreenFrame> {
+    let datagrams = realtime.subscribe_datagrams();
+    let (sender, receiver) = mpsc::unbounded();
+
+    dioxus::prelude::spawn(async move {
+        let mut datagrams = datagrams;
+        while let Some(bytes) = datagrams.next().await {
+            let Some(frame) = decode_screen_frame(&bytes) else {
+                continue;
+            };
+            if sender.unbounded_send(frame).is_err() {
+                break;
+            }
+        }
+    });
+
+    receiver
+}
+
 /// Sends one encoded microphone frame to the active voice room.
 pub(crate) async fn send_voice_frame(
     realtime: &RealtimeHandle,
@@ -153,6 +193,36 @@ pub(crate) async fn send_voice_frame(
     realtime.send_unreliable_bytes(Bytes::from(bytes)).await
 }
 
+/// Sends one encoded screen sharing frame to the active voice room.
+pub(crate) async fn send_screen_frame(
+    realtime: &RealtimeHandle,
+    _server_id: &str,
+    room_id: &str,
+    frame: EncodedScreenShareFrame,
+) -> Result<(), RealtimeError> {
+    let room_id =
+        Uuid::parse_str(room_id).map_err(|_| RealtimeError::new("Voice room id is invalid."))?;
+    let codec = match frame.codec {
+        ScreenShareCodec::Vp9 => MediaCodec::Vp9,
+    };
+    let (_width, _height) = (frame.width, frame.height);
+    let datagram = MediaDatagram {
+        kind: MediaDatagramKind::ScreenFrame,
+        codec,
+        sequence: frame.sequence,
+        timestamp_us: frame.timestamp_us,
+        duration_us: frame.duration_us,
+        room_id,
+        sender_user_id: Uuid::nil(),
+        payload: frame.bytes,
+    };
+    let bytes = datagram
+        .encode()
+        .map_err(|error| RealtimeError::new(format!("Failed to encode screen frame: {error}")))?;
+
+    realtime.send_unreliable_bytes(Bytes::from(bytes)).await
+}
+
 fn decode_participants_changed(envelope: RealtimeEnvelope) -> Option<VoiceRoomSnapshot> {
     if envelope.module != RealtimeModule::VoiceChat
         || envelope.kind != RealtimeKind::VoiceChat(VoiceChatKind::ParticipantsChanged)
@@ -170,6 +240,22 @@ fn decode_voice_frame(bytes: &[u8]) -> Option<InboundVoiceFrame> {
     }
 
     Some(InboundVoiceFrame {
+        room_id: datagram.room_id.to_string(),
+        sender_user_id: datagram.sender_user_id.to_string(),
+        sequence: datagram.sequence,
+        timestamp_us: datagram.timestamp_us,
+        duration_us: datagram.duration_us,
+        bytes: datagram.payload,
+    })
+}
+
+fn decode_screen_frame(bytes: &[u8]) -> Option<InboundScreenFrame> {
+    let datagram = MediaDatagram::decode(bytes).ok()?;
+    if datagram.kind != MediaDatagramKind::ScreenFrame || datagram.codec != MediaCodec::Vp9 {
+        return None;
+    }
+
+    Some(InboundScreenFrame {
         room_id: datagram.room_id.to_string(),
         sender_user_id: datagram.sender_user_id.to_string(),
         sequence: datagram.sequence,
