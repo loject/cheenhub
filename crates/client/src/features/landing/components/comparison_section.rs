@@ -52,7 +52,7 @@ pub(crate) fn ComparisonSection() -> Element {
                             }
                             tr {
                                 td { class: "py-3 pr-4 text-[13px] text-zinc-400", "Публичная разработка" }
-                                td { class: "py-3 pr-4", CheckBadge { label: "Стримы на YouTube" } }
+                                td { class: "py-3 pr-4", CheckBadge { label: "Devlog и стримы на YouTube" } }
                                 td { class: "py-3 text-[13px] text-zinc-600", "Нет" }
                             }
                         }

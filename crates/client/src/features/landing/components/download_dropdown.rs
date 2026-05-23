@@ -9,6 +9,13 @@ use crate::features::landing::components::download_link::DownloadLink;
 #[component]
 pub(crate) fn DownloadDropdown(opens_up: bool, large: bool) -> Element {
     let mut is_open = use_signal(|| false);
+    let install_pwa = move |_| {
+        document::eval(
+            r#"
+            window.dispatchEvent(new CustomEvent("cheenhub:pwa-install"));
+            "#,
+        );
+    };
     let button_class = if large {
         "btn-g flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-6 py-3 text-[13px] font-semibold text-zinc-200"
     } else {
@@ -42,9 +49,17 @@ pub(crate) fn DownloadDropdown(opens_up: bool, large: bool) -> Element {
                 ChevronDownIcon { class_name: "h-3.5 w-3.5 text-zinc-500" }
             }
             div { class: "{menu_class}",
-                DownloadLink { href: "https://cheenhub.ru/download/windows", label: "Windows", format: ".msi" }
-                DownloadLink { href: "https://cheenhub.ru/download/linux", label: "Ubuntu/Linux", format: ".deb" }
-                DownloadLink { href: "https://cheenhub.ru/download/android", label: "Android", format: ".apk" }
+                button {
+                    r#type: "button",
+                    class: "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100",
+                    onclick: install_pwa,
+                    span { "Установить PWA" }
+                    span { class: "ml-4 shrink-0 text-[11px] text-blue-300", "web" }
+                }
+                div { class: "my-1 h-px bg-zinc-800/80" }
+                DownloadLink { href: None, label: "Windows", format: ".msi", disabled: true, status: Some("в разработке") }
+                DownloadLink { href: None, label: "Ubuntu/Linux", format: ".deb", disabled: true, status: Some("в разработке") }
+                DownloadLink { href: None, label: "Android", format: ".apk", disabled: true, status: Some("в разработке") }
             }
         }
     }

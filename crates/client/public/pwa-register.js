@@ -7,6 +7,7 @@
   const RETRY_DELAY_MS = 5000;
   let retryTimer = 0;
   let registrationPromise = null;
+  let pendingInstallPrompt = null;
 
   const log = {
     debug(message, details) {
@@ -300,7 +301,39 @@
     });
   }
 
+  function bindInstallEvents() {
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      pendingInstallPrompt = event;
+      log.info("pwa install prompt is available");
+    });
+
+    window.addEventListener("appinstalled", () => {
+      pendingInstallPrompt = null;
+      log.info("pwa installed");
+    });
+
+    window.addEventListener("cheenhub:pwa-install", async () => {
+      if (!pendingInstallPrompt) {
+        log.warn("pwa install prompt requested before it became available");
+        window.dispatchEvent(new CustomEvent("cheenhub:pwa-install-unavailable"));
+        return;
+      }
+
+      try {
+        pendingInstallPrompt.prompt();
+        const choice = await pendingInstallPrompt.userChoice;
+        log.info("pwa install prompt resolved", { outcome: choice.outcome });
+      } catch (error) {
+        log.warn("pwa install prompt failed", error);
+      } finally {
+        pendingInstallPrompt = null;
+      }
+    });
+  }
+
   bindOfflineEvents();
+  bindInstallEvents();
 
   if (!navigator.onLine || isOfflineShell()) {
     showOffline("Ожидаем сеть");
