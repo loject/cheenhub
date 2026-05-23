@@ -11,6 +11,10 @@
 - If a file violates the project file-size limit, decompose it along real ownership and purpose boundaries. Do not satisfy the limit by moving unrelated fragments into arbitrary files, by creating helper modules with no coherent responsibility, or by relying on formatter/linter loopholes such as intentionally unwrapped long lines.
 - Use GUID/UUID values for persistent identifiers; expose them at API boundaries as strings only when the wire format requires it.
 
+## Client Platform Boundaries
+
+- Hide all platform-dependent client code behind a trait/contract, with file names that make the platform boundary explicit, such as `feature/backend.rs` for the contract, `feature/web.rs` for wasm/browser, `feature/native.rs` when needed, and `feature/unsupported.rs` for stubs.
+
 ## Dioxus State
 
 - Prefer local component state with Dioxus signals/events.
