@@ -21,6 +21,13 @@ extern "C" {
     #[wasm_bindgen(method, catch, js_name = encode)]
     pub(super) fn encode(this: &VideoEncoder, frame: &VideoFrame) -> Result<(), JsValue>;
 
+    #[wasm_bindgen(method, catch, js_name = encode)]
+    pub(super) fn encode_with_options(
+        this: &VideoEncoder,
+        frame: &VideoFrame,
+        options: &JsValue,
+    ) -> Result<(), JsValue>;
+
     #[wasm_bindgen(method, catch, js_name = close)]
     pub(super) fn close(this: &VideoEncoder) -> Result<(), JsValue>;
 
@@ -36,6 +43,9 @@ extern "C" {
 
     #[wasm_bindgen(method, getter)]
     pub(super) fn duration(this: &EncodedVideoChunk) -> Option<f64>;
+
+    #[wasm_bindgen(method, getter, js_name = type)]
+    pub(super) fn chunk_type(this: &EncodedVideoChunk) -> String;
 
     #[wasm_bindgen(method, catch, js_name = copyTo)]
     pub(super) fn copy_to(

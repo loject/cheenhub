@@ -22,6 +22,8 @@ use super::browser_capture::{
 };
 use super::browser_errors::js_error_message;
 
+const KEY_FRAME_INTERVAL_SECONDS: u32 = 2;
+
 /// Browser screen sharing implementation backed by getDisplayMedia and WebCodecs.
 pub(crate) struct BrowserScreenShareBackend;
 
@@ -105,11 +107,13 @@ async fn start_browser_session(
         destination.copy_to(&mut bytes);
         let sequence = output_sequence.get();
         output_sequence.set(sequence.saturating_add(1));
+        let key_frame = chunk.chunk_type() == "key";
         output_on_frame(EncodedScreenShareFrame {
             sequence,
             timestamp_us: chunk.timestamp().max(0.0) as u64,
             duration_us: chunk.duration().unwrap_or(0.0).max(0.0) as u32,
             codec: ScreenShareCodec::Vp9,
+            key_frame,
             width,
             height,
             bytes,
@@ -136,7 +140,14 @@ async fn start_browser_session(
     let encoder: JsValue = encoder.into();
 
     let closed = Rc::new(Cell::new(false));
-    spawn_video_reader(track.clone(), encoder.clone(), closed.clone(), callbacks);
+    let key_frame_interval_frames = frame_rate.saturating_mul(KEY_FRAME_INTERVAL_SECONDS).max(1);
+    spawn_video_reader(
+        track.clone(),
+        encoder.clone(),
+        closed.clone(),
+        callbacks,
+        key_frame_interval_frames,
+    );
 
     Ok(Rc::new(BrowserScreenShareSession {
         encoder,
@@ -179,8 +190,10 @@ fn spawn_video_reader(
     encoder: JsValue,
     closed: Rc<Cell<bool>>,
     callbacks: ScreenShareCallbacks,
+    key_frame_interval_frames: u32,
 ) {
     spawn_local(async move {
+        let frame_sequence = Rc::new(Cell::new(0_u64));
         let processor = match media_stream_track_processor(&track) {
             Ok(processor) => processor,
             Err(error) => {
@@ -214,7 +227,10 @@ fn spawn_video_reader(
                 break;
             }
             let frame = read.value.unchecked_ref::<VideoFrame>();
-            if encode_video_frame(&encoder, frame).is_err() {
+            let sequence = frame_sequence.get();
+            frame_sequence.set(sequence.saturating_add(1));
+            let key_frame = sequence.is_multiple_of(u64::from(key_frame_interval_frames));
+            if encode_video_frame(&encoder, frame, key_frame).is_err() {
                 close_video_frame(frame);
                 break;
             }
@@ -289,8 +305,19 @@ async fn read_stream_chunk(reader: &JsValue) -> Result<StreamRead, ScreenShareEr
     Ok(StreamRead { done, value })
 }
 
-fn encode_video_frame(encoder: &JsValue, frame: &VideoFrame) -> Result<(), JsValue> {
-    encoder.unchecked_ref::<VideoEncoder>().encode(frame)
+fn encode_video_frame(
+    encoder: &JsValue,
+    frame: &VideoFrame,
+    key_frame: bool,
+) -> Result<(), JsValue> {
+    let encoder = encoder.unchecked_ref::<VideoEncoder>();
+    if !key_frame {
+        return encoder.encode(frame);
+    }
+
+    let options = Object::new();
+    set_property(&options, "keyFrame", &JsValue::TRUE);
+    encoder.encode_with_options(frame, &options.into())
 }
 
 fn close_video_frame(frame: &VideoFrame) {

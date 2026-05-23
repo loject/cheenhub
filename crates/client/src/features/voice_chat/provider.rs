@@ -17,6 +17,7 @@ use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 
 use super::kicked_modal::KickedFromVoiceModal;
 use super::realtime;
+use super::screen_video::ScreenVideoHandle;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 
 /// Provides voice connection state to authenticated app components.
@@ -31,6 +32,16 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let kicked_from_room = use_signal(|| None::<String>);
     let speaking_users = use_signal(Vec::new);
     let speaking_generations = use_hook(|| Rc::new(RefCell::new(HashMap::<String, u64>::new())));
+    let screen_video_users = use_signal(Vec::new);
+    let screen_video_subscribers = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
+    let screen_video_generations = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
+    let screen_video = ScreenVideoHandle::new(
+        screen_video_users,
+        screen_video_subscribers,
+        screen_video_generations,
+    );
+    let screen_video_context = screen_video.clone();
+    use_context_provider(move || screen_video_context.clone());
     let mut microphone_target_room = use_signal(|| None::<String>);
     let mut screen_share_target_room = use_signal(|| None::<String>);
     let mut mic_paused_by_mute = use_signal(|| false);
@@ -86,6 +97,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     });
     let screen_datagram_realtime = realtime.clone();
     let screen_datagram_current_user_id = current_user.id.clone();
+    let screen_datagram_video = screen_video.clone();
     use_hook(move || {
         spawn(async move {
             let mut frames = realtime::subscribe_screen_frames(&screen_datagram_realtime);
@@ -99,21 +111,14 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 {
                     continue;
                 }
-                debug!(
-                    sender_user_id = %frame.sender_user_id,
-                    room_id = %frame.room_id,
-                    sequence = frame.sequence,
-                    timestamp_us = frame.timestamp_us,
-                    duration_us = frame.duration_us,
-                    payload_bytes = frame.bytes.len(),
-                    "received relayed screen sharing frame"
-                );
+                screen_datagram_video.publish_frame(frame);
             }
         })
     });
     let status_realtime = realtime.clone();
     let status_playback = playback.clone();
     let status_handle = handle.clone();
+    let status_screen_video = screen_video.clone();
     use_hook(move || {
         spawn(async move {
             let mut statuses = status_realtime.subscribe_connection_status();
@@ -122,6 +127,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                     let mut state = state;
                     state.set(VoiceConnectionState::Disconnected);
                     status_handle.clear_speaking_users();
+                    status_screen_video.clear();
                     status_playback.stop_all();
                 }
             }
@@ -180,6 +186,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 screen_share_target_room.set(None);
                 screen_share.stop();
             }
+            screen_video.clear();
             if microphone_target_room().is_some() {
                 microphone_target_room.set(None);
                 mic_paused_by_mute.set(false);

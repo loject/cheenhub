@@ -66,6 +66,8 @@ pub(crate) struct EncodedScreenShareFrame {
     pub(crate) duration_us: u32,
     /// Encoded codec.
     pub(crate) codec: ScreenShareCodec,
+    /// Whether this frame can start a decoder stream.
+    pub(crate) key_frame: bool,
     /// Encoded frame width.
     pub(crate) width: u32,
     /// Encoded frame height.

@@ -6,6 +6,12 @@ const MAGIC: &[u8; 4] = b"CHUB";
 const VERSION: u8 = 1;
 const HEADER_LEN: usize = 64;
 
+/// Media datagram flag set when the encoded payload is an independently decodable key frame.
+pub const MEDIA_DATAGRAM_FLAG_KEY_FRAME: u8 = 0b0000_0001;
+
+/// Media datagram flag set when the payload carries one fragment of a larger media frame.
+pub const MEDIA_DATAGRAM_FLAG_FRAGMENTED: u8 = 0b0000_0010;
+
 /// Media datagram kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaDatagramKind {
@@ -51,6 +57,8 @@ pub struct MediaDatagram {
     pub kind: MediaDatagramKind,
     /// Encoded payload codec.
     pub codec: MediaCodec,
+    /// Codec-specific flags.
+    pub flags: u8,
     /// Sender-local packet sequence.
     pub sequence: u64,
     /// Capture or encode timestamp in microseconds.
@@ -75,7 +83,7 @@ impl MediaDatagram {
         bytes.push(VERSION);
         bytes.push(self.kind as u8);
         bytes.push(self.codec as u8);
-        bytes.push(0);
+        bytes.push(self.flags);
         bytes.extend_from_slice(&self.sequence.to_be_bytes());
         bytes.extend_from_slice(&self.timestamp_us.to_be_bytes());
         bytes.extend_from_slice(&self.duration_us.to_be_bytes());
@@ -100,6 +108,7 @@ impl MediaDatagram {
         }
         let kind = MediaDatagramKind::from_u8(bytes[5])?;
         let codec = MediaCodec::from_u8(bytes[6])?;
+        let flags = bytes[7];
         let sequence = u64::from_be_bytes(copy_array(&bytes[8..16]));
         let timestamp_us = u64::from_be_bytes(copy_array(&bytes[16..24]));
         let duration_us = u32::from_be_bytes(copy_array(&bytes[24..28]));
@@ -116,6 +125,7 @@ impl MediaDatagram {
         Ok(Self {
             kind,
             codec,
+            flags,
             sequence,
             timestamp_us,
             duration_us,
@@ -185,6 +195,7 @@ mod tests {
         let datagram = MediaDatagram {
             kind: MediaDatagramKind::VoiceFrame,
             codec: MediaCodec::Opus,
+            flags: 0,
             sequence: 42,
             timestamp_us: 123_456,
             duration_us: 20_000,
@@ -204,6 +215,7 @@ mod tests {
         let datagram = MediaDatagram {
             kind: MediaDatagramKind::ScreenFrame,
             codec: MediaCodec::Vp9,
+            flags: MEDIA_DATAGRAM_FLAG_KEY_FRAME,
             sequence: 84,
             timestamp_us: 654_321,
             duration_us: 33_333,
@@ -223,6 +235,7 @@ mod tests {
         let datagram = MediaDatagram {
             kind: MediaDatagramKind::VoiceFrame,
             codec: MediaCodec::Opus,
+            flags: 0,
             sequence: 1,
             timestamp_us: 1,
             duration_us: 20_000,
@@ -244,6 +257,7 @@ mod tests {
         let datagram = MediaDatagram {
             kind: MediaDatagramKind::VoiceFrame,
             codec: MediaCodec::Opus,
+            flags: 0,
             sequence: 1,
             timestamp_us: 1,
             duration_us: 20_000,

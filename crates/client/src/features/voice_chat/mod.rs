@@ -5,6 +5,8 @@ mod participant_grid;
 mod participant_tile;
 mod provider;
 mod realtime;
+mod screen_fragments;
+mod screen_video;
 mod sidebar_controls;
 mod state;
 mod surface;

@@ -11,6 +11,7 @@ use crate::features::app::server_permissions::ServerPermissionsContext;
 use crate::features::audio_playback::AudioPlaybackHandle;
 
 use super::participant_tile::VoiceParticipantTile;
+use super::screen_video::ScreenVideoHandle;
 use super::state::VoiceConnectionHandle;
 
 /// Empty or transient display state for the voice participant grid.
@@ -49,6 +50,7 @@ pub(crate) fn VoiceParticipantGrid(
     let mut user_volumes = use_signal(HashMap::<String, u32>::new);
     let playback = use_context::<AudioPlaybackHandle>();
     let voice = use_context::<VoiceConnectionHandle>();
+    let screen_video = use_context::<ScreenVideoHandle>();
     let current_user_id = use_context::<CurrentUserContext>().require_user().id;
     let can_kick_voice = use_context::<ServerPermissionsContext>().can_kick_voice;
     let count = participants.len().clamp(1, 12);
@@ -75,6 +77,7 @@ pub(crate) fn VoiceParticipantGrid(
     let kick_user_id = open_user_menu().map(|m| m.user_id.clone());
     let kick_server_id = server_id.clone();
     let kick_room_id = room_id.clone();
+    let screen_user_ids = screen_video.live_user_ids();
 
     rsx! {
         div {
@@ -111,6 +114,7 @@ pub(crate) fn VoiceParticipantGrid(
                         VoiceParticipantTile {
                             key: "{participant.user_id}",
                             speaking: speaking_user_ids.iter().any(|user_id| user_id == &participant.user_id),
+                            screen_sharing: screen_user_ids.iter().any(|user_id| user_id == &participant.user_id),
                             participant,
                             on_open_user_menu: move |(name, user_id, x, y)| {
                                 open_user_menu.set(Some(UserMenuState { name, user_id, x, y }));

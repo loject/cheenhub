@@ -1,7 +1,9 @@
 //! Voice chat realtime helpers.
 
 use bytes::Bytes;
-use cheenhub_contracts::media::{MediaCodec, MediaDatagram, MediaDatagramKind};
+use cheenhub_contracts::media::{
+    MEDIA_DATAGRAM_FLAG_KEY_FRAME, MediaCodec, MediaDatagram, MediaDatagramKind,
+};
 use cheenhub_contracts::realtime::{
     JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, RealtimeEnvelope, RealtimeKind, RealtimeModule,
     VoiceChatKind, VoiceRoomSnapshot,
@@ -13,6 +15,8 @@ use uuid::Uuid;
 use crate::features::microphone::{EncodedMicrophoneFrame, MicrophoneCodec};
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
 use crate::features::screen_share::{EncodedScreenShareFrame, ScreenShareCodec};
+
+use super::screen_fragments;
 
 /// Inbound relayed voice frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +50,8 @@ pub(crate) struct InboundScreenFrame {
     pub(crate) duration_us: u32,
     /// Raw encoded VP9 frame bytes.
     pub(crate) bytes: Vec<u8>,
+    /// Whether this frame can start a decoder stream.
+    pub(crate) key_frame: bool,
 }
 
 /// Joins one voice-capable room.
@@ -151,8 +157,17 @@ pub(crate) fn subscribe_screen_frames(
 
     dioxus::prelude::spawn(async move {
         let mut datagrams = datagrams;
+        let mut reassembler = screen_fragments::ScreenFrameReassembler::default();
         while let Some(bytes) = datagrams.next().await {
-            let Some(frame) = decode_screen_frame(&bytes) else {
+            let Some(datagram) = decode_screen_datagram(&bytes) else {
+                continue;
+            };
+            let frame = if screen_fragments::is_fragmented(&datagram) {
+                reassembler.push(datagram).map(screen_frame_from_datagram)
+            } else {
+                Some(screen_frame_from_datagram(datagram))
+            };
+            let Some(frame) = frame else {
                 continue;
             };
             if sender.unbounded_send(frame).is_err() {
@@ -179,6 +194,7 @@ pub(crate) async fn send_voice_frame(
     let datagram = MediaDatagram {
         kind: MediaDatagramKind::VoiceFrame,
         codec,
+        flags: 0,
         sequence: frame.sequence,
         timestamp_us: frame.timestamp_us,
         duration_us: frame.duration_us,
@@ -206,21 +222,19 @@ pub(crate) async fn send_screen_frame(
         ScreenShareCodec::Vp9 => MediaCodec::Vp9,
     };
     let (_width, _height) = (frame.width, frame.height);
-    let datagram = MediaDatagram {
-        kind: MediaDatagramKind::ScreenFrame,
-        codec,
-        sequence: frame.sequence,
-        timestamp_us: frame.timestamp_us,
-        duration_us: frame.duration_us,
-        room_id,
-        sender_user_id: Uuid::nil(),
-        payload: frame.bytes,
+    let flags = if frame.key_frame {
+        MEDIA_DATAGRAM_FLAG_KEY_FRAME
+    } else {
+        0
     };
-    let bytes = datagram
-        .encode()
-        .map_err(|error| RealtimeError::new(format!("Failed to encode screen frame: {error}")))?;
+    for datagram in screen_fragments::screen_frame_datagrams(room_id, codec, flags, frame)? {
+        let bytes = datagram.encode().map_err(|error| {
+            RealtimeError::new(format!("Failed to encode screen frame: {error}"))
+        })?;
+        realtime.send_unreliable_bytes(Bytes::from(bytes)).await?;
+    }
 
-    realtime.send_unreliable_bytes(Bytes::from(bytes)).await
+    Ok(())
 }
 
 fn decode_participants_changed(envelope: RealtimeEnvelope) -> Option<VoiceRoomSnapshot> {
@@ -249,18 +263,23 @@ fn decode_voice_frame(bytes: &[u8]) -> Option<InboundVoiceFrame> {
     })
 }
 
-fn decode_screen_frame(bytes: &[u8]) -> Option<InboundScreenFrame> {
+fn decode_screen_datagram(bytes: &[u8]) -> Option<MediaDatagram> {
     let datagram = MediaDatagram::decode(bytes).ok()?;
     if datagram.kind != MediaDatagramKind::ScreenFrame || datagram.codec != MediaCodec::Vp9 {
         return None;
     }
 
-    Some(InboundScreenFrame {
+    Some(datagram)
+}
+
+fn screen_frame_from_datagram(datagram: MediaDatagram) -> InboundScreenFrame {
+    InboundScreenFrame {
         room_id: datagram.room_id.to_string(),
         sender_user_id: datagram.sender_user_id.to_string(),
         sequence: datagram.sequence,
         timestamp_us: datagram.timestamp_us,
         duration_us: datagram.duration_us,
         bytes: datagram.payload,
-    })
+        key_frame: datagram.flags & MEDIA_DATAGRAM_FLAG_KEY_FRAME != 0,
+    }
 }
