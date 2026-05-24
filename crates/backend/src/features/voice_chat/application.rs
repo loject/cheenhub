@@ -1,8 +1,9 @@
 //! Voice chat presence application flows.
 
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, RealtimeKind, RealtimeModule, ServerRoleKind,
-    ServerRolePermission, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
+    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, ListServerVoiceRooms, RealtimeKind,
+    RealtimeModule, ServerRoleKind, ServerRolePermission, ServerVoiceRoomsSnapshot, VoiceChatKind,
+    VoiceRoomParticipant, VoiceRoomSnapshot,
 };
 use cheenhub_contracts::rest::{AuthUser, ServerRoomKind};
 use chrono::Utc;
@@ -113,6 +114,46 @@ pub(crate) async fn kick_member(
     fanout_snapshot(state, snapshot.clone()).await;
 
     Ok(snapshot)
+}
+
+/// Lists active voice room participant snapshots for one server.
+pub(crate) async fn list_server_voice_rooms(
+    state: &AppState,
+    user_id: &Uuid,
+    request: ListServerVoiceRooms,
+) -> Result<ServerVoiceRoomsSnapshot, VoiceChatApplicationError> {
+    let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
+    if !user_has_server_access(state, user_id, &server_id)
+        .await
+        .map_err(VoiceChatApplicationError::Internal)?
+    {
+        return Err(VoiceChatApplicationError::Unauthorized(
+            "Нет доступа к этому серверу.".to_owned(),
+        ));
+    }
+
+    let rooms = state
+        .voice_presence_store
+        .server_room_participants(&server_id)
+        .await
+        .into_iter()
+        .map(|(room_id, participants)| VoiceRoomSnapshot {
+            server_id: server_id.to_string(),
+            room_id: room_id.to_string(),
+            participants: participants.iter().map(participant_summary).collect(),
+        })
+        .collect::<Vec<_>>();
+
+    tracing::debug!(
+        server_id = %server_id,
+        active_voice_rooms = rooms.len(),
+        "listed server voice room participants"
+    );
+
+    Ok(ServerVoiceRoomsSnapshot {
+        server_id: server_id.to_string(),
+        rooms,
+    })
 }
 
 /// Removes presence owned by a closed realtime stream.
@@ -290,6 +331,13 @@ async fn fanout_snapshot(state: &AppState, snapshot: VoiceRoomSnapshot) {
         .iter()
         .map(|recipient| recipient.stream_id)
         .collect::<Vec<_>>();
+    tracing::debug!(
+        server_id = %snapshot.server_id,
+        room_id = %snapshot.room_id,
+        participants = snapshot.participants.len(),
+        recipients = stream_ids.len(),
+        "fanning out voice room participants changed event"
+    );
 
     state
         .realtime_hub

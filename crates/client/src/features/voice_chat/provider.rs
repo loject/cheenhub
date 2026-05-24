@@ -31,6 +31,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let state = use_signal(|| VoiceConnectionState::Disconnected);
     let kicked_from_room = use_signal(|| None::<String>);
     let speaking_users = use_signal(Vec::new);
+    let room_snapshots = use_signal(Vec::new);
     let speaking_generations = use_hook(|| Rc::new(RefCell::new(HashMap::<String, u64>::new())));
     let screen_video_users = use_signal(Vec::new);
     let screen_video_subscribers = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
@@ -49,6 +50,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         state,
         kicked_from_room,
         speaking_users,
+        room_snapshots,
         speaking_generations,
         realtime.clone(),
         current_user.clone(),

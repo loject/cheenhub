@@ -9,7 +9,7 @@ use crate::features::app::current_user::CurrentUserContext;
 use crate::features::network::RealtimeConnectionStatusIndicator;
 use crate::features::server_settings::ServerSettingsScope;
 use crate::features::user_settings::UserSettingsScope;
-use crate::features::voice_chat::SidebarVoiceControls;
+use crate::features::voice_chat::{SidebarVoiceControls, VoiceConnectionHandle};
 
 use crate::features::app::server_permissions::ServerPermissionsContext;
 
@@ -42,6 +42,7 @@ pub(crate) fn ServerRoomsScope(
     on_server_updated: EventHandler<ServerSummary>,
 ) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
+    let voice = use_context::<VoiceConnectionHandle>();
     use_avatar_seed(current_user.id.clone());
     let mut rooms = use_signal(|| None::<Vec<ServerRoomSummary>>);
     let mut active_room_id = use_signal(|| None::<String>);
@@ -51,6 +52,7 @@ pub(crate) fn ServerRoomsScope(
     let mut is_user_settings_open = use_signal(|| false);
     let mut active_workspace = use_signal(|| None::<ServerWorkspace>);
     let mut mounted_workspaces = use_signal(Vec::<ServerWorkspace>::new);
+    let mut voice_sidebar_loaded = use_signal(|| false);
     let chat_open_by_room = use_signal(Vec::<(String, bool)>::new);
     let server_id = server.id.clone();
     let load_server_id = server.id.clone();
@@ -102,6 +104,7 @@ pub(crate) fn ServerRoomsScope(
     let sidebar_voice_class = sidebar_styles::sidebar_voice_class(settings_workspace_active);
     let user_bar_class = sidebar_styles::user_bar_class(settings_workspace_active);
     let user_details_class = sidebar_styles::user_details_class(settings_workspace_active);
+    let voice_loader = voice.clone();
     use_effect(move || {
         if rooms().is_some() {
             return;
@@ -114,6 +117,10 @@ pub(crate) fn ServerRoomsScope(
         let next_active_room_id = next_rooms.first().map(|room| room.id.clone());
         active_room_id.set(next_active_room_id.clone());
         rooms.set(Some(next_rooms.clone()));
+        if !voice_sidebar_loaded() {
+            voice_sidebar_loaded.set(true);
+            voice_loader.load_server_voice_rooms(server_id.clone());
+        }
 
         if let Some(room_id) = next_active_room_id.clone() {
             let workspace = ServerWorkspace::Room(room_id);
@@ -247,6 +254,7 @@ pub(crate) fn ServerRoomsScope(
                                 room: room.clone(),
                                 is_active: matches!(active_workspace(), Some(ServerWorkspace::Room(ref id)) if id == &room.id),
                                 is_owner,
+                                voice_participants: voice.room_participants(&server.id, &room.id).unwrap_or_default(),
                                 compact_when_settings_active: settings_workspace_active,
                                 on_select: {
                                     let room = room.clone();
@@ -348,6 +356,7 @@ pub(crate) fn ServerRoomsScope(
                         nickname: current_user.nickname.clone(),
                         avatar_url: current_user.avatar_url.clone(),
                         class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[12px] font-bold text-white".to_owned(),
+                        avatar_seed: Some(current_user.id.clone()),
                     }
                     div { class: user_details_class,
                         div { class: "truncate text-[12px] font-medium text-zinc-100", "{current_user.nickname}" }

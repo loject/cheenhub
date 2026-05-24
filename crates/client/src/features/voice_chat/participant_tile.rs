@@ -83,6 +83,7 @@ pub(crate) fn VoiceParticipantTile(
                         nickname: participant.nickname.clone(),
                         avatar_url: participant.avatar_url.clone(),
                         class: "flex h-20 w-20 items-center justify-center rounded-full border border-white/10 bg-zinc-900/80 text-[26px] font-bold text-zinc-100 shadow-[0_16px_36px_rgba(0,0,0,.24)]".to_owned(),
+                        avatar_seed: Some(participant.user_id.clone()),
                     }
                 }
             }

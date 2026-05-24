@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
-use cheenhub_contracts::realtime::{JoinVoiceRoom, LeaveVoiceRoom};
+use cheenhub_contracts::realtime::{JoinVoiceRoom, LeaveVoiceRoom, ListServerVoiceRooms};
 use cheenhub_contracts::rest::{RegisterRequest, ServerRoomKind};
 
-use super::{VoiceChatApplicationError, join_room, leave_room};
+use super::{VoiceChatApplicationError, join_room, leave_room, list_server_voice_rooms};
 use crate::features::auth::application as auth_application;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
 use crate::features::auth::security::keys::AuthKeys;
@@ -247,4 +247,41 @@ async fn joining_new_room_replaces_previous_presence() {
             .await
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn member_can_list_active_voice_room_participants_for_server() {
+    let state = state();
+    let (user, user_id) = registered_user(&state).await;
+    let stream_id = uuid::Uuid::new_v4();
+    let (server_id, room_id) = create_room(&state, &user_id, "voice", ServerRoomKind::Voice).await;
+
+    join_room(
+        &state,
+        stream_id,
+        uuid::Uuid::new_v4(),
+        &user,
+        &user_id,
+        JoinVoiceRoom {
+            server_id: server_id.clone(),
+            room_id: room_id.clone(),
+        },
+    )
+    .await
+    .expect("join should succeed");
+
+    let snapshot = list_server_voice_rooms(
+        &state,
+        &user_id,
+        ListServerVoiceRooms {
+            server_id: server_id.clone(),
+        },
+    )
+    .await
+    .expect("server voice rooms should list");
+
+    assert_eq!(snapshot.server_id, server_id);
+    assert_eq!(snapshot.rooms.len(), 1);
+    assert_eq!(snapshot.rooms[0].room_id, room_id);
+    assert_eq!(snapshot.rooms[0].participants[0].nickname, "voice_owner");
 }

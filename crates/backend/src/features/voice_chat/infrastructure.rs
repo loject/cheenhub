@@ -126,6 +126,34 @@ impl InMemoryVoicePresenceStore {
         participants
     }
 
+    /// Lists active participants grouped by room for one server.
+    pub(crate) async fn server_room_participants(
+        &self,
+        server_id: &Uuid,
+    ) -> Vec<(Uuid, Vec<VoicePresence>)> {
+        let mut entries = self
+            .entries
+            .lock()
+            .await
+            .iter()
+            .filter(|entry| &entry.server_id == server_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|presence| (presence.room_id, presence.joined_at));
+
+        let mut rooms = Vec::<(Uuid, Vec<VoicePresence>)>::new();
+        for presence in entries {
+            match rooms.last_mut() {
+                Some((room_id, participants)) if *room_id == presence.room_id => {
+                    participants.push(presence);
+                }
+                _ => rooms.push((presence.room_id, vec![presence])),
+            }
+        }
+
+        rooms
+    }
+
     /// Returns the active presence for one user in one room.
     pub(crate) async fn room_presence_for_user(
         &self,

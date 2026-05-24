@@ -27,8 +27,8 @@ pub use text_chat::{
     SendMessageAccepted, TextChatImageAttachment, TextChatKind, TextChatMessage, UploadChatImage,
 };
 pub use voice_chat::{
-    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, VoiceChatKind, VoiceRoomParticipant,
-    VoiceRoomSnapshot,
+    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, ListServerVoiceRooms, ServerVoiceRoomsSnapshot,
+    VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
 };
 
 #[cfg(test)]

@@ -64,11 +64,16 @@ pub(crate) fn use_avatar_seed(seed: String) {
 
 /// Renders a user avatar image with nickname initial fallback.
 #[component]
-pub(crate) fn UserAvatar(nickname: String, avatar_url: Option<String>, class: String) -> Element {
+pub(crate) fn UserAvatar(
+    nickname: String,
+    avatar_url: Option<String>,
+    class: String,
+    avatar_seed: Option<String>,
+) -> Element {
     let mut image_failed = use_signal(|| false);
     let show_image = avatar_url.is_some() && !image_failed();
-    let avatar_seed = try_consume_context::<AvatarSeed>()
-        .map(|seed| (seed.0)())
+    let avatar_seed = avatar_seed
+        .or_else(|| try_consume_context::<AvatarSeed>().map(|seed| (seed.0)()))
         .unwrap_or_else(|| nickname.clone());
     let palette = default_avatar_palette(&avatar_seed);
     let fallback_style = format!(

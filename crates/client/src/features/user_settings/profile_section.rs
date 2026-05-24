@@ -37,6 +37,7 @@ pub(crate) fn ProfileSettingsSection() -> Element {
                         nickname: current_user.nickname.clone(),
                         avatar_url: current_user.avatar_url.clone(),
                         class: "flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-accent text-[28px] font-bold text-white shadow-[0_14px_36px_rgba(59,130,246,.20)]".to_owned(),
+                        avatar_seed: Some(current_user.id.clone()),
                     }
                     div { class: "min-w-0 flex-1",
                         h3 { class: "text-[16px] font-semibold tracking-[-0.03em] text-zinc-50", "Аватар" }

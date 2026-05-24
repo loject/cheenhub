@@ -46,6 +46,7 @@ pub(super) fn ChatMessageItem(
                 nickname: message.author_nickname.clone(),
                 avatar_url: message.author_avatar_url.clone(),
                 class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-800 text-[12px] font-bold text-zinc-100".to_owned(),
+                avatar_seed: Some(message.author_user_id.clone()),
             }
             div { class: "min-w-0 flex-1",
                 div { class: "mb-1 flex items-center gap-2",

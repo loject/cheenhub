@@ -1,8 +1,10 @@
 //! Individual room list item for the server rooms sidebar.
 
-use cheenhub_contracts::rest::ServerRoomSummary;
+use cheenhub_contracts::realtime::VoiceRoomParticipant;
+use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomSummary};
 use dioxus::prelude::*;
 
+use super::avatar::UserAvatar;
 use super::server_rooms_state::{room_icon, room_icon_class};
 
 #[component]
@@ -10,6 +12,7 @@ pub(super) fn RoomListItem(
     room: ServerRoomSummary,
     is_active: bool,
     is_owner: bool,
+    voice_participants: Vec<VoiceRoomParticipant>,
     compact_when_settings_active: bool,
     on_select: EventHandler<()>,
     on_edit: EventHandler<()>,
@@ -17,6 +20,16 @@ pub(super) fn RoomListItem(
 ) -> Element {
     let room_name_class = room_name_class(compact_when_settings_active);
     let room_actions_class = room_actions_class(compact_when_settings_active);
+    let show_voice_participants =
+        room.kind != ServerRoomKind::Text && !voice_participants.is_empty();
+    let visible_voice_participants = voice_participants
+        .iter()
+        .take(3)
+        .cloned()
+        .collect::<Vec<_>>();
+    let hidden_voice_participant_count = voice_participants
+        .len()
+        .saturating_sub(visible_voice_participants.len());
 
     rsx! {
         div {
@@ -29,6 +42,47 @@ pub(super) fn RoomListItem(
                 onclick: move |_| on_select(()),
                 span { class: room_icon_class(room.kind), "{room_icon(room.kind)}" }
                 span { class: room_name_class, "{room.name}" }
+            }
+            if show_voice_participants {
+                div { class: "group/voice-tooltip relative ml-2 flex shrink-0 items-center",
+                    div { class: "flex items-center -space-x-1",
+                        for participant in visible_voice_participants {
+                            UserAvatar {
+                                key: "{participant.user_id}",
+                                nickname: participant.nickname.clone(),
+                                avatar_url: participant.avatar_url.clone(),
+                                class: "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-zinc-950 bg-zinc-800 text-[9px] font-bold text-zinc-100 ring-1 ring-zinc-800".to_owned(),
+                                avatar_seed: Some(participant.user_id.clone()),
+                            }
+                        }
+                        if hidden_voice_participant_count > 0 {
+                            span { class: "flex h-5 min-w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-800 px-1 text-[9px] font-semibold text-zinc-300 ring-1 ring-zinc-800",
+                                "+{hidden_voice_participant_count}"
+                            }
+                        }
+                    }
+                    div {
+                        class: "pointer-events-none absolute right-0 top-7 z-50 hidden w-56 rounded-lg border border-zinc-800 bg-zinc-950 p-2 shadow-2xl shadow-black/40 group-hover/voice-tooltip:block group-focus-within/voice-tooltip:block",
+                        div { class: "mb-1 px-1 text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500",
+                            "В голосе"
+                        }
+                        div { class: "max-h-56 space-y-1 overflow-y-auto",
+                            for participant in voice_participants {
+                                div { key: "{participant.user_id}", class: "flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1",
+                                    UserAvatar {
+                                        nickname: participant.nickname.clone(),
+                                        avatar_url: participant.avatar_url.clone(),
+                                        class: "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-bold text-zinc-100".to_owned(),
+                                        avatar_seed: Some(participant.user_id.clone()),
+                                    }
+                                    span { class: "min-w-0 truncate text-[12px] font-medium text-zinc-200",
+                                        "{participant.nickname}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             if is_owner {
                 span { class: room_actions_class,

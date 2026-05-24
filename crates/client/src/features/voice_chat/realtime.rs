@@ -5,8 +5,8 @@ use cheenhub_contracts::media::{
     MEDIA_DATAGRAM_FLAG_KEY_FRAME, MediaCodec, MediaDatagram, MediaDatagramKind,
 };
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, RealtimeEnvelope, RealtimeKind, RealtimeModule,
-    VoiceChatKind, VoiceRoomSnapshot,
+    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, ListServerVoiceRooms, RealtimeEnvelope,
+    RealtimeKind, RealtimeModule, ServerVoiceRoomsSnapshot, VoiceChatKind, VoiceRoomSnapshot,
 };
 use futures_channel::mpsc;
 use futures_util::StreamExt;
@@ -100,6 +100,20 @@ pub(crate) async fn kick_voice_member(
                 room_id,
                 user_id,
             },
+        )
+        .await
+}
+
+/// Loads active voice room participant snapshots for one server.
+pub(crate) async fn list_server_voice_rooms(
+    realtime: &RealtimeHandle,
+    server_id: String,
+) -> Result<ServerVoiceRoomsSnapshot, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::ListServerVoiceRooms),
+            ListServerVoiceRooms { server_id },
         )
         .await
 }

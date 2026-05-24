@@ -13,6 +13,7 @@ use gloo_timers::future::TimeoutFuture;
 use crate::features::realtime::RealtimeHandle;
 
 use super::realtime;
+use super::room_presence::{self, VoiceRoomParticipants};
 
 const SPEAKING_RELEASE_TIMEOUT_MS: u32 = 450;
 const JOIN_RESPONSE_TIMEOUT_MS: u32 = 12_000;
@@ -69,6 +70,7 @@ pub(crate) struct VoiceConnectionHandle {
     /// Room name the user was kicked from, set when a kick is detected.
     pub(crate) kicked_from_room: Signal<Option<String>>,
     speaking_users: Signal<Vec<SpeakingUserActivity>>,
+    room_snapshots: Signal<Vec<VoiceRoomParticipants>>,
     speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
     realtime: RealtimeHandle,
     current_user: AuthUser,
@@ -86,6 +88,7 @@ impl VoiceConnectionHandle {
         state: Signal<VoiceConnectionState>,
         kicked_from_room: Signal<Option<String>>,
         speaking_users: Signal<Vec<SpeakingUserActivity>>,
+        room_snapshots: Signal<Vec<VoiceRoomParticipants>>,
         speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
         realtime: RealtimeHandle,
         current_user: AuthUser,
@@ -94,6 +97,7 @@ impl VoiceConnectionHandle {
             state,
             kicked_from_room,
             speaking_users,
+            room_snapshots,
             speaking_generations,
             realtime,
             current_user,
@@ -122,6 +126,40 @@ impl VoiceConnectionHandle {
             .into_iter()
             .map(|activity| activity.user_id)
             .collect()
+    }
+
+    /// Returns the latest known participant list for one voice-capable room.
+    pub(crate) fn room_participants(
+        &self,
+        server_id: &str,
+        room_id: &str,
+    ) -> Option<Vec<VoiceRoomParticipant>> {
+        room_presence::participants_for(&(self.room_snapshots)(), server_id, room_id)
+    }
+
+    /// Loads active voice room snapshots for a server over realtime.
+    pub(crate) fn load_server_voice_rooms(&self, server_id: String) {
+        let realtime = self.realtime.clone();
+        let handle = self.clone();
+        spawn(async move {
+            match realtime::list_server_voice_rooms(&realtime, server_id.clone()).await {
+                Ok(snapshot) => {
+                    info!(
+                        server_id = %snapshot.server_id,
+                        active_voice_rooms = snapshot.rooms.len(),
+                        "loaded server voice room sidebar participants"
+                    );
+                    handle.replace_server_room_snapshots(snapshot.server_id, snapshot.rooms);
+                }
+                Err(error) => {
+                    warn!(
+                        %error,
+                        server_id = %server_id,
+                        "failed to load server voice room sidebar participants"
+                    );
+                }
+            }
+        });
     }
 
     /// Marks one user as speaking until no new voice frame refreshes the marker.
@@ -188,6 +226,7 @@ impl VoiceConnectionHandle {
 
         let previous = current.active_target();
         let realtime = self.realtime.clone();
+        let handle = self.clone();
         let mut state = self.state;
         let user = self.current_user.clone();
         state.set(VoiceConnectionState::Connecting {
@@ -227,6 +266,7 @@ impl VoiceConnectionHandle {
             {
                 Either::Left((Ok(mut snapshot), _)) => {
                     ensure_current_user_present(&mut snapshot.participants, &user);
+                    handle.apply_room_snapshot(snapshot.clone());
                     info!(
                         server_id = %target.server_id,
                         room_id = %target.room_id,
@@ -319,6 +359,7 @@ impl VoiceConnectionHandle {
 
     /// Applies a participant snapshot event.
     pub(crate) fn apply_snapshot(&self, snapshot: cheenhub_contracts::realtime::VoiceRoomSnapshot) {
+        self.apply_room_snapshot(snapshot.clone());
         let current = self.state();
         let Some(target) = current.active_target() else {
             return;
@@ -360,6 +401,24 @@ impl VoiceConnectionHandle {
             }
             VoiceConnectionState::Disconnected => VoiceConnectionState::Disconnected,
         });
+    }
+
+    fn apply_room_snapshot(&self, snapshot: cheenhub_contracts::realtime::VoiceRoomSnapshot) {
+        let mut next_snapshots = (self.room_snapshots)();
+        room_presence::apply_snapshot(&mut next_snapshots, snapshot);
+        let mut room_snapshots = self.room_snapshots;
+        room_snapshots.set(next_snapshots);
+    }
+
+    fn replace_server_room_snapshots(
+        &self,
+        server_id: String,
+        snapshots: Vec<cheenhub_contracts::realtime::VoiceRoomSnapshot>,
+    ) {
+        let mut next_snapshots = (self.room_snapshots)();
+        room_presence::replace_server_snapshots(&mut next_snapshots, server_id, snapshots);
+        let mut room_snapshots = self.room_snapshots;
+        room_snapshots.set(next_snapshots);
     }
 }
 
