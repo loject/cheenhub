@@ -59,6 +59,7 @@ pub struct UpdateServerAvatarResponse {
 }
 
 /// Server room type supported by the MVP.
+/// TODO: это не должен быть rest, а должен быть realtime
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerRoomKind {
