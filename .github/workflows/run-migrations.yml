@@ -1,0 +1,124 @@
+name: Run database migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend_image_ref:
+        description: "Full backend image reference, for example ghcr.io/owner/repo/backend:v1.0.0."
+        required: true
+        type: string
+      compose_project_dir:
+        description: "Absolute path to the checked-out CheenHub directory on the Ubuntu server."
+        required: true
+        default: "/opt/cheenhub"
+        type: string
+      env_file:
+        description: "Production env file path relative to compose_project_dir."
+        required: true
+        default: ".env.production"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  migrate:
+    name: Run migrations on server
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 20
+
+    steps:
+      - name: Resolve backend image reference
+        id: image
+        shell: bash
+        env:
+          INPUT_BACKEND_IMAGE_REF: ${{ inputs.backend_image_ref }}
+        run: |
+          image_ref="${INPUT_BACKEND_IMAGE_REF}"
+
+          if [[ "${image_ref}" != *":"* ]]; then
+            echo "backend_image_ref must include a tag, for example ghcr.io/owner/repo/backend:v1.0.0" >&2
+            exit 1
+          fi
+
+          echo "ref=${image_ref}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate deployment secrets
+        shell: bash
+        env:
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+        run: |
+          missing=0
+
+          for name in DEPLOY_SSH_HOST DEPLOY_SSH_USER DEPLOY_SSH_PRIVATE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "${name} secret is required." >&2
+              missing=1
+            fi
+          done
+
+          exit "${missing}"
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${DEPLOY_SSH_PRIVATE_KEY}" > ~/.ssh/cheenhub_deploy_key
+          chmod 600 ~/.ssh/cheenhub_deploy_key
+          ssh-keyscan -p "${DEPLOY_SSH_PORT}" "${DEPLOY_SSH_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Pull image and run migrations
+        shell: bash
+        env:
+          BACKEND_IMAGE_REF: ${{ steps.image.outputs.ref }}
+          COMPOSE_PROJECT_DIR: ${{ inputs.compose_project_dir }}
+          ENV_FILE: ${{ inputs.env_file }}
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+          DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+        run: |
+          printf -v quoted_backend_image_ref '%q' "${BACKEND_IMAGE_REF}"
+          printf -v quoted_compose_project_dir '%q' "${COMPOSE_PROJECT_DIR}"
+          printf -v quoted_env_file '%q' "${ENV_FILE}"
+          printf -v quoted_ghcr_username '%q' "${GHCR_USERNAME}"
+          printf -v quoted_ghcr_read_token '%q' "${GHCR_READ_TOKEN}"
+
+          ssh -i ~/.ssh/cheenhub_deploy_key \
+            -p "${DEPLOY_SSH_PORT}" \
+            "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
+            "BACKEND_IMAGE_REF=${quoted_backend_image_ref} COMPOSE_PROJECT_DIR=${quoted_compose_project_dir} ENV_FILE=${quoted_env_file} GHCR_USERNAME=${quoted_ghcr_username} GHCR_READ_TOKEN=${quoted_ghcr_read_token} bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd "${COMPOSE_PROJECT_DIR}"
+
+          if [[ -n "${GHCR_READ_TOKEN}" ]]; then
+            printf '%s\n' "${GHCR_READ_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+          fi
+
+          CHEENHUB_BACKEND_IMAGE_REF="${BACKEND_IMAGE_REF}" docker compose \
+            --env-file "${ENV_FILE}" \
+            -f deploy/compose.yml \
+            pull migrate
+
+          CHEENHUB_BACKEND_IMAGE_REF="${BACKEND_IMAGE_REF}" docker compose \
+            --env-file "${ENV_FILE}" \
+            -f deploy/compose.yml \
+            up -d db
+
+          CHEENHUB_BACKEND_IMAGE_REF="${BACKEND_IMAGE_REF}" docker compose \
+            --env-file "${ENV_FILE}" \
+            -f deploy/compose.yml \
+            up --force-recreate --abort-on-container-exit --exit-code-from migrate migrate
+          REMOTE

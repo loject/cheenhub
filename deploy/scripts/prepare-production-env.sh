@@ -17,9 +17,8 @@ postgres_password="$(openssl rand -hex 32)"
 
 cat > "$env_file" <<EOF
 CHEENHUB_DOMAIN=$host
-CHEENHUB_BACKEND_IMAGE=cheenhub-backend
-CHEENHUB_WEB_IMAGE=cheenhub-web
-CHEENHUB_IMAGE_TAG=latest
+CHEENHUB_BACKEND_IMAGE_REF=ghcr.io/<owner>/<repo>/backend:<tag>
+CHEENHUB_WEB_IMAGE_REF=ghcr.io/<owner>/<repo>/web:<tag>
 
 POSTGRES_DB=cheenhub
 POSTGRES_USER=cheenhub

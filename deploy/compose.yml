@@ -17,7 +17,7 @@ services:
       retries: 12
 
   migrate:
-    image: ${CHEENHUB_BACKEND_IMAGE:-cheenhub-backend}:${CHEENHUB_IMAGE_TAG:-latest}
+    image: ${CHEENHUB_BACKEND_IMAGE_REF:?CHEENHUB_BACKEND_IMAGE_REF is required}
     restart: "no"
     env_file:
       - ../.env.production
@@ -29,7 +29,7 @@ services:
         condition: service_healthy
 
   backend:
-    image: ${CHEENHUB_BACKEND_IMAGE:-cheenhub-backend}:${CHEENHUB_IMAGE_TAG:-latest}
+    image: ${CHEENHUB_BACKEND_IMAGE_REF:?CHEENHUB_BACKEND_IMAGE_REF is required}
     restart: unless-stopped
     env_file:
       - ../.env.production
@@ -54,7 +54,7 @@ services:
         condition: service_completed_successfully
 
   web:
-    image: ${CHEENHUB_WEB_IMAGE:-cheenhub-web}:${CHEENHUB_IMAGE_TAG:-latest}
+    image: ${CHEENHUB_WEB_IMAGE_REF:?CHEENHUB_WEB_IMAGE_REF is required}
     restart: unless-stopped
     ports:
       - "80:80"
