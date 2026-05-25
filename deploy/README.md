@@ -54,13 +54,14 @@ CHEENHUB_BACKEND_IMAGE_REF=ghcr.io/loject/cheenhub/backend:v1.0.0
 CHEENHUB_WEB_IMAGE_REF=ghcr.io/loject/cheenhub/web:v1.0.0
 ```
 
-## Ручной запуск миграций через GitHub Actions
+## Ручной деплой через GitHub Actions
 
-Workflow `.github/workflows/run-migrations.yml` запускается вручную через `workflow_dispatch`.
+Workflow `.github/workflows/run-migrations.yml` запускается вручную через `workflow_dispatch`, сначала применяет миграции, затем обновляет backend и frontend containers.
 
 Inputs:
 
 - `backend_image_ref` - полный image reference backend-образа, например `ghcr.io/<owner>/<repo>/backend:v1.0.0`.
+- `web_image_ref` - полный image reference frontend-образа, например `ghcr.io/<owner>/<repo>/web:v1.0.0`.
 - `compose_project_dir` - путь к checkout проекта на Ubuntu-сервере, по умолчанию `/opt/cheenhub`.
 - `env_file` - production env-файл относительно `compose_project_dir`, по умолчанию `.env.production`.
 
@@ -73,7 +74,7 @@ Secrets:
 - `GHCR_READ_TOKEN` - опционально, нужен для приватных GHCR packages.
 - `GHCR_USERNAME` - опционально, по умолчанию используется actor workflow.
 
-Workflow подключается по SSH, проверяет что `compose_project_dir` является чистым git checkout, делает `git fetch` и `git checkout --detach` на commit workflow, затем использует `deploy/compose.migrate.yml`: делает `docker compose pull migrate`, поднимает `db` и запускает одноразовый service `migrate` из указанного backend image. Этот migrate-compose не зависит от frontend image.
+Workflow подключается по SSH, проверяет что `compose_project_dir` является чистым git checkout, делает `git fetch` и `git checkout --detach` на commit workflow, затем использует `deploy/compose.migrate.yml`: делает `docker compose pull migrate`, поднимает `db` и запускает одноразовый service `migrate` из указанного backend image. После успешной миграции workflow использует `deploy/compose.yml`, подтягивает `backend`, `web`, `certbot` и перезапускает `backend`, `web`, `certbot` через `up -d --no-deps`.
 
 Для локальной сборки на сервере можно добавить `deploy/compose.build.yml`, а для ручного frontend-артефакта оставить текущий overlay `deploy/compose.artifact.yml`.
 
