@@ -1,0 +1,32 @@
+name: cheenhub
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  migrate:
+    image: ${CHEENHUB_BACKEND_IMAGE_REF:?CHEENHUB_BACKEND_IMAGE_REF is required}
+    restart: "no"
+    env_file:
+      - ../.env.production
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    command: ["cheenhub_migrations", "up"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

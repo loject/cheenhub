@@ -126,16 +126,16 @@ jobs:
 
           CHEENHUB_BACKEND_IMAGE_REF="${BACKEND_IMAGE_REF}" docker compose \
             --env-file "${ENV_FILE}" \
-            -f deploy/compose.yml \
+            -f deploy/compose.migrate.yml \
             pull migrate
 
           CHEENHUB_BACKEND_IMAGE_REF="${BACKEND_IMAGE_REF}" docker compose \
             --env-file "${ENV_FILE}" \
-            -f deploy/compose.yml \
+            -f deploy/compose.migrate.yml \
             up -d db
 
           CHEENHUB_BACKEND_IMAGE_REF="${BACKEND_IMAGE_REF}" docker compose \
             --env-file "${ENV_FILE}" \
-            -f deploy/compose.yml \
+            -f deploy/compose.migrate.yml \
             up --force-recreate --abort-on-container-exit --exit-code-from migrate migrate
           REMOTE

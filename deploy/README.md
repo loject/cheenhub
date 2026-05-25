@@ -73,7 +73,7 @@ Secrets:
 - `GHCR_READ_TOKEN` - опционально, нужен для приватных GHCR packages.
 - `GHCR_USERNAME` - опционально, по умолчанию используется actor workflow.
 
-Workflow подключается по SSH, проверяет что `compose_project_dir` является чистым git checkout, делает `git fetch` и `git checkout --detach` на commit workflow, затем делает `docker compose pull migrate`, поднимает `db` и запускает одноразовый service `migrate` из указанного backend image.
+Workflow подключается по SSH, проверяет что `compose_project_dir` является чистым git checkout, делает `git fetch` и `git checkout --detach` на commit workflow, затем использует `deploy/compose.migrate.yml`: делает `docker compose pull migrate`, поднимает `db` и запускает одноразовый service `migrate` из указанного backend image. Этот migrate-compose не зависит от frontend image.
 
 Для локальной сборки на сервере можно добавить `deploy/compose.build.yml`, а для ручного frontend-артефакта оставить текущий overlay `deploy/compose.artifact.yml`.
 
