@@ -82,6 +82,8 @@ jobs:
         env:
           BACKEND_IMAGE_REF: ${{ steps.image.outputs.ref }}
           COMPOSE_PROJECT_DIR: ${{ inputs.compose_project_dir }}
+          DEPLOY_GIT_REF: ${{ github.ref }}
+          DEPLOY_GIT_SHA: ${{ github.sha }}
           ENV_FILE: ${{ inputs.env_file }}
           DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
           DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
@@ -91,6 +93,8 @@ jobs:
         run: |
           printf -v quoted_backend_image_ref '%q' "${BACKEND_IMAGE_REF}"
           printf -v quoted_compose_project_dir '%q' "${COMPOSE_PROJECT_DIR}"
+          printf -v quoted_deploy_git_ref '%q' "${DEPLOY_GIT_REF}"
+          printf -v quoted_deploy_git_sha '%q' "${DEPLOY_GIT_SHA}"
           printf -v quoted_env_file '%q' "${ENV_FILE}"
           printf -v quoted_ghcr_username '%q' "${GHCR_USERNAME}"
           printf -v quoted_ghcr_read_token '%q' "${GHCR_READ_TOKEN}"
@@ -98,10 +102,23 @@ jobs:
           ssh -i ~/.ssh/cheenhub_deploy_key \
             -p "${DEPLOY_SSH_PORT}" \
             "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
-            "BACKEND_IMAGE_REF=${quoted_backend_image_ref} COMPOSE_PROJECT_DIR=${quoted_compose_project_dir} ENV_FILE=${quoted_env_file} GHCR_USERNAME=${quoted_ghcr_username} GHCR_READ_TOKEN=${quoted_ghcr_read_token} bash -s" <<'REMOTE'
+            "BACKEND_IMAGE_REF=${quoted_backend_image_ref} COMPOSE_PROJECT_DIR=${quoted_compose_project_dir} DEPLOY_GIT_REF=${quoted_deploy_git_ref} DEPLOY_GIT_SHA=${quoted_deploy_git_sha} ENV_FILE=${quoted_env_file} GHCR_USERNAME=${quoted_ghcr_username} GHCR_READ_TOKEN=${quoted_ghcr_read_token} bash -s" <<'REMOTE'
           set -euo pipefail
 
           cd "${COMPOSE_PROJECT_DIR}"
+
+          if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo "${COMPOSE_PROJECT_DIR} must be a git checkout of the CheenHub repository." >&2
+            exit 1
+          fi
+
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "${COMPOSE_PROJECT_DIR} has uncommitted changes; refusing to overwrite deploy source." >&2
+            exit 1
+          fi
+
+          git fetch --prune origin "${DEPLOY_GIT_REF}"
+          git checkout --detach "${DEPLOY_GIT_SHA}"
 
           if [[ -n "${GHCR_READ_TOKEN}" ]]; then
             printf '%s\n' "${GHCR_READ_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin

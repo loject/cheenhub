@@ -10,7 +10,7 @@
 
 ## Первичная подготовка сервера
 
-На сервере нужен Docker Compose v2 и каталог приложения, например `/opt/cheenhub`.
+На сервере нужен Docker Compose v2 и git checkout репозитория, например `/opt/cheenhub`. Deploy workflow считает репозиторий единственным source of truth и перед запуском миграций синхронизирует server checkout с commit'ом workflow.
 
 ```bash
 deploy/scripts/prepare-production-env.sh cheenhub.ru .env.production
@@ -73,7 +73,7 @@ Secrets:
 - `GHCR_READ_TOKEN` - опционально, нужен для приватных GHCR packages.
 - `GHCR_USERNAME` - опционально, по умолчанию используется actor workflow.
 
-Workflow подключается по SSH, делает `docker compose pull migrate`, поднимает `db`, затем запускает одноразовый service `migrate` из указанного backend image.
+Workflow подключается по SSH, проверяет что `compose_project_dir` является чистым git checkout, делает `git fetch` и `git checkout --detach` на commit workflow, затем делает `docker compose pull migrate`, поднимает `db` и запускает одноразовый service `migrate` из указанного backend image.
 
 Для локальной сборки на сервере можно добавить `deploy/compose.build.yml`, а для ручного frontend-артефакта оставить текущий overlay `deploy/compose.artifact.yml`.
 
