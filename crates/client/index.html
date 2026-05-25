@@ -29,10 +29,12 @@
           display: grid;
           place-items: center;
           padding: 24px;
-          background:
-            radial-gradient(circle at 20% 0%, rgba(37, 99, 235, 0.20), transparent 32rem),
-            linear-gradient(135deg, #111827 0%, #172033 44%, #0f172a 100%);
-          color: #f8fafc;
+          background-color: #09090b;
+          background-image:
+            linear-gradient(to right, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+          background-size: 28px 28px;
+          color: #f4f4f5;
           font-family:
             Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
             "Segoe UI", sans-serif;
@@ -44,34 +46,35 @@
 
         .pwa-offline-panel {
           width: min(100%, 460px);
-          border: 1px solid rgba(148, 163, 184, 0.28);
-          border-radius: 8px;
-          padding: 28px;
-          background: rgba(15, 23, 42, 0.86);
-          box-shadow: 0 24px 70px rgba(2, 6, 23, 0.38);
+          border: 1px solid rgba(39, 39, 42, 0.95);
+          border-radius: 16px;
+          padding: 24px;
+          background: rgba(24, 24, 27, 0.92);
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
         }
 
         .pwa-offline-kicker {
           margin: 0 0 10px;
-          color: #93c5fd;
-          font-size: 13px;
-          font-weight: 700;
+          color: #71717a;
+          font-size: 10px;
+          font-weight: 600;
           letter-spacing: 0;
           text-transform: uppercase;
         }
 
         .pwa-offline-title {
           margin: 0;
-          font-size: 28px;
-          line-height: 1.12;
+          font-size: 24px;
+          font-weight: 650;
+          line-height: 1.18;
           letter-spacing: 0;
         }
 
         .pwa-offline-copy {
           margin: 14px 0 0;
-          color: #cbd5e1;
-          font-size: 15px;
-          line-height: 1.55;
+          color: #a1a1aa;
+          font-size: 13px;
+          line-height: 1.65;
         }
 
         .pwa-offline-actions {
@@ -84,25 +87,34 @@
         .pwa-offline-button {
           min-height: 44px;
           border: 0;
-          border-radius: 8px;
+          border-radius: 12px;
           padding: 0 18px;
-          background: #60a5fa;
-          color: #08111f;
+          background: #3b82f6;
+          color: #ffffff;
           cursor: pointer;
           font: inherit;
-          font-weight: 800;
+          font-size: 13px;
+          font-weight: 650;
+          transition:
+            background 0.15s,
+            box-shadow 0.15s;
+        }
+
+        .pwa-offline-button:hover {
+          background: #60a5fa;
+          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
         }
 
         .pwa-offline-button:focus-visible {
-          outline: 3px solid rgba(147, 197, 253, 0.76);
+          outline: 3px solid rgba(59, 130, 246, 0.38);
           outline-offset: 3px;
         }
 
         .pwa-offline-status {
           align-self: center;
           min-width: 0;
-          color: #bfdbfe;
-          font-size: 14px;
+          color: #71717a;
+          font-size: 12px;
         }
 
         @media (max-width: 520px) {

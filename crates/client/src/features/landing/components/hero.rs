@@ -9,6 +9,8 @@ use crate::features::landing::components::web_button::WebButton;
 
 #[component]
 pub(crate) fn Hero() -> Element {
+    let app_version = env!("CHEENHUB_APP_VERSION");
+
     rsx! {
         section { class: "relative mx-auto max-w-6xl px-5 pb-16 pt-20 lg:px-8 lg:pt-28",
             div { class: "pointer-events-none absolute left-1/2 top-0 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-accent/5 blur-3xl" }
@@ -19,7 +21,7 @@ pub(crate) fn Hero() -> Element {
                             span { class: "glow-ring" }
                             span { class: "relative h-2 w-2 rounded-full bg-accent/80" }
                         }
-                        "Открытый код  ·  v0.9 бета  ·  бесплатно"
+                        "Открытый код  ·  {app_version}  ·  бесплатно"
                     }
                 }
                 h1 { class: "a2 mx-auto max-w-3xl text-center text-4xl font-semibold leading-[1.1] tracking-[-0.05em] text-zinc-50 sm:text-5xl lg:text-[60px]",

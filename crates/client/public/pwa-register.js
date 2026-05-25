@@ -2,7 +2,6 @@
   "use strict";
 
   const LOG_PREFIX = "[pwa]";
-  const CACHE_NAME = "cheenhub-pwa-shell-v1";
   const OFFLINE_CHECK_PATH = "/manifest.webmanifest";
   const RETRY_DELAY_MS = 5000;
   let retryTimer = 0;
@@ -33,13 +32,29 @@
     return document.documentElement.dataset.pwaOfflineShell === "true";
   }
 
+  function isStandalonePwa() {
+    return (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.matchMedia("(display-mode: window-controls-overlay)").matches ||
+      window.navigator.standalone === true
+    );
+  }
+
+  function isLandingPath() {
+    return window.location.pathname === "/" || window.location.pathname === "/index.html";
+  }
+
+  function shouldUseOfflineExperience() {
+    return isOfflineShell() || (isStandalonePwa() && !isLandingPath());
+  }
+
   function appHasRendered() {
     const main = document.getElementById("main");
     return Boolean(main && main.childElementCount > 0);
   }
 
   function shouldShowOfflinePanel() {
-    return isOfflineShell() || !appHasRendered();
+    return shouldUseOfflineExperience() && (isOfflineShell() || !appHasRendered());
   }
 
   function setStatus(message) {
@@ -50,6 +65,15 @@
   }
 
   function showOffline(message) {
+    if (!shouldUseOfflineExperience()) {
+      hideOffline();
+      log.debug("offline shell skipped outside installed app", {
+        path: window.location.pathname,
+        standalone: isStandalonePwa(),
+      });
+      return;
+    }
+
     const panel = offlinePanel();
     if (panel) {
       const shouldShow = shouldShowOfflinePanel();
@@ -95,6 +119,12 @@
   }
 
   async function verifyOnline(source) {
+    if (!shouldUseOfflineExperience()) {
+      clearRetryTimer();
+      hideOffline();
+      return true;
+    }
+
     if (!navigator.onLine) {
       showOffline("Ожидаем сеть");
       scheduleRetry();
@@ -195,7 +225,7 @@
   }
 
   async function cacheCurrentShell() {
-    if (!("caches" in window) || !navigator.onLine) {
+    if (!navigator.onLine) {
       return;
     }
 
@@ -212,20 +242,13 @@
     }
 
     try {
-      const cache = await caches.open(CACHE_NAME);
-      await Promise.allSettled(
-        Array.from(urls).map((url) =>
-          cache.add(new Request(url, { credentials: "same-origin" }))
-        )
-      );
-      log.debug("cached current app shell", { urls: Array.from(urls) });
-
       const registration = await registrationPromise;
       if (registration && registration.active) {
         registration.active.postMessage({
           type: "CACHE_URLS",
           urls: Array.from(urls),
         });
+        log.debug("requested current app shell cache", { urls: Array.from(urls) });
       }
     } catch (error) {
       log.warn("failed to cache current app shell", error);
@@ -277,19 +300,27 @@
 
     window.addEventListener("offline", () => {
       log.info("browser reported offline");
-      showOffline("Ожидаем сеть");
-      scheduleRetry();
+      if (shouldUseOfflineExperience()) {
+        showOffline("Ожидаем сеть");
+        scheduleRetry();
+      }
     });
 
     window.addEventListener("online", () => {
       log.info("browser reported online");
-      verifyOnline("online-event");
+      if (shouldUseOfflineExperience()) {
+        verifyOnline("online-event");
+      }
     });
 
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && !navigator.onLine) {
+      if (document.visibilityState !== "visible" || !shouldUseOfflineExperience()) {
+        return;
+      }
+
+      if (!navigator.onLine) {
         showOffline("Ожидаем сеть");
-      } else if (document.visibilityState === "visible") {
+      } else {
         verifyOnline("visibilitychange");
       }
     });
@@ -335,14 +366,16 @@
   bindOfflineEvents();
   bindInstallEvents();
 
-  if (!navigator.onLine || isOfflineShell()) {
+  if (shouldUseOfflineExperience() && (!navigator.onLine || isOfflineShell())) {
     showOffline("Ожидаем сеть");
   }
 
   registrationPromise = registerServiceWorker();
 
   window.addEventListener("load", () => {
-    verifyOnline("initial-load");
+    if (shouldUseOfflineExperience()) {
+      verifyOnline("initial-load");
+    }
     registrationPromise
       .then(() => cacheCurrentShell())
       .catch((error) => log.warn("pwa startup failed", error));

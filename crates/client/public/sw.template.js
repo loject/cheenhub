@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v0.1.0-dev";
+const CACHE_VERSION = "__CHEENHUB_APP_VERSION__";
 const SHELL_CACHE = `cheenhub-pwa-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `cheenhub-pwa-runtime-${CACHE_VERSION}`;
 const CACHE_NAMES = new Set([SHELL_CACHE, RUNTIME_CACHE]);

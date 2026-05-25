@@ -36,6 +36,18 @@ jobs:
           echo "backend=ghcr.io/${repo}/backend" >> "$GITHUB_OUTPUT"
           echo "web=ghcr.io/${repo}/web" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve app version
+        id: app-version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/client/Cargo.toml | head -n 1)"
+            version="v${crate_version}-${GITHUB_SHA::7}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
       - name: Validate release configuration
         shell: bash
         run: |
@@ -99,6 +111,7 @@ jobs:
           labels: ${{ steps.web-meta.outputs.labels }}
           build-args: |
             CHEENHUB_API_BASE_URL=${{ env.CHEENHUB_API_BASE_URL }}
+            CHEENHUB_APP_VERSION=${{ steps.app-version.outputs.version }}
             CHEENHUB_JWT_KEY_ID=${{ env.CHEENHUB_JWT_KEY_ID }}
             CHEENHUB_JWT_PUBLIC_KEY_BASE64=${{ env.CHEENHUB_JWT_PUBLIC_KEY_BASE64 }}
             CHEENHUB_REALTIME_URL=${{ env.CHEENHUB_REALTIME_URL }}
