@@ -52,12 +52,12 @@ pub(crate) fn SidebarVoiceControls() -> Element {
     let microphone_speaking = microphone_live && microphone_level.active;
     let microphone_level_width =
         (microphone_level.rms / microphone_level.threshold.max(0.001)).clamp(0.08, 1.0) * 100.0;
-    let microphone_label = match microphone_status {
-        MicrophoneStatus::Idle => "Включить микрофон",
-        MicrophoneStatus::Starting => "Запрашиваем микрофон",
-        MicrophoneStatus::Live => "Выключить микрофон",
-        MicrophoneStatus::PermissionDenied => "Доступ к микрофону запрещен",
-        MicrophoneStatus::Error(_) => "Микрофон недоступен",
+    let microphone_label = match &microphone_status {
+        MicrophoneStatus::Idle => "Включить микрофон".to_owned(),
+        MicrophoneStatus::Starting => "Запрашиваем микрофон".to_owned(),
+        MicrophoneStatus::Live => "Выключить микрофон".to_owned(),
+        MicrophoneStatus::PermissionDenied => "Доступ к микрофону запрещен".to_owned(),
+        MicrophoneStatus::Error(message) => message.clone(),
     };
     let output_label = if output_muted {
         "Включить звук"
@@ -65,7 +65,7 @@ pub(crate) fn SidebarVoiceControls() -> Element {
         "Отключить звук"
     };
     let microphone_label = if output_muted {
-        "Включить микрофон (включит звук)"
+        "Включить микрофон (включит звук)".to_owned()
     } else {
         microphone_label
     };

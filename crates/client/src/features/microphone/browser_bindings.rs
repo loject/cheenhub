@@ -1,6 +1,6 @@
-//! Browser WebCodecs and stream bindings for microphone capture.
+//! Browser WebCodecs bindings for microphone capture.
 
-use js_sys::{Float32Array, Promise, Uint8Array};
+use js_sys::{Promise, Uint8Array};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -50,35 +50,6 @@ extern "C" {
     #[wasm_bindgen(constructor, catch, js_class = AudioData)]
     pub(super) fn new(init: &JsValue) -> Result<AudioData, JsValue>;
 
-    #[wasm_bindgen(method, getter, js_name = numberOfFrames)]
-    pub(super) fn audio_data_number_of_frames(this: &AudioData) -> u32;
-
-    #[wasm_bindgen(method, getter, js_name = numberOfChannels)]
-    pub(super) fn audio_data_number_of_channels(this: &AudioData) -> u32;
-
-    #[wasm_bindgen(method, getter, js_name = sampleRate)]
-    pub(super) fn audio_data_sample_rate(this: &AudioData) -> f64;
-
-    #[wasm_bindgen(method, getter, js_name = timestamp)]
-    pub(super) fn audio_data_timestamp(this: &AudioData) -> f64;
-
-    #[wasm_bindgen(method, getter, js_name = duration)]
-    pub(super) fn audio_data_duration(this: &AudioData) -> Option<f64>;
-
-    #[wasm_bindgen(method, catch, js_name = copyTo)]
-    pub(super) fn audio_data_copy_to(
-        this: &AudioData,
-        destination: &Float32Array,
-        options: &JsValue,
-    ) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(js_name = MediaStreamTrackProcessor)]
-    #[derive(Clone)]
-    pub(super) type MediaStreamTrackProcessor;
-
-    #[wasm_bindgen(constructor, catch, js_class = MediaStreamTrackProcessor)]
-    pub(super) fn new(init: &JsValue) -> Result<MediaStreamTrackProcessor, JsValue>;
-
-    #[wasm_bindgen(method, getter)]
-    pub(super) fn readable(this: &MediaStreamTrackProcessor) -> JsValue;
+    #[wasm_bindgen(method, catch, js_name = close)]
+    pub(super) fn close(this: &AudioData) -> Result<(), JsValue>;
 }

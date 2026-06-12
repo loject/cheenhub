@@ -10,7 +10,7 @@ use crate::features::audio_playback::{
 };
 use crate::features::microphone::{
     AudioInputDevice, AudioInputDevicesResult, MicrophoneActivationMode, MicrophoneHandle,
-    enumerate_audio_input_devices, request_microphone_permission,
+    MicrophoneStatus, enumerate_audio_input_devices, request_microphone_permission,
 };
 
 use super::sound_devices::{input_device_widget, output_device_widget};
@@ -42,6 +42,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
     let output_volume = playback.output_volume_percent();
     let activation_mode = mic.activation_mode();
     let activation_level = mic.vad_threshold_percent();
+    let microphone_status = mic.status();
     let mic_level = mic.level();
     let live_level = level_percent(mic_level.rms);
 
@@ -162,6 +163,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
                         )}
                     }
                     {volume_slider("Громкость микрофона", input_volume, move |value| mic_volume_change.set_input_volume_percent(value))}
+                    {microphone_capture_notice(&microphone_status)}
                 }
 
                 // Output device column (mock for now).
@@ -403,6 +405,28 @@ fn level_value_class(active: bool) -> &'static str {
         "text-[12px] font-medium text-emerald-300"
     } else {
         "text-[12px] text-zinc-500"
+    }
+}
+
+fn microphone_capture_notice(status: &MicrophoneStatus) -> Element {
+    match status {
+        MicrophoneStatus::Idle | MicrophoneStatus::Live => rsx! {},
+        MicrophoneStatus::Starting => rsx! {
+            div { class: "flex items-center gap-2 rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2.5 text-[12px] leading-5 text-blue-100",
+                span { class: "inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-300/30 border-t-blue-200" }
+                "Проверяем захват микрофона…"
+            }
+        },
+        MicrophoneStatus::PermissionDenied => rsx! {
+            div { class: "rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-[12px] leading-5 text-red-200",
+                "Доступ к микрофону запрещён. Разрешите его в настройках браузера и обновите страницу."
+            }
+        },
+        MicrophoneStatus::Error(message) => rsx! {
+            div { class: "rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2.5 text-[12px] leading-5 text-amber-100",
+                "{message}"
+            }
+        },
     }
 }
 

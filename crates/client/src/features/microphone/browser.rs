@@ -1,31 +1,38 @@
-//! Browser microphone backend.
+//! Browser microphone backend orchestration.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
-use dioxus::prelude::debug;
+use dioxus::prelude::{info, warn};
 use futures_util::FutureExt;
 use futures_util::future::LocalBoxFuture;
-use js_sys::{Float32Array, Function, Object, Promise, Reflect, Uint8Array};
+use js_sys::{Function, Reflect};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::{JsFuture, spawn_local};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{
+    AudioContext, AudioNode, AudioWorkletNode, GainNode, MediaStream, MediaStreamAudioSourceNode,
+    MessageEvent, MessagePort,
+};
 
 use super::backend::{
-    EncodedMicrophoneFrame, MicrophoneBackend, MicrophoneCallbacks, MicrophoneCodec,
-    MicrophoneConfig, MicrophoneError, MicrophoneLevel, MicrophoneSession,
+    MicrophoneBackend, MicrophoneCallbacks, MicrophoneCodec, MicrophoneConfig, MicrophoneError,
+    MicrophoneSession,
 };
-use super::browser_bindings::{
-    AudioData, AudioEncoder, EncodedAudioChunk, MediaStreamTrackProcessor,
-};
+use super::browser_bindings::{AudioEncoder, EncodedAudioChunk};
 use super::browser_capture::{
     first_audio_track, log_selected_audio_track, request_microphone_stream,
 };
+use super::browser_encoding::{
+    close_encoder_lossy, create_encoder, encoder_config, microphone_message_closure,
+};
 use super::browser_errors::js_error_message;
-use super::browser_gain::{apply_input_gain, encode_value_with_gain};
-use super::vad::{VoiceActivityDetector, rms_level};
+use super::browser_worklet::{
+    connect_capture_graph, create_audio_context, create_worklet_node, load_worklet_module,
+    worklet_chunk_ms,
+};
 
-/// Browser microphone implementation backed by getUserMedia and WebCodecs.
+/// Browser microphone implementation backed by AudioWorklet and WebCodecs.
 pub(crate) struct BrowserMicrophoneBackend;
 
 impl MicrophoneBackend for BrowserMicrophoneBackend {
@@ -39,9 +46,16 @@ impl MicrophoneBackend for BrowserMicrophoneBackend {
 }
 
 struct BrowserMicrophoneSession {
-    encoder: JsValue,
+    encoder: AudioEncoder,
+    context: AudioContext,
     track: web_sys::MediaStreamTrack,
+    source: MediaStreamAudioSourceNode,
+    worklet: AudioWorkletNode,
+    silent_gain: GainNode,
+    port: MessagePort,
     closed: Rc<Cell<bool>>,
+    _message_closure: Closure<dyn FnMut(MessageEvent)>,
+    _processor_error_closure: Closure<dyn FnMut(JsValue)>,
     _output_closure: Closure<dyn FnMut(EncodedAudioChunk)>,
     _error_closure: Closure<dyn FnMut(JsValue)>,
     bitrate_bps: Rc<Cell<u32>>,
@@ -50,14 +64,29 @@ struct BrowserMicrophoneSession {
 impl MicrophoneSession for BrowserMicrophoneSession {
     fn stop(&self) -> LocalBoxFuture<'static, Result<(), MicrophoneError>> {
         let encoder = self.encoder.clone();
+        let context = self.context.clone();
         let track = self.track.clone();
+        let source = self.source.clone();
+        let worklet = self.worklet.clone();
+        let silent_gain = self.silent_gain.clone();
+        let port = self.port.clone();
         let closed = self.closed.clone();
         async move {
             if closed.replace(true) {
                 return Ok(());
             }
+
+            port.set_onmessage(None);
+            port.close();
+            worklet.set_onprocessorerror(None);
+            disconnect_audio_node(source.as_ref());
+            disconnect_audio_node(worklet.as_ref());
+            disconnect_audio_node(silent_gain.as_ref());
             track.stop();
-            close_encoder(&encoder)?;
+            encoder.close().map_err(microphone_error)?;
+            JsFuture::from(context.close().map_err(microphone_error)?)
+                .await
+                .map_err(microphone_error)?;
             Ok(())
         }
         .boxed_local()
@@ -76,330 +105,241 @@ async fn start_browser_session(
     config: MicrophoneConfig,
     callbacks: MicrophoneCallbacks,
 ) -> Result<Rc<dyn MicrophoneSession>, MicrophoneError> {
+    validate_config(&config)?;
+    ensure_browser_microphone_support()?;
+
+    let context = create_audio_context(config.sample_rate_hz)?;
+    let sample_rate_hz = context.sample_rate().round().max(1.0) as u32;
+    if sample_rate_hz != config.sample_rate_hz {
+        close_context_lossy(&context).await;
+        return Err(MicrophoneError::new(format!(
+            "Браузер создал аудиоконтекст {sample_rate_hz} Гц вместо необходимых {} Гц.",
+            config.sample_rate_hz
+        )));
+    }
+    if let Err(error) = load_worklet_module(&context).await {
+        close_context_lossy(&context).await;
+        return Err(error);
+    }
+
+    let encoder_config = encoder_config(sample_rate_hz, config.channels, config.bitrate_bps);
+    verify_encoder_support(&context, &encoder_config).await?;
+    let stream = request_stream_or_close_context(&context, config.clone()).await?;
+    let track = first_track_or_cleanup(&stream, &context).await?;
+    log_selected_audio_track(&track, config.device_id.as_deref());
+
+    let encoder = match create_encoder(&encoder_config, &config, callbacks.on_frame.clone()) {
+        Ok(encoder) => encoder,
+        Err(error) => {
+            stop_media_stream(&stream);
+            close_context_lossy(&context).await;
+            return Err(error);
+        }
+    };
+
+    let source = match context.create_media_stream_source(&stream) {
+        Ok(source) => source,
+        Err(error) => {
+            stop_media_stream(&stream);
+            close_encoder_lossy(&encoder.encoder);
+            close_context_lossy(&context).await;
+            return Err(microphone_error(error));
+        }
+    };
+    let worklet = match create_worklet_node(&context, sample_rate_hz) {
+        Ok(worklet) => worklet,
+        Err(error) => {
+            stop_media_stream(&stream);
+            close_encoder_lossy(&encoder.encoder);
+            close_context_lossy(&context).await;
+            return Err(error);
+        }
+    };
+    let silent_gain = match context.create_gain() {
+        Ok(gain) => gain,
+        Err(error) => {
+            stop_media_stream(&stream);
+            close_encoder_lossy(&encoder.encoder);
+            close_context_lossy(&context).await;
+            return Err(microphone_error(error));
+        }
+    };
+    silent_gain.gain().set_value(0.0);
+
+    let closed = Rc::new(Cell::new(false));
+    let port = match worklet.port() {
+        Ok(port) => port,
+        Err(error) => {
+            stop_media_stream(&stream);
+            close_encoder_lossy(&encoder.encoder);
+            close_context_lossy(&context).await;
+            return Err(microphone_error(error));
+        }
+    };
+    let message_closure = microphone_message_closure(
+        encoder.encoder.clone(),
+        callbacks,
+        config.clone(),
+        sample_rate_hz,
+        closed.clone(),
+    );
+    port.set_onmessage(Some(message_closure.as_ref().unchecked_ref()));
+    port.start();
+
+    let processor_error_closure = Closure::wrap(Box::new(move |error: JsValue| {
+        warn!(
+            error = %js_error_message(error),
+            "microphone audio worklet processor failed"
+        );
+    }) as Box<dyn FnMut(JsValue)>);
+    worklet.set_onprocessorerror(Some(processor_error_closure.as_ref().unchecked_ref()));
+
+    if let Err(error) = connect_capture_graph(&source, &worklet, &silent_gain, &context) {
+        stop_media_stream(&stream);
+        close_encoder_lossy(&encoder.encoder);
+        close_context_lossy(&context).await;
+        return Err(error);
+    }
+    if let Err(error) = JsFuture::from(context.resume().map_err(microphone_error)?).await {
+        stop_media_stream(&stream);
+        close_encoder_lossy(&encoder.encoder);
+        close_context_lossy(&context).await;
+        return Err(microphone_error(error));
+    }
+
+    info!(
+        sample_rate_hz,
+        chunk_ms = worklet_chunk_ms(),
+        "browser microphone audio worklet capture started"
+    );
+    Ok(Rc::new(BrowserMicrophoneSession {
+        encoder: encoder.encoder,
+        context,
+        track,
+        source,
+        worklet,
+        silent_gain,
+        port,
+        closed,
+        _message_closure: message_closure,
+        _processor_error_closure: processor_error_closure,
+        _output_closure: encoder.output_closure,
+        _error_closure: encoder.error_closure,
+        bitrate_bps: Rc::new(Cell::new(config.bitrate_bps)),
+    }))
+}
+
+fn validate_config(config: &MicrophoneConfig) -> Result<(), MicrophoneError> {
     if config.codec != MicrophoneCodec::Opus {
         return Err(MicrophoneError::new("Поддерживается только Opus микрофон."));
     }
     if config.channels != 1 {
         return Err(MicrophoneError::new("Поддерживается только моно микрофон."));
     }
+    Ok(())
+}
 
-    let stream = request_microphone_stream(config.clone()).await?;
-    let track = first_audio_track(&stream)?;
-    log_selected_audio_track(&track, config.device_id.as_deref());
-    let encoder_config = encoder_config(config.clone());
-    let support = JsFuture::from(AudioEncoder::is_config_supported(&encoder_config))
-        .await
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
-    let supported = Reflect::get(&support, &JsValue::from_str("supported"))
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?
-        .as_bool()
-        .unwrap_or(false);
+async fn verify_encoder_support(
+    context: &AudioContext,
+    encoder_config: &JsValue,
+) -> Result<(), MicrophoneError> {
+    let support = match JsFuture::from(AudioEncoder::is_config_supported(encoder_config)).await {
+        Ok(support) => support,
+        Err(error) => {
+            close_context_lossy(context).await;
+            return Err(microphone_error(error));
+        }
+    };
+    let supported = match Reflect::get(&support, &JsValue::from_str("supported")) {
+        Ok(supported) => supported.as_bool().unwrap_or(false),
+        Err(error) => {
+            close_context_lossy(context).await;
+            return Err(microphone_error(error));
+        }
+    };
     if !supported {
+        close_context_lossy(context).await;
         return Err(MicrophoneError::new(
             "Браузер не поддерживает кодирование микрофона в Opus.",
         ));
     }
-
-    let sequence = Rc::new(Cell::new(0_u64));
-    let bitrate_bps = Rc::new(Cell::new(config.bitrate_bps));
-    let output_on_frame = callbacks.on_frame.clone();
-    let output_sequence = sequence.clone();
-    let output_closure = Closure::wrap(Box::new(move |chunk: EncodedAudioChunk| {
-        let byte_length = chunk.byte_length();
-        let destination = Uint8Array::new_with_length(byte_length);
-        if chunk.copy_to(&destination).is_err() {
-            return;
-        }
-        let mut bytes = vec![0; byte_length as usize];
-        destination.copy_to(&mut bytes);
-        let sequence = output_sequence.get();
-        output_sequence.set(sequence.saturating_add(1));
-        output_on_frame(EncodedMicrophoneFrame {
-            sequence,
-            timestamp_us: chunk.timestamp().max(0.0) as u64,
-            duration_us: chunk.duration().unwrap_or(0.0).max(0.0) as u32,
-            codec: MicrophoneCodec::Opus,
-            sample_rate_hz: config.sample_rate_hz,
-            channels: config.channels,
-            bytes,
-        });
-    }) as Box<dyn FnMut(EncodedAudioChunk)>);
-    let error_closure = Closure::wrap(Box::new(move |error: JsValue| {
-        console_warn(&format!(
-            "browser microphone encoder failed: {}",
-            js_error_message(error)
-        ));
-    }) as Box<dyn FnMut(JsValue)>);
-    let encoder_init = encoder_init(
-        error_closure.as_ref().unchecked_ref(),
-        output_closure.as_ref().unchecked_ref(),
-    )?;
-    let encoder = AudioEncoder::new(&encoder_init)
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
-    encoder
-        .configure(&encoder_config)
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
-    let encoder: JsValue = encoder.into();
-
-    let closed = Rc::new(Cell::new(false));
-    spawn_audio_reader(
-        track.clone(),
-        encoder.clone(),
-        closed.clone(),
-        config,
-        callbacks,
-    );
-
-    Ok(Rc::new(BrowserMicrophoneSession {
-        encoder,
-        track,
-        closed,
-        _output_closure: output_closure,
-        _error_closure: error_closure,
-        bitrate_bps,
-    }))
+    Ok(())
 }
 
-fn encoder_config(config: MicrophoneConfig) -> JsValue {
-    let object = Object::new();
-    set_property(&object, "codec", &JsValue::from_str("opus"));
-    set_property(
-        &object,
-        "sampleRate",
-        &JsValue::from_f64(f64::from(config.sample_rate_hz)),
-    );
-    set_property(
-        &object,
-        "numberOfChannels",
-        &JsValue::from_f64(f64::from(config.channels)),
-    );
-    set_property(
-        &object,
-        "bitrate",
-        &JsValue::from_f64(f64::from(config.bitrate_bps)),
-    );
-    object.into()
-}
-
-fn encoder_init(error: &Function, output: &Function) -> Result<JsValue, MicrophoneError> {
-    let object = Object::new();
-    Reflect::set(&object, &JsValue::from_str("error"), error)
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
-    Reflect::set(&object, &JsValue::from_str("output"), output)
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
-    Ok(object.into())
-}
-
-fn spawn_audio_reader(
-    track: web_sys::MediaStreamTrack,
-    encoder: JsValue,
-    closed: Rc<Cell<bool>>,
+async fn request_stream_or_close_context(
+    context: &AudioContext,
     config: MicrophoneConfig,
-    callbacks: MicrophoneCallbacks,
-) {
-    spawn_local(async move {
-        let detector = Rc::new(RefCell::new(VoiceActivityDetector::new(config)));
-        let processor = match media_stream_track_processor(&track) {
-            Ok(processor) => processor,
-            Err(error) => {
-                console_warn(&format!(
-                    "failed to create microphone track processor: {error}"
-                ));
-                return;
-            }
-        };
-        let reader = match stream_reader(&processor.readable()) {
-            Ok(reader) => reader,
-            Err(error) => {
-                console_warn(&format!(
-                    "failed to create microphone stream reader: {error}"
-                ));
-                return;
-            }
-        };
-
-        while !closed.get() {
-            let read = match read_stream_chunk(&reader).await {
-                Ok(read) => read,
-                Err(error) => {
-                    console_warn(&format!("failed to read microphone frame: {error}"));
-                    break;
-                }
-            };
-            if read.done {
-                break;
-            }
-            let should_encode = match voice_gate_allows_audio(&read.value, &detector, &callbacks) {
-                Ok(should_encode) => should_encode,
-                Err(error) => {
-                    console_warn(&format!("failed to measure microphone level: {error}"));
-                    false
-                }
-            };
-            if !should_encode {
-                close_audio_data(&read.value);
-                continue;
-            }
-            let input_gain = detector.borrow().config().input_gain;
-            let encoded_value = match encode_value_with_gain(&read.value, input_gain) {
-                Ok(encoded_value) => encoded_value,
-                Err(error) => {
-                    console_warn(&format!("failed to apply microphone input volume: {error}"));
-                    break;
-                }
-            };
-            if encode_audio_data(&encoder, encoded_value.value()).is_err() {
-                encoded_value.close();
-                break;
-            }
-            encoded_value.close();
-            close_audio_data(&read.value);
+) -> Result<MediaStream, MicrophoneError> {
+    match request_microphone_stream(config).await {
+        Ok(stream) => Ok(stream),
+        Err(error) => {
+            close_context_lossy(context).await;
+            Err(error)
         }
-    });
-}
-
-fn voice_gate_allows_audio(
-    value: &JsValue,
-    detector: &Rc<RefCell<VoiceActivityDetector>>,
-    callbacks: &MicrophoneCallbacks,
-) -> Result<bool, MicrophoneError> {
-    let audio = value.unchecked_ref::<AudioData>();
-    let mut samples = audio_samples(audio)?;
-    apply_input_gain(&mut samples, detector.borrow().config().input_gain);
-    let rms = rms_level(&samples);
-    let timestamp_us = audio.audio_data_timestamp().max(0.0) as u64;
-    let duration_us = audio.audio_data_duration().unwrap_or(0.0).max(0.0) as u32;
-    let previous_active = detector.borrow().is_active();
-    let active = detector.borrow_mut().update(rms, duration_us);
-    if active != previous_active {
-        debug!(
-            rms,
-            active,
-            threshold = detector_threshold(detector),
-            timestamp_us,
-            "microphone voice activation changed"
-        );
     }
-    (callbacks.on_level)(MicrophoneLevel {
-        rms,
-        active,
-        threshold: detector_threshold(detector),
-        timestamp_us,
-    });
-
-    Ok(active)
 }
 
-fn detector_threshold(detector: &Rc<RefCell<VoiceActivityDetector>>) -> f32 {
-    detector.borrow().config().vad_threshold
-}
-
-fn audio_samples(audio: &AudioData) -> Result<Vec<f32>, MicrophoneError> {
-    let frames = audio.audio_data_number_of_frames();
-    let channels = audio.audio_data_number_of_channels().max(1);
-    if frames == 0 {
-        return Ok(Vec::new());
+async fn first_track_or_cleanup(
+    stream: &MediaStream,
+    context: &AudioContext,
+) -> Result<web_sys::MediaStreamTrack, MicrophoneError> {
+    match first_audio_track(stream) {
+        Ok(track) => Ok(track),
+        Err(error) => {
+            stop_media_stream(stream);
+            close_context_lossy(context).await;
+            Err(error)
+        }
     }
-
-    let mut samples = Vec::with_capacity(frames as usize * channels as usize);
-    for channel in 0..channels {
-        let channel_samples = Float32Array::new_with_length(frames);
-        audio
-            .audio_data_copy_to(&channel_samples, &copy_options(channel))
-            .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
-        samples.extend(channel_samples.to_vec());
-    }
-
-    Ok(samples)
 }
 
-fn copy_options(plane_index: u32) -> JsValue {
-    let object = Object::new();
-    set_property(&object, "format", &JsValue::from_str("f32-planar"));
-    set_property(
-        &object,
-        "planeIndex",
-        &JsValue::from_f64(f64::from(plane_index)),
-    );
-    object.into()
-}
-
-fn media_stream_track_processor(
-    track: &web_sys::MediaStreamTrack,
-) -> Result<MediaStreamTrackProcessor, MicrophoneError> {
-    let init = Object::new();
-    Reflect::set(&init, &JsValue::from_str("track"), track.as_ref())
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
-    MediaStreamTrackProcessor::new(&init.into())
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))
-}
-
-fn stream_reader(readable: &JsValue) -> Result<JsValue, MicrophoneError> {
-    let get_reader = Reflect::get(readable, &JsValue::from_str("getReader"))
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?
-        .dyn_into::<Function>()
-        .map_err(|_| MicrophoneError::new("ReadableStream.getReader недоступен."))?;
-    get_reader
-        .call0(readable)
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))
-}
-
-struct StreamRead {
-    done: bool,
-    value: JsValue,
-}
-
-async fn read_stream_chunk(reader: &JsValue) -> Result<StreamRead, MicrophoneError> {
-    let read = Reflect::get(reader, &JsValue::from_str("read"))
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?
-        .dyn_into::<Function>()
-        .map_err(|_| MicrophoneError::new("ReadableStream reader.read недоступен."))?;
-    let promise = read
-        .call0(reader)
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?
-        .dyn_into::<Promise>()
-        .map_err(|_| MicrophoneError::new("ReadableStream reader.read не вернул Promise."))?;
-    let result = JsFuture::from(promise)
-        .await
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
-    let done = Reflect::get(&result, &JsValue::from_str("done"))
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?
-        .as_bool()
-        .unwrap_or(false);
-    let value = Reflect::get(&result, &JsValue::from_str("value"))
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?;
-
-    Ok(StreamRead { done, value })
-}
-
-fn close_audio_data(value: &JsValue) {
-    if let Ok(close) = Reflect::get(value, &JsValue::from_str("close"))
-        && let Ok(close) = close.dyn_into::<Function>()
+fn ensure_browser_microphone_support() -> Result<(), MicrophoneError> {
+    if !global_constructor_available("AudioContext")
+        && !global_constructor_available("webkitAudioContext")
     {
-        let _ = close.call0(value);
+        return Err(MicrophoneError::new(
+            "Браузер не поддерживает AudioContext для захвата микрофона.",
+        ));
+    }
+    if !global_constructor_available("AudioWorkletNode") {
+        return Err(MicrophoneError::new(
+            "Браузер не поддерживает AudioWorklet для захвата микрофона.",
+        ));
+    }
+    if !global_constructor_available("AudioEncoder") {
+        return Err(MicrophoneError::new(
+            "Браузер не поддерживает кодирование микрофона через WebCodecs.",
+        ));
+    }
+    Ok(())
+}
+
+fn global_constructor_available(name: &str) -> bool {
+    Reflect::get(&js_sys::global(), &JsValue::from_str(name))
+        .ok()
+        .and_then(|value| value.dyn_into::<Function>().ok())
+        .is_some()
+}
+
+fn stop_media_stream(stream: &MediaStream) {
+    let tracks = stream.get_audio_tracks();
+    for i in 0..tracks.length() {
+        if let Ok(track) = tracks.get(i).dyn_into::<web_sys::MediaStreamTrack>() {
+            track.stop();
+        }
     }
 }
 
-fn console_warn(message: &str) {
-    web_sys::console::warn_1(&JsValue::from_str(message));
+async fn close_context_lossy(context: &AudioContext) {
+    if let Ok(promise) = context.close() {
+        let _ = JsFuture::from(promise).await;
+    }
 }
 
-fn close_encoder(encoder: &JsValue) -> Result<(), MicrophoneError> {
-    let close = Reflect::get(encoder, &JsValue::from_str("close"))
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))?
-        .dyn_into::<Function>()
-        .map_err(|_| MicrophoneError::new("AudioEncoder.close недоступен."))?;
-    close
-        .call0(encoder)
-        .map(|_| ())
-        .map_err(|error| MicrophoneError::new(js_error_message(error)))
+fn disconnect_audio_node(node: &AudioNode) {
+    let _ = node.disconnect();
 }
 
-fn encode_audio_data(encoder: &JsValue, value: &JsValue) -> Result<(), JsValue> {
-    let encode = Reflect::get(encoder, &JsValue::from_str("encode"))?.dyn_into::<Function>()?;
-    encode.call1(encoder, value).map(|_| ())
-}
-
-fn set_property(object: &Object, name: &str, value: &JsValue) {
-    let _ = Reflect::set(object, &JsValue::from_str(name), value);
+fn microphone_error(error: JsValue) -> MicrophoneError {
+    MicrophoneError::new(js_error_message(error))
 }
