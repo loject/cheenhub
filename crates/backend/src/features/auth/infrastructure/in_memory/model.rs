@@ -14,6 +14,9 @@ pub(in crate::features::auth::infrastructure) struct InMemoryState {
     pub(in crate::features::auth::infrastructure) sessions: Vec<InMemorySession>,
     /// Refresh tokens.
     pub(in crate::features::auth::infrastructure) refresh_tokens: Vec<InMemoryRefreshToken>,
+    /// User-Agent values observed for login sessions.
+    pub(in crate::features::auth::infrastructure) session_user_agents:
+        Vec<InMemorySessionUserAgent>,
     /// Linked OAuth accounts.
     pub(in crate::features::auth::infrastructure) oauth_accounts: Vec<OAuthAccount>,
     /// OAuth authorization states.
@@ -69,6 +72,21 @@ pub(in crate::features::auth::infrastructure) struct InMemoryRefreshToken {
     pub(in crate::features::auth::infrastructure) expires_at: DateTime<Utc>,
     /// Revocation timestamp.
     pub(in crate::features::auth::infrastructure) revoked_at: Option<DateTime<Utc>>,
+}
+
+/// In-memory auth session User-Agent row.
+#[derive(Debug, Clone)]
+pub(in crate::features::auth::infrastructure) struct InMemorySessionUserAgent {
+    /// Owning session id.
+    pub(in crate::features::auth::infrastructure) session_id: Uuid,
+    /// Normalized User-Agent string.
+    #[allow(dead_code)]
+    pub(in crate::features::auth::infrastructure) user_agent: String,
+    /// First observation timestamp.
+    #[allow(dead_code)]
+    pub(in crate::features::auth::infrastructure) first_seen_at: DateTime<Utc>,
+    /// Last observation timestamp.
+    pub(in crate::features::auth::infrastructure) last_seen_at: DateTime<Utc>,
 }
 
 /// In-memory OAuth state row.

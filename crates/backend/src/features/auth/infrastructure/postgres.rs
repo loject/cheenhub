@@ -163,6 +163,7 @@ impl AuthStore for PostgresAuthStore {
         &self,
         user_id: &Uuid,
         refresh_hash: String,
+        user_agent: Option<&str>,
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<Uuid> {
@@ -170,6 +171,7 @@ impl AuthStore for PostgresAuthStore {
             &self.database,
             user_id,
             refresh_hash,
+            user_agent,
             now,
             expires_at,
         )
@@ -189,6 +191,7 @@ impl AuthStore for PostgresAuthStore {
         old_refresh_id: &Uuid,
         session_id: &Uuid,
         next_hash: String,
+        user_agent: Option<&str>,
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
@@ -197,6 +200,7 @@ impl AuthStore for PostgresAuthStore {
             old_refresh_id,
             session_id,
             next_hash,
+            user_agent,
             now,
             expires_at,
         )

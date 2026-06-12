@@ -33,9 +33,19 @@ pub(crate) use oauth::{
 };
 
 /// Registers a user and creates an authenticated session.
+#[cfg(test)]
 pub(crate) async fn register(
     state: &AppState,
     request: RegisterRequest,
+) -> Result<AuthResponse, AuthError> {
+    register_with_user_agent(state, request, None).await
+}
+
+/// Registers a user and records request User-Agent metadata when present.
+pub(crate) async fn register_with_user_agent(
+    state: &AppState,
+    request: RegisterRequest,
+    user_agent: Option<String>,
 ) -> Result<AuthResponse, AuthError> {
     let valid = validation::register(
         request.nickname,
@@ -58,13 +68,23 @@ pub(crate) async fn register(
         .await
         .map_err(map_insert_user_error)?;
 
-    create_auth_response(state, &user).await
+    create_auth_response(state, &user, user_agent.as_deref()).await
 }
 
 /// Logs a user in and creates an authenticated session.
+#[cfg(test)]
 pub(crate) async fn login(
     state: &AppState,
     request: LoginRequest,
+) -> Result<AuthResponse, AuthError> {
+    login_with_user_agent(state, request, None).await
+}
+
+/// Logs a user in and records request User-Agent metadata when present.
+pub(crate) async fn login_with_user_agent(
+    state: &AppState,
+    request: LoginRequest,
+    user_agent: Option<String>,
 ) -> Result<AuthResponse, AuthError> {
     let valid = validation::login(request.email, request.password)
         .map_err(|message| AuthError::BadRequest(message.to_owned()))?;
@@ -87,7 +107,7 @@ pub(crate) async fn login(
         return Err(invalid_credentials());
     }
 
-    create_auth_response(state, &user).await
+    create_auth_response(state, &user, user_agent.as_deref()).await
 }
 
 /// Sends a password reset email when the account exists.
@@ -177,10 +197,11 @@ pub(crate) async fn confirm_password_reset(
     Ok(())
 }
 
-/// Rotates a refresh token and returns a fresh token pair.
-pub(crate) async fn refresh(
+/// Rotates a refresh token and records request User-Agent metadata when present.
+pub(crate) async fn refresh_with_user_agent(
     state: &AppState,
     request: RefreshRequest,
+    user_agent: Option<String>,
 ) -> Result<AuthResponse, AuthError> {
     let old_hash = refresh_token::hash(&request.refresh_token);
     let now = Utc::now();
@@ -203,6 +224,7 @@ pub(crate) async fn refresh(
             &refresh_session.refresh_token_id,
             &refresh_session.session_id,
             next_hash,
+            user_agent.as_deref(),
             now,
             session_expires_at,
         )
@@ -328,6 +350,7 @@ pub(crate) async fn change_current_user_password(
 pub(super) async fn create_auth_response(
     state: &AppState,
     user: &UserAccount,
+    user_agent: Option<&str>,
 ) -> Result<AuthResponse, AuthError> {
     let now = Utc::now();
     let refresh = refresh_token::generate();
@@ -335,9 +358,15 @@ pub(super) async fn create_auth_response(
     let expires_at = now + Duration::days(state.refresh_token_lifetime_days);
     let session_id = state
         .auth_store
-        .create_session(&user.id, refresh_hash, now, expires_at)
+        .create_session(&user.id, refresh_hash, user_agent, now, expires_at)
         .await
         .map_err(AuthError::Internal)?;
+    tracing::info!(
+        user_id = %user.id,
+        %session_id,
+        user_agent_present = user_agent.is_some(),
+        "created auth session"
+    );
 
     Ok(AuthResponse {
         access_token: jwt::sign_access_token(

@@ -8,12 +8,16 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::features::auth::domain::RefreshSession;
-use crate::features::auth::infrastructure::entities::{refresh_tokens, sessions, users};
+use crate::features::auth::infrastructure::entities::{
+    refresh_tokens, session_user_agents, sessions, users,
+};
+use crate::features::auth::security::user_agent;
 
 pub(super) async fn create_session(
     database: &DatabaseConnection,
     user_id: &Uuid,
     refresh_hash: String,
+    user_agent: Option<&str>,
     now: DateTime<Utc>,
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<Uuid> {
@@ -42,6 +46,10 @@ pub(super) async fn create_session(
     }
     .insert(database)
     .await?;
+
+    if let Some(user_agent) = user_agent {
+        record_session_user_agent(database, &session_id, user_agent, now).await?;
+    }
 
     Ok(session_id)
 }
@@ -100,6 +108,7 @@ pub(super) async fn rotate_refresh(
     old_refresh_id: &Uuid,
     session_id: &Uuid,
     next_hash: String,
+    user_agent: Option<&str>,
     now: DateTime<Utc>,
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<()> {
@@ -135,6 +144,47 @@ pub(super) async fn rotate_refresh(
     }
     .insert(database)
     .await?;
+
+    if let Some(user_agent) = user_agent {
+        record_session_user_agent(database, session_id, user_agent, now).await?;
+    }
+
+    Ok(())
+}
+
+async fn record_session_user_agent(
+    database: &DatabaseConnection,
+    session_id: &Uuid,
+    user_agent: &str,
+    now: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let Some(user_agent) = user_agent::normalize(user_agent) else {
+        return Ok(());
+    };
+
+    if let Some(existing) = session_user_agents::Entity::find()
+        .filter(session_user_agents::Column::SessionId.eq(*session_id))
+        .filter(session_user_agents::Column::UserAgent.eq(&user_agent))
+        .one(database)
+        .await?
+    {
+        let mut existing = existing.into_active_model();
+        existing.last_seen_at = Set(now);
+        existing.update(database).await?;
+        tracing::debug!(%session_id, "updated auth session user-agent observation");
+        return Ok(());
+    }
+
+    session_user_agents::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        session_id: Set(*session_id),
+        user_agent: Set(user_agent),
+        first_seen_at: Set(now),
+        last_seen_at: Set(now),
+    }
+    .insert(database)
+    .await?;
+    tracing::info!(%session_id, "recorded new auth session user-agent");
 
     Ok(())
 }

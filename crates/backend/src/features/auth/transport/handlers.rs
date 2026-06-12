@@ -22,17 +22,23 @@ use crate::state::AppState;
 /// Registers a new email/password account.
 pub(crate) async fn register(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AuthError> {
-    application::register(&state, request).await.map(Json)
+    application::register_with_user_agent(&state, request, request_user_agent(&headers))
+        .await
+        .map(Json)
 }
 
 /// Logs in with email/password.
 pub(crate) async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AuthError> {
-    application::login(&state, request).await.map(Json)
+    application::login_with_user_agent(&state, request, request_user_agent(&headers))
+        .await
+        .map(Json)
 }
 
 /// Sends a password reset email when the account exists.
@@ -56,9 +62,12 @@ pub(crate) async fn confirm_password_reset(
 /// Rotates a refresh token and returns a new token pair.
 pub(crate) async fn refresh(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<RefreshRequest>,
 ) -> Result<Json<AuthResponse>, AuthError> {
-    application::refresh(&state, request).await.map(Json)
+    application::refresh_with_user_agent(&state, request, request_user_agent(&headers))
+        .await
+        .map(Json)
 }
 
 /// Invalidates the current refresh session.
@@ -139,9 +148,10 @@ pub(crate) async fn google_oauth_callback(
 /// Completes a Google OAuth frontend handoff.
 pub(crate) async fn complete_google_oauth(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<OAuthCompleteRequest>,
 ) -> Result<Json<OAuthCompleteResponse>, AuthError> {
-    application::complete_google_oauth(&state, request)
+    application::complete_google_oauth(&state, request, request_user_agent(&headers))
         .await
         .map(Json)
 }
@@ -149,9 +159,10 @@ pub(crate) async fn complete_google_oauth(
 /// Finishes registration for a verified Google OAuth identity.
 pub(crate) async fn register_with_google_oauth(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<OAuthRegistrationRequest>,
 ) -> Result<Json<AuthResponse>, AuthError> {
-    application::register_with_google_oauth(&state, request)
+    application::register_with_google_oauth(&state, request, request_user_agent(&headers))
         .await
         .map(Json)
 }
@@ -232,6 +243,13 @@ fn optional_bearer_token(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .filter(|token| !token.is_empty())
+}
+
+fn request_user_agent(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
 }
 
 #[derive(Debug, Deserialize)]

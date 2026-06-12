@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 pub(super) mod model;
 
+use super::in_memory_refresh as refresh;
 use crate::features::auth::domain::*;
 use crate::features::auth::infrastructure::*;
 use model::*;
@@ -160,10 +161,11 @@ impl AuthStore for InMemoryAuthStore {
         &self,
         user_id: &Uuid,
         refresh_hash: String,
+        user_agent: Option<&str>,
         _now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<Uuid> {
-        super::in_memory_refresh::create_session(&self.state, user_id, refresh_hash, expires_at)
+        refresh::create_session(&self.state, user_id, refresh_hash, user_agent, expires_at)
     }
 
     async fn find_active_refresh(
@@ -171,7 +173,7 @@ impl AuthStore for InMemoryAuthStore {
         token_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<RefreshSession>> {
-        super::in_memory_refresh::find_active_refresh(&self.state, token_hash, now)
+        refresh::find_active_refresh(&self.state, token_hash, now)
     }
 
     async fn rotate_refresh(
@@ -179,14 +181,16 @@ impl AuthStore for InMemoryAuthStore {
         old_refresh_id: &Uuid,
         session_id: &Uuid,
         next_hash: String,
+        user_agent: Option<&str>,
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        super::in_memory_refresh::rotate_refresh(
+        refresh::rotate_refresh(
             &self.state,
             old_refresh_id,
             session_id,
             next_hash,
+            user_agent,
             now,
             expires_at,
         )
@@ -197,7 +201,7 @@ impl AuthStore for InMemoryAuthStore {
         token_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        super::in_memory_refresh::revoke_refresh_session(&self.state, token_hash, now)
+        refresh::revoke_refresh_session(&self.state, token_hash, now)
     }
 
     async fn session_is_active(
@@ -205,7 +209,7 @@ impl AuthStore for InMemoryAuthStore {
         session_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<bool> {
-        super::in_memory_refresh::session_is_active(&self.state, session_id, now)
+        refresh::session_is_active(&self.state, session_id, now)
     }
 
     async fn revoke_user_sessions(&self, user_id: &Uuid, now: DateTime<Utc>) -> anyhow::Result<()> {

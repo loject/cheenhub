@@ -129,6 +129,7 @@ pub(crate) trait AuthStore: Send + Sync {
         &self,
         user_id: &Uuid,
         refresh_hash: String,
+        user_agent: Option<&str>,
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<Uuid>;
@@ -146,6 +147,7 @@ pub(crate) trait AuthStore: Send + Sync {
         old_refresh_id: &Uuid,
         session_id: &Uuid,
         next_hash: String,
+        user_agent: Option<&str>,
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()>;

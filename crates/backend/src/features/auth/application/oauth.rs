@@ -1,5 +1,4 @@
 //! Google OAuth application flows.
-
 use anyhow::anyhow;
 use cheenhub_contracts::rest::*;
 use chrono::{Duration, Utc};
@@ -114,6 +113,7 @@ pub(crate) async fn google_oauth_callback_url(
 pub(crate) async fn complete_google_oauth(
     state: &AppState,
     request: OAuthCompleteRequest,
+    user_agent: Option<String>,
 ) -> Result<OAuthCompleteResponse, AuthError> {
     let now = Utc::now();
     let code_hash = refresh_token::hash(&request.handoff_code);
@@ -140,7 +140,7 @@ pub(crate) async fn complete_google_oauth(
                 .await
                 .map_err(AuthError::Internal)?;
             Ok(OAuthCompleteResponse::Authenticated {
-                auth: create_auth_response(state, &user).await?,
+                auth: create_auth_response(state, &user, user_agent.as_deref()).await?,
             })
         }
         HANDOFF_LINKED => {
@@ -188,6 +188,7 @@ pub(crate) async fn complete_google_oauth(
 pub(crate) async fn register_with_google_oauth(
     state: &AppState,
     request: OAuthRegistrationRequest,
+    user_agent: Option<String>,
 ) -> Result<AuthResponse, AuthError> {
     if !request.accepts_policies {
         return Err(AuthError::BadRequest(
@@ -274,7 +275,7 @@ pub(crate) async fn register_with_google_oauth(
         .await
         .map_err(AuthError::Internal)?;
 
-    create_auth_response(state, &user).await
+    create_auth_response(state, &user, user_agent.as_deref()).await
 }
 
 /// Lists external accounts linked to the current user.
