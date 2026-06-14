@@ -12,7 +12,10 @@ use crate::features::app::components::app_shell::ActiveRoom;
 use crate::features::realtime::RealtimeHandle;
 
 use super::compose::{ComposeState, send_current_message};
-use super::history::{HistoryState, HistoryTarget, load_initial_history, load_older_history};
+use super::history::{
+    HistoryState, HistoryTarget, load_initial_history, load_initial_history_when_connected,
+    load_older_history,
+};
 use super::message_item::ChatMessageItem;
 use super::messages::{append_message, is_appearing_message, remove_message};
 use super::realtime::{self, TextChatEvent};
@@ -106,7 +109,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let removing_message_ids_list = removing_message_ids();
 
     use_hook(move || {
-        load_initial_history(history_target, history_state);
+        load_initial_history_when_connected(history_target, history_state);
     });
 
     use_hook(move || {

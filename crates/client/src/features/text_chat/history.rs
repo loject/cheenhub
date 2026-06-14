@@ -4,8 +4,9 @@ use std::rc::Rc;
 
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;
+use futures_util::StreamExt;
 
-use crate::features::realtime::RealtimeHandle;
+use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 
 use super::messages::prepend_messages;
 use super::realtime;
@@ -35,17 +36,80 @@ pub(super) fn load_initial_history(target: HistoryTarget, mut state: HistoryStat
     state.initial_loading.set(true);
     state.history_error.set(None);
     spawn(async move {
-        match realtime::load_room_history(&target.realtime, target.server_id, target.room_id, None)
-            .await
+        let server_id = target.server_id;
+        let room_id = target.room_id;
+        match realtime::load_room_history(
+            &target.realtime,
+            server_id.clone(),
+            room_id.clone(),
+            None,
+        )
+        .await
         {
             Ok(history) => {
+                info!(
+                    server_id = %server_id,
+                    room_id = %room_id,
+                    messages = history.messages.len(),
+                    has_more = history.has_more,
+                    "loaded initial text chat history"
+                );
                 state.messages.set(history.messages);
                 state.appearing_message_ids.set(Vec::new());
                 state.has_more.set(history.has_more);
                 state.pending_scroll.set(Some(ScrollCommand::Bottom));
             }
-            Err(error) => state.history_error.set(Some(error.to_string())),
+            Err(error) => {
+                warn!(
+                    %error,
+                    server_id = %server_id,
+                    room_id = %room_id,
+                    "failed to load initial text chat history"
+                );
+                state.history_error.set(Some(error.to_string()));
+            }
         }
+        state.initial_loading.set(false);
+    });
+}
+
+pub(super) fn load_initial_history_when_connected(target: HistoryTarget, mut state: HistoryState) {
+    state.initial_loading.set(true);
+    state.history_error.set(None);
+    let mut statuses = target.realtime.subscribe_connection_status();
+    spawn(async move {
+        let mut logged_wait = false;
+        while let Some(status) = statuses.next().await {
+            match status {
+                RealtimeConnectionStatus::Connected(_) => {
+                    info!(
+                        server_id = %target.server_id,
+                        room_id = %target.room_id,
+                        "loading initial text chat history after realtime connected"
+                    );
+                    load_initial_history(target, state);
+                    return;
+                }
+                RealtimeConnectionStatus::Disconnected if !logged_wait => {
+                    logged_wait = true;
+                    debug!(
+                        server_id = %target.server_id,
+                        room_id = %target.room_id,
+                        "waiting for realtime connection before loading initial text chat history"
+                    );
+                }
+                RealtimeConnectionStatus::Disconnected => {}
+            }
+        }
+
+        warn!(
+            server_id = %target.server_id,
+            room_id = %target.room_id,
+            "realtime status subscription closed before initial text chat history load"
+        );
+        state.history_error.set(Some(
+            "Не удалось дождаться соединения. Попробуй ещё раз.".to_owned(),
+        ));
         state.initial_loading.set(false);
     });
 }
