@@ -2414,6 +2414,10 @@ video {
   border-color: rgb(245 158 11 / 0.35);
 }
 
+.border-blue-300\/30 {
+  border-color: rgb(147 197 253 / 0.3);
+}
+
 .border-blue-400\/20 {
   border-color: rgb(96 165 250 / 0.2);
 }
@@ -2558,6 +2562,11 @@ video {
 .border-t-accent {
   --tw-border-opacity: 1;
   border-top-color: rgb(59 130 246 / var(--tw-border-opacity, 1));
+}
+
+.border-t-blue-200 {
+  --tw-border-opacity: 1;
+  border-top-color: rgb(191 219 254 / var(--tw-border-opacity, 1));
 }
 
 .border-t-blue-300 {
