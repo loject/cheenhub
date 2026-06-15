@@ -1,4 +1,4 @@
-//! Mock user settings modal shell.
+//! User settings modal shell.
 
 use dioxus::prelude::*;
 

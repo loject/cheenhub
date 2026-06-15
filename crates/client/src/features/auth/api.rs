@@ -167,23 +167,26 @@ pub(crate) async fn current_user() -> Result<AuthUser, String> {
     Err(read_error(response).await)
 }
 
-/// Invalidates the current refresh session and clears stored tokens.
-#[allow(dead_code)]
+/// Invalidates the current refresh session and clears stored tokens after the attempt.
 pub(crate) async fn logout() -> Result<(), String> {
     let Some(tokens) = storage::load() else {
         storage::clear();
         return Ok(());
     };
 
-    let response = Request::post(&url("/auth/logout"))
-        .json(&LogoutRequest {
-            refresh_token: tokens.refresh_token,
-        })
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
-        .send()
-        .await
-        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+    let request = match Request::post(&url("/auth/logout")).json(&LogoutRequest {
+        refresh_token: tokens.refresh_token,
+    }) {
+        Ok(request) => request,
+        Err(_) => {
+            storage::clear();
+            return Err("Не удалось подготовить запрос.".to_owned());
+        }
+    };
+
+    let response = request.send().await;
     storage::clear();
+    let response = response.map_err(|_| NETWORK_ERROR_MESSAGE.to_owned())?;
 
     if response.ok() {
         Ok(())
