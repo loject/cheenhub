@@ -4,9 +4,6 @@ use std::collections::BTreeMap;
 
 use super::provider::VoiceFrame;
 
-/// Target network playout delay before an inbound frame is decoded.
-pub(super) const TARGET_PLAYOUT_DELAY_MS: u64 = 120;
-
 const MAX_PENDING_FRAMES: usize = 80;
 const SEQUENCE_RESET_BACKWARD_THRESHOLD: u64 = 64;
 
@@ -109,7 +106,11 @@ impl JitterBuffer {
     }
 
     /// Releases frames whose playout deadline has passed.
-    pub(super) fn drain_ready(&mut self, now_ms: u64) -> JitterBufferDrain {
+    pub(super) fn drain_ready(
+        &mut self,
+        now_ms: u64,
+        target_playout_delay_ms: u64,
+    ) -> JitterBufferDrain {
         let mut drain = JitterBufferDrain::default();
 
         loop {
@@ -120,7 +121,7 @@ impl JitterBuffer {
             self.drop_queued_stale(expected_sequence, &mut drain);
 
             if let Some(queued) = self.pending.get(&expected_sequence) {
-                let ready_at = queued.arrival_ms.saturating_add(TARGET_PLAYOUT_DELAY_MS);
+                let ready_at = queued.arrival_ms.saturating_add(target_playout_delay_ms);
                 if ready_at > now_ms {
                     drain.next_wake_ms = Some(delay_until_ms(ready_at, now_ms));
                     break;
@@ -139,7 +140,7 @@ impl JitterBuffer {
             let Some((&next_available_sequence, queued)) = self.pending.first_key_value() else {
                 break;
             };
-            let missing_deadline = queued.arrival_ms.saturating_add(TARGET_PLAYOUT_DELAY_MS);
+            let missing_deadline = queued.arrival_ms.saturating_add(target_playout_delay_ms);
             if missing_deadline > now_ms && self.pending.len() < MAX_PENDING_FRAMES {
                 drain.next_wake_ms = Some(delay_until_ms(missing_deadline, now_ms));
                 break;
@@ -196,17 +197,19 @@ mod tests {
     use super::*;
     use crate::features::audio_playback::provider::PlaybackCodec;
 
+    const TEST_TARGET_PLAYOUT_DELAY_MS: u64 = 120;
+
     #[test]
     fn holds_frame_until_target_delay() {
         let mut buffer = JitterBuffer::default();
 
         buffer.push(frame(0), 1_000);
 
-        let early = buffer.drain_ready(1_119);
+        let early = buffer.drain_ready(1_119, TEST_TARGET_PLAYOUT_DELAY_MS);
         assert!(early.ready_frames.is_empty());
         assert_eq!(early.next_wake_ms, Some(1));
 
-        let ready = buffer.drain_ready(1_120);
+        let ready = buffer.drain_ready(1_120, TEST_TARGET_PLAYOUT_DELAY_MS);
         assert_eq!(sequences(&ready.ready_frames), vec![0]);
         assert_eq!(ready.next_wake_ms, None);
         assert!(buffer.is_empty());
@@ -219,11 +222,11 @@ mod tests {
         buffer.push(frame(1), 1_000);
         buffer.push(frame(0), 1_020);
 
-        let first_deadline = buffer.drain_ready(1_120);
+        let first_deadline = buffer.drain_ready(1_120, TEST_TARGET_PLAYOUT_DELAY_MS);
         assert!(first_deadline.ready_frames.is_empty());
         assert_eq!(first_deadline.next_wake_ms, Some(20));
 
-        let ready = buffer.drain_ready(1_140);
+        let ready = buffer.drain_ready(1_140, TEST_TARGET_PLAYOUT_DELAY_MS);
         assert_eq!(sequences(&ready.ready_frames), vec![0, 1]);
     }
 
@@ -234,12 +237,12 @@ mod tests {
         buffer.push(frame(0), 1_000);
         buffer.push(frame(2), 1_010);
 
-        let first = buffer.drain_ready(1_120);
+        let first = buffer.drain_ready(1_120, TEST_TARGET_PLAYOUT_DELAY_MS);
         assert_eq!(sequences(&first.ready_frames), vec![0]);
         assert_eq!(first.next_wake_ms, Some(10));
         assert_eq!(first.skipped_sequences, 0);
 
-        let second = buffer.drain_ready(1_130);
+        let second = buffer.drain_ready(1_130, TEST_TARGET_PLAYOUT_DELAY_MS);
         assert_eq!(sequences(&second.ready_frames), vec![2]);
         assert_eq!(second.skipped_sequences, 1);
     }
@@ -249,7 +252,7 @@ mod tests {
         let mut buffer = JitterBuffer::default();
 
         buffer.push(frame(0), 1_000);
-        buffer.drain_ready(1_120);
+        buffer.drain_ready(1_120, TEST_TARGET_PLAYOUT_DELAY_MS);
 
         assert_eq!(
             buffer.push(frame(0), 1_130),
@@ -264,7 +267,7 @@ mod tests {
         let mut buffer = JitterBuffer::default();
 
         buffer.push(frame(100), 1_000);
-        buffer.drain_ready(1_120);
+        buffer.drain_ready(1_120, TEST_TARGET_PLAYOUT_DELAY_MS);
 
         assert_eq!(
             buffer.push(frame(0), 2_000),
@@ -274,7 +277,21 @@ mod tests {
             }
         );
 
-        let ready = buffer.drain_ready(2_120);
+        let ready = buffer.drain_ready(2_120, TEST_TARGET_PLAYOUT_DELAY_MS);
+        assert_eq!(sequences(&ready.ready_frames), vec![0]);
+    }
+
+    #[test]
+    fn uses_configured_target_delay() {
+        let mut buffer = JitterBuffer::default();
+
+        buffer.push(frame(0), 1_000);
+
+        let early = buffer.drain_ready(1_159, 160);
+        assert!(early.ready_frames.is_empty());
+        assert_eq!(early.next_wake_ms, Some(1));
+
+        let ready = buffer.drain_ready(1_160, 160);
         assert_eq!(sequences(&ready.ready_frames), vec![0]);
     }
 

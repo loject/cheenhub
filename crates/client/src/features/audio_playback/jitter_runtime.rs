@@ -6,7 +6,7 @@ use wasm_bindgen_futures::spawn_local;
 use web_time::{SystemTime, UNIX_EPOCH};
 
 use super::browser_helpers::js_error_message;
-use super::jitter_buffer::{JitterBufferPush, TARGET_PLAYOUT_DELAY_MS};
+use super::jitter_buffer::JitterBufferPush;
 use super::provider::{AudioPlaybackHandle, PlaybackCodec, VoiceFrame};
 
 impl AudioPlaybackHandle {
@@ -32,6 +32,7 @@ impl AudioPlaybackHandle {
                 .or_default()
                 .push(frame, jitter_now_ms())
         };
+        let target_delay_ms = self.inner.borrow().jitter_buffer_ms;
 
         match outcome {
             JitterBufferPush::Accepted { pending_frames } => {
@@ -39,7 +40,7 @@ impl AudioPlaybackHandle {
                     debug!(
                         %sender_user_id,
                         sequence,
-                        target_delay_ms = TARGET_PLAYOUT_DELAY_MS,
+                        target_delay_ms,
                         "started inbound voice jitter buffer"
                     );
                 }
@@ -106,15 +107,19 @@ impl AudioPlaybackHandle {
     }
 
     fn drain_jitter_buffer(&self, sender_user_id: &str) -> Option<u32> {
-        let drain = {
+        let (drain, target_delay_ms) = {
             let mut inner = self.inner.borrow_mut();
             if inner.muted {
                 inner.jitter_buffers.remove(sender_user_id);
                 return None;
             }
 
+            let target_delay_ms = inner.jitter_buffer_ms;
             let buffer = inner.jitter_buffers.get_mut(sender_user_id)?;
-            buffer.drain_ready(jitter_now_ms())
+            (
+                buffer.drain_ready(jitter_now_ms(), u64::from(target_delay_ms)),
+                target_delay_ms,
+            )
         };
 
         if drain.skipped_sequences > 0 || drain.dropped_stale_frames > 0 {
@@ -122,6 +127,7 @@ impl AudioPlaybackHandle {
                 %sender_user_id,
                 skipped_sequences = drain.skipped_sequences,
                 dropped_stale_frames = drain.dropped_stale_frames,
+                target_delay_ms,
                 "advanced inbound voice jitter buffer after network jitter"
             );
         }

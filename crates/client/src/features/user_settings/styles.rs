@@ -24,3 +24,8 @@ pub(crate) fn parse_percent(value: &str, fallback: i32) -> i32 {
 pub(crate) fn parse_percent_range(value: &str, fallback: u32, max: u32) -> u32 {
     value.parse::<u32>().unwrap_or(fallback).min(max)
 }
+
+/// Parses an unsigned integer value and clamps it to a custom slider range.
+pub(crate) fn parse_u32_range(value: &str, fallback: u32, min: u32, max: u32) -> u32 {
+    value.parse::<u32>().unwrap_or(fallback).clamp(min, max)
+}

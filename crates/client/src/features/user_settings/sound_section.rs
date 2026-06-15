@@ -5,8 +5,8 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 
 use crate::features::audio_playback::{
-    AudioOutputDevice, AudioOutputDevicesResult, AudioPlaybackHandle,
-    enumerate_audio_output_devices,
+    AudioOutputDevice, AudioOutputDevicesResult, AudioPlaybackHandle, MAX_JITTER_BUFFER_MS,
+    MIN_JITTER_BUFFER_MS, enumerate_audio_output_devices,
 };
 use crate::features::microphone::{
     AudioInputDevice, AudioInputDevicesResult, MicrophoneActivationMode, MicrophoneHandle,
@@ -14,7 +14,7 @@ use crate::features::microphone::{
 };
 
 use super::sound_devices::{input_device_widget, output_device_widget};
-use super::styles::{parse_percent, parse_percent_range};
+use super::styles::{parse_percent, parse_percent_range, parse_u32_range};
 
 /// Renders sound input, output, and voice activation controls.
 #[component]
@@ -40,6 +40,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
 
     let input_volume = mic.input_volume_percent();
     let output_volume = playback.output_volume_percent();
+    let jitter_buffer_ms = playback.jitter_buffer_ms();
     let activation_mode = mic.activation_mode();
     let activation_level = mic.vad_threshold_percent();
     let microphone_status = mic.status();
@@ -137,6 +138,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
     };
 
     let mic_volume_change = mic.clone();
+    let playback_jitter_change = playback.clone();
     let mic_always_active = mic.clone();
     let mic_voice_activation = mic.clone();
     let mic_threshold_change = mic.clone();
@@ -180,6 +182,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
                         )}
                     }
                     {volume_slider("Громкость вывода", output_volume, move |value| playback.set_output_volume_percent(value))}
+                    {jitter_buffer_slider(jitter_buffer_ms, move |value| playback_jitter_change.set_jitter_buffer_ms(value))}
                 }
             }
 
@@ -375,6 +378,37 @@ fn volume_slider(
                 value,
                 oninput: move |event| on_change(parse_percent_range(&event.value(), value, 200)),
                 class: "w-full cursor-pointer accent-blue-500",
+            }
+        }
+    }
+}
+
+fn jitter_buffer_slider(value: u32, mut on_change: impl FnMut(u32) + 'static) -> Element {
+    rsx! {
+        div {
+            div { class: "mb-2 flex items-center justify-between gap-3",
+                label { class: "text-[13px] font-medium text-zinc-300", "Буфер входящего звука" }
+                span { class: "shrink-0 text-[12px] text-zinc-500", "{value} мс" }
+            }
+            input {
+                r#type: "range",
+                min: "{MIN_JITTER_BUFFER_MS}",
+                max: "{MAX_JITTER_BUFFER_MS}",
+                step: "10",
+                value,
+                oninput: move |event| {
+                    on_change(parse_u32_range(
+                        &event.value(),
+                        value,
+                        MIN_JITTER_BUFFER_MS,
+                        MAX_JITTER_BUFFER_MS,
+                    ))
+                },
+                class: "w-full cursor-pointer accent-blue-500",
+            }
+            div { class: "mt-1 flex items-center justify-between text-[11px] text-zinc-600",
+                span { "{MIN_JITTER_BUFFER_MS} мс" }
+                span { "{MAX_JITTER_BUFFER_MS} мс" }
             }
         }
     }
