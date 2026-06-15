@@ -5,7 +5,7 @@ default_to_workspace = false
 CARGO_MAKE_CRATE_INSTALLATION_LOCKED = true
 CHEENHUB_JWT_KEY_ID = { value = "dev-ed25519-1", condition = { env_not_set = ["CHEENHUB_JWT_KEY_ID"] } }
 CHEENHUB_JWT_PUBLIC_KEY_BASE64 = { value = "FyeAHCHdj3LQJcxcJv1Zo3mW8m+kqBGytTetC2NCIBU=", condition = { env_not_set = ["CHEENHUB_JWT_PUBLIC_KEY_BASE64"] } }
-DIOXUS_ADDR = { value = "127.0.0.1", condition = { env_not_set = ["DIOXUS_ADDR"] } }
+DIOXUS_ADDR = { value = "0.0.0.0", condition = { env_not_set = ["DIOXUS_ADDR"] } }
 DIOXUS_PORT = { value = "8080", condition = { env_not_set = ["DIOXUS_PORT"] } }
 POSTGRES_CONTAINER = { value = "cheenhub-postgres", condition = { env_not_set = ["POSTGRES_CONTAINER"] } }
 POSTGRES_USER = { value = "postgres", condition = { env_not_set = ["POSTGRES_USER"] } }
