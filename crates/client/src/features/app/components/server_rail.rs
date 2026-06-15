@@ -24,7 +24,7 @@ pub(crate) fn ServerRail(
     };
 
     rsx! {
-        aside { class: "flex w-[76px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 p-3 backdrop-blur-xl",
+        aside { class: "server-rail flex w-[76px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 p-3 backdrop-blur-xl",
             div { class: "mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-100 text-zinc-950",
                 LogoIcon { class_name: "h-7 w-7" }
             }

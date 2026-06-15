@@ -39,6 +39,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let has_more = use_signal(|| false);
     let is_near_bottom = use_signal(|| true);
     let mut list_element = use_signal(|| None::<Rc<MountedData>>);
+    let mut compose_input_element = use_signal(|| None::<Rc<MountedData>>);
     let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
     let event_room_id = room.id.clone();
     let history_server_id = server_id.clone();
@@ -386,6 +387,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                         value: "{draft()}",
                         placeholder: "Сообщение в {placeholder_prefix} {room.name}",
                         class: "max-h-28 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600",
+                        onmounted: move |event| compose_input_element.set(Some(event.data.clone())),
                         oninput: move |event| draft.set(event.value()),
                         onkeydown: move |event| {
                             if event.key() == Key::Enter && !event.modifiers().shift() {
@@ -399,7 +401,19 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                         disabled: !can_send,
                         class: "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_4px_18px_rgba(59,130,246,0.16)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 disabled:hover:bg-accent",
                         "aria-label": "Отправить сообщение",
-                        onclick: move |_| submit_message.call(()),
+                        onpointerdown: move |event| {
+                            if event.pointer_type() == "mouse" {
+                                return;
+                            }
+
+                            event.prevent_default();
+                            submit_message.call(());
+                            focus_compose_input(compose_input_element);
+                        },
+                        onclick: move |_| {
+                            submit_message.call(());
+                            focus_compose_input(compose_input_element);
+                        },
                         svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6 12 3.269 3.126A59.77 59.77 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.876L6 12Zm0 0h7.5" }
                         }
@@ -408,4 +422,16 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
             }
         }
     }
+}
+
+fn focus_compose_input(input_element: Signal<Option<Rc<MountedData>>>) {
+    let Some(element) = input_element.cloned() else {
+        return;
+    };
+
+    spawn(async move {
+        if let Err(error) = element.set_focus(true).await {
+            debug!(?error, "failed to restore text chat input focus");
+        }
+    });
 }

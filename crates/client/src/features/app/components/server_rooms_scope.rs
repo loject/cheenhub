@@ -52,6 +52,7 @@ pub(crate) fn ServerRoomsScope(
     let mut is_user_settings_open = use_signal(|| false);
     let mut active_workspace = use_signal(|| None::<ServerWorkspace>);
     let mut mounted_workspaces = use_signal(Vec::<ServerWorkspace>::new);
+    let mut mobile_workspace_open = use_signal(|| false);
     let mut voice_sidebar_loaded = use_signal(|| false);
     let chat_open_by_room = use_signal(Vec::<(String, bool)>::new);
     let server_id = server.id.clone();
@@ -105,6 +106,7 @@ pub(crate) fn ServerRoomsScope(
     let user_bar_class = sidebar_styles::user_bar_class(settings_workspace_active);
     let user_details_class = sidebar_styles::user_details_class(settings_workspace_active);
     let voice_loader = voice.clone();
+
     use_effect(move || {
         if rooms().is_some() {
             return;
@@ -146,6 +148,7 @@ pub(crate) fn ServerRoomsScope(
     rsx! {
         aside {
             class: sidebar_class,
+            "data-mobile-workspace-open": if mobile_workspace_open() { "true" } else { "false" },
             onclick: move |_| is_server_menu_open.set(false),
             div { class: "relative border-b border-zinc-800/80 p-4",
                 button {
@@ -185,6 +188,7 @@ pub(crate) fn ServerRoomsScope(
                                     ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
                                     mounted_workspaces.set(next_mounted_workspaces);
                                     active_workspace.set(Some(workspace));
+                                    mobile_workspace_open.set(true);
                                 }
                                 ServerMenuAction::CreateInvite => {
                                     on_open_modal.call(AppModal::InviteLink {
@@ -260,12 +264,19 @@ pub(crate) fn ServerRoomsScope(
                                     let room = room.clone();
                                     let select_server_id = select_server_id.clone();
                                     move |_| {
+                                        info!(
+                                            server_id = %select_server_id,
+                                            room_id = %room.id,
+                                            room_kind = ?room.kind,
+                                            "selected room workspace"
+                                        );
                                         active_room_id.set(Some(room.id.clone()));
                                         let workspace = ServerWorkspace::Room(room.id.clone());
                                         let mut next_mounted_workspaces = mounted_workspaces();
                                         ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
                                         mounted_workspaces.set(next_mounted_workspaces);
                                         active_workspace.set(Some(workspace));
+                                        mobile_workspace_open.set(true);
                                         if active {
                                             on_state_change.call((
                                                 select_server_id.clone(),
@@ -383,8 +394,22 @@ pub(crate) fn ServerRoomsScope(
                         server_id: server.id.clone(),
                         room: room.clone(),
                         active: active && matches!(active_workspace(), Some(ServerWorkspace::Room(active_room_id)) if active_room_id == room.id),
+                        mobile_workspace_open: mobile_workspace_open(),
                         chat_open_by_room,
                         on_state_change,
+                        on_mobile_back: {
+                            let mobile_back_server_id = server.id.clone();
+                            move |_| {
+                                if let Some(room_id) = active_room_id() {
+                                    info!(
+                                        server_id = %mobile_back_server_id,
+                                        room_id = %room_id,
+                                        "closed mobile room workspace"
+                                    );
+                                }
+                                mobile_workspace_open.set(false);
+                            }
+                        },
                     }
                 }
             }
@@ -453,6 +478,7 @@ pub(crate) fn ServerRoomsScope(
                     ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
                     mounted_workspaces.set(next_mounted_workspaces);
                     active_workspace.set(Some(workspace));
+                    mobile_workspace_open.set(true);
                     room_action_status.set(String::new());
                     on_state_change.call((
                         save_server_id.clone(),

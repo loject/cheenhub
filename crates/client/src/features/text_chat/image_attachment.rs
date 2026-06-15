@@ -34,9 +34,9 @@ pub(super) fn ChatImageAttachment(attachment: TextChatImageAttachment) -> Elemen
     });
     let zoom_percent = (zoom() * 100.0).round() as i32;
     let viewer_image_class = if drag_origin().is_some() {
-        "block max-h-[calc(100vh-7rem)] max-w-[calc(100vw-3rem)] cursor-grabbing select-none rounded-[10px] object-contain shadow-[0_24px_90px_rgba(0,0,0,0.65)] will-change-transform"
+        "chat-image-viewer-image block cursor-grabbing select-none rounded-[10px] object-contain shadow-[0_24px_90px_rgba(0,0,0,0.65)] will-change-transform"
     } else {
-        "block max-h-[calc(100vh-7rem)] max-w-[calc(100vw-3rem)] cursor-grab select-none rounded-[10px] object-contain shadow-[0_24px_90px_rgba(0,0,0,0.65)] will-change-transform"
+        "chat-image-viewer-image block cursor-grab select-none rounded-[10px] object-contain shadow-[0_24px_90px_rgba(0,0,0,0.65)] will-change-transform"
     };
 
     rsx! {
@@ -92,7 +92,7 @@ pub(super) fn ChatImageAttachment(attachment: TextChatImageAttachment) -> Elemen
         if viewer_open() {
             if let Some(Ok(loaded)) = image.read().as_ref() {
                 div {
-                    class: "fixed inset-0 z-[1100] flex flex-col bg-black text-zinc-100 backdrop-blur-sm",
+                    class: "chat-image-viewer flex flex-col bg-black text-zinc-100 backdrop-blur-sm",
                     onwheel: move |event| {
                         event.prevent_default();
                         let delta_y = match event.delta() {

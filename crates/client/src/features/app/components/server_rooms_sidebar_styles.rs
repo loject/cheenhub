@@ -2,9 +2,9 @@
 
 pub(super) fn rooms_sidebar_class(settings_workspace_active: bool) -> &'static str {
     if settings_workspace_active {
-        "group/rooms relative z-30 flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 backdrop-blur-xl transition-[width] duration-200 ease-out max-[1440px]:w-[68px] max-[1440px]:hover:w-[284px] max-[1440px]:focus-within:w-[284px]"
+        "server-rooms-sidebar group/rooms relative z-30 flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 backdrop-blur-xl transition-[width] duration-200 ease-out max-[1440px]:w-[68px] max-[1440px]:hover:w-[284px] max-[1440px]:focus-within:w-[284px]"
     } else {
-        "group/rooms relative z-30 flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 backdrop-blur-xl transition-[width] duration-200 ease-out"
+        "server-rooms-sidebar group/rooms relative z-30 flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 backdrop-blur-xl transition-[width] duration-200 ease-out"
     }
 }
 

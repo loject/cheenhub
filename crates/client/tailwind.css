@@ -265,6 +265,23 @@
     display: none;
   }
 
+  .chat-image-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    min-height: 100dvh;
+    height: 100dvh;
+  }
+
+  .chat-image-viewer-image {
+    max-width: calc(100vw - 3rem);
+    max-height: calc(100dvh - 7rem);
+  }
+
+  .mobile-room-back-button {
+    display: none;
+  }
+
   #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .voice-stage {
     padding-bottom: 18px;
   }
@@ -321,6 +338,53 @@
 
   .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="true"] .chat-corner-toggle {
     display: flex;
+  }
+
+  @media (max-width: 900px) {
+    #app-shell {
+      height: 100dvh;
+      max-height: 100dvh;
+    }
+
+    #app-shell .server-rooms-sidebar {
+      flex-basis: calc(100vw - 76px);
+      width: calc(100vw - 76px);
+      max-width: calc(100vw - 76px);
+    }
+
+    #app-shell:has(.room-workspace-shell[data-mobile-workspace-open="true"]) .server-rail {
+      display: none;
+    }
+
+    #app-shell .server-rooms-sidebar[data-mobile-workspace-open="true"],
+    #app-shell .room-workspace-shell[data-mobile-workspace-open="false"] {
+      display: none;
+    }
+
+    #app-shell .room-workspace {
+      flex: 0 0 calc(100vw - 76px);
+      width: calc(100vw - 76px);
+    }
+
+    #app-shell:has(.room-workspace-shell[data-mobile-workspace-open="true"]) .room-workspace {
+      flex-basis: 100vw;
+      width: 100vw;
+    }
+
+    #app-shell .room-header {
+      height: 64px;
+      gap: 0.75rem;
+      padding-inline: 1rem;
+    }
+
+    .mobile-room-back-button {
+      display: flex;
+    }
+
+    #app-shell .voice-shell::before {
+      top: 64px;
+      width: min(480px, 86vw);
+    }
   }
 
   .sidebar-voice-presence {

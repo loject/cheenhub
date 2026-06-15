@@ -13,10 +13,21 @@ pub(crate) fn RoomInstance(
     server_id: String,
     room: ActiveRoom,
     active: bool,
+    mobile_workspace_open: bool,
     mut chat_open_by_room: Signal<Vec<(String, bool)>>,
     on_state_change: EventHandler<(String, ServerShellState)>,
+    on_mobile_back: EventHandler<()>,
 ) -> Element {
-    let wrapper_class = if active { "contents" } else { "hidden" };
+    let wrapper_class = if active {
+        "room-workspace-shell contents"
+    } else {
+        "room-workspace-shell hidden"
+    };
+    let mobile_workspace_open_attr = if mobile_workspace_open {
+        "true"
+    } else {
+        "false"
+    };
     let room_id = room.id.clone();
     let chat_open = chat_open_for_room(&chat_open_by_room(), &room_id);
     let chat_open_attr = if chat_open { "true" } else { "false" };
@@ -31,13 +42,17 @@ pub(crate) fn RoomInstance(
     };
 
     rsx! {
-        div { class: wrapper_class,
+        div { class: wrapper_class, "data-mobile-workspace-open": mobile_workspace_open_attr,
             section {
                 class: "room-workspace voice-shell relative flex min-w-0 flex-1 flex-col bg-zinc-950/35",
                 "data-room-kind": super::app_shell::room_kind_attr(room.kind),
                 "data-voice-room-active": if voice_room_active { "true" } else { "false" },
                 "data-voice-connected": if voice_room_connected { "true" } else { "false" },
-                RoomHeader { server_id: server_id.clone(), room: room.clone() }
+                RoomHeader {
+                    server_id: server_id.clone(),
+                    room: room.clone(),
+                    on_mobile_back,
+                }
                 div { class: "content-split flex min-h-0 flex-1 flex-col",
                     VoiceRoomSurface {
                         server_id: server_id.clone(),

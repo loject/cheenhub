@@ -8,7 +8,11 @@ use crate::features::voice_chat::{VoiceConnectionHandle, VoiceConnectionState, V
 
 /// Renders the active room title and join voice affordance.
 #[component]
-pub(crate) fn RoomHeader(server_id: String, room: ActiveRoom) -> Element {
+pub(crate) fn RoomHeader(
+    server_id: String,
+    room: ActiveRoom,
+    on_mobile_back: EventHandler<()>,
+) -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
     let state = voice.state();
     let is_voice_capable = room.kind != ServerRoomKind::Text;
@@ -52,8 +56,17 @@ pub(crate) fn RoomHeader(server_id: String, room: ActiveRoom) -> Element {
     };
 
     rsx! {
-        div { class: "flex h-[72px] shrink-0 items-center justify-between gap-4 border-b border-zinc-800/80 bg-zinc-950/85 px-6 backdrop-blur-xl",
-            div { class: "min-w-0",
+        div { class: "room-header flex h-[72px] shrink-0 items-center justify-between gap-4 border-b border-zinc-800/80 bg-zinc-950/85 px-6 backdrop-blur-xl",
+            button {
+                r#type: "button",
+                class: "mobile-room-back-button h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-400 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100",
+                "aria-label": "Вернуться к списку комнат",
+                onclick: move |_| on_mobile_back.call(()),
+                svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
+                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 18 9 12l6-6" }
+                }
+            }
+            div { class: "min-w-0 flex-1",
                 div { class: "flex items-center gap-3",
                     h1 { class: "truncate text-[15px] font-semibold tracking-[-0.04em] text-zinc-50", "{room.name}" }
                     span { class: "inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 px-2.5 py-1 text-[11px] text-zinc-400",
