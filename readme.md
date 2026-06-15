@@ -1,5 +1,16 @@
 # CheenHub
 
+## Локальный запуск
+
+Проект использует cargo-make для dev-задач и cargo-watch/Dioxus CLI для
+локального dev stack.
+
+```bash
+cargo install --locked cargo-make
+cargo make setup
+cargo make dev-stack
+```
+
 ## Легенда комнат
 
 \# - текстовая комната

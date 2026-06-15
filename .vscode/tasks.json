@@ -2,28 +2,116 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "CheenHub: dev stack",
-      "dependsOrder": "sequence",
-      "dependsOn": [
-        "CheenHub: ensure Docker Desktop",
-        "CheenHub: ensure Postgres",
-        "CheenHub: dev services"
+      "label": "CheenHub: bootstrap cargo-make",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "install",
+        "--locked",
+        "cargo-make"
       ],
-      "problemMatcher": []
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "dedicated",
+        "group": "cheenhub-dev",
+        "clear": true,
+        "close": true
+      },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "CheenHub: setup dev tools",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "make",
+        "setup"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "dedicated",
+        "group": "cheenhub-dev",
+        "clear": true,
+        "close": true
+      },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "CheenHub: dev stack",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dev-stack"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "dedicated",
+        "group": "cheenhub-dev",
+        "clear": true
+      },
+      "problemMatcher": {
+        "base": "$rustc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "."
+        }
+      }
     },
     {
       "label": "CheenHub: dev services",
-      "dependsOrder": "parallel",
-      "dependsOn": [
-        "CheenHub: dioxus web",
-        "CheenHub: backend watch"
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dev-services"
       ],
-      "problemMatcher": []
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "dedicated",
+        "group": "cheenhub-dev",
+        "clear": true
+      },
+      "problemMatcher": {
+        "base": "$rustc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "."
+        }
+      }
     },
     {
       "label": "CheenHub: ensure Docker Desktop",
       "type": "shell",
-      "command": "if docker info >/dev/null 2>&1; then echo 'Docker Desktop is already running.'; exit 0; fi; echo 'Docker Desktop is not running; starting it...'; if command -v systemctl >/dev/null 2>&1; then systemctl --user start docker-desktop >/dev/null 2>&1 || true; fi; if ! docker info >/dev/null 2>&1 && command -v docker-desktop >/dev/null 2>&1; then nohup docker-desktop >/tmp/cheenhub-docker-desktop.log 2>&1 & fi; for attempt in $(seq 1 90); do if docker info >/dev/null 2>&1; then echo 'Docker Desktop is ready.'; exit 0; fi; sleep 1; done; echo 'Docker Desktop did not become ready within 90 seconds.' >&2; exit 1",
+      "command": "cargo",
+      "args": [
+        "make",
+        "ensure-docker-desktop"
+      ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -41,7 +129,11 @@
     {
       "label": "CheenHub: ensure Postgres",
       "type": "shell",
-      "command": "if docker ps --format '{{.Names}}' | grep -qx 'cheenhub-postgres'; then echo 'Postgres container is already running.'; exit 0; fi; if docker ps -a --format '{{.Names}}' | grep -qx 'cheenhub-postgres'; then echo 'Starting existing Postgres container...'; docker start cheenhub-postgres >/dev/null; else echo 'Creating Postgres container...'; docker run --name cheenhub-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=mysecretpassword -e POSTGRES_DB=cheenhub -p 5432:5432 -v cheenhub-postgres-data:/var/lib/postgresql/data -d postgres:16 >/dev/null; fi; for attempt in $(seq 1 60); do if docker exec cheenhub-postgres pg_isready -U postgres -d cheenhub >/dev/null 2>&1; then echo 'Postgres is ready.'; exit 0; fi; sleep 1; done; echo 'Postgres did not become ready within 60 seconds.' >&2; exit 1",
+      "command": "cargo",
+      "args": [
+        "make",
+        "ensure-postgres"
+      ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -59,18 +151,13 @@
     {
       "label": "CheenHub: dioxus web",
       "type": "shell",
-      "command": "dx",
+      "command": "cargo",
       "args": [
-        "serve",
-        "--package",
-        "cheenhub_client"
+        "make",
+        "dioxus-web"
       ],
       "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "CHEENHUB_JWT_KEY_ID": "dev-ed25519-1",
-          "CHEENHUB_JWT_PUBLIC_KEY_BASE64": "FyeAHCHdj3LQJcxcJv1Zo3mW8m+kqBGytTetC2NCIBU="
-        }
+        "cwd": "${workspaceFolder}"
       },
       "isBackground": true,
       "presentation": {
@@ -95,9 +182,8 @@
       "type": "shell",
       "command": "cargo",
       "args": [
-        "watch",
-        "-x",
-        "run -p cheenhub_backend"
+        "make",
+        "backend-watch"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -123,7 +209,11 @@
     {
       "label": "CheenHub: migrate database",
       "type": "shell",
-      "command": "set -a; [ -f .env ] && source .env; set +a; cargo run -p cheenhub_migrations -- up",
+      "command": "cargo",
+      "args": [
+        "make",
+        "migrate-database"
+      ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -140,7 +230,12 @@
     {
       "label": "CheenHub: create git tag",
       "type": "shell",
-      "command": "tag='${input:cheenhubGitTag}'; if [ -z \"$tag\" ]; then echo 'Tag name is required.' >&2; exit 1; fi; if git rev-parse -q --verify \"refs/tags/$tag\" >/dev/null; then echo \"Tag already exists: $tag\" >&2; exit 1; fi; git tag \"$tag\" && echo \"Created git tag: $tag\"",
+      "command": "cargo",
+      "args": [
+        "make",
+        "create-git-tag",
+        "${input:cheenhubGitTag}"
+      ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
