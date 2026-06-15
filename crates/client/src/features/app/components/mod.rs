@@ -16,6 +16,7 @@ pub(crate) mod server_context_menu;
 pub(crate) mod server_instance;
 pub(crate) mod server_rail;
 pub(crate) mod server_rail_button;
+pub(crate) mod server_realtime_status;
 pub(crate) mod server_rooms_scope;
 mod server_rooms_sidebar_styles;
 mod server_rooms_state;

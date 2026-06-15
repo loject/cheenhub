@@ -6,7 +6,6 @@ use dioxus::prelude::*;
 
 use crate::features::app::api;
 use crate::features::app::current_user::CurrentUserContext;
-use crate::features::network::RealtimeConnectionStatusIndicator;
 use crate::features::server_settings::ServerSettingsScope;
 use crate::features::user_settings::UserSettingsScope;
 use crate::features::voice_chat::{SidebarVoiceControls, VoiceConnectionHandle};
@@ -19,6 +18,7 @@ use super::room_editor_modal::RoomEditorModal;
 use super::room_instance::RoomInstance;
 use super::room_list_item::RoomListItem;
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
+use super::server_realtime_status::ServerRealtimeStatus;
 use super::server_rooms_sidebar_styles as sidebar_styles;
 use super::server_rooms_state::{
     ServerWorkspace, active_room, chat_open_for_room, ensure_workspace_mounted, room_by_id,
@@ -98,10 +98,6 @@ pub(crate) fn ServerRoomsScope(
         sidebar_styles::rooms_sidebar_header_icon_class(settings_workspace_active);
     let room_section_title_class =
         sidebar_styles::room_section_title_class(settings_workspace_active);
-    let connection_status_class =
-        sidebar_styles::connection_status_class(settings_workspace_active);
-    let connection_details_class =
-        sidebar_styles::connection_details_class(settings_workspace_active);
     let sidebar_voice_class = sidebar_styles::sidebar_voice_class(settings_workspace_active);
     let user_bar_class = sidebar_styles::user_bar_class(settings_workspace_active);
     let user_details_class = sidebar_styles::user_details_class(settings_workspace_active);
@@ -352,12 +348,9 @@ pub(crate) fn ServerRoomsScope(
                 }
             }
             div { class: "relative z-40 border-t border-zinc-800/80 p-3",
-                div { class: connection_status_class,
-                    RealtimeConnectionStatusIndicator {}
-                    div { class: connection_details_class,
-                        div { class: "truncate text-[11px] font-medium text-zinc-100", "{server_name}" }
-                        div { class: "truncate text-[11px] text-zinc-500", "realtime соединение" }
-                    }
+                ServerRealtimeStatus {
+                    server_name: server_name.clone(),
+                    settings_workspace_active: settings_workspace_active,
                 }
                 div { class: sidebar_voice_class,
                     SidebarVoiceControls {}
