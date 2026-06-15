@@ -27,6 +27,7 @@ pub(crate) fn AppPage() -> Element {
 
     use_effect(move || {
         if !api::has_tokens() {
+            info!("redirecting unauthenticated app route to login");
             navigator.replace(Route::Login {});
             return;
         }
