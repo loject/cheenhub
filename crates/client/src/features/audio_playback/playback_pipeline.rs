@@ -12,7 +12,7 @@ use super::browser_bindings::{AudioData, AudioDecoder, EncodedAudioChunk};
 use super::browser_helpers::{js_error_message, set_property};
 use super::provider::{AudioPlaybackInner, VoiceFrame};
 
-const INITIAL_PLAYBACK_BUFFER_SECONDS: f64 = 0.12;
+const INITIAL_PLAYBACK_BUFFER_SECONDS: f64 = 0.03;
 const CONTINUOUS_PLAYBACK_MARGIN_SECONDS: f64 = 0.02;
 
 pub(super) struct ScheduledAudioSource {

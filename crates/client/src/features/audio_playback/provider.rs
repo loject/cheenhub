@@ -10,6 +10,7 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::AudioContext;
 
 use super::browser_helpers::{apply_output_device_to_context, js_error_message, stop_audio_source};
+use super::jitter_buffer::JitterBuffer;
 use super::output_devices::AudioOutputDevice;
 use super::playback_pipeline::{
     ScheduledAudioSource, SenderPlayback, create_sender_playback, encoded_audio_chunk,
@@ -48,13 +49,16 @@ pub(crate) struct AudioPlaybackHandle {
     selected_output_device_id: Signal<Option<String>>,
     selected_output_device_label: Signal<Option<String>>,
     output_volume_percent: Signal<u32>,
-    inner: Rc<RefCell<AudioPlaybackInner>>,
+    pub(super) inner: Rc<RefCell<AudioPlaybackInner>>,
 }
 
 pub(super) struct AudioPlaybackInner {
     pub(super) context: Option<AudioContext>,
     pub(super) muted: bool,
     pub(super) senders: HashMap<String, SenderPlayback>,
+    pub(super) jitter_buffers: HashMap<String, JitterBuffer>,
+    pub(super) jitter_drainers: HashMap<String, u64>,
+    pub(super) next_jitter_drainer_generation: u64,
     pub(super) scheduled_sources: HashMap<String, Vec<ScheduledAudioSource>>,
     pub(super) scheduled_until: HashMap<String, f64>,
     /// Per-user gain values (0.0–2.0, default 1.0). Persisted so volumes set
@@ -64,22 +68,6 @@ pub(super) struct AudioPlaybackInner {
 }
 
 impl AudioPlaybackHandle {
-    /// Plays one encoded voice frame.
-    pub(crate) fn play_voice_frame(&self, frame: VoiceFrame) {
-        if frame.codec != PlaybackCodec::Opus || frame.bytes.is_empty() {
-            return;
-        }
-        if self.is_muted() {
-            return;
-        }
-        if let Err(error) = self.play(frame) {
-            warn!(
-                error = %js_error_message(error),
-                "failed to play inbound voice frame"
-            );
-        }
-    }
-
     /// Returns whether inbound playback is muted.
     pub(crate) fn is_muted(&self) -> bool {
         (self.muted)()
@@ -192,6 +180,7 @@ impl AudioPlaybackHandle {
         let (sender, sources) = {
             let mut inner = self.inner.borrow_mut();
             let sender = inner.senders.remove(sender_user_id);
+            inner.jitter_buffers.remove(sender_user_id);
             let sources = inner
                 .scheduled_sources
                 .remove(sender_user_id)
@@ -231,6 +220,11 @@ impl AudioPlaybackHandle {
                     sender_ids.push(sender_id.clone());
                 }
             }
+            for sender_id in inner.jitter_buffers.keys() {
+                if !sender_ids.iter().any(|known_id| known_id == sender_id) {
+                    sender_ids.push(sender_id.clone());
+                }
+            }
             sender_ids
         };
         for sender_id in sender_ids {
@@ -258,7 +252,7 @@ impl AudioPlaybackHandle {
         }
     }
 
-    fn play(&self, frame: VoiceFrame) -> Result<(), JsValue> {
+    pub(super) fn decode_voice_frame(&self, frame: VoiceFrame) -> Result<(), JsValue> {
         let context = self.context()?;
         let mut inner = self.inner.borrow_mut();
         if inner.muted {
@@ -351,6 +345,9 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             context: None,
             muted: false,
             senders: HashMap::new(),
+            jitter_buffers: HashMap::new(),
+            jitter_drainers: HashMap::new(),
+            next_jitter_drainer_generation: 0,
             scheduled_sources: HashMap::new(),
             scheduled_until: HashMap::new(),
             user_volumes: HashMap::new(),

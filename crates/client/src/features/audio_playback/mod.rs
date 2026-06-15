@@ -2,6 +2,8 @@
 
 mod browser_bindings;
 mod browser_helpers;
+mod jitter_buffer;
+mod jitter_runtime;
 mod output_devices;
 mod playback_pipeline;
 mod provider;
