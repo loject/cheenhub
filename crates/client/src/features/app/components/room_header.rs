@@ -20,8 +20,9 @@ pub(crate) fn RoomHeader(
     let is_active_voice_room = target
         .as_ref()
         .is_some_and(|target| target.room_id == room.id);
+    let is_connected_to_voice = matches!(&state, VoiceConnectionState::Connected { .. });
     let is_busy = matches!(
-        state,
+        &state,
         VoiceConnectionState::Connecting { .. } | VoiceConnectionState::Disconnecting { .. }
     );
     let (badge, dot_class, subtitle) = match room.kind {
@@ -76,7 +77,7 @@ pub(crate) fn RoomHeader(
                 }
                 p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "{subtitle}" }
             }
-            if is_voice_capable {
+            if is_voice_capable && !is_connected_to_voice {
                 button {
                     id: "join-voice-button",
                     r#type: "button",
