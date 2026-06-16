@@ -34,16 +34,17 @@ pub(crate) fn ensure_tls_config(
     let using_default_paths =
         cert_path == DEFAULT_DEV_CERT_PATH && key_path == DEFAULT_DEV_KEY_PATH;
 
-    if using_default_paths
-        && Path::new(cert_path).exists()
-        && Path::new(key_path).exists()
-        && !is_webtransport_dev_certificate_usable(cert_path)?
-    {
-        info!(
-            cert_path,
-            key_path, "regenerating WebTransport dev TLS certificate"
-        );
-        generate_dev_certificate(cert_path, key_path)?;
+    if using_default_paths && Path::new(cert_path).exists() && Path::new(key_path).exists() {
+        let status = webtransport_dev_certificate_status(cert_path)?;
+        if status != DevCertificateStatus::Usable {
+            info!(
+                cert_path,
+                key_path,
+                reason = status.reason(),
+                "regenerating WebTransport dev TLS certificate"
+            );
+            generate_dev_certificate(cert_path, key_path)?;
+        }
     }
 
     if !Path::new(cert_path).exists() || !Path::new(key_path).exists() {
@@ -100,6 +101,21 @@ pub(crate) fn load_private_key(path: &str) -> anyhow::Result<PrivateKeyDer<'stat
 }
 
 fn generate_dev_certificate(cert_path: &str, key_path: &str) -> anyhow::Result<()> {
+    let now = OffsetDateTime::now_utc();
+    generate_dev_certificate_with_validity(
+        cert_path,
+        key_path,
+        now - Duration::minutes(1),
+        now + Duration::days(DEV_CERT_LIFETIME_DAYS),
+    )
+}
+
+fn generate_dev_certificate_with_validity(
+    cert_path: &str,
+    key_path: &str,
+    not_before: OffsetDateTime,
+    not_after: OffsetDateTime,
+) -> anyhow::Result<()> {
     let cert_path = PathBuf::from(cert_path);
     let key_path = PathBuf::from(key_path);
     if let Some(parent) = cert_path.parent() {
@@ -120,15 +136,14 @@ fn generate_dev_certificate(cert_path: &str, key_path: &str) -> anyhow::Result<(
     }
 
     let key_pair = KeyPair::generate().context("failed to generate WebTransport dev key")?;
-    let now = OffsetDateTime::now_utc();
     let mut params = CertificateParams::new(vec![
         "localhost".to_owned(),
         "127.0.0.1".to_owned(),
         "::1".to_owned(),
     ])
     .context("failed to generate WebTransport dev certificate")?;
-    params.not_before = now - Duration::minutes(1);
-    params.not_after = now + Duration::days(DEV_CERT_LIFETIME_DAYS);
+    params.not_before = not_before;
+    params.not_after = not_after;
 
     let certificate = params
         .self_signed(&key_pair)
@@ -149,17 +164,51 @@ fn generate_dev_certificate(cert_path: &str, key_path: &str) -> anyhow::Result<(
     Ok(())
 }
 
-fn is_webtransport_dev_certificate_usable(path: &str) -> anyhow::Result<bool> {
+fn webtransport_dev_certificate_status(path: &str) -> anyhow::Result<DevCertificateStatus> {
     let certificates = load_certificates(path)?;
     let Some(certificate) = certificates.first() else {
-        return Ok(false);
+        return Ok(DevCertificateStatus::MissingCertificate);
     };
     let (_, parsed) = parse_x509_certificate(certificate.as_ref())
         .map_err(|error| anyhow!("failed to parse WebTransport dev certificate: {error}"))?;
     let validity = parsed.validity();
-    let lifetime = validity.not_after.to_datetime() - validity.not_before.to_datetime();
+    let not_before = validity.not_before.to_datetime();
+    let not_after = validity.not_after.to_datetime();
+    let lifetime = not_after - not_before;
+    let now = OffsetDateTime::now_utc();
 
-    Ok(lifetime <= Duration::days(14))
+    if lifetime > Duration::days(14) {
+        return Ok(DevCertificateStatus::LifetimeTooLong);
+    }
+    if now < not_before {
+        return Ok(DevCertificateStatus::NotYetValid);
+    }
+    if now >= not_after {
+        return Ok(DevCertificateStatus::Expired);
+    }
+
+    Ok(DevCertificateStatus::Usable)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DevCertificateStatus {
+    Usable,
+    MissingCertificate,
+    LifetimeTooLong,
+    NotYetValid,
+    Expired,
+}
+
+impl DevCertificateStatus {
+    fn reason(self) -> &'static str {
+        match self {
+            Self::Usable => "usable",
+            Self::MissingCertificate => "certificate file contains no certificates",
+            Self::LifetimeTooLong => "certificate lifetime exceeds WebTransport hash limit",
+            Self::NotYetValid => "certificate is not valid yet",
+            Self::Expired => "certificate has expired",
+        }
+    }
 }
 
 fn write_private_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
@@ -210,12 +259,37 @@ mod tests {
                 .expect("certificates load")
                 .is_empty()
         );
-        assert!(
-            is_webtransport_dev_certificate_usable(cert_path.to_str().expect("utf-8 cert path"))
-                .expect("certificate parses")
+        assert_eq!(
+            webtransport_dev_certificate_status(cert_path.to_str().expect("utf-8 cert path"))
+                .expect("certificate parses"),
+            DevCertificateStatus::Usable
         );
         load_private_key(key_path.to_str().expect("utf-8 key path")).expect("private key loads");
 
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn rejects_expired_dev_certificate_files() {
+        let directory =
+            std::env::temp_dir().join(format!("cheenhub-webtransport-test-{}", Uuid::new_v4()));
+        let cert_path = directory.join("cert.pem");
+        let key_path = directory.join("key.pem");
+        let now = OffsetDateTime::now_utc();
+
+        generate_dev_certificate_with_validity(
+            cert_path.to_str().expect("utf-8 cert path"),
+            key_path.to_str().expect("utf-8 key path"),
+            now - Duration::days(13),
+            now - Duration::minutes(1),
+        )
+        .expect("expired dev certificate is generated");
+
+        assert_eq!(
+            webtransport_dev_certificate_status(cert_path.to_str().expect("utf-8 cert path"))
+                .expect("certificate parses"),
+            DevCertificateStatus::Expired
+        );
         let _ = fs::remove_dir_all(directory);
     }
 
