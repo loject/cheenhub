@@ -1,4 +1,4 @@
-//! Shared backend application state.
+//! Общее состояние приложения бэкенда.
 
 use std::sync::Arc;
 
@@ -13,49 +13,49 @@ use crate::features::text_chat::infrastructure::{ChatAttachmentObjectStore, Text
 use crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore;
 use crate::realtime::hub::RealtimeHub;
 
-/// Shared backend application state.
+/// Общее состояние приложения бэкенда.
 #[derive(Clone)]
 pub(crate) struct AppState {
-    /// Authentication storage backend.
+    /// Бэкенд хранения аутентификации.
     pub(crate) auth_store: Arc<dyn AuthStore>,
-    /// Authentication email sender.
+    /// Отправитель писем аутентификации.
     pub(crate) auth_mailer: Arc<dyn AuthMailer>,
-    /// Server storage backend.
+    /// Бэкенд хранения серверов.
     pub(crate) server_store: Arc<dyn ServerStore>,
-    /// Text chat storage backend.
+    /// Бэкенд хранения текстового чата.
     pub(crate) text_chat_store: Arc<dyn TextChatStore>,
-    /// Text chat attachment object storage backend.
+    /// Бэкенд объектного хранения вложений текстового чата.
     pub(crate) chat_attachment_object_store: Arc<dyn ChatAttachmentObjectStore>,
-    /// Image storage backend.
+    /// Бэкенд хранения изображений.
     pub(crate) image_store: Arc<dyn ImageStore>,
-    /// Process-wide queue limiting image processing concurrency.
+    /// Очередь на уровне процесса, ограничивающая параллельность обработки изображений.
     pub(crate) image_processing_queue: Arc<Semaphore>,
-    /// Active voice room presence.
+    /// Активное присутствие в голосовых комнатах.
     pub(crate) voice_presence_store: Arc<InMemoryVoicePresenceStore>,
-    /// Shared realtime stream registry and fanout hub.
+    /// Общий реестр потоков realtime и хаб вещания.
     pub(crate) realtime_hub: Arc<RealtimeHub>,
-    /// Access JWT signing keys.
+    /// Ключи подписи Access JWT.
     pub(crate) auth_keys: AuthKeys,
-    /// Access JWT lifetime in minutes.
+    /// Время жизни Access JWT в минутах.
     pub(crate) access_token_lifetime_minutes: i64,
-    /// Refresh token lifetime in days.
+    /// Время жизни Refresh токена в днях.
     pub(crate) refresh_token_lifetime_days: i64,
-    /// Google OAuth client id.
+    /// ID клиента Google OAuth.
     pub(crate) google_oauth_client_id: Option<String>,
-    /// Google OAuth client secret.
+    /// Секрет клиента Google OAuth.
     pub(crate) google_oauth_client_secret: Option<String>,
-    /// Google OAuth redirect URI registered for this backend.
+    /// URI перенаправления Google OAuth, зарегистрированный для этого бэкенда.
     pub(crate) google_oauth_redirect_uri: Option<String>,
-    /// Browser client base URL used after OAuth callbacks.
+    /// Базовый URL клиента браузера после обратных вызовов OAuth.
     pub(crate) cheenhub_client_base_url: String,
-    /// Public REST API base URL used for generated asset links.
+    /// Публичный базовый URL REST API для сгенерированных ссылок на ресурсы.
     pub(crate) cheenhub_api_base_url: String,
-    /// OAuth state lifetime in minutes.
+    /// Время жизни состояния OAuth в минутах.
     pub(crate) oauth_state_lifetime_minutes: i64,
-    /// OAuth handoff lifetime in minutes.
+    /// Время жизни передачи OAuth в минутах.
     pub(crate) oauth_handoff_lifetime_minutes: i64,
-    /// OAuth registration intent lifetime in minutes.
+    /// Время жизни намерения регистрации OAuth в минутах.
     pub(crate) oauth_registration_lifetime_minutes: i64,
-    /// Password reset token lifetime in minutes.
+    /// Время жизни токена сброса пароля в минутах.
     pub(crate) password_reset_token_lifetime_minutes: i64,
 }

@@ -1,4 +1,4 @@
-//! Realtime module router.
+//! Роутер модуля realtime.
 
 use cheenhub_contracts::realtime::{RealtimeEnvelope, RealtimeModule, RejectionCode};
 use cheenhub_contracts::rest::AuthUser;
@@ -11,7 +11,7 @@ use super::protocol::send_rejection;
 use super::sink::EnvelopeSink;
 use super::{control, network};
 
-/// Dispatches a realtime envelope to the module that owns it.
+/// Отправляет конверт realtime в владеющий им модуль.
 pub(crate) async fn dispatch(
     state: &AppState,
     user: &AuthUser,
@@ -37,7 +37,7 @@ pub(crate) async fn dispatch(
     }
 }
 
-/// Runs module-specific cleanup after a reliable stream closes.
+/// Выполняет специфичную для модуля очистку после закрытия надежного потока.
 pub(crate) async fn cleanup_stream(state: &AppState, module: RealtimeModule, stream_id: Uuid) {
     match module {
         RealtimeModule::VoiceChat => {

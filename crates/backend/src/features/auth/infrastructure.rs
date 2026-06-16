@@ -1,4 +1,4 @@
-//! Authentication infrastructure layer.
+//! Слой инфраструктуры аутентификации.
 
 mod conversions;
 mod entities;
@@ -27,21 +27,21 @@ use crate::features::auth::domain::{
 pub(crate) use in_memory::InMemoryAuthStore;
 pub(crate) use postgres::PostgresAuthStore;
 
-/// Unique user field conflict.
+/// Конфликт уникального поля пользователя.
 #[derive(Debug)]
 pub(crate) enum UserConflict {
-    /// Nickname is already used.
+    /// Конфликт никнейма.
     Nickname,
-    /// Email is already used.
+    /// Конфликт email.
     Email,
 }
 
-/// Error returned while inserting a user.
+/// Ошибка, возвращаемая при вставке пользователя.
 #[derive(Debug)]
 pub(crate) enum InsertUserError {
-    /// Unique field conflict.
+    /// Конфликт уникального поля.
     Conflict(UserConflict),
-    /// Unexpected database error.
+    /// Непредвиденная ошибка базы данных.
     Database(sea_orm::DbErr),
     /// Unexpected storage error.
     Storage(anyhow::Error),
@@ -50,14 +50,14 @@ pub(crate) enum InsertUserError {
 /// Error returned while updating a user's nickname.
 #[derive(Debug)]
 pub(crate) enum UpdateUserNicknameError {
-    /// Unique field conflict.
+    /// Конфликт уникального поля.
     Conflict(UserConflict),
     /// Nickname was changed too recently.
     Cooldown {
         /// First timestamp when another nickname change is allowed.
         next_allowed_at: DateTime<Utc>,
     },
-    /// Unexpected database error.
+    /// Непредвиденная ошибка базы данных.
     Database(sea_orm::DbErr),
     /// Unexpected storage error.
     Storage(anyhow::Error),

@@ -1,92 +1,92 @@
-//! Voice chat presence realtime module contracts.
+//! Контракты модуля realtime для присутствия в голосовом чате.
 
 use serde::{Deserialize, Serialize};
 
-/// Voice chat presence module message kinds.
+/// Виды сообщений модуля присутствия в голосовом чате.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VoiceChatKind {
-    /// Join one voice-capable room.
+    /// Присоединиться к одной комнате с поддержкой голоса.
     JoinVoiceRoom,
-    /// Leave one voice-capable room.
+    /// Покинуть одну комнату с поддержкой голоса.
     LeaveVoiceRoom,
-    /// Kick one participant from a voice room.
+    /// Исключить одного участника из голосовой комнаты.
     KickVoiceMember,
-    /// Load active voice room participant snapshots for one server.
+    /// Загрузить снимки присутствия участников в активных голосовых комнатах для одного сервера.
     ListServerVoiceRooms,
-    /// Active voice room snapshots for one server.
+    /// Снимки активных голосовых комнат для одного сервера.
     ServerVoiceRoomsSnapshot,
-    /// Current voice room participant snapshot.
+    /// Текущий снимок участников голосовой комнаты.
     VoiceRoomSnapshot,
-    /// Voice room participant list changed event.
+    /// Событие изменения списка участников голосовой комнаты.
     ParticipantsChanged,
 }
 
-/// Request payload used to join a voice-capable room.
+/// Полезная нагрузка запроса на присоединение к комнате с поддержкой голоса.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JoinVoiceRoom {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
 }
 
-/// Request payload used to leave a voice-capable room.
+/// Полезная нагрузка запроса на выход из комнаты с поддержкой голоса.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LeaveVoiceRoom {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
 }
 
-/// Current participants for one voice room.
+/// Текущие участники одной голосовой комнаты.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoiceRoomSnapshot {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
-    /// Participants currently present in the room.
+    /// Участники, присутствующие в комнате.
     pub participants: Vec<VoiceRoomParticipant>,
 }
 
-/// Request payload used to kick a participant from a voice room.
+/// Полезная нагрузка запроса на исключение участника из голосовой комнаты.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KickVoiceMember {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
-    /// User identifier to kick.
+    /// Идентификатор исключаемого пользователя.
     pub user_id: String,
 }
 
-/// Request payload used to load active voice rooms for one server.
+/// Полезная нагрузка запроса на загрузку активных голосовых комнат одного сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListServerVoiceRooms {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
 }
 
-/// Active voice room snapshots for one server.
+/// Снимки активных голосовых комнат одного сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerVoiceRoomsSnapshot {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Voice room snapshots with active participants.
+    /// Снимки голосовых комнат с активными участниками.
     pub rooms: Vec<VoiceRoomSnapshot>,
 }
 
-/// Voice room participant payload.
+/// Полезная нагрузка участника голосовой комнаты.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoiceRoomParticipant {
-    /// Stable user identifier.
+    /// Стабильный идентификатор пользователя.
     pub user_id: String,
-    /// User nickname snapshot.
+    /// Снимок имени пользователя.
     pub nickname: String,
-    /// Public avatar image URL when configured.
+    /// Публичный URL изображения аватара, если он настроен.
     pub avatar_url: Option<String>,
-    /// RFC3339 timestamp for when this participant joined.
+    /// Метка времени RFC3339, когда этот участник присоединился.
     pub joined_at: String,
 }

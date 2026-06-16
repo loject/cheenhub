@@ -1,112 +1,112 @@
-//! Authentication domain models.
+//! Модели домена аутентификации.
 
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-/// User account data used by authentication flows.
+/// Данные учетной записи пользователя, используемые в потоках аутентификации.
 #[derive(Debug, Clone)]
 pub(crate) struct UserAccount {
-    /// Stable user identifier.
+    /// Стабильный идентификатор пользователя.
     pub(crate) id: Uuid,
-    /// Public nickname shown to other users.
+    /// Публичный никнейм, отображаемый другим пользователям.
     pub(crate) nickname: String,
-    /// Email address used for login.
+    /// Адрес электронной почты, используемый для входа.
     pub(crate) email: String,
-    /// Stored Argon2 password hash.
+    /// Сохраненный хеш пароля Argon2.
     pub(crate) password_hash: Option<String>,
-    /// Current avatar image identifier.
+    /// Текущий идентификатор изображения аватара.
     pub(crate) avatar_image_id: Option<Uuid>,
-    /// Account registration timestamp.
+    /// Метка времени регистрации учетной записи.
     pub(crate) registered_at: DateTime<Utc>,
-    /// Last successful nickname update timestamp.
+    /// Метка времени последнего успешного обновления никнейма.
     pub(crate) nickname_updated_at: DateTime<Utc>,
 }
 
-/// Active refresh token session with its owning user.
+/// Активная сессия refresh-токена с владельцем.
 #[derive(Debug, Clone)]
 pub(crate) struct RefreshSession {
-    /// Refresh token row identifier.
+    /// Идентификатор строки refresh-токена.
     pub(crate) refresh_token_id: Uuid,
-    /// Session row identifier.
+    /// Идентификатор строки сессии.
     pub(crate) session_id: Uuid,
     /// User that owns the session.
     pub(crate) user: UserAccount,
 }
 
-/// Active auth session data used by account security settings.
+/// Активные данные сессии аутентификации, используемые настройками безопасности учетной записи.
 #[derive(Debug, Clone)]
 pub(crate) struct UserSession {
-    /// Session row identifier.
+    /// Идентификатор строки сессии.
     pub(crate) id: Uuid,
-    /// Session creation timestamp.
+    /// Метка времени создания сессии.
     pub(crate) created_at: DateTime<Utc>,
-    /// Last observed activity timestamp.
+    /// Метка времени последней наблюдаемой активности.
     pub(crate) last_seen_at: DateTime<Utc>,
-    /// Session expiration timestamp.
+    /// Метка времени истечения сессии.
     pub(crate) expires_at: DateTime<Utc>,
-    /// Most recent normalized User-Agent observed for the session.
+    /// Недавно наблюдаемый нормализованный User-Agent для сессии.
     pub(crate) user_agent: Option<String>,
 }
 
-/// Linked OAuth account data.
+/// Данные связанной учетной записи OAuth.
 #[derive(Debug, Clone)]
 pub(crate) struct OAuthAccount {
-    /// User that owns the linked account.
+    /// Пользователь, владеющий связанной учетной записью.
     pub(crate) user_id: Uuid,
-    /// External OAuth provider.
+    /// Внешний провайдер OAuth.
     pub(crate) provider: String,
-    /// Stable provider-side subject.
+    /// Стабильный идентификатор на стороне провайдера.
     pub(crate) provider_subject: String,
     /// Provider email address.
     pub(crate) email: String,
-    /// Provider display name.
+    /// Отображаемое имя провайдера.
     pub(crate) display_name: Option<String>,
-    /// Timestamp when the provider was linked.
+    /// Метка времени, когда провайдер был связан.
     pub(crate) linked_at: DateTime<Utc>,
 }
 
-/// Short-lived OAuth state created before provider redirect.
+/// Одноразовое состояние OAuth, созданное перед перенаправлением к провайдеру.
 #[derive(Debug, Clone)]
 pub(crate) struct OAuthState {
-    /// OAuth nonce sent to the provider.
+    /// OAuth нонс, отправляемый провайдеру.
     pub(crate) nonce: String,
-    /// Flow kind.
+    /// Вид потока.
     pub(crate) flow_kind: String,
-    /// Authenticated user for link flow.
+    /// Аутентифицированный пользователь для потока привязки.
     pub(crate) user_id: Option<Uuid>,
 }
 
-/// Short-lived OAuth registration intent.
+/// Краткоживущее намерение регистрации OAuth.
 #[derive(Debug, Clone)]
 pub(crate) struct OAuthRegistrationIntent {
-    /// Stable intent row identifier.
+    /// Стабильный идентификатор строки намерения.
     pub(crate) id: Uuid,
-    /// Stable provider-side subject.
+    /// Стабильный идентификатор на стороне провайдера.
     pub(crate) provider_subject: String,
-    /// Verified provider email address.
+    /// Проверенный адрес электронной почты провайдера.
     pub(crate) email: String,
-    /// Provider display name.
+    /// Отображаемое имя провайдера.
     pub(crate) display_name: Option<String>,
 }
 
-/// Short-lived OAuth frontend handoff.
+/// Одноразовый OAuth-handoff для фронтенда.
 #[derive(Debug, Clone)]
 pub(crate) struct OAuthHandoff {
-    /// Stable handoff row identifier.
+    /// Стабильный идентификатор строки handoff.
     pub(crate) id: Uuid,
-    /// Handoff result kind.
+    /// Вид результата handoff.
     pub(crate) kind: String,
-    /// User id for authenticated and linked handoffs.
+    /// ID пользователя для аутентифицированных и связанных handoffs.
     pub(crate) user_id: Option<Uuid>,
-    /// Registration intent id for registration handoffs.
+    /// ID намерения регистрации для регистрационных handoffs.
     pub(crate) registration_intent_id: Option<Uuid>,
 }
 
-/// Short-lived password reset token data.
+/// Данные одноразового токена сброса пароля.
 #[derive(Debug, Clone)]
 pub(crate) struct PasswordResetToken {
-    /// Stable password reset token row identifier.
+    /// Стабильный идентификатор строки токена сброса пароля.
     pub(crate) id: Uuid,
-    /// User that owns the reset token.
+    /// Пользователь, владеющий токеном сброса.
     pub(crate) user_id: Uuid,
 }

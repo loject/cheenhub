@@ -50,6 +50,7 @@
 
 - Every crate must include crate-level documentation.
 - Every public module, type, function, trait, enum, constant, and field must have `///` documentation when it is introduced.
+- Write new documentation comments (`//!`, `///`) and regular code comments in Russian. Keep protocol names, API names, environment variable names, type and field names unchanged; prefer established English technical terms when translation would make the meaning less precise.
 - Crates use `#![warn(missing_docs)]`; warnings are acceptable during early development, but new public API should not add missing-doc warnings.
 - Run `cargo clippy --workspace --all-targets` and `cargo fmt` before handing off code.
 

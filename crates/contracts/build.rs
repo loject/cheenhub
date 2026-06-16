@@ -1,4 +1,4 @@
-//! Contracts build-time checks.
+//! Проверки сборки контрактов во время компиляции.
 
 mod file_lines {
     include!("../../build_support/file_lines.rs");

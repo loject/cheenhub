@@ -1,4 +1,4 @@
-//! WebTransport unreliable datagram receive loop.
+//! Цикл получения ненадежных датаграмм WebTransport.
 
 use cheenhub_contracts::media::{MediaCodec, MediaDatagram, MediaDatagramKind};
 use tracing::debug;

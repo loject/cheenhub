@@ -1,4 +1,4 @@
-//! WebTransport realtime server scaffold.
+//! Каркас сервера realtime WebTransport.
 
 mod control;
 mod datagram;
@@ -27,7 +27,7 @@ pub(crate) use tls::ensure_tls_config;
 
 const REALTIME_PATH: &str = "/realtime";
 
-/// Binds the WebTransport realtime listener.
+/// Привязывает слушатель realtime WebTransport.
 pub(crate) fn bind(address: SocketAddr, cert_path: &str, key_path: &str) -> anyhow::Result<Server> {
     let certificates = tls::load_certificates(cert_path)?;
     let private_key = tls::load_private_key(key_path)?;

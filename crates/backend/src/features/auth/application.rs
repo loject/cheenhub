@@ -1,4 +1,4 @@
-//! Authentication application flows.
+//! Потоки приложения аутентификации.
 
 use cheenhub_contracts::rest::{
     AuthResponse, AuthUser, ChangeCurrentUserPasswordRequest, LoginRequest, LogoutRequest,
@@ -36,7 +36,7 @@ pub(crate) use sessions::{
     active_sessions, revoke_current_user_session, revoke_current_user_sessions,
 };
 
-/// Registers a user and creates an authenticated session.
+/// Регистрирует пользователя и создает аутентифицированную сессию.
 #[cfg(test)]
 pub(crate) async fn register(
     state: &AppState,
@@ -45,7 +45,7 @@ pub(crate) async fn register(
     register_with_user_agent(state, request, None).await
 }
 
-/// Registers a user and records request User-Agent metadata when present.
+/// Регистрирует пользователя и записывает метаданные User-Agent запроса, если они присутствуют.
 pub(crate) async fn register_with_user_agent(
     state: &AppState,
     request: RegisterRequest,
@@ -75,7 +75,7 @@ pub(crate) async fn register_with_user_agent(
     create_auth_response(state, &user, user_agent.as_deref()).await
 }
 
-/// Logs a user in and creates an authenticated session.
+/// Вход пользователя и создание аутентифицированной сессии.
 #[cfg(test)]
 pub(crate) async fn login(
     state: &AppState,
@@ -84,7 +84,7 @@ pub(crate) async fn login(
     login_with_user_agent(state, request, None).await
 }
 
-/// Logs a user in and records request User-Agent metadata when present.
+/// Вход пользователя и запись метаданных User-Agent запроса, если они присутствуют.
 pub(crate) async fn login_with_user_agent(
     state: &AppState,
     request: LoginRequest,
@@ -114,7 +114,7 @@ pub(crate) async fn login_with_user_agent(
     create_auth_response(state, &user, user_agent.as_deref()).await
 }
 
-/// Sends a password reset email when the account exists.
+/// Отправляет письмо сброса пароля, если учетная запись существует.
 pub(crate) async fn request_password_reset(
     state: &AppState,
     request: PasswordResetRequest,
@@ -159,7 +159,7 @@ pub(crate) async fn request_password_reset(
     Ok(())
 }
 
-/// Confirms a password reset token and sets a new password.
+/// Подтверждает сброс пароля с использованием токена сброса пароля и устанавливает новый пароль.
 pub(crate) async fn confirm_password_reset(
     state: &AppState,
     request: PasswordResetConfirmRequest,
@@ -201,7 +201,7 @@ pub(crate) async fn confirm_password_reset(
     Ok(())
 }
 
-/// Rotates a refresh token and records request User-Agent metadata when present.
+/// Обновляет refresh-токен и записывает метаданные User-Agent запроса, если они присутствуют.
 pub(crate) async fn refresh_with_user_agent(
     state: &AppState,
     request: RefreshRequest,
@@ -248,7 +248,7 @@ pub(crate) async fn refresh_with_user_agent(
     })
 }
 
-/// Revokes a refresh session.
+/// Аннулирует текущую сессию refresh-токена.
 pub(crate) async fn logout(state: &AppState, request: LogoutRequest) -> Result<(), AuthError> {
     let token_hash = refresh_token::hash(&request.refresh_token);
     state

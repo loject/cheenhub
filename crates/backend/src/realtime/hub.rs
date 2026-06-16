@@ -1,4 +1,4 @@
-//! Shared realtime stream registry and fanout.
+//! Общий реестр потоков realtime и вещания.
 
 use cheenhub_contracts::realtime::{RealtimeKind, RealtimeModule};
 use futures_util::future::join_all;
@@ -12,7 +12,7 @@ use crate::state::AppState;
 use super::protocol;
 use super::sink::{DatagramSink, EnvelopeSink};
 
-/// Shared registry for active module-bound realtime streams.
+/// Общий реестр активных потоков realtime, привязанных к модулям.
 #[derive(Default)]
 pub(crate) struct RealtimeHub {
     streams: Mutex<Vec<RealtimeStream>>,
@@ -34,7 +34,7 @@ struct RealtimeSession {
     datagrams: DatagramSink,
 }
 
-/// Public stream identity used by feature-level fanout policies.
+/// Публичный идентификатор потока, используемый в политиках вещания на уровне функций.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RealtimeRecipient {
     /// Stable realtime stream identifier.
@@ -44,7 +44,7 @@ pub(crate) struct RealtimeRecipient {
 }
 
 impl RealtimeHub {
-    /// Registers a module-bound reliable stream.
+    /// Регистрирует надежный поток, привязанный к модулю.
     pub(crate) async fn register_stream(
         &self,
         stream_id: Uuid,
@@ -65,7 +65,7 @@ impl RealtimeHub {
         debug!(%stream_id, ?module, %user_id, "registered realtime stream");
     }
 
-    /// Registers an authenticated WebTransport session for datagram fanout.
+    /// Регистрирует аутентифицированную сессию WebTransport для вещания датаграмм.
     pub(crate) async fn register_session(
         &self,
         session_id: Uuid,
@@ -84,14 +84,14 @@ impl RealtimeHub {
         debug!(%session_id, %user_id, "registered realtime session");
     }
 
-    /// Removes an authenticated WebTransport session.
+    /// Удаляет аутентифицированную сессию WebTransport.
     pub(crate) async fn unregister_session(&self, session_id: Uuid) {
         let mut sessions = self.sessions.lock().await;
         sessions.retain(|session| session.id != session_id);
         debug!(%session_id, "unregistered realtime session");
     }
 
-    /// Sends one raw datagram to selected active sessions.
+    /// Отправляет одну сырую датаграмму выбранным активным сессиям.
     pub(crate) async fn fanout_datagram_to_sessions(
         &self,
         session_ids: &[Uuid],
@@ -123,14 +123,14 @@ impl RealtimeHub {
         .await;
     }
 
-    /// Removes a module-bound reliable stream.
+    /// Удаляет надежный поток, привязанный к модулю.
     pub(crate) async fn unregister_stream(&self, stream_id: Uuid) {
         let mut streams = self.streams.lock().await;
         streams.retain(|stream| stream.id != stream_id);
         debug!(%stream_id, "unregistered realtime stream");
     }
 
-    /// Returns active recipients for a realtime module on one server.
+    /// Возвращает активных получателей для модуля realtime на одном сервере.
     pub(crate) async fn recipients(
         &self,
         state: &AppState,
@@ -170,7 +170,7 @@ impl RealtimeHub {
         recipients
     }
 
-    /// Fans out a server-scoped event to selected streams of one realtime module.
+    /// Вещает событие, ограниченное сервером, выбранным потокам одного модуля realtime.
     pub(crate) async fn fanout_to_streams<P>(
         &self,
         module: RealtimeModule,

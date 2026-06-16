@@ -1,26 +1,26 @@
-//! Authentication error types.
+//! Типы ошибок аутентификации.
 
-/// Error returned by authentication application flows.
+/// Ошибка, возвращаемая потоками приложения аутентификации.
 #[derive(Debug)]
 pub(crate) enum AuthError {
-    /// Request data is invalid.
+    /// Данные запроса невалидны.
     BadRequest(String),
-    /// Credentials or tokens are invalid.
+    /// Учетные данные или токены невалидны.
     Unauthorized(String),
-    /// A unique account field already exists.
+    /// Уникальное поле учетной записи уже существует.
     Conflict(String),
-    /// Request is valid but currently rate limited.
+    /// Запрос валиден, но в данный момент ограничен частотой запросов.
     RateLimited(String),
     /// A required runtime integration is not configured.
     Misconfigured {
-        /// Integration or feature name.
+        /// Название функции или интеграции.
         feature: &'static str,
-        /// Missing environment variable names.
+        /// Имена отсутствующих переменных окружения.
         missing: Vec<&'static str>,
-        /// User-facing message.
+        /// Сообщение для пользователя.
         message: String,
     },
-    /// Unexpected infrastructure failure.
+    /// Непредвиденный сбой инфраструктуры.
     Internal(anyhow::Error),
 }
 

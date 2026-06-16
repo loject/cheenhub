@@ -1,4 +1,4 @@
-//! WebTransport realtime session lifecycle.
+//! Жизненный цикл сессии realtime WebTransport.
 
 use anyhow::{Context, anyhow};
 use std::sync::Arc;
@@ -17,7 +17,7 @@ use super::protocol::validate_envelope;
 use super::sink::{DatagramSink, EnvelopeSink};
 use super::{control, datagram, router};
 
-/// Handles one accepted WebTransport session.
+/// Обрабатывает одну принятую сессию WebTransport.
 pub(crate) async fn handle_session(
     state: AppState,
     session_id: Uuid,

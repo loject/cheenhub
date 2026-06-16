@@ -1,4 +1,4 @@
-//! Shared realtime envelope contracts.
+//! Общие контракты конвертов realtime.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -10,39 +10,39 @@ use super::server::ServerKind;
 use super::text_chat::TextChatKind;
 use super::voice_chat::VoiceChatKind;
 
-/// Top-level realtime module namespace.
+/// Верхнеуровневое пространство имен модулей realtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RealtimeModule {
-    /// Session lifecycle and diagnostic control messages.
+    /// Сообщения жизненного цикла сессии и диагностического управления.
     Control,
-    /// Connection quality measurement messages.
+    /// Сообщения измерения качества соединения.
     Network,
-    /// Server management messages and events.
+    /// Сообщения управления сервером и события.
     Server,
-    /// Text chat messages and events.
+    /// Сообщения текстового чата и события.
     TextChat,
-    /// Voice chat presence messages and events.
+    /// Сообщения присутствия в голосовом чате и события.
     VoiceChat,
 }
 
-/// Typed realtime message kind wrapper.
+/// Обертка для типизированных видов сообщений realtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RealtimeKind {
-    /// Control module message kind.
+    /// Вид сообщения модуля управления.
     Control(ControlKind),
-    /// Network module message kind.
+    /// Вид сообщения модуля сети.
     Network(NetworkKind),
-    /// Server management module message kind.
+    /// Вид сообщения модуля управления сервером.
     Server(ServerKind),
-    /// Text chat module message kind.
+    /// Вид сообщения модуля текстового чата.
     TextChat(TextChatKind),
-    /// Voice chat presence module message kind.
+    /// Вид сообщения модуля присутствия в голосовом чате.
     VoiceChat(VoiceChatKind),
 }
 
 impl RealtimeKind {
-    /// Returns the module that owns this kind.
+    /// Возвращает модуль, которому принадлежит этот вид.
     pub fn module(self) -> RealtimeModule {
         match self {
             Self::Control(_) => RealtimeModule::Control,
@@ -96,21 +96,21 @@ impl<'de> Deserialize<'de> for RealtimeKind {
     }
 }
 
-/// Envelope used by every reliable realtime message.
+/// Конверт, используемый в каждом надежном сообщении realtime.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RealtimeEnvelope {
-    /// Module that owns the message.
+    /// Модуль, владеющий сообщением.
     pub module: RealtimeModule,
-    /// Module-local typed message kind.
+    /// Локальный для модуля типизированный вид сообщения.
     pub kind: RealtimeKind,
-    /// Optional request identifier used for request-response correlation.
+    /// Необязательный идентификатор запроса, используемый для корреляции запрос-ответ.
     pub request_id: Option<Uuid>,
-    /// Module-owned JSON payload decoded by the receiving module.
+    /// JSON-полезная нагрузка, принадлежащая модулю и декодируемая принимающим модулем.
     pub payload: Value,
 }
 
 impl RealtimeEnvelope {
-    /// Creates a typed envelope from a serializable payload.
+    /// Создает типизированный конверт из сериализуемой полезной нагрузки.
     pub fn new<T>(
         module: RealtimeModule,
         kind: RealtimeKind,
@@ -128,7 +128,7 @@ impl RealtimeEnvelope {
         })
     }
 
-    /// Returns whether this envelope has a matching module/kind pair.
+    /// Возвращает, соответствует ли вид сообщения модулю конверта.
     pub fn has_matching_module_kind(&self) -> bool {
         self.kind.module() == self.module
     }

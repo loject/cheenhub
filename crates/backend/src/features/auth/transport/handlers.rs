@@ -1,4 +1,4 @@
-//! Authentication HTTP handlers.
+//! HTTP обработчики аутентификации.
 
 use axum::{
     Json,
@@ -20,7 +20,7 @@ use crate::features::auth::application;
 use crate::features::auth::error::AuthError;
 use crate::state::AppState;
 
-/// Registers a new email/password account.
+/// Регистрирует новую учетную запись email/пароль.
 pub(crate) async fn register(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -31,7 +31,7 @@ pub(crate) async fn register(
         .map(Json)
 }
 
-/// Logs in with email/password.
+/// Вход по email/паролю.
 pub(crate) async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -42,7 +42,7 @@ pub(crate) async fn login(
         .map(Json)
 }
 
-/// Sends a password reset email when the account exists.
+/// Отправляет письмо сброса пароля, если учетная запись существует.
 pub(crate) async fn request_password_reset(
     State(state): State<AppState>,
     Json(request): Json<PasswordResetRequest>,
@@ -51,7 +51,7 @@ pub(crate) async fn request_password_reset(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Sets a new password using a password reset token.
+/// Устанавливает новый пароль с использованием токена сброса пароля.
 pub(crate) async fn confirm_password_reset(
     State(state): State<AppState>,
     Json(request): Json<PasswordResetConfirmRequest>,
@@ -60,7 +60,7 @@ pub(crate) async fn confirm_password_reset(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Rotates a refresh token and returns a new token pair.
+/// Обновляет refresh-токен и возвращает новую пару токенов.
 pub(crate) async fn refresh(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -71,7 +71,7 @@ pub(crate) async fn refresh(
         .map(Json)
 }
 
-/// Invalidates the current refresh session.
+/// Аннулирует текущую сессию refresh-токена.
 pub(crate) async fn logout(
     State(state): State<AppState>,
     Json(request): Json<LogoutRequest>,
@@ -80,7 +80,7 @@ pub(crate) async fn logout(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Lists active sessions for the current user.
+/// Список активных сессий текущего пользователя.
 pub(crate) async fn active_sessions(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -89,7 +89,7 @@ pub(crate) async fn active_sessions(
     application::active_sessions(&state, token).await.map(Json)
 }
 
-/// Invalidates one active session owned by the current user.
+/// Аннулирует одну активную сессию, принадлежащую текущему пользователю.
 pub(crate) async fn revoke_session(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -100,7 +100,7 @@ pub(crate) async fn revoke_session(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Invalidates every active session owned by the current user.
+/// Аннулирует все активные сессии текущего пользователя.
 pub(crate) async fn revoke_sessions(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -110,7 +110,7 @@ pub(crate) async fn revoke_sessions(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Returns the current user for a valid access JWT.
+/// Возвращает текущего пользователя для валидного Access JWT.
 pub(crate) async fn me(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -119,7 +119,7 @@ pub(crate) async fn me(
     application::me(&state, token).await.map(Json)
 }
 
-/// Updates the current user profile.
+/// Обновляет профиль текущего пользователя.
 pub(crate) async fn update_current_user(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -131,7 +131,7 @@ pub(crate) async fn update_current_user(
         .map(Json)
 }
 
-/// Changes the current user's password.
+/// Меняет пароль текущего пользователя.
 pub(crate) async fn change_current_user_password(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -142,7 +142,7 @@ pub(crate) async fn change_current_user_password(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Updates the current user's avatar.
+/// Обновляет аватар текущего пользователя.
 pub(crate) async fn update_current_user_avatar(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -154,7 +154,7 @@ pub(crate) async fn update_current_user_avatar(
         .map(Json)
 }
 
-/// Starts a Google OAuth login or link flow.
+/// Запускает процесс входа Google OAuth или привязки.
 pub(crate) async fn start_google_oauth(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -166,7 +166,7 @@ pub(crate) async fn start_google_oauth(
         .map(Json)
 }
 
-/// Handles the Google OAuth provider callback.
+/// Обрабатывает callback провайдера Google OAuth.
 pub(crate) async fn google_oauth_callback(
     State(state): State<AppState>,
     Query(query): Query<GoogleOAuthCallbackQuery>,
@@ -176,7 +176,7 @@ pub(crate) async fn google_oauth_callback(
     Redirect::to(&url)
 }
 
-/// Completes a Google OAuth frontend handoff.
+/// Завершает процесс Google OAuth frontend handoff.
 pub(crate) async fn complete_google_oauth(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -187,7 +187,7 @@ pub(crate) async fn complete_google_oauth(
         .map(Json)
 }
 
-/// Finishes registration for a verified Google OAuth identity.
+/// Завершает регистрацию для подтвержденной личности Google OAuth.
 pub(crate) async fn register_with_google_oauth(
     State(state): State<AppState>,
     headers: HeaderMap,

@@ -1,9 +1,9 @@
-//! Backend logging and tracing setup.
+//! Настройка логирования и трассировки бэкенда.
 
 use anyhow::anyhow;
 use tracing_subscriber::{EnvFilter, fmt};
 
-/// Initializes process-wide tracing.
+/// Инициализирует трассировку на уровне процесса.
 pub(crate) fn init(filter: &str) -> anyhow::Result<()> {
     fmt()
         .with_env_filter(EnvFilter::new(filter))

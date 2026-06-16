@@ -1,98 +1,98 @@
-//! Environment-backed backend configuration.
+//! Конфигурация бэкенда на основе переменных окружения.
 
 use std::{env, net::SocketAddr};
 
 use anyhow::{Context, anyhow};
 
-/// Runtime configuration for the backend service.
+/// Конфигурация сервиса бэкенда во время выполнения.
 #[derive(Debug, Clone)]
 pub(crate) struct AppConfig {
-    /// Postgres connection string.
+    /// Строка подключения к Postgres.
     pub(crate) database_url: String,
-    /// Host address used by the HTTP listener.
+    /// Хост-адрес, используемый HTTP-слушателем.
     pub(crate) backend_host: String,
-    /// Port used by the HTTP listener.
+    /// Порт, используемый HTTP-слушателем.
     pub(crate) backend_port: u16,
-    /// Tracing filter used by `tracing-subscriber`.
+    /// Фильтр трассировки, используемый `tracing-subscriber`.
     pub(crate) log_filter: String,
-    /// Base64 encoded Ed25519 private key seed used to sign access JWTs.
+    /// Base64-кодированный seed приватного ключа Ed25519 для подписи Access JWT.
     pub(crate) jwt_private_key_base64: String,
-    /// Active JWT key identifier.
+    /// Активный идентификатор ключа Access JWT.
     pub(crate) jwt_key_id: String,
-    /// Access JWT lifetime in minutes.
+    /// Время жизни Access JWT в минутах.
     pub(crate) access_token_lifetime_minutes: i64,
-    /// Refresh token lifetime in days.
+    /// Время жизни Refresh токена в днях.
     pub(crate) refresh_token_lifetime_days: i64,
-    /// Google OAuth client id.
+    /// ID клиента Google OAuth.
     pub(crate) google_oauth_client_id: Option<String>,
-    /// Google OAuth client secret.
+    /// Секрет клиента Google OAuth.
     pub(crate) google_oauth_client_secret: Option<String>,
-    /// Google OAuth redirect URI registered for this backend.
+    /// URI перенаправления Google OAuth, зарегистрированный для этого бэкенда.
     pub(crate) google_oauth_redirect_uri: Option<String>,
-    /// Browser client base URL used after OAuth callbacks.
+    /// Базовый URL клиента браузера после обратных вызовов OAuth.
     pub(crate) cheenhub_client_base_url: String,
-    /// Public REST API base URL used for generated asset links.
+    /// Публичный базовый URL REST API для сгенерированных ссылок на ресурсы.
     pub(crate) cheenhub_api_base_url: String,
-    /// OAuth state lifetime in minutes.
+    /// Время жизни состояния OAuth в минутах.
     pub(crate) oauth_state_lifetime_minutes: i64,
-    /// OAuth handoff lifetime in minutes.
+    /// Время жизни передачи OAuth в минутах.
     pub(crate) oauth_handoff_lifetime_minutes: i64,
-    /// OAuth registration intent lifetime in minutes.
+    /// Время жизни намерения регистрации OAuth в минутах.
     pub(crate) oauth_registration_lifetime_minutes: i64,
-    /// SMTP host used for password reset emails.
+    /// Хост SMTP для писем сброса пароля.
     pub(crate) smtp_host: Option<String>,
-    /// SMTP port used for password reset emails.
+    /// Порт SMTP для писем сброса пароля.
     pub(crate) smtp_port: u16,
-    /// SMTP username used for password reset emails.
+    /// Имя пользователя SMTP для писем сброса пароля.
     pub(crate) smtp_username: Option<String>,
-    /// SMTP password used for password reset emails.
+    /// Пароль SMTP для писем сброса пароля.
     pub(crate) smtp_password: Option<String>,
-    /// Sender email address for password reset emails.
+    /// Адрес электронной почты отправителя для писем сброса пароля.
     pub(crate) smtp_from_email: Option<String>,
-    /// Password reset token lifetime in minutes.
+    /// Время жизни токена сброса пароля в минутах.
     pub(crate) password_reset_token_lifetime_minutes: i64,
-    /// Authentication storage backend.
+    /// Бэкенд хранения аутентификации.
     pub(crate) auth_store: AuthStoreConfig,
-    /// Host address used by the WebTransport listener.
+    /// Хост-адрес, используемый слушателем WebTransport.
     pub(crate) webtransport_host: String,
-    /// Port used by the WebTransport listener.
+    /// Порт, используемый слушателем WebTransport.
     pub(crate) webtransport_port: u16,
-    /// Optional PEM certificate path used by the WebTransport listener.
+    /// Необязательный путь к PEM-сертификату, используемый слушателем WebTransport.
     pub(crate) webtransport_tls_cert_path: Option<String>,
-    /// Optional PEM private key path used by the WebTransport listener.
+    /// Необязательный путь к PEM-приватному ключу, используемый слушателем WebTransport.
     pub(crate) webtransport_tls_key_path: Option<String>,
-    /// Optional S3-compatible object storage configuration for chat images.
+    /// Необязательная конфигурация S3-совместимого объектного хранилища для изображений чата.
     pub(crate) chat_images_s3: Option<S3Config>,
 }
 
-/// S3-compatible object storage configuration.
+/// Конфигурация S3-совместимого объектного хранилища.
 #[derive(Debug, Clone)]
 pub(crate) struct S3Config {
-    /// S3 API endpoint URL.
+    /// URL эндпоинта S3 API.
     pub(crate) endpoint: String,
-    /// S3 signing region.
+    /// Регион подписи S3.
     pub(crate) region: String,
-    /// Bucket used to store chat image objects.
+    /// S3 bucket для хранения объектов изображений чата.
     pub(crate) bucket: String,
-    /// Access key id.
+    /// ID ключа доступа.
     pub(crate) access_key_id: String,
-    /// Secret access key.
+    /// Секретный ключ доступа.
     pub(crate) secret_access_key: String,
-    /// Whether to force path-style addressing.
+    /// Принудительно использовать адресацию в стиле пути.
     pub(crate) force_path_style: bool,
 }
 
-/// Authentication storage backend configuration.
+/// Конфигурация бэкенда хранения аутентификации.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AuthStoreConfig {
-    /// Store auth state in Postgres.
+    /// Хранит состояние аутентификации в Postgres.
     Postgres,
-    /// Store auth state in process memory.
+    /// Хранит состояние аутентификации в памяти процесса.
     InMemory,
 }
 
 impl AppConfig {
-    /// Loads backend configuration from the process environment.
+    /// Загружает конфигурацию бэкенда из окружения процесса.
     pub(crate) fn from_env() -> anyhow::Result<Self> {
         Ok(Self {
             database_url: required("DATABASE_URL")?,
@@ -144,7 +144,7 @@ impl AppConfig {
         })
     }
 
-    /// Returns the socket address used by the HTTP listener.
+    /// Возвращает socket address, используемый HTTP-слушателем.
     pub(crate) fn socket_addr(&self) -> anyhow::Result<SocketAddr> {
         format!("{}:{}", self.backend_host, self.backend_port)
             .parse()
@@ -156,7 +156,7 @@ impl AppConfig {
             })
     }
 
-    /// Returns the socket address used by the WebTransport listener.
+    /// Возвращает socket address, используемый слушателем WebTransport.
     pub(crate) fn webtransport_socket_addr(&self) -> anyhow::Result<SocketAddr> {
         format!("{}:{}", self.webtransport_host, self.webtransport_port)
             .parse()

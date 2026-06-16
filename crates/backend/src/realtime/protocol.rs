@@ -1,4 +1,4 @@
-//! Realtime envelope protocol helpers.
+//! Вспомогательные функции протокола конвертов realtime.
 
 use anyhow::{Context, anyhow};
 use cheenhub_contracts::realtime::{
@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::sink::EnvelopeSink;
 
-/// Ensures an envelope has a matching module/kind pair.
+/// Убеждается, что конверт имеет соответствующую пару модуль/вид.
 pub(crate) fn validate_envelope(envelope: &RealtimeEnvelope) -> anyhow::Result<()> {
     if envelope.has_matching_module_kind() {
         Ok(())
@@ -19,7 +19,7 @@ pub(crate) fn validate_envelope(envelope: &RealtimeEnvelope) -> anyhow::Result<(
     }
 }
 
-/// Returns the request id or fails when a request-response message omitted it.
+/// Возвращает идентификатор запроса или завершается с ошибкой, если он отсутствует в сообщении запрос-ответ.
 pub(crate) fn require_request_id(envelope: &RealtimeEnvelope) -> anyhow::Result<Uuid> {
     envelope
         .request_id
