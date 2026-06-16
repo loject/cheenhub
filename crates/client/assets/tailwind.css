@@ -2792,6 +2792,10 @@ video {
   background-color: rgb(239 68 68 / 0.15);
 }
 
+.bg-red-500\/70 {
+  background-color: rgb(239 68 68 / 0.7);
+}
+
 .bg-red-950\/20 {
   background-color: rgb(69 10 10 / 0.2);
 }
@@ -2945,10 +2949,6 @@ video {
 
 .bg-zinc-950\/95 {
   background-color: rgb(9 9 11 / 0.95);
-}
-
-.bg-red-500\/70 {
-  background-color: rgb(239 68 68 / 0.7);
 }
 
 .bg-\[radial-gradient\(circle_at_center\2c rgba\(255\2c 255\2c 255\2c 0\.08\)\2c transparent_42\%\)\] {
