@@ -162,10 +162,17 @@ impl AuthStore for InMemoryAuthStore {
         user_id: &Uuid,
         refresh_hash: String,
         user_agent: Option<&str>,
-        _now: DateTime<Utc>,
+        now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<Uuid> {
-        refresh::create_session(&self.state, user_id, refresh_hash, user_agent, expires_at)
+        refresh::create_session(
+            &self.state,
+            user_id,
+            refresh_hash,
+            user_agent,
+            now,
+            expires_at,
+        )
     }
 
     async fn find_active_refresh(
@@ -212,6 +219,23 @@ impl AuthStore for InMemoryAuthStore {
         refresh::session_is_active(&self.state, session_id, now)
     }
 
+    async fn list_active_sessions(
+        &self,
+        user_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<UserSession>> {
+        refresh::list_active_sessions(&self.state, user_id, now)
+    }
+
+    async fn revoke_user_session(
+        &self,
+        user_id: &Uuid,
+        session_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        refresh::revoke_user_session(&self.state, user_id, session_id, now)
+    }
+
     async fn revoke_user_sessions(&self, user_id: &Uuid, now: DateTime<Utc>) -> anyhow::Result<()> {
         super::in_memory_password_reset::revoke_user_sessions(&self.state, user_id, now)
     }
@@ -248,17 +272,14 @@ impl AuthStore for InMemoryAuthStore {
         _now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        state.oauth_states.push(InMemoryOAuthState {
+        super::in_memory_oauth::insert_oauth_state(
+            &self.state,
             state_hash,
             nonce,
             flow_kind,
             user_id,
             expires_at,
-            consumed_at: None,
-        });
-
-        Ok(())
+        )
     }
 
     async fn consume_oauth_state(
@@ -266,21 +287,7 @@ impl AuthStore for InMemoryAuthStore {
         state_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<OAuthState>> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let Some(oauth_state) = state.oauth_states.iter_mut().find(|oauth_state| {
-            oauth_state.state_hash == state_hash
-                && oauth_state.consumed_at.is_none()
-                && oauth_state.expires_at > now
-        }) else {
-            return Ok(None);
-        };
-        oauth_state.consumed_at = Some(now);
-
-        Ok(Some(OAuthState {
-            nonce: oauth_state.nonce.clone(),
-            flow_kind: oauth_state.flow_kind.clone(),
-            user_id: oauth_state.user_id,
-        }))
+        super::in_memory_oauth::consume_oauth_state(&self.state, state_hash, now)
     }
 
     async fn find_oauth_account_by_subject(
@@ -288,14 +295,11 @@ impl AuthStore for InMemoryAuthStore {
         provider: &str,
         provider_subject: &str,
     ) -> anyhow::Result<Option<OAuthAccount>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        Ok(state
-            .oauth_accounts
-            .iter()
-            .find(|account| {
-                account.provider == provider && account.provider_subject == provider_subject
-            })
-            .cloned())
+        super::in_memory_oauth::find_oauth_account_by_subject(
+            &self.state,
+            provider,
+            provider_subject,
+        )
     }
 
     async fn find_oauth_account_for_user(
@@ -303,22 +307,11 @@ impl AuthStore for InMemoryAuthStore {
         provider: &str,
         user_id: &Uuid,
     ) -> anyhow::Result<Option<OAuthAccount>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        Ok(state
-            .oauth_accounts
-            .iter()
-            .find(|account| account.provider == provider && account.user_id == *user_id)
-            .cloned())
+        super::in_memory_oauth::find_oauth_account_for_user(&self.state, provider, user_id)
     }
 
     async fn list_oauth_accounts(&self, user_id: &Uuid) -> anyhow::Result<Vec<OAuthAccount>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        Ok(state
-            .oauth_accounts
-            .iter()
-            .filter(|account| account.user_id == *user_id)
-            .cloned()
-            .collect())
+        super::in_memory_oauth::list_oauth_accounts(&self.state, user_id)
     }
 
     async fn insert_oauth_account(
@@ -330,40 +323,19 @@ impl AuthStore for InMemoryAuthStore {
         display_name: Option<String>,
         now: DateTime<Utc>,
     ) -> anyhow::Result<OAuthAccount> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        if state.oauth_accounts.iter().any(|account| {
-            account.provider == provider && account.provider_subject == provider_subject
-        }) {
-            return Err(anyhow::anyhow!("oauth provider subject is already linked"));
-        }
-        if state
-            .oauth_accounts
-            .iter()
-            .any(|account| account.provider == provider && account.user_id == *user_id)
-        {
-            return Err(anyhow::anyhow!("oauth provider is already linked for user"));
-        }
-        let account = OAuthAccount {
-            user_id: *user_id,
+        super::in_memory_oauth::insert_oauth_account(
+            &self.state,
+            user_id,
             provider,
             provider_subject,
             email,
             display_name,
-            linked_at: now,
-        };
-        state.oauth_accounts.push(account.clone());
-
-        Ok(account)
+            now,
+        )
     }
 
     async fn delete_oauth_account(&self, provider: &str, user_id: &Uuid) -> anyhow::Result<bool> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let previous_len = state.oauth_accounts.len();
-        state
-            .oauth_accounts
-            .retain(|account| account.provider != provider || account.user_id != *user_id);
-
-        Ok(state.oauth_accounts.len() != previous_len)
+        super::in_memory_oauth::delete_oauth_account(&self.state, provider, user_id)
     }
 
     async fn insert_oauth_handoff(
@@ -375,18 +347,14 @@ impl AuthStore for InMemoryAuthStore {
         _now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        state.oauth_handoffs.push(InMemoryOAuthHandoff {
-            id: Uuid::new_v4(),
+        super::in_memory_oauth::insert_oauth_handoff(
+            &self.state,
             code_hash,
             kind,
             user_id,
             registration_intent_id,
             expires_at,
-            consumed_at: None,
-        });
-
-        Ok(())
+        )
     }
 
     async fn find_active_oauth_handoff(
@@ -394,21 +362,7 @@ impl AuthStore for InMemoryAuthStore {
         code_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<OAuthHandoff>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        Ok(state
-            .oauth_handoffs
-            .iter()
-            .find(|handoff| {
-                handoff.code_hash == code_hash
-                    && handoff.consumed_at.is_none()
-                    && handoff.expires_at > now
-            })
-            .map(|handoff| OAuthHandoff {
-                id: handoff.id,
-                kind: handoff.kind.clone(),
-                user_id: handoff.user_id,
-                registration_intent_id: handoff.registration_intent_id,
-            }))
+        super::in_memory_oauth::find_active_oauth_handoff(&self.state, code_hash, now)
     }
 
     async fn consume_oauth_handoff(
@@ -416,16 +370,7 @@ impl AuthStore for InMemoryAuthStore {
         handoff_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        if let Some(handoff) = state
-            .oauth_handoffs
-            .iter_mut()
-            .find(|handoff| handoff.id == *handoff_id)
-        {
-            handoff.consumed_at = Some(now);
-        }
-
-        Ok(())
+        super::in_memory_oauth::consume_oauth_handoff(&self.state, handoff_id, now)
     }
 
     async fn insert_oauth_registration_intent(
@@ -437,23 +382,14 @@ impl AuthStore for InMemoryAuthStore {
         _now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<OAuthRegistrationIntent> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let intent = OAuthRegistrationIntent {
-            id: Uuid::new_v4(),
+        super::in_memory_oauth::insert_oauth_registration_intent(
+            &self.state,
+            provider,
             provider_subject,
             email,
             display_name,
-        };
-        state
-            .oauth_registration_intents
-            .push(InMemoryOAuthRegistrationIntent {
-                intent: intent.clone(),
-                provider,
-                expires_at,
-                consumed_at: None,
-            });
-
-        Ok(intent)
+            expires_at,
+        )
     }
 
     async fn find_active_oauth_registration_intent(
@@ -461,17 +397,7 @@ impl AuthStore for InMemoryAuthStore {
         intent_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<OAuthRegistrationIntent>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        Ok(state
-            .oauth_registration_intents
-            .iter()
-            .find(|intent| {
-                intent.intent.id == *intent_id
-                    && intent.provider == "google"
-                    && intent.consumed_at.is_none()
-                    && intent.expires_at > now
-            })
-            .map(|intent| intent.intent.clone()))
+        super::in_memory_oauth::find_active_oauth_registration_intent(&self.state, intent_id, now)
     }
 
     async fn consume_oauth_registration_intent(
@@ -479,16 +405,7 @@ impl AuthStore for InMemoryAuthStore {
         intent_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        if let Some(intent) = state
-            .oauth_registration_intents
-            .iter_mut()
-            .find(|intent| intent.intent.id == *intent_id)
-        {
-            intent.consumed_at = Some(now);
-        }
-
-        Ok(())
+        super::in_memory_oauth::consume_oauth_registration_intent(&self.state, intent_id, now)
     }
 }
 

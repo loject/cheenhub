@@ -33,6 +33,21 @@ pub(crate) struct RefreshSession {
     pub(crate) user: UserAccount,
 }
 
+/// Active auth session data used by account security settings.
+#[derive(Debug, Clone)]
+pub(crate) struct UserSession {
+    /// Session row identifier.
+    pub(crate) id: Uuid,
+    /// Session creation timestamp.
+    pub(crate) created_at: DateTime<Utc>,
+    /// Last observed activity timestamp.
+    pub(crate) last_seen_at: DateTime<Utc>,
+    /// Session expiration timestamp.
+    pub(crate) expires_at: DateTime<Utc>,
+    /// Most recent normalized User-Agent observed for the session.
+    pub(crate) user_agent: Option<String>,
+}
+
 /// Linked OAuth account data.
 #[derive(Debug, Clone)]
 pub(crate) struct OAuthAccount {

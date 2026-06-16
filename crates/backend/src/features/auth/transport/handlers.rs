@@ -3,15 +3,16 @@
 use axum::{
     Json,
     body::Bytes,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
 };
 use cheenhub_contracts::rest::{
-    ApiError, AuthResponse, AuthUser, ChangeCurrentUserPasswordRequest, LinkedAccountsResponse,
-    LoginRequest, LogoutRequest, OAuthCompleteRequest, OAuthCompleteResponse,
-    OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse, PasswordResetConfirmRequest,
-    PasswordResetRequest, RefreshRequest, RegisterRequest, UpdateCurrentUserRequest,
+    ActiveSessionsResponse, ApiError, AuthResponse, AuthUser, ChangeCurrentUserPasswordRequest,
+    LinkedAccountsResponse, LoginRequest, LogoutRequest, OAuthCompleteRequest,
+    OAuthCompleteResponse, OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse,
+    PasswordResetConfirmRequest, PasswordResetRequest, RefreshRequest, RegisterRequest,
+    UpdateCurrentUserRequest,
 };
 use serde::Deserialize;
 
@@ -76,6 +77,36 @@ pub(crate) async fn logout(
     Json(request): Json<LogoutRequest>,
 ) -> Result<StatusCode, AuthError> {
     application::logout(&state, request).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Lists active sessions for the current user.
+pub(crate) async fn active_sessions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ActiveSessionsResponse>, AuthError> {
+    let token = bearer_token(&headers)?;
+    application::active_sessions(&state, token).await.map(Json)
+}
+
+/// Invalidates one active session owned by the current user.
+pub(crate) async fn revoke_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(session_id): Path<String>,
+) -> Result<StatusCode, AuthError> {
+    let token = bearer_token(&headers)?;
+    application::revoke_current_user_session(&state, token, &session_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Invalidates every active session owned by the current user.
+pub(crate) async fn revoke_sessions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<StatusCode, AuthError> {
+    let token = bearer_token(&headers)?;
+    application::revoke_current_user_sessions(&state, token).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

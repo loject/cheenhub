@@ -33,6 +33,14 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/refresh", post(transport::handlers::refresh))
         .route("/logout", post(transport::handlers::logout))
         .route(
+            "/sessions",
+            get(transport::handlers::active_sessions).delete(transport::handlers::revoke_sessions),
+        )
+        .route(
+            "/sessions/{session_id}",
+            axum::routing::delete(transport::handlers::revoke_session),
+        )
+        .route(
             "/me",
             get(transport::handlers::me).patch(transport::handlers::update_current_user),
         )

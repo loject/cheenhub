@@ -23,6 +23,7 @@ mod avatar;
 mod nickname;
 mod oauth;
 mod password;
+mod sessions;
 
 #[tokio::test]
 async fn password_reset_request_sends_email_for_existing_user() {

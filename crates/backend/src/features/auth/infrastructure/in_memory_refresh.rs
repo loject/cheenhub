@@ -6,7 +6,7 @@ use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::features::auth::domain::RefreshSession;
+use crate::features::auth::domain::{RefreshSession, UserSession};
 use crate::features::auth::infrastructure::in_memory::model::{
     InMemoryRefreshToken, InMemorySession, InMemorySessionUserAgent, InMemoryState,
 };
@@ -17,15 +17,17 @@ pub(super) fn create_session(
     user_id: &Uuid,
     refresh_hash: String,
     user_agent: Option<&str>,
+    now: DateTime<Utc>,
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<Uuid> {
     let mut state = state.lock().map_err(|_| poisoned())?;
     let session_id = Uuid::new_v4();
-    let now = Utc::now();
 
     state.sessions.push(InMemorySession {
         id: session_id,
         user_id: *user_id,
+        created_at: now,
+        last_seen_at: now,
         expires_at,
         revoked_at: None,
     });
@@ -89,6 +91,36 @@ pub(super) fn session_is_active(
     }))
 }
 
+pub(super) fn list_active_sessions(
+    state: &Mutex<InMemoryState>,
+    user_id: &Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Vec<UserSession>> {
+    let state = state.lock().map_err(|_| poisoned())?;
+    let mut sessions = state
+        .sessions
+        .iter()
+        .filter(|session| {
+            session.user_id == *user_id && session.revoked_at.is_none() && session.expires_at > now
+        })
+        .map(|session| UserSession {
+            id: session.id,
+            created_at: session.created_at,
+            last_seen_at: session.last_seen_at,
+            expires_at: session.expires_at,
+            user_agent: state
+                .session_user_agents
+                .iter()
+                .filter(|observed| observed.session_id == session.id)
+                .max_by_key(|observed| observed.last_seen_at)
+                .map(|observed| observed.user_agent.clone()),
+        })
+        .collect::<Vec<_>>();
+    sessions.sort_by(|left, right| right.last_seen_at.cmp(&left.last_seen_at));
+
+    Ok(sessions)
+}
+
 pub(super) fn rotate_refresh(
     state: &Mutex<InMemoryState>,
     old_refresh_id: &Uuid,
@@ -111,6 +143,7 @@ pub(super) fn rotate_refresh(
         .iter_mut()
         .find(|session| session.id == *session_id && session.revoked_at.is_none())
     {
+        session.last_seen_at = now;
         session.expires_at = expires_at;
     }
     state.refresh_tokens.push(InMemoryRefreshToken {
@@ -125,6 +158,34 @@ pub(super) fn rotate_refresh(
     }
 
     Ok(())
+}
+
+pub(super) fn revoke_user_session(
+    state: &Mutex<InMemoryState>,
+    user_id: &Uuid,
+    session_id: &Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    let mut state = state.lock().map_err(|_| poisoned())?;
+    let Some(session) = state.sessions.iter_mut().find(|session| {
+        session.id == *session_id
+            && session.user_id == *user_id
+            && session.revoked_at.is_none()
+            && session.expires_at > now
+    }) else {
+        return Ok(false);
+    };
+    session.revoked_at = Some(now);
+
+    for refresh_token in state
+        .refresh_tokens
+        .iter_mut()
+        .filter(|refresh_token| refresh_token.session_id == *session_id)
+    {
+        refresh_token.revoked_at = Some(now);
+    }
+
+    Ok(true)
 }
 
 fn record_session_user_agent(

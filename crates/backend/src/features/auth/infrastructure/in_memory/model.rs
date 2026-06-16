@@ -53,6 +53,10 @@ pub(in crate::features::auth::infrastructure) struct InMemorySession {
     pub(in crate::features::auth::infrastructure) id: Uuid,
     /// Owner user id.
     pub(in crate::features::auth::infrastructure) user_id: Uuid,
+    /// Session creation timestamp.
+    pub(in crate::features::auth::infrastructure) created_at: DateTime<Utc>,
+    /// Last activity timestamp.
+    pub(in crate::features::auth::infrastructure) last_seen_at: DateTime<Utc>,
     /// Expiration timestamp.
     pub(in crate::features::auth::infrastructure) expires_at: DateTime<Utc>,
     /// Revocation timestamp.

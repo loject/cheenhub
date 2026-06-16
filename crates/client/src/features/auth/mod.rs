@@ -7,6 +7,7 @@ pub(crate) mod guest_guard;
 pub(crate) mod jwt;
 mod pages;
 mod profile_api;
+pub(crate) mod sessions_api;
 mod storage;
 
 pub(crate) use components::token_refresher::TokenRefresher;

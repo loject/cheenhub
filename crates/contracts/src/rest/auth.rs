@@ -147,6 +147,59 @@ pub struct LogoutRequest {
     pub refresh_token: String,
 }
 
+/// Device category inferred from a session User-Agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionDeviceKind {
+    /// Desktop or laptop browser.
+    Desktop,
+    /// Phone browser or mobile app web view.
+    Mobile,
+    /// Tablet browser or tablet app web view.
+    Tablet,
+    /// Automated client, crawler, or script-like runtime.
+    Bot,
+    /// Unknown client type.
+    Unknown,
+}
+
+/// Parsed User-Agent details for an active auth session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionClientInfo {
+    /// Inferred device category.
+    pub device_kind: SessionDeviceKind,
+    /// Human-readable operating system name.
+    pub os_name: String,
+    /// Human-readable browser or client name.
+    pub browser_name: String,
+}
+
+/// Active auth session shown in account security settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveSession {
+    /// Stable session identifier.
+    pub id: String,
+    /// Parsed User-Agent details.
+    pub client: SessionClientInfo,
+    /// Last normalized raw User-Agent observed for the session.
+    pub user_agent: Option<String>,
+    /// RFC 3339 timestamp when the session was created.
+    pub created_at: String,
+    /// RFC 3339 timestamp when the session was last seen.
+    pub last_seen_at: String,
+    /// RFC 3339 timestamp when the session expires unless refreshed.
+    pub expires_at: String,
+    /// Whether this row describes the access token used for the request.
+    pub current: bool,
+}
+
+/// Response containing active auth sessions for the current user.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveSessionsResponse {
+    /// Active sessions ordered by most recent activity first.
+    pub sessions: Vec<ActiveSession>,
+}
+
 /// Linked external account returned to account settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkedAccount {

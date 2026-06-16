@@ -21,6 +21,7 @@ use uuid::Uuid;
 mod avatar;
 mod google;
 mod oauth;
+mod sessions;
 
 const NICKNAME_CHANGE_COOLDOWN_DAYS: i64 = 7;
 #[cfg(test)]
@@ -30,6 +31,9 @@ pub(crate) use avatar::update_current_user_avatar;
 pub(crate) use oauth::{
     complete_google_oauth, google_oauth_callback_url, linked_accounts, register_with_google_oauth,
     start_google_oauth, unlink_google,
+};
+pub(crate) use sessions::{
+    active_sessions, revoke_current_user_session, revoke_current_user_sessions,
 };
 
 /// Registers a user and creates an authenticated session.
@@ -381,7 +385,7 @@ pub(super) async fn create_auth_response(
     })
 }
 
-async fn require_current_user(
+pub(super) async fn require_current_user(
     state: &AppState,
     access_token: &str,
 ) -> Result<(UserAccount, Uuid), AuthError> {

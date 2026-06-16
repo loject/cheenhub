@@ -3,10 +3,12 @@
 mod conversions;
 mod entities;
 mod in_memory;
+mod in_memory_oauth;
 mod in_memory_password_reset;
 mod in_memory_profile;
 mod in_memory_refresh;
 mod postgres;
+mod postgres_oauth;
 mod postgres_password_reset;
 mod postgres_profile;
 mod postgres_refresh;
@@ -19,7 +21,7 @@ use uuid::Uuid;
 
 use crate::features::auth::domain::{
     OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, OAuthState, PasswordResetToken,
-    RefreshSession, UserAccount,
+    RefreshSession, UserAccount, UserSession,
 };
 
 pub(crate) use in_memory::InMemoryAuthStore;
@@ -162,6 +164,21 @@ pub(crate) trait AuthStore: Send + Sync {
     /// Returns whether a session is currently active.
     async fn session_is_active(
         &self,
+        session_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool>;
+
+    /// Lists active sessions owned by a user.
+    async fn list_active_sessions(
+        &self,
+        user_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<UserSession>>;
+
+    /// Revokes one active session owned by a user.
+    async fn revoke_user_session(
+        &self,
+        user_id: &Uuid,
         session_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<bool>;

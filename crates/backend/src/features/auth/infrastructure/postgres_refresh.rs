@@ -3,11 +3,12 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
-    Set,
+    QueryOrder, Set,
 };
+use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::features::auth::domain::RefreshSession;
+use crate::features::auth::domain::{RefreshSession, UserSession};
 use crate::features::auth::infrastructure::entities::{
     refresh_tokens, session_user_agents, sessions, users,
 };
@@ -103,6 +104,51 @@ pub(super) async fn session_is_active(
         .is_some())
 }
 
+pub(super) async fn list_active_sessions(
+    database: &DatabaseConnection,
+    user_id: &Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Vec<UserSession>> {
+    let sessions = sessions::Entity::find()
+        .filter(sessions::Column::UserId.eq(*user_id))
+        .filter(sessions::Column::RevokedAt.is_null())
+        .filter(sessions::Column::ExpiresAt.gt(now))
+        .order_by_desc(sessions::Column::LastSeenAt)
+        .all(database)
+        .await?;
+
+    if sessions.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let session_ids = sessions
+        .iter()
+        .map(|session| session.id)
+        .collect::<Vec<_>>();
+    let mut latest_user_agents = HashMap::<Uuid, String>::new();
+    for observed in session_user_agents::Entity::find()
+        .filter(session_user_agents::Column::SessionId.is_in(session_ids))
+        .order_by_desc(session_user_agents::Column::LastSeenAt)
+        .all(database)
+        .await?
+    {
+        latest_user_agents
+            .entry(observed.session_id)
+            .or_insert(observed.user_agent);
+    }
+
+    Ok(sessions
+        .into_iter()
+        .map(|session| UserSession {
+            id: session.id,
+            created_at: session.created_at,
+            last_seen_at: session.last_seen_at,
+            expires_at: session.expires_at,
+            user_agent: latest_user_agents.remove(&session.id),
+        })
+        .collect())
+}
+
 pub(super) async fn rotate_refresh(
     database: &DatabaseConnection,
     old_refresh_id: &Uuid,
@@ -150,6 +196,41 @@ pub(super) async fn rotate_refresh(
     }
 
     Ok(())
+}
+
+pub(super) async fn revoke_user_session(
+    database: &DatabaseConnection,
+    user_id: &Uuid,
+    session_id: &Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    let result = sessions::Entity::update_many()
+        .col_expr(
+            sessions::Column::RevokedAt,
+            sea_orm::sea_query::Expr::value(now),
+        )
+        .filter(sessions::Column::Id.eq(*session_id))
+        .filter(sessions::Column::UserId.eq(*user_id))
+        .filter(sessions::Column::RevokedAt.is_null())
+        .filter(sessions::Column::ExpiresAt.gt(now))
+        .exec(database)
+        .await?;
+
+    if result.rows_affected == 0 {
+        return Ok(false);
+    }
+
+    refresh_tokens::Entity::update_many()
+        .col_expr(
+            refresh_tokens::Column::RevokedAt,
+            sea_orm::sea_query::Expr::value(now),
+        )
+        .filter(refresh_tokens::Column::SessionId.eq(*session_id))
+        .filter(refresh_tokens::Column::RevokedAt.is_null())
+        .exec(database)
+        .await?;
+
+    Ok(true)
 }
 
 async fn record_session_user_agent(
