@@ -190,20 +190,25 @@ impl RealtimeHub {
             .cloned()
             .collect::<Vec<_>>();
 
-        for stream in streams {
-            if let Err(error) =
-                protocol::write_envelope(&stream.send, module, kind, None, payload.clone()).await
-            {
-                warn!(
-                    stream_id = %stream.id,
-                    ?module,
-                    %server_id,
-                    user_id = %stream.user_id,
-                    %error,
-                    "failed to fan out realtime event"
-                );
+        // TODO: benchmark this fanout path before adding bounded concurrency or task spawning.
+        join_all(streams.into_iter().map(|stream| {
+            let payload = payload.clone();
+            async move {
+                if let Err(error) =
+                    protocol::write_envelope(&stream.send, module, kind, None, payload).await
+                {
+                    warn!(
+                        stream_id = %stream.id,
+                        ?module,
+                        %server_id,
+                        user_id = %stream.user_id,
+                        %error,
+                        "failed to fan out realtime event"
+                    );
+                }
             }
-        }
+        }))
+        .await;
     }
 }
 
