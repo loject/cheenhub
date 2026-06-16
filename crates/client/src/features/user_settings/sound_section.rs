@@ -214,7 +214,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
                                 div { class: "font-medium", "Push-to-talk" }
                                 div { class: "mt-1 text-[12px] leading-4 text-zinc-500", "Активация по удержанию клавиши." }
                             }
-                            div { class: "pointer-events-none absolute left-1/2 top-full z-10 mt-2 w-max -translate-x-1/2 rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-2 text-[12px] text-zinc-200 opacity-0 shadow-[0_16px_40px_rgba(0,0,0,.45)] backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100",
+                            div { class: "pointer-events-none absolute left-1/2 top-full z-10 mt-2 w-[calc(100vw-32px)] max-w-xs -translate-x-1/2 rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-2 text-center text-[12px] text-zinc-200 opacity-0 shadow-[0_16px_40px_rgba(0,0,0,.45)] backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100 sm:w-max sm:max-w-none",
                                 "в разработке"
                             }
                         }

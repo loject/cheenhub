@@ -12,7 +12,7 @@ pub(crate) fn select_class() -> &'static str {
 
 /// Primary action button class.
 pub(crate) fn primary_button_class() -> &'static str {
-    "flex h-9 items-center justify-center rounded-xl bg-accent px-4 text-[12px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.16)] transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-accent"
+    "flex h-10 w-full items-center justify-center rounded-xl bg-accent px-4 text-[12px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.16)] transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-accent sm:h-9 sm:w-auto"
 }
 
 /// Parses a percentage-like value and clamps it to a slider range.

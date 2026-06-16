@@ -261,16 +261,16 @@ fn device_icon_path(kind: SessionDeviceKind) -> &'static str {
 
 fn all_sessions_button_class(is_pending: bool) -> &'static str {
     if is_pending {
-        "flex h-9 shrink-0 cursor-wait items-center justify-center rounded-xl border border-red-500/25 bg-red-500/15 px-3 text-[12px] font-medium text-red-100 transition disabled:opacity-60"
+        "flex h-10 w-full shrink-0 cursor-wait items-center justify-center rounded-xl border border-red-500/25 bg-red-500/15 px-3 text-[12px] font-medium text-red-100 transition disabled:opacity-60 sm:h-9 sm:w-auto"
     } else {
-        "flex h-9 shrink-0 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/10 px-3 text-[12px] font-medium text-red-200 transition hover:border-red-500/35 hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+        "flex h-10 w-full shrink-0 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/10 px-3 text-[12px] font-medium text-red-200 transition hover:border-red-500/35 hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50 sm:h-9 sm:w-auto"
     }
 }
 
 fn revoke_session_button_class(is_pending: bool) -> &'static str {
     if is_pending {
-        "flex h-9 shrink-0 cursor-wait items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 px-3 text-[12px] font-medium text-red-100"
+        "flex h-10 w-full shrink-0 cursor-wait items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 px-3 text-[12px] font-medium text-red-100 sm:h-9 sm:w-auto"
     } else {
-        "flex h-9 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-300 transition hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+        "flex h-10 w-full shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-300 transition hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50 sm:h-9 sm:w-auto"
     }
 }

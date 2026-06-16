@@ -44,7 +44,7 @@ pub(crate) fn ProfileSettingsSection() -> Element {
                         p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "PNG, JPG, GIF или WebP до 8 МБ. После загрузки изображение станет квадратным 512×512." }
                         div { class: "mt-3 flex flex-wrap items-center gap-2",
                             label {
-                                class: "inline-flex h-9 cursor-pointer items-center justify-center rounded-xl border border-accent/25 bg-accent/10 px-3 text-[12px] font-medium text-blue-100 transition hover:border-accent/45 hover:bg-accent/15",
+                                class: "inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-xl border border-accent/25 bg-accent/10 px-3 text-[12px] font-medium text-blue-100 transition hover:border-accent/45 hover:bg-accent/15 sm:h-9 sm:w-auto",
                                 input {
                                     class: "sr-only",
                                     r#type: "file",
@@ -336,7 +336,7 @@ fn linked_accounts_list(
                 button {
                     r#type: "button",
                     disabled: google_unlinking,
-                    class: "flex h-9 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-300 transition hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200 disabled:cursor-wait disabled:opacity-60",
+                    class: "flex h-10 w-full shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-300 transition hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200 disabled:cursor-wait disabled:opacity-60 sm:h-9 sm:w-auto",
                     onclick: move |_| on_unlink.call("google".to_owned()),
                     if google_unlinking { "Отключаем..." } else { "Отключить" }
                 }
@@ -344,7 +344,7 @@ fn linked_accounts_list(
                 button {
                     r#type: "button",
                     disabled: link_busy,
-                    class: "flex h-9 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-300 transition hover:border-accent/35 hover:bg-accent/10 hover:text-blue-100 disabled:cursor-wait disabled:opacity-60",
+                    class: "flex h-10 w-full shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-300 transition hover:border-accent/35 hover:bg-accent/10 hover:text-blue-100 disabled:cursor-wait disabled:opacity-60 sm:h-9 sm:w-auto",
                     onclick: move |_| on_link_google.call(()),
                     if link_busy { "Открываем..." } else { "Подключить" }
                 }
@@ -361,10 +361,10 @@ fn linked_accounts_list(
             button {
                 r#type: "button",
                 disabled: true,
-                class: "flex h-9 shrink-0 cursor-not-allowed items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-500",
+                class: "flex h-10 w-full shrink-0 cursor-not-allowed items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-500 sm:h-9 sm:w-auto",
                 "Подключить"
             }
-            span { class: "pointer-events-none absolute left-1/2 top-full z-10 mt-2 w-max -translate-x-1/2 rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-2 text-[12px] text-zinc-200 opacity-0 shadow-[0_16px_40px_rgba(0,0,0,.45)] backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100",
+            span { class: "pointer-events-none absolute left-1/2 top-full z-10 mt-2 w-[calc(100vw-32px)] max-w-xs -translate-x-1/2 rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-2 text-center text-[12px] text-zinc-200 opacity-0 shadow-[0_16px_40px_rgba(0,0,0,.45)] backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100 sm:w-max sm:max-w-none",
                 "в разработке"
             }
         }
