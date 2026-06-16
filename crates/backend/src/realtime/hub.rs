@@ -1,6 +1,7 @@
 //! Shared realtime stream registry and fanout.
 
 use cheenhub_contracts::realtime::{RealtimeKind, RealtimeModule};
+use futures_util::future::join_all;
 use serde::Serialize;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
@@ -105,16 +106,21 @@ impl RealtimeHub {
             .cloned()
             .collect::<Vec<_>>();
 
-        for session in sessions {
-            if let Err(error) = session.datagrams.send_datagram(bytes.clone()).await {
-                warn!(
-                    session_id = %session.id,
-                    user_id = %session.user_id,
-                    %error,
-                    "failed to fan out realtime datagram"
-                );
+        // TODO: benchmark this hot path before adding bounded concurrency or task spawning.
+        join_all(sessions.into_iter().map(|session| {
+            let bytes = bytes.clone();
+            async move {
+                if let Err(error) = session.datagrams.send_datagram(bytes).await {
+                    warn!(
+                        session_id = %session.id,
+                        user_id = %session.user_id,
+                        %error,
+                        "failed to fan out realtime datagram"
+                    );
+                }
             }
-        }
+        }))
+        .await;
     }
 
     /// Removes a module-bound reliable stream.
