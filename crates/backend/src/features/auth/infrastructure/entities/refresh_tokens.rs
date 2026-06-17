@@ -1,29 +1,29 @@
-//! Refresh token entity.
+//! Сущность refresh-токена.
 
 use sea_orm::entity::prelude::*;
 
-/// Refresh token database row.
+/// Строка базы данных refresh-токена.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "refresh_tokens")]
 pub struct Model {
-    /// Stable refresh token row identifier.
+    /// Стабильный идентификатор строки refresh-токена.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// Session that owns the refresh token.
+    /// Сессия, которой принадлежит refresh-токен.
     pub session_id: Uuid,
-    /// SHA-256 hash of the opaque refresh token.
+    /// SHA-256-хэш непрозрачного refresh-токена.
     pub token_hash: String,
-    /// Refresh token creation timestamp.
+    /// Временная метка создания refresh-токена.
     pub created_at: DateTimeUtc,
-    /// Refresh token rotation timestamp.
+    /// Временная метка ротации refresh-токена.
     pub rotated_at: Option<DateTimeUtc>,
-    /// Refresh token expiration timestamp.
+    /// Временная метка истечения refresh-токена.
     pub expires_at: DateTimeUtc,
-    /// Refresh token revocation timestamp.
+    /// Временная метка отзыва refresh-токена.
     pub revoked_at: Option<DateTimeUtc>,
 }
 
-/// Refresh token relations.
+/// Связи refresh-токена.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

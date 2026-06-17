@@ -1,4 +1,4 @@
-//! Google OAuth application flows.
+//! Потоки приложения Google OAuth.
 use anyhow::anyhow;
 use cheenhub_contracts::rest::*;
 use chrono::{Duration, Utc};
@@ -21,7 +21,7 @@ const HANDOFF_AUTHENTICATED: &str = "authenticated";
 const HANDOFF_LINKED: &str = "linked";
 const HANDOFF_REGISTRATION_REQUIRED: &str = "registration_required";
 
-/// Starts a Google OAuth login or account linking flow.
+/// Запускает поток входа или привязки аккаунта через Google OAuth.
 pub(crate) async fn start_google_oauth(
     state: &AppState,
     access_token: Option<&str>,
@@ -90,7 +90,7 @@ pub(crate) async fn start_google_oauth(
     })
 }
 
-/// Handles the Google OAuth callback and returns a frontend redirect URL.
+/// Обрабатывает callback Google OAuth и возвращает URL перенаправления на фронтенд.
 pub(crate) async fn google_oauth_callback_url(
     state: &AppState,
     code: Option<String>,
@@ -109,7 +109,7 @@ pub(crate) async fn google_oauth_callback_url(
     }
 }
 
-/// Completes a frontend OAuth handoff.
+/// Завершает OAuth-handoff для фронтенда.
 pub(crate) async fn complete_google_oauth(
     state: &AppState,
     request: OAuthCompleteRequest,
@@ -184,7 +184,7 @@ pub(crate) async fn complete_google_oauth(
     }
 }
 
-/// Completes registration for a verified Google OAuth identity.
+/// Завершает регистрацию для подтвержденной Google OAuth-идентичности.
 pub(crate) async fn register_with_google_oauth(
     state: &AppState,
     request: OAuthRegistrationRequest,
@@ -278,7 +278,7 @@ pub(crate) async fn register_with_google_oauth(
     create_auth_response(state, &user, user_agent.as_deref()).await
 }
 
-/// Lists external accounts linked to the current user.
+/// Перечисляет внешние аккаунты, привязанные к текущему пользователю.
 pub(crate) async fn linked_accounts(
     state: &AppState,
     access_token: &str,
@@ -297,7 +297,7 @@ pub(crate) async fn linked_accounts(
     Ok(LinkedAccountsResponse { accounts })
 }
 
-/// Unlinks Google from the current user when another login method remains.
+/// Отвязывает Google от текущего пользователя, если остается другой способ входа.
 pub(crate) async fn unlink_google(
     state: &AppState,
     access_token: &str,

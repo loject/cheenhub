@@ -1,6 +1,6 @@
-//! Pure guard decisions for guest-only authentication pages.
+//! Чистые решения guard'а для гостевых страниц аутентификации.
 
-/// Guest-only authentication page protected by the saved-session guard.
+/// Гостевая страница аутентификации, защищенная guard'ом сохраненной сессии.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GuestAuthPage {
     /// Email/password login page.
@@ -19,7 +19,7 @@ impl GuestAuthPage {
     }
 }
 
-/// Result of evaluating access to a guest-only authentication page.
+/// Результат проверки доступа к гостевой странице аутентификации.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GuestAuthGuardDecision {
     /// The guest page can be rendered.
@@ -28,7 +28,7 @@ pub(crate) enum GuestAuthGuardDecision {
     RedirectToAppHome { source: GuestAuthPage },
 }
 
-/// Decides whether a guest authentication page can render for the current session state.
+/// Решает, можно ли рендерить гостевую страницу аутентификации при текущем состоянии сессии.
 pub(crate) const fn decide_guest_auth_guard(
     source: GuestAuthPage,
     has_saved_session: bool,

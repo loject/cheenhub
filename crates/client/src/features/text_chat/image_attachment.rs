@@ -1,4 +1,4 @@
-//! Text chat image attachment view.
+//! Вид вложения-изображения в текстовом чате.
 
 use cheenhub_contracts::realtime::TextChatImageAttachment;
 use dioxus::html::geometry::WheelDelta;
@@ -8,7 +8,7 @@ use crate::features::realtime::RealtimeHandle;
 
 use super::realtime;
 
-/// Renders one text chat image attachment loaded through realtime.
+/// Рендерит одно вложение-изображение текстового чата, загруженное через realtime.
 #[component]
 pub(super) fn ChatImageAttachment(attachment: TextChatImageAttachment) -> Element {
     let realtime = use_context::<RealtimeHandle>();

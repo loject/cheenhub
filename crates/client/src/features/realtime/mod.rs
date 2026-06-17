@@ -1,4 +1,4 @@
-//! Realtime WebTransport client scaffold.
+//! Каркас realtime WebTransport-клиента.
 
 mod config;
 mod error;

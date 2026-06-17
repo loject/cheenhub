@@ -1,4 +1,4 @@
-//! Control realtime module.
+//! Модуль управления realtime.
 
 use cheenhub_contracts::realtime::{
     Authenticate, Authenticated, ControlAck, ControlKind, ControlText, RealtimeEnvelope,
@@ -15,7 +15,7 @@ use super::protocol::{
 };
 use super::sink::EnvelopeSink;
 
-/// Authenticates the first stream of a realtime session.
+/// Аутентифицирует первый поток realtime-сессии.
 pub(crate) async fn authenticate_session(
     state: &AppState,
     send: &EnvelopeSink,
@@ -68,7 +68,7 @@ pub(crate) async fn authenticate_session(
     Ok(Some(user))
 }
 
-/// Handles one control module envelope.
+/// Обрабатывает один конверт модуля управления.
 pub(crate) async fn handle(
     _state: &AppState,
     send: &EnvelopeSink,

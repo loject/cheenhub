@@ -1,20 +1,20 @@
-//! Server role permission entity.
+//! Сущность прав роли сервера.
 
 use sea_orm::entity::prelude::*;
 
-/// Server role permission database row.
+/// Строка базы данных права роли сервера.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "server_role_permissions")]
 pub struct Model {
-    /// Role that owns the permission.
+    /// Роль, которой принадлежит право.
     #[sea_orm(primary_key, auto_increment = false)]
     pub role_id: Uuid,
-    /// Stored permission key.
+    /// Сохраненный ключ права.
     #[sea_orm(primary_key, auto_increment = false)]
     pub permission: String,
 }
 
-/// Server role permission relations.
+/// Связи прав роли сервера.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

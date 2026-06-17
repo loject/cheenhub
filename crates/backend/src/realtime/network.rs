@@ -1,4 +1,4 @@
-//! Модуль качества сети realtime.
+//! Модуль оценки качества сети realtime.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -11,7 +11,7 @@ use crate::state::AppState;
 use super::protocol::{decode_payload, require_request_id, send_rejection, write_envelope};
 use super::sink::EnvelopeSink;
 
-/// Обрабатывает один конверт модуля сети.
+/// Обрабатывает один конверт сетевого модуля.
 pub(crate) async fn handle(
     _state: &AppState,
     send: &EnvelopeSink,

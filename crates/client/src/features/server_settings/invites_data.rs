@@ -1,51 +1,51 @@
-//! Server invite data for the settings UI.
+//! Данные приглашений сервера для интерфейса настроек.
 
 use cheenhub_contracts::realtime::ServerInviteLink;
 
-/// Server invite availability status.
+/// Статус доступности приглашения сервера.
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum InviteStatus {
-    /// Invite can be used to join the server.
+    /// Приглашение можно использовать для входа на сервер.
     Active,
-    /// Invite was revoked and can no longer be used.
+    /// Приглашение отозвано и больше не действует.
     Revoked,
 }
 
-/// Server invite link shown in settings.
+/// Ссылка-приглашение сервера, отображаемая в настройках.
 #[derive(Clone, PartialEq)]
 pub(super) struct InviteLink {
-    /// Stable local invite row id.
+    /// Стабильный локальный идентификатор строки приглашения.
     pub(super) id: String,
-    /// Invite code shown to administrators.
+    /// Код приглашения, показываемый администраторам.
     pub(super) code: String,
-    /// Display name of the invite creator.
+    /// Отображаемое имя создателя приглашения.
     pub(super) author: String,
-    /// Human-readable creation time.
+    /// Человекочитаемое время создания.
     pub(super) created_at: String,
-    /// Human-readable expiration time.
+    /// Человекочитаемое время истечения.
     pub(super) expires_at: String,
-    /// Optional usage limit.
+    /// Необязательный лимит использований.
     pub(super) max_uses: Option<u32>,
-    /// Current invite status.
+    /// Текущий статус приглашения.
     pub(super) status: InviteStatus,
-    /// Members who joined through this invite.
+    /// Участники, присоединившиеся по этому приглашению.
     pub(super) joined_members: Vec<InviteJoin>,
 }
 
-/// Member entry joined through an invite.
+/// Запись участника, вошедшего по приглашению.
 #[derive(Clone, PartialEq)]
 pub(super) struct InviteJoin {
-    /// Stable member id.
+    /// Стабильный идентификатор участника.
     pub(super) id: String,
-    /// Member display name.
+    /// Отображаемое имя участника.
     pub(super) name: String,
-    /// Human-readable join time.
+    /// Человекочитаемое время вступления.
     pub(super) joined_at: String,
-    /// Whether this member can currently be kicked.
+    /// Можно ли сейчас исключить этого участника.
     pub(super) is_active_member: bool,
 }
 
-/// Converts a realtime invite payload into UI data.
+/// Преобразует realtime-полезную нагрузку приглашения в данные интерфейса.
 pub(super) fn invite_from_realtime(invite: ServerInviteLink) -> InviteLink {
     InviteLink {
         id: invite.code.clone(),

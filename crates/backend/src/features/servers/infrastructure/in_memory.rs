@@ -1,4 +1,4 @@
-//! Simple in-memory server storage.
+//! Простое in-memory-хранилище серверов.
 use anyhow::anyhow;
 use async_trait::async_trait;
 use cheenhub_contracts::rest::ServerRoomKind;
@@ -11,7 +11,7 @@ use crate::features::servers::domain::{
     ServerRole, ServerRoom,
 };
 use crate::features::servers::infrastructure::ServerStore;
-/// In-memory server storage for local runs and tests.
+/// In-memory-хранилище серверов для локального запуска и тестов.
 #[derive(Default)]
 pub(crate) struct InMemoryServerStore {
     pub(super) state: Mutex<InMemoryState>,

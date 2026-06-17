@@ -1,178 +1,178 @@
-//! Server REST contracts.
+//! Контракты REST для серверов.
 
 use serde::{Deserialize, Serialize};
 
 use crate::realtime::ServerRoleSummary;
 
-/// Request body used to create a new server.
+/// Тело запроса для создания нового сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateServerRequest {
-    /// Human-readable server name.
+    /// Человекочитаемое имя сервера.
     pub name: String,
 }
 
-/// Server data returned by server endpoints.
+/// Данные сервера, возвращаемые эндпоинтами серверов.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerSummary {
-    /// Stable server identifier.
+    /// Стабильный идентификатор сервера.
     pub id: String,
-    /// Human-readable server name.
+    /// Человекочитаемое имя сервера.
     pub name: String,
-    /// Public avatar image URL when configured.
+    /// Публичный URL аватара, если он настроен.
     pub avatar_url: Option<String>,
-    /// Whether the current user owns the server.
+    /// Владеет ли текущий пользователь сервером.
     pub is_owner: bool,
-    /// Whether the current user is an active server member.
+    /// Является ли текущий пользователь активным участником сервера.
     pub is_member: bool,
-    /// All roles defined on this server with their permissions.
+    /// Все роли, определенные на этом сервере, с их правами.
     pub roles: Vec<ServerRoleSummary>,
-    /// Role identifiers currently assigned to the current user on this server.
+    /// Идентификаторы ролей, которые сейчас назначены текущему пользователю на этом сервере.
     pub member_role_ids: Vec<String>,
 }
 
-/// Successful server creation response.
+/// Успешный ответ о создании сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateServerResponse {
-    /// Created server.
+    /// Созданный сервер.
     pub server: ServerSummary,
 }
 
-/// Request body used to update a server profile.
+/// Тело запроса для обновления профиля сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateServerRequest {
-    /// Human-readable server name.
+    /// Человекочитаемое имя сервера.
     pub name: String,
 }
 
-/// Successful server profile update response.
+/// Успешный ответ на обновление профиля сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateServerResponse {
-    /// Updated server.
+    /// Обновленный сервер.
     pub server: ServerSummary,
 }
 
-/// Successful server avatar update response.
+/// Успешный ответ на обновление аватара сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateServerAvatarResponse {
-    /// Updated server.
+    /// Обновленный сервер.
     pub server: ServerSummary,
 }
 
-/// Server room type supported by the MVP.
-/// TODO: это не должен быть rest, а должен быть realtime
+/// Тип комнаты сервера, поддерживаемый MVP.
+/// TODO: это не должен быть REST, а должен быть realtime
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerRoomKind {
-    /// Text-only room.
+    /// Комната только для текста.
     Text,
-    /// Voice-only room.
+    /// Комната только для голоса.
     Voice,
-    /// Room that has text and voice affordances.
+    /// Комната с текстовыми и голосовыми возможностями.
     TextAndVoice,
 }
 
-/// Server room data returned by room endpoints.
+/// Данные комнаты сервера, возвращаемые room-эндпоинтами.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerRoomSummary {
-    /// Stable room identifier.
+    /// Стабильный идентификатор комнаты.
     pub id: String,
-    /// Human-readable room name.
+    /// Человекочитаемое имя комнаты.
     pub name: String,
-    /// Room interaction type.
+    /// Тип взаимодействия комнаты.
     pub kind: ServerRoomKind,
-    /// Append-only room ordering position inside the server.
+    /// Позиция комнаты в порядке добавления внутри сервера.
     pub position: u32,
 }
 
-/// Request body used to create a server room.
+/// Тело запроса для создания комнаты сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateServerRoomRequest {
-    /// Human-readable room name.
+    /// Человекочитаемое имя комнаты.
     pub name: String,
-    /// Room interaction type.
+    /// Тип взаимодействия комнаты.
     pub kind: ServerRoomKind,
 }
 
-/// Request body used to update a server room.
+/// Тело запроса для обновления комнаты сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateServerRoomRequest {
-    /// Human-readable room name.
+    /// Человекочитаемое имя комнаты.
     pub name: String,
-    /// Room interaction type.
+    /// Тип взаимодействия комнаты.
     pub kind: ServerRoomKind,
 }
 
-/// Server room list response.
+/// Ответ со списком комнат сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListServerRoomsResponse {
-    /// Rooms available on the server.
+    /// Комнаты, доступные на сервере.
     pub rooms: Vec<ServerRoomSummary>,
 }
 
-/// Successful server room creation response.
+/// Успешный ответ о создании комнаты сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateServerRoomResponse {
-    /// Created room.
+    /// Созданная комната.
     pub room: ServerRoomSummary,
 }
 
-/// Successful server room update response.
+/// Успешный ответ на обновление комнаты сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateServerRoomResponse {
-    /// Updated room.
+    /// Обновленная комната.
     pub room: ServerRoomSummary,
 }
 
-/// Request body used to create a server invite.
+/// Тело запроса для создания приглашения сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateServerInviteRequest {
-    /// Optional maximum number of accepted invite uses.
+    /// Необязательный максимальный лимит использований приглашения.
     pub max_uses: Option<u32>,
-    /// Optional invite lifetime in days.
+    /// Необязательный срок жизни приглашения в днях.
     pub expires_in_days: Option<u32>,
 }
 
-/// Successful server invite creation response.
+/// Успешный ответ о создании приглашения сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateServerInviteResponse {
-    /// Stable invite code.
+    /// Стабильный код приглашения.
     pub code: String,
 }
 
-/// Server invite data returned by invite lookup endpoints.
+/// Данные приглашения сервера, возвращаемые lookup-эндпоинтами.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerInviteSummary {
-    /// Stable invite code.
+    /// Стабильный код приглашения.
     pub code: String,
-    /// Number of successful invite uses.
+    /// Количество успешных использований приглашения.
     pub uses: u32,
-    /// Optional maximum number of accepted invite uses.
+    /// Необязательный максимальный лимит использований приглашения.
     pub max_uses: Option<u32>,
-    /// Optional invite expiration timestamp in RFC3339 format.
+    /// Необязательная временная метка истечения приглашения в формате RFC3339.
     pub expires_at: Option<String>,
 }
 
-/// Successful server invite lookup response.
+/// Успешный ответ на поиск приглашения сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerInviteInfoResponse {
-    /// Invite metadata.
+    /// Метаданные приглашения.
     pub invite: ServerInviteSummary,
-    /// Server the invite points to.
+    /// Сервер, на который указывает приглашение.
     pub server: ServerSummary,
 }
 
-/// Successful server invite acceptance response.
+/// Успешный ответ на принятие приглашения сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AcceptServerInviteResponse {
-    /// Server the current user can now access.
+    /// Сервер, к которому текущий пользователь теперь имеет доступ.
     pub server: ServerSummary,
-    /// Whether the current user was already an active member.
+    /// Был ли текущий пользователь уже активным участником.
     pub already_member: bool,
 }
 
-/// Server list response.
+/// Ответ со списком серверов.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListServersResponse {
-    /// Servers available to the current user.
+    /// Серверы, доступные текущему пользователю.
     pub servers: Vec<ServerSummary>,
 }

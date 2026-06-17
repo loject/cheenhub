@@ -1,4 +1,4 @@
-//! Text chat event delivery policy.
+//! Политика доставки событий текстового чата.
 
 use cheenhub_contracts::realtime::ServerRoleKind;
 use cheenhub_contracts::realtime::ServerRolePermission;
@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
-/// Returns whether a user can delete any message in the server (owner or has DeleteMessages role).
+/// Возвращает, может ли пользователь удалить любое сообщение на сервере (владелец или имеет роль DeleteMessages).
 pub(crate) async fn can_delete_any_message(
     state: &AppState,
     user_id: &Uuid,
@@ -40,7 +40,7 @@ pub(crate) async fn can_delete_any_message(
     }))
 }
 
-/// Returns whether a user can receive room-scoped text chat events.
+/// Возвращает, может ли пользователь получать события текстового чата, ограниченные комнатой.
 pub(crate) async fn can_receive_room_event(
     state: &AppState,
     user_id: &Uuid,

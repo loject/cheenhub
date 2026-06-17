@@ -1,4 +1,4 @@
-//! Authentication security primitives.
+//! Примитивы безопасности для аутентификации.
 
 pub(crate) mod jwt;
 pub(crate) mod keys;

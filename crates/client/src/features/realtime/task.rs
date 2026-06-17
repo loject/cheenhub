@@ -1,6 +1,6 @@
-//! Realtime task spawning helpers.
+//! Вспомогательные функции запуска realtime-задач.
 
-/// Spawns a realtime background task.
+/// Запускает фоновую realtime-задачу.
 pub(crate) fn spawn_task(future: impl std::future::Future<Output = ()> + 'static) {
     dioxus::prelude::spawn(future);
 }

@@ -1,4 +1,4 @@
-//! Authentication option metric component.
+//! Компонент метрики варианта аутентификации.
 
 use dioxus::prelude::*;
 

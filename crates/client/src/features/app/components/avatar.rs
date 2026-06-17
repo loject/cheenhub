@@ -1,4 +1,4 @@
-//! User avatar renderer.
+//! Рендерер аватара пользователя.
 
 use dioxus::prelude::*;
 
@@ -8,7 +8,7 @@ struct AvatarPalette {
     outline_color: &'static str,
 }
 
-/// Seed used by avatars to choose a deterministic default palette.
+/// Seed, который аватары используют для выбора детерминированной палитры по умолчанию.
 #[derive(Clone, Copy)]
 pub(crate) struct AvatarSeed(Signal<String>);
 
@@ -55,14 +55,14 @@ const DEFAULT_AVATAR_PALETTES: &[AvatarPalette] = &[
     },
 ];
 
-/// Provides the deterministic default avatar seed for descendant avatars.
+/// Предоставляет детерминированный seed аватара по умолчанию для дочерних аватаров.
 pub(crate) fn use_avatar_seed(seed: String) {
     let initial_seed = seed.clone();
     let mut avatar_seed = use_context_provider(move || AvatarSeed(Signal::new(initial_seed)));
     avatar_seed.0.set(seed);
 }
 
-/// Renders a user avatar image with nickname initial fallback.
+/// Рендерит изображение аватара пользователя с подстановкой первой буквы ника.
 #[component]
 pub(crate) fn UserAvatar(
     nickname: String,

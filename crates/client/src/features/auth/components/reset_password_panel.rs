@@ -1,4 +1,4 @@
-//! Password reset confirmation form panel component.
+//! Компонент панели формы подтверждения сброса пароля.
 
 use cheenhub_contracts::rest::PasswordResetConfirmRequest;
 use dioxus::prelude::*;

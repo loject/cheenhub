@@ -1,4 +1,4 @@
-//! Invite acceptance route component.
+//! Компонент маршрута принятия приглашения.
 
 use dioxus::prelude::*;
 

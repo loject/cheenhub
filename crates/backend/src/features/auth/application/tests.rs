@@ -1,4 +1,4 @@
-//! Authentication application tests.
+//! Тесты приложения аутентификации.
 
 use std::sync::Arc;
 

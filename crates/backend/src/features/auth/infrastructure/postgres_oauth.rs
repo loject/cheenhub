@@ -1,4 +1,4 @@
-//! Postgres OAuth storage helpers.
+//! Вспомогательные функции хранения OAuth для Postgres.
 
 use chrono::{DateTime, Utc};
 use sea_orm::{

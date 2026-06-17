@@ -1,13 +1,13 @@
-//! Server input validation.
+//! Валидация входных данных сервера.
 
-/// Normalized create-server input.
+/// Нормализованный ввод для создания сервера.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ValidCreateServer {
-    /// Human-readable server name.
+    /// Человекочитаемое имя сервера.
     pub(crate) name: String,
 }
 
-/// Validates and normalizes server creation input.
+/// Проверяет и нормализует ввод для создания сервера.
 pub(crate) fn create_server(name: String) -> Result<ValidCreateServer, &'static str> {
     let name = name.trim().to_owned();
     let len = name.chars().count();
@@ -19,14 +19,14 @@ pub(crate) fn create_server(name: String) -> Result<ValidCreateServer, &'static 
     Ok(ValidCreateServer { name })
 }
 
-/// Normalized server-room input.
+/// Нормализованный ввод для комнаты сервера.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ValidServerRoom {
-    /// Human-readable room name.
+    /// Человекочитаемое имя комнаты.
     pub(crate) name: String,
 }
 
-/// Validates and normalizes room input.
+/// Проверяет и нормализует ввод для комнаты.
 pub(crate) fn server_room(name: String) -> Result<ValidServerRoom, &'static str> {
     let name = name.trim().to_owned();
     let len = name.chars().count();
@@ -38,16 +38,16 @@ pub(crate) fn server_room(name: String) -> Result<ValidServerRoom, &'static str>
     Ok(ValidServerRoom { name })
 }
 
-/// Normalized create-invite input.
+/// Нормализованный ввод для создания приглашения.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ValidCreateServerInvite {
-    /// Optional maximum number of accepted invite uses.
+    /// Необязательный максимальный лимит использований приглашения.
     pub(crate) max_uses: Option<u32>,
-    /// Optional invite lifetime in days.
+    /// Необязательный срок жизни приглашения в днях.
     pub(crate) expires_in_days: Option<u32>,
 }
 
-/// Validates server invite creation input.
+/// Проверяет ввод для создания приглашения сервера.
 pub(crate) fn create_server_invite(
     max_uses: Option<u32>,
     expires_in_days: Option<u32>,

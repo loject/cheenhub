@@ -1,21 +1,21 @@
-//! Ed25519 JWT key handling.
+//! Обработка Ed25519-ключей JWT.
 
 use anyhow::{Context, anyhow};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use ed25519_dalek::SigningKey;
 
-/// Active authentication signing keys.
+/// Активные ключи подписи аутентификации.
 #[derive(Clone)]
 pub(crate) struct AuthKeys {
-    /// Active key identifier embedded into JWT headers and claims.
+    /// Идентификатор активного ключа, встроенный в заголовки и claims JWT.
     pub(crate) key_id: String,
-    /// Active Ed25519 signing key.
+    /// Активный Ed25519-ключ подписи.
     pub(crate) signing_key: SigningKey,
 }
 
 impl AuthKeys {
-    /// Builds authentication keys from backend configuration.
+    /// Создает ключи аутентификации из конфигурации бэкенда.
     pub(crate) fn from_config(private_key_base64: &str, key_id: String) -> anyhow::Result<Self> {
         if key_id.trim().is_empty() {
             return Err(anyhow!("JWT_KEY_ID must not be empty"));
@@ -34,7 +34,7 @@ impl AuthKeys {
         })
     }
 
-    /// Builds deterministic authentication keys for tests.
+    /// Создает детерминированные ключи аутентификации для тестов.
     #[cfg(test)]
     pub(crate) fn generate_for_tests() -> Self {
         Self {

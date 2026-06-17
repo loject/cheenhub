@@ -1,4 +1,4 @@
-//! WebTransport TLS configuration.
+//! Конфигурация TLS для WebTransport.
 
 use std::fs::{self, File};
 use std::io::{BufReader, Write};
@@ -15,16 +15,16 @@ const DEFAULT_DEV_CERT_PATH: &str = "target/cheenhub-dev/webtransport-cert.pem";
 const DEFAULT_DEV_KEY_PATH: &str = "target/cheenhub-dev/webtransport-key.pem";
 const DEV_CERT_LIFETIME_DAYS: i64 = 13;
 
-/// Resolved WebTransport TLS configuration.
+/// Разрешенная конфигурация TLS для WebTransport.
 #[derive(Debug)]
 pub(crate) struct TlsConfig {
-    /// PEM certificate path used by the listener.
+    /// Путь к PEM-сертификату, используемому слушателем.
     pub(crate) cert_path: String,
-    /// PEM private key path used by the listener.
+    /// Путь к PEM-приватному ключу, используемому слушателем.
     pub(crate) key_path: String,
 }
 
-/// Ensures WebTransport TLS files exist before the backend starts.
+/// Проверяет наличие файлов TLS WebTransport перед запуском бэкенда.
 pub(crate) fn ensure_tls_config(
     cert_path: Option<&str>,
     key_path: Option<&str>,
@@ -73,7 +73,7 @@ pub(crate) fn ensure_tls_config(
     })
 }
 
-/// Loads a PEM certificate chain.
+/// Загружает цепочку PEM-сертификатов.
 pub(crate) fn load_certificates(path: &str) -> anyhow::Result<Vec<CertificateDer<'static>>> {
     let file =
         File::open(path).with_context(|| format!("failed to open certificate PEM {path}"))?;
@@ -90,7 +90,7 @@ pub(crate) fn load_certificates(path: &str) -> anyhow::Result<Vec<CertificateDer
     Ok(certificates)
 }
 
-/// Loads a PEM private key.
+/// Загружает PEM-приватный ключ.
 pub(crate) fn load_private_key(path: &str) -> anyhow::Result<PrivateKeyDer<'static>> {
     let file =
         File::open(path).with_context(|| format!("failed to open private key PEM {path}"))?;

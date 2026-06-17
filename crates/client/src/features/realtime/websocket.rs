@@ -1,4 +1,4 @@
-//! WebSocket fallback client transport helpers.
+//! Вспомогательные функции fallback-транспорта клиента через WebSocket.
 
 use bytes::Bytes;
 use cheenhub_contracts::realtime::RealtimeEnvelope;

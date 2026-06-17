@@ -1,4 +1,4 @@
-//! Nickname update application tests.
+//! Тесты приложения обновления никнейма.
 
 use cheenhub_contracts::rest::UpdateCurrentUserRequest;
 use chrono::{Duration, Utc};

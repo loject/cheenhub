@@ -1,4 +1,4 @@
-//! Voice chat media datagram handling.
+//! Обработка медиадатаграмм голосового чата.
 
 use bytes::Bytes;
 use cheenhub_contracts::media::MediaDatagram;
@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
-/// Handles one decoded voice media datagram.
+/// Обрабатывает одну декодированную медиадатаграмму голоса.
 pub(crate) async fn handle_voice_frame(
     state: &AppState,
     session_id: Uuid,
@@ -17,7 +17,7 @@ pub(crate) async fn handle_voice_frame(
     handle_room_media_frame(state, session_id, user_id, datagram, "voice").await;
 }
 
-/// Handles one decoded screen sharing media datagram.
+/// Обрабатывает одну декодированную медиадатаграмму демонстрации экрана.
 pub(crate) async fn handle_screen_frame(
     state: &AppState,
     session_id: Uuid,

@@ -1,4 +1,4 @@
-//! Current user profile API client.
+//! Клиент API профиля текущего пользователя.
 
 use cheenhub_contracts::rest::{
     AuthUser, ChangeCurrentUserPasswordRequest, UpdateCurrentUserRequest,
@@ -8,7 +8,7 @@ use js_sys::Uint8Array;
 
 use super::api::{fresh_access_token, read_error, refresh_access_token, url};
 
-/// Updates the current authenticated user profile.
+/// Обновляет профиль текущего аутентифицированного пользователя.
 pub(crate) async fn update_current_user(
     request: UpdateCurrentUserRequest,
 ) -> Result<AuthUser, String> {
@@ -24,7 +24,7 @@ pub(crate) async fn update_current_user(
     parse_user_response(response).await
 }
 
-/// Changes the current authenticated user's password.
+/// Меняет пароль текущего аутентифицированного пользователя.
 pub(crate) async fn change_current_user_password(
     request: ChangeCurrentUserPasswordRequest,
 ) -> Result<(), String> {
@@ -40,7 +40,7 @@ pub(crate) async fn change_current_user_password(
     parse_empty_response(response).await
 }
 
-/// Uploads and replaces the current authenticated user's avatar.
+/// Загружает и заменяет аватар текущего аутентифицированного пользователя.
 pub(crate) async fn update_current_user_avatar(bytes: Vec<u8>) -> Result<AuthUser, String> {
     let access_token = fresh_access_token().await?;
     let response = send_avatar_update_request(&access_token, &bytes).await?;

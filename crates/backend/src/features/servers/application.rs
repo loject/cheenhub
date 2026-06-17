@@ -1,4 +1,4 @@
-//! Server application flows.
+//! Потоки приложения серверов.
 
 use cheenhub_contracts::rest::{
     AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,
@@ -34,7 +34,7 @@ pub(crate) use members_settings::{
 pub(crate) use profile::{update, update_avatar};
 pub(crate) use role_settings::{list_server_roles, save_server_roles};
 
-/// Creates a server owned by the current user.
+/// Создает сервер, принадлежащий текущему пользователю.
 pub(crate) async fn create(
     state: &AppState,
     access_token: &str,
@@ -68,7 +68,7 @@ pub(crate) async fn create(
     })
 }
 
-/// Lists servers available to the current user.
+/// Возвращает серверы, доступные текущему пользователю.
 pub(crate) async fn list(
     state: &AppState,
     access_token: &str,
@@ -91,7 +91,7 @@ pub(crate) async fn list(
     Ok(ListServersResponse { servers: summaries })
 }
 
-/// Creates an invite for a server owned by the current user.
+/// Создает приглашение для сервера, принадлежащего текущему пользователю.
 pub(crate) async fn create_invite(
     state: &AppState,
     access_token: &str,
@@ -131,7 +131,7 @@ pub(crate) async fn create_invite(
     })
 }
 
-/// Loads server invite information for the current user.
+/// Загружает информацию о приглашении сервера для текущего пользователя.
 pub(crate) async fn invite_info(
     state: &AppState,
     access_token: &str,
@@ -215,7 +215,7 @@ pub(crate) async fn invite_info(
     })
 }
 
-/// Accepts a server invite for the current user.
+/// Принимает приглашение сервера для текущего пользователя.
 pub(crate) async fn accept_invite(
     state: &AppState,
     access_token: &str,
@@ -318,7 +318,7 @@ pub(crate) async fn accept_invite(
     })
 }
 
-/// Leaves a server as the current user.
+/// Покидает сервер от имени текущего пользователя.
 pub(crate) async fn leave(
     state: &AppState,
     access_token: &str,
@@ -365,7 +365,7 @@ pub(crate) async fn leave(
         .map_err(ServerError::Internal)
 }
 
-/// Lists rooms available on a server for the current user.
+/// Возвращает комнаты, доступные на сервере для текущего пользователя.
 pub(crate) async fn list_rooms(
     state: &AppState,
     access_token: &str,
@@ -385,7 +385,7 @@ pub(crate) async fn list_rooms(
     })
 }
 
-/// Creates a room on a server owned by the current user.
+/// Создает комнату на сервере, принадлежащем текущему пользователю.
 pub(crate) async fn create_room(
     state: &AppState,
     access_token: &str,
@@ -408,7 +408,7 @@ pub(crate) async fn create_room(
     })
 }
 
-/// Updates a room on a server owned by the current user.
+/// Обновляет комнату на сервере, принадлежащем текущему пользователю.
 pub(crate) async fn update_room(
     state: &AppState,
     access_token: &str,
@@ -437,7 +437,7 @@ pub(crate) async fn update_room(
     })
 }
 
-/// Deletes a room from a server owned by the current user.
+/// Удаляет комнату с сервера, принадлежащего текущему пользователю.
 pub(crate) async fn delete_room(
     state: &AppState,
     access_token: &str,

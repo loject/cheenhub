@@ -1,24 +1,24 @@
-//! Screen sharing backend contracts.
+//! Контракты backend'а демонстрации экрана.
 
 use std::fmt;
 use std::rc::Rc;
 
 use futures_util::future::LocalBoxFuture;
 
-/// Callback invoked for every encoded screen frame.
+/// Callback, вызываемый для каждого закодированного кадра экрана.
 pub(crate) type ScreenShareFrameCallback = Rc<dyn Fn(EncodedScreenShareFrame)>;
 
-/// Callback invoked when the capture source ends outside the app controls.
+/// Callback, вызываемый, когда источник захвата завершается вне управления приложения.
 pub(crate) type ScreenShareEndedCallback = Rc<dyn Fn()>;
 
-/// Encoded screen sharing codec.
+/// Кодек закодированной демонстрации экрана.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ScreenShareCodec {
     /// VP9 video.
     Vp9,
 }
 
-/// Screen capture and encoding configuration.
+/// Конфигурация захвата и кодирования экрана.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ScreenShareConfig {
     /// Preferred encoded codec.
@@ -45,7 +45,7 @@ impl Default for ScreenShareConfig {
     }
 }
 
-/// Screen sharing callbacks supplied by the owning feature.
+/// Callback'и демонстрации экрана, предоставленные владеющей функцией.
 #[derive(Clone)]
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub(crate) struct ScreenShareCallbacks {
@@ -55,7 +55,7 @@ pub(crate) struct ScreenShareCallbacks {
     pub(crate) on_ended: ScreenShareEndedCallback,
 }
 
-/// One encoded screen sharing frame.
+/// Один закодированный кадр демонстрации экрана.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EncodedScreenShareFrame {
     /// Sender-local frame sequence.
@@ -76,7 +76,7 @@ pub(crate) struct EncodedScreenShareFrame {
     pub(crate) bytes: Vec<u8>,
 }
 
-/// Current screen sharing status.
+/// Текущее состояние демонстрации экрана.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ScreenShareStatus {
     /// Capture is stopped.
@@ -91,13 +91,13 @@ pub(crate) enum ScreenShareStatus {
     Error(String),
 }
 
-/// Active screen sharing session.
+/// Активная сессия демонстрации экрана.
 pub(crate) trait ScreenShareSession {
     /// Stops capture and releases backend resources.
     fn stop(&self) -> LocalBoxFuture<'static, Result<(), ScreenShareError>>;
 }
 
-/// Screen capture backend.
+/// Backend захвата экрана.
 pub(crate) trait ScreenShareBackend {
     /// Starts capture and calls `on_frame` for every encoded frame.
     fn start(
@@ -107,7 +107,7 @@ pub(crate) trait ScreenShareBackend {
     ) -> LocalBoxFuture<'static, Result<Rc<dyn ScreenShareSession>, ScreenShareError>>;
 }
 
-/// Screen sharing backend error.
+/// Ошибка backend'а демонстрации экрана.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ScreenShareError {
     message: String,

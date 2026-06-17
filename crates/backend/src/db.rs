@@ -1,10 +1,10 @@
-//! Database connection setup.
+//! Настройка подключения к базе данных.
 
 use anyhow::Context;
 use sea_orm::{Database, DatabaseConnection};
 use tracing::info;
 
-/// Opens a Postgres database connection.
+/// Открывает подключение к базе данных Postgres.
 pub(crate) async fn connect(database_url: &str) -> anyhow::Result<DatabaseConnection> {
     let database = Database::connect(database_url)
         .await

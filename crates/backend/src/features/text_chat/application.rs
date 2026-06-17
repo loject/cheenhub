@@ -1,4 +1,4 @@
-//! Text chat application flows.
+//! Потоки приложения текстового чата.
 
 use cheenhub_contracts::realtime::{
     DeleteMessage, DeleteMessageAccepted, LoadRoomHistory, MessageDeletedPayload, RealtimeKind,
@@ -21,7 +21,7 @@ mod attachments;
 
 pub(crate) use attachments::{chat_image, upload_chat_image};
 
-/// Loads the latest text messages for a room.
+/// Загружает последние текстовые сообщения комнаты.
 pub(crate) async fn load_room_history(
     state: &AppState,
     user_id: &Uuid,
@@ -69,7 +69,7 @@ pub(crate) async fn load_room_history(
     })
 }
 
-/// Accepts a message, starts fanout and persistence, and returns immediately.
+/// Принимает сообщение, запускает рассылку и сохранение и сразу возвращает ответ.
 pub(crate) async fn send_message(
     state: &AppState,
     user: &AuthUser,
@@ -141,8 +141,8 @@ pub(crate) async fn send_message(
     Ok(SendMessageAccepted { message: payload })
 }
 
-/// Soft-deletes a message: the author can always delete their own; moderators with
-/// `DeleteMessages` permission (or the server owner) can delete any message.
+/// Мягко удаляет сообщение: автор всегда может удалить свое; модераторы с правом
+/// `DeleteMessages` (или владелец сервера) могут удалить любое сообщение.
 pub(crate) async fn delete_message(
     state: &AppState,
     user_id: &Uuid,
@@ -202,25 +202,25 @@ pub(crate) async fn delete_message(
     })
 }
 
-/// Text chat application error.
+/// Ошибка приложения текстового чата.
 #[derive(Debug)]
 pub(crate) enum TextChatApplicationError {
-    /// Request shape or target is invalid.
+    /// Неверны форма запроса или цель.
     BadRequest(String),
-    /// User cannot access the requested chat resource.
+    /// Пользователь не может получить доступ к запрошенному ресурсу чата.
     Unauthorized(String),
-    /// Resource was not found.
+    /// Ресурс не найден.
     NotFound(String),
-    /// Required integration is not configured.
+    /// Требуемая интеграция не настроена.
     Misconfigured {
-        /// Integration or feature name.
+        /// Имя интеграции или функции.
         feature: &'static str,
-        /// Missing environment variable names.
+        /// Имена отсутствующих переменных окружения.
         missing: Vec<&'static str>,
-        /// User-facing message.
+        /// Сообщение для пользователя.
         message: String,
     },
-    /// Unexpected internal failure.
+    /// Неожиданная внутренняя ошибка.
     Internal(anyhow::Error),
 }
 

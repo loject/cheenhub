@@ -1,9 +1,9 @@
-//! Current authenticated user context.
+//! Контекст текущего аутентифицированного пользователя.
 
 use cheenhub_contracts::rest::AuthUser;
 use dioxus::prelude::*;
 
-/// Context shared by authenticated app components that need the current user.
+/// Контекст, общий для компонентов аутентифицированного приложения, которым нужен текущий пользователь.
 #[derive(Clone, Copy)]
 pub(crate) struct CurrentUserContext {
     user: Signal<Option<AuthUser>>,

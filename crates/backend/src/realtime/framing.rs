@@ -1,4 +1,4 @@
-//! Length-prefixed realtime stream framing.
+//! Фрейминг realtime-потока с префиксом длины.
 
 use anyhow::{Context, anyhow};
 use bytes::{BufMut, Bytes, BytesMut};
@@ -8,7 +8,7 @@ use web_transport::{RecvStream, SendStream};
 
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
-/// Writes one realtime JSON envelope frame to a reliable stream.
+/// Записывает один JSON-фрейм realtime-конверта в надежный поток.
 pub(crate) async fn write_envelope(
     send: &Mutex<SendStream>,
     envelope: &RealtimeEnvelope,
@@ -17,7 +17,7 @@ pub(crate) async fn write_envelope(
     write_frame(send, &bytes).await
 }
 
-/// Reads one realtime JSON envelope frame from a reliable stream.
+/// Читает один JSON-фрейм realtime-конверта из надежного потока.
 pub(crate) async fn read_envelope(
     recv: &mut RecvStream,
 ) -> anyhow::Result<Option<RealtimeEnvelope>> {

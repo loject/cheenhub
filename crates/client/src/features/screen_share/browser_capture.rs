@@ -1,4 +1,4 @@
-//! Browser screen sharing stream acquisition.
+//! Получение потока браузерной демонстрации экрана.
 
 use dioxus::prelude::debug;
 use js_sys::{Function, Reflect};

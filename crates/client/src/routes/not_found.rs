@@ -1,4 +1,4 @@
-//! Not found route component.
+//! Компонент маршрута "не найдено".
 
 use dioxus::prelude::*;
 
@@ -6,7 +6,7 @@ use crate::Route;
 use crate::features::auth::api;
 use crate::features::landing::components::logo_icon::LogoIcon;
 
-/// Renders the fallback page for unknown client routes.
+/// Рендерит запасную страницу для неизвестных клиентских маршрутов.
 #[component]
 pub(crate) fn NotFound(route: Vec<String>) -> Element {
     let requested_path = format!("/{}", route.join("/"));

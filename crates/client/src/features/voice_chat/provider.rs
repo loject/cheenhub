@@ -1,4 +1,4 @@
-//! Voice connection context provider.
+//! Провайдер контекста голосового соединения.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ use super::realtime;
 use super::screen_video::ScreenVideoHandle;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 
-/// Provides voice connection state to authenticated app components.
+/// Предоставляет состояние голосового соединения аутентифицированным компонентам приложения.
 #[component]
 pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();

@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! Backend entrypoint for CheenHub.
+//! Точка входа бэкенда CheenHub.
 
 mod config;
 mod db;

@@ -1,4 +1,4 @@
-//! Persistent audio playback preference storage.
+//! Хранилище постоянных предпочтений воспроизведения аудио.
 
 use dioxus::prelude::{info, warn};
 use dioxus_sdk_storage::{LocalStorage, StorageBacking};
@@ -8,23 +8,23 @@ const OUTPUT_DEVICE_LABEL_KEY: &str = "cheenhub.audio_playback.output_device_lab
 const OUTPUT_VOLUME_PERCENT_KEY: &str = "cheenhub.audio_playback.output_volume_percent";
 const JITTER_BUFFER_MS_KEY: &str = "cheenhub.audio_playback.jitter_buffer_ms";
 const DEFAULT_OUTPUT_VOLUME_PERCENT: u32 = 100;
-/// Default inbound voice jitter buffer delay in milliseconds.
+/// Задержка джиттер-буфера для входящего голоса по умолчанию, в миллисекундах.
 pub(crate) const DEFAULT_JITTER_BUFFER_MS: u32 = 120;
-/// Minimum inbound voice jitter buffer delay in milliseconds.
+/// Минимальная задержка джиттер-буфера для входящего голоса, в миллисекундах.
 pub(crate) const MIN_JITTER_BUFFER_MS: u32 = 40;
-/// Maximum inbound voice jitter buffer delay in milliseconds.
+/// Максимальная задержка джиттер-буфера для входящего голоса, в миллисекундах.
 pub(crate) const MAX_JITTER_BUFFER_MS: u32 = 400;
 
-/// Stored audio output device preference.
+/// Сохраненное предпочтение устройства аудиовывода.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StoredOutputDevice {
-    /// Browser sink/device ID to pass into `AudioContext.setSinkId`.
+    /// Идентификатор browser sink/устройства, передаваемый в `AudioContext.setSinkId`.
     pub(crate) device_id: String,
-    /// Browser-provided device label used to recover when device IDs rotate.
+    /// Метка устройства, полученная от браузера, для восстановления при смене идентификаторов.
     pub(crate) label: Option<String>,
 }
 
-/// Loads the preferred audio output device from local storage.
+/// Загружает предпочтительное устройство аудиовывода из локального хранилища.
 pub(crate) fn load_output_device() -> Option<StoredOutputDevice> {
     let device_id = get::<LocalStorage>(OUTPUT_DEVICE_ID_KEY).filter(|id| !id.is_empty())?;
     let label = get::<LocalStorage>(OUTPUT_DEVICE_LABEL_KEY).filter(|label| !label.is_empty());
@@ -36,7 +36,7 @@ pub(crate) fn load_output_device() -> Option<StoredOutputDevice> {
     Some(StoredOutputDevice { device_id, label })
 }
 
-/// Saves the preferred audio output device into local storage.
+/// Сохраняет предпочтительное устройство аудиовывода в локальное хранилище.
 pub(crate) fn save_output_device(device_id: &str, label: Option<&str>) {
     if device_id.is_empty() {
         clear_output_device();
@@ -54,13 +54,13 @@ pub(crate) fn save_output_device(device_id: &str, label: Option<&str>) {
     );
 }
 
-/// Clears the preferred audio output device from local storage.
+/// Очищает предпочтительное устройство аудиовывода из локального хранилища.
 pub(crate) fn clear_output_device() {
     remove::<LocalStorage>(OUTPUT_DEVICE_ID_KEY);
     remove::<LocalStorage>(OUTPUT_DEVICE_LABEL_KEY);
 }
 
-/// Loads the preferred audio output volume percentage.
+/// Загружает предпочтительный процент громкости аудиовывода.
 pub(crate) fn load_output_volume_percent() -> u32 {
     let volume = get::<LocalStorage>(OUTPUT_VOLUME_PERCENT_KEY)
         .and_then(|value| value.parse::<u32>().ok())
@@ -70,7 +70,7 @@ pub(crate) fn load_output_volume_percent() -> u32 {
     volume
 }
 
-/// Saves the preferred audio output volume percentage.
+/// Сохраняет предпочтительный процент громкости аудиовывода.
 pub(crate) fn save_output_volume_percent(volume_percent: u32) {
     let volume_percent = clamp_volume_percent(volume_percent);
     set::<LocalStorage>(OUTPUT_VOLUME_PERCENT_KEY, &volume_percent.to_string());

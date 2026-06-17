@@ -1,4 +1,4 @@
-//! Text chat infrastructure layer.
+//! Инфраструктурный слой текстового чата.
 
 mod entities;
 mod in_memory;
@@ -20,45 +20,45 @@ pub(crate) use postgres::PostgresTextChatStore;
 
 const HISTORY_LIMIT: u64 = 50;
 
-/// One page of text messages.
+/// Одна страница текстовых сообщений.
 pub(crate) struct TextMessagePage {
-    /// Messages in oldest-to-newest order.
+    /// Сообщения в порядке от старых к новым.
     pub(crate) messages: Vec<TextMessage>,
-    /// Whether older messages are available before this page.
+    /// Доступны ли более старые сообщения перед этой страницей.
     pub(crate) has_more: bool,
 }
 
-/// Text chat storage boundary.
+/// Граница хранилища текстового чата.
 #[async_trait]
 pub(crate) trait TextChatStore: Send + Sync {
-    /// Inserts a prebuilt text message.
+    /// Вставляет заранее собранное текстовое сообщение.
     async fn insert_text_message(&self, message: TextMessage) -> anyhow::Result<()>;
 
-    /// Inserts chat attachment metadata.
+    /// Вставляет метаданные вложения чата.
     async fn insert_chat_attachment(&self, attachment: NewChatAttachment) -> anyhow::Result<()>;
 
-    /// Finds chat attachment metadata by id.
+    /// Находит метаданные вложения чата по идентификатору.
     async fn find_chat_attachment(
         &self,
         attachment_id: &Uuid,
     ) -> anyhow::Result<Option<ChatAttachment>>;
 
-    /// Loads one room message page, oldest-to-newest.
+    /// Загружает одну страницу сообщений комнаты в порядке от старых к новым.
     async fn room_message_page(
         &self,
         room_id: &Uuid,
         before_message_id: Option<&Uuid>,
     ) -> anyhow::Result<TextMessagePage>;
 
-    /// Soft-deletes a message, recording who deleted it.
+    /// Мягко удаляет сообщение, фиксируя, кто его удалил.
     ///
-    /// When `require_authorship` is `true` the delete is rejected unless
-    /// `deleted_by_user_id` matches the message author (own-message delete).
-    /// When `false`, any non-deleted message is deleted regardless of author
-    /// (moderation delete).
+    /// Когда `require_authorship` равно `true`, удаление отклоняется, если только
+    /// `deleted_by_user_id` не совпадает с автором сообщения (удаление своего сообщения).
+    /// Когда `false`, удаляется любое не удаленное сообщение независимо от автора
+    /// (удаление модератором).
     ///
-    /// Returns `Some(updated_message)` on success, `None` when the message
-    /// does not exist, is already deleted, or authorship check fails.
+    /// Возвращает `Some(updated_message)` при успехе, `None`, когда сообщение
+    /// не существует, уже удалено или проверка авторства не прошла.
     async fn soft_delete_message(
         &self,
         message_id: &Uuid,

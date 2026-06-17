@@ -50,7 +50,7 @@ pub(crate) async fn cleanup_stream(state: &AppState, module: RealtimeModule, str
     }
 }
 
-/// Rejects a reliable stream message when it changes module ownership.
+/// Отклоняет сообщение надежного потока, если оно меняет владельца модуля.
 pub(crate) async fn reject_module_change(
     send: &EnvelopeSink,
     envelope: &RealtimeEnvelope,

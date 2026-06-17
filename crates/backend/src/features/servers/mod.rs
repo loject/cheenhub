@@ -1,4 +1,4 @@
-//! Server management feature.
+//! Функция управления серверами.
 
 mod application;
 mod domain;
@@ -15,7 +15,7 @@ use axum::{
 
 use crate::state::AppState;
 
-/// Builds server routes.
+/// Собирает маршруты серверов.
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route(

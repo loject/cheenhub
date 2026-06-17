@@ -1,4 +1,4 @@
-//! Authentication UI feature for the CheenHub web client.
+//! UI-функция аутентификации для веб-клиента CheenHub.
 
 pub(crate) mod api;
 mod components;

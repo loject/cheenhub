@@ -1,27 +1,27 @@
-//! Server member role assignment entity.
+//! Сущность назначения роли участнику сервера.
 
 use sea_orm::entity::prelude::*;
 
-/// Server member role assignment database row.
+/// Строка базы данных назначения роли участнику сервера.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "server_member_roles")]
 pub struct Model {
-    /// Server the assignment belongs to.
+    /// Сервер, которому принадлежит назначение.
     #[sea_orm(primary_key, auto_increment = false)]
     pub server_id: Uuid,
-    /// User that holds the role.
+    /// Пользователь, который имеет роль.
     #[sea_orm(primary_key, auto_increment = false)]
     pub user_id: Uuid,
-    /// Role assigned to the user.
+    /// Роль, назначенная пользователю.
     #[sea_orm(primary_key, auto_increment = false)]
     pub role_id: Uuid,
-    /// User that granted the role.
+    /// Пользователь, который выдал роль.
     pub granted_by_user_id: Uuid,
-    /// When the role was assigned.
+    /// Когда роль была назначена.
     pub assigned_at: DateTimeUtc,
 }
 
-/// Server member role relations.
+/// Связи назначения ролей участникам сервера.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

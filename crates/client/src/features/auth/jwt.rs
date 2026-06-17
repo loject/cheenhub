@@ -1,4 +1,4 @@
-//! Client-side access JWT validation.
+//! Проверка access JWT на стороне клиента.
 
 use web_time::{SystemTime, UNIX_EPOCH};
 
@@ -11,22 +11,22 @@ const DEFAULT_KEY_ID: &str = "dev-ed25519-1";
 const DEFAULT_PUBLIC_KEY_BASE64: &str = "FyeAHCHdj3LQJcxcJv1Zo3mW8m+kqBGytTetC2NCIBU=";
 const REFRESH_SKEW_SECONDS: i64 = 60;
 
-/// Access JWT claims used by the client.
+/// Набор claims access JWT, используемый клиентом.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub(crate) struct AccessClaims {
-    /// User id.
+    /// Идентификатор пользователя.
     pub(crate) sub: String,
-    /// User nickname.
+    /// Никнейм пользователя.
     pub(crate) nickname: String,
-    /// User email.
+    /// Email пользователя.
     pub(crate) email: String,
-    /// Issued-at unix timestamp.
+    /// Unix-временная метка выпуска.
     pub(crate) iat: i64,
-    /// Expiration unix timestamp.
+    /// Unix-временная метка истечения.
     pub(crate) exp: i64,
-    /// Session id.
+    /// Идентификатор сессии.
     pub(crate) session_id: String,
-    /// JWT key identifier.
+    /// Идентификатор JWT-ключа.
     pub(crate) kid: String,
 }
 
@@ -36,21 +36,21 @@ struct JwtHeader {
     kid: String,
 }
 
-/// Returns whether an access token can be used without immediate refresh.
+/// Возвращает, можно ли использовать access token без немедленного обновления.
 pub(crate) fn is_fresh(token: &str) -> bool {
     verify(token)
         .map(|claims| claims.exp > now_seconds() + REFRESH_SKEW_SECONDS)
         .unwrap_or(false)
 }
 
-/// Returns the number of seconds to wait before refreshing an access JWT.
+/// Возвращает число секунд до обновления access JWT.
 pub(crate) fn seconds_until_refresh(token: &str) -> Result<u32, String> {
     let claims = verify(token)?;
     let seconds = claims.exp - now_seconds() - REFRESH_SKEW_SECONDS;
     Ok(seconds.max(0) as u32)
 }
 
-/// Verifies a signed access JWT with the embedded public key.
+/// Проверяет подписанный access JWT с помощью встроенного публичного ключа.
 pub(crate) fn verify(token: &str) -> Result<AccessClaims, String> {
     let mut parts = token.split('.');
     let header = parts

@@ -1,41 +1,41 @@
-//! Stored image entity.
+//! Сущность сохраненного изображения.
 
 use sea_orm::entity::prelude::*;
 
-/// Stored image database row.
+/// Строка базы данных сохраненного изображения.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "images")]
 pub struct Model {
-    /// Stable image identifier.
+    /// Стабильный идентификатор изображения.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// User that owns this image.
+    /// Пользователь, которому принадлежит это изображение.
     pub owner_user_id: Uuid,
-    /// Image purpose, such as `user_avatar`.
+    /// Назначение изображения, например `user_avatar`.
     pub kind: String,
-    /// Stored image MIME content type.
+    /// Сохраненный MIME-тип изображения.
     pub content_type: String,
-    /// Pixel width.
+    /// Ширина в пикселях.
     pub width: i32,
-    /// Pixel height.
+    /// Высота в пикселях.
     pub height: i32,
-    /// Stored byte size.
+    /// Сохраненный размер в байтах.
     pub byte_size: i64,
-    /// Hex-encoded SHA-256 digest of stored bytes.
+    /// SHA-256-digest сохраненных байтов в hex-формате.
     pub sha256: String,
-    /// Storage backend name, such as `database`.
+    /// Имя бэкенда хранения, например `database`.
     pub storage_backend: String,
-    /// External object storage key when bytes are not stored in this row.
+    /// Ключ внешнего объектного хранилища, когда байты не хранятся в этой строке.
     pub storage_key: Option<String>,
-    /// Stored image bytes for database-backed images.
+    /// Сохраненные байты изображения для изображений, хранящихся в базе данных.
     pub data: Option<Vec<u8>>,
-    /// Creation timestamp.
+    /// Временная метка создания.
     pub created_at: DateTimeUtc,
-    /// Last update timestamp.
+    /// Временная метка последнего обновления.
     pub updated_at: DateTimeUtc,
 }
 
-/// Stored image relations.
+/// Связи сохраненного изображения.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

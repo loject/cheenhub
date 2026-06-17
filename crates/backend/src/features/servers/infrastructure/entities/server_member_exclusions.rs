@@ -1,27 +1,27 @@
-//! Server member exclusion entity.
+//! Сущность исключения участника сервера.
 
 use sea_orm::entity::prelude::*;
 
-/// Server member exclusion database row.
+/// Строка базы данных исключения участника сервера.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "server_member_exclusions")]
 pub struct Model {
-    /// Stable exclusion row identifier.
+    /// Стабильный идентификатор строки исключения.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// Server the exclusion belongs to.
+    /// Сервер, которому принадлежит исключение.
     pub server_id: Uuid,
-    /// User blocked from rejoining.
+    /// Пользователь, которому запрещен повторный вход.
     pub user_id: Uuid,
-    /// User or system actor that created the exclusion.
+    /// Пользователь или системный актер, создавший исключение.
     pub initiator_user_id: Uuid,
-    /// Timestamp until which the user cannot rejoin.
+    /// Временная метка, до которой пользователь не может вернуться.
     pub expires_at: DateTimeUtc,
-    /// Exclusion creation timestamp.
+    /// Временная метка создания исключения.
     pub created_at: DateTimeUtc,
 }
 
-/// Server member exclusion relations.
+/// Связи исключения участника сервера.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

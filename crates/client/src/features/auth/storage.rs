@@ -1,11 +1,11 @@
-//! Browser token storage for authentication.
+//! Хранилище токенов аутентификации в браузере.
 
 use dioxus_sdk_storage::{LocalStorage, SessionStorage, StorageBacking};
 
 const ACCESS_TOKEN_KEY: &str = "cheenhub.access_token";
 const REFRESH_TOKEN_KEY: &str = "cheenhub.refresh_token";
 
-/// Stored authentication token pair.
+/// Сохраненная пара токенов аутентификации.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StoredTokens {
     /// Short-lived access JWT.
@@ -14,7 +14,7 @@ pub(crate) struct StoredTokens {
     pub(crate) refresh_token: String,
 }
 
-/// Loads tokens from Dioxus-managed browser storage boundary.
+/// Загружает токены из границы браузерного хранилища, управляемой Dioxus.
 pub(crate) fn load() -> Option<StoredTokens> {
     if let Some(tokens) = load_from::<LocalStorage>() {
         return Some(tokens);
@@ -38,7 +38,7 @@ where
     })
 }
 
-/// Saves tokens into browser storage.
+/// Сохраняет токены в браузерное хранилище.
 pub(crate) fn save(access_token: &str, refresh_token: &str) {
     set::<LocalStorage>(ACCESS_TOKEN_KEY, access_token);
     set::<LocalStorage>(REFRESH_TOKEN_KEY, refresh_token);
@@ -46,7 +46,7 @@ pub(crate) fn save(access_token: &str, refresh_token: &str) {
     set::<SessionStorage>(REFRESH_TOKEN_KEY, refresh_token);
 }
 
-/// Clears all stored authentication tokens.
+/// Очищает все сохраненные токены аутентификации.
 pub(crate) fn clear() {
     remove::<LocalStorage>(ACCESS_TOKEN_KEY);
     remove::<LocalStorage>(REFRESH_TOKEN_KEY);

@@ -1,4 +1,4 @@
-//! Access JWT signing and verification.
+//! Подпись и проверка access JWT.
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -11,22 +11,22 @@ use crate::features::auth::domain::UserAccount;
 use crate::features::auth::error::AuthError;
 use crate::features::auth::security::keys::AuthKeys;
 
-/// Access JWT claims used by the backend.
+/// Набор claims access JWT, используемый бэкендом.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct AccessClaims {
-    /// User id.
+    /// Идентификатор пользователя.
     pub(crate) sub: String,
-    /// User nickname.
+    /// Никнейм пользователя.
     pub(crate) nickname: String,
-    /// User email.
+    /// Email пользователя.
     pub(crate) email: String,
-    /// Issued-at unix timestamp.
+    /// Unix-временная метка выпуска.
     pub(crate) iat: i64,
-    /// Expiration unix timestamp.
+    /// Unix-временная метка истечения.
     pub(crate) exp: i64,
-    /// Session id.
+    /// Идентификатор сессии.
     pub(crate) session_id: String,
-    /// JWT key identifier.
+    /// Идентификатор JWT-ключа.
     pub(crate) kid: String,
 }
 
@@ -37,7 +37,7 @@ struct JwtHeader {
     kid: String,
 }
 
-/// Signs a short-lived access JWT for a user session.
+/// Подписывает короткоживущий access JWT для пользовательской сессии.
 pub(crate) fn sign_access_token(
     signing_key: &SigningKey,
     key_id: &str,
@@ -71,7 +71,7 @@ pub(crate) fn sign_access_token(
     ))
 }
 
-/// Verifies an access JWT and returns its claims.
+/// Проверяет access JWT и возвращает его claims.
 pub(crate) fn verify_access_token(keys: &AuthKeys, token: &str) -> Result<AccessClaims, AuthError> {
     let mut parts = token.split('.');
     let header = parts.next().ok_or_else(invalid_token)?;

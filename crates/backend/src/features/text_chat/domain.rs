@@ -1,93 +1,93 @@
-//! Text chat domain models.
+//! Доменные модели текстового чата.
 
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-/// Text message data used by text chat flows.
+/// Данные текстового сообщения, используемые в потоках текстового чата.
 #[derive(Debug, Clone)]
 pub(crate) struct TextMessage {
-    /// Stable message identifier.
+    /// Стабильный идентификатор сообщения.
     pub(crate) id: Uuid,
-    /// Server the message belongs to.
+    /// Сервер, которому принадлежит сообщение.
     pub(crate) server_id: Uuid,
-    /// Room the message belongs to.
+    /// Комната, которой принадлежит сообщение.
     pub(crate) room_id: Uuid,
-    /// User that authored the message.
+    /// Пользователь, создавший сообщение.
     pub(crate) author_user_id: Uuid,
-    /// Author nickname snapshot.
+    /// Снимок ника автора.
     pub(crate) author_nickname: String,
-    /// Message body.
+    /// Тело сообщения.
     pub(crate) body: String,
-    /// Image attachments included in the message.
+    /// Вложения-изображения, включенные в сообщение.
     pub(crate) attachments: Vec<ChatAttachment>,
-    /// Message creation timestamp.
+    /// Временная метка создания сообщения.
     pub(crate) created_at: DateTime<Utc>,
-    /// Soft-delete timestamp; set when a message is deleted.
+    /// Временная метка мягкого удаления; задается при удалении сообщения.
     pub(crate) deleted_at: Option<DateTime<Utc>>,
-    /// User who deleted the message; may differ from author for moderation deletes.
+    /// Пользователь, удаливший сообщение; для модераторских удалений может отличаться от автора.
     pub(crate) deleted_by_user_id: Option<Uuid>,
 }
 
-/// Chat image attachment metadata.
+/// Метаданные вложения-изображения чата.
 #[derive(Debug, Clone)]
 pub(crate) struct ChatAttachment {
-    /// Stable attachment identifier.
+    /// Стабильный идентификатор вложения.
     pub(crate) id: Uuid,
-    /// Server the attachment belongs to.
+    /// Сервер, которому принадлежит вложение.
     pub(crate) server_id: Uuid,
-    /// Room the attachment belongs to.
+    /// Комната, которой принадлежит вложение.
     pub(crate) room_id: Uuid,
-    /// User that uploaded the attachment.
+    /// Пользователь, загрузивший вложение.
     pub(crate) uploader_user_id: Uuid,
-    /// Message that owns the attachment after it is sent.
+    /// Сообщение, которому принадлежит вложение после отправки.
     pub(crate) message_id: Option<Uuid>,
-    /// S3 bucket that stores the object.
+    /// S3 bucket, в котором хранится объект.
     pub(crate) bucket: String,
-    /// S3 object key.
+    /// Ключ S3-объекта.
     pub(crate) object_key: String,
-    /// Validated image content type.
+    /// Проверенный MIME-тип изображения.
     pub(crate) content_type: String,
-    /// Original upload byte length.
+    /// Исходный размер загрузки в байтах.
     pub(crate) byte_size: i64,
-    /// Image width in pixels.
+    /// Ширина изображения в пикселях.
     pub(crate) width: i32,
-    /// Image height in pixels.
+    /// Высота изображения в пикселях.
     pub(crate) height: i32,
-    /// SHA-256 hash of uploaded bytes.
+    /// SHA-256-хэш загруженных байтов.
     pub(crate) sha256: String,
-    /// Optional original filename from the upload request.
+    /// Необязательное исходное имя файла из запроса загрузки.
     pub(crate) original_filename: Option<String>,
-    /// Creation timestamp.
+    /// Временная метка создания.
     pub(crate) created_at: DateTime<Utc>,
 }
 
-/// New chat image attachment metadata.
+/// Метаданные нового вложения-изображения чата.
 #[derive(Debug, Clone)]
 pub(crate) struct NewChatAttachment {
-    /// Stable attachment identifier.
+    /// Стабильный идентификатор вложения.
     pub(crate) id: Uuid,
-    /// Server the attachment belongs to.
+    /// Сервер, которому принадлежит вложение.
     pub(crate) server_id: Uuid,
-    /// Room the attachment belongs to.
+    /// Комната, которой принадлежит вложение.
     pub(crate) room_id: Uuid,
-    /// User that uploaded the attachment.
+    /// Пользователь, загрузивший вложение.
     pub(crate) uploader_user_id: Uuid,
-    /// Message that owns the attachment after it is sent.
+    /// Сообщение, которому принадлежит вложение после отправки.
     pub(crate) message_id: Option<Uuid>,
-    /// S3 bucket that stores the object.
+    /// S3 bucket, в котором хранится объект.
     pub(crate) bucket: String,
-    /// S3 object key.
+    /// Ключ S3-объекта.
     pub(crate) object_key: String,
-    /// Validated image content type.
+    /// Проверенный MIME-тип изображения.
     pub(crate) content_type: String,
-    /// Original upload byte length.
+    /// Исходный размер загрузки в байтах.
     pub(crate) byte_size: i64,
-    /// Image width in pixels.
+    /// Ширина изображения в пикселях.
     pub(crate) width: i32,
-    /// Image height in pixels.
+    /// Высота изображения в пикселях.
     pub(crate) height: i32,
-    /// SHA-256 hash of uploaded bytes.
+    /// SHA-256-хэш загруженных байтов.
     pub(crate) sha256: String,
-    /// Optional original filename from the upload request.
+    /// Необязательное исходное имя файла из запроса загрузки.
     pub(crate) original_filename: Option<String>,
 }

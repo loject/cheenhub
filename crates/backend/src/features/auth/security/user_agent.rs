@@ -1,34 +1,34 @@
-//! User-Agent normalization helpers.
+//! Вспомогательные функции нормализации User-Agent.
 
 const MAX_USER_AGENT_CHARS: usize = 512;
 
-/// Coarse device type inferred from a User-Agent.
+/// Грубая категория устройства, определенная по User-Agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParsedDeviceKind {
-    /// Desktop or laptop browser.
+    /// Браузер настольного компьютера или ноутбука.
     Desktop,
-    /// Phone browser or mobile app web view.
+    /// Браузер телефона или web view мобильного приложения.
     Mobile,
-    /// Tablet browser or tablet app web view.
+    /// Браузер планшета или web view планшетного приложения.
     Tablet,
-    /// Automated client, crawler, or script-like runtime.
+    /// Автоматизированный клиент, crawler или скриптоподобная среда.
     Bot,
-    /// Unknown client type.
+    /// Неизвестный тип клиента.
     Unknown,
 }
 
-/// User-facing User-Agent details.
+/// Человекочитаемые данные User-Agent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ParsedUserAgent {
-    /// Inferred device category.
+    /// Определенная категория устройства.
     pub(crate) device_kind: ParsedDeviceKind,
-    /// Human-readable operating system name.
+    /// Человекочитаемое имя операционной системы.
     pub(crate) os_name: String,
-    /// Human-readable browser or client name.
+    /// Человекочитаемое имя браузера или клиента.
     pub(crate) browser_name: String,
 }
 
-/// Returns a bounded User-Agent value suitable for persistence.
+/// Возвращает ограниченное значение User-Agent, подходящее для сохранения.
 pub(crate) fn normalize(value: &str) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -38,7 +38,7 @@ pub(crate) fn normalize(value: &str) -> Option<String> {
     Some(trimmed.chars().take(MAX_USER_AGENT_CHARS).collect())
 }
 
-/// Parses a normalized User-Agent into stable user-facing labels.
+/// Разбирает нормализованный User-Agent в стабильные человекочитаемые метки.
 pub(crate) fn parse(value: Option<&str>) -> ParsedUserAgent {
     let Some(value) = value else {
         return unknown_user_agent();

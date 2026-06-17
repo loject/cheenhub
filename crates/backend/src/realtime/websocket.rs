@@ -1,4 +1,4 @@
-//! WebSocket fallback realtime adapter.
+//! Адаптер WebSocket-резерва для realtime.
 
 use std::collections::HashMap;
 
@@ -23,7 +23,7 @@ use super::protocol::validate_envelope;
 use super::sink::{DatagramSink, EnvelopeSink, WebSocketOutbound};
 use super::{control, datagram, router};
 
-/// Upgrades an HTTP request into a realtime WebSocket fallback connection.
+/// Обновляет HTTP-запрос до соединения WebSocket-резерва для realtime.
 pub(crate) async fn upgrade(
     State(state): State<AppState>,
     upgrade: WebSocketUpgrade,

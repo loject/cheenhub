@@ -1,4 +1,4 @@
-//! Authentication page header.
+//! Заголовок страницы аутентификации.
 
 use dioxus::prelude::*;
 

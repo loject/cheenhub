@@ -1,4 +1,4 @@
-//! Image infrastructure layer.
+//! Инфраструктурный слой изображений.
 
 use async_trait::async_trait;
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
@@ -11,23 +11,23 @@ mod entities {
     pub(crate) mod images;
 }
 
-/// Image storage boundary.
+/// Граница хранилища изображений.
 #[async_trait]
 pub(crate) trait ImageStore: Send + Sync {
-    /// Inserts a processed image.
+    /// Вставляет обработанное изображение.
     async fn insert_image(&self, image: NewStoredImage) -> anyhow::Result<()>;
 
-    /// Finds a stored image by id.
+    /// Находит сохраненное изображение по идентификатору.
     async fn find_image(&self, image_id: &Uuid) -> anyhow::Result<Option<StoredImage>>;
 }
 
-/// Postgres-backed image storage.
+/// Хранилище изображений на базе Postgres.
 pub(crate) struct PostgresImageStore {
     database: DatabaseConnection,
 }
 
 impl PostgresImageStore {
-    /// Builds a Postgres-backed image storage.
+    /// Создает хранилище изображений на базе Postgres.
     pub(crate) fn new(database: DatabaseConnection) -> Self {
         Self { database }
     }
@@ -66,7 +66,7 @@ impl ImageStore for PostgresImageStore {
     }
 }
 
-/// In-memory image storage for tests and local development.
+/// In-memory-хранилище изображений для тестов и локальной разработки.
 #[derive(Default)]
 pub(crate) struct InMemoryImageStore {
     images: Mutex<Vec<StoredImage>>,

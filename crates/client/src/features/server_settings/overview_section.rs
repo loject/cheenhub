@@ -1,4 +1,4 @@
-//! Server overview settings section.
+//! Секция общих настроек сервера.
 
 use cheenhub_contracts::rest::{ServerSummary, UpdateServerRequest};
 use dioxus::prelude::*;
@@ -7,7 +7,7 @@ use crate::features::app::components::server_avatar::ServerAvatar;
 
 use super::api;
 
-/// Renders server name and avatar settings.
+/// Рендерит настройки имени и иконки сервера.
 #[component]
 pub(crate) fn ServerOverviewSettingsSection(
     server: ServerSummary,

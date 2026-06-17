@@ -1,11 +1,11 @@
-//! OAuth callback route component.
+//! Компонент маршрута OAuth callback.
 
 use dioxus::prelude::*;
 
 use crate::Route;
 use crate::features::auth::api::{self, OAuthCompletion, OAuthRegistrationRequired};
 
-/// Handles OAuth provider callbacks.
+/// Обрабатывает callback-ответы OAuth-провайдера.
 #[component]
 pub(crate) fn OAuthCallback(
     code: Option<String>,

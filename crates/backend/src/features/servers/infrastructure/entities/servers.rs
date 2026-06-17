@@ -1,27 +1,27 @@
-//! Server entity.
+//! Сущность сервера.
 
 use sea_orm::entity::prelude::*;
 
-/// Server database row.
+/// Строка базы данных сервера.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "servers")]
 pub struct Model {
-    /// Stable server identifier.
+    /// Стабильный идентификатор сервера.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// User that owns the server.
+    /// Пользователь, которому принадлежит сервер.
     pub owner_user_id: Uuid,
-    /// Human-readable server name.
+    /// Человекочитаемое имя сервера.
     pub name: String,
-    /// Stored server avatar image identifier.
+    /// Идентификатор сохраненного изображения аватара сервера.
     pub avatar_image_id: Option<Uuid>,
-    /// Server creation timestamp.
+    /// Временная метка создания сервера.
     pub created_at: DateTimeUtc,
-    /// Last server update timestamp.
+    /// Временная метка последнего обновления сервера.
     pub updated_at: DateTimeUtc,
 }
 
-/// Server relations.
+/// Связи сервера.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

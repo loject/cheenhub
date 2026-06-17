@@ -43,11 +43,11 @@ pub(crate) enum InsertUserError {
     Conflict(UserConflict),
     /// Непредвиденная ошибка базы данных.
     Database(sea_orm::DbErr),
-    /// Unexpected storage error.
+    /// Непредвиденная ошибка хранилища.
     Storage(anyhow::Error),
 }
 
-/// Error returned while updating a user's nickname.
+/// Ошибка, возвращаемая при обновлении никнейма пользователя.
 #[derive(Debug)]
 pub(crate) enum UpdateUserNicknameError {
     /// Конфликт уникального поля.
@@ -63,10 +63,10 @@ pub(crate) enum UpdateUserNicknameError {
     Storage(anyhow::Error),
 }
 
-/// Authentication storage boundary.
+/// Граница хранилища аутентификации.
 #[async_trait]
 pub(crate) trait AuthStore: Send + Sync {
-    /// Inserts a new user account.
+    /// Вставляет новую учетную запись пользователя.
     async fn insert_user(
         &self,
         nickname: String,
@@ -76,16 +76,16 @@ pub(crate) trait AuthStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> Result<UserAccount, InsertUserError>;
 
-    /// Finds a user by normalized email.
+    /// Находит пользователя по нормализованному email.
     async fn find_user_by_email(
         &self,
         email_normalized: &str,
     ) -> anyhow::Result<Option<UserAccount>>;
 
-    /// Finds a user by id.
+    /// Находит пользователя по идентификатору.
     async fn find_user_by_id(&self, user_id: &Uuid) -> anyhow::Result<Option<UserAccount>>;
 
-    /// Updates a user's public nickname.
+    /// Обновляет публичный никнейм пользователя.
     async fn update_user_nickname(
         &self,
         user_id: &Uuid,
@@ -95,7 +95,7 @@ pub(crate) trait AuthStore: Send + Sync {
         cooldown: Duration,
     ) -> Result<Option<UserAccount>, UpdateUserNicknameError>;
 
-    /// Updates a user's current avatar image identifier.
+    /// Обновляет текущий идентификатор изображения аватара пользователя.
     async fn update_user_avatar_image_id(
         &self,
         user_id: &Uuid,
@@ -103,13 +103,13 @@ pub(crate) trait AuthStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<UserAccount>>;
 
-    /// Finds current avatar image identifiers for users.
+    /// Находит текущие идентификаторы изображений аватаров пользователей.
     async fn avatar_image_ids_by_user_ids(
         &self,
         user_ids: &[Uuid],
     ) -> anyhow::Result<HashMap<Uuid, Uuid>>;
 
-    /// Updates a user's password hash.
+    /// Обновляет хеш пароля пользователя.
     async fn update_user_password_hash(
         &self,
         user_id: &Uuid,
@@ -117,7 +117,7 @@ pub(crate) trait AuthStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> anyhow::Result<()>;
 
-    /// Updates a user's password hash and records a profile password change trace.
+    /// Обновляет хеш пароля пользователя и записывает трассировку смены пароля профиля.
     async fn change_user_password(
         &self,
         user_id: &Uuid,
@@ -126,7 +126,7 @@ pub(crate) trait AuthStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> anyhow::Result<()>;
 
-    /// Creates a session and its initial refresh token row.
+    /// Создает сессию и ее начальную строку refresh-токена.
     async fn create_session(
         &self,
         user_id: &Uuid,
@@ -136,14 +136,14 @@ pub(crate) trait AuthStore: Send + Sync {
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<Uuid>;
 
-    /// Finds an active refresh session by token hash.
+    /// Находит активную refresh-сессию по хешу токена.
     async fn find_active_refresh(
         &self,
         token_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<RefreshSession>>;
 
-    /// Rotates a refresh token for an existing session.
+    /// Выполняет ротацию refresh-токена для существующей сессии.
     async fn rotate_refresh(
         &self,
         old_refresh_id: &Uuid,
@@ -154,28 +154,28 @@ pub(crate) trait AuthStore: Send + Sync {
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()>;
 
-    /// Revokes a refresh token and the session that owns it.
+    /// Отзывает refresh-токен и принадлежащую ему сессию.
     async fn revoke_refresh_session(
         &self,
         token_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<()>;
 
-    /// Returns whether a session is currently active.
+    /// Возвращает, активна ли сессия сейчас.
     async fn session_is_active(
         &self,
         session_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<bool>;
 
-    /// Lists active sessions owned by a user.
+    /// Возвращает активные сессии, принадлежащие пользователю.
     async fn list_active_sessions(
         &self,
         user_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Vec<UserSession>>;
 
-    /// Revokes one active session owned by a user.
+    /// Отзывает одну активную сессию пользователя.
     async fn revoke_user_session(
         &self,
         user_id: &Uuid,
@@ -183,10 +183,10 @@ pub(crate) trait AuthStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> anyhow::Result<bool>;
 
-    /// Revokes every active session owned by a user.
+    /// Отзывает все активные сессии пользователя.
     async fn revoke_user_sessions(&self, user_id: &Uuid, now: DateTime<Utc>) -> anyhow::Result<()>;
 
-    /// Inserts a short-lived password reset token.
+    /// Вставляет краткоживущий токен сброса пароля.
     async fn insert_password_reset_token(
         &self,
         user_id: &Uuid,
@@ -195,14 +195,14 @@ pub(crate) trait AuthStore: Send + Sync {
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()>;
 
-    /// Consumes an active password reset token.
+    /// Потребляет активный токен сброса пароля.
     async fn consume_password_reset_token(
         &self,
         token_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<PasswordResetToken>>;
 
-    /// Inserts a short-lived OAuth state.
+    /// Вставляет краткоживущий OAuth state.
     async fn insert_oauth_state(
         &self,
         state_hash: String,
@@ -213,31 +213,31 @@ pub(crate) trait AuthStore: Send + Sync {
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()>;
 
-    /// Consumes an active OAuth state.
+    /// Потребляет активный OAuth state.
     async fn consume_oauth_state(
         &self,
         state_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<OAuthState>>;
 
-    /// Finds a linked OAuth account by provider subject.
+    /// Находит привязанный OAuth-аккаунт по subject провайдера.
     async fn find_oauth_account_by_subject(
         &self,
         provider: &str,
         provider_subject: &str,
     ) -> anyhow::Result<Option<OAuthAccount>>;
 
-    /// Finds a linked OAuth account for a user.
+    /// Находит привязанный OAuth-аккаунт для пользователя.
     async fn find_oauth_account_for_user(
         &self,
         provider: &str,
         user_id: &Uuid,
     ) -> anyhow::Result<Option<OAuthAccount>>;
 
-    /// Lists linked OAuth accounts for a user.
+    /// Список привязанных OAuth-аккаунтов пользователя.
     async fn list_oauth_accounts(&self, user_id: &Uuid) -> anyhow::Result<Vec<OAuthAccount>>;
 
-    /// Inserts a linked OAuth account.
+    /// Вставляет привязанный OAuth-аккаунт.
     async fn insert_oauth_account(
         &self,
         user_id: &Uuid,
@@ -248,10 +248,10 @@ pub(crate) trait AuthStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> anyhow::Result<OAuthAccount>;
 
-    /// Deletes a linked OAuth account for a user.
+    /// Удаляет привязанный OAuth-аккаунт пользователя.
     async fn delete_oauth_account(&self, provider: &str, user_id: &Uuid) -> anyhow::Result<bool>;
 
-    /// Inserts a short-lived OAuth frontend handoff.
+    /// Вставляет краткоживущий OAuth-handoff для фронтенда.
     async fn insert_oauth_handoff(
         &self,
         code_hash: String,
@@ -262,21 +262,21 @@ pub(crate) trait AuthStore: Send + Sync {
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()>;
 
-    /// Finds an active OAuth frontend handoff.
+    /// Находит активный OAuth-handoff фронтенда.
     async fn find_active_oauth_handoff(
         &self,
         code_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<OAuthHandoff>>;
 
-    /// Marks an OAuth frontend handoff as consumed.
+    /// Помечает OAuth-handoff фронтенда как использованный.
     async fn consume_oauth_handoff(
         &self,
         handoff_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<()>;
 
-    /// Inserts a short-lived OAuth registration intent.
+    /// Вставляет краткоживущее намерение регистрации OAuth.
     async fn insert_oauth_registration_intent(
         &self,
         provider: String,
@@ -287,14 +287,14 @@ pub(crate) trait AuthStore: Send + Sync {
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<OAuthRegistrationIntent>;
 
-    /// Finds an active OAuth registration intent.
+    /// Находит активное намерение регистрации OAuth.
     async fn find_active_oauth_registration_intent(
         &self,
         intent_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<OAuthRegistrationIntent>>;
 
-    /// Marks an OAuth registration intent as consumed.
+    /// Помечает намерение регистрации OAuth как использованное.
     async fn consume_oauth_registration_intent(
         &self,
         intent_id: &Uuid,

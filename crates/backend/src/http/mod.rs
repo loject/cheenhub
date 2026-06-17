@@ -1,4 +1,4 @@
-//! HTTP router setup.
+//! Настройка HTTP-роутера.
 
 mod api;
 
@@ -7,7 +7,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 use crate::state::AppState;
 
-/// Builds the backend HTTP router.
+/// Собирает HTTP-роутер бэкенда.
 pub(crate) fn router(state: AppState) -> Router {
     Router::new()
         .nest("/api", api::router())

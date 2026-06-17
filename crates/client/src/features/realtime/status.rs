@@ -1,6 +1,6 @@
-//! Realtime connection status.
+//! Состояние realtime-соединения.
 
-/// Active realtime transport kind.
+/// Активный тип realtime-транспорта.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RealtimeTransportKind {
     /// Primary WebTransport connection.
@@ -9,7 +9,7 @@ pub(crate) enum RealtimeTransportKind {
     WebSocketFallback,
 }
 
-/// Current realtime connection state.
+/// Текущее состояние realtime-соединения.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RealtimeConnectionStatus {
     /// Realtime session is authenticated and ready for requests.

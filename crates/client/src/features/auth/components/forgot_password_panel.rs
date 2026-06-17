@@ -1,4 +1,4 @@
-//! Password reset request form panel component.
+//! Компонент панели формы запроса сброса пароля.
 
 use cheenhub_contracts::rest::PasswordResetRequest;
 use dioxus::prelude::*;

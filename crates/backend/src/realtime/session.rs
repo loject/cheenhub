@@ -1,4 +1,4 @@
-//! Жизненный цикл сессии realtime WebTransport.
+//! Жизненный цикл realtime-сессии WebTransport.
 
 use anyhow::{Context, anyhow};
 use std::sync::Arc;

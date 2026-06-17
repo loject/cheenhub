@@ -1,4 +1,4 @@
-//! Individual room list item for the server rooms sidebar.
+//! Отдельный элемент списка комнат для боковой панели комнат сервера.
 
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomSummary};

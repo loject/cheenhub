@@ -37,7 +37,7 @@ pub(crate) fn bind(address: SocketAddr, cert_path: &str, key_path: &str) -> anyh
         .context("failed to build WebTransport server")
 }
 
-/// Serves accepted WebTransport realtime sessions.
+/// Обслуживает принятые realtime-сессии WebTransport.
 pub(crate) async fn serve(
     state: AppState,
     address: SocketAddr,

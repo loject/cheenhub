@@ -1,4 +1,4 @@
-//! Screen sharing provider runtime helpers.
+//! Вспомогательные функции runtime-провайдера демонстрации экрана.
 
 use dioxus::prelude::*;
 

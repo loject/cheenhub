@@ -1,4 +1,4 @@
-//! Small domain values used by the authentication UI.
+//! Небольшие доменные значения, используемые UI аутентификации.
 
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum AuthProvider {

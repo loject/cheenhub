@@ -1,12 +1,12 @@
-//! Shared REST error contracts.
+//! Общие контракты ошибок REST.
 
 use serde::{Deserialize, Serialize};
 
-/// Structured error response returned by REST endpoints.
+/// Структурированный ответ с ошибкой, возвращаемый REST-эндпоинтами.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiError {
-    /// Stable machine-readable error code.
+    /// Стабильный машинно-читаемый код ошибки.
     pub code: String,
-    /// User-facing error message.
+    /// Сообщение об ошибке для пользователя.
     pub message: String,
 }

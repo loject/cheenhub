@@ -1,4 +1,4 @@
-//! Image application helpers.
+//! Помощники приложения для изображений.
 
 use image::GenericImageView;
 use image::ImageEncoder;
@@ -19,23 +19,23 @@ const DATABASE_STORAGE_BACKEND: &str = "database";
 const AVATAR_SIZE_PX: u32 = 512;
 const MAX_AVATAR_UPLOAD_BYTES: usize = 8 * 1024 * 1024;
 
-/// Processed user avatar image ready for persistence.
+/// Обработанный аватар пользователя, готовый к сохранению.
 pub(crate) struct ProcessedUserAvatar {
     data: Vec<u8>,
 }
 
 impl ProcessedUserAvatar {
-    /// Returns stored image byte length.
+    /// Возвращает размер сохраненного изображения в байтах.
     pub(crate) fn byte_len(&self) -> usize {
         self.data.len()
     }
 
-    /// Converts this processed avatar into a database image row payload.
+    /// Преобразует этот обработанный аватар в полезную нагрузку строки изображения БД.
     pub(crate) fn into_new_stored_image(self, id: Uuid, owner_user_id: Uuid) -> NewStoredImage {
         self.into_new_stored_image_with_kind(id, owner_user_id, USER_AVATAR_KIND)
     }
 
-    /// Converts this processed avatar into a server avatar image row payload.
+    /// Преобразует этот обработанный аватар в полезную нагрузку строки аватара сервера.
     pub(crate) fn into_new_server_avatar_image(
         self,
         id: Uuid,
@@ -66,7 +66,7 @@ impl ProcessedUserAvatar {
     }
 }
 
-/// Processes a user avatar upload through the global image processing queue.
+/// Обрабатывает загрузку аватара пользователя через глобальную очередь обработки изображений.
 pub(crate) async fn process_user_avatar(
     state: &AppState,
     user_id: Uuid,
@@ -94,7 +94,7 @@ pub(crate) async fn process_user_avatar(
     processed
 }
 
-/// Processes a server avatar upload through the global image processing queue.
+/// Обрабатывает загрузку аватара сервера через глобальную очередь обработки изображений.
 pub(crate) async fn process_server_avatar(
     state: &AppState,
     server_id: Uuid,
@@ -122,7 +122,7 @@ pub(crate) async fn process_server_avatar(
     processed
 }
 
-/// Loads a public image by identifier.
+/// Загружает публичное изображение по идентификатору.
 pub(crate) async fn public_image(
     state: &AppState,
     image_id: &Uuid,
@@ -144,7 +144,7 @@ pub(crate) async fn public_image(
     Ok(image)
 }
 
-/// Builds a public avatar URL for an image id.
+/// Строит публичный URL аватара по идентификатору изображения.
 pub(crate) fn avatar_url(state: &AppState, image_id: &Uuid) -> String {
     format!(
         "{}/images/{}",
@@ -153,7 +153,7 @@ pub(crate) fn avatar_url(state: &AppState, image_id: &Uuid) -> String {
     )
 }
 
-/// Loads public avatar URLs keyed by user id.
+/// Загружает публичные URL аватаров, индексированные по идентификатору пользователя.
 pub(crate) async fn avatar_urls_by_user_ids(
     state: &AppState,
     user_ids: impl IntoIterator<Item = Uuid>,

@@ -1,11 +1,11 @@
-//! Server rail button component.
+//! Компонент кнопки серверной панели.
 
 use cheenhub_contracts::rest::ServerSummary;
 use dioxus::prelude::*;
 
 use super::server_avatar::ServerAvatar;
 
-/// Renders a server switcher button.
+/// Рендерит кнопку переключения серверов.
 #[component]
 pub(crate) fn ServerRailButton(
     server: ServerSummary,

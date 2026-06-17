@@ -1,4 +1,4 @@
-//! Text chat message list helpers.
+//! Вспомогательные функции списка сообщений текстового чата.
 
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;
@@ -43,7 +43,7 @@ pub(super) fn prepend_messages(
     messages.set(next_messages);
 }
 
-/// Removes a message from the list by id.
+/// Удаляет сообщение из списка по идентификатору.
 pub(super) fn remove_message(messages: &mut Signal<Vec<TextChatMessage>>, message_id: &str) {
     let next = messages()
         .into_iter()

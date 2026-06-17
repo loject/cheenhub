@@ -1,45 +1,45 @@
-//! Network quality state shared by network UI.
+//! Состояние качества сети, общее для сетевого UI.
 
 use dioxus::prelude::{Signal, WritableExt};
 
 const HISTORY_WINDOW_MS: u64 = 60_000;
 
-/// One measured realtime ping sample.
+/// Один измеренный ping-сэмпл realtime.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct PingSample {
-    /// Client timestamp when the pong arrived.
+    /// Временная метка клиента, когда пришел pong.
     pub(crate) received_at_ms: u64,
-    /// Round-trip time in milliseconds.
+    /// Время туда-обратно в миллисекундах.
     pub(crate) rtt_ms: f64,
 }
 
-/// Current network quality measurements.
+/// Текущие измерения качества сети.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct NetworkQualityState {
-    /// Latest measured round-trip time in milliseconds.
+    /// Последнее измеренное время туда-обратно в миллисекундах.
     pub(crate) latest_rtt_ms: Option<f64>,
-    /// Ping samples retained for the latest minute.
+    /// Ping-сэмплы, сохраненные за последнюю минуту.
     pub(crate) samples: Vec<PingSample>,
 }
 
-/// Cloneable network quality state handle.
+/// Клонируемый хендл состояния качества сети.
 #[derive(Clone, Copy)]
 pub(crate) struct NetworkQualityHandle {
     state: Signal<NetworkQualityState>,
 }
 
 impl NetworkQualityHandle {
-    /// Creates a handle backed by the provided Dioxus signal.
+    /// Создает хендл на базе переданного сигнала Dioxus.
     pub(crate) fn new(state: Signal<NetworkQualityState>) -> Self {
         Self { state }
     }
 
-    /// Returns the current network quality snapshot.
+    /// Возвращает текущий снимок качества сети.
     pub(crate) fn current(&self) -> NetworkQualityState {
         (self.state)()
     }
 
-    /// Records a completed ping-pong measurement.
+    /// Записывает завершенное ping-pong-измерение.
     pub(crate) fn record_ping(&mut self, received_at_ms: u64, rtt_ms: f64) {
         self.state.with_mut(|state| {
             state.latest_rtt_ms = Some(rtt_ms);
@@ -54,7 +54,7 @@ impl NetworkQualityHandle {
         });
     }
 
-    /// Clears quality data after the realtime session is lost.
+    /// Очищает данные качества после потери realtime-сессии.
     pub(crate) fn clear(&mut self) {
         self.state.set(NetworkQualityState::default());
     }

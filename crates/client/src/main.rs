@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! Web client entrypoint for CheenHub.
+//! Точка входа web-клиента CheenHub.
 
 use dioxus::prelude::*;
 

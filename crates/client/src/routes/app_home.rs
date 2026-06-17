@@ -1,4 +1,4 @@
-//! Authenticated application route component.
+//! Компонент маршрута аутентифицированного приложения.
 
 use dioxus::prelude::*;
 

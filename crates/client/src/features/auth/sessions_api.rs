@@ -1,4 +1,4 @@
-//! Current user session API client.
+//! Клиент API сессий текущего пользователя.
 
 use cheenhub_contracts::rest::{ActiveSession, ActiveSessionsResponse};
 use gloo_net::http::Request;
@@ -6,7 +6,7 @@ use gloo_net::http::Request;
 use super::api::{fresh_access_token, read_error, refresh_access_token, url};
 use super::storage;
 
-/// Loads active sessions for the current authenticated user.
+/// Загружает активные сессии текущего аутентифицированного пользователя.
 pub(crate) async fn active_sessions() -> Result<Vec<ActiveSession>, String> {
     let access_token = fresh_access_token().await?;
     let response = send_get_sessions_request(&access_token).await?;
@@ -20,7 +20,7 @@ pub(crate) async fn active_sessions() -> Result<Vec<ActiveSession>, String> {
     parse_sessions_response(response).await
 }
 
-/// Revokes one active session owned by the current authenticated user.
+/// Отзывает одну активную сессию текущего аутентифицированного пользователя.
 pub(crate) async fn revoke_session(session_id: &str) -> Result<(), String> {
     let access_token = fresh_access_token().await?;
     let response =
@@ -36,7 +36,7 @@ pub(crate) async fn revoke_session(session_id: &str) -> Result<(), String> {
     parse_empty_response(response).await
 }
 
-/// Revokes every active session for the current authenticated user.
+/// Отзывает все активные сессии текущего аутентифицированного пользователя.
 pub(crate) async fn revoke_all_sessions() -> Result<(), String> {
     let access_token = fresh_access_token().await?;
     let response = send_delete_request(&access_token, "/auth/sessions").await?;

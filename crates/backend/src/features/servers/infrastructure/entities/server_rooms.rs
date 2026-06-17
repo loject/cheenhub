@@ -1,29 +1,29 @@
-//! Server room entity.
+//! Сущность комнаты сервера.
 
 use sea_orm::entity::prelude::*;
 
-/// Server room database row.
+/// Строка базы данных комнаты сервера.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "server_rooms")]
 pub struct Model {
-    /// Stable room identifier.
+    /// Стабильный идентификатор комнаты.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// Server the room belongs to.
+    /// Сервер, которому принадлежит комната.
     pub server_id: Uuid,
-    /// Human-readable room name.
+    /// Человекочитаемое имя комнаты.
     pub name: String,
-    /// Stored room kind.
+    /// Сохраненный вид комнаты.
     pub kind: String,
-    /// Append-only ordering position inside the server.
+    /// Позиция в порядке добавления внутри сервера.
     pub position: i32,
-    /// Room creation timestamp.
+    /// Временная метка создания комнаты.
     pub created_at: DateTimeUtc,
-    /// Last room update timestamp.
+    /// Временная метка последнего обновления комнаты.
     pub updated_at: DateTimeUtc,
 }
 
-/// Server room relations.
+/// Связи комнаты сервера.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

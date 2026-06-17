@@ -1,4 +1,4 @@
-//! Object storage for text chat attachment bytes.
+//! Объектное хранилище байтов вложений текстового чата.
 
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region};
@@ -11,36 +11,36 @@ use std::{collections::HashMap, sync::Mutex};
 
 use crate::config::S3Config;
 
-/// Stored object bytes and metadata.
+/// Сохраненные байты объекта и метаданные.
 pub(crate) struct StoredObject {
-    /// Object bytes.
+    /// Байты объекта.
     pub(crate) bytes: Vec<u8>,
-    /// Object content type.
+    /// MIME-тип объекта.
     pub(crate) content_type: String,
 }
 
-/// Object storage boundary for text chat attachment bytes.
+/// Граница объектного хранилища байтов вложений текстового чата.
 #[async_trait]
 pub(crate) trait ChatAttachmentObjectStore: Send + Sync {
-    /// Returns the configured object bucket.
+    /// Возвращает настроенный bucket объекта.
     fn bucket(&self) -> Option<&str>;
 
-    /// Writes one object.
+    /// Записывает один объект.
     async fn put_object(&self, key: &str, content_type: &str, bytes: Vec<u8>)
     -> anyhow::Result<()>;
 
-    /// Reads one object.
+    /// Читает один объект.
     async fn get_object(&self, key: &str) -> anyhow::Result<StoredObject>;
 }
 
-/// S3-compatible object storage for text chat attachment bytes.
+/// S3-совместимое объектное хранилище байтов вложений текстового чата.
 pub(crate) struct S3ChatAttachmentObjectStore {
     client: Client,
     bucket: String,
 }
 
 impl S3ChatAttachmentObjectStore {
-    /// Builds an S3-compatible object storage client.
+    /// Создает клиент S3-совместимого объектного хранилища.
     pub(crate) async fn from_config(config: &S3Config) -> Self {
         let credentials = Credentials::new(
             config.access_key_id.clone(),
@@ -112,7 +112,7 @@ impl ChatAttachmentObjectStore for S3ChatAttachmentObjectStore {
     }
 }
 
-/// Disabled object storage used when chat image S3 env is not configured.
+/// Отключенное объектное хранилище, используемое когда переменные S3 для изображений чата не настроены.
 #[derive(Default)]
 pub(crate) struct DisabledChatAttachmentObjectStore;
 
@@ -136,7 +136,7 @@ impl ChatAttachmentObjectStore for DisabledChatAttachmentObjectStore {
     }
 }
 
-/// In-memory object storage for local tests.
+/// In-memory-объектное хранилище для локальных тестов.
 #[derive(Default)]
 #[cfg(test)]
 pub(crate) struct InMemoryChatAttachmentObjectStore {
@@ -146,7 +146,7 @@ pub(crate) struct InMemoryChatAttachmentObjectStore {
 
 #[cfg(test)]
 impl InMemoryChatAttachmentObjectStore {
-    /// Builds an in-memory object storage with a bucket name.
+    /// Создает in-memory-объектное хранилище с именем bucket.
     pub(crate) fn new(bucket: impl Into<String>) -> Self {
         Self {
             objects: Mutex::new(HashMap::new()),

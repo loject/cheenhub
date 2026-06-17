@@ -1,4 +1,4 @@
-//! Top-level route components.
+//! Компоненты верхнего уровня маршрутов.
 
 mod app_home;
 mod forgot_password;

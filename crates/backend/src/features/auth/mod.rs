@@ -1,4 +1,4 @@
-//! Email/password authentication feature.
+//! Функция аутентификации по email и паролю.
 
 pub(crate) mod application;
 mod domain;
@@ -17,7 +17,7 @@ use axum::{
 
 use crate::state::AppState;
 
-/// Builds authentication routes.
+/// Собирает маршруты аутентификации.
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/register", post(transport::handlers::register))

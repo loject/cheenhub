@@ -198,7 +198,7 @@ pub(crate) async fn register_with_google_oauth(
         .map(Json)
 }
 
-/// Lists external accounts linked to the current user.
+/// Возвращает список внешних аккаунтов, привязанных к текущему пользователю.
 pub(crate) async fn linked_accounts(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -207,7 +207,7 @@ pub(crate) async fn linked_accounts(
     application::linked_accounts(&state, token).await.map(Json)
 }
 
-/// Unlinks Google from the current user.
+/// Отвязывает Google от текущего пользователя.
 pub(crate) async fn unlink_google(
     State(state): State<AppState>,
     headers: HeaderMap,

@@ -1,4 +1,4 @@
-//! Общие контракты конвертов realtime.
+//! Общие контракты realtime-конвертов.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;

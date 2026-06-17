@@ -1,4 +1,4 @@
-//! Per-room authenticated app workspace.
+//! Рабочая область аутентифицированного приложения для одной комнаты.
 
 use dioxus::prelude::*;
 
@@ -7,7 +7,7 @@ use super::room_header::RoomHeader;
 use crate::features::text_chat::{RoomChatSurface, RoomChatSurfaceMode};
 use crate::features::voice_chat::{VoiceConnectionHandle, VoiceRoomSurface};
 
-/// Renders one room workspace with local UI state scoped to that room.
+/// Рендерит одну рабочую область комнаты с локальным UI-состоянием, ограниченным этой комнатой.
 #[component]
 pub(crate) fn RoomInstance(
     server_id: String,

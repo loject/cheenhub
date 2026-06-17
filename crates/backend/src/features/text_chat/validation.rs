@@ -1,14 +1,14 @@
-//! Text chat validation helpers.
+//! Вспомогательные функции валидации текстового чата.
 
 const MAX_MESSAGE_BODY_CHARS: usize = 2000;
 
-/// Validated text chat message body.
+/// Проверенное тело сообщения текстового чата.
 pub(crate) struct ValidMessageBody {
-    /// Trimmed message body.
+    /// Обрезанное тело сообщения.
     pub(crate) body: String,
 }
 
-/// Validates and normalizes a message body.
+/// Проверяет и нормализует тело сообщения.
 pub(crate) fn message_body(body: String) -> Result<ValidMessageBody, &'static str> {
     let body = body.trim().to_owned();
     if body.is_empty() {

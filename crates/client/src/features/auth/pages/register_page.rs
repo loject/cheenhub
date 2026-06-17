@@ -1,4 +1,4 @@
-//! Registration route page.
+//! Страница маршрута регистрации.
 
 use dioxus::prelude::*;
 
@@ -6,7 +6,7 @@ use crate::features::auth::components::auth_header::AuthHeader;
 use crate::features::auth::components::auth_hero::AuthHero;
 use crate::features::auth::components::register_panel::RegisterPanel;
 
-/// Renders the CheenHub registration page.
+/// Рендерит страницу регистрации CheenHub.
 #[component]
 pub(crate) fn RegisterPage() -> Element {
     rsx! {

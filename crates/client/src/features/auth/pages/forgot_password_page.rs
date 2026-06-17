@@ -1,4 +1,4 @@
-//! Forgot password route page.
+//! Страница маршрута восстановления пароля.
 
 use dioxus::prelude::*;
 
@@ -6,7 +6,7 @@ use crate::features::auth::components::auth_header::AuthHeader;
 use crate::features::auth::components::auth_hero::AuthHero;
 use crate::features::auth::components::forgot_password_panel::ForgotPasswordPanel;
 
-/// Renders the CheenHub password reset request page.
+/// Рендерит страницу запроса сброса пароля CheenHub.
 #[component]
 pub(crate) fn ForgotPasswordPage() -> Element {
     rsx! {

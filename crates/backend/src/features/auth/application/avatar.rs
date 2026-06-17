@@ -1,4 +1,4 @@
-//! Current-user avatar profile flow.
+//! Поток профиля аватара текущего пользователя.
 
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
@@ -7,7 +7,7 @@ use crate::features::auth::error::AuthError;
 use crate::features::images::application as image_application;
 use crate::state::AppState;
 
-/// Updates the current user's avatar image.
+/// Обновляет изображение аватара текущего пользователя.
 pub(crate) async fn update_current_user_avatar(
     state: &AppState,
     access_token: &str,

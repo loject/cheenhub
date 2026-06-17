@@ -1,4 +1,4 @@
-//! Forgot password route component.
+//! Компонент маршрута восстановления пароля.
 
 use dioxus::prelude::*;
 

@@ -29,7 +29,7 @@ pub(crate) struct RefreshSession {
     pub(crate) refresh_token_id: Uuid,
     /// Идентификатор строки сессии.
     pub(crate) session_id: Uuid,
-    /// User that owns the session.
+    /// Пользователь, которому принадлежит сессия.
     pub(crate) user: UserAccount,
 }
 
@@ -57,7 +57,7 @@ pub(crate) struct OAuthAccount {
     pub(crate) provider: String,
     /// Стабильный идентификатор на стороне провайдера.
     pub(crate) provider_subject: String,
-    /// Provider email address.
+    /// Адрес email провайдера.
     pub(crate) email: String,
     /// Отображаемое имя провайдера.
     pub(crate) display_name: Option<String>,

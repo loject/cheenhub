@@ -1,4 +1,4 @@
-//! Backend feature modules.
+//! Модули функций бэкенда.
 
 pub(crate) mod auth;
 pub(crate) mod images;

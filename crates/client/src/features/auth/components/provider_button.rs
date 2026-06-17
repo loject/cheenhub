@@ -1,4 +1,4 @@
-//! External authentication provider button component.
+//! Компонент кнопки внешнего провайдера аутентификации.
 
 use dioxus::prelude::*;
 

@@ -1,4 +1,4 @@
-//! Create and edit room modal.
+//! Модальное окно создания и редактирования комнаты.
 
 use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomSummary};
 use dioxus::prelude::*;
@@ -7,7 +7,7 @@ use crate::features::app::api;
 
 use super::modal::Modal;
 
-/// Renders the room creation and editing flow.
+/// Рендерит поток создания и редактирования комнаты.
 #[component]
 pub(crate) fn RoomEditorModal(
     server_id: String,

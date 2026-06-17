@@ -1,4 +1,4 @@
-//! Server sidebar realtime status surface.
+//! Поверхность realtime-статуса в боковой панели сервера.
 
 use dioxus::prelude::*;
 use futures_util::StreamExt;
@@ -8,7 +8,7 @@ use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle, Realti
 
 use super::server_rooms_sidebar_styles as sidebar_styles;
 
-/// Renders the realtime status row in the server sidebar.
+/// Рендерит строку realtime-статуса в боковой панели сервера.
 #[component]
 pub(crate) fn ServerRealtimeStatus(
     server_name: String,

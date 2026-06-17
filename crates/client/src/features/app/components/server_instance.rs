@@ -1,4 +1,4 @@
-//! Per-server authenticated app workspace.
+//! Рабочая область аутентифицированного приложения для одного сервера.
 
 use cheenhub_contracts::rest::ServerSummary;
 use dioxus::prelude::*;
@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 use super::app_shell::{AppModal, ServerShellState};
 use super::server_rooms_scope::ServerRoomsScope;
 
-/// Renders one server workspace wrapper.
+/// Рендерит одну обертку рабочей области сервера.
 #[component]
 pub(crate) fn ServerInstance(
     server: ServerSummary,

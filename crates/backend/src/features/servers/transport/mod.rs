@@ -1,3 +1,3 @@
-//! Server HTTP transport layer.
+//! Транспортный HTTP-слой серверов.
 
 pub(crate) mod handlers;

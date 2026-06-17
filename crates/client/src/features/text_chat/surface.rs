@@ -1,4 +1,4 @@
-//! Room chat surface component.
+//! Компонент поверхности чата комнаты.
 
 use dioxus::prelude::*;
 
@@ -6,7 +6,7 @@ use crate::features::app::components::app_shell::ActiveRoom;
 
 use super::panel::ChatRoomPanel;
 
-/// Visual mode for a room chat surface.
+/// Визуальный режим поверхности чата комнаты.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RoomChatSurfaceMode {
     /// Full room workspace chat.
@@ -15,7 +15,7 @@ pub(crate) enum RoomChatSurfaceMode {
     Embedded,
 }
 
-/// Renders chat in either full-room or embedded form.
+/// Рендерит чат в полном или встроенном виде.
 #[component]
 pub(crate) fn RoomChatSurface(
     server_id: String,

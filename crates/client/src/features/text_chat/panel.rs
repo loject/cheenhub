@@ -1,4 +1,4 @@
-//! Room text chat panel component.
+//! Компонент панели текстового чата комнаты.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -21,7 +21,7 @@ use super::messages::{append_message, is_appearing_message, remove_message};
 use super::realtime::{self, TextChatEvent};
 use super::scroll::{ScrollCommand, apply_scroll_command, update_scroll_state};
 
-/// Renders a realtime text chat panel for one room.
+/// Рендерит панель realtime-текстового чата для одной комнаты.
 #[component]
 pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) -> Element {
     let realtime = use_context::<RealtimeHandle>();

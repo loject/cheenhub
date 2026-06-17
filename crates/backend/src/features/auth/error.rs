@@ -11,7 +11,7 @@ pub(crate) enum AuthError {
     Conflict(String),
     /// Запрос валиден, но в данный момент ограничен частотой запросов.
     RateLimited(String),
-    /// A required runtime integration is not configured.
+    /// Требуемая интеграция времени выполнения не настроена.
     Misconfigured {
         /// Название функции или интеграции.
         feature: &'static str,
@@ -25,7 +25,7 @@ pub(crate) enum AuthError {
 }
 
 impl AuthError {
-    /// Returns the user-facing error message when this error is safe to expose.
+    /// Возвращает сообщение для пользователя, когда эту ошибку можно безопасно показывать.
     pub(crate) fn user_message(&self) -> Option<&str> {
         match self {
             Self::BadRequest(message)

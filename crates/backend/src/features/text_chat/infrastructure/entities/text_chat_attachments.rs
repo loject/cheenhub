@@ -1,43 +1,43 @@
-//! Text chat attachment entity.
+//! Сущность вложения текстового чата.
 
 use sea_orm::entity::prelude::*;
 
-/// Text chat attachment database row.
+/// Строка базы данных вложения текстового чата.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "text_chat_attachments")]
 pub struct Model {
-    /// Stable attachment identifier.
+    /// Стабильный идентификатор вложения.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// Server the attachment belongs to.
+    /// Сервер, которому принадлежит вложение.
     pub server_id: Uuid,
-    /// Room the attachment belongs to.
+    /// Комната, которой принадлежит вложение.
     pub room_id: Uuid,
-    /// User that uploaded the attachment.
+    /// Пользователь, загрузивший вложение.
     pub uploader_user_id: Uuid,
-    /// Message that owns the attachment after it is sent.
+    /// Сообщение, которому принадлежит вложение после отправки.
     pub message_id: Option<Uuid>,
-    /// S3 bucket that stores the object.
+    /// S3 bucket, в котором хранится объект.
     pub bucket: String,
-    /// S3 object key.
+    /// Ключ S3-объекта.
     pub object_key: String,
-    /// Validated image content type.
+    /// Проверенный MIME-тип изображения.
     pub content_type: String,
-    /// Original upload byte length.
+    /// Исходный размер загрузки в байтах.
     pub byte_size: i64,
-    /// Image width in pixels.
+    /// Ширина изображения в пикселях.
     pub width: i32,
-    /// Image height in pixels.
+    /// Высота изображения в пикселях.
     pub height: i32,
-    /// SHA-256 hash of uploaded bytes.
+    /// SHA-256-хэш загруженных байтов.
     pub sha256: String,
-    /// Optional original filename from the upload request.
+    /// Необязательное исходное имя файла из запроса загрузки.
     pub original_filename: Option<String>,
-    /// Creation timestamp.
+    /// Временная метка создания.
     pub created_at: DateTimeUtc,
 }
 
-/// Text chat attachment relations.
+/// Связи вложения текстового чата.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

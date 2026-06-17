@@ -1,4 +1,4 @@
-//! Postgres password reset storage helpers.
+//! Вспомогательные функции хранения сброса пароля для Postgres.
 
 use chrono::{DateTime, Utc};
 use sea_orm::{

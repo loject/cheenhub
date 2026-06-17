@@ -1,4 +1,4 @@
-//! Audio playback context provider.
+//! Провайдер контекста воспроизведения аудио.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -17,14 +17,14 @@ use super::playback_pipeline::{
 };
 use super::storage;
 
-/// Encoded playback codec.
+/// Кодек кодированного воспроизведения.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlaybackCodec {
     /// Opus audio.
     Opus,
 }
 
-/// Encoded voice frame prepared for playback.
+/// Закодированный голосовой фрейм, подготовленный к воспроизведению.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VoiceFrame {
     /// Authenticated sender identifier.
@@ -42,7 +42,7 @@ pub(crate) struct VoiceFrame {
     pub(crate) bytes: Vec<u8>,
 }
 
-/// Context handle for browser audio playback.
+/// Контекстный хэндл для браузерного аудиовоспроизведения.
 #[derive(Clone)]
 pub(crate) struct AudioPlaybackHandle {
     muted: Signal<bool>,
@@ -63,19 +63,19 @@ pub(super) struct AudioPlaybackInner {
     pub(super) jitter_buffer_ms: u32,
     pub(super) scheduled_sources: HashMap<String, Vec<ScheduledAudioSource>>,
     pub(super) scheduled_until: HashMap<String, f64>,
-    /// Per-user gain values (0.0–2.0, default 1.0). Persisted so volumes set
-    /// before the first frame are applied when the sender is first created.
+    /// Значения усиления для каждого пользователя (0.0–2.0, по умолчанию 1.0).
+    /// Сохраняется, чтобы громкость, заданная до первого фрейма, применялась при первом создании отправителя.
     pub(super) user_volumes: HashMap<String, f64>,
     pub(super) output_gain: f64,
 }
 
 impl AudioPlaybackHandle {
-    /// Returns whether inbound playback is muted.
+    /// Возвращает, отключено ли входящее воспроизведение.
     pub(crate) fn is_muted(&self) -> bool {
         (self.muted)()
     }
 
-    /// Updates inbound playback mute state.
+    /// Обновляет состояние отключения входящего воспроизведения.
     pub(crate) fn set_muted(&self, muted: bool) {
         let changed_to_muted = {
             let mut inner = self.inner.borrow_mut();
@@ -95,7 +95,7 @@ impl AudioPlaybackHandle {
         }
     }
 
-    /// Sets per-user playback volume (0–200, where 100 = 100%).
+    /// Устанавливает громкость воспроизведения для каждого пользователя (0–200, где 100 = 100%).
     pub(crate) fn set_user_volume(&self, sender_user_id: &str, volume_percent: u32) {
         let gain = gain_from_percent(volume_percent);
         let mut inner = self.inner.borrow_mut();
@@ -106,12 +106,12 @@ impl AudioPlaybackHandle {
         }
     }
 
-    /// Returns the current master output volume percentage.
+    /// Возвращает текущий процент общей громкости вывода.
     pub(crate) fn output_volume_percent(&self) -> u32 {
         (self.output_volume_percent)()
     }
 
-    /// Updates the master output volume percentage.
+    /// Обновляет процент общей громкости вывода.
     pub(crate) fn set_output_volume_percent(&self, volume_percent: u32) {
         let volume_percent = volume_percent.min(200);
         if *self.output_volume_percent.peek() == volume_percent {

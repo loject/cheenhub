@@ -1,4 +1,4 @@
-//! OAuth authentication application tests.
+//! Тесты приложения аутентификации OAuth.
 
 use cheenhub_contracts::rest::{
     LoginRequest, OAuthCompleteRequest, OAuthCompleteResponse, OAuthRegistrationRequest,

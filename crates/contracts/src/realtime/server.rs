@@ -1,347 +1,347 @@
-//! Server management realtime module contracts.
+//! Контракты realtime-модуля управления сервером.
 
 use serde::{Deserialize, Serialize};
 
-/// Server management realtime message kinds.
+/// Виды сообщений realtime-модуля управления сервером.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerKind {
-    /// Load members for a server.
+    /// Загрузить участников сервера.
     ListServerMembers,
-    /// Server-member list response.
+    /// Ответ со списком участников сервера.
     ServerMemberList,
-    /// Load invite links for a server.
+    /// Загрузить ссылки-приглашения сервера.
     ListServerInvites,
-    /// Invite-link list response.
+    /// Ответ со списком ссылок-приглашений.
     ServerInviteList,
-    /// Revoke one server invite.
+    /// Отозвать одно приглашение сервера.
     RevokeServerInvite,
-    /// Acknowledges that an invite was revoked.
+    /// Подтверждает, что приглашение было отозвано.
     ServerInviteRevoked,
-    /// Kick a member that joined through an invite.
+    /// Исключить участника, вошедшего по приглашению.
     KickServerInviteMember,
-    /// Acknowledges that an invite member was kicked.
+    /// Подтверждает, что участник по приглашению был исключен.
     ServerInviteMemberKicked,
-    /// Kick an active server member.
+    /// Исключить активного участника сервера.
     KickServerMember,
-    /// Acknowledges that a server member was kicked.
+    /// Подтверждает, что участник сервера был исключен.
     ServerMemberKicked,
-    /// Load roles for a server.
+    /// Загрузить роли сервера.
     ListServerRoles,
-    /// Server-role list response.
+    /// Ответ со списком ролей сервера.
     ServerRoleList,
-    /// Save server roles.
+    /// Сохранить роли сервера.
     SaveServerRoles,
-    /// Acknowledges that server roles were saved.
+    /// Подтверждает, что роли сервера были сохранены.
     ServerRolesSaved,
-    /// Assign a custom role to a server member.
+    /// Назначить участнику сервера пользовательскую роль.
     AssignServerMemberRole,
-    /// Acknowledges that a role was assigned.
+    /// Подтверждает, что роль была назначена.
     ServerMemberRoleAssigned,
-    /// Revoke a custom role from a server member.
+    /// Отозвать пользовательскую роль у участника сервера.
     RevokeServerMemberRole,
-    /// Acknowledges that a role was revoked.
+    /// Подтверждает, что роль была отозвана.
     ServerMemberRoleRevoked,
 }
 
-/// Request payload used to load server members.
+/// Полезная нагрузка запроса для загрузки участников сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListServerMembers {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
 }
 
-/// Response payload containing active server members.
+/// Полезная нагрузка ответа со списком активных участников сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerMemberList {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Active members visible to the current administrator.
+    /// Активные участники, видимые текущему администратору.
     pub members: Vec<ServerMemberEntry>,
 }
 
-/// Active server member shown in settings.
+/// Активный участник сервера, отображаемый в настройках.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerMemberEntry {
-    /// Stable user identifier.
+    /// Стабильный идентификатор пользователя.
     pub user_id: String,
-    /// Current user nickname.
+    /// Текущий никнейм пользователя.
     pub nickname: String,
-    /// Whether this member owns the server.
+    /// Владеет ли этот участник сервером.
     pub is_owner: bool,
-    /// Membership start timestamp in RFC3339 format.
+    /// Временная метка начала участия в формате RFC3339.
     pub joined_at: String,
-    /// Invite link used by this member, when available.
+    /// Ссылка-приглашение, использованная этим участником, если доступна.
     pub invite_code: Option<String>,
-    /// Invite-use timestamp in RFC3339 format, when available.
+    /// Временная метка использования приглашения в формате RFC3339, если доступна.
     pub invite_used_at: Option<String>,
-    /// Custom role identifiers currently assigned to this member.
+    /// Идентификаторы пользовательских ролей, которые сейчас назначены этому участнику.
     pub role_ids: Vec<String>,
 }
 
-/// Request payload used to load server invite links.
+/// Полезная нагрузка запроса для загрузки ссылок-приглашений сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListServerInvites {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
 }
 
-/// Response payload containing server invite links.
+/// Полезная нагрузка ответа со ссылками-приглашениями сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerInviteList {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Invite links available to the current administrator.
+    /// Ссылки-приглашения, доступные текущему администратору.
     pub invites: Vec<ServerInviteLink>,
 }
 
-/// Server invite link shown in settings.
+/// Ссылка-приглашение сервера, отображаемая в настройках.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerInviteLink {
-    /// Stable invite code.
+    /// Стабильный код приглашения.
     pub code: String,
-    /// User that created the invite.
+    /// Пользователь, создавший приглашение.
     pub author_user_id: String,
-    /// Current nickname of the invite creator.
+    /// Текущий никнейм создателя приглашения.
     pub author_nickname: String,
-    /// Invite creation timestamp in RFC3339 format.
+    /// Временная метка создания приглашения в формате RFC3339.
     pub created_at: String,
-    /// Optional invite expiration timestamp in RFC3339 format.
+    /// Необязательная временная метка истечения приглашения в формате RFC3339.
     pub expires_at: Option<String>,
-    /// Optional maximum number of accepted invite uses.
+    /// Необязательный максимальный лимит использований приглашения.
     pub max_uses: Option<u32>,
-    /// Number of successful invite uses.
+    /// Количество успешных использований приглашения.
     pub uses: u32,
-    /// Revocation timestamp in RFC3339 format when the invite is revoked.
+    /// Временная метка отзыва в формате RFC3339, когда приглашение отозвано.
     pub revoked_at: Option<String>,
-    /// Members that joined through this invite.
+    /// Участники, вошедшие по этому приглашению.
     pub joined_members: Vec<ServerInviteJoinedMember>,
 }
 
-/// Member entry joined through an invite.
+/// Запись об участнике, вошедшем по приглашению.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerInviteJoinedMember {
-    /// Stable user identifier.
+    /// Стабильный идентификатор пользователя.
     pub user_id: String,
-    /// Current user nickname.
+    /// Текущий никнейм пользователя.
     pub nickname: String,
-    /// Invite-use timestamp in RFC3339 format.
+    /// Временная метка использования приглашения в формате RFC3339.
     pub joined_at: String,
-    /// Whether the user is currently an active server member.
+    /// Является ли пользователь сейчас активным участником сервера.
     pub is_active_member: bool,
 }
 
-/// Request payload used to revoke one server invite.
+/// Полезная нагрузка запроса для отзыва одного приглашения сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevokeServerInvite {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Invite code to revoke.
+    /// Код приглашения для отзыва.
     pub code: String,
 }
 
-/// Response payload returned after revoking one server invite.
+/// Полезная нагрузка ответа после отзыва одного приглашения сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerInviteRevoked {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Revoked invite code.
+    /// Отозванный код приглашения.
     pub code: String,
-    /// Revocation timestamp in RFC3339 format.
+    /// Временная метка отзыва в формате RFC3339.
     pub revoked_at: String,
 }
 
-/// Request payload used to kick a member that joined through an invite.
+/// Полезная нагрузка запроса для исключения участника, вошедшего по приглашению.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KickServerInviteMember {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Invite code used by the member.
+    /// Код приглашения, использованный участником.
     pub invite_code: String,
-    /// User identifier to kick.
+    /// Идентификатор пользователя для исключения.
     pub user_id: String,
 }
 
-/// Response payload returned after kicking an invite member.
+/// Полезная нагрузка ответа после исключения участника по приглашению.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerInviteMemberKicked {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Invite code used by the kicked member.
+    /// Код приглашения, использованный исключенным участником.
     pub invite_code: String,
-    /// Kicked user identifier.
+    /// Идентификатор исключенного пользователя.
     pub user_id: String,
 }
 
-/// Request payload used to kick an active server member.
+/// Полезная нагрузка запроса для исключения активного участника сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KickServerMember {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// User identifier to kick.
+    /// Идентификатор пользователя для исключения.
     pub user_id: String,
-    /// Optional rejoin block duration in seconds.
+    /// Необязательная длительность блокировки повторного входа в секундах.
     pub exclusion_duration_seconds: Option<u64>,
 }
 
-/// Response payload returned after kicking a server member.
+/// Полезная нагрузка ответа после исключения участника сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerMemberKicked {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Kicked user identifier.
+    /// Идентификатор исключенного пользователя.
     pub user_id: String,
-    /// Timestamp until which the user cannot rejoin, in RFC3339 format.
+    /// Временная метка, до которой пользователь не может вернуться, в формате RFC3339.
     pub excluded_until: Option<String>,
 }
 
-/// Request payload used to load server roles.
+/// Полезная нагрузка запроса для загрузки ролей сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListServerRoles {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
 }
 
-/// Response payload containing server roles.
+/// Полезная нагрузка ответа со списком ролей сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerRoleList {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Roles ordered from highest to lowest priority.
+    /// Роли, отсортированные от высшего приоритета к низшему.
     pub roles: Vec<ServerRoleEntry>,
 }
 
-/// Server role kind.
+/// Вид роли сервера.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerRoleKind {
-    /// Mandatory owner role.
+    /// Обязательная роль владельца.
     Owner,
-    /// Mandatory default member role.
+    /// Обязательная роль участника по умолчанию.
     Member,
-    /// User-created role.
+    /// Роль, созданная пользователем.
     Custom,
 }
 
-/// Server role permission flag.
+/// Флаг права роли сервера.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerRolePermission {
-    /// Allows creating server invite links.
+    /// Разрешает создавать ссылки-приглашения сервера.
     CreateInviteLinks,
-    /// Allows kicking members from the server.
+    /// Разрешает исключать участников из сервера.
     KickServerMembers,
-    /// Allows managing server roles.
+    /// Разрешает управлять ролями сервера.
     ManageRoles,
-    /// Allows kicking members from voice rooms.
+    /// Разрешает исключать участников из голосовых комнат.
     KickVoiceMembers,
-    /// Allows deleting any message in text rooms.
+    /// Разрешает удалять любые сообщения в текстовых комнатах.
     DeleteMessages,
 }
 
-/// Minimal server role summary embedded in server-level responses for client-side permission checks.
+/// Краткая сводка роли сервера, встроенная в серверные ответы для проверки прав на клиенте.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerRoleSummary {
-    /// Stable role identifier.
+    /// Стабильный идентификатор роли.
     pub role_id: String,
-    /// Role kind (owner / member / custom).
+    /// Вид роли (owner / member / custom).
     pub kind: ServerRoleKind,
-    /// Permissions granted by this role.
+    /// Права, предоставляемые этой ролью.
     pub permissions: Vec<ServerRolePermission>,
 }
 
-/// Server role shown in settings.
+/// Роль сервера, отображаемая в настройках.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerRoleEntry {
-    /// Stable role identifier.
+    /// Стабильный идентификатор роли.
     pub role_id: String,
-    /// Human-readable role name.
+    /// Человекочитаемое имя роли.
     pub name: String,
-    /// Hex role color.
+    /// Цвет роли в hex.
     pub color: String,
-    /// Number of members that currently have this role.
+    /// Число участников, у которых сейчас есть эта роль.
     pub members: u32,
-    /// Whether this role is mandatory and cannot be deleted.
+    /// Обязательная ли эта роль и нельзя ли ее удалить.
     pub is_required: bool,
-    /// Role kind.
+    /// Вид роли.
     pub kind: ServerRoleKind,
-    /// Effective role permissions.
+    /// Итоговые права роли.
     pub permissions: Vec<ServerRolePermission>,
 }
 
-/// Request payload used to save server roles.
+/// Полезная нагрузка запроса для сохранения ролей сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SaveServerRoles {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Roles ordered from highest to lowest priority.
+    /// Роли, отсортированные от высшего приоритета к низшему.
     pub roles: Vec<ServerRoleDraft>,
 }
 
-/// Server role draft sent from settings.
+/// Черновик роли сервера, отправляемый из настроек.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerRoleDraft {
-    /// Existing role identifier. Missing ids create new custom roles.
+    /// Идентификатор существующей роли. Отсутствие id создает новую пользовательскую роль.
     pub role_id: Option<String>,
-    /// Human-readable role name.
+    /// Человекочитаемое имя роли.
     pub name: String,
-    /// Hex role color.
+    /// Цвет роли в hex.
     pub color: String,
-    /// Role kind.
+    /// Вид роли.
     pub kind: ServerRoleKind,
-    /// Enabled role permissions.
+    /// Включенные права роли.
     pub permissions: Vec<ServerRolePermission>,
 }
 
-/// Response payload returned after saving server roles.
+/// Полезная нагрузка ответа после сохранения ролей сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerRolesSaved {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Saved roles ordered from highest to lowest priority.
+    /// Сохраненные роли, отсортированные от высшего приоритета к низшему.
     pub roles: Vec<ServerRoleEntry>,
 }
 
-/// Request payload used to assign a custom role to a server member.
+/// Полезная нагрузка запроса для назначения пользовательской роли участнику сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AssignServerMemberRole {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Target user identifier.
+    /// Идентификатор целевого пользователя.
     pub user_id: String,
-    /// Custom role identifier to assign.
+    /// Идентификатор пользовательской роли для назначения.
     pub role_id: String,
 }
 
-/// Response payload returned after assigning a role to a server member.
+/// Полезная нагрузка ответа после назначения роли участнику сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerMemberRoleAssigned {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// User that received the role.
+    /// Пользователь, получивший роль.
     pub user_id: String,
-    /// Role that was assigned.
+    /// Назначенная роль.
     pub role_id: String,
 }
 
-/// Request payload used to revoke a custom role from a server member.
+/// Полезная нагрузка запроса для отзыва пользовательской роли у участника сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevokeServerMemberRole {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Target user identifier.
+    /// Идентификатор целевого пользователя.
     pub user_id: String,
-    /// Custom role identifier to revoke.
+    /// Идентификатор пользовательской роли для отзыва.
     pub role_id: String,
 }
 
-/// Response payload returned after revoking a role from a server member.
+/// Полезная нагрузка ответа после отзыва роли у участника сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerMemberRoleRevoked {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// User that lost the role.
+    /// Пользователь, у которого отозвали роль.
     pub user_id: String,
-    /// Role that was revoked.
+    /// Отозванная роль.
     pub role_id: String,
 }

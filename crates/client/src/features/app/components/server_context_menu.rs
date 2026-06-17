@@ -1,10 +1,10 @@
-//! Server context menu component.
+//! Компонент контекстного меню сервера.
 
 use dioxus::prelude::*;
 
 use crate::features::app::api;
 
-/// Actions emitted by the server context menu.
+/// Действия, отправляемые контекстным меню сервера.
 #[derive(Clone, PartialEq)]
 pub(crate) enum ServerMenuAction {
     /// Open the server settings workspace.
@@ -15,7 +15,7 @@ pub(crate) enum ServerMenuAction {
     LeftServer(String),
 }
 
-/// Renders server-level actions.
+/// Рендерит действия уровня сервера.
 #[component]
 pub(crate) fn ServerContextMenu(
     server_id: String,

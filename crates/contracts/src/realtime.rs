@@ -1,4 +1,4 @@
-//! Shared realtime WebTransport contracts.
+//! Общие контракты realtime WebTransport.
 
 mod control;
 mod envelope;

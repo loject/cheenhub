@@ -1,4 +1,4 @@
-//! Right arrow icon component.
+//! Компонент иконки стрелки вправо.
 
 use dioxus::prelude::*;
 

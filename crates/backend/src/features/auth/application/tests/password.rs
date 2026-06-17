@@ -1,4 +1,4 @@
-//! Password change application tests.
+//! Тесты приложения смены пароля.
 
 use cheenhub_contracts::rest::{ChangeCurrentUserPasswordRequest, LoginRequest};
 

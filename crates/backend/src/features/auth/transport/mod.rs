@@ -1,3 +1,3 @@
-//! Authentication HTTP transport layer.
+//! Транспортный HTTP-слой аутентификации.
 
 pub(crate) mod handlers;

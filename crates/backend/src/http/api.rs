@@ -1,4 +1,4 @@
-//! REST API router shell.
+//! Оболочка роутера REST API.
 
 use axum::{Router, http::StatusCode, routing::get};
 
@@ -6,7 +6,7 @@ use crate::features::{auth, images, servers};
 use crate::realtime;
 use crate::state::AppState;
 
-/// Builds the REST API router.
+/// Собирает роутер REST API.
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::routes())
@@ -16,7 +16,7 @@ pub(crate) fn router() -> Router<AppState> {
         .fallback(not_found)
 }
 
-/// Returns the default response for routes that are not implemented yet.
+/// Возвращает ответ по умолчанию для маршрутов, которые еще не реализованы.
 pub(crate) async fn not_found() -> StatusCode {
     StatusCode::NOT_FOUND
 }

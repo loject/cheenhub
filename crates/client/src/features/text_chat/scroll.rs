@@ -1,4 +1,4 @@
-//! Text chat scroll behavior.
+//! Поведение прокрутки текстового чата.
 
 use std::rc::Rc;
 

@@ -1,4 +1,4 @@
-//! Realtime client configuration.
+//! Конфигурация realtime-клиента.
 
 use url::Url;
 use web_transport::ClientBuilder;
@@ -8,13 +8,13 @@ use super::error::RealtimeError;
 const DEFAULT_API_BASE_URL: &str = "http://127.0.0.1:3000/api";
 const DEFAULT_REALTIME_URL: &str = "https://127.0.0.1:4443/realtime";
 
-/// Returns the configured realtime endpoint URL.
+/// Возвращает настроенный URL realtime-эндпойнта.
 pub(crate) fn realtime_url() -> Result<Url, RealtimeError> {
     Url::parse(option_env!("CHEENHUB_REALTIME_URL").unwrap_or(DEFAULT_REALTIME_URL))
         .map_err(|error| RealtimeError::new(format!("Invalid realtime URL: {error}")))
 }
 
-/// Returns the configured WebSocket fallback realtime endpoint URL.
+/// Возвращает настроенный URL realtime-эндпойнта для fallback через WebSocket.
 pub(crate) fn realtime_websocket_url() -> Result<Url, RealtimeError> {
     if let Some(value) = option_env!("CHEENHUB_REALTIME_WS_URL") {
         return Url::parse(value).map_err(|error| {
@@ -44,7 +44,7 @@ pub(crate) fn realtime_websocket_url() -> Result<Url, RealtimeError> {
     Ok(url)
 }
 
-/// Builds a WebTransport client using either system roots or a configured cert hash.
+/// Собирает WebTransport-клиент, используя либо системные корни, либо настроенный хеш сертификата.
 pub(crate) fn realtime_client() -> Result<web_transport::Client, RealtimeError> {
     let builder = ClientBuilder::new();
     if let Some(hash) = realtime_cert_sha256()? {

@@ -1,4 +1,4 @@
-//! Current user auth session application flows.
+//! Потоки приложения для auth-сессий текущего пользователя.
 
 use cheenhub_contracts::rest::{
     ActiveSession, ActiveSessionsResponse, SessionClientInfo, SessionDeviceKind,
@@ -12,7 +12,7 @@ use crate::features::auth::error::AuthError;
 use crate::features::auth::security::user_agent;
 use crate::state::AppState;
 
-/// Lists active auth sessions for the current user.
+/// Возвращает активные auth-сессии текущего пользователя.
 pub(crate) async fn active_sessions(
     state: &AppState,
     access_token: &str,
@@ -37,7 +37,7 @@ pub(crate) async fn active_sessions(
     })
 }
 
-/// Revokes one active auth session owned by the current user.
+/// Отзывает одну активную auth-сессию, принадлежащую текущему пользователю.
 pub(crate) async fn revoke_current_user_session(
     state: &AppState,
     access_token: &str,
@@ -70,7 +70,7 @@ pub(crate) async fn revoke_current_user_session(
     Ok(())
 }
 
-/// Revokes every active auth session owned by the current user.
+/// Отзывает все активные auth-сессии, принадлежащие текущему пользователю.
 pub(crate) async fn revoke_current_user_sessions(
     state: &AppState,
     access_token: &str,

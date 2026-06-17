@@ -1,4 +1,4 @@
-//! Cancellation guards for realtime requests and stream writes.
+//! Guard'ы отмены для realtime-запросов и записи в потоки.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;

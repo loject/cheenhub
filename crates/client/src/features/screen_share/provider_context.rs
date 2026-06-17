@@ -1,4 +1,4 @@
-//! Screen sharing context provider component.
+//! Компонент провайдера контекста демонстрации экрана.
 
 use std::rc::Rc;
 
@@ -12,7 +12,7 @@ use super::browser::BrowserScreenShareBackend as DefaultScreenShareBackend;
 #[cfg(not(target_arch = "wasm32"))]
 use super::unsupported::UnavailableScreenShareBackend as DefaultScreenShareBackend;
 
-/// Provides screen sharing capture state to authenticated app components.
+/// Предоставляет состояние захвата экрана аутентифицированным компонентам приложения.
 #[component]
 pub(crate) fn ScreenShareProvider(children: Element) -> Element {
     let status = use_signal(|| ScreenShareStatus::Idle);

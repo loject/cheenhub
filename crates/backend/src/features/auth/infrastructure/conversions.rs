@@ -1,4 +1,4 @@
-//! Infrastructure model conversions.
+//! Преобразования моделей инфраструктуры.
 
 use crate::features::auth::domain::{
     OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, PasswordResetToken, UserAccount,

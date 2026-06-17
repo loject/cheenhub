@@ -1,4 +1,4 @@
-//! Text chat compose behavior.
+//! Поведение набора текста в чате.
 
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;

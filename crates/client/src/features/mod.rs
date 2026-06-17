@@ -1,4 +1,4 @@
-//! Client feature modules.
+//! Модули клиентских функций.
 
 pub(crate) mod app;
 pub(crate) mod audio_playback;

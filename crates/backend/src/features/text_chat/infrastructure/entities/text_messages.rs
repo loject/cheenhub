@@ -1,33 +1,33 @@
-//! Text message entity.
+//! Сущность текстового сообщения.
 
 use sea_orm::entity::prelude::*;
 
-/// Text message database row.
+/// Строка базы данных текстового сообщения.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "text_messages")]
 pub struct Model {
-    /// Stable message identifier.
+    /// Стабильный идентификатор сообщения.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// Server the message belongs to.
+    /// Сервер, которому принадлежит сообщение.
     pub server_id: Uuid,
-    /// Room the message belongs to.
+    /// Комната, которой принадлежит сообщение.
     pub room_id: Uuid,
-    /// User that authored the message.
+    /// Пользователь, создавший сообщение.
     pub author_user_id: Uuid,
-    /// Author nickname snapshot.
+    /// Снимок ника автора.
     pub author_nickname: String,
-    /// Message body.
+    /// Тело сообщения.
     pub body: String,
-    /// Message creation timestamp.
+    /// Временная метка создания сообщения.
     pub created_at: DateTimeUtc,
-    /// Soft-delete timestamp; set when a message is deleted.
+    /// Временная метка мягкого удаления; задается при удалении сообщения.
     pub deleted_at: Option<DateTimeUtc>,
-    /// User who deleted the message; may differ from author for moderation deletes.
+    /// Пользователь, удаливший сообщение; для модераторских удалений может отличаться от автора.
     pub deleted_by_user_id: Option<Uuid>,
 }
 
-/// Text message relations.
+/// Связи текстового сообщения.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

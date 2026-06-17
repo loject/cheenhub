@@ -1,4 +1,4 @@
-//! Server management realtime adapter.
+//! Realtime-адаптер управления серверами.
 
 use cheenhub_contracts::realtime::{
     AssignServerMemberRole, KickServerInviteMember, KickServerMember, ListServerInvites,
@@ -15,7 +15,7 @@ use crate::realtime::protocol::{
 };
 use crate::state::AppState;
 
-/// Handles one server management module envelope.
+/// Обрабатывает один конверт модуля управления серверами.
 pub(crate) async fn handle(
     state: &AppState,
     user_id: &Uuid,

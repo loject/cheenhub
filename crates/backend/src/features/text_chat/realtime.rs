@@ -1,4 +1,4 @@
-//! Text chat realtime adapter.
+//! Адаптер realtime для текстового чата.
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -16,7 +16,7 @@ use crate::realtime::protocol::{
 };
 use crate::state::AppState;
 
-/// Handles one text chat module envelope.
+/// Обрабатывает один конверт модуля текстового чата.
 pub(crate) async fn handle(
     state: &AppState,
     user: &AuthUser,

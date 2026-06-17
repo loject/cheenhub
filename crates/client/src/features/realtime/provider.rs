@@ -1,4 +1,4 @@
-//! Dioxus realtime provider.
+//! Dioxus-провайдер realtime.
 
 use dioxus::prelude::*;
 use gloo_timers::future::TimeoutFuture;
@@ -12,7 +12,7 @@ const PING_INTERVAL_MS: u32 = 5_000;
 const RECONNECT_INITIAL_DELAY_MS: u32 = 1_000;
 const RECONNECT_MAX_DELAY_MS: u32 = 30_000;
 
-/// Provides realtime context to authenticated app components.
+/// Предоставляет realtime-контекст аутентифицированным компонентам приложения.
 #[component]
 pub(crate) fn RealtimeProvider(children: Element) -> Element {
     let handle = use_signal(create_handle);

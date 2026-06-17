@@ -29,7 +29,7 @@ pub(crate) struct AppConfig {
     pub(crate) google_oauth_client_secret: Option<String>,
     /// URI перенаправления Google OAuth, зарегистрированный для этого бэкенда.
     pub(crate) google_oauth_redirect_uri: Option<String>,
-    /// Базовый URL клиента браузера после обратных вызовов OAuth.
+    /// Базовый URL браузерного клиента после обратных вызовов OAuth.
     pub(crate) cheenhub_client_base_url: String,
     /// Публичный базовый URL REST API для сгенерированных ссылок на ресурсы.
     pub(crate) cheenhub_api_base_url: String,

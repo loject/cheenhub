@@ -1,11 +1,11 @@
-//! Access token refresh loop component.
+//! Компонент цикла обновления access token.
 
 use dioxus::prelude::*;
 use gloo_timers::future::TimeoutFuture;
 
 use crate::features::auth::{api, jwt, storage};
 
-/// Keeps the stored access JWT fresh while the authenticated app is mounted.
+/// Поддерживает сохраненный access JWT актуальным, пока смонтировано аутентифицированное приложение.
 #[component]
 pub(crate) fn TokenRefresher(on_session_expired: EventHandler<()>) -> Element {
     let _task = use_hook(move || {

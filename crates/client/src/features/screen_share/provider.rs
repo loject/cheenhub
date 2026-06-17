@@ -1,4 +1,4 @@
-//! Screen sharing context handle.
+//! Контекстный хэндл демонстрации экрана.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,7 +11,7 @@ use super::backend::{
 };
 use super::provider_runtime::{next_generation, status_from_error};
 
-/// Context handle used by features that need screen capture.
+/// Контекстный хэндл, используемый функциями, которым нужен захват экрана.
 #[derive(Clone)]
 pub(crate) struct ScreenShareHandle {
     pub(super) status: Signal<ScreenShareStatus>,

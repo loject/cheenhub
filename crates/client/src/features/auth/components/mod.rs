@@ -1,4 +1,4 @@
-//! Authentication UI components.
+//! Компоненты UI аутентификации.
 
 pub(super) mod arrow_left_icon;
 pub(super) mod arrow_right_icon;

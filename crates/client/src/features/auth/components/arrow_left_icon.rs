@@ -1,4 +1,4 @@
-//! Left arrow icon component.
+//! Компонент иконки стрелки влево.
 
 use dioxus::prelude::*;
 

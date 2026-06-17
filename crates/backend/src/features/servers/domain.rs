@@ -1,11 +1,11 @@
-//! Server domain models.
+//! Доменные модели сервера.
 
 use cheenhub_contracts::realtime::{ServerRoleKind, ServerRolePermission};
 use cheenhub_contracts::rest::ServerRoomKind;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-/// Server data used by server flows.
+/// Данные сервера, используемые в потоках сервера.
 #[derive(Debug, Clone)]
 pub(crate) struct Server {
     /// Stable server identifier.
@@ -24,7 +24,7 @@ pub(crate) struct Server {
     pub(crate) updated_at: DateTime<Utc>,
 }
 
-/// Server data with current-user membership context.
+/// Данные сервера с контекстом членства текущего пользователя.
 #[derive(Debug, Clone)]
 pub(crate) struct ServerAccess {
     /// Server available to the current user.
@@ -33,7 +33,7 @@ pub(crate) struct ServerAccess {
     pub(crate) is_member: bool,
 }
 
-/// Server room data used by server flows.
+/// Данные комнаты сервера, используемые в потоках сервера.
 #[derive(Debug, Clone)]
 pub(crate) struct ServerRoom {
     /// Stable room identifier.
@@ -53,7 +53,7 @@ pub(crate) struct ServerRoom {
     pub(crate) updated_at: DateTime<Utc>,
 }
 
-/// Server role data used by server settings flows.
+/// Данные роли сервера, используемые в потоках настроек сервера.
 #[derive(Debug, Clone)]
 pub(crate) struct ServerRole {
     /// Stable role identifier.
@@ -78,7 +78,7 @@ pub(crate) struct ServerRole {
     pub(crate) updated_at: DateTime<Utc>,
 }
 
-/// Server invite data used by server flows.
+/// Данные приглашения сервера, используемые в потоках сервера.
 #[derive(Debug, Clone)]
 pub(crate) struct ServerInvite {
     /// Stable invite identifier used as the invite code.
@@ -97,7 +97,7 @@ pub(crate) struct ServerInvite {
     pub(crate) revoked_at: Option<DateTime<Utc>>,
 }
 
-/// Server member data used by server flows.
+/// Данные участника сервера, используемые в потоках сервера.
 #[derive(Debug, Clone)]
 pub(crate) struct ServerMember {
     /// Stable server member row identifier.
@@ -114,7 +114,7 @@ pub(crate) struct ServerMember {
     pub(crate) left_at: Option<DateTime<Utc>>,
 }
 
-/// Temporary server exclusion that blocks a kicked user from rejoining.
+/// Временное исключение с сервера, блокирующее повторное присоединение кикнутого пользователя.
 #[derive(Debug, Clone)]
 pub(crate) struct ServerMemberExclusion {
     /// Stable exclusion row identifier.
@@ -134,7 +134,7 @@ pub(crate) struct ServerMemberExclusion {
     pub(crate) created_at: DateTime<Utc>,
 }
 
-/// Server invite use data used by server flows.
+/// Данные использования приглашения сервера, используемые в потоках сервера.
 #[derive(Debug, Clone)]
 pub(crate) struct ServerInviteUse {
     /// Stable invite use row identifier.

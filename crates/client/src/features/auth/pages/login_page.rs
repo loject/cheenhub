@@ -1,4 +1,4 @@
-//! Login route page.
+//! Страница маршрута входа.
 
 use dioxus::prelude::*;
 
@@ -6,7 +6,7 @@ use crate::features::auth::components::auth_header::AuthHeader;
 use crate::features::auth::components::auth_hero::AuthHero;
 use crate::features::auth::components::login_panel::LoginPanel;
 
-/// Renders the CheenHub login page.
+/// Рендерит страницу входа CheenHub.
 #[component]
 pub(crate) fn LoginPage() -> Element {
     rsx! {

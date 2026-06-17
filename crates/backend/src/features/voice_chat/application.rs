@@ -16,7 +16,7 @@ mod avatar;
 
 pub(crate) use avatar::update_user_avatar;
 
-/// Joins one voice-capable room and returns the current participant snapshot.
+/// Входит в одну комнату с поддержкой голоса и возвращает текущий снимок участников.
 pub(crate) async fn join_room(
     state: &AppState,
     realtime_stream_id: Uuid,
@@ -49,7 +49,7 @@ pub(crate) async fn join_room(
     Ok(snapshot)
 }
 
-/// Leaves one voice-capable room and returns the current participant snapshot.
+/// Покидает одну комнату с поддержкой голоса и возвращает текущий снимок участников.
 pub(crate) async fn leave_room(
     state: &AppState,
     realtime_stream_id: Uuid,
@@ -74,7 +74,7 @@ pub(crate) async fn leave_room(
     Ok(snapshot)
 }
 
-/// Kicks one participant from a voice room if the requesting user has permission.
+/// Кикает одного участника из голосовой комнаты, если у запрашивающего пользователя есть право.
 pub(crate) async fn kick_member(
     state: &AppState,
     kicker_user_id: &Uuid,
@@ -116,7 +116,7 @@ pub(crate) async fn kick_member(
     Ok(snapshot)
 }
 
-/// Lists active voice room participant snapshots for one server.
+/// Перечисляет активные снимки участников голосовых комнат одного сервера.
 pub(crate) async fn list_server_voice_rooms(
     state: &AppState,
     user_id: &Uuid,
@@ -156,7 +156,7 @@ pub(crate) async fn list_server_voice_rooms(
     })
 }
 
-/// Removes presence owned by a closed realtime stream.
+/// Удаляет присутствие, принадлежащее закрытому realtime-потоку.
 pub(crate) async fn disconnect_realtime_stream(state: &AppState, realtime_stream_id: Uuid) {
     let removed = state
         .voice_presence_store
@@ -165,7 +165,7 @@ pub(crate) async fn disconnect_realtime_stream(state: &AppState, realtime_stream
     fanout_removed_rooms(state, removed, None).await;
 }
 
-/// Updates active voice presence snapshots after a profile nickname change.
+/// Обновляет активные снимки голосового присутствия после изменения никнейма профиля.
 pub(crate) async fn update_user_nickname(state: &AppState, user_id: &Uuid, nickname: String) {
     let rooms = state
         .voice_presence_store
@@ -186,7 +186,7 @@ pub(crate) async fn update_user_nickname(state: &AppState, user_id: &Uuid, nickn
     }
 }
 
-/// Voice chat application error.
+/// Ошибка приложения голосового чата.
 #[derive(Debug)]
 pub(crate) enum VoiceChatApplicationError {
     /// Request shape or target is invalid.

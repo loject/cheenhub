@@ -1,4 +1,4 @@
-//! Authentication API client.
+//! Клиент API аутентификации.
 
 use cheenhub_contracts::rest::{
     ApiError, AuthResponse, AuthUser, LoginRequest, LogoutRequest, OAuthFlow,
@@ -18,37 +18,37 @@ pub(crate) use super::profile_api::{
     change_current_user_password, update_current_user, update_current_user_avatar,
 };
 
-/// Registers a new account and stores the returned tokens.
+/// Регистрирует новую учетную запись и сохраняет возвращенные токены.
 pub(crate) async fn register(request: RegisterRequest) -> Result<AuthUser, String> {
     let response = post_json("/auth/register", &request).await?;
     save_response(response)
 }
 
-/// Logs in with email/password and stores the returned tokens.
+/// Входит по email и паролю и сохраняет возвращенные токены.
 pub(crate) async fn login(request: LoginRequest) -> Result<AuthUser, String> {
     let response = post_json("/auth/login", &request).await?;
     save_response(response)
 }
 
-/// Requests a password reset email for an account.
+/// Запрашивает письмо для сброса пароля для учетной записи.
 pub(crate) async fn request_password_reset(request: PasswordResetRequest) -> Result<(), String> {
     post_empty("/auth/password-reset/request", &request).await
 }
 
-/// Confirms a password reset token and stores the new password.
+/// Подтверждает токен сброса пароля и сохраняет новый пароль.
 pub(crate) async fn confirm_password_reset(
     request: PasswordResetConfirmRequest,
 ) -> Result<(), String> {
     post_empty("/auth/password-reset/confirm", &request).await
 }
 
-/// Starts Google OAuth login and returns the provider authorization URL.
+/// Запускает вход через Google OAuth и возвращает URL авторизации провайдера.
 pub(crate) async fn start_google_oauth(redirect_uri: String) -> Result<String, String> {
     let _ = redirect_uri;
     start_oauth("/auth/oauth/google/start", OAuthFlow::Login, None).await
 }
 
-/// Starts Google account linking and returns the provider authorization URL.
+/// Запускает привязку аккаунта Google и возвращает URL авторизации провайдера.
 pub(crate) async fn start_google_account_link(redirect_uri: String) -> Result<String, String> {
     let _ = redirect_uri;
     let access_token = fresh_access_token().await?;
@@ -60,7 +60,7 @@ pub(crate) async fn start_google_account_link(redirect_uri: String) -> Result<St
     .await
 }
 
-/// Completes OAuth login with a backend handoff code.
+/// Завершает вход через OAuth с кодом handoff от бэкенда.
 pub(crate) async fn complete_google_oauth(
     handoff_code: String,
     nickname: Option<String>,
@@ -81,7 +81,7 @@ pub(crate) async fn complete_google_oauth(
     complete_oauth("/auth/oauth/google/complete", handoff_code).await
 }
 
-/// Completes OAuth account linking with a backend handoff code.
+/// Завершает привязку аккаунта через OAuth с кодом handoff от бэкенда.
 pub(crate) async fn complete_google_account_link(handoff_code: String) -> Result<(), String> {
     match complete_oauth("/auth/oauth/google/complete", handoff_code).await? {
         OAuthCompletion::Authenticated(_) | OAuthCompletion::Linked => Ok(()),
@@ -91,7 +91,7 @@ pub(crate) async fn complete_google_account_link(handoff_code: String) -> Result
     }
 }
 
-/// Loads linked external accounts for the current user.
+/// Загружает привязанные внешние аккаунты текущего пользователя.
 pub(crate) async fn linked_accounts() -> Result<Vec<LinkedAccount>, String> {
     let access_token = fresh_access_token().await?;
     let response = Request::get(&url("/auth/linked-accounts"))
@@ -107,7 +107,7 @@ pub(crate) async fn linked_accounts() -> Result<Vec<LinkedAccount>, String> {
     Err(read_error(response).await)
 }
 
-/// Unlinks an external account from the current user.
+/// Отвязывает внешний аккаунт от текущего пользователя.
 pub(crate) async fn unlink_account(provider: &str) -> Result<(), String> {
     if provider != "google" {
         return Err("Этот провайдер пока нельзя отключить.".to_owned());
@@ -126,17 +126,17 @@ pub(crate) async fn unlink_account(provider: &str) -> Result<(), String> {
     }
 }
 
-/// Returns whether a token pair is available locally.
+/// Возвращает, доступна ли локально пара токенов.
 pub(crate) fn has_tokens() -> bool {
     storage::load().is_some()
 }
 
-/// Returns whether an API error was caused by a failed network request.
+/// Возвращает, вызвана ли ошибка API неудачным сетевым запросом.
 pub(crate) fn is_network_error(error: &str) -> bool {
     error == NETWORK_ERROR_MESSAGE
 }
 
-/// Loads the current authenticated user, refreshing access token when needed.
+/// Загружает текущего аутентифицированного пользователя, обновляя access token при необходимости.
 pub(crate) async fn current_user() -> Result<AuthUser, String> {
     let access_token = fresh_access_token().await?;
     let response = Request::get(&url("/auth/me"))
@@ -167,7 +167,7 @@ pub(crate) async fn current_user() -> Result<AuthUser, String> {
     Err(read_error(response).await)
 }
 
-/// Invalidates the current refresh session and clears stored tokens after the attempt.
+/// Делает текущую refresh-сессию недействительной и очищает сохраненные токены после попытки.
 pub(crate) async fn logout() -> Result<(), String> {
     let Some(tokens) = storage::load() else {
         storage::clear();
@@ -236,7 +236,7 @@ pub(crate) async fn refresh_access_token() -> Result<String, String> {
     Ok(response.access_token)
 }
 
-/// OAuth completion result returned by the auth API.
+/// Результат завершения OAuth, возвращаемый auth API.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum OAuthCompletion {
     /// OAuth completed with a full auth session.
@@ -247,7 +247,7 @@ pub(crate) enum OAuthCompletion {
     Linked,
 }
 
-/// Additional data needed to finish OAuth registration.
+/// Дополнительные данные, необходимые для завершения регистрации OAuth.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct OAuthRegistrationRequired {
     /// Email address returned by the OAuth provider when available.
@@ -256,7 +256,7 @@ pub(crate) struct OAuthRegistrationRequired {
     pub(crate) suggested_nickname: Option<String>,
 }
 
-/// Linked external account shown in user settings.
+/// Привязанный внешний аккаунт, показываемый в настройках пользователя.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct LinkedAccount {
     /// OAuth provider identifier such as `google`.

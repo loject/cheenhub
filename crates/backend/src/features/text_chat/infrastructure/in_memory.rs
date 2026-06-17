@@ -1,4 +1,4 @@
-//! Simple in-memory text chat storage.
+//! Простое in-memory-хранилище текстового чата.
 
 use std::sync::Mutex;
 
@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::features::text_chat::domain::{ChatAttachment, NewChatAttachment, TextMessage};
 use crate::features::text_chat::infrastructure::{HISTORY_LIMIT, TextChatStore, TextMessagePage};
 
-/// In-memory text chat storage for local runs and tests.
+/// In-memory-хранилище текстового чата для локального запуска и тестов.
 #[derive(Default)]
 pub(crate) struct InMemoryTextChatStore {
     messages: Mutex<Vec<TextMessage>>,

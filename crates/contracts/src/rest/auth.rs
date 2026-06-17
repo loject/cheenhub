@@ -1,256 +1,256 @@
-//! Authentication REST contracts.
+//! Контракты REST для аутентификации.
 
 use serde::{Deserialize, Serialize};
 
-/// Request body used to create a new email/password account.
+/// Тело запроса для создания новой учетной записи по email и паролю.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegisterRequest {
-    /// Public nickname shown to other users.
+    /// Публичный никнейм, видимый другим пользователям.
     pub nickname: String,
-    /// Email address used for login.
+    /// Адрес email для входа.
     pub email: String,
-    /// Plain password submitted over HTTPS.
+    /// Обычный пароль, отправляемый по HTTPS.
     pub password: String,
-    /// Whether the user accepted mandatory policies.
+    /// Принял ли пользователь обязательные правила.
     pub accepts_policies: bool,
 }
 
-/// Request body used to login with email/password.
+/// Тело запроса для входа по email и паролю.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoginRequest {
-    /// Email address used for login.
+    /// Адрес email для входа.
     pub email: String,
-    /// Plain password submitted over HTTPS.
+    /// Обычный пароль, отправляемый по HTTPS.
     pub password: String,
 }
 
-/// Request body used to start a password reset email.
+/// Тело запроса для отправки письма сброса пароля.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PasswordResetRequest {
-    /// Email address that should receive a password reset link.
+    /// Адрес email, который должен получить ссылку для сброса пароля.
     pub email: String,
 }
 
-/// Request body used to finish a password reset.
+/// Тело запроса для завершения сброса пароля.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PasswordResetConfirmRequest {
-    /// Opaque reset token from the password reset link.
+    /// Непрозрачный токен сброса из ссылки на сброс пароля.
     pub token: String,
-    /// New plain password submitted over HTTPS.
+    /// Новый обычный пароль, отправляемый по HTTPS.
     pub new_password: String,
 }
 
-/// External OAuth provider supported by the REST API.
+/// Внешний OAuth-провайдер, поддерживаемый REST API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OAuthProvider {
-    /// Google OAuth identity provider.
+    /// Провайдер идентификации Google OAuth.
     Google,
 }
 
-/// OAuth flow kind requested by the client.
+/// Вид OAuth-потока, запрошенный клиентом.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OAuthFlow {
-    /// Log in or register with the external provider.
+    /// Войти или зарегистрироваться через внешний провайдер.
     Login,
-    /// Link the external provider to the current authenticated account.
+    /// Привязать внешний провайдер к текущей аутентифицированной учетной записи.
     Link,
 }
 
-/// Request body used to start an OAuth authorization flow.
+/// Тело запроса для запуска OAuth-авторизации.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OAuthStartRequest {
-    /// OAuth flow kind requested by the client.
+    /// Вид OAuth-потока, запрошенный клиентом.
     pub flow: OAuthFlow,
 }
 
-/// Response returned after an OAuth authorization flow is prepared.
+/// Ответ, возвращаемый после подготовки OAuth-авторизации.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OAuthStartResponse {
-    /// Provider authorization URL where the browser should navigate.
+    /// URL авторизации провайдера, куда должен перейти браузер.
     pub authorization_url: String,
 }
 
-/// Request body used to finish an OAuth callback handoff.
+/// Тело запроса для завершения передачи OAuth callback.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OAuthCompleteRequest {
-    /// One-time handoff code returned through the frontend callback URL.
+    /// Одноразовый код передачи, возвращаемый через callback URL фронтенда.
     pub handoff_code: String,
 }
 
-/// Response returned when completing an OAuth handoff.
+/// Ответ, возвращаемый при завершении передачи OAuth.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OAuthCompleteResponse {
-    /// OAuth produced an authenticated CheenHub session.
+    /// OAuth создал аутентифицированную сессию CheenHub.
     Authenticated {
-        /// Authentication tokens and current user.
+        /// Токены аутентификации и текущий пользователь.
         auth: AuthResponse,
     },
-    /// OAuth identity is verified but a new CheenHub account needs a nickname.
+    /// Личность OAuth подтверждена, но новой учетной записи CheenHub нужен никнейм.
     RegistrationRequired {
-        /// One-time token used to finish registration.
+        /// Одноразовый токен для завершения регистрации.
         registration_token: String,
-        /// Verified email address from the OAuth provider.
+        /// Подтвержденный адрес email от OAuth-провайдера.
         email: String,
-        /// Display name returned by the OAuth provider.
+        /// Отображаемое имя, возвращенное OAuth-провайдером.
         display_name: Option<String>,
     },
-    /// OAuth linked a provider to the current account.
+    /// OAuth привязал провайдера к текущей учетной записи.
     Linked {
-        /// Linked external account.
+        /// Привязанная внешняя учетная запись.
         account: LinkedAccount,
     },
 }
 
-/// Request body used to finish OAuth registration.
+/// Тело запроса для завершения OAuth-регистрации.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OAuthRegistrationRequest {
-    /// One-time registration token returned by OAuth completion.
+    /// Одноразовый токен регистрации, возвращенный после завершения OAuth.
     pub registration_token: String,
-    /// Public nickname chosen for the new CheenHub account.
+    /// Публичный никнейм, выбранный для новой учетной записи CheenHub.
     pub nickname: String,
-    /// Whether the user accepted mandatory policies.
+    /// Принял ли пользователь обязательные правила.
     pub accepts_policies: bool,
 }
 
-/// Request body used to update the current authenticated user profile.
+/// Тело запроса для обновления профиля текущего аутентифицированного пользователя.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateCurrentUserRequest {
-    /// New public nickname shown to other users.
+    /// Новый публичный никнейм, видимый другим пользователям.
     pub nickname: String,
 }
 
-/// Request body used to change the current user's password.
+/// Тело запроса для смены пароля текущего пользователя.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangeCurrentUserPasswordRequest {
-    /// Current plain password submitted over HTTPS.
+    /// Текущий обычный пароль, отправляемый по HTTPS.
     pub current_password: String,
-    /// New plain password submitted over HTTPS.
+    /// Новый обычный пароль, отправляемый по HTTPS.
     pub new_password: String,
-    /// Repeated new password submitted to prevent mistyped changes.
+    /// Повтор нового пароля для защиты от опечатки.
     pub new_password_confirmation: String,
 }
 
-/// Request body used to rotate a refresh token.
+/// Тело запроса для ротации refresh-токена.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RefreshRequest {
-    /// Opaque refresh token previously issued by the backend.
+    /// Непрозрачный refresh-токен, ранее выданный бэкендом.
     pub refresh_token: String,
 }
 
-/// Request body used to invalidate a session.
+/// Тело запроса для инвалидирования сессии.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogoutRequest {
-    /// Opaque refresh token identifying the session to invalidate.
+    /// Непрозрачный refresh-токен, идентифицирующий сессию для инвалидирования.
     pub refresh_token: String,
 }
 
-/// Device category inferred from a session User-Agent.
+/// Категория устройства, определенная по User-Agent сессии.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionDeviceKind {
-    /// Desktop or laptop browser.
+    /// Браузер на настольном компьютере или ноутбуке.
     Desktop,
-    /// Phone browser or mobile app web view.
+    /// Браузер телефона или web view мобильного приложения.
     Mobile,
-    /// Tablet browser or tablet app web view.
+    /// Браузер планшета или web view планшетного приложения.
     Tablet,
-    /// Automated client, crawler, or script-like runtime.
+    /// Автоматизированный клиент, crawler или скриптоподобная среда.
     Bot,
-    /// Unknown client type.
+    /// Неизвестный тип клиента.
     Unknown,
 }
 
-/// Parsed User-Agent details for an active auth session.
+/// Разобранные данные User-Agent активной auth-сессии.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionClientInfo {
-    /// Inferred device category.
+    /// Определенная категория устройства.
     pub device_kind: SessionDeviceKind,
-    /// Human-readable operating system name.
+    /// Человекочитаемое имя операционной системы.
     pub os_name: String,
-    /// Human-readable browser or client name.
+    /// Человекочитаемое имя браузера или клиента.
     pub browser_name: String,
 }
 
-/// Active auth session shown in account security settings.
+/// Активная auth-сессия, отображаемая в настройках безопасности учетной записи.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveSession {
-    /// Stable session identifier.
+    /// Стабильный идентификатор сессии.
     pub id: String,
-    /// Parsed User-Agent details.
+    /// Разобранные данные User-Agent.
     pub client: SessionClientInfo,
-    /// Last normalized raw User-Agent observed for the session.
+    /// Последний нормализованный raw User-Agent, наблюдавшийся для сессии.
     pub user_agent: Option<String>,
-    /// RFC 3339 timestamp when the session was created.
+    /// Временная метка RFC 3339 создания сессии.
     pub created_at: String,
-    /// RFC 3339 timestamp when the session was last seen.
+    /// Временная метка RFC 3339 последнего обнаружения сессии.
     pub last_seen_at: String,
-    /// RFC 3339 timestamp when the session expires unless refreshed.
+    /// Временная метка RFC 3339 истечения сессии, если ее не обновить.
     pub expires_at: String,
-    /// Whether this row describes the access token used for the request.
+    /// Описывает ли эта строка access-токен, использованный для запроса.
     pub current: bool,
 }
 
-/// Response containing active auth sessions for the current user.
+/// Ответ со списком активных auth-сессий текущего пользователя.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveSessionsResponse {
-    /// Active sessions ordered by most recent activity first.
+    /// Активные сессии, отсортированные по убыванию свежести активности.
     pub sessions: Vec<ActiveSession>,
 }
 
-/// Linked external account returned to account settings.
+/// Привязанная внешняя учетная запись, возвращаемая в настройки аккаунта.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkedAccount {
-    /// External OAuth provider.
+    /// Внешний OAuth-провайдер.
     pub provider: OAuthProvider,
-    /// Email address reported by the provider.
+    /// Адрес email, сообщенный провайдером.
     pub email: String,
-    /// Display name reported by the provider.
+    /// Отображаемое имя, сообщенное провайдером.
     pub display_name: Option<String>,
-    /// RFC 3339 timestamp when the provider was linked.
+    /// Временная метка RFC 3339 привязки провайдера.
     pub linked_at: String,
 }
 
-/// Response containing external accounts linked to the current user.
+/// Ответ со списком внешних аккаунтов, привязанных к текущему пользователю.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkedAccountsResponse {
-    /// Linked external accounts.
+    /// Привязанные внешние аккаунты.
     pub accounts: Vec<LinkedAccount>,
 }
 
-/// Request body used to unlink an external provider account.
+/// Тело запроса для отвязки аккаунта внешнего провайдера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnlinkProviderRequest {
-    /// External OAuth provider to unlink.
+    /// Внешний OAuth-провайдер для отвязки.
     pub provider: OAuthProvider,
 }
 
-/// Successful authentication response.
+/// Успешный ответ аутентификации.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthResponse {
-    /// Short-lived Ed25519-signed access JWT.
+    /// Короткоживущий access JWT, подписанный Ed25519.
     pub access_token: String,
-    /// Long-lived opaque refresh token.
+    /// Долгоживущий непрозрачный refresh-токен.
     pub refresh_token: String,
-    /// Authenticated user profile.
+    /// Профиль аутентифицированного пользователя.
     pub user: AuthUser,
 }
 
-/// User data returned by authentication endpoints.
+/// Данные пользователя, возвращаемые auth-эндпоинтами.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthUser {
-    /// Stable user identifier.
+    /// Стабильный идентификатор пользователя.
     pub id: String,
-    /// Public nickname shown to other users.
+    /// Публичный никнейм, видимый другим пользователям.
     pub nickname: String,
-    /// Email address used for login.
+    /// Адрес email для входа.
     pub email: String,
-    /// RFC 3339 registration timestamp.
+    /// Временная метка регистрации в формате RFC 3339.
     pub registered_at: String,
-    /// Whether the account has a local password.
+    /// Есть ли у учетной записи локальный пароль.
     pub has_password: bool,
-    /// Public avatar image URL when the user configured one.
+    /// Публичный URL аватара, если пользователь его настроил.
     pub avatar_url: Option<String>,
 }

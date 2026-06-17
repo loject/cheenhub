@@ -1,4 +1,4 @@
-//! Create-server modal.
+//! Модальное окно создания сервера.
 
 use cheenhub_contracts::rest::ServerSummary;
 use dioxus::prelude::*;
@@ -7,7 +7,7 @@ use crate::features::app::api;
 
 use super::modal::Modal;
 
-/// Renders the server creation flow.
+/// Рендерит поток создания сервера.
 #[component]
 pub(crate) fn CreateServerModal(
     on_close: EventHandler<()>,

@@ -1,25 +1,25 @@
-//! Server member entity.
+//! Сущность участника сервера.
 
 use sea_orm::entity::prelude::*;
 
-/// Server member database row.
+/// Строка базы данных участника сервера.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "server_members")]
 pub struct Model {
-    /// Stable server member row identifier.
+    /// Стабильный идентификатор строки участника сервера.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// Server the member belongs to.
+    /// Сервер, которому принадлежит участник.
     pub server_id: Uuid,
-    /// User that joined the server.
+    /// Пользователь, вступивший на сервер.
     pub user_id: Uuid,
-    /// Membership start timestamp.
+    /// Временная метка начала участия.
     pub joined_at: DateTimeUtc,
-    /// Membership end timestamp for future soft leave.
+    /// Временная метка окончания участия для будущего мягкого выхода.
     pub left_at: Option<DateTimeUtc>,
 }
 
-/// Server member relations.
+/// Связи участника сервера.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

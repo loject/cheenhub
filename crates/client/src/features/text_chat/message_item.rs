@@ -1,4 +1,4 @@
-//! Text chat message item component.
+//! Компонент элемента сообщения текстового чата.
 
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;
@@ -9,7 +9,7 @@ use crate::features::app::server_permissions::ServerPermissionsContext;
 
 use super::image_attachment::ChatImageAttachment;
 
-/// Renders one text chat message row.
+/// Рендерит одну строку сообщения текстового чата.
 #[component]
 pub(super) fn ChatMessageItem(
     message: TextChatMessage,

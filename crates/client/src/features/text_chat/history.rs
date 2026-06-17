@@ -1,4 +1,4 @@
-//! Text chat history loading.
+//! Загрузка истории текстового чата.
 
 use std::rc::Rc;
 

@@ -1,4 +1,4 @@
-//! Text chat feature.
+//! Функция текстового чата.
 
 pub(crate) mod application;
 pub(crate) mod domain;

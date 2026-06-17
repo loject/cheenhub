@@ -1,4 +1,4 @@
-//! Browser screen sharing backend.
+//! Browser-backend демонстрации экрана.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -24,7 +24,7 @@ use super::browser_errors::js_error_message;
 
 const KEY_FRAME_INTERVAL_SECONDS: u32 = 2;
 
-/// Browser screen sharing implementation backed by getDisplayMedia and WebCodecs.
+/// Реализация браузерной демонстрации экрана на основе `getDisplayMedia` и WebCodecs.
 pub(crate) struct BrowserScreenShareBackend;
 
 impl ScreenShareBackend for BrowserScreenShareBackend {

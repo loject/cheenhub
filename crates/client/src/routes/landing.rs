@@ -1,4 +1,4 @@
-//! Landing route component.
+//! Компонент маршрута лендинга.
 
 use dioxus::prelude::*;
 

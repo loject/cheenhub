@@ -8,7 +8,7 @@ use web_transport::Session;
 use crate::features::voice_chat;
 use crate::state::AppState;
 
-/// Spawns the authenticated session datagram reader.
+/// Запускает читатель датаграмм для аутентифицированной сессии.
 pub(crate) fn spawn_reader(state: AppState, session_id: Uuid, user_id: Uuid, session: Session) {
     tokio::spawn(async move {
         loop {

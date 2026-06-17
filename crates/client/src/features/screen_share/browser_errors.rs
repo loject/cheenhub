@@ -1,4 +1,4 @@
-//! Browser screen sharing error helpers.
+//! Вспомогательные функции ошибок браузерной демонстрации экрана.
 
 use js_sys::Reflect;
 use wasm_bindgen::JsValue;

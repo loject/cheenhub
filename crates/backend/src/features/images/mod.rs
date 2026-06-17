@@ -1,4 +1,4 @@
-//! Image processing and public delivery feature.
+//! Функция обработки изображений и публичной доставки.
 
 pub(crate) mod application;
 pub(crate) mod domain;
@@ -9,7 +9,7 @@ use axum::Router;
 
 use crate::state::AppState;
 
-/// Builds public image routes.
+/// Собирает маршруты публичных изображений.
 pub(crate) fn routes() -> Router<AppState> {
     transport::routes()
 }

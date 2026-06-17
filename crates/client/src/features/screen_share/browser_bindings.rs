@@ -1,4 +1,4 @@
-//! Browser WebCodecs and stream bindings for screen sharing.
+//! Браузерные привязки WebCodecs и потоков для демонстрации экрана.
 
 use js_sys::{Promise, Uint8Array};
 use wasm_bindgen::prelude::*;

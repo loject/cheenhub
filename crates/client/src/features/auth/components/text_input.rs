@@ -1,4 +1,4 @@
-//! Text input component for the authentication form.
+//! Компонент текстового поля для формы аутентификации.
 
 use dioxus::prelude::*;
 

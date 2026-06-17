@@ -1,4 +1,4 @@
-//! Server HTTP handlers.
+//! HTTP-обработчики серверов.
 
 use axum::{
     Json,
@@ -19,7 +19,7 @@ use crate::features::servers::application;
 use crate::features::servers::error::ServerError;
 use crate::state::AppState;
 
-/// Creates a server owned by the current user.
+/// Создает сервер, принадлежащий текущему пользователю.
 pub(crate) async fn create(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -29,7 +29,7 @@ pub(crate) async fn create(
     application::create(&state, token, request).await.map(Json)
 }
 
-/// Lists servers owned by the current user.
+/// Возвращает серверы, принадлежащие текущему пользователю.
 pub(crate) async fn list(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -38,7 +38,7 @@ pub(crate) async fn list(
     application::list(&state, token).await.map(Json)
 }
 
-/// Updates a server owned by the current user.
+/// Обновляет сервер, принадлежащий текущему пользователю.
 pub(crate) async fn update(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -51,7 +51,7 @@ pub(crate) async fn update(
         .map(Json)
 }
 
-/// Updates a server avatar owned by the current user.
+/// Обновляет аватар сервера, принадлежащего текущему пользователю.
 pub(crate) async fn update_avatar(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -64,7 +64,7 @@ pub(crate) async fn update_avatar(
         .map(Json)
 }
 
-/// Creates an invite for a server owned by the current user.
+/// Создает приглашение для сервера, принадлежащего текущему пользователю.
 pub(crate) async fn create_invite(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -77,7 +77,7 @@ pub(crate) async fn create_invite(
         .map(Json)
 }
 
-/// Loads server invite information for the current user.
+/// Загружает информацию о приглашении сервера для текущего пользователя.
 pub(crate) async fn invite_info(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -89,7 +89,7 @@ pub(crate) async fn invite_info(
         .map(Json)
 }
 
-/// Accepts a server invite for the current user.
+/// Принимает приглашение сервера для текущего пользователя.
 pub(crate) async fn accept_invite(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -101,7 +101,7 @@ pub(crate) async fn accept_invite(
         .map(Json)
 }
 
-/// Leaves a server as the current user.
+/// Покидает сервер от имени текущего пользователя.
 pub(crate) async fn leave(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -112,7 +112,7 @@ pub(crate) async fn leave(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Lists rooms available on a server for the current user.
+/// Возвращает комнаты, доступные на сервере для текущего пользователя.
 pub(crate) async fn list_rooms(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -124,7 +124,7 @@ pub(crate) async fn list_rooms(
         .map(Json)
 }
 
-/// Creates a room on a server owned by the current user.
+/// Создает комнату на сервере, принадлежащем текущему пользователю.
 pub(crate) async fn create_room(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -137,7 +137,7 @@ pub(crate) async fn create_room(
         .map(Json)
 }
 
-/// Updates a room on a server owned by the current user.
+/// Обновляет комнату на сервере, принадлежащем текущему пользователю.
 pub(crate) async fn update_room(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -150,7 +150,7 @@ pub(crate) async fn update_room(
         .map(Json)
 }
 
-/// Deletes a room from a server owned by the current user.
+/// Удаляет комнату с сервера, принадлежащего текущему пользователю.
 pub(crate) async fn delete_room(
     State(state): State<AppState>,
     headers: HeaderMap,

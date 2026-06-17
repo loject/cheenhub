@@ -13,7 +13,7 @@ use crate::features::auth::infrastructure::entities::{
 };
 use crate::features::auth::infrastructure::{UpdateUserNicknameError, UserConflict};
 
-/// Updates a user's public nickname.
+/// Обновляет публичный никнейм пользователя.
 pub(super) async fn update_user_nickname(
     database: &DatabaseConnection,
     user_id: &Uuid,
@@ -89,7 +89,7 @@ pub(super) async fn update_user_nickname(
     })
 }
 
-/// Updates a user's password hash and records the password change trace.
+/// Обновляет хеш пароля пользователя и записывает трассировку смены пароля.
 pub(super) async fn change_user_password(
     database: &DatabaseConnection,
     user_id: &Uuid,

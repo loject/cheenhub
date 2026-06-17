@@ -1,38 +1,38 @@
-//! Voice chat presence infrastructure.
+//! Инфраструктура присутствия голосового чата.
 
 use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-/// In-memory voice presence store for active realtime module streams.
+/// In-memory-хранилище голосового присутствия для активных потоков realtime-модуля.
 #[derive(Default)]
 pub(crate) struct InMemoryVoicePresenceStore {
     entries: Mutex<Vec<VoicePresence>>,
 }
 
-/// Active voice room presence row.
+/// Активная запись присутствия в голосовой комнате.
 #[derive(Debug, Clone)]
 pub(crate) struct VoicePresence {
-    /// Realtime module stream that owns this presence and is used for disconnect cleanup.
+    /// Поток realtime-модуля, которому принадлежит это присутствие и который используется для очистки при отключении.
     pub(crate) realtime_stream_id: Uuid,
-    /// Authenticated WebTransport session that receives media datagrams.
+    /// Аутентифицированная сессия WebTransport, получающая медиадатаграммы.
     pub(crate) session_id: Uuid,
-    /// Server that contains the joined room.
+    /// Сервер, содержащий присоединенную комнату.
     pub(crate) server_id: Uuid,
-    /// Joined room identifier.
+    /// Идентификатор присоединенной комнаты.
     pub(crate) room_id: Uuid,
-    /// User that joined the room.
+    /// Пользователь, вошедший в комнату.
     pub(crate) user_id: Uuid,
-    /// User nickname snapshot.
+    /// Снимок ника пользователя.
     pub(crate) nickname: String,
-    /// Public avatar URL snapshot.
+    /// Снимок публичного URL аватара.
     pub(crate) avatar_url: Option<String>,
-    /// Join timestamp.
+    /// Время присоединения.
     pub(crate) joined_at: DateTime<Utc>,
 }
 
 impl InMemoryVoicePresenceStore {
-    /// Replaces presence for one user/realtime stream and returns removed entries.
+    /// Заменяет присутствие одного пользователя или realtime-потока и возвращает удаленные записи.
     pub(crate) async fn join(&self, presence: VoicePresence) -> Vec<VoicePresence> {
         let mut entries = self.entries.lock().await;
         let mut removed = Vec::new();
@@ -52,7 +52,7 @@ impl InMemoryVoicePresenceStore {
         removed
     }
 
-    /// Removes presence for one realtime module stream.
+    /// Удаляет присутствие для одного потока realtime-модуля.
     pub(crate) async fn leave_realtime_stream(
         &self,
         realtime_stream_id: &Uuid,
@@ -61,7 +61,7 @@ impl InMemoryVoicePresenceStore {
             .await
     }
 
-    /// Removes presence for one realtime module stream in one room.
+    /// Удаляет присутствие для одного потока realtime-модуля в одной комнате.
     pub(crate) async fn leave_room(
         &self,
         realtime_stream_id: &Uuid,
@@ -76,7 +76,7 @@ impl InMemoryVoicePresenceStore {
         .await
     }
 
-    /// Removes all presence entries for one user in one room (kick).
+    /// Удаляет все записи присутствия одного пользователя в одной комнате (kick).
     pub(crate) async fn kick_user_from_room(
         &self,
         user_id: &Uuid,
@@ -108,7 +108,7 @@ impl InMemoryVoicePresenceStore {
         removed
     }
 
-    /// Lists active participants for one room.
+    /// Перечисляет активных участников одной комнаты.
     pub(crate) async fn room_participants(
         &self,
         server_id: &Uuid,
@@ -126,7 +126,7 @@ impl InMemoryVoicePresenceStore {
         participants
     }
 
-    /// Lists active participants grouped by room for one server.
+    /// Перечисляет активных участников одного сервера, сгруппированных по комнатам.
     pub(crate) async fn server_room_participants(
         &self,
         server_id: &Uuid,
@@ -154,7 +154,7 @@ impl InMemoryVoicePresenceStore {
         rooms
     }
 
-    /// Returns the active presence for one user in one room.
+    /// Возвращает активное присутствие одного пользователя в одной комнате.
     pub(crate) async fn room_presence_for_user(
         &self,
         room_id: &Uuid,
@@ -168,7 +168,7 @@ impl InMemoryVoicePresenceStore {
             .cloned()
     }
 
-    /// Updates active presence nickname rows for one user and returns affected room identifiers.
+    /// Обновляет никнейм в активных записях присутствия одного пользователя и возвращает затронутые идентификаторы комнат.
     pub(crate) async fn update_user_nickname(
         &self,
         user_id: &Uuid,
@@ -188,7 +188,7 @@ impl InMemoryVoicePresenceStore {
         rooms
     }
 
-    /// Updates active presence avatar URLs for one user and returns affected room identifiers.
+    /// Обновляет URL аватара в активных записях присутствия одного пользователя и возвращает затронутые идентификаторы комнат.
     pub(crate) async fn update_user_avatar(
         &self,
         user_id: &Uuid,
@@ -208,7 +208,7 @@ impl InMemoryVoicePresenceStore {
         rooms
     }
 
-    /// Lists active media recipients in one room excluding one sender session.
+    /// Перечисляет активных получателей медиа в одной комнате, исключая одну сессию отправителя.
     pub(crate) async fn media_recipient_sessions(
         &self,
         room_id: &Uuid,

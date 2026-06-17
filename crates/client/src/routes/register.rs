@@ -1,4 +1,4 @@
-//! Registration route component.
+//! Компонент маршрута регистрации.
 
 use dioxus::prelude::*;
 

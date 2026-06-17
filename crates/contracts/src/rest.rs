@@ -1,4 +1,4 @@
-//! Shared REST API contracts.
+//! Общие контракты REST API.
 
 pub mod auth;
 pub mod error;

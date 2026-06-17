@@ -1,196 +1,196 @@
-//! Text chat realtime module contracts.
+//! Контракты realtime-модуля текстового чата.
 
 use serde::{Deserialize, Serialize};
 
-/// Text chat module message kinds.
+/// Виды сообщений модуля текстового чата.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TextChatKind {
-    /// Load the latest room message history.
+    /// Загрузить свежую историю сообщений комнаты.
     LoadRoomHistory,
-    /// Room message history response.
+    /// Ответ с историей сообщений комнаты.
     RoomHistory,
-    /// Send a message to a room.
+    /// Отправить сообщение в комнату.
     SendMessage,
-    /// Acknowledges that a message send was accepted for fanout and persistence.
+    /// Подтверждает, что сообщение принято для рассылки и сохранения.
     SendMessageAccepted,
-    /// Upload a chat image attachment.
+    /// Загрузить вложение-изображение чата.
     UploadImage,
-    /// Acknowledges that a chat image was uploaded.
+    /// Подтверждает, что изображение чата загружено.
     UploadImageAccepted,
-    /// Load a chat image attachment through realtime.
+    /// Загрузить вложение-изображение чата через realtime.
     LoadImage,
-    /// Response containing one chat image attachment.
+    /// Ответ с одним вложением-изображением чата.
     ImageLoaded,
-    /// A newly created message event.
+    /// Событие о новом сообщении.
     MessageCreated,
-    /// Delete one of the user's own messages.
+    /// Удалить одно из собственных сообщений пользователя.
     DeleteMessage,
-    /// Acknowledges that a message deletion was accepted.
+    /// Подтверждает, что удаление сообщения принято.
     DeleteMessageAccepted,
-    /// A message was deleted by its author; recipients should remove it.
+    /// Сообщение удалено автором; получатели должны убрать его.
     MessageDeleted,
 }
 
-/// Request payload used to load room history.
+/// Полезная нагрузка запроса для загрузки истории комнаты.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoadRoomHistory {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
-    /// Message identifier to load messages before.
+    /// Идентификатор сообщения, перед которым нужно загрузить сообщения.
     pub before_message_id: Option<String>,
 }
 
-/// Response payload containing the latest room messages.
+/// Полезная нагрузка ответа с последними сообщениями комнаты.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoomHistory {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
-    /// Latest persisted room messages.
+    /// Последние сохраненные сообщения комнаты.
     pub messages: Vec<TextChatMessage>,
-    /// Whether older messages are available before this page.
+    /// Доступны ли более старые сообщения до этой страницы.
     pub has_more: bool,
 }
 
-/// Request payload used to send a room message.
+/// Полезная нагрузка запроса для отправки сообщения в комнату.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SendMessage {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
-    /// Message body.
+    /// Тело сообщения.
     pub body: String,
-    /// Uploaded image attachment ids to include in the message.
+    /// Идентификаторы загруженных вложений-изображений, которые нужно включить в сообщение.
     #[serde(default)]
     pub attachment_ids: Vec<String>,
 }
 
-/// Response payload returned after accepting a message send.
+/// Полезная нагрузка ответа после принятия отправки сообщения.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SendMessageAccepted {
-    /// Accepted message.
+    /// Принятое сообщение.
     pub message: TextChatMessage,
 }
 
-/// Request payload used to upload one chat image attachment.
+/// Полезная нагрузка запроса для загрузки одного вложения-изображения чата.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UploadChatImage {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
-    /// Optional original filename.
+    /// Необязательное исходное имя файла.
     pub original_filename: Option<String>,
-    /// Base64-encoded image bytes.
+    /// Байты изображения в Base64.
     pub data_base64: String,
 }
 
-/// Response returned after a chat image upload.
+/// Ответ после загрузки изображения чата.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatImageUploadResponse {
-    /// Stable attachment identifier.
+    /// Стабильный идентификатор вложения.
     pub id: String,
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
-    /// Validated image content type.
+    /// Проверенный MIME-тип изображения.
     pub content_type: String,
-    /// Uploaded byte length.
+    /// Загруженный размер в байтах.
     pub byte_size: i64,
-    /// Image width in pixels.
+    /// Ширина изображения в пикселях.
     pub width: i32,
-    /// Image height in pixels.
+    /// Высота изображения в пикселях.
     pub height: i32,
 }
 
-/// Image attachment metadata included in a text chat message.
+/// Метаданные вложения-изображения, включаемые в сообщение текстового чата.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TextChatImageAttachment {
-    /// Stable attachment identifier.
+    /// Стабильный идентификатор вложения.
     pub id: String,
-    /// Validated image content type.
+    /// Проверенный MIME-тип изображения.
     pub content_type: String,
-    /// Uploaded byte length.
+    /// Загруженный размер в байтах.
     pub byte_size: i64,
-    /// Image width in pixels.
+    /// Ширина изображения в пикселях.
     pub width: i32,
-    /// Image height in pixels.
+    /// Высота изображения в пикселях.
     pub height: i32,
 }
 
-/// Request payload used to load one chat image attachment.
+/// Полезная нагрузка запроса для загрузки одного вложения-изображения чата.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoadChatImage {
-    /// Stable attachment identifier.
+    /// Стабильный идентификатор вложения.
     pub attachment_id: String,
 }
 
-/// Response payload containing one chat image attachment.
+/// Полезная нагрузка ответа с одним вложением-изображением чата.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatImageLoadedResponse {
-    /// Stable attachment identifier.
+    /// Стабильный идентификатор вложения.
     pub id: String,
-    /// Validated image content type.
+    /// Проверенный MIME-тип изображения.
     pub content_type: String,
-    /// Base64-encoded image bytes.
+    /// Байты изображения в Base64.
     pub data_base64: String,
 }
 
-/// Request payload used to soft-delete one of the user's own messages.
+/// Полезная нагрузка запроса для мягкого удаления одного из собственных сообщений пользователя.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeleteMessage {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
-    /// Identifier of the message to delete.
+    /// Идентификатор сообщения для удаления.
     pub message_id: String,
 }
 
-/// Response payload returned after accepting a message deletion.
+/// Полезная нагрузка ответа после принятия удаления сообщения.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeleteMessageAccepted {
-    /// Identifier of the deleted message.
+    /// Идентификатор удаленного сообщения.
     pub message_id: String,
 }
 
-/// Broadcast payload notifying room members that a message was removed.
+/// Полезная нагрузка широковещания, уведомляющая участников комнаты об удалении сообщения.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageDeletedPayload {
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
-    /// Identifier of the removed message.
+    /// Идентификатор удаленного сообщения.
     pub message_id: String,
 }
 
-/// Text chat message payload.
+/// Полезная нагрузка сообщения текстового чата.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TextChatMessage {
-    /// Stable message identifier.
+    /// Стабильный идентификатор сообщения.
     pub id: String,
-    /// Server identifier.
+    /// Идентификатор сервера.
     pub server_id: String,
-    /// Room identifier.
+    /// Идентификатор комнаты.
     pub room_id: String,
-    /// Author user identifier.
+    /// Идентификатор пользователя-автора.
     pub author_user_id: String,
-    /// Author nickname snapshot.
+    /// Снимок ника автора.
     pub author_nickname: String,
-    /// Public author avatar image URL when configured.
+    /// Публичный URL аватара автора, если он настроен.
     pub author_avatar_url: Option<String>,
-    /// Message body.
+    /// Тело сообщения.
     pub body: String,
-    /// Image attachments included in the message.
+    /// Вложения-изображения, включенные в сообщение.
     #[serde(default)]
     pub attachments: Vec<TextChatImageAttachment>,
-    /// Message creation timestamp in RFC3339 format.
+    /// Временная метка создания сообщения в формате RFC3339.
     pub created_at: String,
 }

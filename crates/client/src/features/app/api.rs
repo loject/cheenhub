@@ -1,4 +1,4 @@
-//! Authenticated app API client.
+//! Клиент API аутентифицированного приложения.
 
 use cheenhub_contracts::rest::{
     AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,
@@ -10,7 +10,7 @@ use gloo_net::http::Request;
 
 use crate::features::auth::api as auth_api;
 
-/// Loads servers available to the current user.
+/// Загружает серверы, доступные текущему пользователю.
 pub(crate) async fn list_servers() -> Result<Vec<ServerSummary>, String> {
     let access_token = auth_api::fresh_access_token().await?;
     let response = Request::get(&auth_api::url("/servers"))
@@ -30,7 +30,7 @@ pub(crate) async fn list_servers() -> Result<Vec<ServerSummary>, String> {
     Err(auth_api::read_error(response).await)
 }
 
-/// Creates a server owned by the current user.
+/// Создает сервер, принадлежащий текущему пользователю.
 pub(crate) async fn create_server(name: String) -> Result<ServerSummary, String> {
     let access_token = auth_api::fresh_access_token().await?;
     let response = Request::post(&auth_api::url("/servers"))
@@ -52,7 +52,7 @@ pub(crate) async fn create_server(name: String) -> Result<ServerSummary, String>
     Err(auth_api::read_error(response).await)
 }
 
-/// Creates an invite for a server owned by the current user.
+/// Создает приглашение для сервера, принадлежащего текущему пользователю.
 pub(crate) async fn create_server_invite(
     server_id: String,
     max_uses: Option<u32>,
@@ -81,7 +81,7 @@ pub(crate) async fn create_server_invite(
     Err(auth_api::read_error(response).await)
 }
 
-/// Loads server invite information for the current user.
+/// Загружает информацию о приглашении на сервер для текущего пользователя.
 pub(crate) async fn load_server_invite(code: String) -> Result<ServerInviteInfoResponse, String> {
     let access_token = auth_api::fresh_access_token().await?;
     let response = Request::get(&auth_api::url(&format!("/servers/invites/{code}")))
@@ -100,7 +100,7 @@ pub(crate) async fn load_server_invite(code: String) -> Result<ServerInviteInfoR
     Err(auth_api::read_error(response).await)
 }
 
-/// Accepts a server invite for the current user.
+/// Принимает приглашение на сервер для текущего пользователя.
 pub(crate) async fn accept_server_invite(
     code: String,
 ) -> Result<AcceptServerInviteResponse, String> {
@@ -121,7 +121,7 @@ pub(crate) async fn accept_server_invite(
     Err(auth_api::read_error(response).await)
 }
 
-/// Leaves a server available to the current user.
+/// Покидает сервер, доступный текущему пользователю.
 pub(crate) async fn leave_server(server_id: String) -> Result<(), String> {
     let access_token = auth_api::fresh_access_token().await?;
     let response = Request::delete(&auth_api::url(&format!("/servers/{server_id}/membership")))
@@ -137,7 +137,7 @@ pub(crate) async fn leave_server(server_id: String) -> Result<(), String> {
     Err(auth_api::read_error(response).await)
 }
 
-/// Loads rooms available on a server.
+/// Загружает комнаты, доступные на сервере.
 pub(crate) async fn list_server_rooms(server_id: String) -> Result<Vec<ServerRoomSummary>, String> {
     let access_token = auth_api::fresh_access_token().await?;
     let response = Request::get(&auth_api::url(&format!("/servers/{server_id}/rooms")))
@@ -157,7 +157,7 @@ pub(crate) async fn list_server_rooms(server_id: String) -> Result<Vec<ServerRoo
     Err(auth_api::read_error(response).await)
 }
 
-/// Creates a room on a server owned by the current user.
+/// Создает комнату на сервере, принадлежащем текущему пользователю.
 pub(crate) async fn create_server_room(
     server_id: String,
     name: String,
@@ -183,7 +183,7 @@ pub(crate) async fn create_server_room(
     Err(auth_api::read_error(response).await)
 }
 
-/// Updates a room on a server owned by the current user.
+/// Обновляет комнату на сервере, принадлежащем текущему пользователю.
 pub(crate) async fn update_server_room(
     server_id: String,
     room_id: String,
@@ -212,7 +212,7 @@ pub(crate) async fn update_server_room(
     Err(auth_api::read_error(response).await)
 }
 
-/// Deletes a room from a server owned by the current user.
+/// Удаляет комнату с сервера, принадлежащего текущему пользователю.
 pub(crate) async fn delete_server_room(server_id: String, room_id: String) -> Result<(), String> {
     let access_token = auth_api::fresh_access_token().await?;
     let response = Request::delete(&auth_api::url(&format!(

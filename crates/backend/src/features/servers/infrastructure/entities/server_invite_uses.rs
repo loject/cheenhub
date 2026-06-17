@@ -1,23 +1,23 @@
-//! Server invite use entity.
+//! Сущность использования приглашения сервера.
 
 use sea_orm::entity::prelude::*;
 
-/// Server invite use database row.
+/// Строка базы данных использования приглашения сервера.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "server_invite_uses")]
 pub struct Model {
-    /// Stable invite use row identifier.
+    /// Стабильный идентификатор строки использования приглашения.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// Invite that was used successfully.
+    /// Приглашение, которое было успешно использовано.
     pub invite_id: Uuid,
-    /// User that used the invite successfully.
+    /// Пользователь, успешно использовавший приглашение.
     pub user_id: Uuid,
-    /// Invite use timestamp.
+    /// Временная метка использования приглашения.
     pub used_at: DateTimeUtc,
 }
 
-/// Server invite use relations.
+/// Связи использования приглашения сервера.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

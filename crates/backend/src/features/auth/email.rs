@@ -1,49 +1,49 @@
-//! Authentication email delivery.
+//! Доставка аутентификационных писем.
 
 use async_trait::async_trait;
 use lettre::message::Mailbox;
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
-/// Password reset email content.
+/// Содержимое письма сброса пароля.
 #[derive(Debug, Clone)]
 pub(crate) struct PasswordResetEmail {
-    /// Destination email address.
+    /// Адрес email получателя.
     pub(crate) to: String,
-    /// Reset URL opened by the user.
+    /// URL сброса, который откроет пользователь.
     pub(crate) reset_url: String,
 }
 
-/// Password change notification email content.
+/// Содержимое письма-уведомления о смене пароля.
 #[derive(Debug, Clone)]
 pub(crate) struct PasswordChangedEmail {
-    /// Destination email address.
+    /// Адрес email получателя.
     pub(crate) to: String,
 }
 
-/// Error returned by authentication email delivery.
+/// Ошибка, возвращаемая доставкой аутентификационных писем.
 #[derive(Debug)]
 pub(crate) enum EmailError {
-    /// Email delivery is missing required environment variables.
+    /// Для доставки писем не хватает обязательных переменных окружения.
     Misconfigured {
-        /// Missing environment variable names.
+        /// Имена отсутствующих переменных окружения.
         missing: Vec<&'static str>,
     },
-    /// Email delivery failed unexpectedly.
+    /// Доставка писем неожиданно завершилась ошибкой.
     Internal(anyhow::Error),
 }
 
-/// Authentication email sender.
+/// Отправитель аутентификационных писем.
 #[async_trait]
 pub(crate) trait AuthMailer: Send + Sync {
-    /// Sends a password reset email.
+    /// Отправляет письмо сброса пароля.
     async fn send_password_reset(&self, email: PasswordResetEmail) -> Result<(), EmailError>;
 
-    /// Sends a password change notification email.
+    /// Отправляет письмо-уведомление о смене пароля.
     async fn send_password_changed(&self, email: PasswordChangedEmail) -> Result<(), EmailError>;
 }
 
-/// SMTP-backed authentication email sender.
+/// Отправитель аутентификационных писем на базе SMTP.
 pub(crate) struct SmtpAuthMailer {
     transport: Option<AsyncSmtpTransport<Tokio1Executor>>,
     from: Option<String>,
@@ -51,7 +51,7 @@ pub(crate) struct SmtpAuthMailer {
 }
 
 impl SmtpAuthMailer {
-    /// Builds an SMTP auth mailer from environment configuration.
+    /// Создает SMTP-отправитель писем аутентификации из конфигурации окружения.
     pub(crate) fn new(
         host: Option<String>,
         port: u16,
@@ -190,7 +190,7 @@ fn password_changed_body() -> String {
     "Привет!\n\nПароль от аккаунта CheenHub был изменен. Если это был не ты, сразу запусти сброс пароля и проверь активные сеансы.\n".to_owned()
 }
 
-/// In-memory email sender for tests.
+/// In-memory-отправитель писем для тестов.
 #[cfg(test)]
 pub(crate) mod tests {
     use std::sync::Mutex;
@@ -199,7 +199,7 @@ pub(crate) mod tests {
 
     use super::{AuthMailer, EmailError, PasswordChangedEmail, PasswordResetEmail};
 
-    /// Test auth mailer that records sent reset emails.
+    /// Тестовый отправитель писем аутентификации, который записывает отправленные письма сброса.
     #[derive(Default)]
     pub(crate) struct TestAuthMailer {
         sent: Mutex<Vec<PasswordResetEmail>>,
@@ -207,12 +207,12 @@ pub(crate) mod tests {
     }
 
     impl TestAuthMailer {
-        /// Returns sent reset emails.
+        /// Возвращает отправленные письма сброса.
         pub(crate) fn sent(&self) -> Vec<PasswordResetEmail> {
             self.sent.lock().expect("test mailer lock").clone()
         }
 
-        /// Returns sent password change notifications.
+        /// Возвращает уведомления о смене пароля.
         pub(crate) fn password_changed(&self) -> Vec<PasswordChangedEmail> {
             self.password_changed
                 .lock()

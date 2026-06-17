@@ -1,4 +1,4 @@
-//! Unsupported screen sharing backend.
+//! Неподдерживаемый backend демонстрации экрана.
 
 use std::rc::Rc;
 
@@ -10,7 +10,7 @@ use super::backend::{
     ScreenShareSession,
 };
 
-/// Screen sharing backend for platforms without capture support.
+/// Backend демонстрации экрана для платформ без поддержки захвата.
 pub(crate) struct UnavailableScreenShareBackend;
 
 impl ScreenShareBackend for UnavailableScreenShareBackend {

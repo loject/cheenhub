@@ -1,4 +1,4 @@
-//! SeaORM entities for authentication infrastructure.
+//! Сущности SeaORM для инфраструктуры аутентификации.
 
 pub(crate) mod oauth_accounts;
 pub(crate) mod oauth_handoffs;

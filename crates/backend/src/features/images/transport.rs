@@ -1,4 +1,4 @@
-//! Public image HTTP handlers.
+//! HTTP-обработчики публичных изображений.
 
 use axum::{
     Router,
@@ -13,12 +13,12 @@ use crate::features::auth::error::AuthError;
 use crate::features::images::application;
 use crate::state::AppState;
 
-/// Builds public image routes.
+/// Собирает маршруты публичных изображений.
 pub(crate) fn routes() -> Router<AppState> {
     Router::new().route("/{image_id}", get(image))
 }
 
-/// Returns one public image.
+/// Возвращает одно публичное изображение.
 pub(crate) async fn image(
     State(state): State<AppState>,
     Path(image_id): Path<Uuid>,

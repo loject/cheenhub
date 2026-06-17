@@ -1,4 +1,4 @@
-//! Reset password route component.
+//! Компонент маршрута сброса пароля.
 
 use dioxus::prelude::*;
 

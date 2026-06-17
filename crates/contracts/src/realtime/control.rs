@@ -1,74 +1,74 @@
-//! Control realtime module contracts.
+//! Контракты realtime-модуля управления.
 
 use serde::{Deserialize, Serialize};
 
 use crate::rest::AuthUser;
 
-/// Control module message kinds.
+/// Виды сообщений модуля управления.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlKind {
-    /// Authenticate a newly opened realtime session.
+    /// Аутентифицировать только что открытую realtime-сессию.
     Authenticate,
-    /// Confirm a successful realtime authentication.
+    /// Подтвердить успешную аутентификацию realtime.
     Authenticated,
-    /// Temporary reliable control diagnostic request.
+    /// Временный диагностический запрос модуля управления.
     ControlText,
-    /// Temporary reliable control diagnostic response.
+    /// Временный диагностический ответ модуля управления.
     ControlAck,
-    /// Reject a realtime request or session.
+    /// Отклонить realtime-запрос или сессию.
     Rejected,
 }
 
-/// Request payload used to authenticate a realtime session.
+/// Полезная нагрузка запроса для аутентификации realtime-сессии.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Authenticate {
-    /// Short-lived access JWT.
+    /// Короткоживущий access JWT.
     pub access_token: String,
 }
 
-/// Response payload returned after a successful realtime authentication.
+/// Полезная нагрузка ответа после успешной аутентификации realtime.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Authenticated {
-    /// Authenticated user bound to the realtime session.
+    /// Аутентифицированный пользователь, привязанный к realtime-сессии.
     pub user: AuthUser,
 }
 
-/// Temporary reliable diagnostic control request payload.
+/// Полезная нагрузка временного надежного диагностического запроса.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ControlText {
-    /// Diagnostic text body.
+    /// Текст диагностического сообщения.
     pub body: String,
 }
 
-/// Temporary reliable diagnostic control response payload.
+/// Полезная нагрузка временного надежного диагностического ответа.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ControlAck {
-    /// Diagnostic response body.
+    /// Текст диагностического ответа.
     pub body: String,
 }
 
-/// Stable realtime rejection code.
+/// Стабильный код отклонения realtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RejectionCode {
-    /// Credentials or session state are invalid.
+    /// Учетные данные или состояние сессии недействительны.
     Unauthorized,
-    /// Message shape, module, kind, or payload is invalid.
+    /// Неверны форма сообщения, модуль, вид или полезная нагрузка.
     BadRequest,
-    /// The requested module is not supported.
+    /// Запрошенный модуль не поддерживается.
     UnsupportedModule,
-    /// The requested message kind is not supported by the module.
+    /// Запрошенный вид сообщения не поддерживается модулем.
     UnsupportedMessage,
-    /// Unexpected server failure.
+    /// Неожиданная ошибка сервера.
     InternalError,
 }
 
-/// Rejection payload returned for realtime protocol errors.
+/// Полезная нагрузка отклонения для ошибок протокола realtime.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rejected {
-    /// Stable machine-readable rejection code.
+    /// Стабильный машинно-читаемый код отклонения.
     pub code: RejectionCode,
-    /// Human-readable rejection message.
+    /// Человекочитаемое сообщение об отклонении.
     pub message: String,
 }

@@ -1,60 +1,60 @@
-//! Authentication input validation.
+//! Валидация входных данных аутентификации.
 
-/// Normalized registration input.
+/// Нормализованный ввод для регистрации.
 #[derive(Debug, Clone)]
 pub(crate) struct ValidRegister {
-    /// User nickname.
+    /// Никнейм пользователя.
     pub(crate) nickname: String,
-    /// Original email.
+    /// Исходный email.
     pub(crate) email: String,
-    /// Normalized email for lookup and uniqueness.
+    /// Нормализованный email для поиска и уникальности.
     pub(crate) email_normalized: String,
-    /// Plain password.
+    /// Обычный пароль.
     pub(crate) password: String,
 }
 
-/// Normalized login input.
+/// Нормализованный ввод для входа.
 #[derive(Debug, Clone)]
 pub(crate) struct ValidLogin {
-    /// Normalized email for lookup.
+    /// Нормализованный email для поиска.
     pub(crate) email_normalized: String,
-    /// Plain password.
+    /// Обычный пароль.
     pub(crate) password: String,
 }
 
-/// Normalized password reset request input.
+/// Нормализованный ввод для запроса сброса пароля.
 #[derive(Debug, Clone)]
 pub(crate) struct ValidPasswordResetRequest {
-    /// Normalized email for lookup.
+    /// Нормализованный email для поиска.
     pub(crate) email_normalized: String,
 }
 
-/// Normalized password reset confirmation input.
+/// Нормализованный ввод для подтверждения сброса пароля.
 #[derive(Debug, Clone)]
 pub(crate) struct ValidPasswordResetConfirm {
-    /// Opaque reset token.
+    /// Непрозрачный токен сброса.
     pub(crate) token: String,
-    /// New plain password.
+    /// Новый обычный пароль.
     pub(crate) new_password: String,
 }
 
-/// Normalized password change input.
+/// Нормализованный ввод для смены пароля.
 #[derive(Debug, Clone)]
 pub(crate) struct ValidPasswordChange {
-    /// Current plain password.
+    /// Текущий обычный пароль.
     pub(crate) current_password: String,
-    /// New plain password.
+    /// Новый обычный пароль.
     pub(crate) new_password: String,
 }
 
-/// Normalized current user update input.
+/// Нормализованный ввод для обновления текущего пользователя.
 #[derive(Debug, Clone)]
 pub(crate) struct ValidCurrentUserUpdate {
-    /// User nickname.
+    /// Никнейм пользователя.
     pub(crate) nickname: String,
 }
 
-/// Validates and normalizes registration input.
+/// Проверяет и нормализует ввод для регистрации.
 pub(crate) fn register(
     nickname: String,
     email: String,
@@ -86,7 +86,7 @@ pub(crate) fn register(
     })
 }
 
-/// Validates and normalizes login input.
+/// Проверяет и нормализует ввод для входа.
 pub(crate) fn login(email: String, password: String) -> Result<ValidLogin, &'static str> {
     let email_normalized = email.trim().to_lowercase();
 
@@ -103,7 +103,7 @@ pub(crate) fn login(email: String, password: String) -> Result<ValidLogin, &'sta
     })
 }
 
-/// Validates and normalizes password reset request input.
+/// Проверяет и нормализует ввод для запроса сброса пароля.
 pub(crate) fn password_reset_request(
     email: String,
 ) -> Result<ValidPasswordResetRequest, &'static str> {
@@ -115,7 +115,7 @@ pub(crate) fn password_reset_request(
     Ok(ValidPasswordResetRequest { email_normalized })
 }
 
-/// Validates and normalizes password reset confirmation input.
+/// Проверяет и нормализует ввод для подтверждения сброса пароля.
 pub(crate) fn password_reset_confirm(
     token: String,
     new_password: String,
@@ -134,7 +134,7 @@ pub(crate) fn password_reset_confirm(
     })
 }
 
-/// Validates and normalizes current user password change input.
+/// Проверяет и нормализует ввод для смены пароля текущего пользователя.
 pub(crate) fn password_change(
     current_password: String,
     new_password: String,
@@ -168,7 +168,7 @@ pub(crate) fn current_user_update(
     Ok(ValidCurrentUserUpdate { nickname })
 }
 
-/// Returns whether a nickname satisfies account rules.
+/// Возвращает, удовлетворяет ли никнейм правилам учетной записи.
 pub(crate) fn is_valid_nickname(nickname: &str) -> bool {
     let len = nickname.chars().count();
     (3..=32).contains(&len)
@@ -177,7 +177,7 @@ pub(crate) fn is_valid_nickname(nickname: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
-/// Returns whether an email roughly satisfies account rules.
+/// Возвращает, примерно ли email удовлетворяет правилам учетной записи.
 pub(crate) fn is_valid_email(email: &str) -> bool {
     let Some((local, domain)) = email.split_once('@') else {
         return false;

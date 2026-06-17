@@ -1,4 +1,4 @@
-//! Shared media datagram contracts.
+//! Общие контракты медиадатаграмм.
 
 use uuid::Uuid;
 
@@ -6,18 +6,18 @@ const MAGIC: &[u8; 4] = b"CHUB";
 const VERSION: u8 = 1;
 const HEADER_LEN: usize = 64;
 
-/// Media datagram flag set when the encoded payload is an independently decodable key frame.
+/// Флаг медиадатаграммы, когда закодированная полезная нагрузка является независимо декодируемым ключевым кадром.
 pub const MEDIA_DATAGRAM_FLAG_KEY_FRAME: u8 = 0b0000_0001;
 
-/// Media datagram flag set when the payload carries one fragment of a larger media frame.
+/// Флаг медиадатаграммы, когда полезная нагрузка несет один фрагмент более крупного медиакадра.
 pub const MEDIA_DATAGRAM_FLAG_FRAGMENTED: u8 = 0b0000_0010;
 
-/// Media datagram kind.
+/// Вид медиадатаграммы.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaDatagramKind {
-    /// Encoded microphone audio frame.
+    /// Закодированный аудиокадр микрофона.
     VoiceFrame = 1,
-    /// Encoded screen sharing video frame.
+    /// Закодированный видеокадр демонстрации экрана.
     ScreenFrame = 2,
 }
 
@@ -31,12 +31,12 @@ impl MediaDatagramKind {
     }
 }
 
-/// Encoded media codec carried by a media datagram.
+/// Закодированный медиакодек, передаваемый медиадатаграммой.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaCodec {
-    /// Opus audio.
+    /// Аудио Opus.
     Opus = 1,
-    /// VP9 video.
+    /// Видео VP9.
     Vp9 = 2,
 }
 
@@ -50,31 +50,31 @@ impl MediaCodec {
     }
 }
 
-/// One decoded media datagram.
+/// Одна декодированная медиадатаграмма.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaDatagram {
-    /// Datagram kind.
+    /// Вид датаграммы.
     pub kind: MediaDatagramKind,
-    /// Encoded payload codec.
+    /// Кодек закодированной полезной нагрузки.
     pub codec: MediaCodec,
-    /// Codec-specific flags.
+    /// Флаги, специфичные для кодека.
     pub flags: u8,
-    /// Sender-local packet sequence.
+    /// Локальная для отправителя последовательность пакетов.
     pub sequence: u64,
-    /// Capture or encode timestamp in microseconds.
+    /// Временная метка захвата или кодирования в микросекундах.
     pub timestamp_us: u64,
-    /// Frame duration in microseconds.
+    /// Длительность кадра в микросекундах.
     pub duration_us: u32,
-    /// Target room identifier.
+    /// Идентификатор целевой комнаты.
     pub room_id: Uuid,
-    /// Authenticated sender identifier assigned by the server for relayed frames.
+    /// Идентификатор аутентифицированного отправителя, назначенный сервером для ретранслируемых кадров.
     pub sender_user_id: Uuid,
-    /// Raw encoded media payload.
+    /// Сырая закодированная медиа-полезная нагрузка.
     pub payload: Vec<u8>,
 }
 
 impl MediaDatagram {
-    /// Encodes this media datagram to its binary wire form.
+    /// Кодирует эту медиадатаграмму в ее бинарный wire-формат.
     pub fn encode(&self) -> Result<Vec<u8>, MediaDatagramError> {
         let payload_len = u32::try_from(self.payload.len())
             .map_err(|_| MediaDatagramError::PayloadTooLarge(self.payload.len()))?;
@@ -95,7 +95,7 @@ impl MediaDatagram {
         Ok(bytes)
     }
 
-    /// Decodes one binary media datagram.
+    /// Декодирует одну бинарную медиадатаграмму.
     pub fn decode(bytes: &[u8]) -> Result<Self, MediaDatagramError> {
         if bytes.len() < HEADER_LEN {
             return Err(MediaDatagramError::Truncated);
@@ -136,20 +136,20 @@ impl MediaDatagram {
     }
 }
 
-/// Media datagram encode/decode error.
+/// Ошибка кодирования/декодирования медиадатаграммы.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MediaDatagramError {
-    /// Datagram is shorter than the advertised header or payload.
+    /// Датаграмма короче заявленного заголовка или полезной нагрузки.
     Truncated,
-    /// Datagram does not start with the CheenHub media magic.
+    /// Датаграмма не начинается с media magic CheenHub.
     BadMagic,
-    /// Datagram version is not supported.
+    /// Версия датаграммы не поддерживается.
     UnknownVersion(u8),
-    /// Datagram kind is not supported.
+    /// Вид датаграммы не поддерживается.
     UnknownKind(u8),
-    /// Datagram codec is not supported.
+    /// Кодек датаграммы не поддерживается.
     UnknownCodec(u8),
-    /// Payload length cannot fit the wire format or local allocation.
+    /// Длина полезной нагрузки не помещается в wire-формат или локальное выделение.
     PayloadTooLarge(usize),
 }
 

@@ -1,4 +1,4 @@
-//! Screen sharing capture and encoding feature.
+//! Функция захвата и кодирования демонстрации экрана.
 
 mod backend;
 #[cfg(target_arch = "wasm32")]

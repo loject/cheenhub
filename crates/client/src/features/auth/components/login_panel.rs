@@ -1,4 +1,4 @@
-//! Login form panel component.
+//! Компонент панели формы входа.
 
 use cheenhub_contracts::rest::LoginRequest;
 use dioxus::prelude::*;

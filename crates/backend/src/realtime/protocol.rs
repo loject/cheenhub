@@ -26,7 +26,7 @@ pub(crate) fn require_request_id(envelope: &RealtimeEnvelope) -> anyhow::Result<
         .ok_or_else(|| anyhow!("realtime request is missing request_id"))
 }
 
-/// Decodes a typed payload from an envelope.
+/// Декодирует типизированную полезную нагрузку из конверта.
 pub(crate) fn decode_payload<T>(envelope: &RealtimeEnvelope) -> anyhow::Result<T>
 where
     T: DeserializeOwned,
@@ -34,7 +34,7 @@ where
     serde_json::from_value(envelope.payload.clone()).context("failed to decode realtime payload")
 }
 
-/// Sends a typed rejection envelope.
+/// Отправляет типизированный конверт с отказом.
 pub(crate) async fn send_rejection(
     send: &EnvelopeSink,
     request_id: Option<Uuid>,
@@ -54,7 +54,7 @@ pub(crate) async fn send_rejection(
     .await
 }
 
-/// Writes a typed payload as a realtime envelope.
+/// Записывает типизированную полезную нагрузку как realtime-конверт.
 pub(crate) async fn write_envelope<T>(
     send: &EnvelopeSink,
     module: RealtimeModule,

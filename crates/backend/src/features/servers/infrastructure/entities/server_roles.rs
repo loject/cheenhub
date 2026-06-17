@@ -1,31 +1,31 @@
-//! Server role entity.
+//! Сущность роли сервера.
 
 use sea_orm::entity::prelude::*;
 
-/// Server role database row.
+/// Строка базы данных роли сервера.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "server_roles")]
 pub struct Model {
-    /// Stable role identifier.
+    /// Стабильный идентификатор роли.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// Server the role belongs to.
+    /// Сервер, которому принадлежит роль.
     pub server_id: Uuid,
-    /// Human-readable role name.
+    /// Человекочитаемое имя роли.
     pub name: String,
-    /// Hex role color.
+    /// Цвет роли в hex.
     pub color: String,
-    /// Stored role kind.
+    /// Сохраненный вид роли.
     pub kind: String,
-    /// Ordering position inside the server.
+    /// Позиция в порядке внутри сервера.
     pub position: i32,
-    /// Role creation timestamp.
+    /// Временная метка создания роли.
     pub created_at: DateTimeUtc,
-    /// Last role update timestamp.
+    /// Временная метка последнего обновления роли.
     pub updated_at: DateTimeUtc,
 }
 
-/// Server role relations.
+/// Связи роли сервера.
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 

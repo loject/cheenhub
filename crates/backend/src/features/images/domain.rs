@@ -1,53 +1,53 @@
-//! Image domain models.
+//! Доменные модели изображений.
 
 use uuid::Uuid;
 
-/// Processed image bytes ready for storage.
+/// Обработанные байты изображения, готовые к сохранению.
 #[derive(Debug, Clone)]
 pub(crate) struct NewStoredImage {
-    /// Stable image identifier.
+    /// Стабильный идентификатор изображения.
     pub(crate) id: Uuid,
-    /// User that owns this image.
+    /// Пользователь, которому принадлежит это изображение.
     pub(crate) owner_user_id: Uuid,
-    /// Image purpose.
+    /// Назначение изображения.
     pub(crate) kind: String,
-    /// Stored MIME type.
+    /// Сохраненный MIME-тип.
     pub(crate) content_type: String,
-    /// Pixel width.
+    /// Ширина в пикселях.
     pub(crate) width: i32,
-    /// Pixel height.
+    /// Высота в пикселях.
     pub(crate) height: i32,
-    /// Stored byte size.
+    /// Сохраненный размер в байтах.
     pub(crate) byte_size: i64,
-    /// Hex-encoded SHA-256 digest.
+    /// SHA-256-хэш в hex-формате.
     pub(crate) sha256: String,
-    /// Storage backend name.
+    /// Имя бэкенда хранения.
     pub(crate) storage_backend: String,
-    /// External object storage key.
+    /// Ключ внешнего объектного хранилища.
     pub(crate) storage_key: Option<String>,
-    /// Stored image bytes.
+    /// Сохраненные байты изображения.
     pub(crate) data: Option<Vec<u8>>,
 }
 
-/// Stored image data.
+/// Данные сохраненного изображения.
 #[derive(Debug, Clone)]
 pub(crate) struct StoredImage {
-    /// Stable image identifier.
+    /// Стабильный идентификатор изображения.
     pub(crate) id: Uuid,
-    /// User that owns this image.
+    /// Пользователь, которому принадлежит это изображение.
     pub(crate) owner_user_id: Uuid,
-    /// Image purpose.
+    /// Назначение изображения.
     pub(crate) kind: String,
-    /// Stored MIME type.
+    /// Сохраненный MIME-тип.
     pub(crate) content_type: String,
-    /// Pixel width.
+    /// Ширина в пикселях.
     pub(crate) width: i32,
-    /// Pixel height.
+    /// Высота в пикселях.
     pub(crate) height: i32,
-    /// Stored byte size.
+    /// Сохраненный размер в байтах.
     pub(crate) byte_size: i64,
-    /// Storage backend name.
+    /// Имя бэкенда хранения.
     pub(crate) storage_backend: String,
-    /// Stored image bytes when database-backed.
+    /// Сохраненные байты изображения при хранении в базе данных.
     pub(crate) data: Option<Vec<u8>>,
 }

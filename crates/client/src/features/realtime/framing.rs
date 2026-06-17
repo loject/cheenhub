@@ -1,4 +1,4 @@
-//! Length-prefixed realtime stream framing.
+//! Фрейминг realtime-потока с префиксом длины.
 
 use bytes::{BufMut, Bytes, BytesMut};
 use cheenhub_contracts::realtime::RealtimeEnvelope;
@@ -10,7 +10,7 @@ use super::error::RealtimeError;
 
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
-/// Writes one JSON envelope frame to a reliable stream.
+/// Записывает один JSON-фрейм конверта в надежный поток.
 pub(crate) async fn write_envelope(
     send: &Rc<Mutex<SendStream>>,
     envelope: &RealtimeEnvelope,
@@ -21,7 +21,7 @@ pub(crate) async fn write_envelope(
     write_frame(send, &bytes).await
 }
 
-/// Reads one JSON envelope frame from a reliable stream.
+/// Читает один JSON-фрейм конверта из надежного потока.
 pub(crate) async fn read_envelope(
     recv: &mut RecvStream,
 ) -> Result<Option<RealtimeEnvelope>, RealtimeError> {

@@ -260,14 +260,14 @@ pub(crate) async fn logout(state: &AppState, request: LogoutRequest) -> Result<(
     Ok(())
 }
 
-/// Returns the user for a valid access JWT.
+/// Возвращает пользователя для валидного access JWT.
 pub(crate) async fn me(state: &AppState, access_token: &str) -> Result<AuthUser, AuthError> {
     let (user, _) = require_current_user(state, access_token).await?;
 
     Ok(auth_user(state, &user))
 }
 
-/// Updates the current user profile.
+/// Обновляет профиль текущего пользователя.
 pub(crate) async fn update_current_user(
     state: &AppState,
     access_token: &str,
@@ -302,7 +302,7 @@ pub(crate) async fn update_current_user(
     Ok(auth_user(state, &updated_user))
 }
 
-/// Changes the current user's password.
+/// Меняет пароль текущего пользователя.
 pub(crate) async fn change_current_user_password(
     state: &AppState,
     access_token: &str,

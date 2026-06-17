@@ -1,4 +1,4 @@
-//! WebTransport client transport helpers.
+//! Вспомогательные функции транспортного слоя WebTransport-клиента.
 
 use std::rc::Rc;
 

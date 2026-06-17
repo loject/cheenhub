@@ -1,4 +1,4 @@
-//! Server settings page.
+//! Страница настроек сервера.
 
 use cheenhub_contracts::rest::ServerSummary;
 use dioxus::prelude::*;
@@ -8,7 +8,7 @@ use super::members_section::ServerMembersSettingsSection;
 use super::overview_section::ServerOverviewSettingsSection;
 use super::roles_section::ServerRolesSettingsSection;
 
-/// Server settings sections shown in the settings menu.
+/// Разделы настроек сервера, показанные в меню настроек.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ServerSettingsSection {
     /// Server overview section.
@@ -65,7 +65,7 @@ const SETTINGS_SECTIONS: &[SettingsSectionMeta] = &[
     },
 ];
 
-/// Renders a server settings workspace.
+/// Рендерит рабочую область настроек сервера.
 #[component]
 pub(crate) fn ServerSettingsPage(
     server: ServerSummary,

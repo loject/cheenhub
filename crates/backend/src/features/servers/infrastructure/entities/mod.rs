@@ -1,4 +1,4 @@
-//! SeaORM entities for server infrastructure.
+//! Сущности SeaORM для инфраструктуры серверов.
 
 pub(crate) mod server_invite_uses;
 pub(crate) mod server_invites;

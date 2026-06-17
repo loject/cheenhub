@@ -1,4 +1,4 @@
-//! Realtime connection status indicator component.
+//! Компонент индикатора состояния realtime-соединения.
 
 use dioxus::prelude::*;
 use futures_util::StreamExt;
@@ -10,7 +10,7 @@ const GRAPH_WIDTH: f32 = 220.0;
 const GRAPH_HEIGHT: f32 = 76.0;
 const GRAPH_PADDING: f32 = 8.0;
 
-/// Renders the current WebTransport connection state.
+/// Рендерит текущее состояние соединения WebTransport.
 #[component]
 pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
     let realtime = use_context::<RealtimeHandle>();

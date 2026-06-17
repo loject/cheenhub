@@ -1,4 +1,4 @@
-//! Authenticated application shell page.
+//! Страница оболочки аутентифицированного приложения.
 
 use dioxus::prelude::*;
 use gloo_timers::future::TimeoutFuture;
@@ -13,7 +13,7 @@ use crate::features::realtime::RealtimeProvider;
 use crate::features::screen_share::ScreenShareProvider;
 use crate::features::voice_chat::VoiceConnectionProvider;
 
-/// Renders the signed-in application home.
+/// Рендерит домашнюю страницу вошедшего в систему приложения.
 #[component]
 pub(crate) fn AppPage() -> Element {
     let navigator = use_navigator();

@@ -1,4 +1,4 @@
-//! Registration form panel component.
+//! Компонент панели формы регистрации.
 
 use cheenhub_contracts::rest::RegisterRequest;
 use dioxus::prelude::*;

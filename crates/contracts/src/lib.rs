@@ -1,11 +1,11 @@
 #![warn(missing_docs)]
-//! Shared client-server contracts for CheenHub.
+//! Общие контракты клиента и сервера CheenHub.
 
-/// Future REST API contract modules.
+/// Будущие модули контрактов REST API.
 pub mod rest;
 
-/// Future media transport contract modules.
+/// Будущие модули контрактов медиатранспорта.
 pub mod media;
 
-/// Realtime WebTransport contract modules.
+/// Модули контрактов realtime WebTransport.
 pub mod realtime;

@@ -1,4 +1,4 @@
-//! Realtime outbound sinks for supported transports.
+//! Исходящие приемники realtime для поддерживаемых транспортов.
 
 use std::sync::Arc;
 
@@ -10,44 +10,44 @@ use web_transport::{SendStream, Session};
 
 use super::framing;
 
-/// Outbound message written by the WebSocket realtime adapter.
+/// Исходящее сообщение, записываемое адаптером realtime WebSocket.
 pub(crate) enum WebSocketOutbound {
-    /// Reliable realtime envelope encoded as a WebSocket text message.
+    /// Надежный realtime-конверт, закодированный как текстовое сообщение WebSocket.
     Envelope(RealtimeEnvelope),
-    /// Media datagram bytes encoded as a WebSocket binary message.
+    /// Байты медиадатаграммы, закодированные как двоичное сообщение WebSocket.
     Datagram(Bytes),
 }
 
-/// Concrete envelope sender for realtime reliable messages.
+/// Конкретный отправитель конвертов для надежных realtime-сообщений.
 #[derive(Clone)]
 pub(crate) enum EnvelopeSink {
-    /// WebTransport bidirectional reliable stream.
+    /// Двунаправленный надежный поток WebTransport.
     WebTransport(Arc<Mutex<SendStream>>),
-    /// WebSocket fallback connection writer.
+    /// Запись соединения WebSocket-резерва.
     WebSocket(mpsc::UnboundedSender<WebSocketOutbound>),
 }
 
-/// Concrete datagram sender for realtime media messages.
+/// Конкретный отправитель датаграмм для медиа-сообщений realtime.
 #[derive(Clone)]
 pub(crate) enum DatagramSink {
-    /// WebTransport session datagrams.
+    /// Датаграммы сессии WebTransport.
     WebTransport(Arc<Session>),
-    /// WebSocket fallback binary writer.
+    /// Двоичный писатель WebSocket-резерва.
     WebSocket(mpsc::UnboundedSender<WebSocketOutbound>),
 }
 
 impl EnvelopeSink {
-    /// Wraps a WebTransport reliable stream.
+    /// Оборачивает надежный поток WebTransport.
     pub(crate) fn webtransport(send: Arc<Mutex<SendStream>>) -> Self {
         Self::WebTransport(send)
     }
 
-    /// Wraps a WebSocket fallback writer.
+    /// Оборачивает писатель WebSocket-резерва.
     pub(crate) fn websocket(sender: mpsc::UnboundedSender<WebSocketOutbound>) -> Self {
         Self::WebSocket(sender)
     }
 
-    /// Sends one reliable realtime envelope.
+    /// Отправляет один надежный realtime-конверт.
     pub(crate) async fn send_envelope(&self, envelope: &RealtimeEnvelope) -> anyhow::Result<()> {
         match self {
             Self::WebTransport(send) => framing::write_envelope(send, envelope).await,
@@ -59,17 +59,17 @@ impl EnvelopeSink {
 }
 
 impl DatagramSink {
-    /// Wraps a WebTransport session.
+    /// Оборачивает сессию WebTransport.
     pub(crate) fn webtransport(session: Session) -> Self {
         Self::WebTransport(Arc::new(session))
     }
 
-    /// Wraps a WebSocket fallback writer.
+    /// Оборачивает писатель WebSocket-резерва.
     pub(crate) fn websocket(sender: mpsc::UnboundedSender<WebSocketOutbound>) -> Self {
         Self::WebSocket(sender)
     }
 
-    /// Sends one media datagram through the active transport.
+    /// Отправляет одну медиадатаграмму через активный транспорт.
     pub(crate) async fn send_datagram(&self, bytes: Bytes) -> anyhow::Result<()> {
         match self {
             Self::WebTransport(session) => session

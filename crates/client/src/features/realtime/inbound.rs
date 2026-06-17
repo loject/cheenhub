@@ -1,4 +1,4 @@
-//! Inbound realtime envelope dispatcher.
+//! Диспетчер входящих realtime-конвертов.
 
 use std::cell::RefCell;
 use std::rc::Rc;

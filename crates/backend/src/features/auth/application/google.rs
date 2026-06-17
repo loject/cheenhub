@@ -1,4 +1,4 @@
-//! Google OAuth provider integration helpers.
+//! Вспомогательные функции интеграции с Google OAuth.
 
 use anyhow::Context;
 use serde::Deserialize;
@@ -8,29 +8,29 @@ use crate::features::auth::error::AuthError;
 use crate::features::auth::validation;
 use crate::state::AppState;
 
-/// Google OAuth client configuration.
+/// Конфигурация клиента Google OAuth.
 #[derive(Debug, Clone)]
 pub(super) struct GoogleConfig {
-    /// Google OAuth client id.
+    /// Идентификатор клиента Google OAuth.
     pub(super) client_id: String,
-    /// Google OAuth client secret.
+    /// Секрет клиента Google OAuth.
     pub(super) client_secret: String,
-    /// Registered backend callback URL.
+    /// Зарегистрированный callback URL бэкенда.
     pub(super) redirect_uri: String,
 }
 
-/// Verified Google identity.
+/// Подтвержденная личность Google.
 #[derive(Debug, Clone)]
 pub(super) struct GoogleIdentity {
-    /// Stable Google subject.
+    /// Стабильный subject Google.
     pub(super) subject: String,
-    /// Verified Google email.
+    /// Подтвержденный email Google.
     pub(super) email: String,
-    /// Google display name.
+    /// Отображаемое имя Google.
     pub(super) display_name: Option<String>,
 }
 
-/// Loads Google OAuth configuration from application state.
+/// Загружает конфигурацию Google OAuth из состояния приложения.
 pub(super) fn google_config(state: &AppState) -> Result<GoogleConfig, AuthError> {
     let mut missing = Vec::new();
     if state.google_oauth_client_id.is_none() {
@@ -66,7 +66,7 @@ pub(super) fn google_config(state: &AppState) -> Result<GoogleConfig, AuthError>
     })
 }
 
-/// Builds the frontend OAuth callback URL.
+/// Строит callback URL OAuth для фронтенда.
 pub(super) fn frontend_oauth_url(state: &AppState, params: &[(&str, &str)]) -> String {
     let base = format!(
         "{}/auth/oauth/google",
@@ -83,7 +83,7 @@ pub(super) fn frontend_oauth_url(state: &AppState, params: &[(&str, &str)]) -> S
     url.to_string()
 }
 
-/// Exchanges an authorization code and verifies the returned Google identity.
+/// Обменивает authorization code и проверяет возвращенную личность Google.
 pub(super) async fn exchange_google_code(
     config: &GoogleConfig,
     code: &str,

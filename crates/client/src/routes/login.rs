@@ -1,4 +1,4 @@
-//! Login route component.
+//! Компонент маршрута входа.
 
 use dioxus::prelude::*;
 

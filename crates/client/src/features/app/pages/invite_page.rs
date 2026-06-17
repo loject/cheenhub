@@ -1,4 +1,4 @@
-//! Server invite acceptance page.
+//! Страница принятия приглашения на сервер.
 
 use cheenhub_contracts::rest::AcceptServerInviteResponse;
 use dioxus::prelude::*;
@@ -7,7 +7,7 @@ use gloo_timers::future::TimeoutFuture;
 use crate::Route;
 use crate::features::app::api;
 
-/// Renders a server invite acceptance page.
+/// Рендерит страницу принятия приглашения на сервер.
 #[component]
 pub(crate) fn InvitePage(code: String) -> Element {
     let navigator = use_navigator();

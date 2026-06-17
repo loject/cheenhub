@@ -1,31 +1,31 @@
-//! Network quality realtime module contracts.
+//! Контракты realtime-модуля качества сети.
 
 use serde::{Deserialize, Serialize};
 
-/// Network module message kinds.
+/// Виды сообщений сетевого модуля.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkKind {
-    /// Reliable ping request.
+    /// Надежный ping-запрос.
     Ping,
-    /// Reliable pong response.
+    /// Надежный pong-ответ.
     Pong,
 }
 
-/// Reliable ping request payload.
+/// Полезная нагрузка надежного ping-запроса.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ping {
-    /// Client-side timestamp in milliseconds.
+    /// Временная метка на стороне клиента в миллисекундах.
     pub sent_at_ms: u64,
 }
 
-/// Reliable pong response payload.
+/// Полезная нагрузка надежного pong-ответа.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pong {
-    /// Original client-side timestamp in milliseconds.
+    /// Исходная временная метка клиента в миллисекундах.
     pub sent_at_ms: u64,
-    /// Server-side receive timestamp in milliseconds.
+    /// Временная метка получения на стороне сервера в миллисекундах.
     pub server_received_at_ms: u64,
-    /// Server-side send timestamp in milliseconds.
+    /// Временная метка отправки на стороне сервера в миллисекундах.
     pub server_sent_at_ms: u64,
 }

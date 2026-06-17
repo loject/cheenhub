@@ -1,4 +1,4 @@
-//! Authentication route pages.
+//! Страницы маршрутов аутентификации.
 
 pub(super) mod forgot_password_page;
 pub(super) mod login_page;

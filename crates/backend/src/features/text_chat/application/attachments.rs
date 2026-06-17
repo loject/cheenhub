@@ -1,4 +1,4 @@
-//! Text chat attachment application flows.
+//! Потоки приложения для вложений текстового чата.
 
 use cheenhub_contracts::realtime::ChatImageUploadResponse;
 use image::GenericImageView;
@@ -11,7 +11,7 @@ use crate::state::AppState;
 
 const MAX_CHAT_IMAGE_UPLOAD_BYTES: usize = 10 * 1024 * 1024;
 
-/// Uploads one image attachment for a text chat room.
+/// Загружает одно вложение-изображение для комнаты текстового чата.
 pub(crate) async fn upload_chat_image(
     state: &AppState,
     user_id: &Uuid,
@@ -124,7 +124,7 @@ pub(crate) async fn upload_chat_image(
     })
 }
 
-/// Loads one image attachment after checking room visibility.
+/// Загружает одно вложение-изображение после проверки видимости комнаты.
 pub(crate) async fn chat_image(
     state: &AppState,
     user_id: &Uuid,
