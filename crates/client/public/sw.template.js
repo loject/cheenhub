@@ -6,7 +6,6 @@ const CORE_ASSETS = [
   "/",
   "/index.html",
   "/offline.html",
-  "/manifest.webmanifest",
   "/pwa-register.js",
   "/icons/favicon.svg",
   "/icons/icon-144.png",
@@ -93,7 +92,6 @@ function isStaticAsset(url) {
     url.pathname.startsWith("/wasm/") ||
     url.pathname.startsWith("/icons/") ||
     url.pathname.startsWith("/screenshots/") ||
-    url.pathname === "/manifest.webmanifest" ||
     url.pathname === "/pwa-register.js"
   );
 }

@@ -8,7 +8,6 @@
   "scope": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "browser"],
-  "orientation": "any",
   "background_color": "#111827",
   "theme_color": "#111827",
   "categories": ["social", "communication", "productivity"],

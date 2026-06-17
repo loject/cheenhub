@@ -170,7 +170,7 @@
   }
 
   function collectDocumentUrls() {
-    const urls = new Set(["/", "/index.html", "/offline.html", "/manifest.webmanifest"]);
+    const urls = new Set(["/", "/index.html", "/offline.html"]);
 
     document
       .querySelectorAll("script[src], link[href]")
