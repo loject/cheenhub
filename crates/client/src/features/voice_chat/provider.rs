@@ -11,21 +11,24 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::{AudioPlaybackHandle, PlaybackCodec, VoiceFrame};
+use crate::features::camera::{CameraHandle, CameraStatus};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 
 use super::kicked_modal::KickedFromVoiceModal;
 use super::realtime;
-use super::screen_video::ScreenVideoHandle;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
+use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
 
 /// Предоставляет состояние голосового соединения аутентифицированным компонентам приложения.
+/// TODO: review, выглядит сложно и как куча бойлерплейта
 #[component]
 pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
     let realtime = use_context::<RealtimeHandle>();
     let microphone = use_context::<MicrophoneHandle>();
+    let camera = use_context::<CameraHandle>();
     let screen_share = use_context::<ScreenShareHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
     let state = use_signal(|| VoiceConnectionState::Disconnected);
@@ -33,17 +36,18 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let speaking_users = use_signal(Vec::new);
     let room_snapshots = use_signal(Vec::new);
     let speaking_generations = use_hook(|| Rc::new(RefCell::new(HashMap::<String, u64>::new())));
-    let screen_video_users = use_signal(Vec::new);
-    let screen_video_subscribers = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
-    let screen_video_generations = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
-    let screen_video = ScreenVideoHandle::new(
-        screen_video_users,
-        screen_video_subscribers,
-        screen_video_generations,
+    let participant_video_streams = use_signal(Vec::new);
+    let participant_video_subscribers = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
+    let participant_video_generations = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
+    let participant_video = ParticipantVideoHandle::new(
+        participant_video_streams,
+        participant_video_subscribers,
+        participant_video_generations,
     );
-    let screen_video_context = screen_video.clone();
-    use_context_provider(move || screen_video_context.clone());
+    let participant_video_context = participant_video.clone();
+    use_context_provider(move || participant_video_context.clone());
     let mut microphone_target_room = use_signal(|| None::<String>);
+    let mut camera_target_room = use_signal(|| None::<String>);
     let mut screen_share_target_room = use_signal(|| None::<String>);
     let mut mic_paused_by_mute = use_signal(|| false);
     let handle = VoiceConnectionHandle::new(
@@ -99,7 +103,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     });
     let screen_datagram_realtime = realtime.clone();
     let screen_datagram_current_user_id = current_user.id.clone();
-    let screen_datagram_video = screen_video.clone();
+    let screen_datagram_video = participant_video.clone();
     use_hook(move || {
         spawn(async move {
             let mut frames = realtime::subscribe_screen_frames(&screen_datagram_realtime);
@@ -113,14 +117,35 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 {
                     continue;
                 }
-                screen_datagram_video.publish_frame(frame);
+                screen_datagram_video
+                    .publish_frame(ParticipantVideoSource::ScreenShare, frame.into());
+            }
+        })
+    });
+    let camera_datagram_realtime = realtime.clone();
+    let camera_datagram_current_user_id = current_user.id.clone();
+    let camera_datagram_video = participant_video.clone();
+    use_hook(move || {
+        spawn(async move {
+            let mut frames = realtime::subscribe_camera_frames(&camera_datagram_realtime);
+            while let Some(frame) = frames.next().await {
+                let current = state();
+                let Some(target) = current.active_target() else {
+                    continue;
+                };
+                if frame.room_id != target.room_id
+                    || frame.sender_user_id == camera_datagram_current_user_id
+                {
+                    continue;
+                }
+                camera_datagram_video.publish_frame(ParticipantVideoSource::Camera, frame.into());
             }
         })
     });
     let status_realtime = realtime.clone();
     let status_playback = playback.clone();
     let status_handle = handle.clone();
-    let status_screen_video = screen_video.clone();
+    let status_participant_video = participant_video.clone();
     use_hook(move || {
         spawn(async move {
             let mut statuses = status_realtime.subscribe_connection_status();
@@ -129,7 +154,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                     let mut state = state;
                     state.set(VoiceConnectionState::Disconnected);
                     status_handle.clear_speaking_users();
-                    status_screen_video.clear();
+                    status_participant_video.clear();
                     status_playback.stop_all();
                 }
             }
@@ -138,6 +163,11 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let effect_handle = handle.clone();
     use_effect(move || match state() {
         VoiceConnectionState::Connected { target, .. } => {
+            reconcile_camera_target(
+                camera.clone(),
+                &mut camera_target_room,
+                target.room_id.as_str(),
+            );
             reconcile_screen_share_target(
                 screen_share.clone(),
                 &mut screen_share_target_room,
@@ -184,11 +214,15 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         | VoiceConnectionState::Connecting { .. }
         | VoiceConnectionState::Disconnecting { .. }
         | VoiceConnectionState::Error { .. } => {
+            if camera_target_room().is_some() {
+                camera_target_room.set(None);
+                camera.stop();
+            }
             if screen_share_target_room().is_some() {
                 screen_share_target_room.set(None);
                 screen_share.stop();
             }
-            screen_video.clear();
+            participant_video.clear();
             if microphone_target_room().is_some() {
                 microphone_target_room.set(None);
                 mic_paused_by_mute.set(false);
@@ -207,6 +241,29 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 on_close: move |_| handle.dismiss_kick_notification(),
             }
         }
+    }
+}
+
+fn reconcile_camera_target(
+    camera: CameraHandle,
+    target_room_signal: &mut Signal<Option<String>>,
+    active_room_id: &str,
+) {
+    if !matches!(camera.status(), CameraStatus::Live | CameraStatus::Starting) {
+        if target_room_signal().is_some() {
+            target_room_signal.set(None);
+        }
+        return;
+    }
+
+    match target_room_signal().as_deref() {
+        Some(room_id) if room_id == active_room_id => {}
+        Some(_) => {
+            info!("stopping camera capture after active voice room changed");
+            target_room_signal.set(None);
+            camera.stop();
+        }
+        None => target_room_signal.set(Some(active_room_id.to_owned())),
     }
 }
 

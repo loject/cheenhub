@@ -54,6 +54,9 @@ pub(crate) async fn dispatch(
         MediaDatagramKind::ScreenFrame if datagram.codec == MediaCodec::Vp9 => {
             voice_chat::media::handle_screen_frame(state, session_id, user_id, datagram).await;
         }
+        MediaDatagramKind::CameraFrame if datagram.codec == MediaCodec::Vp9 => {
+            voice_chat::media::handle_camera_frame(state, session_id, user_id, datagram).await;
+        }
         _ => {
             debug!(
                 %session_id,

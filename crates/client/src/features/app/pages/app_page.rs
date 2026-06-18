@@ -8,6 +8,7 @@ use crate::features::app::components::app_shell::AppShell;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::AudioPlaybackProvider;
 use crate::features::auth::{TokenRefresher, api};
+use crate::features::camera::CameraProvider;
 use crate::features::microphone::MicrophoneProvider;
 use crate::features::realtime::RealtimeProvider;
 use crate::features::screen_share::ScreenShareProvider;
@@ -113,9 +114,11 @@ pub(crate) fn AppPage() -> Element {
         RealtimeProvider {
             AudioPlaybackProvider {
                 MicrophoneProvider {
-                    ScreenShareProvider {
-                        VoiceConnectionProvider {
-                            AppShell {}
+                    CameraProvider {
+                        ScreenShareProvider {
+                            VoiceConnectionProvider {
+                                AppShell {}
+                            }
                         }
                     }
                 }

@@ -16,7 +16,9 @@ use crate::features::microphone::{EncodedMicrophoneFrame, MicrophoneCodec};
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
 use crate::features::screen_share::{EncodedScreenShareFrame, ScreenShareCodec};
 
-use super::screen_fragments;
+use crate::features::camera::{CameraCodec, EncodedCameraFrame};
+
+use super::video_fragments::{self, OutboundVideoFrame};
 
 /// Inbound relayed voice frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,22 +37,22 @@ pub(crate) struct InboundVoiceFrame {
     pub(crate) bytes: Vec<u8>,
 }
 
-/// Inbound relayed screen sharing frame.
+/// Входящий ретранслированный VP9 кадр видео.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct InboundScreenFrame {
-    /// Target room identifier.
+pub(crate) struct InboundVideoFrame {
+    /// Идентификатор целевой комнаты.
     pub(crate) room_id: String,
-    /// Authenticated sender identifier.
+    /// Идентификатор аутентифицированного отправителя.
     pub(crate) sender_user_id: String,
-    /// Sender-local packet sequence.
+    /// Локальная для отправителя последовательность пакетов.
     pub(crate) sequence: u64,
-    /// Capture or encode timestamp in microseconds.
+    /// Временная метка захвата или кодирования в микросекундах.
     pub(crate) timestamp_us: u64,
-    /// Frame duration in microseconds.
+    /// Длительность кадра в микросекундах.
     pub(crate) duration_us: u32,
-    /// Raw encoded VP9 frame bytes.
+    /// Сырые байты закодированного VP9 кадра.
     pub(crate) bytes: Vec<u8>,
-    /// Whether this frame can start a decoder stream.
+    /// Может ли этот кадр открыть поток декодера.
     pub(crate) key_frame: bool,
 }
 
@@ -162,24 +164,55 @@ pub(crate) fn subscribe_voice_frames(
     receiver
 }
 
-/// Subscribes to inbound relayed screen sharing frames for this tab.
+/// Подписывает текущую вкладку на входящие ретранслированные кадры демонстрации экрана.
 pub(crate) fn subscribe_screen_frames(
     realtime: &RealtimeHandle,
-) -> mpsc::UnboundedReceiver<InboundScreenFrame> {
+) -> mpsc::UnboundedReceiver<InboundVideoFrame> {
     let datagrams = realtime.subscribe_datagrams();
     let (sender, receiver) = mpsc::unbounded();
 
     dioxus::prelude::spawn(async move {
         let mut datagrams = datagrams;
-        let mut reassembler = screen_fragments::ScreenFrameReassembler::default();
+        let mut reassembler = video_fragments::VideoFrameReassembler::default();
         while let Some(bytes) = datagrams.next().await {
             let Some(datagram) = decode_screen_datagram(&bytes) else {
                 continue;
             };
-            let frame = if screen_fragments::is_fragmented(&datagram) {
-                reassembler.push(datagram).map(screen_frame_from_datagram)
+            let frame = if video_fragments::is_fragmented(&datagram) {
+                reassembler.push(datagram).map(video_frame_from_datagram)
             } else {
-                Some(screen_frame_from_datagram(datagram))
+                Some(video_frame_from_datagram(datagram))
+            };
+            let Some(frame) = frame else {
+                continue;
+            };
+            if sender.unbounded_send(frame).is_err() {
+                break;
+            }
+        }
+    });
+
+    receiver
+}
+
+/// Подписывает текущую вкладку на входящие ретранслированные кадры камеры.
+pub(crate) fn subscribe_camera_frames(
+    realtime: &RealtimeHandle,
+) -> mpsc::UnboundedReceiver<InboundVideoFrame> {
+    let datagrams = realtime.subscribe_datagrams();
+    let (sender, receiver) = mpsc::unbounded();
+
+    dioxus::prelude::spawn(async move {
+        let mut datagrams = datagrams;
+        let mut reassembler = video_fragments::VideoFrameReassembler::default();
+        while let Some(bytes) = datagrams.next().await {
+            let Some(datagram) = decode_camera_datagram(&bytes) else {
+                continue;
+            };
+            let frame = if video_fragments::is_fragmented(&datagram) {
+                reassembler.push(datagram).map(video_frame_from_datagram)
+            } else {
+                Some(video_frame_from_datagram(datagram))
             };
             let Some(frame) = frame else {
                 continue;
@@ -223,27 +256,75 @@ pub(crate) async fn send_voice_frame(
     realtime.send_unreliable_bytes(Bytes::from(bytes)).await
 }
 
-/// Sends one encoded screen sharing frame to the active voice room.
+/// Отправляет один закодированный кадр демонстрации экрана в активную голосовую комнату.
 pub(crate) async fn send_screen_frame(
     realtime: &RealtimeHandle,
     _server_id: &str,
     room_id: &str,
     frame: EncodedScreenShareFrame,
 ) -> Result<(), RealtimeError> {
-    let room_id =
-        Uuid::parse_str(room_id).map_err(|_| RealtimeError::new("Voice room id is invalid."))?;
     let codec = match frame.codec {
         ScreenShareCodec::Vp9 => MediaCodec::Vp9,
     };
-    let (_width, _height) = (frame.width, frame.height);
-    let flags = if frame.key_frame {
-        MEDIA_DATAGRAM_FLAG_KEY_FRAME
-    } else {
-        0
+    let frame = OutboundVideoFrame {
+        sequence: frame.sequence,
+        timestamp_us: frame.timestamp_us,
+        duration_us: frame.duration_us,
+        key_frame: frame.key_frame,
+        bytes: frame.bytes,
     };
-    for datagram in screen_fragments::screen_frame_datagrams(room_id, codec, flags, frame)? {
+    send_video_frame(
+        realtime,
+        room_id,
+        MediaDatagramKind::ScreenFrame,
+        codec,
+        frame,
+        "screen",
+    )
+    .await
+}
+
+/// Отправляет один закодированный кадр камеры в активную голосовую комнату.
+pub(crate) async fn send_camera_frame(
+    realtime: &RealtimeHandle,
+    _server_id: &str,
+    room_id: &str,
+    frame: EncodedCameraFrame,
+) -> Result<(), RealtimeError> {
+    let codec = match frame.codec {
+        CameraCodec::Vp9 => MediaCodec::Vp9,
+    };
+    let frame = OutboundVideoFrame {
+        sequence: frame.sequence,
+        timestamp_us: frame.timestamp_us,
+        duration_us: frame.duration_us,
+        key_frame: frame.key_frame,
+        bytes: frame.bytes,
+    };
+    send_video_frame(
+        realtime,
+        room_id,
+        MediaDatagramKind::CameraFrame,
+        codec,
+        frame,
+        "camera",
+    )
+    .await
+}
+
+async fn send_video_frame(
+    realtime: &RealtimeHandle,
+    room_id: &str,
+    kind: MediaDatagramKind,
+    codec: MediaCodec,
+    frame: OutboundVideoFrame,
+    label: &str,
+) -> Result<(), RealtimeError> {
+    let room_id =
+        Uuid::parse_str(room_id).map_err(|_| RealtimeError::new("Voice room id is invalid."))?;
+    for datagram in video_fragments::video_frame_datagrams(room_id, kind, codec, frame)? {
         let bytes = datagram.encode().map_err(|error| {
-            RealtimeError::new(format!("Failed to encode screen frame: {error}"))
+            RealtimeError::new(format!("Failed to encode {label} frame: {error}"))
         })?;
         realtime.send_unreliable_bytes(Bytes::from(bytes)).await?;
     }
@@ -286,8 +367,17 @@ fn decode_screen_datagram(bytes: &[u8]) -> Option<MediaDatagram> {
     Some(datagram)
 }
 
-fn screen_frame_from_datagram(datagram: MediaDatagram) -> InboundScreenFrame {
-    InboundScreenFrame {
+fn decode_camera_datagram(bytes: &[u8]) -> Option<MediaDatagram> {
+    let datagram = MediaDatagram::decode(bytes).ok()?;
+    if datagram.kind != MediaDatagramKind::CameraFrame || datagram.codec != MediaCodec::Vp9 {
+        return None;
+    }
+
+    Some(datagram)
+}
+
+fn video_frame_from_datagram(datagram: MediaDatagram) -> InboundVideoFrame {
+    InboundVideoFrame {
         room_id: datagram.room_id.to_string(),
         sender_user_id: datagram.sender_user_id.to_string(),
         sequence: datagram.sequence,

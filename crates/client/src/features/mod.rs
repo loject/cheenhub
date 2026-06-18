@@ -3,6 +3,7 @@
 pub(crate) mod app;
 pub(crate) mod audio_playback;
 pub(crate) mod auth;
+pub(crate) mod camera;
 pub(crate) mod landing;
 pub(crate) mod microphone;
 pub(crate) mod network;

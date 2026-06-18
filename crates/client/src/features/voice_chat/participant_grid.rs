@@ -9,10 +9,11 @@ use crate::features::app::components::user_context_menu::UserContextMenu;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::app::server_permissions::ServerPermissionsContext;
 use crate::features::audio_playback::AudioPlaybackHandle;
+use crate::features::camera::{CameraHandle, CameraStatus};
 
-use super::participant_tile::VoiceParticipantTile;
-use super::screen_video::ScreenVideoHandle;
+use super::participant_tile::{VoiceParticipantTile, VoiceParticipantTileMedia};
 use super::state::VoiceConnectionHandle;
+use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
 
 /// Empty or transient display state for the voice participant grid.
 #[derive(Clone, PartialEq, Eq)]
@@ -36,6 +37,14 @@ struct UserMenuState {
     y: f64,
 }
 
+#[derive(Clone, PartialEq)]
+struct ParticipantTileEntry {
+    key: String,
+    participant: VoiceRoomParticipant,
+    speaking: bool,
+    media: VoiceParticipantTileMedia,
+}
+
 /// Renders voice room participants.
 #[component]
 pub(crate) fn VoiceParticipantGrid(
@@ -50,10 +59,10 @@ pub(crate) fn VoiceParticipantGrid(
     let mut user_volumes = use_signal(HashMap::<String, u32>::new);
     let playback = use_context::<AudioPlaybackHandle>();
     let voice = use_context::<VoiceConnectionHandle>();
-    let screen_video = use_context::<ScreenVideoHandle>();
+    let camera = use_context::<CameraHandle>();
+    let participant_video = use_context::<ParticipantVideoHandle>();
     let current_user_id = use_context::<CurrentUserContext>().require_user().id;
     let can_kick_voice = use_context::<ServerPermissionsContext>().can_kick_voice;
-    let count = participants.len().clamp(1, 12);
     let (title, body) = match &status {
         VoiceParticipantGridStatus::Connecting => (
             "Подключаемся к голосовой комнате",
@@ -77,7 +86,18 @@ pub(crate) fn VoiceParticipantGrid(
     let kick_user_id = open_user_menu().map(|m| m.user_id.clone());
     let kick_server_id = server_id.clone();
     let kick_room_id = room_id.clone();
-    let screen_user_ids = screen_video.live_user_ids();
+    let camera_live = matches!(camera.status(), CameraStatus::Live);
+    let camera_user_ids = participant_video.live_user_ids(ParticipantVideoSource::Camera);
+    let screen_user_ids = participant_video.live_user_ids(ParticipantVideoSource::ScreenShare);
+    let participant_tiles = participant_tiles(
+        &participants,
+        &speaking_user_ids,
+        &camera_user_ids,
+        &screen_user_ids,
+        &current_user_id,
+        camera_live,
+    );
+    let count = participant_tiles.len().clamp(1, 12);
 
     rsx! {
         div {
@@ -110,12 +130,12 @@ pub(crate) fn VoiceParticipantGrid(
                 }
             } else {
                 div { class: "participants-grid m-auto flex min-h-full w-[min(100%,1320px)] flex-wrap content-center items-stretch justify-center gap-4 max-[900px]:gap-3", "data-count": "{count}",
-                    for participant in participants {
+                    for tile in participant_tiles {
                         VoiceParticipantTile {
-                            key: "{participant.user_id}",
-                            speaking: speaking_user_ids.iter().any(|user_id| user_id == &participant.user_id),
-                            screen_sharing: screen_user_ids.iter().any(|user_id| user_id == &participant.user_id),
-                            participant,
+                            key: "{tile.key}",
+                            speaking: tile.speaking,
+                            media: tile.media,
+                            participant: tile.participant.clone(),
                             on_open_user_menu: move |(name, user_id, x, y)| {
                                 open_user_menu.set(Some(UserMenuState { name, user_id, x, y }));
                             },
@@ -148,5 +168,73 @@ pub(crate) fn VoiceParticipantGrid(
                 }
             }
         }
+    }
+}
+
+fn participant_tiles(
+    participants: &[VoiceRoomParticipant],
+    speaking_user_ids: &[String],
+    camera_user_ids: &[String],
+    screen_user_ids: &[String],
+    current_user_id: &str,
+    local_camera_live: bool,
+) -> Vec<ParticipantTileEntry> {
+    let mut tiles = Vec::new();
+    for participant in participants {
+        let speaking = speaking_user_ids
+            .iter()
+            .any(|user_id| user_id == &participant.user_id);
+        let screen_sharing = screen_user_ids
+            .iter()
+            .any(|user_id| user_id == &participant.user_id);
+        let local_camera = participant.user_id == current_user_id && local_camera_live;
+        let remote_camera = participant.user_id != current_user_id
+            && camera_user_ids
+                .iter()
+                .any(|user_id| user_id == &participant.user_id);
+        let camera_on = local_camera || remote_camera;
+
+        if screen_sharing {
+            tiles.push(tile_entry(
+                participant,
+                speaking,
+                VoiceParticipantTileMedia::ScreenShare,
+            ));
+        }
+        if camera_on {
+            tiles.push(tile_entry(
+                participant,
+                speaking,
+                VoiceParticipantTileMedia::Camera,
+            ));
+        }
+        if !screen_sharing && !camera_on {
+            tiles.push(tile_entry(
+                participant,
+                speaking,
+                VoiceParticipantTileMedia::Avatar,
+            ));
+        }
+    }
+
+    tiles
+}
+
+fn tile_entry(
+    participant: &VoiceRoomParticipant,
+    speaking: bool,
+    media: VoiceParticipantTileMedia,
+) -> ParticipantTileEntry {
+    let suffix = match media {
+        VoiceParticipantTileMedia::Avatar => "avatar",
+        VoiceParticipantTileMedia::Camera => "camera",
+        VoiceParticipantTileMedia::ScreenShare => "screen",
+    };
+
+    ParticipantTileEntry {
+        key: format!("{}-{suffix}", participant.user_id),
+        participant: participant.clone(),
+        speaking,
+        media,
     }
 }

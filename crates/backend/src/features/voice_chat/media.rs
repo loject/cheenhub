@@ -27,6 +27,16 @@ pub(crate) async fn handle_screen_frame(
     handle_room_media_frame(state, session_id, user_id, datagram, "screen").await;
 }
 
+/// Обрабатывает одну декодированную медиадатаграмму камеры.
+pub(crate) async fn handle_camera_frame(
+    state: &AppState,
+    session_id: Uuid,
+    user_id: Uuid,
+    datagram: MediaDatagram,
+) {
+    handle_room_media_frame(state, session_id, user_id, datagram, "camera").await;
+}
+
 async fn handle_room_media_frame(
     state: &AppState,
     session_id: Uuid,

@@ -6,11 +6,11 @@ mod participant_tile;
 mod provider;
 mod realtime;
 mod room_presence;
-mod screen_fragments;
-mod screen_video;
 mod sidebar_controls;
 mod state;
 mod surface;
+mod video_fragments;
+mod video_streams;
 mod voice_controls;
 
 pub(crate) use provider::VoiceConnectionProvider;

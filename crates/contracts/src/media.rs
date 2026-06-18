@@ -13,12 +13,14 @@ pub const MEDIA_DATAGRAM_FLAG_KEY_FRAME: u8 = 0b0000_0001;
 pub const MEDIA_DATAGRAM_FLAG_FRAGMENTED: u8 = 0b0000_0010;
 
 /// Вид медиадатаграммы.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MediaDatagramKind {
     /// Закодированный аудиокадр микрофона.
     VoiceFrame = 1,
     /// Закодированный видеокадр демонстрации экрана.
     ScreenFrame = 2,
+    /// Закодированный видеокадр камеры.
+    CameraFrame = 3,
 }
 
 impl MediaDatagramKind {
@@ -26,6 +28,7 @@ impl MediaDatagramKind {
         match value {
             1 => Ok(Self::VoiceFrame),
             2 => Ok(Self::ScreenFrame),
+            3 => Ok(Self::CameraFrame),
             _ => Err(MediaDatagramError::UnknownKind(value)),
         }
     }
@@ -222,6 +225,26 @@ mod tests {
             room_id: Uuid::new_v4(),
             sender_user_id: Uuid::new_v4(),
             payload: vec![9, 8, 7, 6],
+        };
+
+        let encoded = datagram.encode().expect("datagram encodes");
+        let decoded = MediaDatagram::decode(&encoded).expect("datagram decodes");
+
+        assert_eq!(decoded, datagram);
+    }
+
+    #[test]
+    fn camera_media_datagram_round_trips() {
+        let datagram = MediaDatagram {
+            kind: MediaDatagramKind::CameraFrame,
+            codec: MediaCodec::Vp9,
+            flags: MEDIA_DATAGRAM_FLAG_KEY_FRAME,
+            sequence: 21,
+            timestamp_us: 456_123,
+            duration_us: 41_667,
+            room_id: Uuid::new_v4(),
+            sender_user_id: Uuid::new_v4(),
+            payload: vec![5, 6, 7, 8],
         };
 
         let encoded = datagram.encode().expect("datagram encodes");

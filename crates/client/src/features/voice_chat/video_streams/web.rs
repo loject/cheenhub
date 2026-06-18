@@ -1,4 +1,4 @@
-//! Browser screen sharing video renderer backend.
+//! Browser-backend renderer'а видео участника.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -8,38 +8,47 @@ use js_sys::{Array, Function, Object, Reflect, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
-use super::InboundScreenFrame;
-use super::backend::{ScreenVideoBackend, ScreenVideoRenderError, ScreenVideoRenderer};
+use super::ParticipantVideoFrame;
+use super::backend::{
+    ParticipantVideoBackend, ParticipantVideoRenderError, ParticipantVideoRenderer,
+};
 
-/// Browser implementation backed by WebCodecs and a canvas.
-pub(crate) struct WebScreenVideoBackend;
+/// Browser-реализация на основе WebCodecs и canvas.
+pub(crate) struct WebParticipantVideoBackend;
 
-impl ScreenVideoBackend for WebScreenVideoBackend {
+impl ParticipantVideoBackend for WebParticipantVideoBackend {
     fn create_renderer(
         &self,
         target_id: String,
         user_id: String,
-    ) -> Result<Rc<dyn ScreenVideoRenderer>, ScreenVideoRenderError> {
-        BrowserScreenVideoRenderer::new(target_id, user_id)
-            .map(|renderer| Rc::new(renderer) as Rc<dyn ScreenVideoRenderer>)
+        source_label: &'static str,
+    ) -> Result<Rc<dyn ParticipantVideoRenderer>, ParticipantVideoRenderError> {
+        BrowserParticipantVideoRenderer::new(target_id, user_id, source_label)
+            .map(|renderer| Rc::new(renderer) as Rc<dyn ParticipantVideoRenderer>)
     }
 }
 
-struct BrowserScreenVideoRenderer {
+struct BrowserParticipantVideoRenderer {
     decoder: VideoDecoder,
     canvas: Rc<RefCell<Option<JsValue>>>,
+    source_label: &'static str,
     received_key_frame: Rc<Cell<bool>>,
     waiting_key_frame_logged: Rc<Cell<bool>>,
     _output_closure: Closure<dyn FnMut(VideoFrame)>,
     _error_closure: Closure<dyn FnMut(JsValue)>,
 }
 
-impl BrowserScreenVideoRenderer {
-    fn new(target_id: String, user_id: String) -> Result<Self, ScreenVideoRenderError> {
+impl BrowserParticipantVideoRenderer {
+    fn new(
+        target_id: String,
+        user_id: String,
+        source_label: &'static str,
+    ) -> Result<Self, ParticipantVideoRenderError> {
         let canvas = Rc::new(RefCell::new(None));
         let output_canvas = canvas.clone();
         let output_target_id = target_id.clone();
         let output_user_id = user_id.clone();
+        let output_source_label = source_label;
         let output_closure = Closure::wrap(Box::new(move |frame: VideoFrame| {
             let canvas = match get_or_create_canvas(&output_canvas, &output_target_id) {
                 Ok(canvas) => canvas,
@@ -47,7 +56,8 @@ impl BrowserScreenVideoRenderer {
                     warn!(
                         %error,
                         sender_user_id = %output_user_id,
-                        "failed to prepare screen sharing canvas"
+                        source = output_source_label,
+                        "failed to prepare participant video canvas"
                     );
                     let _ = frame.close();
                     return;
@@ -58,7 +68,8 @@ impl BrowserScreenVideoRenderer {
                 warn!(
                     error = %js_error_message(error),
                     sender_user_id = %output_user_id,
-                    "failed to draw screen sharing frame"
+                    source = output_source_label,
+                    "failed to draw participant video frame"
                 );
             }
             let _ = frame.close();
@@ -67,7 +78,8 @@ impl BrowserScreenVideoRenderer {
             warn!(
                 error = %js_error_message(error),
                 sender_user_id = %user_id,
-                "screen sharing video decoder failed"
+                source = source_label,
+                "participant video decoder failed"
             );
         }) as Box<dyn FnMut(JsValue)>);
 
@@ -82,6 +94,7 @@ impl BrowserScreenVideoRenderer {
         Ok(Self {
             decoder,
             canvas,
+            source_label,
             received_key_frame: Rc::new(Cell::new(false)),
             waiting_key_frame_logged: Rc::new(Cell::new(false)),
             _output_closure: output_closure,
@@ -90,8 +103,8 @@ impl BrowserScreenVideoRenderer {
     }
 }
 
-impl ScreenVideoRenderer for BrowserScreenVideoRenderer {
-    fn decode(&self, frame: &InboundScreenFrame) -> Result<(), ScreenVideoRenderError> {
+impl ParticipantVideoRenderer for BrowserParticipantVideoRenderer {
+    fn decode(&self, frame: &ParticipantVideoFrame) -> Result<(), ParticipantVideoRenderError> {
         if frame.bytes.is_empty() {
             return Ok(());
         }
@@ -100,7 +113,8 @@ impl ScreenVideoRenderer for BrowserScreenVideoRenderer {
                 debug!(
                     sender_user_id = %frame.sender_user_id,
                     sequence = frame.sequence,
-                    "waiting for screen sharing key frame before decoding"
+                    source = self.source_label,
+                    "waiting for participant video key frame before decoding"
                 );
             }
             return Ok(());
@@ -110,7 +124,8 @@ impl ScreenVideoRenderer for BrowserScreenVideoRenderer {
                 sender_user_id = %frame.sender_user_id,
                 sequence = frame.sequence,
                 payload_bytes = frame.bytes.len(),
-                "received first screen sharing key frame for decoder"
+                source = self.source_label,
+                "received first participant video key frame for decoder"
             );
         }
 
@@ -122,7 +137,8 @@ impl ScreenVideoRenderer for BrowserScreenVideoRenderer {
         if let Err(error) = self.decoder.close() {
             warn!(
                 error = %js_error_message(error),
-                "failed to close screen sharing video decoder"
+                source = self.source_label,
+                "failed to close participant video decoder"
             );
         }
         if let Some(canvas) = self.canvas.borrow_mut().take() {
@@ -137,7 +153,7 @@ fn decoder_config() -> JsValue {
     object.into()
 }
 
-fn encoded_video_chunk(frame: &InboundScreenFrame) -> Result<EncodedVideoChunk, JsValue> {
+fn encoded_video_chunk(frame: &ParticipantVideoFrame) -> Result<EncodedVideoChunk, JsValue> {
     let data = Uint8Array::from(frame.bytes.as_slice());
     let init = Object::new();
     Reflect::set(
@@ -159,18 +175,16 @@ fn encoded_video_chunk(frame: &InboundScreenFrame) -> Result<EncodedVideoChunk, 
     EncodedVideoChunk::new(&init.into())
 }
 
-fn create_canvas_in_target(target_id: &str) -> Result<JsValue, ScreenVideoRenderError> {
+fn create_canvas_in_target(target_id: &str) -> Result<JsValue, ParticipantVideoRenderError> {
     let window = web_sys::window().ok_or_else(|| {
-        ScreenVideoRenderError::new("Окно браузера недоступно для отображения демонстрации экрана.")
+        ParticipantVideoRenderError::new("Окно браузера недоступно для отображения видео.")
     })?;
     let document = window.document().ok_or_else(|| {
-        ScreenVideoRenderError::new(
-            "Документ браузера недоступен для отображения демонстрации экрана.",
-        )
+        ParticipantVideoRenderError::new("Документ браузера недоступен для отображения видео.")
     })?;
     let target = document
         .get_element_by_id(target_id)
-        .ok_or_else(|| ScreenVideoRenderError::new("Контейнер демонстрации экрана недоступен."))?;
+        .ok_or_else(|| ParticipantVideoRenderError::new("Контейнер видео недоступен."))?;
     let canvas = document.create_element("canvas").map_err(render_error)?;
     set_property(canvas.as_ref(), "ariaHidden", &JsValue::from_str("true"));
     set_property(
@@ -186,7 +200,7 @@ fn create_canvas_in_target(target_id: &str) -> Result<JsValue, ScreenVideoRender
 fn get_or_create_canvas(
     canvas: &Rc<RefCell<Option<JsValue>>>,
     target_id: &str,
-) -> Result<JsValue, ScreenVideoRenderError> {
+) -> Result<JsValue, ParticipantVideoRenderError> {
     if let Some(canvas) = canvas.borrow().as_ref() {
         return Ok(canvas.clone());
     }
@@ -221,8 +235,8 @@ fn remove_canvas(canvas: &JsValue) -> Result<(), JsValue> {
     remove.call0(canvas).map(|_| ())
 }
 
-fn render_error(error: JsValue) -> ScreenVideoRenderError {
-    ScreenVideoRenderError::new(js_error_message(error))
+fn render_error(error: JsValue) -> ParticipantVideoRenderError {
+    ParticipantVideoRenderError::new(js_error_message(error))
 }
 
 fn js_error_message(error: JsValue) -> String {

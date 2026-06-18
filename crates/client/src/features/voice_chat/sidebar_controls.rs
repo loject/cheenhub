@@ -6,23 +6,30 @@ use dioxus::prelude::*;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
+use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::AudioPlaybackHandle;
+use crate::features::camera::{CameraHandle, CameraStatus};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
 
 use super::realtime;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
+use super::video_streams::{ParticipantVideoFrame, ParticipantVideoHandle, ParticipantVideoSource};
 
 /// Renders animated sidebar voice controls for the active voice connection.
 #[component]
 pub(crate) fn SidebarVoiceControls() -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
     let microphone = use_context::<MicrophoneHandle>();
+    let camera = use_context::<CameraHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
     let realtime_handle = use_context::<RealtimeHandle>();
+    let current_user_id = use_context::<CurrentUserContext>().require_user().id;
+    let participant_video = use_context::<ParticipantVideoHandle>();
     let output_muted = playback.is_muted();
     let state = voice.state();
     let microphone_status = microphone.status();
+    let camera_status = camera.status();
     let microphone_level = microphone.level();
     let visible = state.shows_sidebar_controls();
     let target = state.active_target();
@@ -50,6 +57,8 @@ pub(crate) fn SidebarVoiceControls() -> Element {
     let microphone_live = matches!(microphone_status, MicrophoneStatus::Live);
     let microphone_starting = matches!(microphone_status, MicrophoneStatus::Starting);
     let microphone_speaking = microphone_live && microphone_level.active;
+    let camera_live = matches!(camera_status, CameraStatus::Live);
+    let camera_starting = matches!(camera_status, CameraStatus::Starting);
     let microphone_level_width =
         (microphone_level.rms / microphone_level.threshold.max(0.001)).clamp(0.08, 1.0) * 100.0;
     let microphone_label = match &microphone_status {
@@ -64,10 +73,27 @@ pub(crate) fn SidebarVoiceControls() -> Element {
     } else {
         "Отключить звук"
     };
+    let camera_label = match camera_status {
+        CameraStatus::Idle => "Включить камеру",
+        CameraStatus::Starting => "Запрашиваем камеру",
+        CameraStatus::Live => "Выключить камеру",
+        CameraStatus::PermissionDenied => "Доступ к камере запрещен",
+        CameraStatus::Error(_) => "Камера недоступна",
+    };
     let microphone_label = if output_muted {
         "Включить микрофон (включит звук)".to_owned()
     } else {
         microphone_label
+    };
+    let camera_button_class = if camera_live {
+        "flex h-9 items-center justify-center rounded-xl border border-cyan-500/35 bg-cyan-500/15 text-cyan-100 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-cyan-400/45 hover:bg-cyan-500/20 disabled:cursor-wait disabled:opacity-60"
+    } else if matches!(
+        camera_status,
+        CameraStatus::PermissionDenied | CameraStatus::Error(_)
+    ) {
+        "flex h-9 items-center justify-center rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-100 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-amber-500/35 hover:bg-amber-500/15 disabled:cursor-wait disabled:opacity-60"
+    } else {
+        "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 disabled:cursor-wait disabled:opacity-60"
     };
     let microphone_button_class = if microphone_speaking {
         "relative flex h-9 items-center justify-center overflow-hidden rounded-xl border border-emerald-300/80 bg-emerald-500/20 text-emerald-50 shadow-[0_0_0_1px_rgba(52,211,153,.25),0_10px_28px_rgba(16,185,129,.20)] transition-[background,border-color,color,transform,box-shadow,opacity] duration-150 hover:-translate-y-px hover:border-emerald-300 hover:bg-emerald-500/25 disabled:cursor-wait disabled:opacity-60"
@@ -87,11 +113,17 @@ pub(crate) fn SidebarVoiceControls() -> Element {
         "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900"
     };
     let toggle_microphone = microphone.clone();
+    let toggle_camera = camera.clone();
     let leave_microphone = microphone.clone();
+    let leave_camera = camera.clone();
     let output_microphone = microphone.clone();
     let mic_playback = playback.clone();
     let toggle_playback = playback.clone();
     let target_for_microphone = target.clone();
+    let target_for_camera = target.clone();
+    let camera_realtime_handle = realtime_handle.clone();
+    let camera_current_user_id = current_user_id.clone();
+    let camera_participant_video = participant_video.clone();
 
     rsx! {
         div { class: "sidebar-voice-presence", "data-sidebar-voice-open": if visible { "true" } else { "false" },
@@ -185,10 +217,55 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                     }
                     button {
                         r#type: "button",
-                        class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900",
-                        "aria-label": "Параметры голосового чата",
-                        svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m9 6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75m-3 6h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5" }
+                        disabled: camera_starting || target_for_camera.is_none(),
+                        class: camera_button_class,
+                        "aria-label": camera_label,
+                        onclick: move |_| {
+                            let Some(target) = target_for_camera.clone() else {
+                                return;
+                            };
+                            let send_realtime = camera_realtime_handle.clone();
+                            let local_user_id = camera_current_user_id.clone();
+                            let local_video = camera_participant_video.clone();
+                            toggle_camera.toggle(Rc::new(move |frame| {
+                                let frame_realtime = send_realtime.clone();
+                                let frame_server_id = target.server_id.clone();
+                                let frame_room_id = target.room_id.clone();
+                                local_video.publish_frame(
+                                    ParticipantVideoSource::Camera,
+                                    ParticipantVideoFrame::from_local_camera(
+                                        frame_room_id.clone(),
+                                        local_user_id.clone(),
+                                        frame.clone(),
+                                    ),
+                                );
+                                spawn_local(async move {
+                                    if let Err(error) = realtime::send_camera_frame(
+                                        &frame_realtime,
+                                        &frame_server_id,
+                                        &frame_room_id,
+                                        frame,
+                                    )
+                                    .await
+                                    {
+                                        warn!(
+                                            %error,
+                                            server_id = %frame_server_id,
+                                            room_id = %frame_room_id,
+                                            "failed to send encoded camera frame"
+                                        );
+                                    }
+                                });
+                            }));
+                        },
+                        if camera_live {
+                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "m15 10 4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14m0-4v4m0-4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2" }
+                            }
+                        } else {
+                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M3 3l18 18M15 10l4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-.4.8M15 10v1.5M15 14a2 2 0 0 1-2 2H6.5M5 8h8a2 2 0 0 1 1.5.68M3 10v4a2 2 0 0 0 2 2h1" }
+                            }
                         }
                     }
                     button {
@@ -198,6 +275,7 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                         "aria-label": "Выйти из голосового чата",
                         onclick: move |_| {
                             leave_microphone.stop();
+                            leave_camera.stop();
                             voice.leave();
                         },
                         svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
