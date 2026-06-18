@@ -35,7 +35,7 @@ async function cacheUrls(cacheName, urls) {
 
   await Promise.allSettled(
     uniqueUrls.map((url) =>
-      cache.add(new Request(url, { credentials: "same-origin" }))
+      cache.add(new Request(url, { cache: "reload", credentials: "same-origin" }))
     )
   );
 }
@@ -58,6 +58,7 @@ self.addEventListener("activate", (event) => {
             .map((key) => caches.delete(key))
         )
       )
+      .then(() => deleteCachedAppBundles())
       .then(() => self.clients.claim())
   );
 });
@@ -82,7 +83,32 @@ function shouldBypass(request, url) {
     url.pathname.startsWith("/api/") ||
     url.pathname.startsWith("/realtime") ||
     url.searchParams.has("cheenhub-online-check") ||
+    request.cache === "reload" ||
     request.cache === "no-store"
+  );
+}
+
+function isAppBundleAsset(url) {
+  return (
+    (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/wasm/")) &&
+    /\.(mjs|js|wasm)$/.test(url.pathname)
+  );
+}
+
+async function deleteCachedAppBundles() {
+  const keys = await caches.keys();
+  await Promise.all(
+    keys
+      .filter((key) => key.startsWith("cheenhub-pwa-"))
+      .map(async (key) => {
+        const cache = await caches.open(key);
+        const requests = await cache.keys();
+        await Promise.all(
+          requests
+            .filter((request) => isAppBundleAsset(new URL(request.url)))
+            .map((request) => cache.delete(request))
+        );
+      })
   );
 }
 
@@ -185,6 +211,11 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(networkFirstNavigation(request));
+    return;
+  }
+
+  if (isAppBundleAsset(url)) {
+    event.respondWith(networkWithRuntimeFallback(request));
     return;
   }
 
