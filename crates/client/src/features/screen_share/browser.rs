@@ -12,7 +12,7 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 use super::backend::{
     EncodedScreenShareFrame, ScreenShareBackend, ScreenShareCallbacks, ScreenShareCodec,
-    ScreenShareConfig, ScreenShareError, ScreenShareSession,
+    ScreenShareConfig, ScreenShareError, ScreenShareErrorKind, ScreenShareSession,
 };
 use super::browser_bindings::{
     EncodedVideoChunk, MediaStreamTrackProcessor, VideoEncoder, VideoFrame,
@@ -23,6 +23,14 @@ use super::browser_capture::{
 use super::browser_errors::js_error_message;
 
 const KEY_FRAME_INTERVAL_SECONDS: u32 = 2;
+const FIREFOX_UNSUPPORTED_SCREEN_SHARE_MESSAGE: &str = concat!(
+    "Firefox не поддерживает текущую демонстрацию экрана. ",
+    "Воспользуйтесь браузером на базе Chromium или нативным клиентом."
+);
+const UNSUPPORTED_SCREEN_SHARE_MESSAGE: &str = concat!(
+    "Этот браузер не поддерживает демонстрацию экрана в CheenHub. ",
+    "Воспользуйтесь браузером на базе Chromium или нативным клиентом."
+);
 
 /// Реализация браузерной демонстрации экрана на основе `getDisplayMedia` и WebCodecs.
 pub(crate) struct BrowserScreenShareBackend;
@@ -71,6 +79,7 @@ async fn start_browser_session(
             "Поддерживается только VP9 демонстрация экрана.",
         ));
     }
+    ensure_browser_screen_share_support()?;
 
     let stream = request_screen_stream().await?;
     let track = first_video_track(&stream)?;
@@ -156,6 +165,44 @@ async fn start_browser_session(
         _output_closure: output_closure,
         _error_closure: error_closure,
     }))
+}
+
+fn ensure_browser_screen_share_support() -> Result<(), ScreenShareError> {
+    if is_firefox_browser() {
+        return Err(ScreenShareError::with_kind(
+            FIREFOX_UNSUPPORTED_SCREEN_SHARE_MESSAGE,
+            ScreenShareErrorKind::UnsupportedBrowser,
+        ));
+    }
+    if !global_constructor_available("VideoEncoder") {
+        return Err(ScreenShareError::new(
+            "Браузер не поддерживает кодирование демонстрации экрана через WebCodecs.",
+        ));
+    }
+    if !global_constructor_available("MediaStreamTrackProcessor") {
+        return Err(ScreenShareError::with_kind(
+            UNSUPPORTED_SCREEN_SHARE_MESSAGE,
+            ScreenShareErrorKind::UnsupportedBrowser,
+        ));
+    }
+
+    Ok(())
+}
+
+fn is_firefox_browser() -> bool {
+    web_sys::window()
+        .and_then(|window| window.navigator().user_agent().ok())
+        .is_some_and(|user_agent| {
+            let user_agent = user_agent.to_ascii_lowercase();
+            user_agent.contains("firefox/") || user_agent.contains("fxios/")
+        })
+}
+
+fn global_constructor_available(name: &str) -> bool {
+    Reflect::get(&js_sys::global(), &JsValue::from_str(name))
+        .ok()
+        .and_then(|value| value.dyn_into::<Function>().ok())
+        .is_some()
 }
 
 fn encoder_config(config: &ScreenShareConfig, width: u32, height: u32, frame_rate: u32) -> JsValue {

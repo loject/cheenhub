@@ -17,8 +17,13 @@ impl ScreenShareBackend for UnavailableScreenShareBackend {
     fn start(
         &self,
         _config: ScreenShareConfig,
-        _callbacks: ScreenShareCallbacks,
+        callbacks: ScreenShareCallbacks,
     ) -> LocalBoxFuture<'static, Result<Rc<dyn ScreenShareSession>, ScreenShareError>> {
+        let ScreenShareCallbacks {
+            on_frame: _on_frame,
+            on_ended: _on_ended,
+        } = callbacks;
+
         async move {
             Err(ScreenShareError::new("Демонстрация экрана недоступна."))
         }

@@ -47,7 +47,6 @@ impl Default for ScreenShareConfig {
 
 /// Callback'и демонстрации экрана, предоставленные владеющей функцией.
 #[derive(Clone)]
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub(crate) struct ScreenShareCallbacks {
     /// Encoded frame callback.
     pub(crate) on_frame: ScreenShareFrameCallback,
@@ -117,18 +116,14 @@ pub(crate) struct ScreenShareError {
 impl ScreenShareError {
     /// Builds a screen sharing error from a user-facing message.
     pub(crate) fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            kind: ScreenShareErrorKind::Unavailable,
-        }
+        Self::with_kind(message, ScreenShareErrorKind::Unavailable)
     }
 
-    /// Builds a screen sharing permission-denied error.
-    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-    pub(crate) fn permission_denied(message: impl Into<String>) -> Self {
+    /// Создает ошибку демонстрации экрана с заданной категорией.
+    pub(super) fn with_kind(message: impl Into<String>, kind: ScreenShareErrorKind) -> Self {
         Self {
             message: message.into(),
-            kind: ScreenShareErrorKind::PermissionDenied,
+            kind,
         }
     }
 
@@ -136,11 +131,17 @@ impl ScreenShareError {
     pub(crate) fn is_permission_denied(&self) -> bool {
         self.kind == ScreenShareErrorKind::PermissionDenied
     }
+
+    /// Возвращает, что текущий браузер не поддерживает демонстрацию экрана.
+    pub(crate) fn is_unsupported_browser(&self) -> bool {
+        self.kind == ScreenShareErrorKind::UnsupportedBrowser
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ScreenShareErrorKind {
+pub(super) enum ScreenShareErrorKind {
     PermissionDenied,
+    UnsupportedBrowser,
     Unavailable,
 }
 

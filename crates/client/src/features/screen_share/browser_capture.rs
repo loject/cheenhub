@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{DisplayMediaStreamConstraints, MediaStream, window};
 
-use super::backend::ScreenShareError;
+use super::backend::{ScreenShareError, ScreenShareErrorKind};
 use super::browser_errors::{is_permission_denied_error, js_error_message};
 
 pub(super) async fn request_screen_stream() -> Result<MediaStream, ScreenShareError> {
@@ -87,7 +87,10 @@ fn number_setting(settings: &JsValue, name: &str) -> Option<u32> {
 
 fn screen_share_error(error: JsValue) -> ScreenShareError {
     if is_permission_denied_error(&error) {
-        ScreenShareError::permission_denied("Доступ к демонстрации экрана запрещен.")
+        ScreenShareError::with_kind(
+            "Доступ к демонстрации экрана запрещен.",
+            ScreenShareErrorKind::PermissionDenied,
+        )
     } else {
         ScreenShareError::new(js_error_message(error))
     }

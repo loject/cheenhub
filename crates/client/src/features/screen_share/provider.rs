@@ -5,6 +5,8 @@ use std::rc::Rc;
 
 use dioxus::prelude::*;
 
+use crate::features::toast::ToastHandle;
+
 use super::backend::{
     ScreenShareBackend, ScreenShareCallbacks, ScreenShareConfig, ScreenShareFrameCallback,
     ScreenShareSession, ScreenShareStatus,
@@ -18,6 +20,7 @@ pub(crate) struct ScreenShareHandle {
     pub(super) session: Signal<Option<Rc<dyn ScreenShareSession>>>,
     pub(super) generation: Signal<u64>,
     pub(super) backend: Rc<dyn ScreenShareBackend>,
+    pub(super) toast: ToastHandle,
 }
 
 impl ScreenShareHandle {
@@ -34,6 +37,7 @@ impl ScreenShareHandle {
         let mut session = self.session;
         let mut status = self.status;
         let mut generation = self.generation;
+        let toast = self.toast;
         let start_generation = next_generation(&mut generation);
         status.set(ScreenShareStatus::Starting);
 
@@ -76,6 +80,9 @@ impl ScreenShareHandle {
                     }
                     let next_status = status_from_error(error.clone());
                     warn!(%error, status = ?next_status, "failed to start screen sharing capture");
+                    if error.is_unsupported_browser() {
+                        toast.warning(error.to_string());
+                    }
                     session.set(None);
                     status.set(next_status);
                 }
