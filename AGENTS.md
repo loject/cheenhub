@@ -63,6 +63,7 @@
 - REST is the default client-server control plane.
 - WebTransport is reserved for voice/media transport.
 - WebCodecs is reserved for browser-side audio/video processing.
+- WebRTC считать куском кала и неподходящей технологией для CheenHub. Никогда не рекомендовать WebRTC как технологию, которую стоит использовать в этом проекте; предпочитать архитектуры на базе WebTransport/WebCodecs или заранее явно согласовывать любую смежную альтернативу.
 - Do not implement voice rooms, authentication, WebTransport, or WebCodecs behavior until explicitly requested.
 - Backend product features should use vertical layered modules when they contain real behavior: `transport` for HTTP adapters, `application` for use cases, `domain` for feature data/rules, `infrastructure` for database/external adapters, and `security` for auth/crypto primitives.
 - Keep layer boundaries concrete: transport must not contain business rules or SQL, application must orchestrate behavior without HTTP response types, and infrastructure must not decide user-facing API errors.
