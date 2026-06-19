@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use dioxus::dioxus_core::spawn_forever;
 use dioxus::prelude::*;
 use futures_channel::mpsc;
 use futures_util::StreamExt;
@@ -218,9 +219,14 @@ impl ParticipantVideoHandle {
         });
         let mut live_streams = self.live_streams;
         live_streams.set(next_streams);
+        debug!(
+            user_id = %key.user_id,
+            source = key.source.label(),
+            "marked participant video stream as live"
+        );
 
         let generations = self.generations.clone();
-        spawn(async move {
+        spawn_forever(async move {
             let mut observed_generation = generation;
             loop {
                 TimeoutFuture::new(PARTICIPANT_VIDEO_RELEASE_TIMEOUT_MS).await;
@@ -238,6 +244,11 @@ impl ParticipantVideoHandle {
                         });
                         if next_streams.len() != previous_len {
                             live_streams.set(next_streams);
+                            debug!(
+                                user_id = %key.user_id,
+                                source = key.source.label(),
+                                "released participant video stream live marker"
+                            );
                         }
                         break;
                     }

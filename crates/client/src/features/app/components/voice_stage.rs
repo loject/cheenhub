@@ -21,7 +21,7 @@ pub(crate) fn VoiceStage() -> Element {
         div {
             class: "voice-stage flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-5 pt-6 pb-[108px] max-[900px]:pt-4 max-[900px]:pb-[100px] lg:p-6 lg:pt-6 lg:pb-[108px]",
             onclick: move |_| open_user_menu.set(None),
-            div { class: "participants-grid m-auto flex min-h-full w-[min(100%,1320px)] flex-wrap content-center items-stretch justify-center gap-4 max-[900px]:gap-3", "data-count": "5",
+            div { class: "participants-grid m-auto flex h-full min-h-0 w-full flex-wrap items-stretch justify-center gap-4 max-[900px]:gap-3", "data-count": "5",
                 article {
                     "data-avatar": "Ч",
                     style: "--avatar-bg: rgba(24,24,27,.80);",

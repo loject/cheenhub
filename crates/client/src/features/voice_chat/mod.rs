@@ -1,7 +1,9 @@
 //! Voice chat client feature.
 
 mod kicked_modal;
+mod participant_focus_strip;
 mod participant_grid;
+mod participant_grid_data;
 mod participant_tile;
 mod provider;
 mod realtime;

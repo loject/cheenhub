@@ -4,14 +4,18 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use dioxus::prelude::{debug, warn};
+use gloo_timers::future::TimeoutFuture;
 use js_sys::{Array, Function, Object, Reflect, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::spawn_local;
 
 use super::ParticipantVideoFrame;
 use super::backend::{
     ParticipantVideoBackend, ParticipantVideoRenderError, ParticipantVideoRenderer,
 };
+
+const VIDEO_CALLBACK_RELEASE_DELAY_MS: u32 = 250;
 
 /// Browser-реализация на основе WebCodecs и canvas.
 pub(crate) struct WebParticipantVideoBackend;
@@ -32,10 +36,11 @@ struct BrowserParticipantVideoRenderer {
     decoder: VideoDecoder,
     canvas: Rc<RefCell<Option<JsValue>>>,
     source_label: &'static str,
+    closed: Rc<Cell<bool>>,
     received_key_frame: Rc<Cell<bool>>,
     waiting_key_frame_logged: Rc<Cell<bool>>,
-    _output_closure: Closure<dyn FnMut(VideoFrame)>,
-    _error_closure: Closure<dyn FnMut(JsValue)>,
+    output_closure: RefCell<Option<Closure<dyn FnMut(VideoFrame)>>>,
+    error_closure: RefCell<Option<Closure<dyn FnMut(JsValue)>>>,
 }
 
 impl BrowserParticipantVideoRenderer {
@@ -45,11 +50,17 @@ impl BrowserParticipantVideoRenderer {
         source_label: &'static str,
     ) -> Result<Self, ParticipantVideoRenderError> {
         let canvas = Rc::new(RefCell::new(None));
+        let closed = Rc::new(Cell::new(false));
         let output_canvas = canvas.clone();
+        let output_closed = closed.clone();
         let output_target_id = target_id.clone();
         let output_user_id = user_id.clone();
         let output_source_label = source_label;
         let output_closure = Closure::wrap(Box::new(move |frame: VideoFrame| {
+            if output_closed.get() {
+                let _ = frame.close();
+                return;
+            }
             let canvas = match get_or_create_canvas(&output_canvas, &output_target_id) {
                 Ok(canvas) => canvas,
                 Err(error) => {
@@ -74,7 +85,11 @@ impl BrowserParticipantVideoRenderer {
             }
             let _ = frame.close();
         }) as Box<dyn FnMut(VideoFrame)>);
+        let error_closed = closed.clone();
         let error_closure = Closure::wrap(Box::new(move |error: JsValue| {
+            if error_closed.get() {
+                return;
+            }
             warn!(
                 error = %js_error_message(error),
                 sender_user_id = %user_id,
@@ -95,16 +110,20 @@ impl BrowserParticipantVideoRenderer {
             decoder,
             canvas,
             source_label,
+            closed,
             received_key_frame: Rc::new(Cell::new(false)),
             waiting_key_frame_logged: Rc::new(Cell::new(false)),
-            _output_closure: output_closure,
-            _error_closure: error_closure,
+            output_closure: RefCell::new(Some(output_closure)),
+            error_closure: RefCell::new(Some(error_closure)),
         })
     }
 }
 
 impl ParticipantVideoRenderer for BrowserParticipantVideoRenderer {
     fn decode(&self, frame: &ParticipantVideoFrame) -> Result<(), ParticipantVideoRenderError> {
+        if self.closed.get() {
+            return Ok(());
+        }
         if frame.bytes.is_empty() {
             return Ok(());
         }
@@ -134,6 +153,9 @@ impl ParticipantVideoRenderer for BrowserParticipantVideoRenderer {
     }
 
     fn close(&self) {
+        if self.closed.replace(true) {
+            return;
+        }
         if let Err(error) = self.decoder.close() {
             warn!(
                 error = %js_error_message(error),
@@ -144,7 +166,38 @@ impl ParticipantVideoRenderer for BrowserParticipantVideoRenderer {
         if let Some(canvas) = self.canvas.borrow_mut().take() {
             let _ = remove_canvas(&canvas);
         }
+        let output_closure = self.output_closure.borrow_mut().take();
+        let error_closure = self.error_closure.borrow_mut().take();
+        defer_video_callbacks_drop(output_closure, error_closure);
+        debug!(
+            source = self.source_label,
+            "closed participant video renderer"
+        );
     }
+}
+
+impl Drop for BrowserParticipantVideoRenderer {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+fn defer_video_callbacks_drop(
+    output_closure: Option<Closure<dyn FnMut(VideoFrame)>>,
+    error_closure: Option<Closure<dyn FnMut(JsValue)>>,
+) {
+    let Some(output_closure) = output_closure else {
+        return;
+    };
+    let Some(error_closure) = error_closure else {
+        return;
+    };
+
+    spawn_local(async move {
+        let callbacks = (output_closure, error_closure);
+        TimeoutFuture::new(VIDEO_CALLBACK_RELEASE_DELAY_MS).await;
+        drop(callbacks);
+    });
 }
 
 fn decoder_config() -> JsValue {

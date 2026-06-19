@@ -8,7 +8,7 @@ use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use super::video_streams::{ParticipantVideoCanvas, ParticipantVideoSource};
 
 /// Видеороль или fallback-содержимое плитки участника.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum VoiceParticipantTileMedia {
     /// Плитка без видеопотока, показывающая аватар участника.
     Avatar,
@@ -19,11 +19,12 @@ pub(crate) enum VoiceParticipantTileMedia {
 }
 
 impl VoiceParticipantTileMedia {
-    fn key_suffix(self) -> &'static str {
+    /// Возвращает стабильное имя медиароли для клиентских логов.
+    pub(crate) fn log_kind(self) -> &'static str {
         match self {
             Self::Avatar => "avatar",
             Self::Camera => "camera",
-            Self::ScreenShare => "screen",
+            Self::ScreenShare => "screen_share",
         }
     }
 }
@@ -32,15 +33,25 @@ impl VoiceParticipantTileMedia {
 #[component]
 pub(crate) fn VoiceParticipantTile(
     participant: VoiceRoomParticipant,
+    focused: bool,
     speaking: bool,
     media: VoiceParticipantTileMedia,
+    on_toggle_focus: EventHandler<()>,
     on_open_user_menu: EventHandler<(String, String, f64, f64)>,
+    on_toggle_user_menu: EventHandler<(String, String, f64, f64)>,
 ) -> Element {
     use_avatar_seed(participant.user_id.clone());
     let screen_sharing = media == VoiceParticipantTileMedia::ScreenShare;
     let camera_on = matches!(media, VoiceParticipantTileMedia::Camera);
-    let tile_key = format!("{}-{}", participant.user_id, media.key_suffix());
-    let tile_class = if screen_sharing && speaking {
+    let video_on = screen_sharing || camera_on;
+    let focused_video = focused && video_on;
+    let tile_class = if focused_video && speaking {
+        "user-tile relative overflow-hidden rounded-lg border border-emerald-400/55 bg-zinc-950 p-0 shadow-none transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-emerald-300/65"
+    } else if focused_video && screen_sharing {
+        "user-tile relative overflow-hidden rounded-lg border border-sky-400/25 bg-zinc-950 p-0 shadow-none transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-sky-300/35"
+    } else if focused_video {
+        "user-tile relative overflow-hidden rounded-lg border border-cyan-400/25 bg-zinc-950 p-0 shadow-none transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-cyan-300/35"
+    } else if screen_sharing && speaking {
         "user-tile relative overflow-hidden rounded-[20px] border border-emerald-400/75 bg-zinc-950 p-4 shadow-[0_0_0_1px_rgba(52,211,153,.24),0_18px_70px_rgba(16,185,129,.18)] transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-emerald-300/80"
     } else if screen_sharing {
         "user-tile relative overflow-hidden rounded-[20px] border border-sky-400/35 bg-zinc-950 p-4 shadow-[0_18px_70px_rgba(2,132,199,.16)] transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-sky-300/50"
@@ -56,12 +67,14 @@ pub(crate) fn VoiceParticipantTile(
 
     rsx! {
         article {
-            key: "{tile_key}",
             "data-avatar": "",
+            "data-focused": if focused { "true" } else { "false" },
             "data-speaking": if speaking { "true" } else { "false" },
             "data-camera": if camera_on { "true" } else { "false" },
+            "data-video": if video_on { "true" } else { "false" },
             style: "--avatar-bg: rgba(24,24,27,.80);",
             class: tile_class,
+            onclick: move |_| on_toggle_focus.call(()),
             oncontextmenu: {
                 let nickname = participant.nickname.clone();
                 let user_id = participant.user_id.clone();
@@ -77,16 +90,20 @@ pub(crate) fn VoiceParticipantTile(
                     user_id: participant.user_id.clone(),
                     source: ParticipantVideoSource::ScreenShare,
                 }
-                div { class: "pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-zinc-950/65 via-transparent to-zinc-950/20" }
+                if !focused {
+                    div { class: "pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-zinc-950/65 via-transparent to-zinc-950/20" }
+                }
             } else if camera_on {
                 ParticipantVideoCanvas {
                     user_id: participant.user_id.clone(),
                     source: ParticipantVideoSource::Camera,
                 }
-                div { class: "pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-zinc-950/65 via-transparent to-zinc-950/20" }
+                if !focused {
+                    div { class: "pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-zinc-950/65 via-transparent to-zinc-950/20" }
+                }
             }
             if speaking {
-                div { class: "pointer-events-none absolute inset-0 rounded-[20px] bg-emerald-400/[0.035]" }
+                div { class: if focused_video { "pointer-events-none absolute inset-0 rounded-lg bg-emerald-400/[0.02]" } else { "pointer-events-none absolute inset-0 rounded-[20px] bg-emerald-400/[0.035]" } }
                 div { class: "pointer-events-none absolute inset-x-4 bottom-12 z-0 flex h-10 justify-center items-end gap-1 text-emerald-300/55",
                     span { class: "inline-block h-4 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current" }
                     span { class: "inline-block h-7 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current [animation-delay:.10s]" }
@@ -94,7 +111,7 @@ pub(crate) fn VoiceParticipantTile(
                     span { class: "inline-block h-8 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current [animation-delay:.30s]" }
                 }
             }
-            div { class: "absolute right-3 top-3 z-20",
+            div { class: "absolute right-3 top-3 z-30",
                 button {
                     r#type: "button",
                     class: "rounded-xl border border-zinc-800 bg-zinc-950 p-2 text-zinc-500 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:text-zinc-200",
@@ -105,7 +122,7 @@ pub(crate) fn VoiceParticipantTile(
                         move |event| {
                             event.stop_propagation();
                             let point = event.client_coordinates();
-                            on_open_user_menu.call((nickname.clone(), user_id.clone(), point.x, point.y));
+                            on_toggle_user_menu.call((nickname.clone(), user_id.clone(), point.x, point.y));
                         }
                     },
                     svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
