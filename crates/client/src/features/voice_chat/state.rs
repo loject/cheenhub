@@ -14,8 +14,8 @@ use crate::features::realtime::RealtimeHandle;
 
 use super::realtime;
 use super::room_presence::{self, VoiceRoomParticipants};
+use super::speaking::{self, SpeakingUserActivity};
 
-const SPEAKING_RELEASE_TIMEOUT_MS: u32 = 450;
 const JOIN_RESPONSE_TIMEOUT_MS: u32 = 12_000;
 
 /// Voice-capable room target.
@@ -76,15 +76,9 @@ pub(crate) struct VoiceConnectionHandle {
     current_user: AuthUser,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SpeakingUserActivity {
-    /// Participant identifier.
-    user_id: String,
-}
-
 impl VoiceConnectionHandle {
     /// Builds a voice connection handle.
-    pub(crate) fn new(
+    pub(super) fn new(
         state: Signal<VoiceConnectionState>,
         kicked_from_room: Signal<Option<String>>,
         speaking_users: Signal<Vec<SpeakingUserActivity>>,
@@ -122,10 +116,7 @@ impl VoiceConnectionHandle {
 
     /// Returns user identifiers currently marked as speaking.
     pub(crate) fn speaking_user_ids(&self) -> Vec<String> {
-        (self.speaking_users)()
-            .into_iter()
-            .map(|activity| activity.user_id)
-            .collect()
+        speaking::user_ids(self.speaking_users)
     }
 
     /// Returns the latest known participant list for one voice-capable room.
@@ -164,57 +155,16 @@ impl VoiceConnectionHandle {
 
     /// Marks one user as speaking until no new voice frame refreshes the marker.
     pub(crate) fn mark_user_speaking(&self, user_id: String) {
-        let generation = {
-            let mut generations = self.speaking_generations.borrow_mut();
-            let generation = generations.entry(user_id.clone()).or_insert(0);
-            *generation = generation.saturating_add(1);
-            *generation
-        };
-
-        let mut next_users = (self.speaking_users)();
-        if next_users
-            .iter()
-            .any(|activity| activity.user_id == user_id)
-        {
-            return;
-        }
-        next_users.push(SpeakingUserActivity {
-            user_id: user_id.clone(),
-        });
-        let mut speaking_users = self.speaking_users;
-        speaking_users.set(next_users);
-
-        let speaking_generations = self.speaking_generations.clone();
-        spawn(async move {
-            let mut observed_generation = generation;
-            loop {
-                TimeoutFuture::new(SPEAKING_RELEASE_TIMEOUT_MS).await;
-                let latest_generation = speaking_generations.borrow().get(&user_id).copied();
-                match latest_generation {
-                    Some(latest_generation) if latest_generation != observed_generation => {
-                        observed_generation = latest_generation;
-                    }
-                    Some(_) => {
-                        speaking_generations.borrow_mut().remove(&user_id);
-                        let mut next_users = speaking_users();
-                        let previous_len = next_users.len();
-                        next_users.retain(|activity| activity.user_id != user_id);
-                        if next_users.len() != previous_len {
-                            speaking_users.set(next_users);
-                        }
-                        break;
-                    }
-                    None => break,
-                }
-            }
-        });
+        speaking::mark_user_speaking(
+            self.speaking_users,
+            self.speaking_generations.clone(),
+            user_id,
+        );
     }
 
     /// Clears all remote speaking indicators.
     pub(crate) fn clear_speaking_users(&self) {
-        self.speaking_generations.borrow_mut().clear();
-        let mut speaking_users = self.speaking_users;
-        speaking_users.set(Vec::new());
+        speaking::clear_speaking_users(self.speaking_users, self.speaking_generations.clone());
     }
 
     /// Joins one room, leaving the previous room first when needed.
@@ -265,6 +215,14 @@ impl VoiceConnectionHandle {
             .await
             {
                 Either::Left((Ok(mut snapshot), _)) => {
+                    if !state().is_connecting_to(&target) {
+                        info!(
+                            server_id = %target.server_id,
+                            room_id = %target.room_id,
+                            "ignored stale voice room join response"
+                        );
+                        return;
+                    }
                     ensure_current_user_present(&mut snapshot.participants, &user);
                     handle.apply_room_snapshot(snapshot.clone());
                     info!(
@@ -274,11 +232,19 @@ impl VoiceConnectionHandle {
                         "joined voice room"
                     );
                     state.set(VoiceConnectionState::Connected {
-                        target,
+                        target: target.clone(),
                         participants: snapshot.participants,
                     });
                 }
                 Either::Left((Err(error), _)) => {
+                    if !state().is_connecting_to(&target) {
+                        info!(
+                            server_id = %target.server_id,
+                            room_id = %target.room_id,
+                            "ignored stale voice room join failure"
+                        );
+                        return;
+                    }
                     warn!(
                         %error,
                         server_id = %target.server_id,
@@ -286,12 +252,20 @@ impl VoiceConnectionHandle {
                         "failed to join voice room"
                     );
                     state.set(VoiceConnectionState::Error {
-                        target: Some(target),
+                        target: Some(target.clone()),
                         message: "Не удалось подключиться к голосовой комнате. Проверь соединение и попробуй ещё раз."
                             .to_owned(),
                     });
                 }
                 Either::Right((_, _)) => {
+                    if !state().is_connecting_to(&target) {
+                        info!(
+                            server_id = %target.server_id,
+                            room_id = %target.room_id,
+                            "ignored stale voice room join timeout"
+                        );
+                        return;
+                    }
                     warn!(
                         timeout_ms = JOIN_RESPONSE_TIMEOUT_MS,
                         server_id = %target.server_id,
@@ -299,7 +273,7 @@ impl VoiceConnectionHandle {
                         "voice room join request timed out"
                     );
                     state.set(VoiceConnectionState::Error {
-                        target: Some(target),
+                        target: Some(target.clone()),
                         message: "Сервер долго не отвечает. Проверь соединение и попробуй ещё раз."
                             .to_owned(),
                     });
@@ -340,8 +314,26 @@ impl VoiceConnectionHandle {
             match realtime::leave_room(&realtime, target.server_id.clone(), target.room_id.clone())
                 .await
             {
-                Ok(_) => state.set(VoiceConnectionState::Disconnected),
+                Ok(_) => {
+                    if state().is_disconnecting_from(&target) {
+                        state.set(VoiceConnectionState::Disconnected);
+                    } else {
+                        info!(
+                            server_id = %target.server_id,
+                            room_id = %target.room_id,
+                            "ignored stale voice room leave response"
+                        );
+                    }
+                }
                 Err(error) => {
+                    if !state().is_disconnecting_from(&target) {
+                        info!(
+                            server_id = %target.server_id,
+                            room_id = %target.room_id,
+                            "ignored stale voice room leave failure"
+                        );
+                        return;
+                    }
                     warn!(
                         %error,
                         server_id = %target.server_id,
@@ -476,6 +468,14 @@ impl VoiceConnectionState {
         matches!(
             self,
             Self::Connecting { target }
+                if target.server_id == room.server_id && target.room_id == room.room_id
+        )
+    }
+
+    fn is_disconnecting_from(&self, room: &VoiceRoomTarget) -> bool {
+        matches!(
+            self,
+            Self::Disconnecting { target, .. }
                 if target.server_id == room.server_id && target.room_id == room.room_id
         )
     }

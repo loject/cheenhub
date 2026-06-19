@@ -214,21 +214,42 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         | VoiceConnectionState::Connecting { .. }
         | VoiceConnectionState::Disconnecting { .. }
         | VoiceConnectionState::Error { .. } => {
-            if camera_target_room().is_some() {
+            let had_camera_target = camera_target_room().is_some();
+            let had_screen_share_target = screen_share_target_room().is_some();
+            let had_microphone_target = microphone_target_room().is_some();
+            let was_paused_by_mute = mic_paused_by_mute();
+
+            if had_camera_target {
                 camera_target_room.set(None);
                 camera.stop();
             }
-            if screen_share_target_room().is_some() {
+            if had_screen_share_target {
                 screen_share_target_room.set(None);
                 screen_share.stop();
             }
             participant_video.clear();
-            if microphone_target_room().is_some() {
+            if had_microphone_target {
                 microphone_target_room.set(None);
-                mic_paused_by_mute.set(false);
                 microphone.stop();
-                effect_handle.clear_speaking_users();
-                playback.stop_all();
+            }
+            if was_paused_by_mute {
+                mic_paused_by_mute.set(false);
+            }
+            effect_handle.clear_speaking_users();
+            playback.stop_all();
+
+            if had_camera_target
+                || had_screen_share_target
+                || had_microphone_target
+                || was_paused_by_mute
+            {
+                info!(
+                    microphone = had_microphone_target,
+                    microphone_paused_by_mute = was_paused_by_mute,
+                    camera = had_camera_target,
+                    screen_share = had_screen_share_target,
+                    "released local voice media resources"
+                );
             }
         }
     });

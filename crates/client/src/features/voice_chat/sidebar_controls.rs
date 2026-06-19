@@ -50,6 +50,7 @@ pub(crate) fn SidebarVoiceControls() -> Element {
         VoiceConnectionState::Disconnecting { .. } => "отключаемся",
         VoiceConnectionState::Error { .. } => "нужна повторная попытка",
     };
+    let media_controls_enabled = matches!(state, VoiceConnectionState::Connected { .. });
     let error = match &state {
         VoiceConnectionState::Error { message, .. } => Some(message.clone()),
         _ => None,
@@ -142,10 +143,13 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                 div { class: "grid grid-cols-4 gap-2",
                     button {
                         r#type: "button",
-                        disabled: microphone_starting || target_for_microphone.is_none(),
+                        disabled: !media_controls_enabled || microphone_starting || target_for_microphone.is_none(),
                         class: microphone_button_class,
                         "aria-label": microphone_label,
                         onclick: move |_| {
+                            if !media_controls_enabled {
+                                return;
+                            }
                             if output_muted {
                                 mic_playback.set_muted(false);
                             }
@@ -217,10 +221,13 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                     }
                     button {
                         r#type: "button",
-                        disabled: camera_starting || target_for_camera.is_none(),
+                        disabled: !media_controls_enabled || camera_starting || target_for_camera.is_none(),
                         class: camera_button_class,
                         "aria-label": camera_label,
                         onclick: move |_| {
+                            if !media_controls_enabled {
+                                return;
+                            }
                             let Some(target) = target_for_camera.clone() else {
                                 return;
                             };

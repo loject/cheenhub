@@ -9,6 +9,7 @@ mod provider;
 mod realtime;
 mod room_presence;
 mod sidebar_controls;
+mod speaking;
 mod state;
 mod surface;
 mod video_fragments;

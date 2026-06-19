@@ -34,6 +34,7 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
     let microphone_level = microphone.level();
     let is_active_room = state.is_active_room(&server_id, &room_id);
     let is_leaving = matches!(state, VoiceConnectionState::Disconnecting { .. });
+    let media_controls_enabled = matches!(state, VoiceConnectionState::Connected { .. });
     let output_muted = playback.is_muted();
     let microphone_live = matches!(microphone_status, MicrophoneStatus::Live);
     let microphone_starting = matches!(microphone_status, MicrophoneStatus::Starting);
@@ -98,7 +99,7 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
             div { class: "pointer-events-auto flex items-center gap-3 rounded-[24px] border border-zinc-800 bg-zinc-950/85 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.38)] drop-shadow-[0_12px_24px_rgba(0,0,0,.28)] backdrop-blur-xl",
                 button {
                     r#type: "button",
-                    disabled: microphone_starting,
+                    disabled: !media_controls_enabled || microphone_starting,
                     class: if microphone_speaking {
                         "group relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-emerald-300/80 bg-emerald-500/20 text-emerald-50 shadow-[0_0_0_1px_rgba(52,211,153,.25),0_14px_36px_rgba(16,185,129,.22)] transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-500/25 disabled:cursor-wait disabled:opacity-60"
                     } else if microphone_live {
@@ -108,6 +109,9 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                     },
                     "aria-label": microphone_label,
                     onclick: move |_| {
+                        if !media_controls_enabled {
+                            return;
+                        }
                         if output_muted {
                             unmute_playback.set_muted(false);
                         }
@@ -163,7 +167,7 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                 }
                 button {
                     r#type: "button",
-                    disabled: camera_starting,
+                    disabled: !media_controls_enabled || camera_starting,
                     class: if camera_live {
                         "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-cyan-400/45 bg-cyan-500/15 text-cyan-100 shadow-[0_0_0_1px_rgba(34,211,238,.16),0_14px_36px_rgba(6,182,212,.14)] transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-cyan-300/55 hover:bg-cyan-500/20 disabled:cursor-wait disabled:opacity-60"
                     } else if matches!(camera_status, CameraStatus::PermissionDenied | CameraStatus::Error(_)) {
@@ -173,6 +177,9 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                     },
                     "aria-label": camera_label,
                     onclick: move |_| {
+                        if !media_controls_enabled {
+                            return;
+                        }
                         let send_realtime = camera_realtime_handle.clone();
                         let send_server_id = camera_server_id.clone();
                         let send_room_id = camera_room_id.clone();
@@ -222,7 +229,7 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                 }
                 button {
                     r#type: "button",
-                    disabled: screen_share_starting,
+                    disabled: !media_controls_enabled || screen_share_starting,
                     class: if screen_share_live {
                         "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-sky-400/45 bg-sky-500/15 text-sky-100 shadow-[0_0_0_1px_rgba(56,189,248,.16),0_14px_36px_rgba(14,165,233,.14)] transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-sky-300/55 hover:bg-sky-500/20 disabled:cursor-wait disabled:opacity-60"
                     } else if matches!(screen_share_status, ScreenShareStatus::PermissionDenied | ScreenShareStatus::Error(_)) {
@@ -232,6 +239,9 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                     },
                     "aria-label": screen_share_label,
                     onclick: move |_| {
+                        if !media_controls_enabled {
+                            return;
+                        }
                         let send_realtime = screen_realtime_handle.clone();
                         let send_server_id = screen_server_id.clone();
                         let send_room_id = screen_room_id.clone();
