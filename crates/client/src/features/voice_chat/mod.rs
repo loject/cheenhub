@@ -1,6 +1,7 @@
 //! Voice chat client feature.
 
 mod kicked_modal;
+mod local_video;
 mod participant_focus_strip;
 mod participant_grid;
 mod participant_grid_data;

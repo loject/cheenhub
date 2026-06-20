@@ -2,7 +2,7 @@
 
 use cheenhub_contracts::realtime::{
     JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, ListServerVoiceRooms, RealtimeEnvelope,
-    RealtimeKind, RealtimeModule, RejectionCode, VoiceChatKind,
+    RealtimeKind, RealtimeModule, RejectionCode, StopVoiceVideoStream, VoiceChatKind,
 };
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
@@ -100,6 +100,21 @@ pub(crate) async fn handle(
                     .await
                 }
                 Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::StopVideoStream) => {
+            let payload: StopVoiceVideoStream = decode_payload(&envelope)?;
+            match application::stop_video_stream(
+                state,
+                realtime_stream_id,
+                session_id,
+                user_id,
+                payload,
+            )
+            .await
+            {
+                Ok(()) => Ok(()),
+                Err(error) => reject_application_error(send, envelope.request_id, error).await,
             }
         }
         RealtimeKind::VoiceChat(_) => {

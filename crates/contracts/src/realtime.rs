@@ -28,7 +28,8 @@ pub use text_chat::{
 };
 pub use voice_chat::{
     JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, ListServerVoiceRooms, ServerVoiceRoomsSnapshot,
-    VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
+    StopVoiceVideoStream, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
+    VoiceVideoStreamEnded, VoiceVideoStreamSource,
 };
 
 #[cfg(test)]
@@ -92,6 +93,34 @@ mod tests {
         assert_eq!(
             decoded.kind,
             RealtimeKind::TextChat(TextChatKind::LoadRoomHistory)
+        );
+        assert!(decoded.has_matching_module_kind());
+    }
+
+    #[test]
+    fn voice_video_stream_ended_envelope_round_trips() {
+        let envelope = RealtimeEnvelope::new(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded),
+            None,
+            VoiceVideoStreamEnded {
+                server_id: Uuid::new_v4().to_string(),
+                room_id: Uuid::new_v4().to_string(),
+                user_id: Uuid::new_v4().to_string(),
+                source: VoiceVideoStreamSource::ScreenShare,
+            },
+        )
+        .expect("payload serializes");
+
+        let json = serde_json::to_string(&envelope).expect("envelope serializes");
+        assert!(json.contains("\"module\":\"voice_chat\""));
+        assert!(json.contains("\"kind\":\"video_stream_ended\""));
+        assert!(json.contains("\"source\":\"screen_share\""));
+        let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+
+        assert_eq!(
+            decoded.kind,
+            RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded)
         );
         assert!(decoded.has_matching_module_kind());
     }

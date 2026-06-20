@@ -2,10 +2,15 @@
 
 use std::sync::Arc;
 
-use cheenhub_contracts::realtime::{JoinVoiceRoom, LeaveVoiceRoom, ListServerVoiceRooms};
+use cheenhub_contracts::realtime::{
+    JoinVoiceRoom, LeaveVoiceRoom, ListServerVoiceRooms, StopVoiceVideoStream,
+    VoiceVideoStreamSource,
+};
 use cheenhub_contracts::rest::{RegisterRequest, ServerRoomKind};
 
-use super::{VoiceChatApplicationError, join_room, leave_room, list_server_voice_rooms};
+use super::{
+    VoiceChatApplicationError, join_room, leave_room, list_server_voice_rooms, stop_video_stream,
+};
 use crate::features::auth::application as auth_application;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
 use crate::features::auth::security::keys::AuthKeys;
@@ -284,4 +289,80 @@ async fn member_can_list_active_voice_room_participants_for_server() {
     assert_eq!(snapshot.rooms.len(), 1);
     assert_eq!(snapshot.rooms[0].room_id, room_id);
     assert_eq!(snapshot.rooms[0].participants[0].nickname, "voice_owner");
+}
+
+#[tokio::test]
+async fn joined_user_can_stop_video_stream() {
+    let state = state();
+    let (user, user_id) = registered_user(&state).await;
+    let stream_id = uuid::Uuid::new_v4();
+    let session_id = uuid::Uuid::new_v4();
+    let (server_id, room_id) = create_room(&state, &user_id, "voice", ServerRoomKind::Voice).await;
+
+    join_room(
+        &state,
+        stream_id,
+        session_id,
+        &user,
+        &user_id,
+        JoinVoiceRoom {
+            server_id: server_id.clone(),
+            room_id: room_id.clone(),
+        },
+    )
+    .await
+    .expect("join should succeed");
+
+    stop_video_stream(
+        &state,
+        stream_id,
+        session_id,
+        &user_id,
+        StopVoiceVideoStream {
+            server_id,
+            room_id,
+            source: VoiceVideoStreamSource::Camera,
+        },
+    )
+    .await
+    .expect("joined user should stop local video stream");
+}
+
+#[tokio::test]
+async fn stop_video_stream_rejects_stale_session() {
+    let state = state();
+    let (user, user_id) = registered_user(&state).await;
+    let stream_id = uuid::Uuid::new_v4();
+    let session_id = uuid::Uuid::new_v4();
+    let (server_id, room_id) = create_room(&state, &user_id, "voice", ServerRoomKind::Voice).await;
+
+    join_room(
+        &state,
+        stream_id,
+        session_id,
+        &user,
+        &user_id,
+        JoinVoiceRoom {
+            server_id: server_id.clone(),
+            room_id: room_id.clone(),
+        },
+    )
+    .await
+    .expect("join should succeed");
+
+    let error = stop_video_stream(
+        &state,
+        stream_id,
+        uuid::Uuid::new_v4(),
+        &user_id,
+        StopVoiceVideoStream {
+            server_id,
+            room_id,
+            source: VoiceVideoStreamSource::ScreenShare,
+        },
+    )
+    .await
+    .expect_err("stale session should be rejected");
+
+    assert!(matches!(error, VoiceChatApplicationError::Unauthorized(_)));
 }

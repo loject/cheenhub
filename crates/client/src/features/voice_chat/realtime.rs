@@ -6,7 +6,8 @@ use cheenhub_contracts::media::{
 };
 use cheenhub_contracts::realtime::{
     JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, ListServerVoiceRooms, RealtimeEnvelope,
-    RealtimeKind, RealtimeModule, ServerVoiceRoomsSnapshot, VoiceChatKind, VoiceRoomSnapshot,
+    RealtimeKind, RealtimeModule, ServerVoiceRoomsSnapshot, StopVoiceVideoStream, VoiceChatKind,
+    VoiceRoomSnapshot, VoiceVideoStreamEnded, VoiceVideoStreamSource,
 };
 use futures_channel::mpsc;
 use futures_util::StreamExt;
@@ -54,6 +55,19 @@ pub(crate) struct InboundVideoFrame {
     pub(crate) bytes: Vec<u8>,
     /// Может ли этот кадр открыть поток декодера.
     pub(crate) key_frame: bool,
+}
+
+/// Входящее событие остановки видеопотока участника.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InboundVideoStreamEnded {
+    /// Идентификатор сервера.
+    pub(crate) server_id: String,
+    /// Идентификатор целевой комнаты.
+    pub(crate) room_id: String,
+    /// Идентификатор пользователя, остановившего видеопоток.
+    pub(crate) sender_user_id: String,
+    /// Остановленный источник видео.
+    pub(crate) source: VoiceVideoStreamSource,
 }
 
 /// Joins one voice-capable room.
@@ -134,6 +148,28 @@ pub(crate) fn subscribe_voice_chat(
                 continue;
             };
             if sender.unbounded_send(snapshot).is_err() {
+                break;
+            }
+        }
+    });
+
+    receiver
+}
+
+/// Подписывает текущую вкладку на события остановки видеопотоков участников.
+pub(crate) fn subscribe_video_stream_ended(
+    realtime: &RealtimeHandle,
+) -> mpsc::UnboundedReceiver<InboundVideoStreamEnded> {
+    let events = realtime.subscribe_events();
+    let (sender, receiver) = mpsc::unbounded();
+
+    dioxus::prelude::spawn(async move {
+        let mut events = events;
+        while let Some(envelope) = events.next().await {
+            let Some(event) = decode_video_stream_ended(envelope) else {
+                continue;
+            };
+            if sender.unbounded_send(event).is_err() {
                 break;
             }
         }
@@ -312,6 +348,30 @@ pub(crate) async fn send_camera_frame(
     .await
 }
 
+/// Сообщает о локальной остановке демонстрации экрана.
+pub(crate) async fn send_screen_stream_stopped(
+    realtime: &RealtimeHandle,
+    server_id: &str,
+    room_id: &str,
+) -> Result<(), RealtimeError> {
+    send_video_stream_stopped(
+        realtime,
+        server_id,
+        room_id,
+        VoiceVideoStreamSource::ScreenShare,
+    )
+    .await
+}
+
+/// Сообщает о локальной остановке камеры.
+pub(crate) async fn send_camera_stream_stopped(
+    realtime: &RealtimeHandle,
+    server_id: &str,
+    room_id: &str,
+) -> Result<(), RealtimeError> {
+    send_video_stream_stopped(realtime, server_id, room_id, VoiceVideoStreamSource::Camera).await
+}
+
 async fn send_video_frame(
     realtime: &RealtimeHandle,
     room_id: &str,
@@ -332,6 +392,25 @@ async fn send_video_frame(
     Ok(())
 }
 
+async fn send_video_stream_stopped(
+    realtime: &RealtimeHandle,
+    server_id: &str,
+    room_id: &str,
+    source: VoiceVideoStreamSource,
+) -> Result<(), RealtimeError> {
+    realtime
+        .send_reliable(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::StopVideoStream),
+            StopVoiceVideoStream {
+                server_id: server_id.to_owned(),
+                room_id: room_id.to_owned(),
+                source,
+            },
+        )
+        .await
+}
+
 fn decode_participants_changed(envelope: RealtimeEnvelope) -> Option<VoiceRoomSnapshot> {
     if envelope.module != RealtimeModule::VoiceChat
         || envelope.kind != RealtimeKind::VoiceChat(VoiceChatKind::ParticipantsChanged)
@@ -340,6 +419,22 @@ fn decode_participants_changed(envelope: RealtimeEnvelope) -> Option<VoiceRoomSn
     }
 
     serde_json::from_value::<VoiceRoomSnapshot>(envelope.payload).ok()
+}
+
+fn decode_video_stream_ended(envelope: RealtimeEnvelope) -> Option<InboundVideoStreamEnded> {
+    if envelope.module != RealtimeModule::VoiceChat
+        || envelope.kind != RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded)
+    {
+        return None;
+    }
+
+    let event = serde_json::from_value::<VoiceVideoStreamEnded>(envelope.payload).ok()?;
+    Some(InboundVideoStreamEnded {
+        server_id: event.server_id,
+        room_id: event.room_id,
+        sender_user_id: event.user_id,
+        source: event.source,
+    })
 }
 
 fn decode_voice_frame(bytes: &[u8]) -> Option<InboundVoiceFrame> {

@@ -2,8 +2,9 @@
 
 use cheenhub_contracts::realtime::{
     JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, ListServerVoiceRooms, RealtimeKind,
-    RealtimeModule, ServerRoleKind, ServerRolePermission, ServerVoiceRoomsSnapshot, VoiceChatKind,
-    VoiceRoomParticipant, VoiceRoomSnapshot,
+    RealtimeModule, ServerRoleKind, ServerRolePermission, ServerVoiceRoomsSnapshot,
+    StopVoiceVideoStream, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
+    VoiceVideoStreamEnded,
 };
 use cheenhub_contracts::rest::{AuthUser, ServerRoomKind};
 use chrono::Utc;
@@ -154,6 +155,74 @@ pub(crate) async fn list_server_voice_rooms(
         server_id: server_id.to_string(),
         rooms,
     })
+}
+
+/// Рассылает участникам комнаты событие остановки видеопотока отправителя.
+pub(crate) async fn stop_video_stream(
+    state: &AppState,
+    realtime_stream_id: Uuid,
+    session_id: Uuid,
+    user_id: &Uuid,
+    request: StopVoiceVideoStream,
+) -> Result<(), VoiceChatApplicationError> {
+    let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
+    let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
+    let Some(presence) = state
+        .voice_presence_store
+        .room_presence_for_user(&room_id, user_id)
+        .await
+    else {
+        return Err(VoiceChatApplicationError::NotFound(
+            "Пользователь не находится в этой голосовой комнате.".to_owned(),
+        ));
+    };
+
+    if presence.server_id != server_id {
+        return Err(VoiceChatApplicationError::BadRequest(
+            "Комната не найдена.".to_owned(),
+        ));
+    }
+    if presence.realtime_stream_id != realtime_stream_id || presence.session_id != session_id {
+        return Err(VoiceChatApplicationError::Unauthorized(
+            "Видеопоток принадлежит другой realtime-сессии.".to_owned(),
+        ));
+    }
+
+    let recipients = state
+        .voice_presence_store
+        .room_participants(&server_id, &room_id)
+        .await;
+    let stream_ids = recipients
+        .iter()
+        .filter(|recipient| recipient.realtime_stream_id != realtime_stream_id)
+        .map(|recipient| recipient.realtime_stream_id)
+        .collect::<Vec<_>>();
+    tracing::info!(
+        server_id = %server_id,
+        room_id = %room_id,
+        user_id = %user_id,
+        source = ?request.source,
+        recipients = stream_ids.len(),
+        "fanning out voice video stream ended event"
+    );
+
+    state
+        .realtime_hub
+        .fanout_to_streams(
+            RealtimeModule::VoiceChat,
+            &server_id,
+            RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded),
+            &stream_ids,
+            VoiceVideoStreamEnded {
+                server_id: server_id.to_string(),
+                room_id: room_id.to_string(),
+                user_id: user_id.to_string(),
+                source: request.source,
+            },
+        )
+        .await;
+
+    Ok(())
 }
 
 /// Удаляет присутствие, принадлежащее закрытому realtime-потоку.

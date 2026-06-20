@@ -7,7 +7,7 @@ mod unsupported;
 mod web;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use dioxus::dioxus_core::spawn_forever;
@@ -31,6 +31,7 @@ const PARTICIPANT_VIDEO_RELEASE_TIMEOUT_MS: u32 = 1_500;
 type ParticipantVideoSubscribers =
     Rc<RefCell<HashMap<ParticipantVideoKey, Vec<mpsc::UnboundedSender<ParticipantVideoFrame>>>>>;
 type ParticipantVideoGenerations = Rc<RefCell<HashMap<ParticipantVideoKey, u64>>>;
+type ParticipantVideoBlockedStreams = Rc<RefCell<HashSet<ParticipantVideoKey>>>;
 
 /// Тип видеопотока внутри плитки участника.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -123,6 +124,7 @@ pub(crate) struct ParticipantVideoHandle {
     live_streams: Signal<Vec<ParticipantVideoActivity>>,
     subscribers: ParticipantVideoSubscribers,
     generations: ParticipantVideoGenerations,
+    blocked_streams: ParticipantVideoBlockedStreams,
     backend: Rc<dyn ParticipantVideoBackend>,
 }
 
@@ -132,11 +134,13 @@ impl ParticipantVideoHandle {
         live_streams: Signal<Vec<ParticipantVideoActivity>>,
         subscribers: ParticipantVideoSubscribers,
         generations: ParticipantVideoGenerations,
+        blocked_streams: ParticipantVideoBlockedStreams,
     ) -> Self {
         Self {
             live_streams,
             subscribers,
             generations,
+            blocked_streams,
             backend: Rc::new(DefaultParticipantVideoBackend),
         }
     }
@@ -157,12 +161,43 @@ impl ParticipantVideoHandle {
         frame: ParticipantVideoFrame,
     ) {
         let key = ParticipantVideoKey::new(source, frame.sender_user_id.clone());
+        if self.should_drop_blocked_frame(&key, frame.key_frame) {
+            debug!(
+                user_id = %key.user_id,
+                source = key.source.label(),
+                sequence = frame.sequence,
+                "dropped participant video frame until next key frame"
+            );
+            return;
+        }
         self.mark_live(key.clone());
         let mut subscribers = self.subscribers.borrow_mut();
         let Some(stream_subscribers) = subscribers.get_mut(&key) else {
             return;
         };
         stream_subscribers.retain(|subscriber| subscriber.unbounded_send(frame.clone()).is_ok());
+    }
+
+    /// Немедленно освобождает индикатор активности одного видеопотока.
+    pub(crate) fn release_stream(&self, source: ParticipantVideoSource, user_id: &str) {
+        let key = ParticipantVideoKey::new(source, user_id.to_owned());
+        self.generations.borrow_mut().remove(&key);
+        self.blocked_streams.borrow_mut().insert(key.clone());
+        let mut next_streams = (self.live_streams)();
+        let previous_len = next_streams.len();
+        next_streams
+            .retain(|activity| activity.source != key.source || activity.user_id != key.user_id);
+        if next_streams.len() == previous_len {
+            return;
+        }
+
+        let mut live_streams = self.live_streams;
+        live_streams.set(next_streams);
+        debug!(
+            user_id = %key.user_id,
+            source = key.source.label(),
+            "released participant video stream live marker"
+        );
     }
 
     /// Подписывает плитку участника на один видеопоток.
@@ -184,6 +219,7 @@ impl ParticipantVideoHandle {
     /// Очищает индикаторы активных видеоисточников.
     pub(crate) fn clear(&self) {
         self.generations.borrow_mut().clear();
+        self.blocked_streams.borrow_mut().clear();
         let mut live_streams = self.live_streams;
         live_streams.set(Vec::new());
     }
@@ -226,6 +262,7 @@ impl ParticipantVideoHandle {
         );
 
         let generations = self.generations.clone();
+        let blocked_streams = self.blocked_streams.clone();
         spawn_forever(async move {
             let mut observed_generation = generation;
             loop {
@@ -237,6 +274,7 @@ impl ParticipantVideoHandle {
                     }
                     Some(_) => {
                         generations.borrow_mut().remove(&key);
+                        blocked_streams.borrow_mut().insert(key.clone());
                         let mut next_streams = live_streams();
                         let previous_len = next_streams.len();
                         next_streams.retain(|activity| {
@@ -256,6 +294,18 @@ impl ParticipantVideoHandle {
                 }
             }
         });
+    }
+
+    fn should_drop_blocked_frame(&self, key: &ParticipantVideoKey, key_frame: bool) -> bool {
+        if !self.blocked_streams.borrow().contains(key) {
+            return false;
+        }
+        if !key_frame {
+            return true;
+        }
+
+        self.blocked_streams.borrow_mut().remove(key);
+        false
     }
 }
 

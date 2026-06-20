@@ -14,12 +14,16 @@ pub enum VoiceChatKind {
     KickVoiceMember,
     /// Загрузить снимки присутствия участников в активных голосовых комнатах для одного сервера.
     ListServerVoiceRooms,
+    /// Сообщить об остановке локального видеопотока в голосовой комнате.
+    StopVideoStream,
     /// Снимки активных голосовых комнат для одного сервера.
     ServerVoiceRoomsSnapshot,
     /// Текущий снимок участников голосовой комнаты.
     VoiceRoomSnapshot,
     /// Событие изменения списка участников голосовой комнаты.
     ParticipantsChanged,
+    /// Событие остановки видеопотока участника голосовой комнаты.
+    VideoStreamEnded,
 }
 
 /// Полезная нагрузка запроса на присоединение к комнате с поддержкой голоса.
@@ -67,6 +71,40 @@ pub struct KickVoiceMember {
 pub struct ListServerVoiceRooms {
     /// Идентификатор сервера.
     pub server_id: String,
+}
+
+/// Источник видеопотока голосовой комнаты.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceVideoStreamSource {
+    /// Видео с камеры участника.
+    Camera,
+    /// Демонстрация экрана участника.
+    ScreenShare,
+}
+
+/// Полезная нагрузка сообщения об остановке локального видеопотока.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StopVoiceVideoStream {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+    /// Остановленный источник видео.
+    pub source: VoiceVideoStreamSource,
+}
+
+/// Событие остановки видеопотока участника голосовой комнаты.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceVideoStreamEnded {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+    /// Пользователь, остановивший видеопоток.
+    pub user_id: String,
+    /// Остановленный источник видео.
+    pub source: VoiceVideoStreamSource,
 }
 
 /// Снимки активных голосовых комнат одного сервера.
