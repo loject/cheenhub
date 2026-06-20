@@ -21,7 +21,7 @@ pub(super) fn ChatMessageItem(
     let current_user = use_context::<CurrentUserContext>().require_user();
     let permissions = use_context::<ServerPermissionsContext>();
     let is_own = message.author_user_id == current_user.id;
-    let can_delete = is_own || permissions.can_moderate;
+    let can_delete = is_own || permissions.can_delete_messages;
     let mut menu_pos = use_signal(|| None::<(f64, f64)>);
 
     let outer_class = match (animate, removing) {

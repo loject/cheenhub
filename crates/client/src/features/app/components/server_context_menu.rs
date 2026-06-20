@@ -20,10 +20,13 @@ pub(crate) enum ServerMenuAction {
 pub(crate) fn ServerContextMenu(
     server_id: String,
     is_owner: bool,
+    can_open_settings: bool,
+    can_create_invite_links: bool,
     on_action: EventHandler<ServerMenuAction>,
 ) -> Element {
     let mut is_leaving = use_signal(|| false);
     let mut leave_status = use_signal(String::new);
+    let has_server_actions = can_open_settings || can_create_invite_links;
     let leave_button_class = if is_leaving() {
         "flex w-full cursor-wait items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300/60 opacity-80"
     } else {
@@ -34,27 +37,33 @@ pub(crate) fn ServerContextMenu(
         div {
             class: "absolute left-4 right-4 top-[86px] z-40 overflow-hidden rounded-[20px] border border-zinc-800 bg-zinc-950/95 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,.55)] backdrop-blur-xl",
             onclick: move |event| event.stop_propagation(),
-            button {
-                r#type: "button",
-                class: "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-[13px] text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:bg-zinc-900 hover:text-zinc-100",
-                onclick: move |_| on_action.call(ServerMenuAction::OpenSettings),
-                span { class: "flex items-center gap-2",
-                    svg { class: "h-4 w-4 text-zinc-500", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" }
+            if can_open_settings {
+                button {
+                    r#type: "button",
+                    class: "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-[13px] text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:bg-zinc-900 hover:text-zinc-100",
+                    onclick: move |_| on_action.call(ServerMenuAction::OpenSettings),
+                    span { class: "flex items-center gap-2",
+                        svg { class: "h-4 w-4 text-zinc-500", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" }
+                        }
+                        "Параметры сервера"
                     }
-                    "Параметры сервера"
                 }
             }
-            button {
-                r#type: "button",
-                class: "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-blue-200 transition-[background,border-color,color,transform,opacity] duration-150 hover:bg-accent/10 hover:text-blue-100",
-                onclick: move |_| on_action.call(ServerMenuAction::CreateInvite),
-                svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" }
+            if can_create_invite_links {
+                button {
+                    r#type: "button",
+                    class: "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-blue-200 transition-[background,border-color,color,transform,opacity] duration-150 hover:bg-accent/10 hover:text-blue-100",
+                    onclick: move |_| on_action.call(ServerMenuAction::CreateInvite),
+                    svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" }
+                    }
+                    "Создать ссылку приглашения"
                 }
-                "Создать ссылку приглашения"
             }
-            div { class: "my-1 border-t border-zinc-800" }
+            if has_server_actions {
+                div { class: "my-1 border-t border-zinc-800" }
+            }
             if is_owner {
                 div { class: "group relative",
                     button {

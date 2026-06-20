@@ -1,6 +1,6 @@
 //! Shared server application helpers.
 
-use cheenhub_contracts::realtime::{ServerRoleKind, ServerRoleSummary};
+use cheenhub_contracts::realtime::{ServerRoleKind, ServerRolePermission, ServerRoleSummary};
 use cheenhub_contracts::rest::{ServerRoomSummary, ServerSummary};
 use uuid::Uuid;
 
@@ -129,6 +129,48 @@ pub(super) async fn server_for_member_or_owner(
     Err(ServerError::NotFound(
         "Сервер не найден или недоступен.".to_owned(),
     ))
+}
+
+pub(super) async fn user_has_server_permission(
+    state: &AppState,
+    server: &Server,
+    user_id: &Uuid,
+    permission: ServerRolePermission,
+) -> Result<bool, ServerError> {
+    if server.owner_user_id == *user_id {
+        return Ok(true);
+    }
+
+    if state
+        .server_store
+        .find_active_server_member(&server.id, user_id)
+        .await
+        .map_err(ServerError::Internal)?
+        .is_none()
+    {
+        return Ok(false);
+    }
+
+    let roles = state
+        .server_store
+        .list_server_roles(&server.id)
+        .await
+        .map_err(ServerError::Internal)?;
+    let member_roles = state
+        .server_store
+        .list_server_member_roles(&server.id)
+        .await
+        .map_err(ServerError::Internal)?;
+    let user_role_ids = member_roles
+        .into_iter()
+        .filter(|(member_user_id, _)| *member_user_id == *user_id)
+        .map(|(_, role_id)| role_id)
+        .collect::<Vec<_>>();
+
+    Ok(roles.iter().any(|role| {
+        (role.kind == ServerRoleKind::Member || user_role_ids.contains(&role.id))
+            && role.permissions.contains(&permission)
+    }))
 }
 
 pub(super) fn map_auth_error(error: AuthError) -> ServerError {

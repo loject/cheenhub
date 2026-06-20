@@ -1,6 +1,5 @@
 //! Per-server room state and workspace coordination.
 
-use cheenhub_contracts::realtime::ServerRolePermission;
 use cheenhub_contracts::rest::{ServerRoomSummary, ServerSummary};
 use dioxus::prelude::*;
 
@@ -67,17 +66,9 @@ pub(crate) fn ServerRoomsScope(
     let server_name = server.name.clone();
     let invite_server_name = server_name.clone();
     let is_owner = server.is_owner;
-    let can_kick_voice = is_owner
-        || server.roles.iter().any(|role| {
-            server.member_role_ids.contains(&role.role_id)
-                && role
-                    .permissions
-                    .contains(&ServerRolePermission::KickVoiceMembers)
-        });
-    use_context_provider(|| ServerPermissionsContext {
-        can_moderate: is_owner,
-        can_kick_voice,
-    });
+    let server_permissions = ServerPermissionsContext::from_server(&server);
+    let can_create_invite_links = server_permissions.can_create_invite_links;
+    use_context_provider(move || server_permissions);
     let room_load_resource = use_resource(move || {
         let request_server_id = load_server_id.clone();
         async move { api::list_server_rooms(request_server_id).await }
@@ -170,6 +161,8 @@ pub(crate) fn ServerRoomsScope(
                     ServerContextMenu {
                         server_id: server.id.clone(),
                         is_owner,
+                        can_open_settings: is_owner,
+                        can_create_invite_links,
                         on_action: move |action: ServerMenuAction| {
                             is_server_menu_open.set(false);
 
@@ -187,6 +180,10 @@ pub(crate) fn ServerRoomsScope(
                                     mobile_workspace_open.set(true);
                                 }
                                 ServerMenuAction::CreateInvite => {
+                                    info!(
+                                        server_id = %invite_server_id,
+                                        "opened server invite modal from context menu"
+                                    );
                                     on_open_modal.call(AppModal::InviteLink {
                                         server_id: invite_server_id.clone(),
                                         server_name: invite_server_name.clone(),

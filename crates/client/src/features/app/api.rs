@@ -52,7 +52,7 @@ pub(crate) async fn create_server(name: String) -> Result<ServerSummary, String>
     Err(auth_api::read_error(response).await)
 }
 
-/// Создает приглашение для сервера, принадлежащего текущему пользователю.
+/// Создает приглашение для сервера, где текущий пользователь имеет нужное право.
 pub(crate) async fn create_server_invite(
     server_id: String,
     max_uses: Option<u32>,

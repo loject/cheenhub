@@ -19,6 +19,14 @@ pub(crate) async fn can_delete_any_message(
     if server.owner_user_id == *user_id {
         return Ok(true);
     }
+    if state
+        .server_store
+        .find_active_server_member(server_id, user_id)
+        .await?
+        .is_none()
+    {
+        return Ok(false);
+    }
 
     let roles = state.server_store.list_server_roles(server_id).await?;
     let member_roles = state
@@ -32,8 +40,7 @@ pub(crate) async fn can_delete_any_message(
         .collect();
 
     Ok(roles.iter().any(|role| {
-        role.kind != ServerRoleKind::Member
-            && user_role_ids.contains(&role.id)
+        (role.kind == ServerRoleKind::Member || user_role_ids.contains(&role.id))
             && role
                 .permissions
                 .contains(&ServerRolePermission::DeleteMessages)
