@@ -5127,6 +5127,10 @@ video {
   opacity: 0.7;
 }
 
+.disabled\:opacity-80:disabled {
+  opacity: 0.8;
+}
+
 .disabled\:hover\:translate-y-0:hover:disabled {
   --tw-translate-y: 0px;
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
@@ -5159,12 +5163,30 @@ video {
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 
+.group\/bitrate:hover .group-hover\/bitrate\:translate-y-0 {
+  --tw-translate-y: 0px;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
 .group:hover .group-hover\:opacity-100 {
   opacity: 1;
 }
 
 .group:hover .group-hover\:opacity-95 {
   opacity: 0.95;
+}
+
+.group\/bitrate:hover .group-hover\/bitrate\:opacity-100 {
+  opacity: 1;
+}
+
+.group\/bitrate:focus .group-focus\/bitrate\:translate-y-0 {
+  --tw-translate-y: 0px;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
+.group\/bitrate:focus .group-focus\/bitrate\:opacity-100 {
+  opacity: 1;
 }
 
 .group:focus-visible .group-focus-visible\:translate-y-0 {
@@ -5738,6 +5760,10 @@ video {
 @media (min-width: 1280px) {
   .xl\:grid-cols-\[320px_minmax\(0\2c 1fr\)\] {
     grid-template-columns: 320px minmax(0,1fr);
+  }
+
+  .xl\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .xl\:pb-0 {
