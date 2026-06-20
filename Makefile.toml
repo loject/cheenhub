@@ -43,8 +43,6 @@ args = [
     "${DIOXUS_ADDR}",
     "--port",
     "${DIOXUS_PORT}",
-    "--open",
-    "true",
 ]
 
 [tasks.ensure-docker-desktop]
