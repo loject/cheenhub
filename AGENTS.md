@@ -52,11 +52,13 @@
 - Every public module, type, function, trait, enum, constant, and field must have `///` documentation when it is introduced.
 - Write new documentation comments (`//!`, `///`) and regular code comments in Russian. Keep protocol names, API names, environment variable names, type and field names unchanged; prefer established English technical terms when translation would make the meaning less precise.
 - Crates use `#![warn(missing_docs)]`; warnings are acceptable during early development, but new public API should not add missing-doc warnings.
-- Run `cargo clippy --workspace --all-targets` and `cargo fmt` before handing off code.
+- Run `cargo fmt` and `cargo clippy --workspace --all-targets` before handing off only when the task changes Rust source, Cargo manifests, migrations, contracts, or other Rust-facing generated code. Do not run cargo commands for documentation-only, CSS-only, asset-only, or other non-Rust changes unless they are needed for the task.
 
 ## Verification
 
-- Before completing any task, verify that all tests pass. If tests cannot be run, explain the blocker and the remaining risk before handing off.
+- Before completing a task, run the narrowest relevant verification for the files and behavior changed.
+- Run `cargo test --workspace --all-targets` only when the change touches functionality that has related Rust tests or affects shared Rust contracts/behavior. If the change is UI-only, styling-only, documentation-only, or otherwise has no related tests in the repo, do not run the full test suite just for ceremony.
+- If relevant tests cannot be run, explain the blocker and the remaining risk before handing off. If tests are intentionally skipped because there are no related tests, say that explicitly.
 
 ## Backend
 
