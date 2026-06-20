@@ -39,8 +39,8 @@ impl Default for ScreenShareConfig {
             codec: ScreenShareCodec::Vp9,
             frame_rate: 30,
             bitrate_bps: 1_500_000,
-            fallback_width: 1920,
-            fallback_height: 1080,
+            fallback_width: 1280,
+            fallback_height: 720,
         }
     }
 }

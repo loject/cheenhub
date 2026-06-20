@@ -39,8 +39,8 @@ impl Default for CameraConfig {
             codec: CameraCodec::Vp9,
             frame_rate: 24,
             bitrate_bps: 700_000,
-            width: 640,
-            height: 360,
+            width: 1280,
+            height: 720,
         }
     }
 }
