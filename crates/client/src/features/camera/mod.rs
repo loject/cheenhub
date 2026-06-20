@@ -2,8 +2,6 @@
 
 mod backend;
 #[cfg(target_arch = "wasm32")]
-mod browser_bindings;
-#[cfg(target_arch = "wasm32")]
 mod browser_capture;
 #[cfg(target_arch = "wasm32")]
 mod browser_errors;

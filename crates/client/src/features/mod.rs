@@ -13,4 +13,5 @@ pub(crate) mod server_settings;
 pub(crate) mod text_chat;
 pub(crate) mod toast;
 pub(crate) mod user_settings;
+pub(crate) mod video_encoding;
 pub(crate) mod voice_chat;
