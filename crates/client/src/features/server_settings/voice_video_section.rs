@@ -154,15 +154,6 @@ fn locked_range(label: &'static str, value_label: &'static str, value: u32, max:
     }
 }
 
-fn profile_badge(label: &'static str, value: &'static str) -> Element {
-    rsx! {
-        span { class: "inline-flex h-8 items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/70 px-3 text-[12px] text-zinc-300",
-            span { class: "text-zinc-500", "{label}" }
-            span { class: "font-medium text-zinc-100", "{value}" }
-        }
-    }
-}
-
 fn single_option_control_class() -> &'static str {
     "h-10 w-full cursor-pointer rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] text-zinc-100 outline-none transition focus:border-accent/70 focus:ring-4 focus:ring-accent/10"
 }
