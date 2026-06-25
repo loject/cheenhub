@@ -2,6 +2,7 @@
 
 mod browser_bindings;
 mod browser_helpers;
+mod clock;
 mod jitter_buffer;
 mod jitter_runtime;
 mod output_devices;

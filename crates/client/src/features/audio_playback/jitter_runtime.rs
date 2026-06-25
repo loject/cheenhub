@@ -1,11 +1,15 @@
 //! Runtime bridge between inbound voice frames and the jitter buffer.
 
 use dioxus::prelude::{debug, warn};
-use gloo_timers::future::TimeoutFuture;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::{AudioContext, MessageEvent};
 use web_time::{SystemTime, UNIX_EPOCH};
 
 use super::browser_helpers::js_error_message;
+use super::clock::{create_playback_clock_node, load_playback_clock_module};
 use super::jitter_buffer::JitterBufferPush;
 use super::provider::{AudioPlaybackHandle, PlaybackCodec, VoiceFrame};
 
@@ -76,46 +80,81 @@ impl AudioPlaybackHandle {
             }
         }
 
-        self.ensure_jitter_drain(sender_user_id);
+        self.ensure_playback_clock();
     }
 
-    fn ensure_jitter_drain(&self, sender_user_id: String) {
-        let generation = {
-            let mut inner = self.inner.borrow_mut();
-            if inner.jitter_drainers.contains_key(&sender_user_id) {
-                return;
-            }
-            inner.next_jitter_drainer_generation =
-                inner.next_jitter_drainer_generation.saturating_add(1);
-            let generation = inner.next_jitter_drainer_generation;
-            inner
-                .jitter_drainers
-                .insert(sender_user_id.clone(), generation);
-            generation
+    /// Запускает тактовый генератор воспроизведения (один раз на сессию контекста).
+    ///
+    /// Слив jitter-буфера управляется тиком AudioWorklet, а не `setTimeout`, чтобы
+    /// звук не деградировал, когда вкладка в фоне (там таймеры троттлятся до ~1 c).
+    fn ensure_playback_clock(&self) {
+        if self.inner.borrow().clock_started {
+            return;
+        }
+        let Ok(context) = self.context() else {
+            return;
         };
+        self.inner.borrow_mut().clock_started = true;
 
         let handle = self.clone();
         spawn_local(async move {
-            loop {
-                let Some(next_wake_ms) = handle.drain_jitter_buffer(&sender_user_id) else {
-                    break;
-                };
-                TimeoutFuture::new(next_wake_ms).await;
+            if let Err(error) = handle.start_playback_clock(context).await {
+                warn!(
+                    error = %js_error_message(error),
+                    "failed to start playback clock worklet"
+                );
+                // Разрешаем повторную попытку на следующем фрейме.
+                handle.inner.borrow_mut().clock_started = false;
             }
-            handle.finish_jitter_drain(&sender_user_id, generation);
         });
     }
 
-    fn drain_jitter_buffer(&self, sender_user_id: &str) -> Option<u32> {
+    async fn start_playback_clock(&self, context: AudioContext) -> Result<(), JsValue> {
+        load_playback_clock_module(&context).await?;
+        let node = create_playback_clock_node(&context)?;
+        let port = node.port()?;
+
+        let handle = self.clone();
+        let closure = Closure::wrap(Box::new(move |_event: MessageEvent| {
+            handle.drain_all_ready();
+        }) as Box<dyn FnMut(MessageEvent)>);
+        port.set_onmessage(Some(closure.as_ref().unchecked_ref()));
+
+        let mut inner = self.inner.borrow_mut();
+        inner.clock_node = Some(node);
+        inner.clock_closure = Some(closure);
+
+        debug!("started inbound voice playback clock worklet");
+        Ok(())
+    }
+
+    /// Сливает готовые фреймы из буферов всех отправителей. Вызывается по тику ворклета.
+    fn drain_all_ready(&self) {
+        let sender_ids = {
+            let inner = self.inner.borrow();
+            if inner.muted {
+                return;
+            }
+            inner.jitter_buffers.keys().cloned().collect::<Vec<_>>()
+        };
+
+        for sender_user_id in sender_ids {
+            self.drain_jitter_buffer(&sender_user_id);
+        }
+    }
+
+    fn drain_jitter_buffer(&self, sender_user_id: &str) {
         let (drain, target_delay_ms) = {
             let mut inner = self.inner.borrow_mut();
             if inner.muted {
                 inner.jitter_buffers.remove(sender_user_id);
-                return None;
+                return;
             }
 
             let target_delay_ms = inner.jitter_buffer_ms;
-            let buffer = inner.jitter_buffers.get_mut(sender_user_id)?;
+            let Some(buffer) = inner.jitter_buffers.get_mut(sender_user_id) else {
+                return;
+            };
             (
                 buffer.drain_ready(jitter_now_ms(), u64::from(target_delay_ms)),
                 target_delay_ms,
@@ -132,7 +171,6 @@ impl AudioPlaybackHandle {
             );
         }
 
-        let next_wake_ms = drain.next_wake_ms;
         for frame in drain.ready_frames {
             if let Err(error) = self.decode_voice_frame(frame) {
                 warn!(
@@ -141,19 +179,6 @@ impl AudioPlaybackHandle {
                     "failed to decode jitter-buffered voice frame"
                 );
             }
-        }
-
-        next_wake_ms
-    }
-
-    fn finish_jitter_drain(&self, sender_user_id: &str, generation: u64) {
-        let mut inner = self.inner.borrow_mut();
-        if inner
-            .jitter_drainers
-            .get(sender_user_id)
-            .is_some_and(|active_generation| *active_generation == generation)
-        {
-            inner.jitter_drainers.remove(sender_user_id);
         }
     }
 }

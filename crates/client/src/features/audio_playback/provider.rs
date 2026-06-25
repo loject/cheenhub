@@ -6,8 +6,9 @@ use std::rc::Rc;
 
 use dioxus::prelude::*;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
-use web_sys::AudioContext;
+use web_sys::{AudioContext, AudioWorkletNode, MessageEvent};
 
 use super::browser_helpers::{apply_output_device_to_context, js_error_message, stop_audio_source};
 use super::jitter_buffer::JitterBuffer;
@@ -58,8 +59,12 @@ pub(super) struct AudioPlaybackInner {
     pub(super) muted: bool,
     pub(super) senders: HashMap<String, SenderPlayback>,
     pub(super) jitter_buffers: HashMap<String, JitterBuffer>,
-    pub(super) jitter_drainers: HashMap<String, u64>,
-    pub(super) next_jitter_drainer_generation: u64,
+    /// Признак того, что тактовый генератор воспроизведения (AudioWorklet) уже запущен.
+    pub(super) clock_started: bool,
+    /// Узел-генератор; хранится, чтобы он не был уничтожен сборщиком.
+    pub(super) clock_node: Option<AudioWorkletNode>,
+    /// Замыкание-обработчик тиков; хранится живым на время работы узла.
+    pub(super) clock_closure: Option<Closure<dyn FnMut(MessageEvent)>>,
     pub(super) jitter_buffer_ms: u32,
     pub(super) scheduled_sources: HashMap<String, Vec<ScheduledAudioSource>>,
     pub(super) scheduled_until: HashMap<String, f64>,
@@ -301,7 +306,7 @@ impl AudioPlaybackHandle {
         sender.decoder.decode(&chunk)
     }
 
-    fn context(&self) -> Result<AudioContext, JsValue> {
+    pub(super) fn context(&self) -> Result<AudioContext, JsValue> {
         if let Some(context) = self.inner.borrow().context.clone() {
             return Ok(context);
         }
@@ -370,8 +375,9 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             muted: false,
             senders: HashMap::new(),
             jitter_buffers: HashMap::new(),
-            jitter_drainers: HashMap::new(),
-            next_jitter_drainer_generation: 0,
+            clock_started: false,
+            clock_node: None,
+            clock_closure: None,
             jitter_buffer_ms: jitter_buffer_ms_value,
             scheduled_sources: HashMap::new(),
             scheduled_until: HashMap::new(),
