@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::AudioContext;
+use web_time::{SystemTime, UNIX_EPOCH};
 
 use super::browser_helpers::{apply_output_device_to_context, js_error_message, stop_audio_source};
 use super::jitter_buffer::JitterBuffer;
@@ -16,6 +17,9 @@ use super::playback_pipeline::{
     ScheduledAudioSource, SenderPlayback, create_sender_playback, encoded_audio_chunk,
 };
 use super::storage;
+
+const AUDIO_DECODER_QUEUE_WARN_FRAMES: u32 = 8;
+pub(super) const AUDIO_PLAYBACK_WARNING_INTERVAL_MS: u64 = 5_000;
 
 /// Кодек кодированного воспроизведения.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +65,9 @@ pub(super) struct AudioPlaybackInner {
     pub(super) jitter_drainers: HashMap<String, u64>,
     pub(super) next_jitter_drainer_generation: u64,
     pub(super) jitter_buffer_ms: u32,
+    pub(super) jitter_warning_at_ms: HashMap<String, u64>,
+    pub(super) decoder_queue_warning_at_ms: HashMap<String, u64>,
+    pub(super) playback_schedule_warning_at: HashMap<String, f64>,
     pub(super) scheduled_sources: HashMap<String, Vec<ScheduledAudioSource>>,
     pub(super) scheduled_until: HashMap<String, f64>,
     /// Значения усиления для каждого пользователя (0.0–2.0, по умолчанию 1.0).
@@ -202,6 +209,9 @@ impl AudioPlaybackHandle {
             let mut inner = self.inner.borrow_mut();
             let sender = inner.senders.remove(sender_user_id);
             inner.jitter_buffers.remove(sender_user_id);
+            inner.jitter_warning_at_ms.remove(sender_user_id);
+            inner.decoder_queue_warning_at_ms.remove(sender_user_id);
+            inner.playback_schedule_warning_at.remove(sender_user_id);
             let sources = inner
                 .scheduled_sources
                 .remove(sender_user_id)
@@ -274,31 +284,60 @@ impl AudioPlaybackHandle {
     }
 
     pub(super) fn decode_voice_frame(&self, frame: VoiceFrame) -> Result<(), JsValue> {
+        let sender_user_id = frame.sender_user_id.clone();
+        let sequence = frame.sequence;
         let context = self.context()?;
-        let mut inner = self.inner.borrow_mut();
-        if inner.muted {
-            return Ok(());
-        }
-        if !inner.senders.contains_key(&frame.sender_user_id) {
-            let initial_gain = inner
-                .user_volumes
-                .get(&frame.sender_user_id)
-                .copied()
-                .unwrap_or(1.0)
-                * inner.output_gain;
-            let sender = create_sender_playback(
-                frame.sender_user_id.clone(),
-                context.clone(),
-                self.inner.clone(),
-                initial_gain,
-            )?;
-            inner.senders.insert(frame.sender_user_id.clone(), sender);
-        }
-        let Some(sender) = inner.senders.get(&frame.sender_user_id) else {
+        let chunk = encoded_audio_chunk(&frame)?;
+        let decoder = {
+            let mut inner = self.inner.borrow_mut();
+            if inner.muted {
+                return Ok(());
+            }
+            if !inner.senders.contains_key(&sender_user_id) {
+                let initial_gain = inner
+                    .user_volumes
+                    .get(&sender_user_id)
+                    .copied()
+                    .unwrap_or(1.0)
+                    * inner.output_gain;
+                let sender = create_sender_playback(
+                    sender_user_id.clone(),
+                    context.clone(),
+                    self.inner.clone(),
+                    initial_gain,
+                )?;
+                inner.senders.insert(sender_user_id.clone(), sender);
+            }
+            inner
+                .senders
+                .get(&sender_user_id)
+                .map(|sender| sender.decoder.clone())
+        };
+        let Some(decoder) = decoder else {
             return Ok(());
         };
-        let chunk = encoded_audio_chunk(&frame)?;
-        sender.decoder.decode(&chunk)
+        let result = decoder.decode(&chunk);
+        let queue_size = decoder.decode_queue_size();
+        if queue_size >= AUDIO_DECODER_QUEUE_WARN_FRAMES {
+            let should_warn = {
+                let mut inner = self.inner.borrow_mut();
+                should_emit_sender_warning(
+                    &mut inner.decoder_queue_warning_at_ms,
+                    &sender_user_id,
+                    audio_playback_now_ms(),
+                    AUDIO_PLAYBACK_WARNING_INTERVAL_MS,
+                )
+            };
+            if should_warn {
+                warn!(
+                    %sender_user_id,
+                    sequence,
+                    queue_size,
+                    "inbound audio decoder queue is backing up"
+                );
+            }
+        }
+        result
     }
 
     fn context(&self) -> Result<AudioContext, JsValue> {
@@ -373,6 +412,9 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             jitter_drainers: HashMap::new(),
             next_jitter_drainer_generation: 0,
             jitter_buffer_ms: jitter_buffer_ms_value,
+            jitter_warning_at_ms: HashMap::new(),
+            decoder_queue_warning_at_ms: HashMap::new(),
+            playback_schedule_warning_at: HashMap::new(),
             scheduled_sources: HashMap::new(),
             scheduled_until: HashMap::new(),
             user_volumes: HashMap::new(),
@@ -400,6 +442,28 @@ fn persist_output_device(device_id: Option<&str>, label: Option<&str>) {
             info!(has_device = false, "cleared audio output device preference");
         }
     }
+}
+
+pub(super) fn should_emit_sender_warning(
+    warnings: &mut HashMap<String, u64>,
+    sender_user_id: &str,
+    now_ms: u64,
+    interval_ms: u64,
+) -> bool {
+    let last_warning_ms = warnings.get(sender_user_id).copied().unwrap_or_default();
+    if last_warning_ms != 0 && now_ms.saturating_sub(last_warning_ms) < interval_ms {
+        return false;
+    }
+
+    warnings.insert(sender_user_id.to_owned(), now_ms);
+    true
+}
+
+pub(super) fn audio_playback_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
 }
 
 fn gain_from_percent(volume_percent: u32) -> f64 {

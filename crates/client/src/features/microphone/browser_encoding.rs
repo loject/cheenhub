@@ -8,6 +8,7 @@ use js_sys::{Float32Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::MessageEvent;
+use web_time::{SystemTime, UNIX_EPOCH};
 
 use super::backend::{
     EncodedMicrophoneFrame, MicrophoneCallbacks, MicrophoneCodec, MicrophoneConfig,
@@ -16,6 +17,10 @@ use super::backend::{
 use super::browser_bindings::{AudioData, AudioEncoder, EncodedAudioChunk};
 use super::browser_errors::js_error_message;
 use super::vad::{VoiceActivityDetector, rms_level};
+
+const MICROPHONE_ENCODER_QUEUE_WARN_FRAMES: u32 = 8;
+const MICROPHONE_WORKLET_DELIVERY_WARN_MS: u64 = 120;
+const MICROPHONE_WARNING_INTERVAL_MS: u64 = 5_000;
 
 pub(super) struct BrowserEncoder {
     pub(super) encoder: AudioEncoder,
@@ -81,6 +86,10 @@ pub(super) fn microphone_message_closure(
     closed: Rc<Cell<bool>>,
 ) -> Closure<dyn FnMut(MessageEvent)> {
     let detector = Rc::new(RefCell::new(VoiceActivityDetector::new(config.clone())));
+    let diagnostics = Rc::new(MicrophoneWorkletDiagnostics {
+        encoder_queue_warning_ms: Rc::new(Cell::new(0)),
+        chunk_timing: Rc::new(RefCell::new(MicrophoneChunkTiming::default())),
+    });
     Closure::wrap(Box::new(move |event: MessageEvent| {
         if closed.get() {
             return;
@@ -92,6 +101,7 @@ pub(super) fn microphone_message_closure(
             &callbacks,
             sample_rate_hz,
             config.input_gain,
+            diagnostics.as_ref(),
         ) {
             warn!(
                 %error,
@@ -142,16 +152,18 @@ fn handle_worklet_message(
     callbacks: &MicrophoneCallbacks,
     sample_rate_hz: u32,
     input_gain: f32,
+    diagnostics: &MicrophoneWorkletDiagnostics,
 ) -> Result<(), MicrophoneError> {
     let chunk = PcmChunk::from_message(data)?;
     if chunk.samples.is_empty() {
         return Ok(());
     }
 
+    let duration_us = duration_us(chunk.samples.len(), sample_rate_hz);
+    warn_if_worklet_delivery_is_late(&chunk, duration_us, &diagnostics.chunk_timing);
     let mut samples = chunk.samples;
     apply_input_gain(&mut samples, input_gain);
     let rms = rms_level(&samples);
-    let duration_us = duration_us(samples.len(), sample_rate_hz);
     let previous_active = detector.borrow().is_active();
     let active = detector.borrow_mut().update(rms, duration_us);
     if active != previous_active {
@@ -177,14 +189,94 @@ fn handle_worklet_message(
     let audio = audio_data_from_samples(&samples, sample_rate_hz, chunk.timestamp_us)?;
     let encode_result = encoder.encode(audio.as_ref());
     let close_result = audio.close();
+    let queue_size = encoder.encode_queue_size();
+    if queue_size >= MICROPHONE_ENCODER_QUEUE_WARN_FRAMES
+        && should_emit_cell_warning(
+            &diagnostics.encoder_queue_warning_ms,
+            browser_now_ms(),
+            MICROPHONE_WARNING_INTERVAL_MS,
+        )
+    {
+        warn!(
+            queue_size,
+            duration_us,
+            timestamp_us = chunk.timestamp_us,
+            "microphone encoder queue is backing up"
+        );
+    }
     encode_result.map_err(microphone_error)?;
     close_result.map_err(microphone_error)?;
     Ok(())
 }
 
+struct MicrophoneWorkletDiagnostics {
+    encoder_queue_warning_ms: Rc<Cell<u64>>,
+    chunk_timing: Rc<RefCell<MicrophoneChunkTiming>>,
+}
+
+#[derive(Default)]
+struct MicrophoneChunkTiming {
+    first_timestamp_us: Option<u64>,
+    first_wall_ms: u64,
+    last_timestamp_us: Option<u64>,
+    last_warning_ms: u64,
+}
+
 struct PcmChunk {
     samples: Vec<f32>,
     timestamp_us: u64,
+}
+
+fn warn_if_worklet_delivery_is_late(
+    chunk: &PcmChunk,
+    duration_us: u32,
+    timing: &Rc<RefCell<MicrophoneChunkTiming>>,
+) {
+    let now_ms = browser_now_ms();
+    let mut timing = timing.borrow_mut();
+    let first_timestamp_us = match timing.first_timestamp_us {
+        Some(timestamp_us) => timestamp_us,
+        None => {
+            timing.first_timestamp_us = Some(chunk.timestamp_us);
+            timing.first_wall_ms = now_ms;
+            timing.last_timestamp_us = Some(chunk.timestamp_us);
+            return;
+        }
+    };
+
+    let expected_wall_ms = timing.first_wall_ms.saturating_add(
+        chunk
+            .timestamp_us
+            .saturating_sub(first_timestamp_us)
+            .checked_div(1_000)
+            .unwrap_or_default(),
+    );
+    let delivery_late_ms = now_ms.saturating_sub(expected_wall_ms);
+    let previous_timestamp_us = timing.last_timestamp_us.replace(chunk.timestamp_us);
+    let timestamp_gap_us = previous_timestamp_us
+        .map(|previous_timestamp_us| chunk.timestamp_us.saturating_sub(previous_timestamp_us))
+        .unwrap_or_default();
+    let timestamp_gap_ms = timestamp_gap_us.checked_div(1_000).unwrap_or_default();
+    let expected_gap_ms = u64::from(duration_us)
+        .checked_div(1_000)
+        .unwrap_or_default();
+    if delivery_late_ms < MICROPHONE_WORKLET_DELIVERY_WARN_MS {
+        return;
+    }
+    if timing.last_warning_ms != 0
+        && now_ms.saturating_sub(timing.last_warning_ms) < MICROPHONE_WARNING_INTERVAL_MS
+    {
+        return;
+    }
+
+    timing.last_warning_ms = now_ms;
+    warn!(
+        delivery_late_ms,
+        timestamp_gap_ms,
+        expected_gap_ms,
+        timestamp_us = chunk.timestamp_us,
+        "microphone audio worklet chunk reached main thread late"
+    );
 }
 
 impl PcmChunk {
@@ -251,6 +343,23 @@ fn duration_us(frames: usize, sample_rate_hz: u32) -> u32 {
         .checked_div(u64::from(sample_rate_hz.max(1)))
         .unwrap_or(0))
     .min(u64::from(u32::MAX)) as u32
+}
+
+fn should_emit_cell_warning(last_warning_ms: &Cell<u64>, now_ms: u64, interval_ms: u64) -> bool {
+    let last_ms = last_warning_ms.get();
+    if last_ms != 0 && now_ms.saturating_sub(last_ms) < interval_ms {
+        return false;
+    }
+
+    last_warning_ms.set(now_ms);
+    true
+}
+
+fn browser_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
 }
 
 fn microphone_error(error: JsValue) -> MicrophoneError {

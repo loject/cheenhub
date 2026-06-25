@@ -21,6 +21,9 @@ extern "C" {
     #[wasm_bindgen(method, catch, js_name = encode)]
     pub(super) fn encode(this: &AudioEncoder, data: &JsValue) -> Result<(), JsValue>;
 
+    #[wasm_bindgen(method, getter, js_name = encodeQueueSize)]
+    pub(super) fn encode_queue_size(this: &AudioEncoder) -> u32;
+
     #[wasm_bindgen(method, catch, js_name = close)]
     pub(super) fn close(this: &AudioEncoder) -> Result<(), JsValue>;
 

@@ -10,10 +10,12 @@ use web_sys::{AudioBufferSourceNode, AudioContext, GainNode};
 
 use super::browser_bindings::{AudioData, AudioDecoder, EncodedAudioChunk};
 use super::browser_helpers::{js_error_message, set_property};
-use super::provider::{AudioPlaybackInner, VoiceFrame};
+use super::provider::AudioPlaybackInner;
+use super::provider::VoiceFrame;
 
 const INITIAL_PLAYBACK_BUFFER_SECONDS: f64 = 0.03;
 const CONTINUOUS_PLAYBACK_MARGIN_SECONDS: f64 = 0.02;
+const PLAYBACK_SCHEDULE_WARNING_INTERVAL_SECONDS: f64 = 5.0;
 
 pub(super) struct ScheduledAudioSource {
     pub(super) source: AudioBufferSourceNode,
@@ -135,11 +137,28 @@ fn schedule_audio_data(
     let now = context.current_time();
     let mut inner = inner.borrow_mut();
     let previous_until = inner.scheduled_until.get(sender_user_id).copied();
+    let mut underrun_ms = None;
+    let mut inserted_gap_ms = None;
+    let mut low_headroom_ms = None;
     let start_at = match previous_until {
         Some(previous_until) if previous_until > now => {
-            previous_until.max(now + CONTINUOUS_PLAYBACK_MARGIN_SECONDS)
+            let start_at = previous_until.max(now + CONTINUOUS_PLAYBACK_MARGIN_SECONDS);
+            if start_at > previous_until {
+                low_headroom_ms = Some((previous_until - now) * 1000.0);
+                inserted_gap_ms = Some((start_at - previous_until) * 1000.0);
+            }
+            start_at
         }
-        _ => {
+        Some(previous_until) => {
+            underrun_ms = Some((now - previous_until) * 1000.0);
+            debug!(
+                %sender_user_id,
+                buffer_ms = INITIAL_PLAYBACK_BUFFER_SECONDS * 1000.0,
+                "priming inbound voice playback buffer"
+            );
+            now + INITIAL_PLAYBACK_BUFFER_SECONDS
+        }
+        None => {
             debug!(
                 %sender_user_id,
                 buffer_ms = INITIAL_PLAYBACK_BUFFER_SECONDS * 1000.0,
@@ -148,6 +167,27 @@ fn schedule_audio_data(
             now + INITIAL_PLAYBACK_BUFFER_SECONDS
         }
     };
+    if let Some(underrun_ms) = underrun_ms {
+        if should_warn_playback_schedule(&mut inner, sender_user_id, now) {
+            warn!(
+                %sender_user_id,
+                underrun_ms,
+                buffer_ms = INITIAL_PLAYBACK_BUFFER_SECONDS * 1000.0,
+                "inbound voice playback underrun"
+            );
+        }
+    } else if let (Some(low_headroom_ms), Some(inserted_gap_ms)) =
+        (low_headroom_ms, inserted_gap_ms)
+        && should_warn_playback_schedule(&mut inner, sender_user_id, now)
+    {
+        warn!(
+            %sender_user_id,
+            low_headroom_ms,
+            inserted_gap_ms,
+            margin_ms = CONTINUOUS_PLAYBACK_MARGIN_SECONDS * 1000.0,
+            "inbound voice playback schedule headroom is low"
+        );
+    }
     let duration = f64::from(frames) / f64::from(sample_rate);
     let end_time = start_at + duration;
     inner
@@ -162,6 +202,26 @@ fn schedule_audio_data(
     sources.push(ScheduledAudioSource { source, end_time });
 
     Ok(())
+}
+
+fn should_warn_playback_schedule(
+    inner: &mut AudioPlaybackInner,
+    sender_user_id: &str,
+    now: f64,
+) -> bool {
+    let last_warning_at = inner
+        .playback_schedule_warning_at
+        .get(sender_user_id)
+        .copied()
+        .unwrap_or(f64::NEG_INFINITY);
+    if now - last_warning_at < PLAYBACK_SCHEDULE_WARNING_INTERVAL_SECONDS {
+        return false;
+    }
+
+    inner
+        .playback_schedule_warning_at
+        .insert(sender_user_id.to_owned(), now);
+    true
 }
 
 fn copy_options(plane_index: u32) -> JsValue {

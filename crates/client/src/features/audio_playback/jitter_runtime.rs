@@ -7,7 +7,13 @@ use web_time::{SystemTime, UNIX_EPOCH};
 
 use super::browser_helpers::js_error_message;
 use super::jitter_buffer::JitterBufferPush;
-use super::provider::{AudioPlaybackHandle, PlaybackCodec, VoiceFrame};
+use super::provider::{
+    AUDIO_PLAYBACK_WARNING_INTERVAL_MS, AudioPlaybackHandle, AudioPlaybackInner, PlaybackCodec,
+    VoiceFrame, audio_playback_now_ms, should_emit_sender_warning,
+};
+
+const JITTER_PENDING_WARN_FRAMES: usize = 12;
+const JITTER_DRAIN_WAKE_LATE_WARN_MS: u64 = 120;
 
 impl AudioPlaybackHandle {
     /// Plays one encoded voice frame.
@@ -44,6 +50,21 @@ impl AudioPlaybackHandle {
                         "started inbound voice jitter buffer"
                     );
                 }
+                if pending_frames >= JITTER_PENDING_WARN_FRAMES {
+                    let should_warn = {
+                        let mut inner = self.inner.borrow_mut();
+                        should_warn_jitter(&mut inner, &sender_user_id, audio_playback_now_ms())
+                    };
+                    if should_warn {
+                        warn!(
+                            %sender_user_id,
+                            sequence,
+                            pending_frames,
+                            target_delay_ms,
+                            "inbound voice jitter buffer pending frames are backing up"
+                        );
+                    }
+                }
             }
             JitterBufferPush::Reset {
                 previous_expected_sequence,
@@ -66,12 +87,25 @@ impl AudioPlaybackHandle {
                 return;
             }
             JitterBufferPush::DroppedStale { expected_sequence } => {
-                debug!(
-                    %sender_user_id,
-                    sequence,
-                    expected_sequence,
-                    "dropped stale inbound voice frame"
-                );
+                let should_warn = {
+                    let mut inner = self.inner.borrow_mut();
+                    should_warn_jitter(&mut inner, &sender_user_id, audio_playback_now_ms())
+                };
+                if should_warn {
+                    warn!(
+                        %sender_user_id,
+                        sequence,
+                        expected_sequence,
+                        "dropped stale inbound voice frame"
+                    );
+                } else {
+                    debug!(
+                        %sender_user_id,
+                        sequence,
+                        expected_sequence,
+                        "dropped stale inbound voice frame"
+                    );
+                }
                 return;
             }
         }
@@ -100,14 +134,32 @@ impl AudioPlaybackHandle {
                 let Some(next_wake_ms) = handle.drain_jitter_buffer(&sender_user_id) else {
                     break;
                 };
+                let wake_deadline_ms = jitter_now_ms().saturating_add(u64::from(next_wake_ms));
                 TimeoutFuture::new(next_wake_ms).await;
+                let woke_at_ms = jitter_now_ms();
+                let wake_late_ms = woke_at_ms.saturating_sub(wake_deadline_ms);
+                if wake_late_ms >= JITTER_DRAIN_WAKE_LATE_WARN_MS {
+                    let should_warn = {
+                        let mut inner = handle.inner.borrow_mut();
+                        should_warn_jitter(&mut inner, &sender_user_id, woke_at_ms)
+                    };
+                    if should_warn {
+                        warn!(
+                            %sender_user_id,
+                            wake_late_ms,
+                            scheduled_delay_ms = next_wake_ms,
+                            "inbound voice jitter drain woke late"
+                        );
+                    }
+                }
             }
             handle.finish_jitter_drain(&sender_user_id, generation);
         });
     }
 
     fn drain_jitter_buffer(&self, sender_user_id: &str) -> Option<u32> {
-        let (drain, target_delay_ms) = {
+        let now_ms = jitter_now_ms();
+        let (drain, target_delay_ms, should_warn_jitter_advance) = {
             let mut inner = self.inner.borrow_mut();
             if inner.muted {
                 inner.jitter_buffers.remove(sender_user_id);
@@ -115,21 +167,33 @@ impl AudioPlaybackHandle {
             }
 
             let target_delay_ms = inner.jitter_buffer_ms;
-            let buffer = inner.jitter_buffers.get_mut(sender_user_id)?;
-            (
-                buffer.drain_ready(jitter_now_ms(), u64::from(target_delay_ms)),
-                target_delay_ms,
-            )
+            let drain = {
+                let buffer = inner.jitter_buffers.get_mut(sender_user_id)?;
+                buffer.drain_ready(now_ms, u64::from(target_delay_ms))
+            };
+            let should_warn = (drain.skipped_sequences > 0 || drain.dropped_stale_frames > 0)
+                && should_warn_jitter(&mut inner, sender_user_id, now_ms);
+            (drain, target_delay_ms, should_warn)
         };
 
         if drain.skipped_sequences > 0 || drain.dropped_stale_frames > 0 {
-            debug!(
-                %sender_user_id,
-                skipped_sequences = drain.skipped_sequences,
-                dropped_stale_frames = drain.dropped_stale_frames,
-                target_delay_ms,
-                "advanced inbound voice jitter buffer after network jitter"
-            );
+            if should_warn_jitter_advance {
+                warn!(
+                    %sender_user_id,
+                    skipped_sequences = drain.skipped_sequences,
+                    dropped_stale_frames = drain.dropped_stale_frames,
+                    target_delay_ms,
+                    "advanced inbound voice jitter buffer after network jitter"
+                );
+            } else {
+                debug!(
+                    %sender_user_id,
+                    skipped_sequences = drain.skipped_sequences,
+                    dropped_stale_frames = drain.dropped_stale_frames,
+                    target_delay_ms,
+                    "advanced inbound voice jitter buffer after network jitter"
+                );
+            }
         }
 
         let next_wake_ms = drain.next_wake_ms;
@@ -156,6 +220,15 @@ impl AudioPlaybackHandle {
             inner.jitter_drainers.remove(sender_user_id);
         }
     }
+}
+
+fn should_warn_jitter(inner: &mut AudioPlaybackInner, sender_user_id: &str, now_ms: u64) -> bool {
+    should_emit_sender_warning(
+        &mut inner.jitter_warning_at_ms,
+        sender_user_id,
+        now_ms,
+        AUDIO_PLAYBACK_WARNING_INTERVAL_MS,
+    )
 }
 
 fn jitter_now_ms() -> u64 {

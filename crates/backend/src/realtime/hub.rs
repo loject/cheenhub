@@ -1,9 +1,12 @@
 //! Общий реестр потоков realtime и вещания.
 
+use std::time::Duration;
+
 use cheenhub_contracts::realtime::{RealtimeKind, RealtimeModule};
 use futures_util::future::join_all;
 use serde::Serialize;
 use tokio::sync::Mutex;
+use tokio::time::Instant;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
@@ -12,11 +15,15 @@ use crate::state::AppState;
 use super::protocol;
 use super::sink::{DatagramSink, EnvelopeSink};
 
+const SLOW_DATAGRAM_FANOUT_WARN_AFTER: Duration = Duration::from_millis(40);
+const SLOW_DATAGRAM_FANOUT_WARNING_INTERVAL: Duration = Duration::from_secs(5);
+
 /// Общий реестр активных потоков realtime, привязанных к модулям.
 #[derive(Default)]
 pub(crate) struct RealtimeHub {
     streams: Mutex<Vec<RealtimeStream>>,
     sessions: Mutex<Vec<RealtimeSession>>,
+    last_slow_datagram_fanout_warning_at: Mutex<Option<Instant>>,
 }
 
 #[derive(Clone)]
@@ -32,6 +39,11 @@ struct RealtimeSession {
     id: Uuid,
     user_id: Uuid,
     datagrams: DatagramSink,
+}
+
+struct DatagramFanoutOutcome {
+    elapsed: Duration,
+    failed: bool,
 }
 
 /// Публичный идентификатор потока, используемый в политиках вещания на уровне функций.
@@ -97,6 +109,8 @@ impl RealtimeHub {
         session_ids: &[Uuid],
         bytes: bytes::Bytes,
     ) {
+        let started_at = Instant::now();
+        let payload_bytes = bytes.len();
         let sessions = self
             .sessions
             .lock()
@@ -105,22 +119,62 @@ impl RealtimeHub {
             .filter(|session| session_ids.contains(&session.id))
             .cloned()
             .collect::<Vec<_>>();
+        let recipient_count = sessions.len();
 
         // TODO: benchmark this hot path before adding bounded concurrency or task spawning.
-        join_all(sessions.into_iter().map(|session| {
+        let outcomes = join_all(sessions.into_iter().map(|session| {
             let bytes = bytes.clone();
             async move {
-                if let Err(error) = session.datagrams.send_datagram(bytes).await {
+                let recipient_started_at = Instant::now();
+                let result = session.datagrams.send_datagram(bytes).await;
+                let elapsed = recipient_started_at.elapsed();
+                if let Err(error) = result {
                     warn!(
                         session_id = %session.id,
                         user_id = %session.user_id,
                         %error,
                         "failed to fan out realtime datagram"
                     );
+                    return DatagramFanoutOutcome {
+                        elapsed,
+                        failed: true,
+                    };
+                }
+
+                DatagramFanoutOutcome {
+                    elapsed,
+                    failed: false,
                 }
             }
         }))
         .await;
+
+        let elapsed = started_at.elapsed();
+        if elapsed >= SLOW_DATAGRAM_FANOUT_WARN_AFTER
+            && self.should_warn_slow_datagram_fanout().await
+        {
+            let failed_recipient_count = outcomes.iter().filter(|outcome| outcome.failed).count();
+            let slow_recipient_count = outcomes
+                .iter()
+                .filter(|outcome| outcome.elapsed >= SLOW_DATAGRAM_FANOUT_WARN_AFTER)
+                .count();
+            let max_recipient_send_ms = outcomes
+                .iter()
+                .map(|outcome| outcome.elapsed.as_millis())
+                .max()
+                .unwrap_or_default();
+
+            // TODO: отправлять сообщение в телеграм(после появления пушей - администратору)
+            warn!(
+                recipient_count,
+                slow_recipient_count,
+                failed_recipient_count,
+                payload_bytes,
+                elapsed_ms = elapsed.as_millis(),
+                max_recipient_send_ms,
+                "slow realtime datagram fanout"
+            );
+        }
     }
 
     /// Удаляет надежный поток, привязанный к модулю.
@@ -209,6 +263,19 @@ impl RealtimeHub {
             }
         }))
         .await;
+    }
+
+    async fn should_warn_slow_datagram_fanout(&self) -> bool {
+        let now = Instant::now();
+        let mut last_warning_at = self.last_slow_datagram_fanout_warning_at.lock().await;
+        if last_warning_at.is_some_and(|last_warning_at| {
+            now.duration_since(last_warning_at) < SLOW_DATAGRAM_FANOUT_WARNING_INTERVAL
+        }) {
+            return false;
+        }
+
+        *last_warning_at = Some(now);
+        true
     }
 }
 

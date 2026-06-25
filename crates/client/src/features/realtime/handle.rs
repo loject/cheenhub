@@ -1,33 +1,37 @@
 //! Realtime connection handle.
 
+mod connection;
 mod fire_and_forget;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::Duration;
 
 use bytes::Bytes;
 use cheenhub_contracts::realtime::{
-    Authenticate, Authenticated, ControlKind, RealtimeEnvelope, RealtimeKind, RealtimeModule,
-    Rejected,
+    ControlKind, RealtimeEnvelope, RealtimeKind, RealtimeModule, Rejected,
 };
-use dioxus::prelude::{debug, info, warn};
+use dioxus::prelude::{debug, warn};
 use futures_channel::{mpsc, oneshot};
 use futures_util::lock::Mutex;
 use serde::{Serialize, de::DeserializeOwned};
 use uuid::Uuid;
+use web_time::{Instant, SystemTime, UNIX_EPOCH};
 use web_transport::{SendStream, Session};
 
-use super::config;
 use super::error::RealtimeError;
 use super::framing;
 use super::guards::{
     ModuleStreams, PendingRequestGuard, PendingRequests, StreamWriteGuard, remove_cached_stream,
 };
 use super::inbound::{EventListeners, spawn_universal_reader};
-use super::status::{RealtimeConnectionStatus, RealtimeTransportKind};
-use super::websocket::{self, WebSocketOutbound, WebSocketOutboundSender};
+use super::status::RealtimeConnectionStatus;
+use super::websocket::{WebSocketOutbound, WebSocketOutboundSender};
 use super::webtransport;
+
+const SLOW_DATAGRAM_SEND_WARN_AFTER: Duration = Duration::from_millis(40);
+const DATAGRAM_SEND_WARNING_INTERVAL_MS: u64 = 5_000;
 
 pub(super) type DatagramListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<Bytes>>>>;
 type StatusListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<RealtimeConnectionStatus>>>>;
@@ -49,6 +53,7 @@ struct RealtimeInner {
     generation: Cell<u64>,
     connection_status: Cell<RealtimeConnectionStatus>,
     status_listeners: StatusListeners,
+    last_slow_datagram_send_warning_ms: Cell<u64>,
 }
 
 #[derive(Clone)]
@@ -64,140 +69,42 @@ enum ConnectedTransport {
 }
 
 impl RealtimeHandle {
-    /// Opens and authenticates the realtime session.
-    pub(crate) async fn connect(
-        &self,
-        access_token: String,
-    ) -> Result<Authenticated, RealtimeError> {
-        match self.connect_webtransport(access_token.clone()).await {
-            Ok(authenticated) => Ok(authenticated),
-            Err(webtransport_error) => {
-                warn!(
-                    %webtransport_error,
-                    "WebTransport realtime connection failed; trying WebSocket fallback"
-                );
-                self.connect_websocket(access_token).await.map_err(|websocket_error| {
-                    RealtimeError::new(format!(
-                        "Failed to connect realtime session: WebTransport error: {webtransport_error}; WebSocket fallback error: {websocket_error}"
-                    ))
-                })
-            }
-        }
-    }
-
-    async fn connect_webtransport(
-        &self,
-        access_token: String,
-    ) -> Result<Authenticated, RealtimeError> {
-        let client = config::realtime_client()?;
-        let url = config::realtime_url()?;
-        info!(%url, "connecting WebTransport realtime session");
-        let session = client.connect(url.clone()).await.map_err(|error| {
-            RealtimeError::new(format!("Failed to connect realtime session: {error}"))
-        })?;
-
-        info!(%url, "WebTransport transport connected");
-        let generation = self.next_generation();
-        self.inner.streams.lock().await.clear();
-        self.inner.pending.borrow_mut().clear();
-        self.inner.session.lock().await.replace(ConnectedSession {
-            generation,
-            transport: ConnectedTransport::WebTransport(Rc::new(session.clone())),
-        });
-
-        let authenticated = self
-            .request(
-                RealtimeModule::Control,
-                RealtimeKind::Control(ControlKind::Authenticate),
-                Authenticate { access_token },
-            )
-            .await;
-        let authenticated: Authenticated = match authenticated {
-            Ok(authenticated) => authenticated,
-            Err(error) => {
-                self.clear_generation(generation).await;
-                return Err(error);
-            }
-        };
-        info!(%url, user_id = %authenticated.user.id, "WebTransport realtime authenticated");
-        self.set_connection_status(RealtimeConnectionStatus::Connected(
-            RealtimeTransportKind::WebTransport,
-        ));
-        webtransport::spawn_datagram_reader(
-            session.clone(),
-            generation,
-            self.inner.datagram_listeners.clone(),
-        );
-        webtransport::spawn_connection_watcher(url.to_string(), session, generation, self.clone());
-
-        Ok(authenticated)
-    }
-
-    async fn connect_websocket(
-        &self,
-        access_token: String,
-    ) -> Result<Authenticated, RealtimeError> {
-        let url = config::realtime_websocket_url()?;
-        info!(%url, "connecting WebSocket realtime fallback session");
-        let (writer, reader) = websocket::split(url.as_str())?;
-        let (sender, receiver) = mpsc::unbounded();
-        let generation = self.next_generation();
-        self.inner.streams.lock().await.clear();
-        self.inner.pending.borrow_mut().clear();
-        self.inner.session.lock().await.replace(ConnectedSession {
-            generation,
-            transport: ConnectedTransport::WebSocket(sender),
-        });
-        websocket::spawn_writer(
-            url.to_string(),
-            generation,
-            writer,
-            receiver,
-            Some(self.clone()),
-        );
-        websocket::spawn_reader(
-            url.to_string(),
-            generation,
-            reader,
-            self.inner.inbound.clone(),
-            self.inner.datagram_listeners.clone(),
-            self.clone(),
-        );
-
-        let authenticated = self
-            .request(
-                RealtimeModule::Control,
-                RealtimeKind::Control(ControlKind::Authenticate),
-                Authenticate { access_token },
-            )
-            .await;
-        let authenticated: Authenticated = match authenticated {
-            Ok(authenticated) => authenticated,
-            Err(error) => {
-                self.clear_generation(generation).await;
-                return Err(error);
-            }
-        };
-        info!(%url, user_id = %authenticated.user.id, "WebSocket realtime fallback authenticated");
-        self.set_connection_status(RealtimeConnectionStatus::Connected(
-            RealtimeTransportKind::WebSocketFallback,
-        ));
-
-        Ok(authenticated)
-    }
-
     /// Sends one raw unreliable datagram message.
     pub(crate) async fn send_unreliable_bytes(&self, bytes: Bytes) -> Result<(), RealtimeError> {
         let Some(connected) = self.inner.session.lock().await.clone() else {
             return Err(RealtimeError::new("Realtime session is not connected."));
         };
+        let generation = connected.generation;
+        let payload_bytes = bytes.len();
 
         match connected.transport {
             ConnectedTransport::WebTransport(session) => {
+                let wait_started_at = Instant::now();
                 let _write_guard = self.inner.datagram_writes.lock().await;
-                session.send_datagram(bytes).await.map_err(|error| {
+                let write_wait = wait_started_at.elapsed();
+                let send_started_at = Instant::now();
+                let result = session.send_datagram(bytes).await.map_err(|error| {
                     RealtimeError::new(format!("Failed to send realtime datagram: {error}"))
-                })
+                });
+                let send_elapsed = send_started_at.elapsed();
+                if result.is_ok()
+                    && (write_wait >= SLOW_DATAGRAM_SEND_WARN_AFTER
+                        || send_elapsed >= SLOW_DATAGRAM_SEND_WARN_AFTER)
+                    && should_emit_cell_warning(
+                        &self.inner.last_slow_datagram_send_warning_ms,
+                        realtime_now_ms(),
+                        DATAGRAM_SEND_WARNING_INTERVAL_MS,
+                    )
+                {
+                    warn!(
+                        generation,
+                        payload_bytes,
+                        write_wait_ms = write_wait.as_millis(),
+                        send_elapsed_ms = send_elapsed.as_millis(),
+                        "slow outbound realtime datagram send"
+                    );
+                }
+                result
             }
             ConnectedTransport::WebSocket(sender) => sender
                 .unbounded_send(WebSocketOutbound::Datagram(bytes))
@@ -448,6 +355,7 @@ pub(crate) fn create_handle() -> RealtimeHandle {
             generation: Cell::new(0),
             connection_status: Cell::new(RealtimeConnectionStatus::Disconnected),
             status_listeners: Rc::new(RefCell::new(Vec::new())),
+            last_slow_datagram_send_warning_ms: Cell::new(0),
         }),
     };
     spawn_universal_reader(
@@ -477,4 +385,21 @@ fn uses_cached_stream(module: RealtimeModule) -> bool {
             | RealtimeModule::TextChat
             | RealtimeModule::VoiceChat
     )
+}
+
+fn should_emit_cell_warning(last_warning_ms: &Cell<u64>, now_ms: u64, interval_ms: u64) -> bool {
+    let last_ms = last_warning_ms.get();
+    if last_ms != 0 && now_ms.saturating_sub(last_ms) < interval_ms {
+        return false;
+    }
+
+    last_warning_ms.set(now_ms);
+    true
+}
+
+fn realtime_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
 }

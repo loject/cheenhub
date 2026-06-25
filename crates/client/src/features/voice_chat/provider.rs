@@ -1,13 +1,14 @@
 //! Провайдер контекста голосового соединения.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::time::Duration;
 
 use dioxus::prelude::*;
 use futures_util::StreamExt;
-use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
+use web_time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::{AudioPlaybackHandle, PlaybackCodec, VoiceFrame};
@@ -24,6 +25,9 @@ use super::local_video::{
 use super::realtime;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
+
+const SLOW_VOICE_FRAME_SEND_WARN_AFTER: Duration = Duration::from_millis(40);
+const VOICE_FRAME_SEND_WARNING_INTERVAL_MS: u64 = 5_000;
 
 /// Предоставляет состояние голосового соединения аутентифицированным компонентам приложения.
 /// TODO: review, выглядит сложно и как куча бойлерплейта
@@ -331,19 +335,67 @@ fn restart_microphone_for_target(
     server_id: String,
     room_id: String,
 ) {
+    let last_slow_send_warning_ms = Rc::new(Cell::new(0));
     microphone.restart(Rc::new(move |frame| {
         let frame_realtime = realtime_handle.clone();
         let frame_server_id = server_id.clone();
         let frame_room_id = room_id.clone();
+        let frame_sequence = frame.sequence;
+        let frame_duration_us = frame.duration_us;
+        let payload_bytes = frame.bytes.len();
+        let last_slow_send_warning_ms = last_slow_send_warning_ms.clone();
         spawn_local(async move {
-            if let Err(error) =
-                realtime::send_voice_frame(&frame_realtime, &frame_server_id, &frame_room_id, frame)
-                    .await
+            let started_at = Instant::now();
+            let result = realtime::send_voice_frame(
+                &frame_realtime,
+                &frame_server_id,
+                &frame_room_id,
+                frame,
+            )
+            .await;
+            let elapsed = started_at.elapsed();
+            if elapsed >= SLOW_VOICE_FRAME_SEND_WARN_AFTER
+                && should_emit_voice_frame_warning(
+                    &last_slow_send_warning_ms,
+                    voice_provider_now_ms(),
+                )
             {
-                web_sys::console::warn_1(&JsValue::from_str(&format!(
-                    "failed to send encoded voice frame: {error}"
-                )));
+                warn!(
+                    server_id = %frame_server_id,
+                    room_id = %frame_room_id,
+                    sequence = frame_sequence,
+                    duration_us = frame_duration_us,
+                    payload_bytes,
+                    elapsed_ms = elapsed.as_millis(),
+                    "slow outbound voice frame send"
+                );
+            }
+            if let Err(error) = result {
+                warn!(
+                    %error,
+                    server_id = %frame_server_id,
+                    room_id = %frame_room_id,
+                    sequence = frame_sequence,
+                    "failed to send encoded voice frame"
+                );
             }
         });
     }));
+}
+
+fn should_emit_voice_frame_warning(last_warning_ms: &Cell<u64>, now_ms: u64) -> bool {
+    let last_ms = last_warning_ms.get();
+    if last_ms != 0 && now_ms.saturating_sub(last_ms) < VOICE_FRAME_SEND_WARNING_INTERVAL_MS {
+        return false;
+    }
+
+    last_warning_ms.set(now_ms);
+    true
+}
+
+fn voice_provider_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
 }

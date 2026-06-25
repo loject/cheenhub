@@ -67,6 +67,7 @@ async fn handle_socket(state: AppState, session_id: Uuid, socket: WebSocket) {
     });
 
     let mut stream_ids = HashMap::new();
+    let mut last_slow_datagram_dispatch_warning_at = None;
     let result = async {
         let envelope = read_next_envelope(&mut socket_receiver)
             .await?
@@ -105,7 +106,14 @@ async fn handle_socket(state: AppState, session_id: Uuid, socket: WebSocket) {
                 }
                 Message::Binary(bytes) => match MediaDatagram::decode(&bytes) {
                     Ok(datagram) => {
-                        datagram::dispatch(&state, session_id, user_id, datagram).await;
+                        datagram::dispatch_with_warnings(
+                            &state,
+                            session_id,
+                            user_id,
+                            datagram,
+                            &mut last_slow_datagram_dispatch_warning_at,
+                        )
+                        .await;
                     }
                     Err(error) => {
                         debug!(
