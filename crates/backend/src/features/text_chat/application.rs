@@ -155,7 +155,7 @@ pub(crate) async fn delete_message(
 
     let own_delete = state
         .text_chat_store
-        .soft_delete_message(&message_id, user_id, true)
+        .soft_delete_message(&server_id, &room_id, &message_id, user_id, true)
         .await
         .map_err(TextChatApplicationError::Internal)?;
 
@@ -172,7 +172,7 @@ pub(crate) async fn delete_message(
         }
         state
             .text_chat_store
-            .soft_delete_message(&message_id, user_id, false)
+            .soft_delete_message(&server_id, &room_id, &message_id, user_id, false)
             .await
             .map_err(TextChatApplicationError::Internal)?
             .ok_or_else(|| {

@@ -49,11 +49,14 @@ RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/regist
 FROM debian:bookworm-slim AS backend-runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --user-group --no-create-home cheenhub
 WORKDIR /app
 COPY --from=backend-builder /usr/local/bin/cheenhub_backend /usr/local/bin/cheenhub_backend
 COPY --from=backend-builder /usr/local/bin/cheenhub_migrations /usr/local/bin/cheenhub_migrations
 EXPOSE 3000 4443/tcp 4443/udp
+# Не работаем от root внутри контейнера.
+USER 10001
 CMD ["cheenhub_backend"]
 
 FROM nginx:1.27-alpine AS web-runtime

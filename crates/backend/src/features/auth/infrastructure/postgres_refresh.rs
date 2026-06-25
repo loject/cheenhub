@@ -233,6 +233,49 @@ pub(super) async fn revoke_user_session(
     Ok(true)
 }
 
+pub(super) async fn revoke_session_on_refresh_reuse(
+    database: &DatabaseConnection,
+    token_hash: &str,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    let Some(refresh_token) = refresh_tokens::Entity::find()
+        .filter(refresh_tokens::Column::TokenHash.eq(token_hash))
+        .one(database)
+        .await?
+    else {
+        return Ok(false);
+    };
+
+    // Активный (не отозванный) токен — это просто просрочка или опечатка, не кража.
+    if refresh_token.revoked_at.is_none() {
+        return Ok(false);
+    }
+
+    // Токен уже был ротирован/отозван, но предъявлен снова — вероятная компрометация.
+    // Завершаем всю сессию и все ее refresh-токены.
+    let session_id = refresh_token.session_id;
+    sessions::Entity::update_many()
+        .col_expr(
+            sessions::Column::RevokedAt,
+            sea_orm::sea_query::Expr::value(now),
+        )
+        .filter(sessions::Column::Id.eq(session_id))
+        .filter(sessions::Column::RevokedAt.is_null())
+        .exec(database)
+        .await?;
+    refresh_tokens::Entity::update_many()
+        .col_expr(
+            refresh_tokens::Column::RevokedAt,
+            sea_orm::sea_query::Expr::value(now),
+        )
+        .filter(refresh_tokens::Column::SessionId.eq(session_id))
+        .filter(refresh_tokens::Column::RevokedAt.is_null())
+        .exec(database)
+        .await?;
+
+    Ok(true)
+}
+
 async fn record_session_user_agent(
     database: &DatabaseConnection,
     session_id: &Uuid,

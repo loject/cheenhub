@@ -100,7 +100,7 @@ impl AppConfig {
             backend_port: optional("BACKEND_PORT", "3000")
                 .parse()
                 .context("BACKEND_PORT must be a valid u16 port")?,
-            log_filter: optional("RUST_LOG", "cheenhub_backend=debug,tower_http=debug,info"),
+            log_filter: optional("RUST_LOG", "cheenhub_backend=info,tower_http=info,warn"),
             jwt_private_key_base64: required("JWT_ED25519_PRIVATE_KEY_BASE64")?,
             jwt_key_id: required("JWT_KEY_ID")?,
             access_token_lifetime_minutes: positive_i64("ACCESS_TOKEN_LIFETIME_MINUTES")?,

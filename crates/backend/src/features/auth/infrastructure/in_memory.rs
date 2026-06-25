@@ -211,6 +211,14 @@ impl AuthStore for InMemoryAuthStore {
         refresh::revoke_refresh_session(&self.state, token_hash, now)
     }
 
+    async fn revoke_session_on_refresh_reuse(
+        &self,
+        token_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        refresh::revoke_session_on_refresh_reuse(&self.state, token_hash, now)
+    }
+
     async fn session_is_active(
         &self,
         session_id: &Uuid,

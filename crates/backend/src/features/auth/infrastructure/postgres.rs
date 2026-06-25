@@ -215,6 +215,15 @@ impl AuthStore for PostgresAuthStore {
         super::postgres_refresh::revoke_refresh_session(&self.database, token_hash, now).await
     }
 
+    async fn revoke_session_on_refresh_reuse(
+        &self,
+        token_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        super::postgres_refresh::revoke_session_on_refresh_reuse(&self.database, token_hash, now)
+            .await
+    }
+
     async fn session_is_active(
         &self,
         session_id: &Uuid,
