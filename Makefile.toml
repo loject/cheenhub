@@ -3,8 +3,6 @@ default_to_workspace = false
 
 [env]
 CARGO_MAKE_CRATE_INSTALLATION_LOCKED = true
-CHEENHUB_JWT_KEY_ID = { value = "dev-ed25519-1", condition = { env_not_set = ["CHEENHUB_JWT_KEY_ID"] } }
-CHEENHUB_JWT_PUBLIC_KEY_BASE64 = { value = "FyeAHCHdj3LQJcxcJv1Zo3mW8m+kqBGytTetC2NCIBU=", condition = { env_not_set = ["CHEENHUB_JWT_PUBLIC_KEY_BASE64"] } }
 DIOXUS_ADDR = { value = "0.0.0.0", condition = { env_not_set = ["DIOXUS_ADDR"] } }
 DIOXUS_PORT = { value = "8080", condition = { env_not_set = ["DIOXUS_PORT"] } }
 POSTGRES_CONTAINER = { value = "cheenhub-postgres", condition = { env_not_set = ["POSTGRES_CONTAINER"] } }
@@ -12,18 +10,36 @@ POSTGRES_USER = { value = "postgres", condition = { env_not_set = ["POSTGRES_USE
 POSTGRES_PASSWORD = { value = "mysecretpassword", condition = { env_not_set = ["POSTGRES_PASSWORD"] } }
 POSTGRES_DB = { value = "cheenhub", condition = { env_not_set = ["POSTGRES_DB"] } }
 POSTGRES_PORT = { value = "5432", condition = { env_not_set = ["POSTGRES_PORT"] } }
+MICROPHONE_WORKER_OUT_DIR = { value = "crates/client/public/workers/microphone", condition = { env_not_set = ["MICROPHONE_WORKER_OUT_DIR"] } }
 
 [tasks.default]
 alias = "dev-stack"
 
 [tasks.dev-stack]
 description = "Ensure local infrastructure and run the backend watcher plus Dioxus dev server."
-dependencies = ["setup", "ensure-docker-desktop", "ensure-postgres"]
+dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
 run_task = "dev-services"
 
+[tasks.ensure-local-jwt-env]
+description = "Ensure local .env contains a valid matching JWT Ed25519 key pair."
+command = "cargo"
+args = [
+    "run",
+    "--quiet",
+    "-p",
+    "cheenhub_backend",
+    "--bin",
+    "cheenhub_generate_jwt_keys",
+    "--",
+    "--ensure-local-env",
+    ".env",
+    "--key-id",
+    "dev-ed25519-1",
+]
+
 [tasks.dev-services]
-description = "Run the backend watcher and Dioxus dev server in parallel."
-run_task = { name = ["backend-watch", "dioxus-web"], fork = true, parallel = true }
+description = "Run the backend watcher, microphone worker watcher, and Dioxus dev server in parallel."
+run_task = { name = ["backend-watch", "microphone-worker-watch", "dioxus-web"], fork = true, parallel = true }
 
 [tasks.backend-watch]
 description = "Run the backend through cargo-watch."
@@ -33,7 +49,7 @@ args = ["watch", "-x", "run -p cheenhub_backend"]
 
 [tasks.dioxus-web]
 description = "Run the Dioxus web dev server."
-dependencies = ["install-dioxus-cli"]
+dependencies = ["install-dioxus-cli", "build-microphone-worker-wasm"]
 command = "dx"
 args = [
     "serve",
@@ -43,6 +59,142 @@ args = [
     "${DIOXUS_ADDR}",
     "--port",
     "${DIOXUS_PORT}",
+]
+
+[tasks.build-web]
+description = "Build the microphone worker wasm artifact and the Dioxus web client."
+dependencies = ["install-dioxus-cli", "build-microphone-worker-wasm-release"]
+command = "dx"
+args = [
+    "build",
+    "--web",
+    "--package",
+    "cheenhub_client",
+    "--release",
+]
+
+[tasks.microphone-worker-watch]
+description = "Rebuild the microphone worker wasm artifact when worker-facing Rust changes."
+dependencies = ["install-cargo-watch"]
+command = "cargo"
+args = [
+    "watch",
+    "--postpone",
+    "-w",
+    "crates/client/src/worker_lib.rs",
+    "-w",
+    "crates/client/src/workers",
+    "-w",
+    "crates/client/src/features/microphone/vad.rs",
+    "-w",
+    "crates/client/Cargo.toml",
+    "-s",
+    "cargo make build-microphone-worker-wasm",
+]
+
+[tasks.build-microphone-worker-wasm]
+description = "Build the debug wasm artifact used by the browser microphone worker."
+dependencies = [
+    "ensure-wasm-target",
+    "install-wasm-bindgen-cli",
+    "prepare-microphone-worker-output",
+    "cargo-build-microphone-worker-wasm",
+    "bindgen-microphone-worker-wasm",
+]
+
+[tasks.build-microphone-worker-wasm-release]
+description = "Build the release wasm artifact used by the browser microphone worker."
+dependencies = [
+    "ensure-wasm-target",
+    "install-wasm-bindgen-cli",
+    "prepare-microphone-worker-output",
+    "cargo-build-microphone-worker-wasm-release",
+    "bindgen-microphone-worker-wasm-release",
+]
+
+[tasks.ensure-wasm-target]
+private = true
+command = "rustup"
+args = ["target", "add", "wasm32-unknown-unknown"]
+
+[tasks.prepare-microphone-worker-output]
+private = true
+linux_alias = "prepare-microphone-worker-output-unix"
+mac_alias = "prepare-microphone-worker-output-unix"
+windows_alias = "prepare-microphone-worker-output-windows"
+
+[tasks.prepare-microphone-worker-output-unix]
+private = true
+script = '''
+mkdir -p "$MICROPHONE_WORKER_OUT_DIR"
+'''
+
+[tasks.prepare-microphone-worker-output-windows]
+private = true
+command = "powershell"
+args = [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    "New-Item -ItemType Directory -Force -Path $env:MICROPHONE_WORKER_OUT_DIR | Out-Null",
+]
+
+[tasks.cargo-build-microphone-worker-wasm]
+private = true
+command = "cargo"
+args = [
+    "build",
+    "-p",
+    "cheenhub_client",
+    "--lib",
+    "--target",
+    "wasm32-unknown-unknown",
+    "--no-default-features",
+    "--features",
+    "microphone_worker",
+]
+
+[tasks.cargo-build-microphone-worker-wasm-release]
+private = true
+command = "cargo"
+args = [
+    "build",
+    "-p",
+    "cheenhub_client",
+    "--lib",
+    "--target",
+    "wasm32-unknown-unknown",
+    "--no-default-features",
+    "--features",
+    "microphone_worker",
+    "--release",
+]
+
+[tasks.bindgen-microphone-worker-wasm]
+private = true
+command = "wasm-bindgen"
+args = [
+    "target/wasm32-unknown-unknown/debug/cheenhub_client_worker.wasm",
+    "--target",
+    "web",
+    "--out-dir",
+    "${MICROPHONE_WORKER_OUT_DIR}",
+    "--out-name",
+    "microphone_worker",
+]
+
+[tasks.bindgen-microphone-worker-wasm-release]
+private = true
+command = "wasm-bindgen"
+args = [
+    "target/wasm32-unknown-unknown/release/cheenhub_client_worker.wasm",
+    "--target",
+    "web",
+    "--out-dir",
+    "${MICROPHONE_WORKER_OUT_DIR}",
+    "--out-name",
+    "microphone_worker",
 ]
 
 [tasks.ensure-docker-desktop]
@@ -261,7 +413,7 @@ dependencies = ["fmt", "clippy-workspace", "test-workspace"]
 
 [tasks.setup]
 description = "Install local development command-line tools used by cargo-make tasks."
-dependencies = ["install-cargo-watch", "install-dioxus-cli"]
+dependencies = ["install-cargo-watch", "install-dioxus-cli", "install-wasm-bindgen-cli"]
 
 [tasks.install-cargo-watch]
 private = true
@@ -270,6 +422,10 @@ install_crate = { crate_name = "cargo-watch", binary = "cargo-watch", test_arg =
 [tasks.install-dioxus-cli]
 private = true
 install_crate = { crate_name = "dioxus-cli", binary = "dx", test_arg = "--version", version = "0.7.5" }
+
+[tasks.install-wasm-bindgen-cli]
+private = true
+install_crate = { crate_name = "wasm-bindgen-cli", binary = "wasm-bindgen", test_arg = "--version", version = "0.2.120" }
 
 [tasks.create-git-tag]
 description = "Create a git tag. Pass the tag name as an extra argument."

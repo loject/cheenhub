@@ -6,27 +6,57 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "cheenhub_client_worker"
+path = "src/worker_lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["app"]
+app = [
+    "dep:base64",
+    "dep:bytes",
+    "dep:cheenhub_contracts",
+    "dep:dioxus",
+    "dep:dioxus-sdk-storage",
+    "dep:ed25519-dalek",
+    "dep:futures-channel",
+    "dep:futures-util",
+    "dep:gloo-net",
+    "dep:gloo-timers",
+    "dep:js-sys",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:url",
+    "dep:uuid",
+    "dep:wasm-bindgen-futures",
+    "dep:web-time",
+    "dep:web-transport",
+    "dep:web-sys",
+]
+microphone_worker = []
+
 [dependencies]
-base64.workspace = true
-bytes.workspace = true
-cheenhub_contracts = { path = "../contracts" }
-dioxus = { workspace = true, features = ["router", "web"] }
-dioxus-sdk-storage.workspace = true
-ed25519-dalek.workspace = true
-futures-channel.workspace = true
-futures-util.workspace = true
-gloo-net.workspace = true
-gloo-timers.workspace = true
-js-sys.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-url.workspace = true
-uuid.workspace = true
+base64 = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
+cheenhub_contracts = { path = "../contracts", optional = true }
+dioxus = { workspace = true, features = ["router", "web"], optional = true }
+dioxus-sdk-storage = { workspace = true, optional = true }
+ed25519-dalek = { workspace = true, optional = true }
+futures-channel = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+gloo-net = { workspace = true, optional = true }
+gloo-timers = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
 wasm-bindgen.workspace = true
-wasm-bindgen-futures.workspace = true
-web-time.workspace = true
-web-transport.workspace = true
-web-sys = { workspace = true, features = [
+wasm-bindgen-futures = { workspace = true, optional = true }
+web-time = { workspace = true, optional = true }
+web-transport = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true, features = [
     "AudioBuffer",
     "AudioBufferSourceNode",
     "AudioContext",
@@ -59,5 +89,7 @@ web-sys = { workspace = true, features = [
 
 [build-dependencies]
 dotenvy.workspace = true
+rcgen.workspace = true
 rustls-pemfile.workspace = true
 sha2.workspace = true
+time.workspace = true
