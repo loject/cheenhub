@@ -20,10 +20,6 @@ pub(crate) fn router(state: AppState) -> Router {
 }
 
 /// Строит CORS-слой, ограниченный известным origin клиента.
-///
-/// Раньше здесь стоял `CorsLayer::permissive()`, который отражал любой Origin и
-/// разрешал все методы/заголовки — любой сайт мог обращаться к API от имени
-/// браузера пользователя. Теперь разрешен только origin фронтенда из конфигурации.
 fn cors_layer(client_base_url: &str) -> CorsLayer {
     let origin = client_base_url
         .trim_end_matches('/')
