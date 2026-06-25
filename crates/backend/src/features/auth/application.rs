@@ -98,13 +98,17 @@ pub(crate) async fn login_with_user_agent(
         .await
         .map_err(AuthError::Internal)?
     else {
+        // Выравниваем время ответа, чтобы нельзя было перечислять аккаунты по таймингу.
+        password::verify_dummy_password();
         return Err(invalid_credentials());
     };
 
     let Some(password_hash) = &user.password_hash else {
-        return Err(AuthError::Unauthorized(
-            "Этот аккаунт создан через внешний вход. Используй Google.".to_owned(),
-        ));
+        // Аккаунт без локального пароля (создан через внешний вход). Возвращаем
+        // тот же обобщенный ответ и выполняем такую же работу, чтобы не раскрывать
+        // ни факт существования аккаунта, ни способ его регистрации.
+        password::verify_dummy_password();
+        return Err(invalid_credentials());
     };
 
     if !password::verify_password(&valid.password, password_hash) {
@@ -215,6 +219,16 @@ pub(crate) async fn refresh_with_user_agent(
         .await
         .map_err(AuthError::Internal)?
     else {
+        // Возможна кража токена: если предъявлен уже ротированный/отозванный токен,
+        // отзываем всю сессию целиком, а не просто отвечаем отказом.
+        if state
+            .auth_store
+            .revoke_session_on_refresh_reuse(&old_hash, now)
+            .await
+            .map_err(AuthError::Internal)?
+        {
+            tracing::warn!("detected refresh token reuse; revoked the entire session");
+        }
         return Err(expired_session());
     };
 

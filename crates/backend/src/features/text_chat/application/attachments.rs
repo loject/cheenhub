@@ -218,10 +218,11 @@ fn validate_chat_image(bytes: &[u8]) -> Result<ValidatedChatImage, TextChatAppli
         }
     };
 
-    let decoded = image::load_from_memory(bytes).map_err(|error| {
-        tracing::warn!(%error, input_bytes = bytes.len(), "rejected invalid chat image upload");
-        TextChatApplicationError::BadRequest("Не удалось прочитать изображение.".to_owned())
-    })?;
+    let decoded =
+        crate::features::images::application::decode_image_limited(bytes).map_err(|error| {
+            tracing::warn!(%error, input_bytes = bytes.len(), "rejected invalid chat image upload");
+            TextChatApplicationError::BadRequest("Не удалось прочитать изображение.".to_owned())
+        })?;
     let (width, height) = decoded.dimensions();
     if width == 0 || height == 0 {
         tracing::warn!(width, height, "rejected empty-dimension chat image");
@@ -239,11 +240,22 @@ fn validate_chat_image(bytes: &[u8]) -> Result<ValidatedChatImage, TextChatAppli
 }
 
 fn clean_filename(value: String) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
+    // Убираем разделители путей, управляющие символы и ведущие/замыкающие точки,
+    // чтобы сохраненное имя нельзя было использовать для path traversal или
+    // инъекции в заголовок Content-Disposition, если оно когда-нибудь попадет туда.
+    let cleaned: String = value
+        .trim()
+        .chars()
+        .filter(|character| {
+            !character.is_control() && !matches!(character, '/' | '\\' | '\0')
+        })
+        .take(255)
+        .collect();
+    let cleaned = cleaned.trim().trim_matches('.').trim();
+    if cleaned.is_empty() {
         None
     } else {
-        Some(trimmed.chars().take(255).collect())
+        Some(cleaned.to_owned())
     }
 }
 

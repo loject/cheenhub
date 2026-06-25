@@ -18,6 +18,28 @@ const PNG_CONTENT_TYPE: &str = "image/png";
 const DATABASE_STORAGE_BACKEND: &str = "database";
 const AVATAR_SIZE_PX: u32 = 512;
 const MAX_AVATAR_UPLOAD_BYTES: usize = 8 * 1024 * 1024;
+/// Максимальная сторона изображения, которую мы готовы декодировать.
+const MAX_DECODE_DIMENSION: u32 = 8192;
+/// Жесткий потолок аллокации памяти при декодировании.
+const MAX_DECODE_ALLOC_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Декодирует изображение с ограничениями на размеры и аллокацию памяти.
+///
+/// `image::load_from_memory` разворачивает весь несжатый буфер ДО любой проверки
+/// размеров, поэтому крошечный «бомбовый» файл (например, PNG 30000×30000) мог
+/// раздуться в гигабайты и привести к OOM/DoS. `ImageReader` с `Limits` применяет
+/// ограничения во время декодирования.
+pub(crate) fn decode_image_limited(bytes: &[u8]) -> image::ImageResult<image::DynamicImage> {
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(image::ImageError::IoError)?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_DECODE_DIMENSION);
+    limits.max_image_height = Some(MAX_DECODE_DIMENSION);
+    limits.max_alloc = Some(MAX_DECODE_ALLOC_BYTES);
+    reader.limits(limits);
+    reader.decode()
+}
 
 /// Обработанный аватар пользователя, готовый к сохранению.
 pub(crate) struct ProcessedUserAvatar {
@@ -187,7 +209,7 @@ fn process_avatar(bytes: &[u8]) -> Result<ProcessedUserAvatar, AuthError> {
         ));
     }
 
-    let decoded = image::load_from_memory(bytes).map_err(|error| {
+    let decoded = decode_image_limited(bytes).map_err(|error| {
         tracing::warn!(%error, input_bytes = bytes.len(), "rejected invalid avatar image");
         AuthError::BadRequest("Не удалось прочитать изображение.".to_owned())
     })?;

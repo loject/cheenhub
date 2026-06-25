@@ -120,6 +120,8 @@ impl TextChatStore for InMemoryTextChatStore {
 
     async fn soft_delete_message(
         &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
         message_id: &Uuid,
         deleted_by_user_id: &Uuid,
         require_authorship: bool,
@@ -127,6 +129,8 @@ impl TextChatStore for InMemoryTextChatStore {
         let mut messages = self.messages.lock().map_err(|_| poisoned())?;
         let Some(message) = messages.iter_mut().find(|m| {
             m.id == *message_id
+                && m.server_id == *server_id
+                && m.room_id == *room_id
                 && m.deleted_at.is_none()
                 && (!require_authorship || m.author_user_id == *deleted_by_user_id)
         }) else {
