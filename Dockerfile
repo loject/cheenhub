@@ -44,9 +44,9 @@ ENV CHEENHUB_REALTIME_CERT_SHA256=${CHEENHUB_REALTIME_CERT_SHA256}
 RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cheenhub-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=cheenhub-web-target,target=/app/target,sharing=locked \
-    dx build --release --platform web --package cheenhub_client --locked --debug-symbols false \
+    dx build --release --platform web --package cheenhub_client --bin cheen_hub --locked --debug-symbols false \
     && mkdir -p /app/web-public \
-    && cp -a /app/target/dx/cheenhub_client/release/web/public/. /app/web-public/
+    && cp -a /app/target/dx/cheen_hub/release/web/public/. /app/web-public/
 
 FROM debian:bookworm-slim AS backend-runtime
 RUN apt-get update \

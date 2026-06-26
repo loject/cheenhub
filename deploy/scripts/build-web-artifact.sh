@@ -17,4 +17,4 @@ release_tag="$(cargo run --quiet -p xtask -- release-version print-tag)"
 : "${CHEENHUB_APP_VERSION:=${release_tag}-$(git rev-parse --short HEAD 2>/dev/null || printf local)}"
 export CHEENHUB_APP_VERSION
 
-dx build --release --platform web --package cheenhub_client --locked --debug-symbols false
+dx build --release --platform web --package cheenhub_client --bin cheen_hub --locked --debug-symbols false

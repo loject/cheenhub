@@ -211,7 +211,7 @@ jobs:
       - name: Build Windows installers
         shell: pwsh
         run: |
-          dx bundle --windows --package cheenhub_client --release --package-types nsis --package-types msi --out-dir dist/windows/raw
+          dx bundle --windows --package cheenhub_client --bin cheen_hub --release --package-types nsis --package-types msi --out-dir dist/windows/raw
 
       - name: Normalize Windows release assets
         shell: pwsh
@@ -291,7 +291,7 @@ jobs:
       - name: Build Linux packages
         shell: bash
         run: |
-          dx bundle --linux --package cheenhub_client --release --package-types deb --package-types appimage --out-dir dist/linux/raw
+          dx bundle --linux --package cheenhub_client --bin cheen_hub --release --package-types deb --package-types appimage --out-dir dist/linux/raw
 
       - name: Normalize Linux release assets
         shell: bash
@@ -455,7 +455,7 @@ jobs:
       - name: Build APK package
         shell: bash
         run: |
-          dx bundle --android --package cheenhub_client --release --package-types apk --out-dir dist/android/raw
+          dx bundle --android --package cheenhub_client --bin cheen_hub --release --package-types apk --out-dir dist/android/raw
 
       - name: Normalize Android release asset
         shell: bash

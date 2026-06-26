@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+autobins = false
+
+[[bin]]
+name = "cheen_hub"
+path = "src/main.rs"
 
 [lib]
 name = "cheenhub_client_worker"
