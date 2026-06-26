@@ -21,9 +21,7 @@ pub(crate) fn router(state: AppState) -> Router {
 
 /// Строит CORS-слой, ограниченный известным origin клиента.
 fn cors_layer(client_base_url: &str) -> CorsLayer {
-    let origin = client_base_url
-        .trim_end_matches('/')
-        .parse::<HeaderValue>();
+    let origin = client_base_url.trim_end_matches('/').parse::<HeaderValue>();
     match origin {
         Ok(origin) => CorsLayer::new()
             .allow_origin(origin)

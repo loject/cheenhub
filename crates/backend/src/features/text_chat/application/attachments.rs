@@ -246,9 +246,7 @@ fn clean_filename(value: String) -> Option<String> {
     let cleaned: String = value
         .trim()
         .chars()
-        .filter(|character| {
-            !character.is_control() && !matches!(character, '/' | '\\' | '\0')
-        })
+        .filter(|character| !character.is_control() && !matches!(character, '/' | '\\' | '\0'))
         .take(255)
         .collect();
     let cleaned = cleaned.trim().trim_matches('.').trim();
