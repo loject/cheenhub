@@ -7,7 +7,7 @@ sub_package = "cheenhub_client"
 [bundle]
 identifier = "ru.cheenhub"
 publisher = "CheenHub"
-icon = ["crates/client/public/icons/icon-512.png"]
+icon = ["public/icons/icon-512.png"]
 short_description = "CheenHub voice chat"
 long_description = "CheenHub desktop and mobile client."
 
