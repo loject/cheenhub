@@ -243,6 +243,46 @@ pub(super) fn revoke_refresh_session(
     Ok(())
 }
 
+pub(super) fn revoke_session_on_refresh_reuse(
+    state: &Mutex<InMemoryState>,
+    token_hash: &str,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    let mut state = state.lock().map_err(|_| poisoned())?;
+
+    let session_id = {
+        let Some(refresh_token) = state
+            .refresh_tokens
+            .iter()
+            .find(|refresh_token| refresh_token.token_hash == token_hash)
+        else {
+            return Ok(false);
+        };
+        // Активный токен — обычная просрочка/опечатка, не кража.
+        if refresh_token.revoked_at.is_none() {
+            return Ok(false);
+        }
+        refresh_token.session_id
+    };
+
+    if let Some(session) = state
+        .sessions
+        .iter_mut()
+        .find(|session| session.id == session_id)
+    {
+        session.revoked_at = Some(now);
+    }
+    for refresh_token in state
+        .refresh_tokens
+        .iter_mut()
+        .filter(|refresh_token| refresh_token.session_id == session_id)
+    {
+        refresh_token.revoked_at = Some(now);
+    }
+
+    Ok(true)
+}
+
 fn poisoned() -> anyhow::Error {
     anyhow!("in-memory auth store lock poisoned")
 }

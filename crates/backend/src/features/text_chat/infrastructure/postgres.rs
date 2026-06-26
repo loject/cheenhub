@@ -150,13 +150,20 @@ impl TextChatStore for PostgresTextChatStore {
 
     async fn soft_delete_message(
         &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
         message_id: &Uuid,
         deleted_by_user_id: &Uuid,
         require_authorship: bool,
     ) -> anyhow::Result<Option<TextMessage>> {
-        // NOTE: soft delete необходим для модерации удаленных сообщений в дальнейшем
+        // NOTE: soft delete необходим для модерации удаленных сообщений в дальнейшем.
+        // Привязка к server_id/room_id обязательна: проверка прав в application слое
+        // выполняется для запрошенной комнаты, поэтому мутировать можно только строку
+        // именно из этой комнаты (иначе — IDOR между серверами).
         let mut query = text_messages::Entity::find()
             .filter(text_messages::Column::Id.eq(*message_id))
+            .filter(text_messages::Column::ServerId.eq(*server_id))
+            .filter(text_messages::Column::RoomId.eq(*room_id))
             .filter(text_messages::Column::DeletedAt.is_null());
         if require_authorship {
             query = query.filter(text_messages::Column::AuthorUserId.eq(*deleted_by_user_id));
