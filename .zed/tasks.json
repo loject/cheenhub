@@ -136,7 +136,16 @@
   },
   {
     "label": "CheenHub: create git tag",
-    "command": "printf 'Git tag name: '; read -r tag; if [ -z \"$tag\" ]; then echo 'Tag name is required.' >&2; exit 1; fi; if git rev-parse -q --verify \"refs/tags/$tag\" >/dev/null; then echo \"Tag already exists: $tag\" >&2; exit 1; fi; git tag \"$tag\" && echo \"Created git tag: $tag\"",
+    "command": "cargo",
+    "args": [
+      "run",
+      "--quiet",
+      "-p",
+      "xtask",
+      "--",
+      "release-version",
+      "tag"
+    ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",
     "hide": "on_success",
