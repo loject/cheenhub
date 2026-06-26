@@ -107,6 +107,15 @@ fn microphone_track_constraints(config: &MicrophoneConfig) -> MediaTrackConstrai
     audio.set_echo_cancellation(&JsValue::TRUE);
     audio.set_noise_suppression(&JsValue::TRUE);
     audio.set_auto_gain_control(&JsValue::TRUE);
+    // Усиленная ML-изоляция голоса Chrome (deep noise suppression) поверх обычного
+    // noiseSuppression: лучше давит постоянный фоновый шум (вентилятор, улица, набор
+    // на клавиатуре). Это нестандартный constraint, поэтому задаем его через Reflect;
+    // движки без поддержки просто игнорируют неизвестный ключ.
+    let _ = Reflect::set(
+        audio.as_ref(),
+        &JsValue::from_str("voiceIsolation"),
+        &JsValue::TRUE,
+    );
     if let Some(ref device_id) = config.device_id
         && !device_id.is_empty()
     {

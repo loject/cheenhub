@@ -133,6 +133,48 @@ pub(super) fn encoder_config(sample_rate_hz: u32, channels: u8, bitrate_bps: u32
         &JsValue::from_str("bitrate"),
         &JsValue::from_f64(f64::from(bitrate_bps)),
     );
+
+    // Opus-специфичные параметры для устойчивости голоса к плохой сети.
+    //
+    // - useinbandfec: in-band FEC встраивает сжатую копию предыдущего кадра, поэтому
+    //   одиночная потеря пакета восстанавливается без заикания (главный выигрыш на
+    //   нестабильном Wi-Fi/мобиле).
+    // - packetlossperc: подсказка кодеку, сколько избыточности FEC закладывать.
+    // - usedtx: во время тишины кодер почти не шлёт данные — экономит трафик; у нас
+    //   уже есть собственный VAD, так что паузы безопасны.
+    // - application=voip и frameDuration=20мс — профиль и размер кадра для речи
+    //   (20мс снижает накладные расходы пакетов; это же значение по умолчанию).
+    //
+    // Неизвестные ключи браузер игнорирует при нормализации конфигурации, поэтому
+    // на старых движках это безопасно — FEC просто не включится.
+    let opus = Object::new();
+    let _ = Reflect::set(
+        &opus,
+        &JsValue::from_str("useinbandfec"),
+        &JsValue::from_bool(true),
+    );
+    let _ = Reflect::set(
+        &opus,
+        &JsValue::from_str("usedtx"),
+        &JsValue::from_bool(true),
+    );
+    let _ = Reflect::set(
+        &opus,
+        &JsValue::from_str("application"),
+        &JsValue::from_str("voip"),
+    );
+    let _ = Reflect::set(
+        &opus,
+        &JsValue::from_str("frameDuration"),
+        &JsValue::from_f64(20_000.0),
+    );
+    let _ = Reflect::set(
+        &opus,
+        &JsValue::from_str("packetlossperc"),
+        &JsValue::from_f64(10.0),
+    );
+    let _ = Reflect::set(&object, &JsValue::from_str("opus"), &opus);
+
     object.into()
 }
 
