@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use gloo_timers::future::TimeoutFuture;
+
+use crate::features::runtime::sleep_ms;
 
 const SPEAKING_RELEASE_TIMEOUT_MS: u32 = 450;
 
@@ -53,7 +54,7 @@ pub(super) fn mark_user_speaking(
     spawn(async move {
         let mut observed_generation = generation;
         loop {
-            TimeoutFuture::new(SPEAKING_RELEASE_TIMEOUT_MS).await;
+            sleep_ms(SPEAKING_RELEASE_TIMEOUT_MS).await;
             let latest_generation = speaking_generations.borrow().get(&user_id).copied();
             match latest_generation {
                 Some(latest_generation) if latest_generation != observed_generation => {

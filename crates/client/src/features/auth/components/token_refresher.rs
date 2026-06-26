@@ -1,9 +1,9 @@
 //! Компонент цикла обновления access token.
 
 use dioxus::prelude::*;
-use gloo_timers::future::TimeoutFuture;
 
 use crate::features::auth::{api, jwt, storage};
+use crate::features::runtime::sleep_ms;
 
 /// Поддерживает сохраненный access JWT актуальным, пока смонтировано аутентифицированное приложение.
 #[component]
@@ -26,7 +26,7 @@ pub(crate) fn TokenRefresher(on_session_expired: EventHandler<()>) -> Element {
                 };
 
                 if seconds > 0 {
-                    TimeoutFuture::new(seconds.saturating_mul(1000)).await;
+                    sleep_ms(seconds.saturating_mul(1000)).await;
                 }
 
                 let Some(tokens) = storage::load() else {
@@ -40,7 +40,7 @@ pub(crate) fn TokenRefresher(on_session_expired: EventHandler<()>) -> Element {
                 if let Err(error) = api::refresh_access_token().await {
                     if api::is_network_error(&error) {
                         warn!("access token refresh deferred while network is unavailable");
-                        TimeoutFuture::new(5_000).await;
+                        sleep_ms(5_000).await;
                         continue;
                     }
 

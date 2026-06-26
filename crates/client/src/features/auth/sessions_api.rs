@@ -1,9 +1,9 @@
 //! Клиент API сессий текущего пользователя.
 
 use cheenhub_contracts::rest::{ActiveSession, ActiveSessionsResponse};
-use gloo_net::http::Request;
+use reqwest::StatusCode;
 
-use super::api::{fresh_access_token, read_error, refresh_access_token, url};
+use super::api::{delete, fresh_access_token, get, read_error, refresh_access_token};
 use super::storage;
 
 /// Загружает активные сессии текущего аутентифицированного пользователя.
@@ -11,7 +11,7 @@ pub(crate) async fn active_sessions() -> Result<Vec<ActiveSession>, String> {
     let access_token = fresh_access_token().await?;
     let response = send_get_sessions_request(&access_token).await?;
 
-    if response.status() == 401 {
+    if response.status() == StatusCode::UNAUTHORIZED {
         let access_token = refresh_access_token().await?;
         let response = send_get_sessions_request(&access_token).await?;
         return parse_sessions_response(response).await;
@@ -26,7 +26,7 @@ pub(crate) async fn revoke_session(session_id: &str) -> Result<(), String> {
     let response =
         send_delete_request(&access_token, &format!("/auth/sessions/{session_id}")).await?;
 
-    if response.status() == 401 {
+    if response.status() == StatusCode::UNAUTHORIZED {
         let access_token = refresh_access_token().await?;
         let response =
             send_delete_request(&access_token, &format!("/auth/sessions/{session_id}")).await?;
@@ -41,7 +41,7 @@ pub(crate) async fn revoke_all_sessions() -> Result<(), String> {
     let access_token = fresh_access_token().await?;
     let response = send_delete_request(&access_token, "/auth/sessions").await?;
 
-    if response.status() == 401 {
+    if response.status() == StatusCode::UNAUTHORIZED {
         let access_token = refresh_access_token().await?;
         let response = send_delete_request(&access_token, "/auth/sessions").await?;
         return clear_after_success(response).await;
@@ -50,19 +50,16 @@ pub(crate) async fn revoke_all_sessions() -> Result<(), String> {
     clear_after_success(response).await
 }
 
-async fn send_get_sessions_request(access_token: &str) -> Result<gloo_net::http::Response, String> {
-    Request::get(&url("/auth/sessions"))
+async fn send_get_sessions_request(access_token: &str) -> Result<reqwest::Response, String> {
+    get("/auth/sessions")
         .header("Authorization", &format!("Bearer {access_token}"))
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())
 }
 
-async fn send_delete_request(
-    access_token: &str,
-    path: &str,
-) -> Result<gloo_net::http::Response, String> {
-    Request::delete(&url(path))
+async fn send_delete_request(access_token: &str, path: &str) -> Result<reqwest::Response, String> {
+    delete(path)
         .header("Authorization", &format!("Bearer {access_token}"))
         .send()
         .await
@@ -70,9 +67,9 @@ async fn send_delete_request(
 }
 
 async fn parse_sessions_response(
-    response: gloo_net::http::Response,
+    response: reqwest::Response,
 ) -> Result<Vec<ActiveSession>, String> {
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<ActiveSessionsResponse>()
             .await
@@ -83,14 +80,14 @@ async fn parse_sessions_response(
     Err(read_error(response).await)
 }
 
-async fn clear_after_success(response: gloo_net::http::Response) -> Result<(), String> {
+async fn clear_after_success(response: reqwest::Response) -> Result<(), String> {
     parse_empty_response(response).await?;
     storage::clear();
     Ok(())
 }
 
-async fn parse_empty_response(response: gloo_net::http::Response) -> Result<(), String> {
-    if response.ok() {
+async fn parse_empty_response(response: reqwest::Response) -> Result<(), String> {
+    if response.status().is_success() {
         return Ok(());
     }
 

@@ -1,4 +1,5 @@
 //! Заглушка кодирования видео для неподдерживаемых платформ.
+#![allow(dead_code, unused_imports)]
 
 use futures_util::FutureExt;
 

@@ -1,4 +1,5 @@
 //! Browser audio output device discovery.
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
 
 use js_sys::{Array, Reflect};
 use wasm_bindgen::prelude::*;

@@ -1,16 +1,13 @@
 //! Функция захвата и кодирования камеры.
 
 mod backend;
-#[cfg(target_arch = "wasm32")]
 mod browser_capture;
-#[cfg(target_arch = "wasm32")]
 mod browser_errors;
+mod native;
 mod provider;
 mod provider_context;
 mod provider_runtime;
-#[cfg(not(target_arch = "wasm32"))]
 mod unsupported;
-#[cfg(target_arch = "wasm32")]
 mod web;
 
 #[allow(unused_imports)]

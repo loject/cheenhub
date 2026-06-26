@@ -27,9 +27,9 @@ app = [
     "dep:ed25519-dalek",
     "dep:futures-channel",
     "dep:futures-util",
-    "dep:gloo-net",
     "dep:gloo-timers",
     "dep:js-sys",
+    "dep:reqwest",
     "dep:serde",
     "dep:serde_json",
     "dep:url",
@@ -40,24 +40,32 @@ app = [
     "dep:web-sys",
 ]
 web = ["app", "dioxus/web"]
-desktop = ["app", "dioxus/desktop"]
-mobile = ["app", "dioxus/mobile"]
+desktop = ["app", "dep:tokio", "dep:tokio-tungstenite", "dioxus/desktop"]
+mobile = ["app", "dep:tokio", "dep:tokio-tungstenite", "dioxus/mobile"]
 microphone_worker = []
 
 [dependencies]
 base64 = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 cheenhub_contracts = { path = "../contracts", optional = true }
-dioxus = { workspace = true, features = ["router"], optional = true }
+dioxus = { workspace = true, features = [
+    "devtools",
+    "launch",
+    "lib",
+    "logger",
+    "router",
+], optional = true }
 dioxus-sdk-storage = { workspace = true, optional = true }
 ed25519-dalek = { workspace = true, optional = true }
 futures-channel = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
-gloo-net = { workspace = true, optional = true }
 gloo-timers = { workspace = true, optional = true }
 js-sys = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 wasm-bindgen.workspace = true
@@ -91,7 +99,10 @@ web-sys = { workspace = true, optional = true, features = [
     "MessagePort",
     "Navigator",
     "Window",
+    "BinaryType",
     "Worklet",
+    "Event",
+    "WebSocket",
     "console",
 ] }
 

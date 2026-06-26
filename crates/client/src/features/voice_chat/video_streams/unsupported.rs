@@ -1,4 +1,5 @@
 //! Запасной renderer видео участника для неподдерживаемых платформ.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 
 use std::rc::Rc;
 

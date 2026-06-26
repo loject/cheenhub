@@ -6,10 +6,10 @@ use std::time::Duration;
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
-use gloo_timers::future::sleep;
 
 use crate::features::app::components::app_shell::ActiveRoom;
 use crate::features::realtime::RealtimeHandle;
+use crate::features::runtime::sleep_duration;
 
 use super::compose::{ComposeState, send_current_message};
 use super::history::{
@@ -132,7 +132,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             let message_id = payload.message_id.clone();
                             removing_message_ids.write().push(message_id.clone());
                             spawn(async move {
-                                sleep(Duration::from_millis(220)).await;
+                                sleep_duration(Duration::from_millis(220)).await;
                                 remove_message(&mut messages, &message_id);
                                 removing_message_ids.write().retain(|id| id != &message_id);
                             });
@@ -184,7 +184,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
             let _ =
                 realtime::delete_text_message(&realtime, server_id, room_id, message_id.clone())
                     .await;
-            sleep(Duration::from_millis(220)).await;
+            sleep_duration(Duration::from_millis(220)).await;
             remove_message(&mut messages, &message_id);
             removing_message_ids.write().retain(|id| id != &message_id);
         });

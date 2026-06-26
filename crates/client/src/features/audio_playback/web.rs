@@ -1,4 +1,16 @@
-//! Провайдер контекста воспроизведения аудио.
+//! Web-провайдер контекста воспроизведения аудио.
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
+
+#[path = "browser_bindings.rs"]
+mod browser_bindings;
+#[path = "browser_helpers.rs"]
+mod browser_helpers;
+#[path = "jitter_buffer.rs"]
+mod jitter_buffer;
+#[path = "jitter_runtime.rs"]
+mod jitter_runtime;
+#[path = "playback_pipeline.rs"]
+mod playback_pipeline;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -10,41 +22,17 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::AudioContext;
 use web_time::{SystemTime, UNIX_EPOCH};
 
-use super::browser_helpers::{apply_output_device_to_context, js_error_message, stop_audio_source};
-use super::jitter_buffer::JitterBuffer;
-use super::output_devices::AudioOutputDevice;
-use super::playback_pipeline::{
+use self::browser_helpers::{apply_output_device_to_context, js_error_message, stop_audio_source};
+use self::jitter_buffer::JitterBuffer;
+use self::playback_pipeline::{
     ScheduledAudioSource, SenderPlayback, create_sender_playback, encoded_audio_chunk,
 };
+use super::backend::VoiceFrame;
+use super::output_devices::AudioOutputDevice;
 use super::storage;
 
 const AUDIO_DECODER_QUEUE_WARN_FRAMES: u32 = 8;
 pub(super) const AUDIO_PLAYBACK_WARNING_INTERVAL_MS: u64 = 5_000;
-
-/// Кодек кодированного воспроизведения.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PlaybackCodec {
-    /// Opus audio.
-    Opus,
-}
-
-/// Закодированный голосовой фрейм, подготовленный к воспроизведению.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct VoiceFrame {
-    /// Authenticated sender identifier.
-    pub(crate) sender_user_id: String,
-    /// Sender-local packet sequence.
-    #[allow(dead_code)]
-    pub(crate) sequence: u64,
-    /// Capture or encode timestamp in microseconds.
-    pub(crate) timestamp_us: u64,
-    /// Frame duration in microseconds.
-    pub(crate) duration_us: u32,
-    /// Encoded codec.
-    pub(crate) codec: PlaybackCodec,
-    /// Encoded frame bytes.
-    pub(crate) bytes: Vec<u8>,
-}
 
 /// Контекстный хэндл для браузерного аудиовоспроизведения.
 #[derive(Clone)]
@@ -58,22 +46,23 @@ pub(crate) struct AudioPlaybackHandle {
 }
 
 pub(super) struct AudioPlaybackInner {
-    pub(super) context: Option<AudioContext>,
-    pub(super) muted: bool,
-    pub(super) senders: HashMap<String, SenderPlayback>,
-    pub(super) jitter_buffers: HashMap<String, JitterBuffer>,
-    pub(super) jitter_drainers: HashMap<String, u64>,
-    pub(super) next_jitter_drainer_generation: u64,
-    pub(super) jitter_buffer_ms: u32,
-    pub(super) jitter_warning_at_ms: HashMap<String, u64>,
-    pub(super) decoder_queue_warning_at_ms: HashMap<String, u64>,
-    pub(super) playback_schedule_warning_at: HashMap<String, f64>,
-    pub(super) scheduled_sources: HashMap<String, Vec<ScheduledAudioSource>>,
-    pub(super) scheduled_until: HashMap<String, f64>,
+    pub(in crate::features::audio_playback::web) context: Option<AudioContext>,
+    pub(in crate::features::audio_playback::web) muted: bool,
+    pub(in crate::features::audio_playback::web) senders: HashMap<String, SenderPlayback>,
+    pub(in crate::features::audio_playback::web) jitter_buffers: HashMap<String, JitterBuffer>,
+    pub(in crate::features::audio_playback::web) jitter_drainers: HashMap<String, u64>,
+    pub(in crate::features::audio_playback::web) next_jitter_drainer_generation: u64,
+    pub(in crate::features::audio_playback::web) jitter_buffer_ms: u32,
+    pub(in crate::features::audio_playback::web) jitter_warning_at_ms: HashMap<String, u64>,
+    pub(in crate::features::audio_playback::web) decoder_queue_warning_at_ms: HashMap<String, u64>,
+    pub(in crate::features::audio_playback::web) playback_schedule_warning_at: HashMap<String, f64>,
+    pub(in crate::features::audio_playback::web) scheduled_sources:
+        HashMap<String, Vec<ScheduledAudioSource>>,
+    pub(in crate::features::audio_playback::web) scheduled_until: HashMap<String, f64>,
     /// Значения усиления для каждого пользователя (0.0–2.0, по умолчанию 1.0).
     /// Сохраняется, чтобы громкость, заданная до первого фрейма, применялась при первом создании отправителя.
-    pub(super) user_volumes: HashMap<String, f64>,
-    pub(super) output_gain: f64,
+    pub(in crate::features::audio_playback::web) user_volumes: HashMap<String, f64>,
+    pub(in crate::features::audio_playback::web) output_gain: f64,
 }
 
 impl AudioPlaybackHandle {

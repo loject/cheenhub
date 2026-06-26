@@ -1,4 +1,5 @@
 //! Static data for the landing page.
+#![allow(dead_code, unused_imports)]
 
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) struct Feature {

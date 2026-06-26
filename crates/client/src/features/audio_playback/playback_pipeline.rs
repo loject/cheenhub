@@ -8,10 +8,10 @@ use js_sys::{Float32Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 use web_sys::{AudioBufferSourceNode, AudioContext, GainNode};
 
+use super::AudioPlaybackInner;
 use super::browser_bindings::{AudioData, AudioDecoder, EncodedAudioChunk};
 use super::browser_helpers::{js_error_message, set_property};
-use super::provider::AudioPlaybackInner;
-use super::provider::VoiceFrame;
+use crate::features::audio_playback::backend::VoiceFrame;
 
 const INITIAL_PLAYBACK_BUFFER_SECONDS: f64 = 0.03;
 const CONTINUOUS_PLAYBACK_MARGIN_SECONDS: f64 = 0.02;

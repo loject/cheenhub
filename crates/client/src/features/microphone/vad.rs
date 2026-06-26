@@ -1,5 +1,7 @@
 //! Volume-based voice activity detection.
 
+#![allow(dead_code, unused_imports)]
+
 use super::backend::{MicrophoneActivationMode, MicrophoneConfig};
 
 const VAD_RELEASE_THRESHOLD_RATIO: f32 = 0.65;

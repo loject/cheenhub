@@ -1,10 +1,10 @@
 //! Dioxus-провайдер realtime.
 
 use dioxus::prelude::*;
-use gloo_timers::future::TimeoutFuture;
 
 use crate::features::auth::api as auth_api;
 use crate::features::network::{NetworkQualityHandle, realtime as network_realtime};
+use crate::features::runtime::sleep_ms;
 
 use super::handle::create_handle;
 
@@ -37,7 +37,7 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                             delay_ms = reconnect_delay_ms,
                             "skipping realtime connection without access token"
                         );
-                        TimeoutFuture::new(reconnect_delay_ms).await;
+                        sleep_ms(reconnect_delay_ms).await;
                         reconnect_delay_ms = next_reconnect_delay(reconnect_delay_ms);
                         continue;
                     }
@@ -51,7 +51,7 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                         );
                         reconnect_delay_ms = RECONNECT_INITIAL_DELAY_MS;
                         loop {
-                            TimeoutFuture::new(PING_INTERVAL_MS).await;
+                            sleep_ms(PING_INTERVAL_MS).await;
                             match network_realtime::ping(&realtime).await {
                                 Ok(measurement) => {
                                     network_quality.record_ping(
@@ -81,7 +81,7 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                         );
                     }
                 }
-                TimeoutFuture::new(reconnect_delay_ms).await;
+                sleep_ms(reconnect_delay_ms).await;
                 reconnect_delay_ms = next_reconnect_delay(reconnect_delay_ms);
             }
         })

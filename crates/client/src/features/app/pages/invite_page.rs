@@ -2,10 +2,10 @@
 
 use cheenhub_contracts::rest::AcceptServerInviteResponse;
 use dioxus::prelude::*;
-use gloo_timers::future::TimeoutFuture;
 
 use crate::Route;
 use crate::features::app::api;
+use crate::features::runtime::sleep_ms;
 
 /// Рендерит страницу принятия приглашения на сервер.
 #[component]
@@ -162,11 +162,11 @@ pub(crate) fn InvitePage(code: String) -> Element {
                                                             redirect_countdown.set(Some(3));
 
                                                             for seconds_left in (1..=2).rev() {
-                                                                TimeoutFuture::new(1000).await;
+                                                                sleep_ms(1000).await;
                                                                 redirect_countdown.set(Some(seconds_left));
                                                             }
 
-                                                            TimeoutFuture::new(1000).await;
+                                                            sleep_ms(1000).await;
                                                             redirect_countdown.set(None);
                                                             navigator.push(Route::AppHome {});
                                                         }

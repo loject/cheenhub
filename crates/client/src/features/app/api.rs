@@ -6,20 +6,19 @@ use cheenhub_contracts::rest::{
     ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse, ServerRoomKind,
     ServerRoomSummary, ServerSummary, UpdateServerRoomRequest, UpdateServerRoomResponse,
 };
-use gloo_net::http::Request;
 
 use crate::features::auth::api as auth_api;
 
 /// Загружает серверы, доступные текущему пользователю.
 pub(crate) async fn list_servers() -> Result<Vec<ServerSummary>, String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::get(&auth_api::url("/servers"))
+    let response = auth_api::get("/servers")
         .header("Authorization", &format!("Bearer {access_token}"))
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<ListServersResponse>()
             .await
@@ -33,15 +32,14 @@ pub(crate) async fn list_servers() -> Result<Vec<ServerSummary>, String> {
 /// Создает сервер, принадлежащий текущему пользователю.
 pub(crate) async fn create_server(name: String) -> Result<ServerSummary, String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::post(&auth_api::url("/servers"))
+    let response = auth_api::post("/servers")
         .header("Authorization", &format!("Bearer {access_token}"))
         .json(&CreateServerRequest { name })
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<CreateServerResponse>()
             .await
@@ -59,18 +57,17 @@ pub(crate) async fn create_server_invite(
     expires_in_days: Option<u32>,
 ) -> Result<String, String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::post(&auth_api::url(&format!("/servers/{server_id}/invites")))
+    let response = auth_api::post(&format!("/servers/{server_id}/invites"))
         .header("Authorization", &format!("Bearer {access_token}"))
         .json(&CreateServerInviteRequest {
             max_uses,
             expires_in_days,
         })
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<CreateServerInviteResponse>()
             .await
@@ -84,13 +81,13 @@ pub(crate) async fn create_server_invite(
 /// Загружает информацию о приглашении на сервер для текущего пользователя.
 pub(crate) async fn load_server_invite(code: String) -> Result<ServerInviteInfoResponse, String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::get(&auth_api::url(&format!("/servers/invites/{code}")))
+    let response = auth_api::get(&format!("/servers/invites/{code}"))
         .header("Authorization", &format!("Bearer {access_token}"))
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<ServerInviteInfoResponse>()
             .await
@@ -105,13 +102,13 @@ pub(crate) async fn accept_server_invite(
     code: String,
 ) -> Result<AcceptServerInviteResponse, String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::post(&auth_api::url(&format!("/servers/invites/{code}/accept")))
+    let response = auth_api::post(&format!("/servers/invites/{code}/accept"))
         .header("Authorization", &format!("Bearer {access_token}"))
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<AcceptServerInviteResponse>()
             .await
@@ -124,13 +121,13 @@ pub(crate) async fn accept_server_invite(
 /// Покидает сервер, доступный текущему пользователю.
 pub(crate) async fn leave_server(server_id: String) -> Result<(), String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::delete(&auth_api::url(&format!("/servers/{server_id}/membership")))
+    let response = auth_api::delete(&format!("/servers/{server_id}/membership"))
         .header("Authorization", &format!("Bearer {access_token}"))
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return Ok(());
     }
 
@@ -140,13 +137,13 @@ pub(crate) async fn leave_server(server_id: String) -> Result<(), String> {
 /// Загружает комнаты, доступные на сервере.
 pub(crate) async fn list_server_rooms(server_id: String) -> Result<Vec<ServerRoomSummary>, String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::get(&auth_api::url(&format!("/servers/{server_id}/rooms")))
+    let response = auth_api::get(&format!("/servers/{server_id}/rooms"))
         .header("Authorization", &format!("Bearer {access_token}"))
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<ListServerRoomsResponse>()
             .await
@@ -164,15 +161,14 @@ pub(crate) async fn create_server_room(
     kind: ServerRoomKind,
 ) -> Result<ServerRoomSummary, String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::post(&auth_api::url(&format!("/servers/{server_id}/rooms")))
+    let response = auth_api::post(&format!("/servers/{server_id}/rooms"))
         .header("Authorization", &format!("Bearer {access_token}"))
         .json(&CreateServerRoomRequest { name, kind })
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<CreateServerRoomResponse>()
             .await
@@ -191,17 +187,14 @@ pub(crate) async fn update_server_room(
     kind: ServerRoomKind,
 ) -> Result<ServerRoomSummary, String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::put(&auth_api::url(&format!(
-        "/servers/{server_id}/rooms/{room_id}"
-    )))
-    .header("Authorization", &format!("Bearer {access_token}"))
-    .json(&UpdateServerRoomRequest { name, kind })
-    .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
-    .send()
-    .await
-    .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+    let response = auth_api::put(&format!("/servers/{server_id}/rooms/{room_id}"))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .json(&UpdateServerRoomRequest { name, kind })
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<UpdateServerRoomResponse>()
             .await
@@ -215,15 +208,13 @@ pub(crate) async fn update_server_room(
 /// Удаляет комнату с сервера, принадлежащего текущему пользователю.
 pub(crate) async fn delete_server_room(server_id: String, room_id: String) -> Result<(), String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::delete(&auth_api::url(&format!(
-        "/servers/{server_id}/rooms/{room_id}"
-    )))
-    .header("Authorization", &format!("Bearer {access_token}"))
-    .send()
-    .await
-    .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+    let response = auth_api::delete(&format!("/servers/{server_id}/rooms/{room_id}"))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return Ok(());
     }
 

@@ -3,7 +3,6 @@
 use cheenhub_contracts::rest::{
     ServerSummary, UpdateServerAvatarResponse, UpdateServerRequest, UpdateServerResponse,
 };
-use gloo_net::http::Request;
 
 use crate::features::auth::api as auth_api;
 
@@ -13,15 +12,14 @@ pub(super) async fn update_server(
     request: UpdateServerRequest,
 ) -> Result<ServerSummary, String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::put(&auth_api::url(&format!("/servers/{server_id}")))
+    let response = auth_api::put(&format!("/servers/{server_id}"))
         .header("Authorization", &format!("Bearer {access_token}"))
         .json(&request)
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<UpdateServerResponse>()
             .await
@@ -38,16 +36,15 @@ pub(super) async fn update_server_avatar(
     bytes: Vec<u8>,
 ) -> Result<ServerSummary, String> {
     let access_token = auth_api::fresh_access_token().await?;
-    let response = Request::put(&auth_api::url(&format!("/servers/{server_id}/avatar")))
+    let response = auth_api::put(&format!("/servers/{server_id}/avatar"))
         .header("Authorization", &format!("Bearer {access_token}"))
         .header("Content-Type", "application/octet-stream")
         .body(bytes)
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<UpdateServerAvatarResponse>()
             .await

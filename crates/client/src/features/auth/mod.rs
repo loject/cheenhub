@@ -4,6 +4,7 @@ pub(crate) mod api;
 mod components;
 mod domain;
 pub(crate) mod guest_guard;
+mod http;
 pub(crate) mod jwt;
 mod pages;
 mod profile_api;

@@ -1,5 +1,7 @@
 //! Browser microphone AudioWorklet graph helpers.
 
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
+
 use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;

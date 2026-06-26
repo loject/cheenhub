@@ -19,7 +19,8 @@ static TAILWIND_CSS: Asset = asset!(
 );
 
 fn main() {
-    dioxus::launch(App);
+    dioxus_sdk_storage::set_dir!();
+    features::runtime::launch_client(App);
 }
 
 #[derive(Clone, Debug, PartialEq, Routable)]

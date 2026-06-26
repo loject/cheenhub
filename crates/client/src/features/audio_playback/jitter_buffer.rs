@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use super::provider::VoiceFrame;
+use crate::features::audio_playback::backend::VoiceFrame;
 
 const MAX_PENDING_FRAMES: usize = 80;
 const SEQUENCE_RESET_BACKWARD_THRESHOLD: u64 = 64;
@@ -195,7 +195,7 @@ fn delay_until_ms(deadline_ms: u64, now_ms: u64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::audio_playback::provider::PlaybackCodec;
+    use crate::features::audio_playback::PlaybackCodec;
 
     const TEST_TARGET_PLAYOUT_DELAY_MS: u64 = 120;
 

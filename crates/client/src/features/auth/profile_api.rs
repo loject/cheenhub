@@ -3,10 +3,9 @@
 use cheenhub_contracts::rest::{
     AuthUser, ChangeCurrentUserPasswordRequest, UpdateCurrentUserRequest,
 };
-use gloo_net::http::Request;
-use js_sys::Uint8Array;
+use reqwest::StatusCode;
 
-use super::api::{fresh_access_token, read_error, refresh_access_token, url};
+use super::api::{fresh_access_token, patch, post, put, read_error, refresh_access_token};
 
 /// Обновляет профиль текущего аутентифицированного пользователя.
 pub(crate) async fn update_current_user(
@@ -15,7 +14,7 @@ pub(crate) async fn update_current_user(
     let access_token = fresh_access_token().await?;
     let response = send_update_request(&access_token, &request).await?;
 
-    if response.status() == 401 {
+    if response.status() == StatusCode::UNAUTHORIZED {
         let access_token = refresh_access_token().await?;
         let response = send_update_request(&access_token, &request).await?;
         return parse_user_response(response).await;
@@ -31,7 +30,7 @@ pub(crate) async fn change_current_user_password(
     let access_token = fresh_access_token().await?;
     let response = send_password_change_request(&access_token, &request).await?;
 
-    if response.status() == 401 {
+    if response.status() == StatusCode::UNAUTHORIZED {
         let access_token = refresh_access_token().await?;
         let response = send_password_change_request(&access_token, &request).await?;
         return parse_empty_response(response).await;
@@ -45,7 +44,7 @@ pub(crate) async fn update_current_user_avatar(bytes: Vec<u8>) -> Result<AuthUse
     let access_token = fresh_access_token().await?;
     let response = send_avatar_update_request(&access_token, &bytes).await?;
 
-    if response.status() == 401 {
+    if response.status() == StatusCode::UNAUTHORIZED {
         let access_token = refresh_access_token().await?;
         let response = send_avatar_update_request(&access_token, &bytes).await?;
         return parse_user_response(response).await;
@@ -57,11 +56,10 @@ pub(crate) async fn update_current_user_avatar(bytes: Vec<u8>) -> Result<AuthUse
 async fn send_update_request(
     access_token: &str,
     request: &UpdateCurrentUserRequest,
-) -> Result<gloo_net::http::Response, String> {
-    Request::patch(&url("/auth/me"))
+) -> Result<reqwest::Response, String> {
+    patch("/auth/me")
         .header("Authorization", &format!("Bearer {access_token}"))
         .json(request)
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())
@@ -70,11 +68,10 @@ async fn send_update_request(
 async fn send_password_change_request(
     access_token: &str,
     request: &ChangeCurrentUserPasswordRequest,
-) -> Result<gloo_net::http::Response, String> {
-    Request::post(&url("/auth/me/password"))
+) -> Result<reqwest::Response, String> {
+    post("/auth/me/password")
         .header("Authorization", &format!("Bearer {access_token}"))
         .json(request)
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())
@@ -83,19 +80,18 @@ async fn send_password_change_request(
 async fn send_avatar_update_request(
     access_token: &str,
     bytes: &[u8],
-) -> Result<gloo_net::http::Response, String> {
-    Request::put(&url("/auth/me/avatar"))
+) -> Result<reqwest::Response, String> {
+    put("/auth/me/avatar")
         .header("Authorization", &format!("Bearer {access_token}"))
         .header("Content-Type", "application/octet-stream")
-        .body(Uint8Array::from(bytes))
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
+        .body(bytes.to_vec())
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())
 }
 
-async fn parse_user_response(response: gloo_net::http::Response) -> Result<AuthUser, String> {
-    if response.ok() {
+async fn parse_user_response(response: reqwest::Response) -> Result<AuthUser, String> {
+    if response.status().is_success() {
         return response
             .json::<AuthUser>()
             .await
@@ -105,8 +101,8 @@ async fn parse_user_response(response: gloo_net::http::Response) -> Result<AuthU
     Err(read_error(response).await)
 }
 
-async fn parse_empty_response(response: gloo_net::http::Response) -> Result<(), String> {
-    if response.ok() {
+async fn parse_empty_response(response: reqwest::Response) -> Result<(), String> {
+    if response.status().is_success() {
         return Ok(());
     }
 

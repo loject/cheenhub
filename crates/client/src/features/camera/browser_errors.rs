@@ -1,5 +1,7 @@
 //! Вспомогательные функции ошибок браузерной камеры.
 
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
+
 use js_sys::Reflect;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;

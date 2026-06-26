@@ -3,8 +3,6 @@
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use wasm_bindgen::JsValue;
-use wasm_bindgen_futures::spawn_local;
 
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::AudioPlaybackHandle;
@@ -161,7 +159,7 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                                 let frame_realtime = send_realtime.clone();
                                 let frame_server_id = target.server_id.clone();
                                 let frame_room_id = target.room_id.clone();
-                                spawn_local(async move {
+                                spawn(async move {
                                     if let Err(error) = realtime::send_voice_frame(
                                         &frame_realtime,
                                         &frame_server_id,
@@ -170,9 +168,12 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                                     )
                                     .await
                                     {
-                                        web_sys::console::warn_1(&JsValue::from_str(&format!(
-                                            "failed to send encoded voice frame: {error}"
-                                        )));
+                                        warn!(
+                                            %error,
+                                            server_id = %frame_server_id,
+                                            room_id = %frame_room_id,
+                                            "failed to send encoded voice frame"
+                                        );
                                     }
                                 });
                             }));
@@ -246,7 +247,7 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                                         frame.clone(),
                                     ),
                                 );
-                                spawn_local(async move {
+                                spawn(async move {
                                     if let Err(error) = realtime::send_camera_frame(
                                         &frame_realtime,
                                         &frame_server_id,

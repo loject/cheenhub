@@ -3,7 +3,6 @@
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use wasm_bindgen_futures::spawn_local;
 
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::AudioPlaybackHandle;
@@ -122,7 +121,7 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                             let frame_realtime = send_realtime.clone();
                             let frame_server_id = send_server_id.clone();
                             let frame_room_id = send_room_id.clone();
-                            spawn_local(async move {
+                            spawn(async move {
                                 if let Err(error) = realtime::send_voice_frame(
                                     &frame_realtime,
                                     &frame_server_id,
@@ -197,7 +196,7 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                                     frame.clone(),
                                 ),
                             );
-                            spawn_local(async move {
+                            spawn(async move {
                                 if let Err(error) = realtime::send_camera_frame(
                                     &frame_realtime,
                                     &frame_server_id,
@@ -249,7 +248,7 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
                             let frame_realtime = send_realtime.clone();
                             let frame_server_id = send_server_id.clone();
                             let frame_room_id = send_room_id.clone();
-                            spawn_local(async move {
+                            spawn(async move {
                                 if let Err(error) = realtime::send_screen_frame(
                                     &frame_realtime,
                                     &frame_server_id,

@@ -8,10 +8,12 @@ mod browser_encoding;
 mod browser_errors;
 mod browser_worklet;
 mod input_devices;
+mod native;
 mod provider;
 mod provider_context;
 mod provider_runtime;
 mod storage;
+mod unsupported;
 mod vad;
 
 #[allow(unused_imports)]

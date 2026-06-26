@@ -1,5 +1,7 @@
 //! Получение потока браузерной демонстрации экрана.
 
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
+
 use dioxus::prelude::debug;
 use js_sys::{Function, Reflect};
 use wasm_bindgen::JsCast;

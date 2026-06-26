@@ -21,6 +21,11 @@ description = "Ensure local infrastructure and run the backend watcher plus Diox
 dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
 run_task = "dev-services"
 
+[tasks.dev-stack-desktop]
+description = "Ensure local infrastructure and run the backend watcher plus Dioxus desktop app."
+dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
+run_task = "dev-services-desktop"
+
 [tasks.ensure-local-jwt-env]
 description = "Ensure local .env contains a valid matching JWT Ed25519 key pair."
 command = "cargo"
@@ -42,6 +47,10 @@ args = [
 description = "Run the backend watcher, microphone worker watcher, and Dioxus dev server in parallel."
 run_task = { name = ["backend-watch", "microphone-worker-watch", "dioxus-web"], fork = true, parallel = true }
 
+[tasks.dev-services-desktop]
+description = "Run the backend watcher and Dioxus desktop app in parallel."
+run_task = { name = ["backend-watch", "dioxus-desktop"], fork = true, parallel = true }
+
 [tasks.backend-watch]
 description = "Run the backend through cargo-watch."
 dependencies = ["install-cargo-watch"]
@@ -62,6 +71,19 @@ args = [
     "${DIOXUS_ADDR}",
     "--port",
     "${DIOXUS_PORT}",
+]
+
+[tasks.dioxus-desktop]
+description = "Run the Dioxus desktop dev app."
+dependencies = ["install-dioxus-cli"]
+command = "dx"
+args = [
+    "serve",
+    "--desktop",
+    "--package",
+    "cheenhub_client",
+    "--bin",
+    "cheen_hub",
 ]
 
 [tasks.build-web]

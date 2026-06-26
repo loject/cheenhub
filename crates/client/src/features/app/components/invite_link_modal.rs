@@ -1,9 +1,9 @@
 //! Invite-link settings modal.
 
 use dioxus::prelude::*;
-use gloo_timers::future::TimeoutFuture;
 
 use crate::features::app::api;
+use crate::features::runtime::sleep_ms;
 use crate::features::toast::ToastHandle;
 
 use super::modal::Modal;
@@ -174,7 +174,7 @@ pub(crate) fn InviteLinkModal(
                                                         copy_generation.set(next_generation);
                                                         is_copied.set(true);
                                                         toast.success("Ссылка скопирована.");
-                                                        TimeoutFuture::new(1400).await;
+                                                        sleep_ms(1400).await;
 
                                                         if copy_generation() == next_generation {
                                                             is_copied.set(false);

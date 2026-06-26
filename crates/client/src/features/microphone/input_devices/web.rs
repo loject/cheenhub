@@ -1,4 +1,5 @@
 //! Browser audio input device discovery.
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
 
 use js_sys::{Array, Reflect};
 use wasm_bindgen::JsCast;
@@ -6,7 +7,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{MediaStream, MediaStreamConstraints, window};
 
-use super::browser_errors::is_permission_denied_error;
+use crate::features::microphone::browser_errors::is_permission_denied_error;
 
 /// One audio input device returned by `enumerateDevices`.
 #[derive(Debug, Clone, PartialEq)]

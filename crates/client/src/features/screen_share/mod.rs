@@ -1,16 +1,13 @@
 //! Функция захвата и кодирования демонстрации экрана.
 
 mod backend;
-#[cfg(target_arch = "wasm32")]
 mod browser;
-#[cfg(target_arch = "wasm32")]
 mod browser_capture;
-#[cfg(target_arch = "wasm32")]
 mod browser_errors;
+mod native;
 mod provider;
 mod provider_context;
 mod provider_runtime;
-#[cfg(not(target_arch = "wasm32"))]
 mod unsupported;
 
 #[allow(unused_imports)]

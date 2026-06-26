@@ -1,9 +1,8 @@
 //! Общее состояние и renderer видеопотоков участников.
 
 mod backend;
-#[cfg(not(target_arch = "wasm32"))]
+mod native;
 mod unsupported;
-#[cfg(target_arch = "wasm32")]
 mod web;
 
 use std::cell::RefCell;
@@ -14,16 +13,12 @@ use dioxus::dioxus_core::spawn_forever;
 use dioxus::prelude::*;
 use futures_channel::mpsc;
 use futures_util::StreamExt;
-use gloo_timers::future::TimeoutFuture;
 use uuid::Uuid;
 
 use crate::features::camera::EncodedCameraFrame;
+use crate::features::runtime::sleep_ms;
 
 use self::backend::{ParticipantVideoBackend, ParticipantVideoRenderer};
-#[cfg(not(target_arch = "wasm32"))]
-use self::unsupported::UnavailableParticipantVideoBackend as DefaultParticipantVideoBackend;
-#[cfg(target_arch = "wasm32")]
-use self::web::WebParticipantVideoBackend as DefaultParticipantVideoBackend;
 use super::realtime::InboundVideoFrame;
 
 const PARTICIPANT_VIDEO_RELEASE_TIMEOUT_MS: u32 = 1_500;
@@ -141,7 +136,7 @@ impl ParticipantVideoHandle {
             subscribers,
             generations,
             blocked_streams,
-            backend: Rc::new(DefaultParticipantVideoBackend),
+            backend: native::default_backend(),
         }
     }
 
@@ -266,7 +261,7 @@ impl ParticipantVideoHandle {
         spawn_forever(async move {
             let mut observed_generation = generation;
             loop {
-                TimeoutFuture::new(PARTICIPANT_VIDEO_RELEASE_TIMEOUT_MS).await;
+                sleep_ms(PARTICIPANT_VIDEO_RELEASE_TIMEOUT_MS).await;
                 let latest_generation = generations.borrow().get(&key).copied();
                 match latest_generation {
                     Some(latest_generation) if latest_generation != observed_generation => {

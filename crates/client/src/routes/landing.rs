@@ -2,11 +2,11 @@
 
 use dioxus::prelude::*;
 
-use crate::features::landing::LandingPage;
+use crate::features::landing::LandingRoute;
 
 #[component]
 pub(crate) fn Landing() -> Element {
     rsx! {
-        LandingPage {}
+        LandingRoute {}
     }
 }

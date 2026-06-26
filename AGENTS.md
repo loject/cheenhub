@@ -14,6 +14,9 @@
 ## Client Platform Boundaries
 
 - Hide all platform-dependent client code behind a trait/contract, with file names that make the platform boundary explicit, such as `feature/backend.rs` for the contract, `feature/web.rs` for wasm/browser, `feature/native.rs` when needed, and `feature/unsupported.rs` for stubs.
+- If client behavior has different implementations on different platforms, create an explicit platform module folder with files for the supported platforms, such as `web.rs`, `native.rs`, `desktop.rs`, `mobile.rs`, and `unsupported.rs`.
+- Platform selection must stay inside those platform files. Do not use `#[cfg(target_arch = "wasm32")]`, `#[cfg(not(target_arch = "wasm32"))]`, feature-target `#[cfg(...)]`, `cfg_attr(...)`, `cfg!(...)`, or equivalent platform branching in shared modules, feature `mod.rs` files, UI components, providers, or startup code outside the platform implementation files.
+- Shared client files should depend only on the platform contract or on a platform-neutral helper exported by that platform folder; they must not import `web_sys`, `js_sys`, browser-only APIs, native-only APIs, or target-gated dependencies directly.
 
 ## Dioxus State
 

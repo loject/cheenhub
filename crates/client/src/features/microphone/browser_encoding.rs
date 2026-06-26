@@ -1,5 +1,7 @@
 //! Browser microphone WebCodecs encoding helpers.
 
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
+
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 

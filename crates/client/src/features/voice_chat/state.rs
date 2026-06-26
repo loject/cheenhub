@@ -8,9 +8,9 @@ use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use cheenhub_contracts::rest::AuthUser;
 use dioxus::prelude::*;
 use futures_util::future::{Either, FutureExt, select};
-use gloo_timers::future::TimeoutFuture;
 
 use crate::features::realtime::RealtimeHandle;
+use crate::features::runtime::sleep_ms;
 
 use super::realtime;
 use super::room_presence::{self, VoiceRoomParticipants};
@@ -210,7 +210,7 @@ impl VoiceConnectionHandle {
                 realtime::join_room(&realtime, target.server_id.clone(), target.room_id.clone());
             match select(
                 join.boxed_local(),
-                TimeoutFuture::new(JOIN_RESPONSE_TIMEOUT_MS).boxed_local(),
+                sleep_ms(JOIN_RESPONSE_TIMEOUT_MS).boxed_local(),
             )
             .await
             {

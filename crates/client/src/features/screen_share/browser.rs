@@ -1,4 +1,5 @@
 //! Browser-backend демонстрации экрана.
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
 
 use std::cell::Cell;
 use std::rc::Rc;

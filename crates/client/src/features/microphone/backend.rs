@@ -71,6 +71,7 @@ impl Default for MicrophoneConfig {
 }
 
 /// Microphone callbacks supplied by the owning feature.
+#[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct MicrophoneCallbacks {
     /// Encoded frame callback.
@@ -166,6 +167,7 @@ impl MicrophoneError {
     }
 
     /// Builds a microphone permission-denied error.
+    #[allow(dead_code)]
     pub(crate) fn permission_denied(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),

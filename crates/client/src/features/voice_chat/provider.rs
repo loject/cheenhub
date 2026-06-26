@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use dioxus::prelude::*;
 use futures_util::StreamExt;
-use wasm_bindgen_futures::spawn_local;
 use web_time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::features::app::current_user::CurrentUserContext;
@@ -344,7 +343,7 @@ fn restart_microphone_for_target(
         let frame_duration_us = frame.duration_us;
         let payload_bytes = frame.bytes.len();
         let last_slow_send_warning_ms = last_slow_send_warning_ms.clone();
-        spawn_local(async move {
+        spawn(async move {
             let started_at = Instant::now();
             let result = realtime::send_voice_frame(
                 &frame_realtime,

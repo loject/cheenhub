@@ -1,16 +1,17 @@
 //! Runtime bridge between inbound voice frames and the jitter buffer.
 
 use dioxus::prelude::{debug, warn};
-use gloo_timers::future::TimeoutFuture;
-use wasm_bindgen_futures::spawn_local;
 use web_time::{SystemTime, UNIX_EPOCH};
+
+use crate::features::runtime::sleep_ms;
 
 use super::browser_helpers::js_error_message;
 use super::jitter_buffer::JitterBufferPush;
-use super::provider::{
-    AUDIO_PLAYBACK_WARNING_INTERVAL_MS, AudioPlaybackHandle, AudioPlaybackInner, PlaybackCodec,
-    VoiceFrame, audio_playback_now_ms, should_emit_sender_warning,
+use super::{
+    AUDIO_PLAYBACK_WARNING_INTERVAL_MS, AudioPlaybackHandle, AudioPlaybackInner,
+    audio_playback_now_ms, should_emit_sender_warning,
 };
+use crate::features::audio_playback::backend::{PlaybackCodec, VoiceFrame};
 
 const JITTER_PENDING_WARN_FRAMES: usize = 12;
 const JITTER_DRAIN_WAKE_LATE_WARN_MS: u64 = 120;
@@ -129,13 +130,13 @@ impl AudioPlaybackHandle {
         };
 
         let handle = self.clone();
-        spawn_local(async move {
+        dioxus::prelude::spawn(async move {
             loop {
                 let Some(next_wake_ms) = handle.drain_jitter_buffer(&sender_user_id) else {
                     break;
                 };
                 let wake_deadline_ms = jitter_now_ms().saturating_add(u64::from(next_wake_ms));
-                TimeoutFuture::new(next_wake_ms).await;
+                sleep_ms(next_wake_ms).await;
                 let woke_at_ms = jitter_now_ms();
                 let wake_late_ms = woke_at_ms.saturating_sub(wake_deadline_ms);
                 if wake_late_ms >= JITTER_DRAIN_WAKE_LATE_WARN_MS {

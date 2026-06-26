@@ -1,7 +1,6 @@
 //! Страница оболочки аутентифицированного приложения.
 
 use dioxus::prelude::*;
-use gloo_timers::future::TimeoutFuture;
 
 use crate::Route;
 use crate::features::app::components::app_shell::AppShell;
@@ -11,6 +10,7 @@ use crate::features::auth::{TokenRefresher, api};
 use crate::features::camera::CameraProvider;
 use crate::features::microphone::MicrophoneProvider;
 use crate::features::realtime::RealtimeProvider;
+use crate::features::runtime::sleep_ms;
 use crate::features::screen_share::ScreenShareProvider;
 use crate::features::voice_chat::VoiceConnectionProvider;
 
@@ -62,7 +62,7 @@ pub(crate) fn AppPage() -> Element {
                     warn!("current user load deferred while network is unavailable");
                     profile_error.set(Some(error));
                     loading_profile.set(false);
-                    TimeoutFuture::new(5_000).await;
+                    sleep_ms(5_000).await;
                     load_attempt.with_mut(|attempt| *attempt = attempt.saturating_add(1));
                 }
                 Err(error) => {

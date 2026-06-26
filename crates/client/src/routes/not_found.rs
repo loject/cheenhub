@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 
 use crate::Route;
 use crate::features::auth::api;
+use crate::features::landing;
 use crate::features::landing::components::logo_icon::LogoIcon;
 
 /// Рендерит запасную страницу для неизвестных клиентских маршрутов.
@@ -11,6 +12,8 @@ use crate::features::landing::components::logo_icon::LogoIcon;
 pub(crate) fn NotFound(route: Vec<String>) -> Element {
     let requested_path = format!("/{}", route.join("/"));
     let has_session = api::has_tokens();
+    let home_route = landing::public_home_route();
+    let home_label = landing::public_home_label();
 
     use_effect({
         let requested_path = requested_path.clone();
@@ -25,7 +28,7 @@ pub(crate) fn NotFound(route: Vec<String>) -> Element {
                 nav { class: "relative z-10 border-b border-zinc-800/80 bg-zinc-950/85 backdrop-blur-xl",
                     div { class: "mx-auto flex max-w-6xl items-center justify-between px-5 py-3 lg:px-8",
                         Link {
-                            to: Route::Landing {},
+                            to: home_route.clone(),
                             class: "flex items-center gap-3",
                             div { class: "flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-100 text-zinc-950",
                                 LogoIcon { class_name: "h-5 w-5" }
@@ -61,9 +64,9 @@ pub(crate) fn NotFound(route: Vec<String>) -> Element {
                             }
                             div { class: "a4 mt-7 flex flex-wrap gap-3",
                                 Link {
-                                    to: Route::Landing {},
+                                    to: home_route,
                                     class: "btn-p inline-flex items-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white",
-                                    "На главную"
+                                    "{home_label}"
                                 }
                                 if has_session {
                                     Link {

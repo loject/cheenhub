@@ -1,4 +1,5 @@
 //! Browser-backend renderer'а видео участника.
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -16,6 +17,9 @@ use super::backend::{
 };
 
 const VIDEO_CALLBACK_RELEASE_DELAY_MS: u32 = 250;
+
+type VideoOutputClosure = Closure<dyn FnMut(VideoFrame)>;
+type VideoErrorClosure = Closure<dyn FnMut(JsValue)>;
 
 /// Browser-реализация на основе WebCodecs и canvas.
 pub(crate) struct WebParticipantVideoBackend;
@@ -39,8 +43,8 @@ struct BrowserParticipantVideoRenderer {
     closed: Rc<Cell<bool>>,
     received_key_frame: Rc<Cell<bool>>,
     waiting_key_frame_logged: Rc<Cell<bool>>,
-    output_closure: RefCell<Option<Closure<dyn FnMut(VideoFrame)>>>,
-    error_closure: RefCell<Option<Closure<dyn FnMut(JsValue)>>>,
+    output_closure: RefCell<Option<VideoOutputClosure>>,
+    error_closure: RefCell<Option<VideoErrorClosure>>,
 }
 
 impl BrowserParticipantVideoRenderer {

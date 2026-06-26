@@ -5,15 +5,15 @@ use cheenhub_contracts::rest::{
     OAuthRegistrationRequest, OAuthStartRequest, PasswordResetConfirmRequest, PasswordResetRequest,
     RefreshRequest, RegisterRequest,
 };
-use gloo_net::http::Request;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::features::auth::{jwt, storage};
 
-const DEFAULT_API_BASE_URL: &str = "http://127.0.0.1:3000/api";
 const NETWORK_ERROR_MESSAGE: &str = "Не удалось связаться с сервером.";
 
+pub(crate) use super::http::{delete, get, patch, post, put};
 pub(crate) use super::profile_api::{
     change_current_user_password, update_current_user, update_current_user_avatar,
 };
@@ -94,13 +94,13 @@ pub(crate) async fn complete_google_account_link(handoff_code: String) -> Result
 /// Загружает привязанные внешние аккаунты текущего пользователя.
 pub(crate) async fn linked_accounts() -> Result<Vec<LinkedAccount>, String> {
     let access_token = fresh_access_token().await?;
-    let response = Request::get(&url("/auth/linked-accounts"))
+    let response = get("/auth/linked-accounts")
         .header("Authorization", &format!("Bearer {access_token}"))
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         return parse_linked_accounts(response).await;
     }
 
@@ -113,13 +113,13 @@ pub(crate) async fn unlink_account(provider: &str) -> Result<(), String> {
         return Err("Этот провайдер пока нельзя отключить.".to_owned());
     }
     let access_token = fresh_access_token().await?;
-    let response = Request::post(&url("/auth/linked-accounts/google/unlink"))
+    let response = post("/auth/linked-accounts/google/unlink")
         .header("Authorization", &format!("Bearer {access_token}"))
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         Ok(())
     } else {
         Err(read_error(response).await)
@@ -139,15 +139,15 @@ pub(crate) fn is_network_error(error: &str) -> bool {
 /// Загружает текущего аутентифицированного пользователя, обновляя access token при необходимости.
 pub(crate) async fn current_user() -> Result<AuthUser, String> {
     let access_token = fresh_access_token().await?;
-    let response = Request::get(&url("/auth/me"))
+    let response = get("/auth/me")
         .header("Authorization", &format!("Bearer {access_token}"))
         .send()
         .await
         .map_err(|_| NETWORK_ERROR_MESSAGE.to_owned())?;
 
-    if response.status() == 401 {
+    if response.status() == StatusCode::UNAUTHORIZED {
         let access_token = refresh_access_token().await?;
-        return Request::get(&url("/auth/me"))
+        return get("/auth/me")
             .header("Authorization", &format!("Bearer {access_token}"))
             .send()
             .await
@@ -157,7 +157,7 @@ pub(crate) async fn current_user() -> Result<AuthUser, String> {
             .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned());
     }
 
-    if response.ok() {
+    if response.status().is_success() {
         return response
             .json::<AuthUser>()
             .await
@@ -174,21 +174,16 @@ pub(crate) async fn logout() -> Result<(), String> {
         return Ok(());
     };
 
-    let request = match Request::post(&url("/auth/logout")).json(&LogoutRequest {
-        refresh_token: tokens.refresh_token,
-    }) {
-        Ok(request) => request,
-        Err(_) => {
-            storage::clear();
-            return Err("Не удалось подготовить запрос.".to_owned());
-        }
-    };
-
-    let response = request.send().await;
+    let response = post("/auth/logout")
+        .json(&LogoutRequest {
+            refresh_token: tokens.refresh_token,
+        })
+        .send()
+        .await;
     storage::clear();
     let response = response.map_err(|_| NETWORK_ERROR_MESSAGE.to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         Ok(())
     } else {
         Err(read_error(response).await)
@@ -290,19 +285,18 @@ async fn start_oauth(
     flow: OAuthFlow,
     access_token: Option<String>,
 ) -> Result<String, String> {
-    let mut request = Request::post(&url(path));
+    let mut request = post(path);
     if let Some(access_token) = access_token {
         request = request.header("Authorization", &format!("Bearer {access_token}"));
     }
 
     let response = request
         .json(&OAuthStartRequest { flow })
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if !response.ok() {
+    if !response.status().is_success() {
         return Err(read_error(response).await);
     }
 
@@ -321,17 +315,16 @@ async fn start_oauth(
 }
 
 async fn complete_oauth(path: &str, handoff_code: String) -> Result<OAuthCompletion, String> {
-    let response = Request::post(&url(path))
+    let response = post(path)
         .json(&OAuthCompleteRequest {
             handoff_code,
             nickname: None,
         })
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if !response.ok() {
+    if !response.status().is_success() {
         return Err(read_error(response).await);
     }
 
@@ -407,9 +400,7 @@ fn string_field(value: &Value, names: &[&str]) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-async fn parse_linked_accounts(
-    response: gloo_net::http::Response,
-) -> Result<Vec<LinkedAccount>, String> {
+async fn parse_linked_accounts(response: reqwest::Response) -> Result<Vec<LinkedAccount>, String> {
     let value = response
         .json::<Value>()
         .await
@@ -442,14 +433,13 @@ async fn post_json<T>(path: &str, request: &T) -> Result<AuthResponse, String>
 where
     T: serde::Serialize,
 {
-    let response = Request::post(&url(path))
+    let response = post(path)
         .json(request)
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
         .map_err(|_| NETWORK_ERROR_MESSAGE.to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         response
             .json::<AuthResponse>()
             .await
@@ -463,14 +453,13 @@ async fn post_empty<T>(path: &str, request: &T) -> Result<(), String>
 where
     T: serde::Serialize,
 {
-    let response = Request::post(&url(path))
+    let response = post(path)
         .json(request)
-        .map_err(|_| "Не удалось подготовить запрос.".to_owned())?
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
 
-    if response.ok() {
+    if response.status().is_success() {
         Ok(())
     } else {
         Err(read_error(response).await)
@@ -483,18 +472,10 @@ fn save_response(response: AuthResponse) -> Result<AuthUser, String> {
     Ok(response.user)
 }
 
-pub(crate) async fn read_error(response: gloo_net::http::Response) -> String {
+pub(crate) async fn read_error(response: reqwest::Response) -> String {
     response
         .json::<ApiError>()
         .await
         .map(|error| error.message)
         .unwrap_or_else(|_| "Не удалось выполнить запрос. Попробуй еще раз.".to_owned())
-}
-
-pub(crate) fn url(path: &str) -> String {
-    format!("{}{}", api_base_url().trim_end_matches('/'), path)
-}
-
-fn api_base_url() -> &'static str {
-    option_env!("CHEENHUB_API_BASE_URL").unwrap_or(DEFAULT_API_BASE_URL)
 }

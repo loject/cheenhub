@@ -6,13 +6,9 @@ use dioxus::prelude::*;
 
 use crate::features::toast::ToastHandle;
 
-use super::backend::{ScreenShareBackend, ScreenShareSession, ScreenShareStatus};
+use super::backend::{ScreenShareSession, ScreenShareStatus};
+use super::native::default_backend;
 use super::provider::ScreenShareHandle;
-
-#[cfg(target_arch = "wasm32")]
-use super::browser::BrowserScreenShareBackend as DefaultScreenShareBackend;
-#[cfg(not(target_arch = "wasm32"))]
-use super::unsupported::UnavailableScreenShareBackend as DefaultScreenShareBackend;
 
 /// Предоставляет состояние захвата экрана аутентифицированным компонентам приложения.
 #[component]
@@ -21,7 +17,7 @@ pub(crate) fn ScreenShareProvider(children: Element) -> Element {
     let session = use_signal(|| None::<Rc<dyn ScreenShareSession>>);
     let generation = use_signal(|| 0);
     let toast = use_context::<ToastHandle>();
-    let backend: Rc<dyn ScreenShareBackend> = Rc::new(DefaultScreenShareBackend);
+    let backend = default_backend();
     let handle = ScreenShareHandle {
         status,
         session,

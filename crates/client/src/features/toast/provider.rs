@@ -1,7 +1,8 @@
 //! Toast notification context provider.
 
 use dioxus::prelude::*;
-use gloo_timers::future::TimeoutFuture;
+
+use crate::features::runtime::sleep_ms;
 
 const TOAST_TTL_MS: u32 = 4_200;
 const TOAST_EXIT_MS: u32 = 180;
@@ -111,7 +112,7 @@ impl ToastHandle {
         debug!(toast_id = id, kind = ?kind, "queued toast notification");
 
         spawn(async move {
-            TimeoutFuture::new(TOAST_TTL_MS).await;
+            sleep_ms(TOAST_TTL_MS).await;
             begin_dismiss_toast(&mut toasts, id);
         });
     }
@@ -179,7 +180,7 @@ fn begin_dismiss_toast(toasts: &mut Signal<Vec<Toast>>, id: u64) {
 
     let mut toasts = *toasts;
     spawn(async move {
-        TimeoutFuture::new(TOAST_EXIT_MS).await;
+        sleep_ms(TOAST_EXIT_MS).await;
         remove_toast(&mut toasts, id);
     });
 }

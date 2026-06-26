@@ -1,5 +1,7 @@
 //! Browser microphone stream acquisition.
 
+#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
+
 use dioxus::prelude::{debug, warn};
 use js_sys::{Function, Object, Reflect};
 use wasm_bindgen::JsCast;

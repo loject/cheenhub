@@ -92,7 +92,7 @@ impl RealtimeHandle {
     ) -> Result<Authenticated, RealtimeError> {
         let url = config::realtime_websocket_url()?;
         info!(%url, "connecting WebSocket realtime fallback session");
-        let (writer, reader) = websocket::split(url.as_str())?;
+        let (writer, reader) = websocket::split(url.as_str()).await?;
         let (sender, receiver) = mpsc::unbounded();
         let generation = self.next_generation();
         self.inner.streams.lock().await.clear();
