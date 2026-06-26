@@ -44,11 +44,16 @@ jobs:
         id: app-version
         shell: bash
         run: |
+          release_tag="$(cargo run --quiet -p xtask -- release-version print-tag)"
+
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            version="${GITHUB_REF_NAME}"
+            version="${release_tag}"
+            if [[ "${GITHUB_REF_NAME}" != "${release_tag}" ]]; then
+              echo "Release tag ${GITHUB_REF_NAME} must match workspace version ${release_tag}." >&2
+              exit 1
+            fi
           else
-            crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/client/Cargo.toml | head -n 1)"
-            version="v${crate_version}-${GITHUB_SHA::7}"
+            version="${release_tag}-${GITHUB_SHA::7}"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 

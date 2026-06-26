@@ -13,8 +13,8 @@ set -a
 source "$env_file"
 set +a
 
-crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/client/Cargo.toml | head -n 1)"
-: "${CHEENHUB_APP_VERSION:=v${crate_version}-$(git rev-parse --short HEAD 2>/dev/null || printf local)}"
+release_tag="$(cargo run --quiet -p xtask -- release-version print-tag)"
+: "${CHEENHUB_APP_VERSION:=${release_tag}-$(git rev-parse --short HEAD 2>/dev/null || printf local)}"
 export CHEENHUB_APP_VERSION
 
 dx build --release --platform web --package cheenhub_client --locked --debug-symbols false

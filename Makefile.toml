@@ -427,7 +427,17 @@ install_crate = { crate_name = "dioxus-cli", binary = "dx", test_arg = "--versio
 private = true
 install_crate = { crate_name = "wasm-bindgen-cli", binary = "wasm-bindgen", test_arg = "--version", version = "0.2.120" }
 
+[tasks.check-release-version]
+description = "Check that every package uses the workspace release version."
+command = "cargo"
+args = ["run", "-p", "xtask", "--", "release-version", "check"]
+
+[tasks.print-release-tag]
+description = "Print the git tag derived from the workspace release version."
+command = "cargo"
+args = ["run", "-p", "xtask", "--", "release-version", "print-tag"]
+
 [tasks.create-git-tag]
-description = "Create a git tag. Pass the tag name as an extra argument."
-command = "git"
-args = ["tag", "${@}"]
+description = "Create the git tag derived from the workspace release version."
+command = "cargo"
+args = ["run", "-p", "xtask", "--", "release-version", "tag"]
