@@ -1,6 +1,7 @@
 #![warn(missing_docs)]
 //! Вспомогательные команды разработки и релизов CheenHub.
 
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,6 +25,7 @@ fn run() -> XtaskResult<()> {
     };
 
     match command.as_str() {
+        "line-stats" => run_line_stats(),
         "release-version" => run_release_version(args.collect()),
         "-h" | "--help" | "help" => print_usage(),
         unknown => Err(format!("unknown xtask command: {unknown}")),
@@ -32,9 +34,71 @@ fn run() -> XtaskResult<()> {
 
 fn print_usage() -> XtaskResult<()> {
     println!(
-        "Usage:\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag"
+        "Usage:\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag"
     );
     Ok(())
+}
+
+fn run_line_stats() -> XtaskResult<()> {
+    let repo_root = git_output(["rev-parse", "--show-toplevel"])?;
+    env::set_current_dir(repo_root.trim())
+        .map_err(|error| format!("failed to enter repository root: {error}"))?;
+
+    let tracked_files = git_output(["ls-files"])?;
+    let mut totals = BTreeMap::new();
+
+    for file in tracked_files.lines() {
+        let path = Path::new(file);
+        let Some(kind) = line_stat_kind(path) else {
+            continue;
+        };
+        let contents = read_file(path)?;
+        *totals.entry(kind).or_insert(0) += contents.lines().count();
+    }
+
+    let mut rows: Vec<_> = totals.into_iter().collect();
+    let total_lines: usize = rows.iter().map(|(_, lines)| *lines).sum();
+    rows.sort_by(|(left_kind, left_lines), (right_kind, right_lines)| {
+        right_lines
+            .cmp(left_lines)
+            .then_with(|| left_kind.cmp(right_kind))
+    });
+
+    for (kind, lines) in rows {
+        println!("{kind:<12} {lines}");
+    }
+    println!("{:<12} {total_lines}", "total");
+
+    Ok(())
+}
+
+fn line_stat_kind(path: &Path) -> Option<&'static str> {
+    let file_name = path.file_name()?.to_string_lossy();
+    if file_name.eq_ignore_ascii_case("Dockerfile") {
+        return Some("dockerfile");
+    }
+    if file_name == ".dockerignore" || file_name == ".gitignore" {
+        return Some("gitignore");
+    }
+
+    let extension = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    match extension.as_str() {
+        "rs" => Some("rust"),
+        "toml" => Some("toml"),
+        "js" => Some("javascript"),
+        "css" => Some("css"),
+        "html" => Some("html"),
+        "md" => Some("markdown"),
+        "json" => Some("json"),
+        "yml" | "yaml" => Some("yaml"),
+        "sh" => Some("sh"),
+        "svg" => Some("svg"),
+        "webmanifest" => Some("webmanifest"),
+        "lock" => Some("lockfile"),
+        "conf" => Some("config"),
+        "example" => Some("example"),
+        _ => None,
+    }
 }
 
 fn run_release_version(args: Vec<String>) -> XtaskResult<()> {
