@@ -124,7 +124,10 @@ fn run_release_version(args: Vec<String>) -> XtaskResult<()> {
         }
         "tag" => {
             workspace.check_release_version()?;
+            ensure_clean_worktree("before cargo build")?;
             run_release_build()?;
+            commit_release_build_changes(&expected_tag)?;
+            ensure_clean_worktree("before creating the git tag")?;
             create_git_tag(&expected_tag)?;
             println!("Created git tag {expected_tag}.");
         }
@@ -346,6 +349,43 @@ fn run_release_build() -> XtaskResult<()> {
     checked_status(Command::new("cargo").arg("build"))?;
     println!("cargo build finished.");
     Ok(())
+}
+
+fn ensure_clean_worktree(stage: &str) -> XtaskResult<()> {
+    let status = git_status()?;
+    if status.trim().is_empty() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "repository has uncommitted changes {stage}:\n{}",
+        status.trim_end()
+    ))
+}
+
+fn commit_release_build_changes(tag: &str) -> XtaskResult<()> {
+    let status = git_status()?;
+    if status.trim().is_empty() {
+        println!("cargo build did not create repository changes.");
+        return Ok(());
+    }
+
+    println!(
+        "cargo build created repository changes; committing them before creating the git tag."
+    );
+    checked_command(Command::new("git").args(["add", "-A"]))?;
+    checked_command(
+        Command::new("git")
+            .arg("commit")
+            .arg("-m")
+            .arg(format!("build: refresh generated files for {tag}")),
+    )?;
+    println!("Committed cargo build changes for {tag}.");
+    Ok(())
+}
+
+fn git_status() -> XtaskResult<String> {
+    git_output(["status", "--porcelain"])
 }
 
 fn git_output<const N: usize>(args: [&str; N]) -> XtaskResult<String> {
