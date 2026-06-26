@@ -11,6 +11,8 @@ type XtaskResult<T> = Result<T, String>;
 
 const ROOT_MANIFEST: &str = "Cargo.toml";
 
+mod release_artifacts;
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("{error}");
@@ -26,6 +28,7 @@ fn run() -> XtaskResult<()> {
 
     match command.as_str() {
         "line-stats" => run_line_stats(),
+        "release-artifacts" => release_artifacts::run(args.collect()),
         "release-version" => run_release_version(args.collect()),
         "-h" | "--help" | "help" => print_usage(),
         unknown => Err(format!("unknown xtask command: {unknown}")),
@@ -34,7 +37,7 @@ fn run() -> XtaskResult<()> {
 
 fn print_usage() -> XtaskResult<()> {
     println!(
-        "Usage:\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag"
+        "Usage:\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>"
     );
     Ok(())
 }

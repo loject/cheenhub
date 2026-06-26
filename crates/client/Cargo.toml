@@ -12,7 +12,7 @@ path = "src/worker_lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["app"]
+default = ["web"]
 app = [
     "dep:base64",
     "dep:bytes",
@@ -34,13 +34,16 @@ app = [
     "dep:web-transport",
     "dep:web-sys",
 ]
+web = ["app", "dioxus/web"]
+desktop = ["app", "dioxus/desktop"]
+mobile = ["app", "dioxus/mobile"]
 microphone_worker = []
 
 [dependencies]
 base64 = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 cheenhub_contracts = { path = "../contracts", optional = true }
-dioxus = { workspace = true, features = ["router", "web"], optional = true }
+dioxus = { workspace = true, features = ["router"], optional = true }
 dioxus-sdk-storage = { workspace = true, optional = true }
 ed25519-dalek = { workspace = true, optional = true }
 futures-channel = { workspace = true, optional = true }

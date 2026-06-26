@@ -11,6 +11,7 @@ POSTGRES_PASSWORD = { value = "mysecretpassword", condition = { env_not_set = ["
 POSTGRES_DB = { value = "cheenhub", condition = { env_not_set = ["POSTGRES_DB"] } }
 POSTGRES_PORT = { value = "5432", condition = { env_not_set = ["POSTGRES_PORT"] } }
 MICROPHONE_WORKER_OUT_DIR = { value = "crates/client/public/workers/microphone", condition = { env_not_set = ["MICROPHONE_WORKER_OUT_DIR"] } }
+RELEASE_BUNDLE_OUT_DIR = { value = "target/cheenhub-release/raw", condition = { env_not_set = ["RELEASE_BUNDLE_OUT_DIR"] } }
 
 [tasks.default]
 alias = "dev-stack"
@@ -71,6 +72,94 @@ args = [
     "--package",
     "cheenhub_client",
     "--release",
+]
+
+[tasks.bundle-windows-release]
+description = "Build Windows NSIS and MSI client bundles."
+dependencies = ["bundle-windows-exe-release", "bundle-windows-msi-release"]
+
+[tasks.bundle-windows-exe-release]
+description = "Build the Windows NSIS .exe client installer."
+dependencies = ["install-dioxus-cli", "check-release-version"]
+command = "dx"
+args = [
+    "bundle",
+    "--windows",
+    "--package",
+    "cheenhub_client",
+    "--release",
+    "--package-types",
+    "nsis",
+    "--out-dir",
+    "${RELEASE_BUNDLE_OUT_DIR}/windows",
+]
+
+[tasks.bundle-windows-msi-release]
+description = "Build the Windows MSI client installer."
+dependencies = ["install-dioxus-cli", "check-release-version"]
+command = "dx"
+args = [
+    "bundle",
+    "--windows",
+    "--package",
+    "cheenhub_client",
+    "--release",
+    "--package-types",
+    "msi",
+    "--out-dir",
+    "${RELEASE_BUNDLE_OUT_DIR}/windows",
+]
+
+[tasks.bundle-linux-release]
+description = "Build Linux deb and AppImage client bundles."
+dependencies = ["bundle-linux-deb-release", "bundle-linux-appimage-release"]
+
+[tasks.bundle-linux-deb-release]
+description = "Build the Linux .deb client package."
+dependencies = ["install-dioxus-cli", "check-release-version"]
+command = "dx"
+args = [
+    "bundle",
+    "--linux",
+    "--package",
+    "cheenhub_client",
+    "--release",
+    "--package-types",
+    "deb",
+    "--out-dir",
+    "${RELEASE_BUNDLE_OUT_DIR}/linux",
+]
+
+[tasks.bundle-linux-appimage-release]
+description = "Build the Linux AppImage client package."
+dependencies = ["install-dioxus-cli", "check-release-version"]
+command = "dx"
+args = [
+    "bundle",
+    "--linux",
+    "--package",
+    "cheenhub_client",
+    "--release",
+    "--package-types",
+    "appimage",
+    "--out-dir",
+    "${RELEASE_BUNDLE_OUT_DIR}/linux",
+]
+
+[tasks.bundle-android-apk-release]
+description = "Build the Android APK client package."
+dependencies = ["install-dioxus-cli", "check-release-version"]
+command = "dx"
+args = [
+    "bundle",
+    "--android",
+    "--package",
+    "cheenhub_client",
+    "--release",
+    "--package-types",
+    "apk",
+    "--out-dir",
+    "${RELEASE_BUNDLE_OUT_DIR}/android",
 ]
 
 [tasks.microphone-worker-watch]

@@ -4,5 +4,44 @@ default_platform = "web"
 asset_dir = "crates/client/assets"
 sub_package = "cheenhub_client"
 
+[bundle]
+identifier = "ru.cheenhub"
+publisher = "CheenHub"
+icon = ["crates/client/public/icons/icon-512.png"]
+short_description = "CheenHub voice chat"
+long_description = "CheenHub desktop and mobile client."
+
 [web.app]
 title = "CheenHub — голосовой чат для геймеров"
+
+[windows]
+identifier = "ru.cheenhub"
+
+[windows.webview_install_mode]
+type = "DownloadBootstrapper"
+silent = true
+
+[windows.wix]
+upgrade_code = "082cd097-8bbc-4aca-94f7-7881dda02673"
+
+[linux]
+identifier = "ru.cheenhub"
+categories = ["Network", "Chat"]
+section = "net"
+depends = [
+    "libwebkit2gtk-4.1-0",
+    "libgtk-3-0",
+    "libayatana-appindicator3-1",
+    "libasound2",
+    "libudev1",
+]
+
+[android]
+identifier = "ru.cheenhub"
+min_sdk = 24
+target_sdk = 35
+
+[android.permissions]
+"android.permission.INTERNET" = { description = "Network access for CheenHub API and realtime transport" }
+"android.permission.RECORD_AUDIO" = { description = "Voice chat microphone capture" }
+"android.permission.CAMERA" = { description = "Camera capture" }
