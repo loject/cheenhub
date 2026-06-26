@@ -7,6 +7,7 @@ FROM source AS backend-builder
 COPY .cargo ./.cargo
 COPY Cargo.toml Cargo.lock Dioxus.toml ./
 COPY build_support ./build_support
+COPY xtask ./xtask
 COPY crates ./crates
 RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cheenhub-cargo-git,target=/usr/local/cargo/git,sharing=locked \
@@ -26,6 +27,7 @@ FROM web-tools AS web-builder
 COPY .cargo ./.cargo
 COPY Cargo.toml Cargo.lock Dioxus.toml ./
 COPY build_support ./build_support
+COPY xtask ./xtask
 COPY crates ./crates
 ARG CHEENHUB_API_BASE_URL
 ARG CHEENHUB_APP_VERSION
