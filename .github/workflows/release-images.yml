@@ -204,7 +204,7 @@ jobs:
           cargo run --quiet -p xtask -- release-artifacts collect windows dist/windows/raw dist/client $env:GITHUB_REF_NAME
 
       - name: Upload Windows release assets
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: client-release-windows
           path: dist/client/*
@@ -271,7 +271,7 @@ jobs:
           cargo run --quiet -p xtask -- release-artifacts collect linux dist/linux/raw dist/client "${GITHUB_REF_NAME}"
 
       - name: Upload Linux release assets
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: client-release-linux
           path: dist/client/*
@@ -335,14 +335,60 @@ jobs:
           ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
         shell: bash
         run: |
-          if [[ -z "${ANDROID_RELEASE_KEYSTORE_BASE64}" || -z "${ANDROID_RELEASE_KEYSTORE_PASSWORD}" || -z "${ANDROID_RELEASE_KEY_ALIAS}" || -z "${ANDROID_RELEASE_KEY_PASSWORD}" ]]; then
-            echo "ANDROID_RELEASE_KEYSTORE_BASE64, ANDROID_RELEASE_KEYSTORE_PASSWORD, ANDROID_RELEASE_KEY_ALIAS, and ANDROID_RELEASE_KEY_PASSWORD secrets are required to build a release APK." >&2
+          signing_keystore_dir="${GITHUB_WORKSPACE}/target/android-signing"
+          mkdir -p "${signing_keystore_dir}"
+
+          missing_secrets=()
+          has_signing_secret=false
+          for secret_name in \
+            ANDROID_RELEASE_KEYSTORE_BASE64 \
+            ANDROID_RELEASE_KEYSTORE_PASSWORD \
+            ANDROID_RELEASE_KEY_ALIAS \
+            ANDROID_RELEASE_KEY_PASSWORD
+          do
+            if [[ -n "${!secret_name}" ]]; then
+              has_signing_secret=true
+            else
+              missing_secrets+=("${secret_name}")
+            fi
+          done
+
+          if [[ "${has_signing_secret}" == "true" && "${#missing_secrets[@]}" -gt 0 ]]; then
+            echo "Android release signing secrets are partially configured. Missing: ${missing_secrets[*]}." >&2
             exit 1
           fi
 
-          mkdir -p target/android-signing
-          printf '%s' "${ANDROID_RELEASE_KEYSTORE_BASE64}" | base64 --decode > target/android-signing/release.jks
-          chmod 600 target/android-signing/release.jks
+          if [[ "${has_signing_secret}" == "true" ]]; then
+            signing_keystore_path="${signing_keystore_dir}/release.jks"
+            signing_keystore_password="${ANDROID_RELEASE_KEYSTORE_PASSWORD}"
+            signing_key_alias="${ANDROID_RELEASE_KEY_ALIAS}"
+            signing_key_password="${ANDROID_RELEASE_KEY_PASSWORD}"
+            printf '%s' "${ANDROID_RELEASE_KEYSTORE_BASE64}" | base64 --decode > "${signing_keystore_path}"
+          else
+            echo "::warning::Android release signing secrets are not configured; generating a temporary CI keystore. APK updates will require reinstalling unless stable ANDROID_RELEASE_* secrets are added."
+            signing_keystore_path="${signing_keystore_dir}/ci-release.jks"
+            signing_keystore_password="cheenhub-ci-release-store"
+            signing_key_alias="cheenhub-ci-release"
+            signing_key_password="cheenhub-ci-release-key"
+            keytool -genkeypair \
+              -noprompt \
+              -keystore "${signing_keystore_path}" \
+              -storepass "${signing_keystore_password}" \
+              -keypass "${signing_key_password}" \
+              -alias "${signing_key_alias}" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storetype JKS \
+              -dname "CN=CheenHub CI, OU=CI, O=CheenHub, L=Novosibirsk, ST=Novosibirsk, C=RU"
+          fi
+
+          chmod 600 "${signing_keystore_path}"
+
+          export ANDROID_SIGNING_KEYSTORE_PATH="${signing_keystore_path}"
+          export ANDROID_SIGNING_KEYSTORE_PASSWORD="${signing_keystore_password}"
+          export ANDROID_SIGNING_KEY_ALIAS="${signing_key_alias}"
+          export ANDROID_SIGNING_KEY_PASSWORD="${signing_key_password}"
 
           python3 - <<'PY'
           import json
@@ -350,10 +396,10 @@ jobs:
 
           with open("Dioxus.toml", "a", encoding="utf-8") as config:
               config.write("\n[android.signing]\n")
-              config.write("jks_file = \"target/android-signing/release.jks\"\n")
-              config.write(f"jks_password = {json.dumps(os.environ['ANDROID_RELEASE_KEYSTORE_PASSWORD'])}\n")
-              config.write(f"key_alias = {json.dumps(os.environ['ANDROID_RELEASE_KEY_ALIAS'])}\n")
-              config.write(f"key_password = {json.dumps(os.environ['ANDROID_RELEASE_KEY_PASSWORD'])}\n")
+              config.write(f"jks_file = {json.dumps(os.environ['ANDROID_SIGNING_KEYSTORE_PATH'])}\n")
+              config.write(f"jks_password = {json.dumps(os.environ['ANDROID_SIGNING_KEYSTORE_PASSWORD'])}\n")
+              config.write(f"key_alias = {json.dumps(os.environ['ANDROID_SIGNING_KEY_ALIAS'])}\n")
+              config.write(f"key_password = {json.dumps(os.environ['ANDROID_SIGNING_KEY_PASSWORD'])}\n")
           PY
 
       - name: Validate release version
@@ -371,7 +417,7 @@ jobs:
           cargo run --quiet -p xtask -- release-artifacts collect android dist/android/raw dist/client "${GITHUB_REF_NAME}"
 
       - name: Upload Android release asset
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: client-release-android
           path: dist/client/*
