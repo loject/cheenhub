@@ -180,23 +180,38 @@ jobs:
           rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal
           rustup default $env:RUST_TOOLCHAIN
 
+      - name: Cache Cargo downloads and Dioxus CLI
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/dx
+            ~/.cargo/bin/dx.exe
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-dioxus-${{ env.DIOXUS_CLI_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-dioxus-${{ env.DIOXUS_CLI_VERSION }}-
+            ${{ runner.os }}-cargo-dioxus-
+
       - name: Install Dioxus CLI
         shell: pwsh
-        run: cargo install dioxus-cli --version $env:DIOXUS_CLI_VERSION --locked
+        run: |
+          $dx = Get-Command dx -ErrorAction SilentlyContinue
+          $expected = [regex]::Escape("dioxus $env:DIOXUS_CLI_VERSION")
+          if ($dx -and ((dx --version) -match $expected)) {
+            dx --version
+          } else {
+            cargo install dioxus-cli --version $env:DIOXUS_CLI_VERSION --locked
+          }
 
       - name: Validate release version
         shell: pwsh
         run: cargo run --quiet -p xtask -- release-version check
 
-      - name: Build NSIS installer
+      - name: Build Windows installers
         shell: pwsh
         run: |
-          dx bundle --windows --package cheenhub_client --release --package-types nsis --out-dir dist/windows/raw
-
-      - name: Build MSI installer
-        shell: pwsh
-        run: |
-          dx bundle --windows --package cheenhub_client --release --package-types msi --out-dir dist/windows/raw
+          dx bundle --windows --package cheenhub_client --release --package-types nsis --package-types msi --out-dir dist/windows/raw
 
       - name: Normalize Windows release assets
         shell: pwsh
@@ -247,23 +262,36 @@ jobs:
           rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal
           rustup default "${RUST_TOOLCHAIN}"
 
+      - name: Cache Cargo downloads and Dioxus CLI
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/dx
+            ~/.cargo/bin/dx.exe
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-dioxus-${{ env.DIOXUS_CLI_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-dioxus-${{ env.DIOXUS_CLI_VERSION }}-
+            ${{ runner.os }}-cargo-dioxus-
+
       - name: Install Dioxus CLI
         shell: bash
-        run: cargo install dioxus-cli --version "${DIOXUS_CLI_VERSION}" --locked
+        run: |
+          if command -v dx >/dev/null 2>&1 && dx --version | grep -F "dioxus ${DIOXUS_CLI_VERSION}" >/dev/null; then
+            dx --version
+          else
+            cargo install dioxus-cli --version "${DIOXUS_CLI_VERSION}" --locked
+          fi
 
       - name: Validate release version
         shell: bash
         run: cargo run --quiet -p xtask -- release-version check
 
-      - name: Build deb package
+      - name: Build Linux packages
         shell: bash
         run: |
-          dx bundle --linux --package cheenhub_client --release --package-types deb --out-dir dist/linux/raw
-
-      - name: Build AppImage package
-        shell: bash
-        run: |
-          dx bundle --linux --package cheenhub_client --release --package-types appimage --out-dir dist/linux/raw
+          dx bundle --linux --package cheenhub_client --release --package-types deb --package-types appimage --out-dir dist/linux/raw
 
       - name: Normalize Linux release assets
         shell: bash
@@ -323,9 +351,27 @@ jobs:
             i686-linux-android \
             x86_64-linux-android
 
+      - name: Cache Cargo downloads and Dioxus CLI
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/dx
+            ~/.cargo/bin/dx.exe
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-dioxus-${{ env.DIOXUS_CLI_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-dioxus-${{ env.DIOXUS_CLI_VERSION }}-
+            ${{ runner.os }}-cargo-dioxus-
+
       - name: Install Dioxus CLI
         shell: bash
-        run: cargo install dioxus-cli --version "${DIOXUS_CLI_VERSION}" --locked
+        run: |
+          if command -v dx >/dev/null 2>&1 && dx --version | grep -F "dioxus ${DIOXUS_CLI_VERSION}" >/dev/null; then
+            dx --version
+          else
+            cargo install dioxus-cli --version "${DIOXUS_CLI_VERSION}" --locked
+          fi
 
       - name: Configure Android release signing
         env:
@@ -444,7 +490,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download client release assets
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           pattern: client-release-*
           path: dist
