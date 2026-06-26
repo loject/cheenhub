@@ -124,6 +124,7 @@ fn run_release_version(args: Vec<String>) -> XtaskResult<()> {
         }
         "tag" => {
             workspace.check_release_version()?;
+            run_release_build()?;
             create_git_tag(&expected_tag)?;
             println!("Created git tag {expected_tag}.");
         }
@@ -340,8 +341,27 @@ fn create_git_tag(tag: &str) -> XtaskResult<()> {
     Ok(())
 }
 
+fn run_release_build() -> XtaskResult<()> {
+    println!("Running cargo build before creating the git tag.");
+    checked_status(Command::new("cargo").arg("build"))?;
+    println!("cargo build finished.");
+    Ok(())
+}
+
 fn git_output<const N: usize>(args: [&str; N]) -> XtaskResult<String> {
     checked_command(Command::new("git").args(args))
+}
+
+fn checked_status(command: &mut Command) -> XtaskResult<()> {
+    let program = command.get_program().to_string_lossy().into_owned();
+    let status = command
+        .status()
+        .map_err(|error| format!("failed to run {program}: {error}"))?;
+    if !status.success() {
+        return Err(format!("{program} failed with status {status}."));
+    }
+
+    Ok(())
 }
 
 fn checked_command(command: &mut Command) -> XtaskResult<String> {
