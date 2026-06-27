@@ -15,7 +15,9 @@ use crate::features::realtime::RealtimeHandle;
 pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: String) -> Element {
     let realtime_handle = use_context::<RealtimeHandle>();
     let mut members = use_signal(|| None::<Vec<ServerMemberRow>>);
+    let mut member_load_processed = use_signal(|| false);
     let mut custom_roles = use_signal(Vec::<CustomRole>::new);
+    let mut roles_load_processed = use_signal(|| false);
     let mut load_error = use_signal(String::new);
     let mut refresh_requested = use_signal(|| false);
     let mut pending_kick = use_signal(|| None::<KickMemberTarget>);
@@ -44,14 +46,16 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
 
     let member_load_result = member_load.read().clone();
     use_effect(move || {
-        if members().is_some() {
+        if members().is_some() || member_load_processed() {
             return;
         }
         let Some(result) = member_load.read().clone() else {
             return;
         };
+        member_load_processed.set(true);
         match result {
             Ok(response) => {
+                let response_server_id = response.server_id.clone();
                 members.set(Some(
                     response
                         .members
@@ -60,38 +64,47 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
                         .collect(),
                 ));
                 if refresh_requested() {
-                    info!(server_id = %response.server_id, "refreshed server members in settings ui");
+                    info!(server_id = %response_server_id, "refreshed server members in settings ui");
+                    refresh_requested.set(false);
                 }
-                refresh_requested.set(false);
-                load_error.set(String::new());
+                if !load_error.peek().is_empty() {
+                    load_error.set(String::new());
+                }
             }
             Err(error) => {
                 warn!(%error, "failed to load server members in settings ui");
-                load_error.set(error.to_string());
-                refresh_requested.set(false);
+                let error_message = error.to_string();
+                if load_error.peek().as_str() != error_message.as_str() {
+                    load_error.set(error_message);
+                }
+                if refresh_requested() {
+                    refresh_requested.set(false);
+                }
             }
         }
     });
 
     use_effect(move || {
-        if !custom_roles().is_empty() {
+        if roles_load_processed() {
             return;
         }
         let Some(Ok(response)) = roles_load.read().clone() else {
             return;
         };
-        custom_roles.set(
-            response
-                .roles
-                .into_iter()
-                .filter(|role| role.kind == ServerRoleKind::Custom)
-                .map(|role| CustomRole {
-                    id: role.role_id,
-                    name: role.name,
-                    color: role.color,
-                })
-                .collect(),
-        );
+        roles_load_processed.set(true);
+        let next_roles = response
+            .roles
+            .into_iter()
+            .filter(|role| role.kind == ServerRoleKind::Custom)
+            .map(|role| CustomRole {
+                id: role.role_id,
+                name: role.name,
+                color: role.color,
+            })
+            .collect::<Vec<_>>();
+        if custom_roles.peek().as_slice() != next_roles.as_slice() {
+            custom_roles.set(next_roles);
+        }
     });
 
     let all_members = members().unwrap_or_default();
@@ -143,6 +156,8 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
                             }
                             load_error.set(String::new());
                             refresh_requested.set(true);
+                            member_load_processed.set(false);
+                            roles_load_processed.set(false);
                             members.set(None);
                             custom_roles.set(Vec::new());
                             member_load.clear();
