@@ -40,14 +40,24 @@ app = [
     "dep:web-sys",
 ]
 web = ["app", "dioxus/web"]
-desktop = ["app", "dep:tokio", "dep:tokio-tungstenite", "dioxus/desktop"]
+desktop = [
+    "app",
+    "dep:tokio",
+    "dep:tokio-tungstenite",
+    "dioxus/desktop",
+]
 mobile = ["app", "dep:tokio", "dep:tokio-tungstenite", "dioxus/mobile"]
+windows = ["native-audio"]
+linux = ["native-audio"]
+macos = ["native-audio"]
+native-audio = ["dep:cpal", "dep:opus"]
 microphone_worker = []
 
 [dependencies]
 base64 = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 cheenhub_contracts = { path = "../contracts", optional = true }
+cpal = { workspace = true, optional = true }
 dioxus = { workspace = true, features = [
     "devtools",
     "launch",
@@ -61,6 +71,7 @@ futures-channel = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 gloo-timers = { workspace = true, optional = true }
 js-sys = { workspace = true, optional = true }
+opus = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }

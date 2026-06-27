@@ -23,6 +23,7 @@ mod file_lines {
 
 fn main() {
     file_lines::check_workspace_file_lines();
+    validate_platform_features();
 
     println!("cargo:rerun-if-changed=../../.env");
     println!("cargo:rerun-if-changed=../../{DEFAULT_DEV_CERT_PATH}");
@@ -52,6 +53,24 @@ fn main() {
     }
 
     forward_env("CHEENHUB_JWT_KEY_ID");
+}
+
+fn validate_platform_features() {
+    let enabled_features = ["web", "windows", "linux", "macos"]
+        .into_iter()
+        .filter(|feature| cargo_feature_enabled(feature))
+        .collect::<Vec<_>>();
+    if enabled_features.len() > 1 {
+        panic!(
+            "Выберите ровно одну platform feature для клиента: web, windows, linux или macos. Сейчас включены: {}.",
+            enabled_features.join(", ")
+        );
+    }
+}
+
+fn cargo_feature_enabled(feature: &str) -> bool {
+    let env_key = format!("CARGO_FEATURE_{}", feature.replace('-', "_").to_uppercase());
+    env::var_os(env_key).is_some()
 }
 
 fn resolve_app_version() -> String {

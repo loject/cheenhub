@@ -1,6 +1,5 @@
 //! Native-реализация WebSocket fallback через tokio-tungstenite.
 
-use bytes::Bytes;
 use dioxus::prelude::{debug, info, warn};
 use futures_channel::mpsc;
 use futures_util::{SinkExt, StreamExt};
@@ -96,7 +95,7 @@ pub(in crate::features::realtime) fn spawn_reader(
                     }
                 }
                 Ok(Message::Binary(bytes)) => {
-                    dispatch_datagram(Bytes::from(bytes), &datagram_listeners);
+                    dispatch_datagram(bytes, &datagram_listeners);
                 }
                 Ok(Message::Close(_)) => {
                     debug!(%url, %generation, "WebSocket realtime fallback closed by peer");

@@ -75,6 +75,12 @@ args = [
 
 [tasks.dioxus-desktop]
 description = "Run the Dioxus desktop dev app."
+linux_alias = "dioxus-desktop-linux"
+mac_alias = "dioxus-desktop-mac"
+windows_alias = "dioxus-desktop-windows"
+
+[tasks.dioxus-desktop-linux]
+description = "Run the Dioxus desktop dev app on Linux."
 dependencies = ["install-dioxus-cli"]
 command = "dx"
 args = [
@@ -84,6 +90,38 @@ args = [
     "cheenhub_client",
     "--bin",
     "cheen_hub",
+    "--features",
+    "linux",
+]
+
+[tasks.dioxus-desktop-mac]
+description = "Run the Dioxus desktop dev app on macOS."
+dependencies = ["install-dioxus-cli"]
+command = "dx"
+args = [
+    "serve",
+    "--desktop",
+    "--package",
+    "cheenhub_client",
+    "--bin",
+    "cheen_hub",
+    "--features",
+    "macos",
+]
+
+[tasks.dioxus-desktop-windows]
+description = "Run the Dioxus desktop dev app on Windows."
+dependencies = ["install-dioxus-cli"]
+command = "dx"
+args = [
+    "serve",
+    "--desktop",
+    "--package",
+    "cheenhub_client",
+    "--bin",
+    "cheen_hub",
+    "--features",
+    "windows",
 ]
 
 [tasks.build-web]
