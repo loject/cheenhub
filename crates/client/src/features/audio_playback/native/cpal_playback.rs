@@ -1,19 +1,29 @@
-//! Native-заглушка воспроизведения входящего аудио.
-#![cfg_attr(
-    any(target_arch = "wasm32", feature = "native-audio"),
-    allow(dead_code, unused_imports)
-)]
+//! Native-провайдер воспроизведения аудио через `cpal`.
 
-use std::cell::Cell;
+mod engine;
+#[path = "../jitter_buffer.rs"]
+mod jitter_buffer;
+mod jitter_runtime;
+mod mixer;
+mod output_samples;
+
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
+use opus::Decoder;
+use web_time::{SystemTime, UNIX_EPOCH};
 
-use super::backend::{PlaybackCodec, VoiceFrame};
-use super::output_devices::AudioOutputDevice;
-use super::storage;
+use self::engine::{NativePlaybackEngine, create_engine};
+use self::jitter_buffer::JitterBuffer;
+use self::mixer::{clear_mixer, remove_sender, update_output_gain, update_sender_gain};
+use super::super::output_devices::AudioOutputDevice;
+use super::super::storage;
 
-/// Контекстный хэндл воспроизведения аудио для native-клиента.
+const AUDIO_SAMPLE_RATE_HZ: u32 = 48_000;
+
+/// Контекстный хэндл native-аудиовоспроизведения.
 #[derive(Clone)]
 pub(crate) struct AudioPlaybackHandle {
     muted: Signal<bool>,
@@ -21,7 +31,21 @@ pub(crate) struct AudioPlaybackHandle {
     selected_output_device_label: Signal<Option<String>>,
     output_volume_percent: Signal<u32>,
     jitter_buffer_ms: Signal<u32>,
-    warned_unsupported: Rc<Cell<bool>>,
+    inner: Rc<RefCell<AudioPlaybackInner>>,
+}
+
+struct AudioPlaybackInner {
+    muted: bool,
+    engine: Option<NativePlaybackEngine>,
+    decoders: HashMap<String, Decoder>,
+    jitter_buffers: HashMap<String, JitterBuffer>,
+    jitter_drainers: HashMap<String, u64>,
+    next_jitter_drainer_generation: u64,
+    jitter_buffer_ms: u32,
+    jitter_warning_at_ms: HashMap<String, u64>,
+    decoder_warning_at_ms: HashMap<String, u64>,
+    user_volumes: HashMap<String, f32>,
+    output_gain: f32,
 }
 
 impl AudioPlaybackHandle {
@@ -32,22 +56,36 @@ impl AudioPlaybackHandle {
 
     /// Обновляет состояние отключения входящего воспроизведения.
     pub(crate) fn set_muted(&self, muted: bool) {
-        if *self.muted.peek() == muted {
-            return;
-        }
-
-        info!(muted, "native audio playback mute state changed");
+        let changed_to_muted = {
+            let mut inner = self.inner.borrow_mut();
+            if inner.muted == muted {
+                return;
+            }
+            inner.muted = muted;
+            muted
+        };
         let mut muted_signal = self.muted;
         muted_signal.set(muted);
+
+        info!(muted, "native audio playback mute state changed");
+        if changed_to_muted {
+            self.stop_all();
+        } else {
+            self.resume();
+        }
     }
 
-    /// Запоминает громкость участника для UI без native playback backend.
+    /// Устанавливает громкость воспроизведения для каждого пользователя (0-200, где 100 = 100%).
     pub(crate) fn set_user_volume(&self, sender_user_id: &str, volume_percent: u32) {
-        debug!(
-            %sender_user_id,
-            volume = volume_percent.min(200),
-            "stored native participant audio volume without playback backend"
-        );
+        let gain = gain_from_percent(volume_percent);
+        let mixer = {
+            let mut inner = self.inner.borrow_mut();
+            inner.user_volumes.insert(sender_user_id.to_owned(), gain);
+            inner.engine.as_ref().map(|engine| engine.mixer.clone())
+        };
+        if let Some(mixer) = mixer {
+            update_sender_gain(&mixer, sender_user_id, gain);
+        }
     }
 
     /// Возвращает текущий процент общей громкости вывода.
@@ -69,6 +107,16 @@ impl AudioPlaybackHandle {
         storage::save_output_volume_percent(volume_percent);
         let mut volume_signal = self.output_volume_percent;
         volume_signal.set(volume_percent);
+
+        let output_gain = gain_from_percent(volume_percent);
+        let mixer = {
+            let mut inner = self.inner.borrow_mut();
+            inner.output_gain = output_gain;
+            inner.engine.as_ref().map(|engine| engine.mixer.clone())
+        };
+        if let Some(mixer) = mixer {
+            update_output_gain(&mixer, output_gain);
+        }
     }
 
     /// Возвращает текущую задержку jitter buffer для входящего голоса.
@@ -87,9 +135,10 @@ impl AudioPlaybackHandle {
         storage::save_jitter_buffer_ms(buffer_ms);
         let mut jitter_buffer_signal = self.jitter_buffer_ms;
         jitter_buffer_signal.set(buffer_ms);
+        self.inner.borrow_mut().jitter_buffer_ms = buffer_ms;
     }
 
-    /// Сохраняет предпочитаемое устройство вывода.
+    /// Сохраняет предпочитаемое устройство вывода и пересоздает native stream.
     pub(crate) fn set_output_device(&self, device: &AudioOutputDevice) {
         self.set_output_device_preference(
             Some(device.device_id.clone()),
@@ -127,26 +176,45 @@ impl AudioPlaybackHandle {
 
     /// Останавливает состояние воспроизведения одного отправителя.
     #[allow(dead_code)]
-    pub(crate) fn stop_sender(&self, _sender_user_id: &str) {}
+    pub(crate) fn stop_sender(&self, sender_user_id: &str) {
+        let mixer = {
+            let mut inner = self.inner.borrow_mut();
+            inner.decoders.remove(sender_user_id);
+            inner.jitter_buffers.remove(sender_user_id);
+            inner.jitter_warning_at_ms.remove(sender_user_id);
+            inner.decoder_warning_at_ms.remove(sender_user_id);
+            inner.engine.as_ref().map(|engine| engine.mixer.clone())
+        };
+        if let Some(mixer) = mixer {
+            remove_sender(&mixer, sender_user_id);
+        }
+    }
 
     /// Останавливает все активное воспроизведение.
-    pub(crate) fn stop_all(&self) {}
+    pub(crate) fn stop_all(&self) {
+        let mixer = {
+            let mut inner = self.inner.borrow_mut();
+            inner.decoders.clear();
+            inner.jitter_buffers.clear();
+            inner.jitter_drainers.clear();
+            inner.jitter_warning_at_ms.clear();
+            inner.decoder_warning_at_ms.clear();
+            inner.engine.as_ref().map(|engine| engine.mixer.clone())
+        };
+        if let Some(mixer) = mixer {
+            clear_mixer(&mixer);
+        }
+        debug!("native audio playback state cleared");
+    }
 
-    /// На native пока только отмечает отсутствие backend'а воспроизведения.
+    /// Запускает native output stream, если воспроизведение разрешено.
     pub(crate) fn resume(&self) {
         if self.is_muted() {
             return;
         }
-        self.warn_unsupported_once(None, None);
-    }
-
-    /// Принимает входящий voice frame без декодирования на native.
-    pub(crate) fn play_voice_frame(&self, frame: VoiceFrame) {
-        if frame.codec != PlaybackCodec::Opus || frame.bytes.is_empty() || self.is_muted() {
-            return;
+        if let Err(error) = self.ensure_engine() {
+            warn!(%error, "failed to resume native audio playback");
         }
-
-        self.warn_unsupported_once(Some(&frame.sender_user_id), Some(frame.sequence));
     }
 
     fn set_output_device_preference(&self, device_id: Option<String>, label: Option<String>) {
@@ -164,18 +232,29 @@ impl AudioPlaybackHandle {
         let mut label_signal = self.selected_output_device_label;
         id_signal.set(device_id);
         label_signal.set(label);
+
+        self.inner.borrow_mut().engine = None;
+        if !self.is_muted()
+            && let Err(error) = self.ensure_engine()
+        {
+            warn!(%error, "failed to switch native audio output device");
+        }
     }
 
-    fn warn_unsupported_once(&self, sender_user_id: Option<&str>, sequence: Option<u64>) {
-        if self.warned_unsupported.replace(true) {
-            return;
+    fn ensure_engine(&self) -> Result<(), String> {
+        let selected_device_id = self.selected_output_device_id.peek().clone();
+        let mut inner = self.inner.borrow_mut();
+        if inner
+            .engine
+            .as_ref()
+            .is_some_and(|engine| engine.device_id().as_deref() == selected_device_id.as_deref())
+        {
+            return Ok(());
         }
 
-        warn!(
-            sender_user_id = sender_user_id.unwrap_or(""),
-            sequence = sequence.unwrap_or_default(),
-            "native audio playback backend is unavailable; inbound voice playback is disabled"
-        );
+        let engine = create_engine(selected_device_id, inner.output_gain, AUDIO_SAMPLE_RATE_HZ)?;
+        inner.engine = Some(engine);
+        Ok(())
     }
 }
 
@@ -198,19 +277,47 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
         use_signal(move || stored_output_device.and_then(|device| device.label));
     let output_volume_percent = use_signal(move || output_volume_value);
     let jitter_buffer_ms = use_signal(move || jitter_buffer_ms_value);
+    let output_gain = gain_from_percent(output_volume_value);
     let handle = AudioPlaybackHandle {
         muted,
         selected_output_device_id,
         selected_output_device_label,
         output_volume_percent,
         jitter_buffer_ms,
-        warned_unsupported: Rc::new(Cell::new(false)),
+        inner: Rc::new(RefCell::new(AudioPlaybackInner {
+            muted: false,
+            engine: None,
+            decoders: HashMap::new(),
+            jitter_buffers: HashMap::new(),
+            jitter_drainers: HashMap::new(),
+            next_jitter_drainer_generation: 0,
+            jitter_buffer_ms: jitter_buffer_ms_value,
+            jitter_warning_at_ms: HashMap::new(),
+            decoder_warning_at_ms: HashMap::new(),
+            user_volumes: HashMap::new(),
+            output_gain,
+        })),
     };
     use_context_provider(move || handle.clone());
 
     rsx! {
         {children}
     }
+}
+
+fn should_emit_sender_warning(
+    warnings: &mut HashMap<String, u64>,
+    sender_user_id: &str,
+    now_ms: u64,
+    interval_ms: u64,
+) -> bool {
+    let last_warning_ms = warnings.get(sender_user_id).copied().unwrap_or_default();
+    if last_warning_ms != 0 && now_ms.saturating_sub(last_warning_ms) < interval_ms {
+        return false;
+    }
+
+    warnings.insert(sender_user_id.to_owned(), now_ms);
+    true
 }
 
 fn persist_output_device(device_id: Option<&str>, label: Option<&str>) {
@@ -227,4 +334,15 @@ fn persist_output_device(device_id: Option<&str>, label: Option<&str>) {
             info!(has_device = false, "cleared audio output device preference");
         }
     }
+}
+
+fn gain_from_percent(volume_percent: u32) -> f32 {
+    volume_percent.min(200) as f32 / 100.0
+}
+
+fn playback_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
 }
