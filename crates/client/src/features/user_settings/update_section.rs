@@ -3,7 +3,8 @@
 use dioxus::prelude::*;
 
 use crate::features::application_update::{
-    ApplicationUpdateHandle, AvailableUpdate, UpdateUiStatus,
+    ApplicationUpdateHandle, AvailableUpdate, UpdateDownloadProgress, UpdateDownloadStatus,
+    UpdateUiStatus,
 };
 use crate::features::toast::ToastHandle;
 
@@ -13,6 +14,7 @@ pub(crate) fn UpdateSettingsSection() -> Element {
     let update = use_context::<ApplicationUpdateHandle>();
     let toast = use_context::<ToastHandle>();
     let status = update.ui_status();
+    let download_status = update.download_status();
     let is_checking = matches!(status, UpdateUiStatus::Checking);
     let panel_class = status_panel_class(&status);
 
@@ -56,10 +58,10 @@ pub(crate) fn UpdateSettingsSection() -> Element {
                         }
                     },
                     UpdateUiStatus::Available { update: available_update } => rsx! {
-                        {available_update_panel(available_update, toast)}
+                        {available_update_panel(available_update, update, download_status, toast)}
                     },
                     UpdateUiStatus::Deferred { update: available_update, until_epoch_seconds } => rsx! {
-                        {deferred_update_panel(available_update, until_epoch_seconds, update, toast)}
+                        {deferred_update_panel(available_update, until_epoch_seconds, update, download_status, toast)}
                     },
                     UpdateUiStatus::Failed { ref message } => rsx! {
                         p { class: "text-[13px] font-medium text-red-100", "Не удалось проверить обновления" }
@@ -71,10 +73,13 @@ pub(crate) fn UpdateSettingsSection() -> Element {
     }
 }
 
-fn available_update_panel(update: AvailableUpdate, toast: ToastHandle) -> Element {
+fn available_update_panel(
+    update: AvailableUpdate,
+    handle: ApplicationUpdateHandle,
+    download_status: UpdateDownloadStatus,
+    toast: ToastHandle,
+) -> Element {
     let version = update.version.clone();
-    let install_version = update.version.clone();
-    let install_release_url = update.release_url.clone();
 
     rsx! {
         div {
@@ -94,20 +99,9 @@ fn available_update_panel(update: AvailableUpdate, toast: ToastHandle) -> Elemen
                     class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-900",
                     "Открыть релиз"
                 }
-                button {
-                    r#type: "button",
-                    class: "flex h-9 items-center justify-center rounded-xl border border-blue-400/25 bg-blue-500/10 px-3 text-[12px] font-semibold text-blue-100 transition hover:border-blue-400/40 hover:bg-blue-500/15",
-                    onclick: move |_| {
-                        info!(
-                            update_version = %install_version,
-                            release_url = %install_release_url,
-                            "application update install requested from settings while installer is not implemented"
-                        );
-                        toast.info("Скачивание и установка будут подключены отдельным шагом.");
-                    },
-                    "Скачать и установить"
-                }
+                {download_update_button(&update, handle, &download_status, toast)}
             }
+            {download_status_panel(&download_status)}
         }
     }
 }
@@ -116,11 +110,10 @@ fn deferred_update_panel(
     update: AvailableUpdate,
     until_epoch_seconds: u64,
     handle: ApplicationUpdateHandle,
+    download_status: UpdateDownloadStatus,
     toast: ToastHandle,
 ) -> Element {
     let version = update.version.clone();
-    let install_version = update.version.clone();
-    let install_release_url = update.release_url.clone();
 
     rsx! {
         div {
@@ -137,22 +130,153 @@ fn deferred_update_panel(
                     onclick: move |_| handle.show_deferred_update_now(),
                     "Показать сейчас"
                 }
-                button {
-                    r#type: "button",
-                    class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-900",
-                    onclick: move |_| {
-                        info!(
-                            update_version = %install_version,
-                            release_url = %install_release_url,
-                            "application update install requested from settings while installer is not implemented"
-                        );
-                        toast.info("Скачивание и установка будут подключены отдельным шагом.");
-                    },
-                    "Скачать и установить"
+                {download_update_button(&update, handle, &download_status, toast)}
+            }
+            {download_status_panel(&download_status)}
+        }
+    }
+}
+
+fn download_update_button(
+    update: &AvailableUpdate,
+    handle: ApplicationUpdateHandle,
+    download_status: &UpdateDownloadStatus,
+    toast: ToastHandle,
+) -> Element {
+    let version = update.version.clone();
+    let has_asset = update.download_asset.is_some();
+    let is_downloading = matches!(download_status, UpdateDownloadStatus::Downloading { .. });
+    let is_downloaded = matches!(
+        download_status,
+        UpdateDownloadStatus::Downloaded {
+            version: downloaded_version,
+            ..
+        } if downloaded_version == &version
+    );
+    let disabled = !has_asset || is_downloading;
+
+    rsx! {
+        button {
+            r#type: "button",
+            disabled,
+            class: download_button_class(disabled),
+            onclick: move |_| {
+                info!(
+                    update_version = %version,
+                    downloaded = is_downloaded,
+                    "application update primary action requested from settings"
+                );
+                if is_downloaded {
+                    handle.install_downloaded_update();
+                    toast.info("Запускаем установщик обновления.");
+                } else {
+                    handle.download_update();
+                    toast.info("Начинаем скачивание обновления.");
                 }
+            },
+            if is_downloading {
+                "Скачиваем..."
+            } else if is_downloaded {
+                "Установить"
+            } else if has_asset {
+                "Скачать обновление"
+            } else {
+                "Нет установщика"
             }
         }
     }
+}
+
+fn download_status_panel(status: &UpdateDownloadStatus) -> Element {
+    match status {
+        UpdateDownloadStatus::Idle => rsx! {},
+        UpdateDownloadStatus::Downloading { version, progress } => rsx! {
+            {download_progress_panel(version, *progress)}
+        },
+        UpdateDownloadStatus::Downloaded { version, file } => rsx! {
+            div { class: "mt-3 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2",
+                p { class: "text-[12px] font-semibold text-emerald-100", "Обновление {version} скачано" }
+                p { class: "mt-1 break-words text-[12px] leading-5 text-emerald-200/75",
+                    "Файл: {file.file_name}. Путь: {file.path}"
+                }
+            }
+        },
+        UpdateDownloadStatus::Failed { message, .. } => rsx! {
+            div { class: "mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2",
+                p { class: "text-[12px] font-semibold text-red-100", "Не удалось скачать обновление" }
+                p { class: "mt-1 text-[12px] leading-5 text-red-200/80", "{message}" }
+            }
+        },
+    }
+}
+
+fn download_progress_panel(version: &str, progress: UpdateDownloadProgress) -> Element {
+    let percentage = progress_percentage(progress);
+    let progress_width = percentage.unwrap_or(100.0);
+    let progress_style = format!("width: {progress_width:.1}%;");
+    let downloaded = format_bytes(progress.downloaded_bytes);
+    let total = progress
+        .total_bytes
+        .map(format_bytes)
+        .unwrap_or_else(|| "неизвестно".to_owned());
+    let speed = format_speed(progress.bytes_per_second);
+
+    rsx! {
+        div { class: "mt-3 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-2",
+            div { class: "flex items-center justify-between gap-3 text-[12px] font-semibold text-blue-100",
+                span { "Скачиваем обновление {version}" }
+                span {
+                    if let Some(percentage) = percentage {
+                        "{percentage:.0}%"
+                    } else {
+                        "{downloaded}"
+                    }
+                }
+            }
+            div { class: "mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-900",
+                div { class: "h-full rounded-full bg-blue-400", style: "{progress_style}" }
+            }
+            p { class: "mt-2 text-[12px] leading-5 text-blue-100/75",
+                "{downloaded} из {total} · {speed}"
+            }
+        }
+    }
+}
+
+fn progress_percentage(progress: UpdateDownloadProgress) -> Option<f64> {
+    let total_bytes = progress.total_bytes?;
+    if total_bytes == 0 {
+        return None;
+    }
+
+    Some(((progress.downloaded_bytes as f64 / total_bytes as f64) * 100.0).clamp(0.0, 100.0))
+}
+
+fn format_speed(bytes_per_second: u64) -> String {
+    if bytes_per_second == 0 {
+        return "скорость считается".to_owned();
+    }
+
+    format!("{}/с", format_bytes(bytes_per_second))
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
+    const GIB: f64 = MIB * 1024.0;
+
+    let bytes = bytes as f64;
+    if bytes >= GIB {
+        return format!("{:.1} ГБ", bytes / GIB);
+    }
+    if bytes >= MIB {
+        return format!("{:.1} МБ", bytes / MIB);
+    }
+    if bytes >= KIB {
+        return format!("{:.1} КБ", bytes / KIB);
+    }
+
+    format!("{bytes:.0} Б")
 }
 
 fn check_button_class(is_checking: bool) -> &'static str {
@@ -160,6 +284,14 @@ fn check_button_class(is_checking: bool) -> &'static str {
         "flex h-10 w-full shrink-0 cursor-wait items-center justify-center rounded-xl border border-blue-400/25 bg-blue-500/10 px-3 text-[12px] font-semibold text-blue-100 disabled:opacity-70 sm:h-9 sm:w-auto"
     } else {
         "flex h-10 w-full shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-900 sm:h-9 sm:w-auto"
+    }
+}
+
+fn download_button_class(disabled: bool) -> &'static str {
+    if disabled {
+        "flex h-9 cursor-not-allowed items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 text-[12px] font-semibold text-zinc-500"
+    } else {
+        "flex h-9 items-center justify-center rounded-xl border border-blue-400/25 bg-blue-500/10 px-3 text-[12px] font-semibold text-blue-100 transition hover:border-blue-400/40 hover:bg-blue-500/15"
     }
 }
 

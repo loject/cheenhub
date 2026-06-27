@@ -3932,6 +3932,10 @@ video {
   color: rgb(167 243 208 / 0.75);
 }
 
+.text-blue-100\/80 {
+  color: rgb(219 234 254 / 0.8);
+}
+
 .accent-blue-500 {
   accent-color: #3b82f6;
 }

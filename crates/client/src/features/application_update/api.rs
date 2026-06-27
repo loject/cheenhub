@@ -4,11 +4,11 @@ use std::cmp::Ordering;
 
 use serde::Deserialize;
 
-use super::handle::AvailableUpdate;
+use super::download;
+use super::types::{AvailableUpdate, UpdateDownloadAsset};
 
 const GITHUB_LATEST_RELEASE_URL: &str =
     "https://api.github.com/repos/loject/cheenhub/releases/latest";
-const USER_AGENT: &str = concat!("CheenHub/", env!("CARGO_PKG_VERSION"));
 
 /// Результат проверки последнего GitHub Release.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,13 +26,21 @@ struct GithubRelease {
     html_url: String,
     draft: bool,
     prerelease: bool,
+    assets: Vec<GithubReleaseAsset>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct GithubReleaseAsset {
+    name: String,
+    browser_download_url: String,
+    size: u64,
 }
 
 /// Проверяет последний стабильный релиз CheenHub на GitHub.
 pub(crate) async fn check_latest_release() -> Result<UpdateCheckOutcome, String> {
     let response = reqwest::Client::new()
         .get(GITHUB_LATEST_RELEASE_URL)
-        .header(reqwest::header::USER_AGENT, USER_AGENT)
+        .header(reqwest::header::USER_AGENT, download::USER_AGENT)
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
         .send()
         .await
@@ -65,6 +73,17 @@ pub(crate) async fn check_latest_release() -> Result<UpdateCheckOutcome, String>
         tag: release.tag_name,
         title: release.name.filter(|name| !name.trim().is_empty()),
         release_url: release.html_url,
+        download_asset: download::select_update_asset(
+            &release
+                .assets
+                .into_iter()
+                .map(|asset| UpdateDownloadAsset {
+                    name: asset.name,
+                    download_url: asset.browser_download_url,
+                    size_bytes: asset.size,
+                })
+                .collect::<Vec<_>>(),
+        ),
     }))
 }
 

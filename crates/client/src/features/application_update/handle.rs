@@ -1,26 +1,15 @@
 //! Контекст управления пользовательским состоянием обновлений.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use dioxus::prelude::*;
 
 use super::api::{self, UpdateCheckOutcome};
+use super::download;
 use super::storage;
+use super::types::{AvailableUpdate, UpdateDownloadProgress, UpdateDownloadStatus};
 
 const QUICK_DISMISS_SECONDS: u32 = 5 * 60;
-
-/// Найденный GitHub Release, который новее текущей версии приложения.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct AvailableUpdate {
-    /// Версия релиза без префикса `v`.
-    pub(crate) version: String,
-    /// Исходный Git tag релиза.
-    pub(crate) tag: String,
-    /// Человекочитаемый заголовок релиза.
-    pub(crate) title: Option<String>,
-    /// Страница релиза на GitHub.
-    pub(crate) release_url: String,
-}
 
 /// Техническое состояние последней проверки обновлений.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,6 +67,7 @@ pub(super) struct ApplicationUpdateState {
     available_update: Option<AvailableUpdate>,
     deferred_until_epoch_seconds: Option<u64>,
     notification_visible: bool,
+    download_status: UpdateDownloadStatus,
 }
 
 impl Default for ApplicationUpdateState {
@@ -87,6 +77,7 @@ impl Default for ApplicationUpdateState {
             available_update: None,
             deferred_until_epoch_seconds: None,
             notification_visible: false,
+            download_status: UpdateDownloadStatus::Idle,
         }
     }
 }
@@ -154,6 +145,11 @@ impl ApplicationUpdateHandle {
         Some(update)
     }
 
+    /// Возвращает состояние скачивания обновления.
+    pub(crate) fn download_status(&self) -> UpdateDownloadStatus {
+        (self.state)().download_status
+    }
+
     /// Запускает проверку GitHub Releases.
     pub(crate) fn check_now(&self) {
         if matches!((self.state)().check_status, UpdateCheckStatus::Checking) {
@@ -177,10 +173,12 @@ impl ApplicationUpdateHandle {
                         state.available_update = None;
                         state.deferred_until_epoch_seconds = None;
                         state.notification_visible = false;
+                        state.download_status = UpdateDownloadStatus::Idle;
                     });
                     storage::clear_deferral();
                 }
                 Ok(UpdateCheckOutcome::Available(update)) => {
+                    let update_version = update.version.clone();
                     let stored_deferral = storage::load_deferral()
                         .filter(|deferral| deferral.version == update.version)
                         .filter(|deferral| deferral.until_epoch_seconds > now_epoch_seconds());
@@ -201,6 +199,17 @@ impl ApplicationUpdateHandle {
                         state.available_update = Some(update);
                         state.deferred_until_epoch_seconds = deferred_until_epoch_seconds;
                         state.notification_visible = notification_visible;
+                        let keep_download_status = matches!(
+                            &state.download_status,
+                            UpdateDownloadStatus::Downloading { .. }
+                        ) || matches!(
+                            &state.download_status,
+                            UpdateDownloadStatus::Downloaded { version, .. }
+                                if version == &update_version
+                        );
+                        if !keep_download_status {
+                            state.download_status = UpdateDownloadStatus::Idle;
+                        }
                     });
                 }
                 Err(message) => {
@@ -217,6 +226,131 @@ impl ApplicationUpdateHandle {
     /// Откладывает напоминание о найденном обновлении.
     pub(crate) fn defer_update(&self, delay: UpdateDeferralDelay) {
         self.defer_update_seconds(delay.seconds());
+    }
+
+    /// Скачивает установщик доступного обновления для текущей платформы.
+    pub(crate) fn download_update(&self) {
+        let Some(update) = (self.state)().available_update else {
+            warn!("application update download requested without available update");
+            return;
+        };
+
+        let version = update.version.clone();
+        if matches!(
+            (self.state)().download_status,
+            UpdateDownloadStatus::Downloading { .. }
+        ) {
+            debug!(update_version = %version, "application update download is already running");
+            return;
+        }
+        if matches!(
+            (self.state)().download_status,
+            UpdateDownloadStatus::Downloaded {
+                version: ref downloaded_version,
+                ..
+            } if downloaded_version == &version
+        ) {
+            debug!(update_version = %version, "application update was already downloaded");
+            return;
+        }
+
+        let Some(asset) = update.download_asset else {
+            let message = "Для этой платформы в релизе нет подходящего установщика.".to_owned();
+            let mut state = self.state;
+            state.with_mut(|state| {
+                state.download_status = UpdateDownloadStatus::Failed {
+                    version: version.clone(),
+                    message: message.clone(),
+                };
+            });
+            warn!(update_version = %version, "no application update asset for current platform");
+            return;
+        };
+
+        let mut state = self.state;
+        let initial_progress = UpdateDownloadProgress {
+            downloaded_bytes: 0,
+            total_bytes: (asset.size_bytes > 0).then_some(asset.size_bytes),
+            bytes_per_second: 0,
+        };
+        state.with_mut(|state| {
+            state.download_status = UpdateDownloadStatus::Downloading {
+                version: version.clone(),
+                progress: initial_progress,
+            };
+        });
+
+        spawn(async move {
+            let started_at = Instant::now();
+            let mut progress_state = state;
+            let progress_version = version.clone();
+            match download::download_update_asset(asset, move |mut progress| {
+                let elapsed_seconds = started_at.elapsed().as_secs_f64();
+                if elapsed_seconds > 0.0 {
+                    progress.bytes_per_second =
+                        (progress.downloaded_bytes as f64 / elapsed_seconds) as u64;
+                }
+                progress_state.with_mut(|state| {
+                    state.download_status = UpdateDownloadStatus::Downloading {
+                        version: progress_version.clone(),
+                        progress,
+                    };
+                });
+            })
+            .await
+            {
+                Ok(file) => {
+                    info!(
+                        update_version = %version,
+                        saved_path = %file.path,
+                        "application update download completed"
+                    );
+                    state.with_mut(|state| {
+                        state.download_status = UpdateDownloadStatus::Downloaded { version, file };
+                    });
+                }
+                Err(message) => {
+                    warn!(
+                        update_version = %version,
+                        %message,
+                        "application update download failed"
+                    );
+                    state.with_mut(|state| {
+                        state.download_status = UpdateDownloadStatus::Failed { version, message };
+                    });
+                }
+            }
+        });
+    }
+
+    /// Запускает установщик уже скачанного обновления.
+    pub(crate) fn install_downloaded_update(&self) {
+        let UpdateDownloadStatus::Downloaded { version, file } = (self.state)().download_status
+        else {
+            warn!("application update install requested without downloaded update");
+            return;
+        };
+
+        match download::install_downloaded_update(&file) {
+            Ok(()) => {
+                info!(
+                    update_version = %version,
+                    update_path = %file.path,
+                    "application update installer started"
+                );
+            }
+            Err(message) => {
+                warn!(
+                    update_version = %version,
+                    %message,
+                    "application update installer failed to start"
+                );
+                let mut state = self.state;
+                state.with_mut(|state| {
+                    state.download_status = UpdateDownloadStatus::Failed { version, message };
+                });
+            }
+        }
     }
 
     /// Скрывает уведомление об обновлении на пять минут.

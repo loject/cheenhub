@@ -69,6 +69,8 @@ pub(crate) struct UpdateAvailableToast {
     current_version: String,
     update_version: String,
     title: Option<String>,
+    primary_label: String,
+    primary_disabled: bool,
     deferral_options: Vec<UpdateToastDeferralOption>,
     selected_deferral_value: String,
     on_install: Rc<dyn Fn()>,
@@ -86,6 +88,8 @@ impl UpdateAvailableToast {
             current_version: content.current_version,
             update_version: content.update_version,
             title: content.title,
+            primary_label: content.primary_label,
+            primary_disabled: content.primary_disabled,
             deferral_options: content.deferral_options,
             selected_deferral_value: content.default_deferral_value,
             on_install: actions.on_install,
@@ -100,6 +104,8 @@ pub(crate) struct UpdateAvailableToastContent {
     current_version: String,
     update_version: String,
     title: Option<String>,
+    primary_label: String,
+    primary_disabled: bool,
     deferral_options: Vec<UpdateToastDeferralOption>,
     default_deferral_value: String,
 }
@@ -110,6 +116,8 @@ impl UpdateAvailableToastContent {
         current_version: impl Into<String>,
         update_version: impl Into<String>,
         title: Option<String>,
+        primary_label: impl Into<String>,
+        primary_disabled: bool,
         deferral_options: Vec<UpdateToastDeferralOption>,
         default_deferral_value: impl Into<String>,
     ) -> Self {
@@ -117,6 +125,8 @@ impl UpdateAvailableToastContent {
             current_version: current_version.into(),
             update_version: update_version.into(),
             title,
+            primary_label: primary_label.into(),
+            primary_disabled,
             deferral_options,
             default_deferral_value: default_deferral_value.into(),
         }
@@ -353,9 +363,10 @@ fn render_update_available_toast(
             div { class: "grid gap-2 border-t border-white/10 bg-white/[0.025] px-3 py-3",
                 button {
                     r#type: "button",
-                    class: "flex h-9 items-center justify-center rounded-md border border-blue-400/25 bg-blue-500/10 px-3 text-[12px] font-semibold text-blue-100 transition hover:border-blue-400/40 hover:bg-blue-500/15",
+                    disabled: update.primary_disabled,
+                    class: update_primary_button_class(update.primary_disabled),
                     onclick: move |_| (on_install.as_ref())(),
-                    "Скачать и установить"
+                    "{update.primary_label}"
                 }
                 div { class: "grid grid-cols-[1fr_auto] gap-2",
                     select {
@@ -399,6 +410,14 @@ fn update_toast_class(exiting: bool) -> &'static str {
         "toast-item toast-item-exiting pointer-events-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-lg border border-white/10 bg-zinc-950/95 text-zinc-100 shadow-[0_18px_50px_rgba(0,0,0,0.38)] backdrop-blur sm:max-w-none"
     } else {
         "toast-item pointer-events-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-lg border border-white/10 bg-zinc-950/95 text-zinc-100 shadow-[0_18px_50px_rgba(0,0,0,0.38)] backdrop-blur sm:max-w-none"
+    }
+}
+
+fn update_primary_button_class(disabled: bool) -> &'static str {
+    if disabled {
+        "flex h-9 cursor-not-allowed items-center justify-center rounded-md border border-zinc-800 bg-zinc-900/70 px-3 text-[12px] font-semibold text-zinc-500"
+    } else {
+        "flex h-9 items-center justify-center rounded-md border border-blue-400/25 bg-blue-500/10 px-3 text-[12px] font-semibold text-blue-100 transition hover:border-blue-400/40 hover:bg-blue-500/15"
     }
 }
 
