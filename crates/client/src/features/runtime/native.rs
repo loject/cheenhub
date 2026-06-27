@@ -29,20 +29,31 @@ pub(super) async fn sleep_duration(duration: Duration) {
 /// Запускает desktop-клиент с размером окна CheenHub.
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element) {
-    use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
+    use dioxus::desktop::{Config, LogicalSize, WindowBuilder, icon_from_memory};
 
     const WINDOW_WIDTH: f64 = 1280.0;
     const WINDOW_HEIGHT: f64 = 820.0;
     const WINDOW_MIN_WIDTH: f64 = 960.0;
     const WINDOW_MIN_HEIGHT: f64 = 640.0;
 
+    let icon = icon_from_memory(include_bytes!(
+        "../../../../../crates/client/public/icons/icon-512.png"
+    ))
+    .expect("failed to load window icon");
+
     let window = WindowBuilder::new()
         .with_title("CheenHub")
         .with_inner_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
-        .with_min_inner_size(LogicalSize::new(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT));
+        .with_min_inner_size(LogicalSize::new(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT))
+        .with_maximized(true);
 
     dioxus::LaunchBuilder::desktop()
-        .with_cfg(Config::new().with_window(window))
+        .with_cfg(
+            Config::new()
+                .with_window(window)
+                .with_icon(icon)
+                .with_menu(None),
+        )
         .launch(app);
 }
 
