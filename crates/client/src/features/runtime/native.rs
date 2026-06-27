@@ -29,7 +29,9 @@ pub(super) async fn sleep_duration(duration: Duration) {
 /// Запускает desktop-клиент с размером окна CheenHub.
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element) {
-    use dioxus::desktop::{Config, LogicalSize, WindowBuilder, icon_from_memory};
+    use dioxus::desktop::{
+        Config, LogicalSize, WindowBuilder, WindowCloseBehaviour, icon_from_memory,
+    };
 
     const WINDOW_WIDTH: f64 = 1280.0;
     const WINDOW_HEIGHT: f64 = 820.0;
@@ -46,12 +48,18 @@ pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element) {
         .with_inner_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
         .with_min_inner_size(LogicalSize::new(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT))
         .with_maximized(true);
+    let close_behaviour = if crate::features::system_tray::load_minimize_to_tray_on_close() {
+        WindowCloseBehaviour::WindowHides
+    } else {
+        WindowCloseBehaviour::WindowCloses
+    };
 
     dioxus::LaunchBuilder::desktop()
         .with_cfg(
             Config::new()
                 .with_window(window)
                 .with_icon(icon)
+                .with_close_behaviour(close_behaviour)
                 .with_menu(None),
         )
         .launch(app);

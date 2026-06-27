@@ -11,6 +11,7 @@ pub(crate) mod realtime;
 pub(crate) mod runtime;
 pub(crate) mod screen_share;
 pub(crate) mod server_settings;
+pub(crate) mod system_tray;
 pub(crate) mod text_chat;
 pub(crate) mod toast;
 pub(crate) mod user_settings;

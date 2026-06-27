@@ -6,6 +6,7 @@ use super::logout_section::LogoutSettingsSection;
 use super::profile_section::ProfileSettingsSection;
 use super::security_section::SecuritySettingsSection;
 use super::sound_section::SoundSettingsSection;
+use super::system_section::SystemSettingsSection;
 
 /// User settings sections shown in the modal menu.
 #[derive(Clone, Copy, PartialEq)]
@@ -16,6 +17,8 @@ pub(crate) enum UserSettingsSection {
     Sound,
     /// Account security and active sessions.
     Security,
+    /// Client system behavior.
+    System,
     /// Sign-out action section.
     Logout,
 }
@@ -42,6 +45,11 @@ const SETTINGS_SECTIONS: &[UserSettingsSectionMeta] = &[
         kind: UserSettingsSection::Security,
         label: "Безопасность",
         description: "Устройства и сеансы",
+    },
+    UserSettingsSectionMeta {
+        kind: UserSettingsSection::System,
+        label: "Система",
+        description: "Окно, трей и запуск",
     },
     UserSettingsSectionMeta {
         kind: UserSettingsSection::Logout,
@@ -119,6 +127,9 @@ pub(crate) fn UserSettingsPage(
                             UserSettingsSection::Security => rsx! {
                                 SecuritySettingsSection {}
                             },
+                            UserSettingsSection::System => rsx! {
+                                SystemSettingsSection {}
+                            },
                             UserSettingsSection::Logout => rsx! {
                                 LogoutSettingsSection {}
                             },
@@ -147,6 +158,7 @@ fn section_label(section: UserSettingsSection) -> &'static str {
         UserSettingsSection::Profile => "Профиль",
         UserSettingsSection::Sound => "Звук",
         UserSettingsSection::Security => "Безопасность",
+        UserSettingsSection::System => "Система",
         UserSettingsSection::Logout => "Выйти",
     }
 }

@@ -11,6 +11,7 @@ use routes::{
     ResetPassword,
 };
 
+use crate::features::system_tray::SystemTrayProvider;
 use crate::features::toast::ToastProvider;
 
 static TAILWIND_CSS: Asset = asset!(
@@ -53,8 +54,10 @@ enum Route {
 fn App() -> Element {
     rsx! {
         document::Stylesheet { href: TAILWIND_CSS }
-        ToastProvider {
-            Router::<Route> {}
+        SystemTrayProvider {
+            ToastProvider {
+                Router::<Route> {}
+            }
         }
     }
 }
