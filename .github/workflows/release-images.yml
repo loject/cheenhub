@@ -211,6 +211,7 @@ jobs:
       - name: Build Windows installers
         shell: pwsh
         run: |
+          cargo build -p cheenhub_client --bin cheenhub_updater --release --no-default-features --features desktop
           dx bundle --windows --package cheenhub_client --bin cheen_hub --release --package-types nsis --package-types msi --out-dir dist/windows/raw
 
       - name: Normalize Windows release assets
@@ -291,6 +292,7 @@ jobs:
       - name: Build Linux packages
         shell: bash
         run: |
+          cargo build -p cheenhub_client --bin cheenhub_updater --release --no-default-features --features desktop
           dx bundle --linux --package cheenhub_client --bin cheen_hub --release --package-types deb --package-types appimage --out-dir dist/linux/raw
 
       - name: Normalize Linux release assets

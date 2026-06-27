@@ -17,6 +17,9 @@ pub(crate) async fn download_update_asset(
     Err("Скачивание обновления недоступно на этой платформе.".to_owned())
 }
 
-pub(crate) fn install_downloaded_update(_file: &DownloadedUpdate) -> Result<(), String> {
+pub(crate) fn install_downloaded_update(
+    _version: &str,
+    _file: &DownloadedUpdate,
+) -> Result<(), String> {
     Err("Установка обновления недоступна на этой платформе.".to_owned())
 }

@@ -11,6 +11,11 @@ autobins = false
 name = "cheen_hub"
 path = "src/main.rs"
 
+[[bin]]
+name = "cheenhub_updater"
+path = "src/updater_main.rs"
+required-features = ["desktop"]
+
 [lib]
 name = "cheenhub_client_worker"
 path = "src/worker_lib.rs"

@@ -16,6 +16,7 @@ title = "CheenHub — голосовой чат для геймеров"
 
 [windows]
 identifier = "ru.cheenhub"
+resources = ["target/release/cheenhub_updater.exe"]
 
 [windows.webview_install_mode]
 type = "DownloadBootstrapper"
@@ -26,6 +27,7 @@ upgrade_code = "082cd097-8bbc-4aca-94f7-7881dda02673"
 
 [linux]
 identifier = "ru.cheenhub"
+resources = ["target/release/cheenhub_updater"]
 categories = ["Network", "Chat"]
 section = "net"
 depends = [

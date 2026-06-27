@@ -20,6 +20,9 @@ pub(crate) async fn download_update_asset(
     )
 }
 
-pub(crate) fn install_downloaded_update(_file: &DownloadedUpdate) -> Result<(), String> {
+pub(crate) fn install_downloaded_update(
+    _version: &str,
+    _file: &DownloadedUpdate,
+) -> Result<(), String> {
     Err("Установка обновления из web-клиента пока недоступна.".to_owned())
 }

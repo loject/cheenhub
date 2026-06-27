@@ -153,67 +153,59 @@ pub(crate) async fn download_update_asset(
 }
 
 #[cfg(not(target_family = "wasm"))]
-pub(crate) fn install_downloaded_update(file: &DownloadedUpdate) -> Result<(), String> {
+pub(crate) fn install_downloaded_update(
+    version: &str,
+    file: &DownloadedUpdate,
+) -> Result<(), String> {
     info!(
+        update_version = %version,
         update_path = %file.path,
-        "starting downloaded application update installer"
+        "starting application update helper"
     );
-    start_installer(file)
+    start_updater(version, file)
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn start_updater(version: &str, file: &DownloadedUpdate) -> Result<(), String> {
+    let current_exe = std::env::current_exe().map_err(|error| {
+        format!("Не удалось определить путь к текущему приложению перед обновлением: {error}")
+    })?;
+    let updater_path = current_exe.with_file_name(updater_executable_name());
+    if !updater_path.is_file() {
+        return Err(format!(
+            "Не удалось найти апдейтер рядом с приложением: {}.",
+            updater_path.display()
+        ));
+    }
+
+    Command::new(&updater_path)
+        .arg("--installer")
+        .arg(&file.path)
+        .arg("--app-pid")
+        .arg(std::process::id().to_string())
+        .arg("--restart")
+        .arg(current_exe)
+        .arg("--version")
+        .arg(version)
+        .spawn()
+        .map_err(|error| format!("Не удалось запустить апдейтер CheenHub: {error}"))?;
+
+    info!(
+        update_version = %version,
+        updater_path = %updater_path.display(),
+        "application update helper started; exiting main application"
+    );
+    std::process::exit(0);
 }
 
 #[cfg(all(not(target_family = "wasm"), target_os = "windows"))]
-fn start_installer(file: &DownloadedUpdate) -> Result<(), String> {
-    Command::new("cmd")
-        .args(["/C", "start", ""])
-        .arg(&file.path)
-        .spawn()
-        .map_err(|error| format!("Не удалось запустить установщик обновления: {error}"))?;
-    Ok(())
+fn updater_executable_name() -> &'static str {
+    "cheenhub_updater.exe"
 }
 
-#[cfg(all(not(target_family = "wasm"), target_os = "linux"))]
-fn start_installer(file: &DownloadedUpdate) -> Result<(), String> {
-    make_executable_if_appimage(file)?;
-    Command::new("xdg-open")
-        .arg(&file.path)
-        .spawn()
-        .map_err(|error| format!("Не удалось открыть установщик обновления: {error}"))?;
-    Ok(())
-}
-
-#[cfg(all(not(target_family = "wasm"), target_os = "macos"))]
-fn start_installer(file: &DownloadedUpdate) -> Result<(), String> {
-    Command::new("open")
-        .arg(&file.path)
-        .spawn()
-        .map_err(|error| format!("Не удалось открыть установщик обновления: {error}"))?;
-    Ok(())
-}
-
-#[cfg(all(
-    not(target_family = "wasm"),
-    not(target_os = "windows"),
-    not(target_os = "linux"),
-    not(target_os = "macos")
-))]
-fn start_installer(_file: &DownloadedUpdate) -> Result<(), String> {
-    Err("Установка обновления недоступна на этой платформе.".to_owned())
-}
-
-#[cfg(all(not(target_family = "wasm"), target_os = "linux"))]
-fn make_executable_if_appimage(file: &DownloadedUpdate) -> Result<(), String> {
-    if !file.file_name.ends_with(".AppImage") {
-        return Ok(());
-    }
-
-    use std::os::unix::fs::PermissionsExt;
-
-    let mut permissions = std::fs::metadata(&file.path)
-        .map_err(|error| format!("Не удалось проверить права файла обновления: {error}"))?
-        .permissions();
-    permissions.set_mode(permissions.mode() | 0o755);
-    std::fs::set_permissions(&file.path, permissions)
-        .map_err(|error| format!("Не удалось подготовить AppImage к запуску: {error}"))
+#[cfg(all(not(target_family = "wasm"), not(target_os = "windows")))]
+fn updater_executable_name() -> &'static str {
+    "cheenhub_updater"
 }
 
 #[cfg(not(target_family = "wasm"))]

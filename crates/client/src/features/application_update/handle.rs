@@ -331,7 +331,7 @@ impl ApplicationUpdateHandle {
             return;
         };
 
-        match download::install_downloaded_update(&file) {
+        match download::install_downloaded_update(&version, &file) {
             Ok(()) => {
                 info!(
                     update_version = %version,
