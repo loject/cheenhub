@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       backend_image_ref:
-        description: "Full backend image reference, for example ghcr.io/owner/repo/backend:v1.0.0."
+        description: "Full backend image reference, for example ghcr.io/loject/cheenhub/backend:v1.0.0."
         required: true
         type: string
       web_image_ref:
-        description: "Full web image reference, for example ghcr.io/owner/repo/web:v1.0.0."
+        description: "Full web image reference, for example ghcr.io/loject/cheenhub/web:v1.0.0."
         required: true
         type: string
       compose_project_dir:
@@ -47,12 +47,12 @@ jobs:
           web_image_ref="${INPUT_WEB_IMAGE_REF}"
 
           if [[ "${backend_image_ref}" != *":"* ]]; then
-            echo "backend_image_ref must include a tag, for example ghcr.io/owner/repo/backend:v1.0.0" >&2
+            echo "backend_image_ref must include a tag, for example ghcr.io/loject/cheenhub/backend:v1.0.0" >&2
             exit 1
           fi
 
           if [[ "${web_image_ref}" != *":"* ]]; then
-            echo "web_image_ref must include a tag, for example ghcr.io/owner/repo/web:v1.0.0" >&2
+            echo "web_image_ref must include a tag, for example ghcr.io/loject/cheenhub/web:v1.0.0" >&2
             exit 1
           fi
 
