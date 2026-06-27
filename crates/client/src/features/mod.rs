@@ -1,12 +1,14 @@
 //! Модули клиентских функций.
 
 pub(crate) mod app;
+pub(crate) mod application_update;
 pub(crate) mod audio_playback;
 pub(crate) mod auth;
 pub(crate) mod camera;
 pub(crate) mod landing;
 pub(crate) mod microphone;
 pub(crate) mod network;
+pub(crate) mod pwa;
 pub(crate) mod realtime;
 pub(crate) mod runtime;
 pub(crate) mod screen_share;

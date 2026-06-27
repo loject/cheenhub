@@ -10,5 +10,6 @@ mod sound_devices;
 mod sound_section;
 mod styles;
 mod system_section;
+mod update_section;
 
 pub(crate) use scope::UserSettingsScope;

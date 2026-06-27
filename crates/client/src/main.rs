@@ -11,6 +11,8 @@ use routes::{
     ResetPassword,
 };
 
+use crate::features::application_update::ApplicationUpdateProvider;
+use crate::features::pwa::PwaVersionBridge;
 use crate::features::system_tray::SystemTrayProvider;
 use crate::features::toast::ToastProvider;
 
@@ -54,9 +56,12 @@ enum Route {
 fn App() -> Element {
     rsx! {
         document::Stylesheet { href: TAILWIND_CSS }
+        PwaVersionBridge {}
         SystemTrayProvider {
             ToastProvider {
-                Router::<Route> {}
+                ApplicationUpdateProvider {
+                    Router::<Route> {}
+                }
             }
         }
     }

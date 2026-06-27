@@ -2,8 +2,11 @@
   "use strict";
 
   const LOG_PREFIX = "[pwa]";
+  const DEFAULT_APP_VERSION = "dev";
   const OFFLINE_CHECK_PATH = "/manifest.webmanifest";
   const RETRY_DELAY_MS = 5000;
+  let appVersion = DEFAULT_APP_VERSION;
+  let registeredServiceWorkerUrl = "";
   let retryTimer = 0;
   let registrationPromise = null;
   let pendingInstallPrompt = null;
@@ -42,6 +45,19 @@
 
   function isLandingPath() {
     return window.location.pathname === "/" || window.location.pathname === "/index.html";
+  }
+
+  function normalizeVersion(value) {
+    if (typeof value !== "string") {
+      return DEFAULT_APP_VERSION;
+    }
+
+    const normalized = value.trim();
+    return normalized || DEFAULT_APP_VERSION;
+  }
+
+  function serviceWorkerUrl() {
+    return `/sw.js?version=${encodeURIComponent(appVersion)}`;
   }
 
   function shouldUseOfflineExperience() {
@@ -255,7 +271,7 @@
     }
   }
 
-  async function registerServiceWorker() {
+  async function registerServiceWorker(source) {
     if (!("serviceWorker" in navigator)) {
       log.warn("service workers are not supported by this browser");
       return null;
@@ -267,8 +283,10 @@
     }
 
     try {
-      log.info("registering service worker");
-      const registration = await navigator.serviceWorker.register("/sw.js", {
+      const scriptUrl = serviceWorkerUrl();
+      registeredServiceWorkerUrl = scriptUrl;
+      log.info("registering service worker", { source, scriptUrl, appVersion });
+      const registration = await navigator.serviceWorker.register(scriptUrl, {
         scope: "/",
         updateViaCache: "none",
       });
@@ -284,6 +302,16 @@
       log.warn("service worker registration failed", error);
       return null;
     }
+  }
+
+  function refreshServiceWorkerRegistration(source) {
+    const scriptUrl = serviceWorkerUrl();
+    if (registrationPromise && registeredServiceWorkerUrl === scriptUrl) {
+      return registrationPromise;
+    }
+
+    registrationPromise = registerServiceWorker(source);
+    return registrationPromise;
   }
 
   function bindOfflineEvents() {
@@ -366,13 +394,18 @@
   bindOfflineEvents();
   bindInstallEvents();
 
+  window.addEventListener("cheenhub:pwa-version", (event) => {
+    appVersion = normalizeVersion(event.detail && event.detail.version);
+    log.info("application version received for service worker", { appVersion });
+    refreshServiceWorkerRegistration("app-version");
+  });
+
   if (shouldUseOfflineExperience() && (!navigator.onLine || isOfflineShell())) {
     showOffline("Ожидаем сеть");
   }
 
-  registrationPromise = registerServiceWorker();
-
   window.addEventListener("load", () => {
+    refreshServiceWorkerRegistration("window-load");
     if (shouldUseOfflineExperience()) {
       verifyOnline("initial-load");
     }

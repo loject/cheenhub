@@ -4,6 +4,8 @@ use dioxus::prelude::*;
 
 use crate::features::system_tray::SystemTrayHandle;
 
+use super::update_section::UpdateSettingsSection;
+
 /// Рендерит системные настройки клиента.
 #[component]
 pub(crate) fn SystemSettingsSection() -> Element {
@@ -12,7 +14,9 @@ pub(crate) fn SystemSettingsSection() -> Element {
     let toggle_system_tray = system_tray.clone();
 
     rsx! {
-        div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
+        div { class: "space-y-4",
+            UpdateSettingsSection {}
+            div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
             div {
                 h3 { class: "text-[16px] font-semibold tracking-[-0.03em] text-zinc-50", "Система" }
                 p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Поведение окна CheenHub и системного трея." }
@@ -38,6 +42,7 @@ pub(crate) fn SystemSettingsSection() -> Element {
                         span { class: knob_class(minimize_to_tray_on_close) }
                     }
                 }
+            }
             }
         }
     }

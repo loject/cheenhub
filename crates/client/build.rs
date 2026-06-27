@@ -14,8 +14,6 @@ use time::{Duration, OffsetDateTime};
 const DEFAULT_DEV_CERT_PATH: &str = "target/cheenhub-dev/webtransport-cert.pem";
 const DEFAULT_DEV_KEY_PATH: &str = "target/cheenhub-dev/webtransport-key.pem";
 const DEV_CERT_LIFETIME_DAYS: i64 = 13;
-const SW_TEMPLATE_PATH: &str = "public/sw.template.js";
-const SW_OUTPUT_PATH: &str = "public/sw.js";
 
 mod file_lines {
     include!("../../build_support/file_lines.rs");
@@ -28,14 +26,12 @@ fn main() {
     println!("cargo:rerun-if-changed=../../.env");
     println!("cargo:rerun-if-changed=../../{DEFAULT_DEV_CERT_PATH}");
     println!("cargo:rerun-if-changed=../../{DEFAULT_DEV_KEY_PATH}");
-    println!("cargo:rerun-if-changed={SW_TEMPLATE_PATH}");
     println!("cargo:rerun-if-env-changed=CHEENHUB_APP_VERSION");
 
     dotenvy::from_filename("../../.env").ok();
 
     let app_version = resolve_app_version();
     println!("cargo:rustc-env=CHEENHUB_APP_VERSION={app_version}");
-    generate_service_worker(&app_version);
 
     forward_env("CHEENHUB_JWT_PUBLIC_KEY_BASE64");
     forward_env("CHEENHUB_API_BASE_URL");
@@ -78,28 +74,6 @@ fn resolve_app_version() -> String {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| format!("v{}-dev", env!("CARGO_PKG_VERSION")))
-}
-
-fn generate_service_worker(app_version: &str) {
-    let manifest_dir =
-        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set"));
-    let template_path = manifest_dir.join(SW_TEMPLATE_PATH);
-    let output_path = manifest_dir.join(SW_OUTPUT_PATH);
-    let template = fs::read_to_string(&template_path).expect("service worker template is readable");
-    let rendered = template.replace("__CHEENHUB_APP_VERSION__", &js_string_literal(app_version));
-
-    if fs::read_to_string(&output_path).ok().as_deref() == Some(rendered.as_str()) {
-        return;
-    }
-
-    fs::write(output_path, rendered).expect("service worker can be generated");
-}
-
-fn js_string_literal(value: &str) -> String {
-    value
-        .chars()
-        .flat_map(|character| character.escape_default())
-        .collect()
 }
 
 fn forward_env(key: &str) -> bool {
