@@ -1,4 +1,4 @@
-//! Native output stream на базе `cpal`.
+//! Output stream на базе `cpal` для Windows, Linux и macOS.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig, SupportedStreamConfig};
@@ -6,7 +6,7 @@ use dioxus::prelude::{info, warn};
 
 use super::mixer::{MixerHandle, new_mixer, output_callback};
 
-/// Активный native output stream и связанный с ним микшер.
+/// Активный output stream и связанный с ним микшер.
 pub(super) struct NativePlaybackEngine {
     _stream: Stream,
     pub(super) mixer: MixerHandle,
@@ -48,7 +48,7 @@ pub(super) fn create_engine(
         channels,
         sample_format = %sample_format,
         selected_device = device_id.as_deref().unwrap_or(""),
-        "native audio cpal playback started"
+        "cpal audio playback started"
     );
     Ok(NativePlaybackEngine {
         _stream: stream,
@@ -65,10 +65,19 @@ fn output_device(host: &cpal::Host, device_id: Option<&str>) -> Result<cpal::Dev
     };
 
     let mut devices = host.output_devices().map_err(cpal_error)?;
-    let device =
-        devices.find(|device| device.name().map(|name| name == device_id).unwrap_or(false));
-    device.ok_or_else(|| {
-        "Выбранное native-устройство вывода недоступно. Проверьте устройство вывода.".to_owned()
+    if let Some(device) =
+        devices.find(|device| device.name().map(|name| name == device_id).unwrap_or(false))
+    {
+        return Ok(device);
+    }
+
+    warn!(
+        selected_device = device_id,
+        "selected cpal audio output device is unavailable; falling back to system default"
+    );
+    host.default_output_device().ok_or_else(|| {
+        "Выбранное устройство вывода недоступно, а системное устройство по умолчанию не найдено."
+            .to_owned()
     })
 }
 
@@ -93,7 +102,7 @@ fn select_output_config(
     }
 
     fallback.ok_or_else(|| {
-        format!("Native-устройство вывода не поддерживает {sample_rate_hz} Гц без resampling.")
+        format!("Устройство вывода не поддерживает {sample_rate_hz} Гц без resampling.")
     })
 }
 
@@ -169,5 +178,5 @@ fn build_output_stream(
 }
 
 fn cpal_error(error: impl std::fmt::Display) -> String {
-    format!("Native audio backend cpal вернул ошибку: {error}")
+    format!("cpal backend для Windows/Linux/macOS вернул ошибку: {error}")
 }

@@ -1,8 +1,9 @@
 //! Контекст управления пользовательским состоянием обновлений.
 
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use dioxus::prelude::*;
+use web_time::{Instant, SystemTime, UNIX_EPOCH};
 
 use super::api::{self, UpdateCheckOutcome};
 use super::download;

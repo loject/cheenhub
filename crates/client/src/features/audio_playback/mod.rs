@@ -7,7 +7,7 @@ mod storage;
 mod unsupported;
 mod web;
 
-pub(crate) use backend::{PlaybackCodec, VoiceFrame};
+pub(crate) use backend::{NotificationSound, PlaybackCodec, VoiceFrame};
 pub(crate) use native::{AudioPlaybackHandle, AudioPlaybackProvider};
 pub(crate) use output_devices::{
     AudioOutputDevice, AudioOutputDevicesResult, enumerate_audio_output_devices,

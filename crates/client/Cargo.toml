@@ -54,10 +54,12 @@ desktop = [
 ]
 mobile = ["app", "dep:tokio", "dep:tokio-tungstenite", "dioxus/mobile"]
 system-tray = []
-windows = ["native-audio"]
-linux = ["native-audio"]
-macos = ["native-audio"]
-native-audio = ["dep:cpal", "dep:opus"]
+# Windows-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
+windows = ["dep:cpal", "dep:opus"]
+# Linux-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
+linux = ["dep:cpal", "dep:opus"]
+# macOS-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
+macos = ["dep:cpal", "dep:opus"]
 microphone_worker = []
 
 [dependencies]
@@ -116,6 +118,7 @@ web-sys = { workspace = true, optional = true, features = [
     "MessageEvent",
     "MessagePort",
     "Navigator",
+    "Response",
     "Window",
     "BinaryType",
     "Worklet",

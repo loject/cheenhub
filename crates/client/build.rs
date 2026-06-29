@@ -116,6 +116,24 @@ fn validate_platform_features() {
             enabled_features.join(", ")
         );
     }
+
+    let desktop_enabled = cargo_feature_enabled("desktop");
+    if desktop_enabled {
+        let enabled_desktop_platforms = ["windows", "linux", "macos"]
+            .into_iter()
+            .filter(|feature| cargo_feature_enabled(feature))
+            .collect::<Vec<_>>();
+        if enabled_desktop_platforms.len() != 1 {
+            panic!(
+                "Desktop-сборка клиента должна явно выбрать ровно одну platform feature: windows, linux или macos. Сейчас включены: {}.",
+                if enabled_desktop_platforms.is_empty() {
+                    "нет".to_owned()
+                } else {
+                    enabled_desktop_platforms.join(", ")
+                }
+            );
+        }
+    }
 }
 
 fn cargo_feature_enabled(feature: &str) -> bool {

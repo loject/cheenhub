@@ -10,16 +10,21 @@ use futures_util::StreamExt;
 use web_time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::features::app::current_user::CurrentUserContext;
-use crate::features::audio_playback::{AudioPlaybackHandle, PlaybackCodec, VoiceFrame};
-use crate::features::camera::CameraHandle;
+use crate::features::audio_playback::{
+    AudioPlaybackHandle, NotificationSound, PlaybackCodec, VoiceFrame,
+};
+use crate::features::camera::{CameraHandle, CameraStatus};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
-use crate::features::screen_share::ScreenShareHandle;
+use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 
 use super::kicked_modal::KickedFromVoiceModal;
 use super::local_video::{
     LocalVideoRuntime, LocalVideoTarget, participant_source_from_contract, reconcile_camera_target,
     reconcile_screen_share_target, release_local_video_target,
+};
+use super::notification_sounds::{
+    ConnectionNotificationSoundState, ToggleNotificationSoundState, VoiceNotificationSoundState,
 };
 use super::realtime;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
@@ -59,6 +64,14 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let mut camera_target_room = use_signal(|| None::<LocalVideoTarget>);
     let mut screen_share_target_room = use_signal(|| None::<LocalVideoTarget>);
     let mut mic_paused_by_mute = use_signal(|| false);
+    let voice_notification_sounds =
+        use_hook(|| Rc::new(RefCell::new(VoiceNotificationSoundState::default())));
+    let camera_notification_sounds =
+        use_hook(|| Rc::new(RefCell::new(ToggleNotificationSoundState::default())));
+    let screen_share_notification_sounds =
+        use_hook(|| Rc::new(RefCell::new(ToggleNotificationSoundState::default())));
+    let connection_notification_sounds =
+        use_hook(|| Rc::new(RefCell::new(ConnectionNotificationSoundState::default())));
     let handle = VoiceConnectionHandle::new(
         state,
         kicked_from_room,
@@ -179,10 +192,12 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let status_playback = playback.clone();
     let status_handle = handle.clone();
     let status_participant_video = participant_video.clone();
+    let status_connection_sounds = connection_notification_sounds.clone();
     use_hook(move || {
         spawn(async move {
             let mut statuses = status_realtime.subscribe_connection_status();
             while let Some(status) = statuses.next().await {
+                let connected = matches!(status, RealtimeConnectionStatus::Connected(_));
                 if matches!(status, RealtimeConnectionStatus::Disconnected) {
                     let mut state = state;
                     state.set(VoiceConnectionState::Disconnected);
@@ -190,13 +205,48 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                     status_participant_video.clear();
                     status_playback.stop_all();
                 }
+                status_connection_sounds
+                    .borrow_mut()
+                    .record(connected, &status_playback);
             }
         })
     });
+    let camera_sound_playback = playback.clone();
+    let camera_sound_handle = camera.clone();
+    let camera_sound_state = camera_notification_sounds.clone();
+    use_effect(move || {
+        camera_sound_state.borrow_mut().record(
+            matches!(camera_sound_handle.status(), CameraStatus::Live),
+            NotificationSound::CameraEnabled,
+            NotificationSound::CameraDisabled,
+            &camera_sound_playback,
+        );
+    });
+    let screen_share_sound_playback = playback.clone();
+    let screen_share_sound_handle = screen_share.clone();
+    let screen_share_sound_state = screen_share_notification_sounds.clone();
+    use_effect(move || {
+        screen_share_sound_state.borrow_mut().record(
+            matches!(screen_share_sound_handle.status(), ScreenShareStatus::Live),
+            NotificationSound::ScreenShareEnabled,
+            NotificationSound::ScreenShareDisabled,
+            &screen_share_sound_playback,
+        );
+    });
     let effect_handle = handle.clone();
     let effect_current_user_id = current_user.id.clone();
+    let effect_voice_sounds = voice_notification_sounds.clone();
     use_effect(move || match state() {
-        VoiceConnectionState::Connected { target, .. } => {
+        VoiceConnectionState::Connected {
+            target,
+            participants,
+        } => {
+            effect_voice_sounds.borrow_mut().record_connected(
+                &target,
+                &participants,
+                &effect_current_user_id,
+                &playback,
+            );
             let local_video_runtime = LocalVideoRuntime {
                 realtime: realtime.clone(),
                 participant_video: participant_video.clone(),
@@ -300,6 +350,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             }
             effect_handle.clear_speaking_users();
             playback.stop_all();
+            effect_voice_sounds.borrow_mut().record_inactive(&playback);
 
             if had_camera_target
                 || had_screen_share_target

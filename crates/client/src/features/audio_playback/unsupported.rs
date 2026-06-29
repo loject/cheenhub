@@ -1,6 +1,11 @@
 //! Native-заглушка воспроизведения входящего аудио.
 #![cfg_attr(
-    any(target_arch = "wasm32", feature = "native-audio"),
+    any(
+        target_arch = "wasm32",
+        feature = "windows",
+        feature = "linux",
+        feature = "macos"
+    ),
     allow(dead_code, unused_imports)
 )]
 
@@ -9,7 +14,7 @@ use std::rc::Rc;
 
 use dioxus::prelude::*;
 
-use super::backend::{PlaybackCodec, VoiceFrame};
+use super::backend::{NotificationSound, PlaybackCodec, VoiceFrame};
 use super::output_devices::AudioOutputDevice;
 use super::storage;
 
@@ -147,6 +152,18 @@ impl AudioPlaybackHandle {
         }
 
         self.warn_unsupported_once(Some(&frame.sender_user_id), Some(frame.sequence));
+    }
+
+    /// Отмечает недоступность системных звуков без backend'а воспроизведения.
+    pub(crate) fn play_notification_sound(&self, sound: NotificationSound) {
+        if self.is_muted() {
+            return;
+        }
+
+        debug!(
+            sound = sound.event_name(),
+            "skipped notification sound without native playback backend"
+        );
     }
 
     fn set_output_device_preference(&self, device_id: Option<String>, label: Option<String>) {

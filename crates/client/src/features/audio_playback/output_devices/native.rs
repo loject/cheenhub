@@ -1,6 +1,9 @@
-//! Выбор платформенной реализации перечисления устройств вывода аудио.
+//! Выбор реализации перечисления устройств вывода аудио для конкретной платформы.
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-audio"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(feature = "windows", feature = "linux", feature = "macos")
+))]
 mod implementation {
     use cpal::traits::{DeviceTrait, HostTrait};
     use dioxus::prelude::{debug, warn};
@@ -28,7 +31,7 @@ mod implementation {
         Available(Vec<AudioOutputDevice>),
     }
 
-    /// Возвращает список native-устройств вывода через `cpal`.
+    /// Возвращает список устройств вывода через `cpal` на Windows, Linux и macOS.
     pub(crate) async fn enumerate_audio_output_devices() -> AudioOutputDevicesResult {
         let host = cpal::default_host();
         let devices = match host.output_devices() {
@@ -68,7 +71,10 @@ mod implementation {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "native-audio")))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(feature = "windows", feature = "linux", feature = "macos"))
+))]
 mod implementation {
     use dioxus::prelude::debug;
 
@@ -95,9 +101,11 @@ mod implementation {
         Available(Vec<AudioOutputDevice>),
     }
 
-    /// Возвращает native-заглушку перечисления устройств вывода.
+    /// Возвращает заглушку для платформ без поддержки перечисления устройств вывода.
     pub(crate) async fn enumerate_audio_output_devices() -> AudioOutputDevicesResult {
-        debug!("audio output device enumeration is unavailable without native audio feature");
+        debug!(
+            "audio output device enumeration is unavailable without windows, linux or macos feature"
+        );
         AudioOutputDevicesResult::NotSupported
     }
 }

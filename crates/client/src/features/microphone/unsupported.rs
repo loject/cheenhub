@@ -13,7 +13,15 @@ use super::backend::{
 
 /// Backend микрофона для платформ без поддержки browser capture.
 #[derive(Debug, Default)]
-#[cfg_attr(any(feature = "web", feature = "native-audio"), allow(dead_code))]
+#[cfg_attr(
+    any(
+        feature = "web",
+        feature = "windows",
+        feature = "linux",
+        feature = "macos"
+    ),
+    allow(dead_code)
+)]
 pub(crate) struct UnavailableMicrophoneBackend;
 
 impl MicrophoneBackend for UnavailableMicrophoneBackend {

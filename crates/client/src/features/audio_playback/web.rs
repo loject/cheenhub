@@ -11,6 +11,8 @@ mod jitter_buffer;
 mod jitter_runtime;
 #[path = "playback_pipeline.rs"]
 mod playback_pipeline;
+#[path = "web_notifications.rs"]
+mod web_notifications;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
