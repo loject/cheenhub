@@ -20,6 +20,7 @@ static CONFIG: OnceLock<InstallerConfig> = OnceLock::new();
 #[derive(Clone, Debug)]
 struct InstallerConfig {
     silent: bool,
+    skip_webview2: bool,
     payload_name: String,
     log_path: PathBuf,
 }
@@ -43,6 +44,7 @@ enum InstallerStage {
 pub(crate) fn run() {
     let config = InstallerConfig {
         silent: has_silent_flag(),
+        skip_webview2: has_skip_webview2_flag(),
         payload_name: payload::INSTALLER_PAYLOAD_NAME
             .unwrap_or("cheenhub-installer-payload.exe")
             .to_owned(),
@@ -50,6 +52,9 @@ pub(crate) fn run() {
     };
 
     if config.silent {
+        if config.skip_webview2 {
+            write_log(&config, "webview2 bootstrapper skip requested");
+        }
         let code = match run_installation_blocking(&config, |_| {}) {
             Ok(()) => 0,
             Err(message) => {
@@ -61,6 +66,9 @@ pub(crate) fn run() {
     }
 
     write_log(&config, "installer started");
+    if config.skip_webview2 {
+        write_log(&config, "webview2 bootstrapper skip requested");
+    }
     let _ = CONFIG.set(config);
 
     use dioxus::desktop::{Config, LogicalSize, WindowBuilder, icon_from_memory};
@@ -264,7 +272,7 @@ fn run_installation_blocking(
     on_stage("extracting installer payload");
     let payload_path = write_payload(config, payload)?;
     on_stage("running nested installer payload");
-    run_payload_installer(&payload_path)?;
+    run_payload_installer(&payload_path, config.skip_webview2, &mut on_stage)?;
     on_stage("nested installer completed");
     Ok(())
 }
@@ -291,7 +299,11 @@ fn write_payload(config: &InstallerConfig, payload: &[u8]) -> Result<PathBuf, St
 }
 
 #[cfg(target_os = "windows")]
-fn run_payload_installer(payload_path: &Path) -> Result<(), String> {
+fn run_payload_installer(
+    payload_path: &Path,
+    skip_webview2: bool,
+    mut on_stage: impl FnMut(&str),
+) -> Result<(), String> {
     let extension = payload_path
         .extension()
         .and_then(|value| value.to_str())
@@ -308,9 +320,15 @@ fn run_payload_installer(payload_path: &Path) -> Result<(), String> {
     } else {
         let mut command = Command::new(payload_path);
         command.arg("/S");
+        if skip_webview2 {
+            command.arg("/SKIP_WEBVIEW2");
+        }
         command
     };
 
+    on_stage(&format!(
+        "running nested installer command: {command:?}; skip_webview2={skip_webview2}"
+    ));
     let status = command
         .status()
         .map_err(|error| format!("Не удалось запустить системный установщик: {error}"))?;
@@ -328,7 +346,11 @@ fn run_payload_installer(payload_path: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn run_payload_installer(_payload_path: &Path) -> Result<(), String> {
+fn run_payload_installer(
+    _payload_path: &Path,
+    _skip_webview2: bool,
+    _on_stage: impl FnMut(&str),
+) -> Result<(), String> {
     Err("Пользовательский установщик пока доступен только для Windows.".to_owned())
 }
 
@@ -363,6 +385,12 @@ fn has_silent_flag() -> bool {
         let arg = arg.to_ascii_lowercase();
         matches!(arg.as_str(), "/s" | "-s" | "--silent" | "/silent")
     })
+}
+
+fn has_skip_webview2_flag() -> bool {
+    std::env::args()
+        .skip(1)
+        .any(|arg| arg.eq_ignore_ascii_case("/SKIP_WEBVIEW2"))
 }
 
 fn exit_installer(code: i32) {

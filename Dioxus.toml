@@ -17,11 +17,13 @@ title = "CheenHub — голосовой чат для геймеров"
 [windows]
 identifier = "ru.cheenhub"
 
-[windows.webview_install_mode]
-type = "DownloadBootstrapper"
-silent = true
+[bundle.windows]
+webview_install_mode = { DownloadBootstrapper = { silent = true } }
 
-[windows.wix]
+[bundle.windows.nsis]
+template = "bundle/windows/nsis-installer.nsi"
+
+[bundle.windows.wix]
 upgrade_code = "082cd097-8bbc-4aca-94f7-7881dda02673"
 
 [linux]

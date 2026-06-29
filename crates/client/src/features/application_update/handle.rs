@@ -324,11 +324,11 @@ impl ApplicationUpdateHandle {
     }
 
     /// Запускает установщик уже скачанного обновления.
-    pub(crate) fn install_downloaded_update(&self) {
+    pub(crate) fn install_downloaded_update(&self) -> bool {
         let UpdateDownloadStatus::Downloaded { version, file } = (self.state)().download_status
         else {
             warn!("application update install requested without downloaded update");
-            return;
+            return false;
         };
 
         match download::install_downloaded_update(&version, &file) {
@@ -338,6 +338,7 @@ impl ApplicationUpdateHandle {
                     update_path = %file.path,
                     "application update installer started"
                 );
+                true
             }
             Err(message) => {
                 warn!(
@@ -349,6 +350,7 @@ impl ApplicationUpdateHandle {
                 state.with_mut(|state| {
                     state.download_status = UpdateDownloadStatus::Failed { version, message };
                 });
+                false
             }
         }
     }

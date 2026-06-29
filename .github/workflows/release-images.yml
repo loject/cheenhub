@@ -216,18 +216,21 @@ jobs:
           rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal
           rustup default $env:RUST_TOOLCHAIN
 
-      - name: Cache Cargo downloads and Dioxus CLI
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-client-release
+          cache-on-failure: true
+          workspaces: |
+            . -> target
+
+      - name: Cache Dioxus CLI
         uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/dx
             ~/.cargo/bin/dx.exe
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-dioxus-${{ env.DIOXUS_CLI_VERSION }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-dioxus-${{ env.DIOXUS_CLI_VERSION }}-
-            ${{ runner.os }}-cargo-dioxus-
+          key: ${{ runner.os }}-dioxus-cli-${{ env.DIOXUS_CLI_VERSION }}
 
       - name: Install Dioxus CLI
         shell: pwsh

@@ -14,8 +14,12 @@ pub(super) fn wait_for_process_exit(pid: u32) {
     }
 }
 
-pub(super) fn run_installer(installer_path: &Path) -> Result<(), String> {
+pub(super) fn run_installer(
+    installer_path: &Path,
+    mut on_log: impl FnMut(&str),
+) -> Result<(), String> {
     let mut command = installer_command(installer_path)?;
+    on_log(&format!("running update installer command: {command:?}"));
     let status = command
         .status()
         .map_err(|error| format!("Не удалось запустить установщик обновления: {error}"))?;
@@ -59,7 +63,7 @@ fn installer_command(installer_path: &Path) -> Result<Command, String> {
     }
 
     let mut command = Command::new(installer_path);
-    command.arg("/S");
+    command.arg("/S").arg("/SKIP_WEBVIEW2");
     Ok(command)
 }
 

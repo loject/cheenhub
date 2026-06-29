@@ -78,7 +78,7 @@ fn UpdaterApp() -> Element {
     let mut started = use_signal(|| false);
     let state = use_signal(|| UpdaterState {
         stage: UpdaterStage::Preparing,
-        detail: "Готовим установку обновления...".to_owned(),
+        detail: "Подготовка пакета обновления.".to_owned(),
     });
 
     use_effect(move || {
@@ -129,7 +129,7 @@ fn UpdaterApp() -> Element {
                 }
                 div { class: "mt-3 flex items-center justify-between gap-3",
                     span { class: "text-[12px] font-medium text-zinc-500", "{progress}%" }
-                    span { class: "text-[12px] text-zinc-500", "Окно можно оставить открытым" }
+                    span { class: "text-[12px] text-zinc-500", "Завершится автоматически" }
                 }
                 if is_complete {
                     button {
@@ -193,7 +193,7 @@ async fn run_installation(config: UpdaterConfig, mut state: Signal<UpdaterState>
     set_stage(
         &mut state,
         UpdaterStage::Preparing,
-        "Проверяем скачанный установщик и параметры запуска.",
+        "Проверяем установочный пакет.",
     );
     sleep_step().await;
 
@@ -213,7 +213,7 @@ async fn run_installation(config: UpdaterConfig, mut state: Signal<UpdaterState>
         set_stage(
             &mut state,
             UpdaterStage::WaitingForApp,
-            "Закрываем основное приложение перед установкой.",
+            "Ожидаем завершения текущего процесса.",
         );
         write_log(&config, &format!("waiting for app pid {pid}"));
         if let Err(error) = tokio::task::spawn_blocking(move || {
@@ -233,7 +233,7 @@ async fn run_installation(config: UpdaterConfig, mut state: Signal<UpdaterState>
     set_stage(
         &mut state,
         UpdaterStage::Installing,
-        "Запускаем установщик и ждём завершения обновления.",
+        "Применяем обновление.",
     );
     sleep_step().await;
     write_log(
@@ -242,7 +242,14 @@ async fn run_installation(config: UpdaterConfig, mut state: Signal<UpdaterState>
     );
 
     let installer_path = config.installer_path.clone();
-    match tokio::task::spawn_blocking(move || platform::run_installer(&installer_path)).await {
+    let installer_log_config = config.clone();
+    match tokio::task::spawn_blocking(move || {
+        platform::run_installer(&installer_path, |message| {
+            write_log(&installer_log_config, message);
+        })
+    })
+    .await
+    {
         Ok(Ok(())) => {}
         Ok(Err(message)) => {
             fail(&config, &mut state, message);
@@ -262,7 +269,7 @@ async fn run_installation(config: UpdaterConfig, mut state: Signal<UpdaterState>
         set_stage(
             &mut state,
             UpdaterStage::Restarting,
-            "Возвращаем CheenHub после установки.",
+            "Запускаем CheenHub заново.",
         );
         sleep_step().await;
         if let Err(message) = platform::restart_application(restart_path) {
@@ -275,7 +282,7 @@ async fn run_installation(config: UpdaterConfig, mut state: Signal<UpdaterState>
     set_stage(
         &mut state,
         UpdaterStage::Complete,
-        "Обновление завершено. Можно продолжить работу.",
+        "Обновление установлено.",
     );
     sleep_step().await;
     write_log(&config, "closing updater after successful installation");
@@ -305,11 +312,11 @@ async fn sleep_step() {
 fn stage_title(stage: UpdaterStage) -> &'static str {
     match stage {
         UpdaterStage::Preparing => "Подготовка",
-        UpdaterStage::WaitingForApp => "Закрываем CheenHub",
-        UpdaterStage::Installing => "Устанавливаем обновление",
-        UpdaterStage::Restarting => "Перезапускаем приложение",
+        UpdaterStage::WaitingForApp => "Ожидание",
+        UpdaterStage::Installing => "Установка",
+        UpdaterStage::Restarting => "Перезапуск",
         UpdaterStage::Complete => "Готово",
-        UpdaterStage::Failed => "Нужна помощь",
+        UpdaterStage::Failed => "Ошибка установки",
     }
 }
 

@@ -193,9 +193,9 @@ fn start_updater(version: &str, file: &DownloadedUpdate) -> Result<(), String> {
     info!(
         update_version = %version,
         updater_path = %current_exe.display(),
-        "application update mode started; exiting main application"
+        "application update mode started; main window should close"
     );
-    std::process::exit(0);
+    Ok(())
 }
 
 #[cfg(not(target_family = "wasm"))]

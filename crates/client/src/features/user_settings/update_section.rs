@@ -3,8 +3,8 @@
 use dioxus::prelude::*;
 
 use crate::features::application_update::{
-    ApplicationUpdateHandle, AvailableUpdate, UpdateDownloadProgress, UpdateDownloadStatus,
-    UpdateUiStatus,
+    ApplicationUpdateHandle, ApplicationUpdateShutdown, AvailableUpdate, UpdateDownloadProgress,
+    UpdateDownloadStatus, UpdateUiStatus, use_application_update_shutdown,
 };
 use crate::features::toast::ToastHandle;
 
@@ -13,6 +13,7 @@ use crate::features::toast::ToastHandle;
 pub(crate) fn UpdateSettingsSection() -> Element {
     let update = use_context::<ApplicationUpdateHandle>();
     let toast = use_context::<ToastHandle>();
+    let update_shutdown = use_application_update_shutdown();
     let status = update.ui_status();
     let download_status = update.download_status();
     let is_checking = matches!(status, UpdateUiStatus::Checking);
@@ -58,10 +59,10 @@ pub(crate) fn UpdateSettingsSection() -> Element {
                         }
                     },
                     UpdateUiStatus::Available { update: available_update } => rsx! {
-                        {available_update_panel(available_update, update, download_status, toast)}
+                        {available_update_panel(available_update, update, download_status, toast, update_shutdown.clone())}
                     },
                     UpdateUiStatus::Deferred { update: available_update, until_epoch_seconds } => rsx! {
-                        {deferred_update_panel(available_update, until_epoch_seconds, update, download_status, toast)}
+                        {deferred_update_panel(available_update, until_epoch_seconds, update, download_status, toast, update_shutdown.clone())}
                     },
                     UpdateUiStatus::Failed { ref message } => rsx! {
                         p { class: "text-[13px] font-medium text-red-100", "Не удалось проверить обновления" }
@@ -78,6 +79,7 @@ fn available_update_panel(
     handle: ApplicationUpdateHandle,
     download_status: UpdateDownloadStatus,
     toast: ToastHandle,
+    update_shutdown: ApplicationUpdateShutdown,
 ) -> Element {
     let version = update.version.clone();
 
@@ -99,7 +101,7 @@ fn available_update_panel(
                     class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-900",
                     "Открыть релиз"
                 }
-                {download_update_button(&update, handle, &download_status, toast)}
+                {download_update_button(&update, handle, &download_status, toast, update_shutdown)}
             }
             {download_status_panel(&download_status)}
         }
@@ -112,6 +114,7 @@ fn deferred_update_panel(
     handle: ApplicationUpdateHandle,
     download_status: UpdateDownloadStatus,
     toast: ToastHandle,
+    update_shutdown: ApplicationUpdateShutdown,
 ) -> Element {
     let version = update.version.clone();
 
@@ -130,7 +133,7 @@ fn deferred_update_panel(
                     onclick: move |_| handle.show_deferred_update_now(),
                     "Показать сейчас"
                 }
-                {download_update_button(&update, handle, &download_status, toast)}
+                {download_update_button(&update, handle, &download_status, toast, update_shutdown)}
             }
             {download_status_panel(&download_status)}
         }
@@ -142,6 +145,7 @@ fn download_update_button(
     handle: ApplicationUpdateHandle,
     download_status: &UpdateDownloadStatus,
     toast: ToastHandle,
+    update_shutdown: ApplicationUpdateShutdown,
 ) -> Element {
     let version = update.version.clone();
     let has_asset = update.download_asset.is_some();
@@ -167,8 +171,10 @@ fn download_update_button(
                     "application update primary action requested from settings"
                 );
                 if is_downloaded {
-                    handle.install_downloaded_update();
-                    toast.info("Запускаем установщик обновления.");
+                    if handle.install_downloaded_update() {
+                        toast.info("Запускаем установщик обновления.");
+                        update_shutdown.close_after_update_started();
+                    }
                 } else {
                     handle.download_update();
                     toast.info("Начинаем скачивание обновления.");

@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 use super::handle::{
     ApplicationUpdateHandle, UpdateDeferralDelay, UpdateUiStatus, now_epoch_seconds,
 };
+use super::shutdown::{ApplicationUpdateShutdown, use_application_update_shutdown};
 use super::types::{AvailableUpdate, UpdateDownloadStatus};
 use crate::features::runtime::sleep_duration;
 use crate::features::toast::{
@@ -19,6 +20,7 @@ use crate::features::toast::{
 pub(super) fn ApplicationUpdateEffects(children: Element) -> Element {
     let handle = use_context::<ApplicationUpdateHandle>();
     let toast = use_context::<ToastHandle>();
+    let update_shutdown = use_application_update_shutdown();
     let mut auto_check_started = use_signal(|| false);
     let mut scheduled_deferral = use_signal(|| None::<(String, u64)>);
     let mut shown_notification_version = use_signal(|| None::<String>);
@@ -77,6 +79,7 @@ pub(super) fn ApplicationUpdateEffects(children: Element) -> Element {
             handle,
             toast,
             download_status,
+            update_shutdown.clone(),
         ));
     });
 
@@ -116,12 +119,14 @@ fn update_available_toast(
     handle: ApplicationUpdateHandle,
     toast: ToastHandle,
     download_status: UpdateDownloadStatus,
+    update_shutdown: ApplicationUpdateShutdown,
 ) -> UpdateAvailableToast {
     let action_version = update.version.clone();
     let primary_state = primary_update_action_state(&update, &download_status);
     let download_handle = handle;
     let download_toast = toast;
     let defer_toast = toast;
+    let shutdown_after_update_start = update_shutdown;
     let quick_dismiss_handle = handle;
     let defer_handle = handle;
 
@@ -146,8 +151,10 @@ fn update_available_toast(
                     "application update primary action requested from notification"
                 );
                 if primary_state.downloaded {
-                    download_handle.install_downloaded_update();
-                    download_toast.info("Запускаем установщик обновления.");
+                    if download_handle.install_downloaded_update() {
+                        download_toast.info("Запускаем установщик обновления.");
+                        shutdown_after_update_start.close_after_update_started();
+                    }
                 } else {
                     download_handle.download_update();
                     download_toast.info("Начинаем скачивание обновления.");
