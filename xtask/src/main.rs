@@ -37,7 +37,7 @@ fn run() -> XtaskResult<()> {
 
 fn print_usage() -> XtaskResult<()> {
     println!(
-        "Usage:\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>"
+        "Usage:\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>\n  cargo run -p xtask -- release-artifacts publish <release-tag> <asset-dir>"
     );
     Ok(())
 }
