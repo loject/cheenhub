@@ -47,19 +47,14 @@ pub(crate) fn SoundSettingsSection() -> Element {
     let mic_level = mic.level();
     let live_level = level_percent(mic_level.rms);
 
-    // Enumerate real devices once on mount. Only auto-selects the first device when
-    // no valid preference is already stored in the microphone handle context.
+    // Enumerate real devices once on mount. Empty preference means system default device.
     let mic_effect = mic.clone();
     use_effect(move || {
         let mic = mic_effect.clone();
         spawn(async move {
             let result = enumerate_audio_input_devices().await;
             if let AudioInputDevicesResult::Available(ref devices) = result {
-                if mic.input_device_id().is_none() {
-                    select_first_input_device(&mic, devices);
-                } else {
-                    mic.reconcile_input_devices(devices);
-                }
+                mic.reconcile_input_devices(devices);
             }
             input_devices_state.set(Some(result));
         });
@@ -71,11 +66,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
         spawn(async move {
             let result = enumerate_audio_output_devices().await;
             if let AudioOutputDevicesResult::Available(ref devices) = result {
-                if playback.output_device_id().is_none() {
-                    select_first_output_device(&playback, devices);
-                } else {
-                    playback.reconcile_output_devices(devices);
-                }
+                playback.reconcile_output_devices(devices);
             }
             output_devices_state.set(Some(result));
         });
@@ -275,18 +266,6 @@ pub(crate) fn SoundSettingsSection() -> Element {
     }
 }
 
-fn select_first_input_device(mic: &MicrophoneHandle, devices: &[AudioInputDevice]) {
-    if let Some(first) = devices.first() {
-        mic.set_input_device(first);
-    }
-}
-
-fn select_first_output_device(playback: &AudioPlaybackHandle, devices: &[AudioOutputDevice]) {
-    if let Some(first) = devices.first() {
-        playback.set_output_device(first);
-    }
-}
-
 fn refresh_devices_after_permission(
     mic: MicrophoneHandle,
     playback: AudioPlaybackHandle,
@@ -341,21 +320,13 @@ async fn refresh_devices_inner(
         enumerate_audio_input_devices().await
     };
     if let AudioInputDevicesResult::Available(ref devices) = input_result {
-        if mic.input_device_id().is_none() {
-            select_first_input_device(&mic, devices);
-        } else {
-            mic.reconcile_input_devices(devices);
-        }
+        mic.reconcile_input_devices(devices);
     }
     input_devices_state.set(Some(input_result));
 
     let output_result = enumerate_audio_output_devices().await;
     if let AudioOutputDevicesResult::Available(ref devices) = output_result {
-        if playback.output_device_id().is_none() {
-            select_first_output_device(&playback, devices);
-        } else {
-            playback.reconcile_output_devices(devices);
-        }
+        playback.reconcile_output_devices(devices);
     }
     output_devices_state.set(Some(output_result));
 }
@@ -453,7 +424,7 @@ fn microphone_capture_notice(status: &MicrophoneStatus) -> Element {
         },
         MicrophoneStatus::PermissionDenied => rsx! {
             div { class: "rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-[12px] leading-5 text-red-200",
-                "Доступ к микрофону запрещён. Разрешите его в настройках браузера и обновите страницу."
+                "Доступ к микрофону запрещён. Разрешите его в настройках системы или браузера и повторите попытку."
             }
         },
         MicrophoneStatus::Error(message) => rsx! {

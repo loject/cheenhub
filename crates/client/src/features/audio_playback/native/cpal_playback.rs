@@ -141,6 +141,11 @@ impl AudioPlaybackHandle {
 
     /// Сохраняет предпочитаемое устройство вывода и пересоздает native stream.
     pub(crate) fn set_output_device(&self, device: &AudioOutputDevice) {
+        if device.device_id.is_empty() {
+            self.set_output_device_preference(None, None);
+            return;
+        }
+
         self.set_output_device_preference(
             Some(device.device_id.clone()),
             Some(device.label.clone()),
@@ -278,14 +283,8 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
         use_signal(move || stored_output_device.and_then(|device| device.label));
     let output_volume_percent = use_signal(move || output_volume_value);
     let jitter_buffer_ms = use_signal(move || jitter_buffer_ms_value);
-    let output_gain = gain_from_percent(output_volume_value);
-    let handle = AudioPlaybackHandle {
-        muted,
-        selected_output_device_id,
-        selected_output_device_label,
-        output_volume_percent,
-        jitter_buffer_ms,
-        inner: Rc::new(RefCell::new(AudioPlaybackInner {
+    let inner = use_hook(move || {
+        Rc::new(RefCell::new(AudioPlaybackInner {
             muted: false,
             engine: None,
             decoders: HashMap::new(),
@@ -296,8 +295,16 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             jitter_warning_at_ms: HashMap::new(),
             decoder_warning_at_ms: HashMap::new(),
             user_volumes: HashMap::new(),
-            output_gain,
-        })),
+            output_gain: gain_from_percent(output_volume_value),
+        }))
+    });
+    let handle = AudioPlaybackHandle {
+        muted,
+        selected_output_device_id,
+        selected_output_device_label,
+        output_volume_percent,
+        jitter_buffer_ms,
+        inner,
     };
     use_context_provider(move || handle.clone());
 

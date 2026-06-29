@@ -90,8 +90,9 @@ args = [
     "cheenhub_client",
     "--bin",
     "cheen_hub",
+    "--no-default-features",
     "--features",
-    "linux",
+    "desktop,linux",
 ]
 
 [tasks.dioxus-desktop-mac]
@@ -105,8 +106,9 @@ args = [
     "cheenhub_client",
     "--bin",
     "cheen_hub",
+    "--no-default-features",
     "--features",
-    "macos",
+    "desktop,macos",
 ]
 
 [tasks.dioxus-desktop-windows]
@@ -120,8 +122,9 @@ args = [
     "cheenhub_client",
     "--bin",
     "cheen_hub",
+    "--no-default-features",
     "--features",
-    "windows",
+    "desktop,windows",
 ]
 
 [tasks.build-web]
@@ -154,8 +157,9 @@ args = [
     "--bin",
     "cheen_hub",
     "--release",
+    "--no-default-features",
     "--features",
-    "windows",
+    "desktop,windows",
     "--package-types",
     "nsis",
     "--out-dir",
@@ -174,8 +178,9 @@ args = [
     "--bin",
     "cheen_hub",
     "--release",
+    "--no-default-features",
     "--features",
-    "windows",
+    "desktop,windows",
     "--package-types",
     "msi",
     "--out-dir",
@@ -198,8 +203,9 @@ args = [
     "--bin",
     "cheen_hub",
     "--release",
+    "--no-default-features",
     "--features",
-    "linux",
+    "desktop,linux",
     "--package-types",
     "deb",
     "--out-dir",
@@ -218,8 +224,9 @@ args = [
     "--bin",
     "cheen_hub",
     "--release",
+    "--no-default-features",
     "--features",
-    "linux",
+    "desktop,linux",
     "--package-types",
     "appimage",
     "--out-dir",

@@ -96,6 +96,11 @@ impl AudioPlaybackHandle {
 
     /// Сохраняет предпочитаемое устройство вывода.
     pub(crate) fn set_output_device(&self, device: &AudioOutputDevice) {
+        if device.device_id.is_empty() {
+            self.set_output_device_preference(None, None);
+            return;
+        }
+
         self.set_output_device_preference(
             Some(device.device_id.clone()),
             Some(device.label.clone()),

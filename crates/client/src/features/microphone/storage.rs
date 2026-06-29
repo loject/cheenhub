@@ -16,9 +16,9 @@ const DEFAULT_VAD_THRESHOLD_PERCENT: u32 = 20;
 /// Stored microphone input device preference.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StoredInputDevice {
-    /// Browser device ID to pass into `getUserMedia`.
+    /// Идентификатор устройства ввода для browser/native backend.
     pub(crate) device_id: String,
-    /// Browser-provided device label used to recover when device IDs rotate.
+    /// Метка устройства для восстановления preference, когда platform backend меняет идентификаторы.
     pub(crate) label: Option<String>,
 }
 

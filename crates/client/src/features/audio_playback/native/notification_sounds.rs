@@ -71,10 +71,12 @@ impl AudioPlaybackHandle {
         };
 
         let sender_id = format!("notification:{}", sound.event_name());
+        let sample_count = samples.len();
+        let output_volume_percent = self.output_volume_percent();
         queue_sender_samples(&mixer, &sender_id, samples, 1.0, 0);
         debug!(
             sound = sound.event_name(),
-            "queued native notification sound"
+            sample_count, output_volume_percent, "queued native notification sound"
         );
     }
 }

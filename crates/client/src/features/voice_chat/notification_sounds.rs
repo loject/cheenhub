@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
+use dioxus::prelude::debug;
 
 use crate::features::audio_playback::{AudioPlaybackHandle, NotificationSound};
 
@@ -54,10 +55,16 @@ impl VoiceNotificationSoundState {
         self.current_user_connected = true;
     }
 
+    /// Возвращает, был ли текущий пользователь отмечен подключенным к голосовой комнате.
+    pub(super) fn is_current_user_connected(&self) -> bool {
+        self.current_user_connected
+    }
+
     /// Отмечает выход из активной комнаты и возвращает звук выхода после cleanup'а.
     pub(super) fn record_inactive(&mut self, playback: &AudioPlaybackHandle) {
         if self.current_user_connected {
             playback.play_notification_sound(NotificationSound::CurrentUserLeft);
+            debug!("recorded current user voice room leave notification");
         }
         self.room_key = None;
         self.participant_ids.clear();

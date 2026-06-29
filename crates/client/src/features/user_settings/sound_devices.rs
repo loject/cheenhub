@@ -38,6 +38,11 @@ pub(super) fn input_device_widget(
                             on_change(device);
                         },
                         class: select_class(),
+                        option {
+                            value: "",
+                            selected: selected.as_deref().unwrap_or_default().is_empty(),
+                            "Системное устройство по умолчанию"
+                        }
                         if selected_input_device_is_unavailable(selected.as_deref(), &devices) {
                             option {
                                 value: selected.as_deref().unwrap_or_default(),
@@ -68,7 +73,7 @@ pub(super) fn input_device_widget(
             div { class: "flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2.5",
                 span { class: "mt-px shrink-0 text-red-400", "⊘" }
                 p { class: "text-[12px] leading-5 text-red-300",
-                    "Доступ к микрофону запрещён. Разрешите его в настройках браузера и обновите страницу."
+                    "Доступ к микрофону запрещён. Разрешите его в настройках системы или браузера и обновите список."
                 }
             }
         },
@@ -79,7 +84,7 @@ pub(super) fn input_device_widget(
         ),
 
         Some(AudioInputDevicesResult::NotSupported) => {
-            not_supported("Браузер не поддерживает выбор устройств аудиовхода.")
+            not_supported("Текущая платформа не поддерживает выбор устройств аудиовхода.")
         }
     }
 }
@@ -115,6 +120,11 @@ pub(super) fn output_device_widget(
                             on_change(device);
                         },
                         class: select_class(),
+                        option {
+                            value: "",
+                            selected: selected.as_deref().unwrap_or_default().is_empty(),
+                            "Системное устройство по умолчанию"
+                        }
                         if selected_output_device_is_unavailable(selected.as_deref(), &devices) {
                             option {
                                 value: selected.as_deref().unwrap_or_default(),
@@ -147,7 +157,7 @@ pub(super) fn output_device_widget(
         ),
 
         Some(AudioOutputDevicesResult::NotSupported) => {
-            not_supported("Браузер не поддерживает выбор устройств аудиовывода.")
+            not_supported("Текущая платформа не поддерживает выбор устройств аудиовывода.")
         }
     }
 }

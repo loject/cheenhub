@@ -349,7 +349,9 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 mic_paused_by_mute.set(false);
             }
             effect_handle.clear_speaking_users();
-            playback.stop_all();
+            if effect_voice_sounds.borrow().is_current_user_connected() {
+                playback.stop_all();
+            }
             effect_voice_sounds.borrow_mut().record_inactive(&playback);
 
             if had_camera_target

@@ -18,9 +18,9 @@ pub(crate) const MAX_JITTER_BUFFER_MS: u32 = 400;
 /// Сохраненное предпочтение устройства аудиовывода.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StoredOutputDevice {
-    /// Идентификатор browser sink/устройства, передаваемый в `AudioContext.setSinkId`.
+    /// Идентификатор устройства вывода для browser/native backend.
     pub(crate) device_id: String,
-    /// Метка устройства, полученная от браузера, для восстановления при смене идентификаторов.
+    /// Метка устройства для восстановления preference, когда platform backend меняет идентификаторы.
     pub(crate) label: Option<String>,
 }
 

@@ -37,12 +37,15 @@ pub(super) fn new_mixer(output_gain: f32) -> MixerHandle {
 /// Возвращает callback для `cpal`, который микширует mono PCM во все каналы устройства.
 pub(super) fn output_callback<T>(
     channels: u16,
+    source_sample_rate_hz: u32,
+    output_sample_rate_hz: u32,
     mixer: MixerHandle,
 ) -> impl FnMut(&mut [T], &cpal::OutputCallbackInfo) + Send + 'static
 where
     T: CpalOutputSample,
 {
     let channels = usize::from(channels.max(1));
+    let mut resampler = OutputResampler::new(source_sample_rate_hz, output_sample_rate_hz);
     move |data, _info| {
         let Ok(mut mixer) = mixer.try_lock() else {
             write_silence(data);
@@ -50,11 +53,53 @@ where
         };
 
         for frame in data.chunks_mut(channels) {
-            let sample = mixer.next_sample();
+            let sample = resampler.next_sample(&mut mixer);
             for output in frame {
                 *output = T::from_f32(sample);
             }
         }
+    }
+}
+
+struct OutputResampler {
+    ratio: f64,
+    position: f64,
+    current: f32,
+    next: f32,
+    initialized: bool,
+}
+
+impl OutputResampler {
+    fn new(source_sample_rate_hz: u32, output_sample_rate_hz: u32) -> Self {
+        let ratio = match (source_sample_rate_hz, output_sample_rate_hz) {
+            (0, _) | (_, 0) => 1.0,
+            (source, output) => f64::from(source) / f64::from(output),
+        };
+
+        Self {
+            ratio,
+            position: 0.0,
+            current: 0.0,
+            next: 0.0,
+            initialized: false,
+        }
+    }
+
+    fn next_sample(&mut self, mixer: &mut MixerState) -> f32 {
+        if !self.initialized {
+            self.current = mixer.next_sample();
+            self.next = mixer.next_sample();
+            self.initialized = true;
+        }
+
+        let sample = self.current + (self.next - self.current) * self.position as f32;
+        self.position += self.ratio;
+        while self.position >= 1.0 {
+            self.current = self.next;
+            self.next = mixer.next_sample();
+            self.position -= 1.0;
+        }
+        sample.clamp(-1.0, 1.0)
     }
 }
 
@@ -210,5 +255,29 @@ mod tests {
         };
 
         assert_eq!(mixer.next_sample(), 1.0);
+    }
+
+    #[test]
+    fn resampler_preserves_source_samples_at_equal_rate() {
+        let mixer = new_mixer(1.0);
+        queue_sender_samples(&mixer, "sender", vec![0.25, 0.5, 0.75], 1.0, 1);
+        let mut mixer = mixer.lock().expect("mixer lock");
+        let mut resampler = OutputResampler::new(48_000, 48_000);
+
+        assert_eq!(resampler.next_sample(&mut mixer), 0.25);
+        assert_eq!(resampler.next_sample(&mut mixer), 0.5);
+        assert_eq!(resampler.next_sample(&mut mixer), 0.75);
+    }
+
+    #[test]
+    fn resampler_interpolates_when_output_rate_is_higher() {
+        let mixer = new_mixer(1.0);
+        queue_sender_samples(&mixer, "sender", vec![0.0, 1.0], 1.0, 1);
+        let mut mixer = mixer.lock().expect("mixer lock");
+        let mut resampler = OutputResampler::new(48_000, 96_000);
+
+        assert_eq!(resampler.next_sample(&mut mixer), 0.0);
+        assert_eq!(resampler.next_sample(&mut mixer), 0.5);
+        assert_eq!(resampler.next_sample(&mut mixer), 1.0);
     }
 }

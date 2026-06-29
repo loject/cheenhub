@@ -291,10 +291,7 @@ impl MicrophoneHandle {
         (self.level)()
     }
 
-    /// Stores the preferred input device.
-    ///
-    /// The label is persisted so a later browser session can recover if the
-    /// device ID changes but the same physical device is still present.
+    /// Сохраняет preference устройства ввода; пустой device_id означает системное устройство по умолчанию.
     pub(crate) fn set_input_device(&self, device: &AudioInputDevice) {
         self.set_input_device_preference(
             Some(device.device_id.clone()),
@@ -326,6 +323,8 @@ impl MicrophoneHandle {
     }
 
     fn set_input_device_preference(&self, device_id: Option<String>, label: Option<String>) {
+        let device_id = device_id.filter(|id| !id.is_empty());
+        let label = device_id.as_ref().and(label);
         if self.selected_input_device_id.peek().as_deref() == device_id.as_deref()
             && self.selected_input_device_label.peek().as_deref() == label.as_deref()
         {

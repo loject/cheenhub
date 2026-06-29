@@ -160,6 +160,11 @@ impl AudioPlaybackHandle {
 
     /// Stores the preferred audio output device and applies it to the active context.
     pub(crate) fn set_output_device(&self, device: &AudioOutputDevice) {
+        if device.device_id.is_empty() {
+            self.set_output_device_preference(None, None);
+            return;
+        }
+
         self.set_output_device_preference(
             Some(device.device_id.clone()),
             Some(device.label.clone()),
@@ -363,9 +368,7 @@ impl AudioPlaybackHandle {
         let Some(context) = self.inner.borrow().context.clone() else {
             return;
         };
-        if let Some(device_id) = device_id {
-            apply_output_device_to_context(context, device_id);
-        }
+        apply_output_device_to_context(context, device_id.unwrap_or_default());
     }
 }
 

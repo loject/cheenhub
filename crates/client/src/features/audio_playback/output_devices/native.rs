@@ -45,6 +45,9 @@ mod implementation {
             }
         };
 
+        let default_output_name = host
+            .default_output_device()
+            .and_then(|device| device.name().ok());
         let mut audio_outputs = Vec::new();
         for device in devices {
             let label = match device.name() {
@@ -63,6 +66,11 @@ mod implementation {
             });
         }
 
+        debug!(
+            device_count = audio_outputs.len(),
+            has_default_device = default_output_name.is_some(),
+            "enumerated native audio output devices"
+        );
         if audio_outputs.is_empty() {
             AudioOutputDevicesResult::NoDevices
         } else {

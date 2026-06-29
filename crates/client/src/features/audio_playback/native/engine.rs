@@ -2,7 +2,7 @@
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig, SupportedStreamConfig};
-use dioxus::prelude::{info, warn};
+use dioxus::prelude::{debug, info, warn};
 
 use super::mixer::{MixerHandle, new_mixer, output_callback};
 
@@ -17,6 +17,15 @@ impl NativePlaybackEngine {
     /// Возвращает идентификатор выбранного устройства вывода.
     pub(super) fn device_id(&self) -> Option<String> {
         self.device_id.clone()
+    }
+}
+
+impl Drop for NativePlaybackEngine {
+    fn drop(&mut self) {
+        debug!(
+            selected_device = self.device_id.as_deref().unwrap_or(""),
+            "native audio playback output stream dropped"
+        );
     }
 }
 
@@ -39,6 +48,8 @@ pub(super) fn create_engine(
         &stream_config,
         sample_format,
         channels,
+        sample_rate_hz,
+        actual_sample_rate_hz,
         mixer.clone(),
     )?;
     stream.play().map_err(cpal_error)?;
@@ -101,9 +112,17 @@ fn select_output_config(
         fallback.get_or_insert(candidate);
     }
 
-    fallback.ok_or_else(|| {
-        format!("Устройство вывода не поддерживает {sample_rate_hz} Гц без resampling.")
-    })
+    if let Some(fallback) = fallback {
+        return Ok(fallback);
+    }
+
+    let default_config = device.default_output_config().map_err(cpal_error)?;
+    warn!(
+        requested_sample_rate_hz = sample_rate_hz,
+        fallback_sample_rate_hz = default_config.sample_rate().0,
+        "native output device does not support requested sample rate; using default cpal config with resampling"
+    );
+    Ok(default_config)
 }
 
 fn build_output_stream(
@@ -111,6 +130,8 @@ fn build_output_stream(
     stream_config: &StreamConfig,
     sample_format: SampleFormat,
     channels: u16,
+    source_sample_rate_hz: u32,
+    output_sample_rate_hz: u32,
     mixer: MixerHandle,
 ) -> Result<Stream, String> {
     let err_fn = move |error| {
@@ -122,49 +143,89 @@ fn build_output_stream(
     let stream = match sample_format {
         SampleFormat::F32 => device.build_output_stream(
             stream_config,
-            output_callback::<f32>(channels, mixer),
+            output_callback::<f32>(
+                channels,
+                source_sample_rate_hz,
+                output_sample_rate_hz,
+                mixer,
+            ),
             err_fn,
             None,
         ),
         SampleFormat::F64 => device.build_output_stream(
             stream_config,
-            output_callback::<f64>(channels, mixer),
+            output_callback::<f64>(
+                channels,
+                source_sample_rate_hz,
+                output_sample_rate_hz,
+                mixer,
+            ),
             err_fn,
             None,
         ),
         SampleFormat::I8 => device.build_output_stream(
             stream_config,
-            output_callback::<i8>(channels, mixer),
+            output_callback::<i8>(
+                channels,
+                source_sample_rate_hz,
+                output_sample_rate_hz,
+                mixer,
+            ),
             err_fn,
             None,
         ),
         SampleFormat::I16 => device.build_output_stream(
             stream_config,
-            output_callback::<i16>(channels, mixer),
+            output_callback::<i16>(
+                channels,
+                source_sample_rate_hz,
+                output_sample_rate_hz,
+                mixer,
+            ),
             err_fn,
             None,
         ),
         SampleFormat::I32 => device.build_output_stream(
             stream_config,
-            output_callback::<i32>(channels, mixer),
+            output_callback::<i32>(
+                channels,
+                source_sample_rate_hz,
+                output_sample_rate_hz,
+                mixer,
+            ),
             err_fn,
             None,
         ),
         SampleFormat::U8 => device.build_output_stream(
             stream_config,
-            output_callback::<u8>(channels, mixer),
+            output_callback::<u8>(
+                channels,
+                source_sample_rate_hz,
+                output_sample_rate_hz,
+                mixer,
+            ),
             err_fn,
             None,
         ),
         SampleFormat::U16 => device.build_output_stream(
             stream_config,
-            output_callback::<u16>(channels, mixer),
+            output_callback::<u16>(
+                channels,
+                source_sample_rate_hz,
+                output_sample_rate_hz,
+                mixer,
+            ),
             err_fn,
             None,
         ),
         SampleFormat::U32 => device.build_output_stream(
             stream_config,
-            output_callback::<u32>(channels, mixer),
+            output_callback::<u32>(
+                channels,
+                source_sample_rate_hz,
+                output_sample_rate_hz,
+                mixer,
+            ),
             err_fn,
             None,
         ),

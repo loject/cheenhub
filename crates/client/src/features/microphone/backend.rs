@@ -47,7 +47,7 @@ pub(crate) struct MicrophoneConfig {
     pub(crate) vad_activation_delay_us: u32,
     /// Time activation remains open after the level falls below threshold.
     pub(crate) vad_release_delay_us: u32,
-    /// Browser deviceId to request via getUserMedia; None uses the default device.
+    /// Идентификатор устройства ввода для platform backend; `None` использует системное устройство по умолчанию.
     pub(crate) device_id: Option<String>,
     /// Linear input gain applied before voice activation and encoding.
     pub(crate) input_gain: f32,
