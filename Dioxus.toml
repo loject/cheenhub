@@ -22,6 +22,7 @@ webview_install_mode = { DownloadBootstrapper = { silent = true } }
 
 [bundle.windows.nsis]
 template = "bundle/windows/nsis-installer.nsi"
+installer_icon = "../../icons/icon.ico"
 
 [bundle.windows.wix]
 upgrade_code = "082cd097-8bbc-4aca-94f7-7881dda02673"

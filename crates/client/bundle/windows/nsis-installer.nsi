@@ -83,6 +83,9 @@ Section "Install"
 
     ; Установка основного бинарника
     File "{{main_binary_path}}"
+    {{#if installer_icon}}
+    File /oname=app.ico "{{installer_icon}}"
+    {{/if}}
 
     ; Установка ресурсов
     {{#each staged_files}}
@@ -97,11 +100,19 @@ Section "Install"
 
     ; Ярлыки в меню Пуск
     CreateDirectory "$SMPROGRAMS\{{start_menu_folder}}"
+    {{#if installer_icon}}
+    CreateShortcut "$SMPROGRAMS\{{start_menu_folder}}\{{product_name}}.lnk" "$INSTDIR\{{main_binary_name}}" "" "$INSTDIR\app.ico" 0
+    {{else}}
     CreateShortcut "$SMPROGRAMS\{{start_menu_folder}}\{{product_name}}.lnk" "$INSTDIR\{{main_binary_name}}"
+    {{/if}}
     CreateShortcut "$SMPROGRAMS\{{start_menu_folder}}\Uninstall {{product_name}}.lnk" "$INSTDIR\uninstall.exe"
 
     ; Ярлык на рабочем столе
+    {{#if installer_icon}}
+    CreateShortcut "$DESKTOP\{{product_name}}.lnk" "$INSTDIR\{{main_binary_name}}" "" "$INSTDIR\app.ico" 0
+    {{else}}
     CreateShortcut "$DESKTOP\{{product_name}}.lnk" "$INSTDIR\{{main_binary_name}}"
+    {{/if}}
 
     ; Записи для списка установленных приложений
     WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{bundle_id}}" \
