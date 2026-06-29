@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 
 #[component]
 pub(crate) fn DownloadLink(
-    href: Option<&'static str>,
+    href: Option<String>,
     label: &'static str,
     format: &'static str,
     disabled: bool,
@@ -27,7 +27,7 @@ pub(crate) fn DownloadLink(
 
     rsx! {
         a {
-            href: href.unwrap_or("#"),
+            href: href.unwrap_or("#".into()),
             class: "flex items-center justify-between rounded-xl px-3 py-2 text-[13px] text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100",
             span { "{label}" }
             span { class: "ml-4 shrink-0 text-[11px] text-zinc-600", "{status_text}" }
