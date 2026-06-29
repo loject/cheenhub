@@ -22,6 +22,7 @@ mod file_lines {
 fn main() {
     file_lines::check_workspace_file_lines();
     validate_platform_features();
+    prepare_installer_payload();
 
     println!("cargo:rerun-if-changed=../../.env");
     println!("cargo:rerun-if-changed=../../{DEFAULT_DEV_CERT_PATH}");
@@ -49,6 +50,59 @@ fn main() {
     }
 
     forward_env("CHEENHUB_JWT_KEY_ID");
+}
+
+fn prepare_installer_payload() {
+    println!("cargo:rerun-if-env-changed=CHEENHUB_INSTALLER_PAYLOAD");
+    println!("cargo:rerun-if-env-changed=CHEENHUB_INSTALLER_PAYLOAD_NAME");
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is set"));
+    let generated_path = out_dir.join("installer_payload.rs");
+    let Some(payload_path) = env::var_os("CHEENHUB_INSTALLER_PAYLOAD").map(PathBuf::from) else {
+        write_installer_payload_module(&generated_path, None, None);
+        return;
+    };
+
+    println!("cargo:rerun-if-changed={}", payload_path.display());
+    let payload_name = env::var("CHEENHUB_INSTALLER_PAYLOAD_NAME")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            payload_path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .map(ToOwned::to_owned)
+        })
+        .unwrap_or_else(|| "cheenhub-installer-payload.exe".to_owned());
+    let payload_copy = out_dir.join("cheenhub-installer-payload.bin");
+    fs::copy(&payload_path, &payload_copy).unwrap_or_else(|error| {
+        panic!(
+            "failed to copy installer payload {} to {}: {error}",
+            payload_path.display(),
+            payload_copy.display()
+        )
+    });
+
+    write_installer_payload_module(&generated_path, Some(&payload_copy), Some(&payload_name));
+}
+
+fn write_installer_payload_module(
+    generated_path: &Path,
+    payload_path: Option<&Path>,
+    payload_name: Option<&str>,
+) {
+    let payload_bytes = payload_path
+        .map(|path| format!("Some(include_bytes!(r#\"{}\"#))", path.display()))
+        .unwrap_or_else(|| "None".to_owned());
+    let payload_name = payload_name
+        .map(|name| format!("Some(r#\"{name}\"#)"))
+        .unwrap_or_else(|| "None".to_owned());
+    let module = format!(
+        "pub const INSTALLER_PAYLOAD: Option<&'static [u8]> = {payload_bytes};\n\
+         pub const INSTALLER_PAYLOAD_NAME: Option<&'static str> = {payload_name};\n"
+    );
+
+    fs::write(generated_path, module).expect("installer payload module can be written");
 }
 
 fn validate_platform_features() {

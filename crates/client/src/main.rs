@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 
 mod features;
 mod routes;
+mod update_mode;
 
 use routes::{
     AppHome, ForgotPassword, Invite, Landing, Login, NotFound, OAuthCallback, Register,
@@ -14,7 +15,6 @@ use routes::{
 use crate::features::application_update::ApplicationUpdateProvider;
 use crate::features::pwa::PwaVersionBridge;
 use crate::features::system_tray::SystemTrayProvider;
-use crate::features::toast::ToastProvider;
 
 static TAILWIND_CSS: Asset = asset!(
     "/assets/tailwind.css",
@@ -22,6 +22,10 @@ static TAILWIND_CSS: Asset = asset!(
 );
 
 fn main() {
+    if update_mode::run_if_requested() {
+        return;
+    }
+
     dioxus_sdk_storage::set_dir!();
     features::runtime::launch_client(App);
 }
@@ -58,10 +62,8 @@ fn App() -> Element {
         document::Stylesheet { href: TAILWIND_CSS }
         PwaVersionBridge {}
         SystemTrayProvider {
-            ToastProvider {
-                ApplicationUpdateProvider {
-                    Router::<Route> {}
-                }
+            ApplicationUpdateProvider {
+                Router::<Route> {}
             }
         }
     }

@@ -12,8 +12,8 @@ name = "cheen_hub"
 path = "src/main.rs"
 
 [[bin]]
-name = "cheenhub_updater"
-path = "src/updater_main.rs"
+name = "cheenhub_installer"
+path = "src/installer_main.rs"
 required-features = ["desktop"]
 
 [lib]

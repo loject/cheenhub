@@ -247,13 +247,21 @@ jobs:
       - name: Build Windows installers
         shell: pwsh
         run: |
-          cargo build -p cheenhub_client --bin cheenhub_updater --release --no-default-features --features desktop
           dx bundle --windows --package cheenhub_client --bin cheen_hub --release --package-types nsis --package-types msi --out-dir dist/windows/raw
+          $payload = Get-ChildItem -Path dist/windows/raw -Recurse -Filter *.exe | Sort-Object FullName | Select-Object -First 1
+          if (-not $payload) {
+            throw "Dioxus Windows NSIS installer was not found in dist/windows/raw."
+          }
+          $env:CHEENHUB_INSTALLER_PAYLOAD = $payload.FullName
+          $env:CHEENHUB_INSTALLER_PAYLOAD_NAME = $payload.Name
+          cargo build -p cheenhub_client --bin cheenhub_installer --release --no-default-features --features desktop
+          New-Item -ItemType Directory -Force dist/windows/installer | Out-Null
+          Copy-Item target/release/cheenhub_installer.exe dist/windows/installer/cheenhub-installer.exe
 
       - name: Normalize Windows release assets
         shell: pwsh
         run: |
-          cargo run --quiet -p xtask -- release-artifacts collect windows dist/windows/raw dist/client $env:GITHUB_REF_NAME
+          cargo run --quiet -p xtask -- release-artifacts collect windows dist/windows/installer dist/client $env:GITHUB_REF_NAME
 
       - name: Publish Windows release assets
         env:
@@ -335,7 +343,6 @@ jobs:
       - name: Build Linux packages
         shell: bash
         run: |
-          cargo build -p cheenhub_client --bin cheenhub_updater --release --no-default-features --features desktop
           dx bundle --linux --package cheenhub_client --bin cheen_hub --release --package-types deb --package-types appimage --out-dir dist/linux/raw
 
       - name: Normalize Linux release assets

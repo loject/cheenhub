@@ -2,6 +2,7 @@
 
 mod api;
 mod download;
+mod effects;
 mod handle;
 mod provider;
 mod storage;

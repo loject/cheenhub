@@ -170,42 +170,32 @@ fn start_updater(version: &str, file: &DownloadedUpdate) -> Result<(), String> {
     let current_exe = std::env::current_exe().map_err(|error| {
         format!("Не удалось определить путь к текущему приложению перед обновлением: {error}")
     })?;
-    let updater_path = current_exe.with_file_name(updater_executable_name());
-    if !updater_path.is_file() {
+    if !current_exe.is_file() {
         return Err(format!(
-            "Не удалось найти апдейтер рядом с приложением: {}.",
-            updater_path.display()
+            "Не удалось найти исполняемый файл CheenHub для запуска обновления: {}.",
+            current_exe.display()
         ));
     }
 
-    Command::new(&updater_path)
+    Command::new(&current_exe)
+        .arg("--cheenhub-update")
         .arg("--installer")
         .arg(&file.path)
         .arg("--app-pid")
         .arg(std::process::id().to_string())
         .arg("--restart")
-        .arg(current_exe)
+        .arg(&current_exe)
         .arg("--version")
         .arg(version)
         .spawn()
-        .map_err(|error| format!("Не удалось запустить апдейтер CheenHub: {error}"))?;
+        .map_err(|error| format!("Не удалось запустить режим обновления CheenHub: {error}"))?;
 
     info!(
         update_version = %version,
-        updater_path = %updater_path.display(),
-        "application update helper started; exiting main application"
+        updater_path = %current_exe.display(),
+        "application update mode started; exiting main application"
     );
     std::process::exit(0);
-}
-
-#[cfg(all(not(target_family = "wasm"), target_os = "windows"))]
-fn updater_executable_name() -> &'static str {
-    "cheenhub_updater.exe"
-}
-
-#[cfg(all(not(target_family = "wasm"), not(target_os = "windows")))]
-fn updater_executable_name() -> &'static str {
-    "cheenhub_updater"
 }
 
 #[cfg(not(target_family = "wasm"))]

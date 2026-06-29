@@ -8,6 +8,10 @@ use dioxus::prelude::*;
 
 mod platform;
 
+static TAILWIND_CSS: Asset = asset!(
+    "/assets/tailwind.css",
+    AssetOptions::css().with_static_head(true)
+);
 static CONFIG: OnceLock<UpdaterConfig> = OnceLock::new();
 
 #[derive(Clone, Debug)]
@@ -56,7 +60,7 @@ pub(crate) fn run() {
     .expect("failed to load updater window icon");
     let window = WindowBuilder::new()
         .with_title("Обновление CheenHub")
-        .with_inner_size(LogicalSize::new(520.0, 360.0))
+        .with_inner_size(LogicalSize::new(520.0, 420.0))
         .with_resizable(false);
 
     dioxus::LaunchBuilder::desktop()
@@ -103,32 +107,33 @@ fn UpdaterApp() -> Element {
     let is_complete = state_value.stage == UpdaterStage::Complete;
 
     rsx! {
-        style { {UPDATER_STYLE} }
-        main { class: "updater-shell",
-            section { class: "updater-card",
-                div { class: "updater-mark", "CH" }
-                div { class: "updater-eyebrow", "CheenHub" }
-                h1 { "Обновление до {version}" }
-                div { class: if is_failed { "status failed" } else if is_complete { "status complete" } else { "status" },
-                    div { class: "pulse" }
+        document::Stylesheet { href: TAILWIND_CSS }
+        main { class: "grid h-screen place-items-center overflow-hidden bg-zinc-950 px-6 py-6 text-zinc-100 selection:bg-zinc-700/40",
+            div { class: "grid-bg absolute inset-0" }
+            section { class: "relative w-full max-w-[420px] rounded-2xl border border-zinc-800 bg-zinc-950/90 p-5 shadow-[0_30px_110px_rgba(0,0,0,.65)]",
+                div { class: "mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-[14px] font-bold text-white shadow-[0_14px_36px_rgba(59,130,246,.20)]", "CH" }
+                div { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-500", "CheenHub" }
+                h1 { class: "mt-2 text-[22px] font-semibold tracking-[-0.04em] text-zinc-50", "Обновление до {version}" }
+                div { class: status_class(is_failed, is_complete),
+                    div { class: pulse_class(is_failed, is_complete) }
                     div {
-                        strong { "{title}" }
-                        span { "{state_value.detail}" }
+                        strong { class: "block text-[13px] font-semibold leading-5 text-zinc-100", "{title}" }
+                        span { class: "mt-1 block text-[12px] leading-5 text-zinc-400", "{state_value.detail}" }
                     }
                 }
-                div { class: "progress-track",
+                div { class: "mt-5 h-2 overflow-hidden rounded-full bg-zinc-900",
                     div {
-                        class: if is_failed { "progress-fill failed" } else { "progress-fill" },
+                        class: progress_fill_class(is_failed),
                         style: "width: {progress}%;"
                     }
                 }
-                div { class: "progress-caption",
-                    span { "{progress}%" }
-                    span { "Окно можно оставить открытым" }
+                div { class: "mt-3 flex items-center justify-between gap-3",
+                    span { class: "text-[12px] font-medium text-zinc-500", "{progress}%" }
+                    span { class: "text-[12px] text-zinc-500", "Окно можно оставить открытым" }
                 }
                 if is_complete {
                     button {
-                        class: "primary-button",
+                        class: primary_button_class(false),
                         onclick: move |_| {
                             exit_updater(0);
                         },
@@ -136,7 +141,7 @@ fn UpdaterApp() -> Element {
                     }
                 } else if is_failed {
                     button {
-                        class: "primary-button danger",
+                        class: primary_button_class(true),
                         onclick: move |_| {
                             exit_updater(1);
                         },
@@ -145,6 +150,42 @@ fn UpdaterApp() -> Element {
                 }
             }
         }
+    }
+}
+
+fn status_class(is_failed: bool, is_complete: bool) -> &'static str {
+    if is_failed {
+        "mt-5 flex min-h-14 items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-3"
+    } else if is_complete {
+        "mt-5 flex min-h-14 items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3"
+    } else {
+        "mt-5 flex min-h-14 items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3"
+    }
+}
+
+fn pulse_class(is_failed: bool, is_complete: bool) -> &'static str {
+    if is_failed {
+        "h-2.5 w-2.5 shrink-0 rounded-full bg-red-400"
+    } else if is_complete {
+        "h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-300"
+    } else {
+        "h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-blue-500 shadow-[0_0_18px_rgba(96,165,250,0.55)]"
+    }
+}
+
+fn progress_fill_class(is_failed: bool) -> &'static str {
+    if is_failed {
+        "h-full rounded-full bg-red-500 transition-[width] duration-100"
+    } else {
+        "h-full rounded-full bg-blue-500 transition-[width] duration-100"
+    }
+}
+
+fn primary_button_class(is_danger: bool) -> &'static str {
+    if is_danger {
+        "mt-5 flex h-10 items-center justify-center rounded-xl border border-red-500/30 bg-red-500/15 px-4 text-[13px] font-semibold text-red-100 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/40 hover:bg-red-500/15"
+    } else {
+        "mt-5 flex h-10 items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-blue-400"
     }
 }
 
@@ -236,6 +277,9 @@ async fn run_installation(config: UpdaterConfig, mut state: Signal<UpdaterState>
         UpdaterStage::Complete,
         "Обновление завершено. Можно продолжить работу.",
     );
+    sleep_step().await;
+    write_log(&config, "closing updater after successful installation");
+    exit_updater(0);
 }
 
 fn set_stage(state: &mut Signal<UpdaterState>, stage: UpdaterStage, detail: impl Into<String>) {
@@ -326,172 +370,5 @@ fn write_log(config: &UpdaterConfig, message: &str) {
         return;
     };
 
-    let _ = writeln!(file, "[cheenhub_updater] {message}");
+    let _ = writeln!(file, "[cheenhub_update_mode] {message}");
 }
-
-const UPDATER_STYLE: &str = r#"
-html, body, #main {
-    width: 100%;
-    height: 100%;
-    margin: 0;
-}
-
-body {
-    font-family: Inter, "Segoe UI", system-ui, sans-serif;
-    background: #121316;
-    color: #f5f7fb;
-}
-
-.updater-shell {
-    align-items: center;
-    background:
-        radial-gradient(circle at 20% 20%, rgba(79, 150, 255, 0.24), transparent 30%),
-        linear-gradient(145deg, #191b20, #0e1013 68%);
-    box-sizing: border-box;
-    display: flex;
-    height: 100%;
-    justify-content: center;
-    padding: 28px;
-}
-
-.updater-card {
-    width: min(420px, 100%);
-}
-
-.updater-mark {
-    align-items: center;
-    background: #f5f7fb;
-    border-radius: 8px;
-    color: #111318;
-    display: flex;
-    font-size: 15px;
-    font-weight: 800;
-    height: 46px;
-    justify-content: center;
-    letter-spacing: 0;
-    margin-bottom: 22px;
-    width: 46px;
-}
-
-.updater-eyebrow {
-    color: #8fa1bd;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0;
-    margin-bottom: 8px;
-    text-transform: uppercase;
-}
-
-h1 {
-    font-size: 28px;
-    line-height: 1.12;
-    margin: 0 0 24px;
-}
-
-.status {
-    align-items: center;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    display: flex;
-    gap: 14px;
-    min-height: 72px;
-    padding: 14px;
-}
-
-.status.complete {
-    border-color: rgba(45, 212, 191, 0.44);
-}
-
-.status.failed {
-    border-color: rgba(248, 113, 113, 0.52);
-}
-
-.pulse {
-    animation: pulse 1.4s ease-in-out infinite;
-    background: #6ea8ff;
-    border-radius: 999px;
-    box-shadow: 0 0 0 0 rgba(110, 168, 255, 0.42);
-    flex: 0 0 auto;
-    height: 12px;
-    width: 12px;
-}
-
-.complete .pulse {
-    animation: none;
-    background: #2dd4bf;
-}
-
-.failed .pulse {
-    animation: none;
-    background: #f87171;
-}
-
-strong {
-    display: block;
-    font-size: 15px;
-    margin-bottom: 5px;
-}
-
-span {
-    color: #bac5d6;
-    display: block;
-    font-size: 13px;
-    line-height: 1.45;
-}
-
-.progress-track {
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 999px;
-    height: 9px;
-    margin-top: 22px;
-    overflow: hidden;
-}
-
-.progress-fill {
-    background: linear-gradient(90deg, #6ea8ff, #2dd4bf);
-    border-radius: inherit;
-    height: 100%;
-    transition: width 320ms ease;
-}
-
-.progress-fill.failed {
-    background: #f87171;
-}
-
-.progress-caption {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 10px;
-}
-
-.progress-caption span {
-    color: #8fa1bd;
-    font-size: 12px;
-}
-
-.primary-button {
-    background: #f5f7fb;
-    border: 0;
-    border-radius: 8px;
-    color: #111318;
-    cursor: pointer;
-    font: inherit;
-    font-size: 14px;
-    font-weight: 700;
-    margin-top: 24px;
-    min-height: 40px;
-    padding: 0 18px;
-}
-
-.primary-button.danger {
-    background: #fecaca;
-    color: #7f1d1d;
-}
-
-@keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(110, 168, 255, 0.42); }
-    70% { box-shadow: 0 0 0 12px rgba(110, 168, 255, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(110, 168, 255, 0); }
-}
-"#;

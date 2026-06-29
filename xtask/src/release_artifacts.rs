@@ -112,16 +112,10 @@ impl ReleaseArtifactPlatform {
 
     fn artifacts(&self) -> &'static [ReleaseArtifact] {
         match self {
-            Self::Windows => &[
-                ReleaseArtifact {
-                    extension: "exe",
-                    suffix: "windows-x64-setup.exe",
-                },
-                ReleaseArtifact {
-                    extension: "msi",
-                    suffix: "windows-x64.msi",
-                },
-            ],
+            Self::Windows => &[ReleaseArtifact {
+                extension: "exe",
+                suffix: "windows-x64-setup.exe",
+            }],
             Self::Linux => &[
                 ReleaseArtifact {
                     extension: "deb",
