@@ -944,14 +944,14 @@ video {
 }
 
 #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .embedded-chat {
-  height: min(340px, 38vh);
+  height: clamp(24dvh, var(--embedded-chat-height, 38dvh), 84dvh);
   opacity: 1;
   transform: translateY(0);
   border-top-color: rgba(63, 63, 70, 0.9);
 }
 
 #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .chat-corner-toggle {
-  bottom: calc(min(340px, 38vh) + 20px);
+  bottom: calc(clamp(24dvh, var(--embedded-chat-height, 38dvh), 84dvh) + 20px);
   border-color: rgba(59, 130, 246, 0.32);
   background: rgba(59, 130, 246, 0.1);
   color: #f4f4f5;
@@ -1082,6 +1082,29 @@ video {
   border-radius: 999px;
   background: rgba(113, 113, 122, 0.72);
   transition: width 0.16s ease, background 0.16s ease;
+}
+
+.embedded-chat[data-resizing="true"],
+  .embedded-chat[data-resizing="true"] .chat-resize-handle,
+  .content-split[data-chat-resizing="true"],
+  .content-split[data-chat-resizing="true"] * {
+  cursor: ns-resize !important;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
+}
+
+.embedded-chat[data-resizing="true"] {
+  transition:
+      opacity 180ms ease,
+      transform 180ms ease,
+      border-color 180ms ease;
+}
+
+.embedded-chat[data-resizing="true"] .chat-resize-handle::before,
+  .chat-resize-handle:hover::before {
+  width: 58px;
+  background: rgba(212, 212, 216, 0.82);
 }
 
 .chat-message {

@@ -1,11 +1,17 @@
 //! Рабочая область аутентифицированного приложения для одной комнаты.
 
+use std::rc::Rc;
+
 use dioxus::prelude::*;
 
 use super::app_shell::{ActiveRoom, ServerShellState};
 use super::room_header::RoomHeader;
 use crate::features::text_chat::{RoomChatSurface, RoomChatSurfaceMode};
 use crate::features::voice_chat::{VoiceConnectionHandle, VoiceRoomSurface};
+
+const EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO: f64 = 0.38;
+const EMBEDDED_CHAT_MIN_WORKSPACE_RATIO: f64 = 0.24;
+const VOICE_CHAT_MIN_WORKSPACE_RATIO: f64 = 0.16;
 
 /// Рендерит одну рабочую область комнаты с локальным UI-состоянием, ограниченным этой комнатой.
 #[component]
@@ -18,6 +24,9 @@ pub(crate) fn RoomInstance(
     on_state_change: EventHandler<(String, ServerShellState)>,
     on_mobile_back: EventHandler<()>,
 ) -> Element {
+    let mut embedded_chat_height_px = use_signal(|| None::<f64>);
+    let mut embedded_chat_resize_origin = use_signal(|| None::<(f64, f64, f64)>);
+    let mut content_split_element = use_signal(|| None::<Rc<MountedData>>);
     let wrapper_class = if active {
         "room-workspace-shell contents"
     } else {
@@ -35,16 +44,22 @@ pub(crate) fn RoomInstance(
     let voice_state = voice.state();
     let voice_room_active = voice_state.is_active_room(&server_id, &room.id);
     let voice_room_connected = voice_state.is_connected_room(&server_id, &room.id);
+    let chat_resizing = embedded_chat_resize_origin().is_some();
+    let chat_resizing_attr = if chat_resizing { "true" } else { "false" };
     let chat_label = if chat_open {
         "Скрыть текстовый чат"
     } else {
         "Открыть текстовый чат"
     };
+    let workspace_style = embedded_chat_height_px()
+        .map(|height_px| format!("--embedded-chat-height: {}px;", height_px.round()))
+        .unwrap_or_default();
 
     rsx! {
         div { class: wrapper_class, "data-mobile-workspace-open": mobile_workspace_open_attr,
             section {
                 class: "room-workspace voice-shell relative flex min-w-0 flex-1 flex-col bg-zinc-950/35",
+                style: "{workspace_style}",
                 "data-room-kind": super::app_shell::room_kind_attr(room.kind),
                 "data-voice-room-active": if voice_room_active { "true" } else { "false" },
                 "data-voice-connected": if voice_room_connected { "true" } else { "false" },
@@ -53,7 +68,43 @@ pub(crate) fn RoomInstance(
                     room: room.clone(),
                     on_mobile_back,
                 }
-                div { class: "content-split flex min-h-0 flex-1 flex-col",
+                div {
+                    class: "content-split flex min-h-0 flex-1 flex-col",
+                    "data-chat-resizing": chat_resizing_attr,
+                    onmounted: move |event| content_split_element.set(Some(event.data.clone())),
+                    onpointermove: move |event| {
+                        let Some((start_y, start_height, workspace_height)) = embedded_chat_resize_origin() else {
+                            return;
+                        };
+
+                        event.prevent_default();
+                        let point = event.client_coordinates();
+                        let next_height = clamp_embedded_chat_height(
+                            start_height + start_y - point.y,
+                            workspace_height,
+                        );
+                        embedded_chat_height_px.set(Some(next_height));
+                    },
+                    onpointerup: {
+                        let resize_room_id = room.id.clone();
+                        move |_| {
+                            finish_embedded_chat_resize(
+                                embedded_chat_resize_origin,
+                                embedded_chat_height_px,
+                                &resize_room_id,
+                            );
+                        }
+                    },
+                    onpointerleave: {
+                        let resize_room_id = room.id.clone();
+                        move |_| {
+                            finish_embedded_chat_resize(
+                                embedded_chat_resize_origin,
+                                embedded_chat_height_px,
+                                &resize_room_id,
+                            );
+                        }
+                    },
                     VoiceRoomSurface {
                         server_id: server_id.clone(),
                         room: room.clone(),
@@ -62,12 +113,45 @@ pub(crate) fn RoomInstance(
                         server_id: server_id.clone(),
                         room: room.clone(),
                         mode: RoomChatSurfaceMode::Embedded,
+                        embedded_resizing: chat_resizing,
+                        on_embedded_resize_start: move |(start_y, measured_height_px): (f64, Option<f64>)| {
+                            let split_element = content_split_element.cloned();
+                            spawn(async move {
+                                let workspace_height = match split_element {
+                                    Some(element) => element
+                                        .get_client_rect()
+                                        .await
+                                        .ok()
+                                        .map(|rect| rect.size.height),
+                                    None => None,
+                                }
+                                .filter(|height| *height > 0.0)
+                                .unwrap_or_else(|| {
+                                    measured_height_px
+                                        .filter(|height| *height > 0.0)
+                                        .unwrap_or(1.0)
+                                        / EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO
+                                });
+                                let start_height = measured_height_px
+                                    .filter(|height_px| *height_px > 0.0)
+                                    .or(embedded_chat_height_px())
+                                    .unwrap_or(workspace_height * EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO);
+
+                                embedded_chat_resize_origin.set(Some((
+                                    start_y,
+                                    clamp_embedded_chat_height(start_height, workspace_height),
+                                    workspace_height,
+                                )));
+                            });
+                        },
                     }
                 }
                 RoomChatSurface {
                     server_id: server_id.clone(),
                     room: room.clone(),
                     mode: RoomChatSurfaceMode::Full,
+                    embedded_resizing: false,
+                    on_embedded_resize_start: move |(_, _)| {},
                 }
                 button {
                     r#type: "button",
@@ -114,4 +198,39 @@ fn chat_open_for_room(chat_open_by_room: &[(String, bool)], room_id: &str) -> bo
         .iter()
         .find_map(|(saved_room_id, chat_open)| (saved_room_id == room_id).then_some(*chat_open))
         .unwrap_or(false)
+}
+
+fn clamp_embedded_chat_height(height_px: f64, workspace_height_px: f64) -> f64 {
+    if workspace_height_px <= 0.0 {
+        return height_px.max(0.0);
+    }
+
+    let min_text_height = workspace_height_px * EMBEDDED_CHAT_MIN_WORKSPACE_RATIO;
+    let max_text_height = workspace_height_px * (1.0 - VOICE_CHAT_MIN_WORKSPACE_RATIO);
+    height_px.clamp(min_text_height, max_text_height.max(min_text_height))
+}
+
+fn finish_embedded_chat_resize(
+    mut resize_origin: Signal<Option<(f64, f64, f64)>>,
+    height_px: Signal<Option<f64>>,
+    room_id: &str,
+) {
+    let Some((_, _, workspace_height_px)) = resize_origin() else {
+        return;
+    };
+
+    resize_origin.set(None);
+    if let Some(height_px) = height_px() {
+        let height_percent = if workspace_height_px > 0.0 {
+            (height_px / workspace_height_px * 100.0).round() as i64
+        } else {
+            0
+        };
+        debug!(
+            room_id,
+            height_px = height_px.round() as i64,
+            height_percent,
+            "embedded text chat resize finished"
+        );
+    }
 }
