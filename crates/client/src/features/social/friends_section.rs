@@ -1,6 +1,6 @@
 //! Секция друзей на social-экране.
 
-use cheenhub_contracts::rest::FriendSummary;
+use cheenhub_contracts::rest::{DmConversationSummary, FriendSummary};
 use dioxus::prelude::*;
 
 use crate::features::app::components::avatar::UserAvatar;
@@ -22,6 +22,7 @@ pub(super) struct FriendMenuRequest {
 #[component]
 pub(super) fn FriendsSection(
     friends: Vec<FriendSummary>,
+    conversations: Vec<DmConversationSummary>,
     is_loading: bool,
     on_search: EventHandler<()>,
     on_open_friend: EventHandler<String>,
@@ -49,11 +50,12 @@ pub(super) fn FriendsSection(
                 }
             } else {
                 div { class: "mt-2 space-y-1",
-                    for (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname) in friends.into_iter().map(|friend| {
+                    for (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname, unread_count) in friends.into_iter().map(|friend| {
                         let open_friend_user_id = friend.user_id.clone();
                         let menu_friend_user_id = friend.user_id.clone();
                         let menu_friend_nickname = friend.nickname.clone();
-                        (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname)
+                        let unread_count = friend_unread_count(&friend, &conversations);
+                        (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname, unread_count)
                     }) {
                         div {
                             key: "{friend.user_id}",
@@ -86,10 +88,71 @@ pub(super) fn FriendsSection(
                                 p { class: "truncate text-[13px] font-medium text-zinc-100", "{friend.nickname}" }
                                 p { class: "text-[11px] text-zinc-500", "Открыть диалог" }
                             }
+                            if unread_count > 0 {
+                                span {
+                                    class: "shrink-0 rounded-full bg-blue-500 px-2 py-0.5 text-[10px] font-bold text-white",
+                                    title: "{unread_count} непрочитанных",
+                                    "{unread_badge_label(unread_count)}"
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+fn friend_unread_count(friend: &FriendSummary, conversations: &[DmConversationSummary]) -> i64 {
+    conversations
+        .iter()
+        .find(|conversation| conversation.friend_user_id == friend.user_id)
+        .map(|conversation| conversation.unread_count)
+        .unwrap_or(friend.unread_count)
+}
+
+fn unread_badge_label(unread_count: i64) -> String {
+    if unread_count > 99 {
+        "99+".to_owned()
+    } else {
+        unread_count.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cheenhub_contracts::rest::{DmConversationSummary, FriendSummary};
+
+    use super::{friend_unread_count, unread_badge_label};
+
+    #[test]
+    fn unread_badge_caps_only_display_value() {
+        assert_eq!(unread_badge_label(0), "0");
+        assert_eq!(unread_badge_label(99), "99");
+        assert_eq!(unread_badge_label(100000), "99+");
+    }
+
+    #[test]
+    fn unread_badge_prefers_conversation_counter() {
+        let friend = FriendSummary {
+            user_id: "friend-1".to_owned(),
+            nickname: "Friend".to_owned(),
+            avatar_url: None,
+            unread_count: 7,
+            friends_since: "2026-06-30T00:00:00Z".to_owned(),
+        };
+        let conversations = vec![DmConversationSummary {
+            id: "conversation-1".to_owned(),
+            friend_user_id: "friend-1".to_owned(),
+            friend_nickname: "Friend".to_owned(),
+            friend_avatar_url: None,
+            unread_count: 2,
+            last_read_message_id: None,
+            last_read_seq: 0,
+            last_read_at: None,
+            updated_at: "2026-06-30T00:00:00Z".to_owned(),
+        }];
+
+        assert_eq!(friend_unread_count(&friend, &conversations), 2);
     }
 }

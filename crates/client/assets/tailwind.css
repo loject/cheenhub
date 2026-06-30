@@ -1608,6 +1608,10 @@ video {
   margin-bottom: 1.75rem;
 }
 
+.mb-\[1px\] {
+  margin-bottom: 1px;
+}
+
 .ml-2 {
   margin-left: 0.5rem;
 }
@@ -2181,10 +2185,6 @@ video {
   max-width: 20rem;
 }
 
-.max-w-4xl {
-  max-width: 56rem;
-}
-
 .flex-1 {
   flex: 1 1 0%;
 }
@@ -2450,6 +2450,12 @@ video {
   --tw-space-x-reverse: 0;
   margin-right: calc(-0.25rem * var(--tw-space-x-reverse));
   margin-left: calc(-0.25rem * calc(1 - var(--tw-space-x-reverse)));
+}
+
+.-space-x-\[3px\] > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-x-reverse: 0;
+  margin-right: calc(-3px * var(--tw-space-x-reverse));
+  margin-left: calc(-3px * calc(1 - var(--tw-space-x-reverse)));
 }
 
 .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {

@@ -23,10 +23,11 @@ use super::friend_context_menu::FriendContextMenu;
 use super::friend_search_modal::FriendSearchModal;
 use super::friends_section::{FriendMenuRequest, FriendsSection};
 use super::presentation::{
-    dm_as_text_message, is_appearing_message, load_messages, load_social_overview,
-    push_message_with_motion, refresh_conversations, refresh_messages,
+    MessageRefreshSignals, dm_as_text_message, is_appearing_message, load_messages,
+    load_social_overview, push_message_with_motion, refresh_conversations, refresh_friends,
+    refresh_messages,
 };
-use super::realtime::{subscribe_social, subscribe_social_events};
+use super::realtime::{subscribe_social_events, subscribe_social_ready_events};
 use super::requests_section::FriendRequestsSection;
 
 /// Рендерит рабочую область друзей и личных сообщений.
@@ -84,6 +85,8 @@ pub(crate) fn SocialPage() -> Element {
                     load_messages(
                         conversation_id,
                         messages,
+                        conversations,
+                        friends,
                         status,
                         is_loading_messages,
                         pending_scroll,
@@ -166,13 +169,53 @@ pub(crate) fn SocialPage() -> Element {
         });
     });
 
+    let refresh_direct_state = use_callback(move |changed_conversation_id: Option<String>| {
+        let selected = selected_conversation();
+        let selected_conversation_id = selected
+            .as_ref()
+            .map(|conversation| conversation.id.as_str());
+        debug!(
+            selected_conversation_id = ?selected_conversation_id,
+            changed_conversation_id = ?changed_conversation_id,
+            "refreshing social state after direct message change"
+        );
+        refresh_conversations(conversations, status);
+        refresh_friends(friends, status);
+        if let Some(conversation) = selected {
+            let should_refresh_messages = changed_conversation_id
+                .as_deref()
+                .is_none_or(|changed_id| changed_id == conversation.id.as_str());
+            if should_refresh_messages {
+                refresh_messages(
+                    conversation.id,
+                    MessageRefreshSignals {
+                        messages,
+                        conversations,
+                        friends,
+                        appearing_message_ids,
+                        removing_message_ids,
+                        status,
+                        is_near_bottom,
+                        pending_scroll,
+                    },
+                );
+            }
+        }
+    });
+
     use_hook(move || {
         let realtime = realtime.clone();
+        let ready_realtime = realtime.clone();
+        let ready_refresh = refresh_direct_state;
         spawn(async move {
-            if let Err(error) = subscribe_social(&realtime).await {
-                warn!(%error, "failed to subscribe social realtime");
-                return;
+            let mut ready = subscribe_social_ready_events(ready_realtime);
+            while ready.next().await.is_some() {
+                debug!("refreshing social state after realtime subscription became active");
+                ready_refresh.call(None);
             }
+        });
+
+        spawn(async move {
             let mut receiver = subscribe_social_events(&realtime);
             while let Some(event) = receiver.next().await {
                 debug!(
@@ -183,24 +226,7 @@ pub(crate) fn SocialPage() -> Element {
                 match event.reason {
                     SocialChangeReason::Friends => reload.call(()),
                     SocialChangeReason::DirectMessages => {
-                        refresh_conversations(conversations, status);
-                        if let Some(conversation) = selected_conversation() {
-                            let should_refresh_messages = event
-                                .conversation_id
-                                .as_deref()
-                                .is_none_or(|changed_id| changed_id == conversation.id.as_str());
-                            if should_refresh_messages {
-                                refresh_messages(
-                                    conversation.id,
-                                    messages,
-                                    appearing_message_ids,
-                                    removing_message_ids,
-                                    status,
-                                    is_near_bottom,
-                                    pending_scroll,
-                                );
-                            }
-                        }
+                        refresh_direct_state.call(event.conversation_id);
                     }
                 }
             }
@@ -267,6 +293,7 @@ pub(crate) fn SocialPage() -> Element {
 
                     FriendsSection {
                         friends: friends(),
+                        conversations: conversations(),
                         is_loading: is_loading(),
                         on_search: move |_| is_search_open.set(true),
                         on_open_friend: move |friend_user_id| {

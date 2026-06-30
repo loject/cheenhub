@@ -57,6 +57,8 @@ pub struct FriendSummary {
     pub nickname: String,
     /// Публичный URL аватара друга, если он настроен.
     pub avatar_url: Option<String>,
+    /// Количество непрочитанных личных сообщений от этого друга.
+    pub unread_count: i64,
     /// Временная метка начала дружбы в формате RFC3339.
     pub friends_since: String,
 }
@@ -125,8 +127,26 @@ pub struct DmConversationSummary {
     pub friend_nickname: String,
     /// URL аватара второго участника, если он настроен.
     pub friend_avatar_url: Option<String>,
+    /// Количество непрочитанных сообщений без UI-ограничения.
+    pub unread_count: i64,
+    /// Последнее прочитанное сообщение текущего пользователя.
+    pub last_read_message_id: Option<String>,
+    /// Последний прочитанный порядковый номер текущего пользователя.
+    pub last_read_seq: i64,
+    /// Время последнего подтверждения прочтения в формате RFC3339.
+    pub last_read_at: Option<String>,
     /// Временная метка последнего обновления в формате RFC3339.
     pub updated_at: String,
+}
+
+/// Статус доставки исходящего личного сообщения.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DmMessageDeliveryStatus {
+    /// Сервер принял и сохранил сообщение.
+    Accepted,
+    /// Получатель прочитал сообщение.
+    Read,
 }
 
 /// Краткие данные сообщения личного диалога.
@@ -136,6 +156,8 @@ pub struct DmMessageSummary {
     pub id: String,
     /// Идентификатор диалога.
     pub conversation_id: String,
+    /// Монотонный порядковый номер сообщения внутри диалога.
+    pub seq: i64,
     /// Идентификатор отправителя.
     pub sender_user_id: String,
     /// Никнейм отправителя.
@@ -144,6 +166,8 @@ pub struct DmMessageSummary {
     pub sender_avatar_url: Option<String>,
     /// Текст сообщения.
     pub body: String,
+    /// Статус доставки для текущего пользователя, если сообщение исходящее.
+    pub delivery_status: Option<DmMessageDeliveryStatus>,
     /// Временная метка создания в формате RFC3339.
     pub created_at: String,
 }
@@ -174,8 +198,34 @@ pub struct OpenDmConversationResponse {
 pub struct ListDmMessagesResponse {
     /// Сообщения в порядке от старых к новым.
     pub messages: Vec<DmMessageSummary>,
+    /// Последний прочитанный порядковый номер собеседника.
+    pub recipient_last_read_seq: i64,
     /// Есть ли более старые сообщения перед этой страницей.
     pub has_more: bool,
+}
+
+/// Запрос на отметку личного диалога прочитанным.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MarkDmConversationReadRequest {
+    /// Последнее сообщение, до которого пользователь дочитал.
+    pub last_read_message_id: String,
+}
+
+/// Ответ на отметку личного диалога прочитанным.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MarkDmConversationReadResponse {
+    /// Идентификатор диалога.
+    pub conversation_id: String,
+    /// Последнее прочитанное сообщение.
+    pub last_read_message_id: Option<String>,
+    /// Последний прочитанный порядковый номер.
+    pub last_read_seq: i64,
+    /// Серверное время последнего подтверждения прочтения.
+    pub last_read_at: Option<String>,
+    /// Количество непрочитанных сообщений в этом диалоге.
+    pub conversation_unread_count: i64,
+    /// Суммарное количество непрочитанных личных сообщений.
+    pub total_unread_count: i64,
 }
 
 /// Запрос на отправку личного сообщения.

@@ -2,9 +2,10 @@
 
 use cheenhub_contracts::rest::{
     DmConversationSummary, DmMessageSummary, ListDmConversationsResponse, ListDmMessagesResponse,
-    ListFriendRequestsResponse, ListFriendsResponse, OpenDmConversationRequest,
-    OpenDmConversationResponse, SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse,
-    SendFriendRequestRequest, SendFriendRequestResponse, UserSearchResult,
+    ListFriendRequestsResponse, ListFriendsResponse, MarkDmConversationReadRequest,
+    MarkDmConversationReadResponse, OpenDmConversationRequest, OpenDmConversationResponse,
+    SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
+    SendFriendRequestResponse, UserSearchResult,
 };
 use reqwest::{Response, StatusCode};
 use serde::Serialize;
@@ -144,14 +145,28 @@ pub(crate) async fn open_dm_conversation(
 /// Загружает сообщения личного диалога.
 pub(crate) async fn list_dm_messages(
     conversation_id: &str,
-) -> Result<Vec<DmMessageSummary>, String> {
+) -> Result<ListDmMessagesResponse, String> {
     authorized_json::<ListDmMessagesResponse>(
         "GET",
         &format!("/direct-messages/conversations/{conversation_id}/messages"),
         None::<&()>,
     )
     .await
-    .map(|response| response.messages)
+}
+
+/// Помечает личный диалог прочитанным до указанного сообщения.
+pub(crate) async fn mark_dm_conversation_read(
+    conversation_id: &str,
+    last_read_message_id: String,
+) -> Result<MarkDmConversationReadResponse, String> {
+    authorized_json::<MarkDmConversationReadResponse>(
+        "POST",
+        &format!("/direct-messages/conversations/{conversation_id}/read"),
+        Some(&MarkDmConversationReadRequest {
+            last_read_message_id,
+        }),
+    )
+    .await
 }
 
 /// Отправляет личное сообщение.

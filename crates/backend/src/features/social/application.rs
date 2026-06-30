@@ -1,25 +1,28 @@
 //! Сценарии приложения для друзей и личных сообщений.
 
+mod direct_messages;
+
 use cheenhub_contracts::realtime::SocialChangeReason;
 use cheenhub_contracts::rest::{
-    ListDmConversationsResponse, ListDmMessagesResponse, ListFriendRequestsResponse,
-    ListFriendsResponse, OpenDmConversationRequest, OpenDmConversationResponse,
-    SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
+    ListFriendRequestsResponse, ListFriendsResponse, SearchUsersResponse, SendFriendRequestRequest,
     SendFriendRequestResponse, UserRelationStatus, UserSearchResult,
 };
-use chrono::Utc;
 use uuid::Uuid;
 
 use crate::features::auth::application::{auth_user, require_current_user};
-use crate::features::social::domain::{DmMessage, FriendshipStatus};
+use crate::features::social::domain::FriendshipStatus;
 use crate::features::social::error::SocialError;
 use crate::features::social::realtime::notify_social_changed;
 use crate::features::social::support::{
-    conversation_summaries, conversation_summary, ensure_user_exists, friend_summaries,
-    load_user_conversation, map_auth_error, message_body, message_summaries, message_summary,
-    other_user_id, parse_id, request_response, request_summary,
+    ensure_user_exists, friend_summaries, map_auth_error, parse_id, request_response,
+    request_summary,
 };
 use crate::state::AppState;
+
+pub(crate) use direct_messages::{
+    list_dm_conversations, list_dm_messages, mark_dm_conversation_read, open_dm_conversation,
+    send_dm_message,
+};
 
 const USER_SEARCH_LIMIT: u64 = 20;
 
@@ -153,7 +156,7 @@ pub(crate) async fn send_friend_request(
     );
     let friendship = state
         .social_store
-        .upsert_friend_request(&current_user.id, &recipient_user_id, Utc::now())
+        .upsert_friend_request(&current_user.id, &recipient_user_id, chrono::Utc::now())
         .await
         .map_err(SocialError::Internal)?;
     notify_social_changed(
@@ -238,7 +241,11 @@ pub(crate) async fn delete_friend(
 
     state
         .social_store
-        .update_friendship_status(&friendship.id, FriendshipStatus::Cancelled, Utc::now())
+        .update_friendship_status(
+            &friendship.id,
+            FriendshipStatus::Cancelled,
+            chrono::Utc::now(),
+        )
         .await
         .map_err(SocialError::Internal)?;
     notify_social_changed(
@@ -250,125 +257,6 @@ pub(crate) async fn delete_friend(
     .await;
     tracing::info!(user_id = %current_user.id, friend_user_id = %friend_user_id, "removed friend");
     Ok(())
-}
-
-/// Возвращает личные диалоги.
-pub(crate) async fn list_dm_conversations(
-    state: &AppState,
-    access_token: &str,
-) -> Result<ListDmConversationsResponse, SocialError> {
-    let (current_user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
-    let conversations = state
-        .social_store
-        .conversations_for_user(&current_user.id)
-        .await
-        .map_err(SocialError::Internal)?;
-    Ok(ListDmConversationsResponse {
-        conversations: conversation_summaries(state, &current_user.id, conversations).await?,
-    })
-}
-
-/// Открывает личный диалог с другом.
-pub(crate) async fn open_dm_conversation(
-    state: &AppState,
-    access_token: &str,
-    request: OpenDmConversationRequest,
-) -> Result<OpenDmConversationResponse, SocialError> {
-    let (current_user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
-    let friend_user_id = parse_id(&request.friend_user_id, "Пользователь не найден.")?;
-    ensure_friendship(state, &current_user.id, &friend_user_id).await?;
-    let conversation = state
-        .social_store
-        .get_or_create_conversation(&current_user.id, &friend_user_id, Utc::now())
-        .await
-        .map_err(SocialError::Internal)?;
-    notify_social_changed(
-        state,
-        &[current_user.id, friend_user_id],
-        SocialChangeReason::DirectMessages,
-        Some(conversation.id),
-    )
-    .await;
-    Ok(OpenDmConversationResponse {
-        conversation: conversation_summary(state, &current_user.id, conversation).await?,
-    })
-}
-
-/// Возвращает страницу сообщений личного диалога.
-pub(crate) async fn list_dm_messages(
-    state: &AppState,
-    access_token: &str,
-    conversation_id: String,
-    before_message_id: Option<String>,
-) -> Result<ListDmMessagesResponse, SocialError> {
-    let (current_user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
-    let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
-    let conversation = load_user_conversation(state, &conversation_id, &current_user.id).await?;
-    let before_message_id = before_message_id
-        .as_deref()
-        .map(|value| parse_id(value, "История сообщений недоступна."))
-        .transpose()?;
-    let page = state
-        .social_store
-        .dm_message_page(&conversation.id, before_message_id.as_ref())
-        .await
-        .map_err(|error| {
-            if before_message_id.is_some() {
-                SocialError::BadRequest("История сообщений недоступна.".to_owned())
-            } else {
-                SocialError::Internal(error)
-            }
-        })?;
-    Ok(ListDmMessagesResponse {
-        messages: message_summaries(state, page.messages).await?,
-        has_more: page.has_more,
-    })
-}
-
-/// Отправляет личное сообщение.
-pub(crate) async fn send_dm_message(
-    state: &AppState,
-    access_token: &str,
-    conversation_id: String,
-    request: SendDmMessageRequest,
-) -> Result<SendDmMessageResponse, SocialError> {
-    let (current_user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
-    let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
-    let conversation = load_user_conversation(state, &conversation_id, &current_user.id).await?;
-    let friend_user_id = other_user_id(&conversation, &current_user.id);
-    ensure_friendship(state, &current_user.id, &friend_user_id).await?;
-    let now = Utc::now();
-    let message = state
-        .social_store
-        .insert_dm_message(DmMessage {
-            id: Uuid::new_v4(),
-            conversation_id,
-            sender_user_id: current_user.id,
-            body: message_body(request.body)?,
-            created_at: now,
-            updated_at: now,
-            deleted_at: None,
-        })
-        .await
-        .map_err(SocialError::Internal)?;
-    notify_social_changed(
-        state,
-        &[current_user.id, friend_user_id],
-        SocialChangeReason::DirectMessages,
-        Some(conversation_id),
-    )
-    .await;
-    Ok(SendDmMessageResponse {
-        message: message_summary(state, message).await?,
-    })
 }
 
 #[derive(Clone, Copy)]
@@ -409,7 +297,7 @@ async fn change_request_status(
 
     let updated = state
         .social_store
-        .update_friendship_status(&friendship.id, next_status, Utc::now())
+        .update_friendship_status(&friendship.id, next_status, chrono::Utc::now())
         .await
         .map_err(SocialError::Internal)?
         .ok_or_else(|| SocialError::NotFound("Заявка не найдена.".to_owned()))?;
@@ -423,26 +311,6 @@ async fn change_request_status(
     Ok(SendFriendRequestResponse {
         request: request_summary(state, updated).await?,
     })
-}
-
-async fn ensure_friendship(
-    state: &AppState,
-    current_user_id: &Uuid,
-    friend_user_id: &Uuid,
-) -> Result<(), SocialError> {
-    let friendship = state
-        .social_store
-        .friendship_between(current_user_id, friend_user_id)
-        .await
-        .map_err(SocialError::Internal)?
-        .ok_or_else(|| SocialError::Unauthorized("Писать можно только друзьям.".to_owned()))?;
-    if friendship.status == FriendshipStatus::Accepted {
-        Ok(())
-    } else {
-        Err(SocialError::Unauthorized(
-            "Писать можно только друзьям.".to_owned(),
-        ))
-    }
 }
 
 async fn relation_status(
@@ -468,3 +336,6 @@ async fn relation_status(
         FriendshipStatus::Declined | FriendshipStatus::Cancelled => None,
     })
 }
+
+#[cfg(test)]
+mod tests;

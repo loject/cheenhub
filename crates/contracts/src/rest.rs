@@ -22,9 +22,10 @@ pub use servers::{
     UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest, UpdateServerRoomResponse,
 };
 pub use social::{
-    DmConversationSummary, DmMessageSummary, FriendRequestStatus, FriendRequestSummary,
-    FriendSummary, ListDmConversationsResponse, ListDmMessagesResponse, ListFriendRequestsResponse,
-    ListFriendsResponse, OpenDmConversationRequest, OpenDmConversationResponse,
+    DmConversationSummary, DmMessageDeliveryStatus, DmMessageSummary, FriendRequestStatus,
+    FriendRequestSummary, FriendSummary, ListDmConversationsResponse, ListDmMessagesResponse,
+    ListFriendRequestsResponse, ListFriendsResponse, MarkDmConversationReadRequest,
+    MarkDmConversationReadResponse, OpenDmConversationRequest, OpenDmConversationResponse,
     SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
     SendFriendRequestResponse, UserRelationStatus, UserSearchResult,
 };

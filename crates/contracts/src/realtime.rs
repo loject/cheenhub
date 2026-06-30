@@ -22,7 +22,10 @@ pub use server::{
     ServerRoleDraft, ServerRoleEntry, ServerRoleKind, ServerRoleList, ServerRolePermission,
     ServerRoleSummary, ServerRolesSaved,
 };
-pub use social::{SocialChangeReason, SocialChanged, SocialKind, SocialReady, SubscribeSocial};
+pub use social::{
+    ConversationReadCheckpoint, SocialChangeReason, SocialChanged, SocialKind, SocialReady,
+    SubscribeSocial,
+};
 pub use text_chat::{
     ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
     LoadChatImage, LoadRoomHistory, MessageDeletedPayload, RoomHistory, SendMessage,
@@ -184,6 +187,7 @@ mod tests {
             author_avatar_url: Some("http://localhost/api/images/avatar".to_owned()),
             body: "hello".to_owned(),
             attachments: Vec::new(),
+            delivery_status: None,
             created_at: "2026-05-13T00:00:00Z".to_owned(),
         };
         let decoded: TextChatMessage =

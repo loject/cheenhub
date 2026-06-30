@@ -401,6 +401,7 @@ fn message_summary(message: &TextMessage, author_avatar_url: Option<String>) -> 
                 height: attachment.height,
             })
             .collect(),
+        delivery_status: None,
         created_at: message.created_at.to_rfc3339(),
     }
 }

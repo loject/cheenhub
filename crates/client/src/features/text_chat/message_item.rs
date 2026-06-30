@@ -1,6 +1,6 @@
 //! Компонент элемента сообщения текстового чата.
 
-use cheenhub_contracts::realtime::TextChatMessage;
+use cheenhub_contracts::{realtime::TextChatMessage, rest::DmMessageDeliveryStatus};
 use dioxus::prelude::*;
 
 use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
@@ -57,8 +57,13 @@ pub(crate) fn ChatMessageItem(
                     }
                 }
                 if !message.body.is_empty() {
-                    div { class: "message-bubble whitespace-pre-wrap break-words rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.72)] px-3 py-2 text-[13px] leading-5 text-zinc-300 transition-[border-color,background] duration-200 hover:border-white/15 hover:bg-[rgba(39,39,42,.84)]",
-                        "{message.body}"
+                    div { class: "message-bubble flex items-end gap-2 whitespace-pre-wrap break-words rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.72)] px-3 py-2 text-[13px] leading-5 text-zinc-300 transition-[border-color,background] duration-200 hover:border-white/15 hover:bg-[rgba(39,39,42,.84)]",
+                        span { class: "min-w-0 flex-1", "{message.body}" }
+                        if is_own {
+                            if let Some(status) = message.delivery_status {
+                                {delivery_status_marks(status)}
+                            }
+                        }
                     }
                 }
                 for attachment in message.attachments.iter().cloned() {
@@ -117,4 +122,31 @@ fn message_time(created_at: &str) -> String {
         .and_then(|time| time.get(0..5))
         .unwrap_or("")
         .to_owned()
+}
+
+fn delivery_status_title(status: DmMessageDeliveryStatus) -> &'static str {
+    match status {
+        DmMessageDeliveryStatus::Accepted => "Сообщение отправлено",
+        DmMessageDeliveryStatus::Read => "Сообщение прочитано",
+    }
+}
+
+fn delivery_status_marks(status: DmMessageDeliveryStatus) -> Element {
+    rsx! {
+        span {
+            class: "mb-[1px] inline-flex shrink-0 items-center text-[10px] font-semibold leading-none text-blue-300",
+            title: "{delivery_status_title(status)}",
+            match status {
+                DmMessageDeliveryStatus::Accepted => rsx! {
+                    span { "✓" }
+                },
+                DmMessageDeliveryStatus::Read => rsx! {
+                    span { class: "inline-flex -space-x-[3px]",
+                        span { "✓" }
+                        span { "✓" }
+                    }
+                },
+            }
+        }
+    }
 }

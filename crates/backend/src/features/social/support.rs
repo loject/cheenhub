@@ -1,16 +1,20 @@
 //! Вспомогательная сборка REST-ответов для social-сценариев.
 
 use cheenhub_contracts::rest::{
-    DmConversationSummary, DmMessageSummary, FriendRequestStatus, FriendRequestSummary,
-    FriendSummary, ListFriendRequestsResponse,
+    DmConversationSummary, DmMessageDeliveryStatus, DmMessageSummary, FriendRequestStatus,
+    FriendRequestSummary, FriendSummary, ListFriendRequestsResponse,
 };
+use chrono::Utc;
 use uuid::Uuid;
 
 use crate::features::auth::application::auth_user;
 use crate::features::auth::domain::UserAccount;
 use crate::features::auth::error::AuthError;
-use crate::features::social::domain::{DmConversation, DmMessage, Friendship, FriendshipStatus};
+use crate::features::social::domain::{
+    ConversationMemberState, DmConversation, DmMessage, Friendship, FriendshipStatus,
+};
 use crate::features::social::error::SocialError;
+use crate::features::social::infrastructure::normalize_unread_count;
 use crate::state::AppState;
 
 pub(super) async fn request_response(
@@ -32,13 +36,21 @@ pub(super) async fn friend_summaries(
     friendships: Vec<Friendship>,
 ) -> Result<Vec<FriendSummary>, SocialError> {
     let mut summaries = Vec::new();
+    let conversations = state
+        .social_store
+        .conversations_for_user(current_user_id)
+        .await
+        .map_err(SocialError::Internal)?;
     for friendship in friendships {
         let friend_user_id = other_friend_id(&friendship, current_user_id);
         let friend = auth_user(state, &ensure_user_exists(state, &friend_user_id).await?);
+        let unread_count =
+            friend_unread_count(state, current_user_id, &friend_user_id, &conversations).await?;
         summaries.push(FriendSummary {
             user_id: friend.id,
             nickname: friend.nickname,
             avatar_url: friend.avatar_url,
+            unread_count: normalize_unread_count(unread_count),
             friends_since: friendship.updated_at.to_rfc3339(),
         });
     }
@@ -90,28 +102,47 @@ pub(super) async fn conversation_summary(
 ) -> Result<DmConversationSummary, SocialError> {
     let friend_user_id = other_user_id(&conversation, current_user_id);
     let friend = auth_user(state, &ensure_user_exists(state, &friend_user_id).await?);
+    let member_state = state
+        .social_store
+        .conversation_member_state(&conversation.id, current_user_id)
+        .await
+        .map_err(SocialError::Internal)?
+        .unwrap_or_else(|| default_member_state(&conversation, current_user_id));
     Ok(DmConversationSummary {
         id: conversation.id.to_string(),
         friend_user_id: friend.id,
         friend_nickname: friend.nickname,
         friend_avatar_url: friend.avatar_url,
+        unread_count: normalize_unread_count(member_state.unread_count),
+        last_read_message_id: member_state
+            .last_read_message_id
+            .map(|message_id| message_id.to_string()),
+        last_read_seq: member_state.last_read_seq,
+        last_read_at: member_state
+            .last_read_at
+            .map(|read_at| read_at.to_rfc3339()),
         updated_at: conversation.updated_at.to_rfc3339(),
     })
 }
 
 pub(super) async fn message_summaries(
     state: &AppState,
+    current_user_id: &Uuid,
+    recipient_last_read_seq: i64,
     messages: Vec<DmMessage>,
 ) -> Result<Vec<DmMessageSummary>, SocialError> {
     let mut summaries = Vec::new();
     for message in messages {
-        summaries.push(message_summary(state, message).await?);
+        summaries
+            .push(message_summary(state, current_user_id, recipient_last_read_seq, message).await?);
     }
     Ok(summaries)
 }
 
 pub(super) async fn message_summary(
     state: &AppState,
+    current_user_id: &Uuid,
+    recipient_last_read_seq: i64,
     message: DmMessage,
 ) -> Result<DmMessageSummary, SocialError> {
     let sender = auth_user(
@@ -121,9 +152,11 @@ pub(super) async fn message_summary(
     Ok(DmMessageSummary {
         id: message.id.to_string(),
         conversation_id: message.conversation_id.to_string(),
+        seq: message.seq,
         sender_user_id: sender.id,
         sender_nickname: sender.nickname,
         sender_avatar_url: sender.avatar_url,
+        delivery_status: delivery_status(&message, current_user_id, recipient_last_read_seq),
         body: message.body,
         created_at: message.created_at.to_rfc3339(),
     })
@@ -213,5 +246,56 @@ fn request_status(status: FriendshipStatus) -> FriendRequestStatus {
         FriendshipStatus::Accepted => FriendRequestStatus::Accepted,
         FriendshipStatus::Declined => FriendRequestStatus::Declined,
         FriendshipStatus::Cancelled => FriendRequestStatus::Cancelled,
+    }
+}
+
+async fn friend_unread_count(
+    state: &AppState,
+    current_user_id: &Uuid,
+    friend_user_id: &Uuid,
+    conversations: &[DmConversation],
+) -> Result<i64, SocialError> {
+    let Some(conversation) = conversations
+        .iter()
+        .find(|conversation| other_user_id(conversation, current_user_id) == *friend_user_id)
+    else {
+        return Ok(0);
+    };
+    Ok(state
+        .social_store
+        .conversation_member_state(&conversation.id, current_user_id)
+        .await
+        .map_err(SocialError::Internal)?
+        .map(|state| normalize_unread_count(state.unread_count))
+        .unwrap_or(0))
+}
+
+fn default_member_state(
+    conversation: &DmConversation,
+    current_user_id: &Uuid,
+) -> ConversationMemberState {
+    ConversationMemberState {
+        conversation_id: conversation.id,
+        user_id: *current_user_id,
+        last_read_message_id: None,
+        last_read_seq: 0,
+        last_read_at: None,
+        unread_count: 0,
+        updated_at: Utc::now(),
+    }
+}
+
+fn delivery_status(
+    message: &DmMessage,
+    current_user_id: &Uuid,
+    recipient_last_read_seq: i64,
+) -> Option<DmMessageDeliveryStatus> {
+    if message.sender_user_id != *current_user_id {
+        return None;
+    }
+    if message.seq <= recipient_last_read_seq {
+        Some(DmMessageDeliveryStatus::Read)
+    } else {
+        Some(DmMessageDeliveryStatus::Accepted)
     }
 }

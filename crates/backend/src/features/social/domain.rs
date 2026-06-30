@@ -80,6 +80,8 @@ pub(crate) struct DmMessage {
     pub(crate) id: Uuid,
     /// Диалог, которому принадлежит сообщение.
     pub(crate) conversation_id: Uuid,
+    /// Монотонный порядковый номер сообщения внутри диалога.
+    pub(crate) seq: i64,
     /// Пользователь, отправивший сообщение.
     pub(crate) sender_user_id: Uuid,
     /// Текст сообщения.
@@ -90,6 +92,53 @@ pub(crate) struct DmMessage {
     pub(crate) updated_at: DateTime<Utc>,
     /// Время мягкого удаления.
     pub(crate) deleted_at: Option<DateTime<Utc>>,
+}
+
+/// Текущее состояние прочтения участника личного диалога.
+#[derive(Debug, Clone)]
+pub(crate) struct ConversationMemberState {
+    /// Диалог, к которому относится состояние.
+    pub(crate) conversation_id: Uuid,
+    /// Пользователь-участник диалога.
+    pub(crate) user_id: Uuid,
+    /// Последнее прочитанное сообщение.
+    pub(crate) last_read_message_id: Option<Uuid>,
+    /// Последний прочитанный порядковый номер.
+    pub(crate) last_read_seq: i64,
+    /// Серверное время последнего подтверждения прочтения.
+    pub(crate) last_read_at: Option<DateTime<Utc>>,
+    /// Количество непрочитанных входящих сообщений.
+    pub(crate) unread_count: i64,
+    /// Время последнего обновления состояния.
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+/// Исторический checkpoint прочтения личного диалога.
+#[derive(Debug, Clone)]
+pub(crate) struct ConversationReadCheckpoint {
+    /// Стабильный идентификатор checkpoint.
+    pub(crate) id: Uuid,
+    /// Диалог, к которому относится checkpoint.
+    pub(crate) conversation_id: Uuid,
+    /// Пользователь, который прочитал сообщения.
+    pub(crate) user_id: Uuid,
+    /// Последнее прочитанное сообщение.
+    pub(crate) last_read_message_id: Uuid,
+    /// Последний прочитанный порядковый номер.
+    pub(crate) last_read_seq: i64,
+    /// Серверное время подтверждения прочтения.
+    pub(crate) read_at: DateTime<Utc>,
+    /// Время создания записи.
+    pub(crate) created_at: DateTime<Utc>,
+}
+
+/// Итог обновления read-state личного диалога.
+#[derive(Debug, Clone)]
+pub(crate) struct ConversationReadUpdate {
+    /// Текущее состояние участника после операции.
+    pub(crate) state: ConversationMemberState,
+    /// Новый checkpoint, если операция продвинула read-state.
+    pub(crate) checkpoint: Option<ConversationReadCheckpoint>,
 }
 
 /// Возвращает UUID пары в стабильном порядке.

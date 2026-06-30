@@ -8,8 +8,9 @@ use axum::{
 };
 use cheenhub_contracts::rest::{
     ApiError, ListDmConversationsResponse, ListDmMessagesResponse, ListFriendRequestsResponse,
-    ListFriendsResponse, OpenDmConversationRequest, OpenDmConversationResponse,
-    SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
+    ListFriendsResponse, MarkDmConversationReadRequest, MarkDmConversationReadResponse,
+    OpenDmConversationRequest, OpenDmConversationResponse, SearchUsersResponse,
+    SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
     SendFriendRequestResponse,
 };
 use serde::Deserialize;
@@ -179,6 +180,19 @@ pub(crate) async fn send_dm_message(
 ) -> Result<Json<SendDmMessageResponse>, SocialError> {
     let token = bearer_token(&headers)?;
     application::send_dm_message(&state, token, conversation_id, request)
+        .await
+        .map(Json)
+}
+
+/// Помечает личный диалог прочитанным до указанного сообщения.
+pub(crate) async fn mark_dm_conversation_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(conversation_id): Path<String>,
+    Json(request): Json<MarkDmConversationReadRequest>,
+) -> Result<Json<MarkDmConversationReadResponse>, SocialError> {
+    let token = bearer_token(&headers)?;
+    application::mark_dm_conversation_read(&state, token, conversation_id, request)
         .await
         .map(Json)
 }

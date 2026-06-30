@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::rest::DmMessageDeliveryStatus;
+
 /// Виды сообщений модуля текстового чата.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -191,6 +193,9 @@ pub struct TextChatMessage {
     /// Вложения-изображения, включенные в сообщение.
     #[serde(default)]
     pub attachments: Vec<TextChatImageAttachment>,
+    /// Статус доставки для личных сообщений.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_status: Option<DmMessageDeliveryStatus>,
     /// Временная метка создания сообщения в формате RFC3339.
     pub created_at: String,
 }

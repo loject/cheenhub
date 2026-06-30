@@ -12,6 +12,8 @@ pub enum SocialKind {
     Ready,
     /// У текущего пользователя изменились друзья, заявки или личные сообщения.
     Changed,
+    /// Участник подтвердил прочтение личного диалога.
+    ConversationReadCheckpoint,
 }
 
 /// Пустой запрос подписки на social-события.
@@ -29,6 +31,21 @@ pub struct SocialChanged {
     pub reason: SocialChangeReason,
     /// Идентификатор личного диалога, если изменение относится к ЛС.
     pub conversation_id: Option<String>,
+}
+
+/// Realtime-событие подтверждения прочтения личного диалога.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConversationReadCheckpoint {
+    /// Идентификатор личного диалога.
+    pub conversation_id: String,
+    /// Пользователь, который прочитал сообщения.
+    pub reader_user_id: String,
+    /// Последнее прочитанное сообщение.
+    pub last_read_message_id: String,
+    /// Последний прочитанный порядковый номер.
+    pub last_read_seq: i64,
+    /// Серверное время подтверждения прочтения в формате RFC3339.
+    pub read_at: String,
 }
 
 /// Причина изменения social-состояния.

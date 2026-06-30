@@ -3,17 +3,32 @@
 mod entities;
 mod in_memory;
 mod postgres;
+mod postgres_conversions;
+mod postgres_read_state;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::features::social::domain::{DmConversation, DmMessage, Friendship, FriendshipStatus};
+use crate::features::social::domain::{
+    ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage, Friendship,
+    FriendshipStatus,
+};
 
 pub(crate) use in_memory::InMemorySocialStore;
 pub(crate) use postgres::PostgresSocialStore;
 
 pub(crate) const DM_HISTORY_LIMIT: u64 = 50;
+
+/// Приводит счетчик непрочитанных к допустимому диапазону.
+pub(crate) fn normalize_unread_count(unread_count: i64) -> i64 {
+    unread_count.max(0)
+}
+
+/// Возвращает счетчик после отметки входящих сообщений прочитанными.
+pub(crate) fn unread_count_after_read(current_unread_count: i64, incoming_read: i64) -> i64 {
+    (normalize_unread_count(current_unread_count) - incoming_read.max(0)).max(0)
+}
 
 /// Страница сообщений личного диалога.
 pub(crate) struct DmMessagePage {
@@ -89,6 +104,59 @@ pub(crate) trait SocialStore: Send + Sync {
         before_message_id: Option<&Uuid>,
     ) -> anyhow::Result<DmMessagePage>;
 
+    /// Возвращает одно сообщение личного диалога.
+    async fn dm_message_by_id(
+        &self,
+        conversation_id: &Uuid,
+        message_id: &Uuid,
+    ) -> anyhow::Result<Option<DmMessage>>;
+
+    /// Возвращает read-state участника диалога.
+    async fn conversation_member_state(
+        &self,
+        conversation_id: &Uuid,
+        user_id: &Uuid,
+    ) -> anyhow::Result<Option<ConversationMemberState>>;
+
+    /// Возвращает суммарное количество непрочитанных личных сообщений пользователя.
+    async fn total_unread_count(&self, user_id: &Uuid) -> anyhow::Result<i64>;
+
+    /// Продвигает read-state участника до указанного сообщения.
+    async fn mark_conversation_read(
+        &self,
+        conversation_id: &Uuid,
+        user_id: &Uuid,
+        last_read_message_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<ConversationReadUpdate>;
+
+    /// Возвращает время прочтения сообщения по первому подходящему checkpoint.
+    #[cfg(test)]
+    async fn message_read_at(
+        &self,
+        conversation_id: &Uuid,
+        user_id: &Uuid,
+        message_seq: i64,
+    ) -> anyhow::Result<Option<DateTime<Utc>>>;
+
     /// Вставляет личное сообщение и обновляет время диалога.
     async fn insert_dm_message(&self, message: DmMessage) -> anyhow::Result<DmMessage>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_unread_count, unread_count_after_read};
+
+    #[test]
+    fn unread_count_after_read_never_goes_below_zero() {
+        assert_eq!(unread_count_after_read(0, 77), 0);
+        assert_eq!(unread_count_after_read(-77, 1), 0);
+        assert_eq!(unread_count_after_read(5, 2), 3);
+    }
+
+    #[test]
+    fn normalize_unread_count_repairs_legacy_negative_values() {
+        assert_eq!(normalize_unread_count(-76), 0);
+        assert_eq!(normalize_unread_count(3), 3);
+    }
 }

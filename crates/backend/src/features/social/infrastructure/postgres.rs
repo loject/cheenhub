@@ -4,17 +4,25 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, QuerySelect, Set,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
+    sea_query::LockType,
 };
 use uuid::Uuid;
 
 use crate::features::social::domain::{
-    DmConversation, DmMessage, Friendship, FriendshipStatus, ordered_pair,
+    ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage, Friendship,
+    FriendshipStatus, ordered_pair,
 };
 use crate::features::social::infrastructure::entities::{
-    self as friendships, dm_conversations, dm_messages,
+    self as friendships, conversation_member_states, conversation_read_checkpoints,
+    dm_conversations, dm_messages,
 };
-use crate::features::social::infrastructure::{DM_HISTORY_LIMIT, DmMessagePage, SocialStore};
+use crate::features::social::infrastructure::postgres_read_state::{
+    ensure_member_state, increment_unread,
+};
+use crate::features::social::infrastructure::{
+    DM_HISTORY_LIMIT, DmMessagePage, SocialStore, normalize_unread_count, unread_count_after_read,
+};
 
 /// Postgres-хранилище социальных данных.
 pub(crate) struct PostgresSocialStore {
@@ -183,10 +191,12 @@ impl SocialStore for PostgresSocialStore {
             .one(&self.database)
             .await?
         {
+            ensure_member_state(&self.database, &row.id, &user_low_id, now).await?;
+            ensure_member_state(&self.database, &row.id, &user_high_id, now).await?;
             return Ok(row.into());
         }
 
-        Ok(dm_conversations::ActiveModel {
+        let conversation = dm_conversations::ActiveModel {
             id: Set(Uuid::new_v4()),
             user_low_id: Set(user_low_id),
             user_high_id: Set(user_high_id),
@@ -194,8 +204,10 @@ impl SocialStore for PostgresSocialStore {
             updated_at: Set(now),
         }
         .insert(&self.database)
-        .await?
-        .into())
+        .await?;
+        ensure_member_state(&self.database, &conversation.id, &user_low_id, now).await?;
+        ensure_member_state(&self.database, &conversation.id, &user_high_id, now).await?;
+        Ok(conversation.into())
     }
 
     async fn dm_message_page(
@@ -247,29 +259,170 @@ impl SocialStore for PostgresSocialStore {
         Ok(DmMessagePage { messages, has_more })
     }
 
+    async fn dm_message_by_id(
+        &self,
+        conversation_id: &Uuid,
+        message_id: &Uuid,
+    ) -> anyhow::Result<Option<DmMessage>> {
+        Ok(dm_messages::Entity::find()
+            .filter(dm_messages::Column::ConversationId.eq(*conversation_id))
+            .filter(dm_messages::Column::Id.eq(*message_id))
+            .one(&self.database)
+            .await?
+            .map(Into::into))
+    }
+
+    async fn conversation_member_state(
+        &self,
+        conversation_id: &Uuid,
+        user_id: &Uuid,
+    ) -> anyhow::Result<Option<ConversationMemberState>> {
+        Ok(conversation_member_states::Entity::find()
+            .filter(conversation_member_states::Column::ConversationId.eq(*conversation_id))
+            .filter(conversation_member_states::Column::UserId.eq(*user_id))
+            .one(&self.database)
+            .await?
+            .map(Into::into))
+    }
+
+    async fn total_unread_count(&self, user_id: &Uuid) -> anyhow::Result<i64> {
+        Ok(conversation_member_states::Entity::find()
+            .filter(conversation_member_states::Column::UserId.eq(*user_id))
+            .all(&self.database)
+            .await?
+            .into_iter()
+            .map(|row| normalize_unread_count(row.unread_count))
+            .sum())
+    }
+
+    async fn mark_conversation_read(
+        &self,
+        conversation_id: &Uuid,
+        user_id: &Uuid,
+        last_read_message_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<ConversationReadUpdate> {
+        let message = dm_messages::Entity::find()
+            .filter(dm_messages::Column::ConversationId.eq(*conversation_id))
+            .filter(dm_messages::Column::Id.eq(*last_read_message_id))
+            .one(&self.database)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("dm read message was not found in conversation"))?;
+        let transaction = self.database.begin().await?;
+        ensure_member_state(&transaction, conversation_id, user_id, now).await?;
+        let state = conversation_member_states::Entity::find()
+            .filter(conversation_member_states::Column::ConversationId.eq(*conversation_id))
+            .filter(conversation_member_states::Column::UserId.eq(*user_id))
+            .lock(LockType::Update)
+            .one(&transaction)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("dm read state was not found after ensure"))?;
+        if message.seq <= state.last_read_seq {
+            transaction.commit().await?;
+            return Ok(ConversationReadUpdate {
+                state: state.into(),
+                checkpoint: None,
+            });
+        }
+
+        let incoming_read = dm_messages::Entity::find()
+            .filter(dm_messages::Column::ConversationId.eq(*conversation_id))
+            .filter(dm_messages::Column::DeletedAt.is_null())
+            .filter(dm_messages::Column::SenderUserId.ne(*user_id))
+            .filter(dm_messages::Column::Seq.gt(state.last_read_seq))
+            .filter(dm_messages::Column::Seq.lte(message.seq))
+            .count(&transaction)
+            .await? as i64;
+        let next_unread_count = unread_count_after_read(state.unread_count, incoming_read);
+        let mut active = state.into_active_model();
+        active.last_read_message_id = Set(Some(*last_read_message_id));
+        active.last_read_seq = Set(message.seq);
+        active.last_read_at = Set(Some(now));
+        active.unread_count = Set(next_unread_count);
+        active.updated_at = Set(now);
+        let state = active.update(&transaction).await?;
+        let checkpoint = conversation_read_checkpoints::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            conversation_id: Set(*conversation_id),
+            user_id: Set(*user_id),
+            last_read_message_id: Set(*last_read_message_id),
+            last_read_seq: Set(message.seq),
+            read_at: Set(now),
+            created_at: Set(now),
+        }
+        .insert(&transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(ConversationReadUpdate {
+            state: state.into(),
+            checkpoint: Some(checkpoint.into()),
+        })
+    }
+
+    #[cfg(test)]
+    async fn message_read_at(
+        &self,
+        conversation_id: &Uuid,
+        user_id: &Uuid,
+        message_seq: i64,
+    ) -> anyhow::Result<Option<DateTime<Utc>>> {
+        Ok(conversation_read_checkpoints::Entity::find()
+            .filter(conversation_read_checkpoints::Column::ConversationId.eq(*conversation_id))
+            .filter(conversation_read_checkpoints::Column::UserId.eq(*user_id))
+            .filter(conversation_read_checkpoints::Column::LastReadSeq.gte(message_seq))
+            .order_by_asc(conversation_read_checkpoints::Column::LastReadSeq)
+            .order_by_asc(conversation_read_checkpoints::Column::ReadAt)
+            .one(&self.database)
+            .await?
+            .map(|row| row.read_at))
+    }
+
     async fn insert_dm_message(&self, message: DmMessage) -> anyhow::Result<DmMessage> {
+        let transaction = self.database.begin().await?;
+        let conversation = dm_conversations::Entity::find_by_id(message.conversation_id)
+            .lock(LockType::Update)
+            .one(&transaction)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("dm conversation was not found for message insert"))?;
+        let next_seq = dm_messages::Entity::find()
+            .filter(dm_messages::Column::ConversationId.eq(message.conversation_id))
+            .order_by_desc(dm_messages::Column::Seq)
+            .one(&transaction)
+            .await?
+            .map(|row| row.seq + 1)
+            .unwrap_or(1);
         let inserted = dm_messages::ActiveModel {
             id: Set(message.id),
             conversation_id: Set(message.conversation_id),
+            seq: Set(next_seq),
             sender_user_id: Set(message.sender_user_id),
             body: Set(message.body),
             created_at: Set(message.created_at),
             updated_at: Set(message.updated_at),
             deleted_at: Set(message.deleted_at),
         }
-        .insert(&self.database)
+        .insert(&transaction)
         .await?;
 
-        if let Some(row) = dm_conversations::Entity::find_by_id(inserted.conversation_id)
-            .one(&self.database)
-            .await?
-        {
-            let mut active = row.into_active_model();
-            active.updated_at = Set(inserted.created_at);
-            active.update(&self.database).await?;
-        }
+        let recipient_user_id = if conversation.user_low_id == inserted.sender_user_id {
+            conversation.user_high_id
+        } else {
+            conversation.user_low_id
+        };
+        let mut active = conversation.into_active_model();
+        active.updated_at = Set(inserted.created_at);
+        active.update(&transaction).await?;
+        increment_unread(
+            &transaction,
+            &inserted.conversation_id,
+            &recipient_user_id,
+            inserted.created_at,
+        )
+        .await?;
 
-        Ok(inserted.into())
+        let inserted = inserted.into();
+        transaction.commit().await?;
+        Ok(inserted)
     }
 }
 
@@ -305,29 +458,4 @@ fn try_friendship(row: friendships::Model) -> anyhow::Result<Friendship> {
         created_at: row.created_at,
         updated_at: row.updated_at,
     })
-}
-
-impl From<dm_conversations::Model> for DmConversation {
-    fn from(row: dm_conversations::Model) -> Self {
-        Self {
-            id: row.id,
-            user_low_id: row.user_low_id,
-            user_high_id: row.user_high_id,
-            updated_at: row.updated_at,
-        }
-    }
-}
-
-impl From<dm_messages::Model> for DmMessage {
-    fn from(row: dm_messages::Model) -> Self {
-        Self {
-            id: row.id,
-            conversation_id: row.conversation_id,
-            sender_user_id: row.sender_user_id,
-            body: row.body,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            deleted_at: row.deleted_at,
-        }
-    }
 }

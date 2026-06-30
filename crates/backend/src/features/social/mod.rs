@@ -49,4 +49,8 @@ pub(crate) fn dm_routes() -> Router<AppState> {
             "/conversations/{conversation_id}/messages",
             get(transport::list_dm_messages).post(transport::send_dm_message),
         )
+        .route(
+            "/conversations/{conversation_id}/read",
+            post(transport::mark_dm_conversation_read),
+        )
 }
