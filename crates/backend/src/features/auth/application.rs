@@ -399,7 +399,7 @@ pub(super) async fn create_auth_response(
     })
 }
 
-pub(super) async fn require_current_user(
+pub(crate) async fn require_current_user(
     state: &AppState,
     access_token: &str,
 ) -> Result<(UserAccount, Uuid), AuthError> {

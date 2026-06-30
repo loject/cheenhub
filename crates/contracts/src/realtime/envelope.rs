@@ -7,6 +7,7 @@ use uuid::Uuid;
 use super::control::ControlKind;
 use super::network::NetworkKind;
 use super::server::ServerKind;
+use super::social::SocialKind;
 use super::text_chat::TextChatKind;
 use super::voice_chat::VoiceChatKind;
 
@@ -20,6 +21,8 @@ pub enum RealtimeModule {
     Network,
     /// Сообщения управления сервером и события.
     Server,
+    /// События друзей и личных сообщений.
+    Social,
     /// Сообщения текстового чата и события.
     TextChat,
     /// Сообщения присутствия в голосовом чате и события.
@@ -35,6 +38,8 @@ pub enum RealtimeKind {
     Network(NetworkKind),
     /// Вид сообщения модуля управления сервером.
     Server(ServerKind),
+    /// Вид сообщения модуля друзей и личных сообщений.
+    Social(SocialKind),
     /// Вид сообщения модуля текстового чата.
     TextChat(TextChatKind),
     /// Вид сообщения модуля присутствия в голосовом чате.
@@ -48,6 +53,7 @@ impl RealtimeKind {
             Self::Control(_) => RealtimeModule::Control,
             Self::Network(_) => RealtimeModule::Network,
             Self::Server(_) => RealtimeModule::Server,
+            Self::Social(_) => RealtimeModule::Social,
             Self::TextChat(_) => RealtimeModule::TextChat,
             Self::VoiceChat(_) => RealtimeModule::VoiceChat,
         }
@@ -63,6 +69,7 @@ impl Serialize for RealtimeKind {
             Self::Control(kind) => kind.serialize(serializer),
             Self::Network(kind) => kind.serialize(serializer),
             Self::Server(kind) => kind.serialize(serializer),
+            Self::Social(kind) => kind.serialize(serializer),
             Self::TextChat(kind) => kind.serialize(serializer),
             Self::VoiceChat(kind) => kind.serialize(serializer),
         }
@@ -84,6 +91,9 @@ impl<'de> Deserialize<'de> for RealtimeKind {
         }
         if let Ok(kind) = ServerKind::deserialize(value.clone()) {
             return Ok(Self::Server(kind));
+        }
+        if let Ok(kind) = SocialKind::deserialize(value.clone()) {
+            return Ok(Self::Social(kind));
         }
         if let Ok(kind) = TextChatKind::deserialize(value.clone()) {
             return Ok(Self::TextChat(kind));

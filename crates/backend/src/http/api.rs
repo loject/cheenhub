@@ -2,7 +2,7 @@
 
 use axum::{Router, http::StatusCode, routing::get};
 
-use crate::features::{auth, images, servers};
+use crate::features::{auth, images, servers, social};
 use crate::realtime;
 use crate::state::AppState;
 
@@ -11,6 +11,8 @@ pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::routes())
         .nest("/images", images::routes())
+        .nest("/friends", social::friend_routes())
+        .nest("/direct-messages", social::dm_routes())
         .route("/realtime/ws", get(realtime::websocket::upgrade))
         .nest("/servers", servers::routes())
         .fallback(not_found)

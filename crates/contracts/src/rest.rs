@@ -3,6 +3,7 @@
 pub mod auth;
 pub mod error;
 pub mod servers;
+pub mod social;
 
 pub use auth::{
     ActiveSession, ActiveSessionsResponse, AuthResponse, AuthUser,
@@ -19,6 +20,13 @@ pub use servers::{
     ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse, ServerInviteSummary,
     ServerRoomKind, ServerRoomSummary, ServerSummary, UpdateServerAvatarResponse,
     UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest, UpdateServerRoomResponse,
+};
+pub use social::{
+    DmConversationSummary, DmMessageSummary, FriendRequestStatus, FriendRequestSummary,
+    FriendSummary, ListDmConversationsResponse, ListDmMessagesResponse, ListFriendRequestsResponse,
+    ListFriendsResponse, OpenDmConversationRequest, OpenDmConversationResponse,
+    SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
+    SendFriendRequestResponse, UserRelationStatus, UserSearchResult,
 };
 
 #[cfg(test)]

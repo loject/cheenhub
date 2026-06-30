@@ -17,6 +17,7 @@ use tracing::info;
 type Stores = (
     Arc<dyn features::auth::infrastructure::AuthStore>,
     Arc<dyn features::servers::infrastructure::ServerStore>,
+    Arc<dyn features::social::infrastructure::SocialStore>,
     Arc<dyn features::text_chat::infrastructure::TextChatStore>,
     Arc<dyn features::text_chat::infrastructure::ChatAttachmentObjectStore>,
     Arc<dyn features::images::infrastructure::ImageStore>,
@@ -69,8 +70,14 @@ async fn main() -> anyhow::Result<()> {
             Arc::new(features::text_chat::infrastructure::DisabledChatAttachmentObjectStore)
         }
     };
-    let (auth_store, server_store, text_chat_store, chat_attachment_object_store, image_store): Stores =
-        match config.auth_store {
+    let (
+        auth_store,
+        server_store,
+        social_store,
+        text_chat_store,
+        chat_attachment_object_store,
+        image_store,
+    ): Stores = match config.auth_store {
         config::AuthStoreConfig::Postgres => {
             let database = db::connect(&config.database_url).await?;
             (
@@ -78,6 +85,9 @@ async fn main() -> anyhow::Result<()> {
                     database.clone(),
                 )),
                 Arc::new(features::servers::infrastructure::PostgresServerStore::new(
+                    database.clone(),
+                )),
+                Arc::new(features::social::infrastructure::PostgresSocialStore::new(
                     database.clone(),
                 )),
                 Arc::new(
@@ -94,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
         config::AuthStoreConfig::InMemory => (
             Arc::new(features::auth::infrastructure::InMemoryAuthStore::default()),
             Arc::new(features::servers::infrastructure::InMemoryServerStore::default()),
+            Arc::new(features::social::infrastructure::InMemorySocialStore::default()),
             Arc::new(features::text_chat::infrastructure::InMemoryTextChatStore::default()),
             chat_attachment_object_store,
             Arc::new(features::images::infrastructure::InMemoryImageStore::default()),
@@ -114,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
             config.smtp_from_email.clone(),
         )?),
         server_store,
+        social_store,
         text_chat_store,
         chat_attachment_object_store,
         image_store,

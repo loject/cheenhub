@@ -10,4 +10,18 @@ mod realtime;
 mod scroll;
 mod surface;
 
+/// Общая ширина и оформление формы ввода сообщений.
+pub(crate) const CHAT_COMPOSER_CLASS: &str = concat!(
+    "chat-input-wrap mx-auto flex w-full max-w-5xl items-end gap-2 rounded-[20px] ",
+    "border border-zinc-800 bg-[rgba(39,39,42,.8)] p-2 ",
+    "shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
+);
+/// Общая ширина списка сообщений.
+pub(crate) const CHAT_CONTENT_CLASS: &str = "mx-auto flex w-full max-w-5xl flex-col gap-4";
+/// Общая ширина строки статуса текстового чата.
+pub(crate) const CHAT_STATUS_CLASS: &str =
+    "mx-auto w-full max-w-5xl px-4 pb-2 text-[11px] leading-4 text-red-200";
+
+pub(crate) use message_item::ChatMessageItem;
+pub(crate) use scroll::{ScrollCommand, apply_scroll_command, update_near_bottom_state};
 pub(crate) use surface::{RoomChatSurface, RoomChatSurfaceMode};

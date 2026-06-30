@@ -4,6 +4,7 @@ use cheenhub_contracts::rest::{ServerRoomKind, ServerSummary};
 use dioxus::prelude::*;
 
 use crate::features::app::api;
+use crate::features::social::SocialPage;
 
 use super::add_server_modal::AddServerModal;
 use super::create_server_modal::CreateServerModal;
@@ -33,6 +34,12 @@ pub(crate) enum AppModal {
     },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ActiveAppArea {
+    Social,
+    Server,
+}
+
 /// Renders the static room UI shell.
 #[component]
 pub(crate) fn AppShell() -> Element {
@@ -46,6 +53,7 @@ pub(crate) fn AppShell() -> Element {
     let mut shell_state = use_signal(default_server_shell_state);
     let mut shell_state_by_server = use_signal(Vec::<(String, ServerShellState)>::new);
     let mut app_modal = use_signal(|| None::<AppModal>);
+    let mut active_area = use_signal(|| ActiveAppArea::Server);
     let show_empty_servers = loaded_servers()
         && !is_loading_servers()
         && servers().is_empty()
@@ -84,18 +92,23 @@ pub(crate) fn AppShell() -> Element {
             ServerRail {
                 servers: servers(),
                 active_server_id: active_server_id(),
+                social_active: active_area() == ActiveAppArea::Social,
                 is_loading: is_loading_servers(),
                 status: server_status(),
                 on_select_server: move |server_id: String| {
                     let next_shell_state =
                         saved_server_shell_state(&shell_state_by_server(), &server_id)
                             .unwrap_or_else(default_server_shell_state);
+                    active_area.set(ActiveAppArea::Server);
                     active_server_id.set(Some(server_id));
                     shell_state.set(next_shell_state);
                 },
+                on_open_social: move |_| active_area.set(ActiveAppArea::Social),
                 on_add_server: move |_| is_add_server_open.set(true),
             }
-            if show_empty_servers {
+            if active_area() == ActiveAppArea::Social {
+                SocialPage {}
+            } else if show_empty_servers {
                 EmptyServersPanel {
                     on_create_server: move |_| is_add_server_open.set(true),
                 }

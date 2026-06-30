@@ -5,23 +5,22 @@ use dioxus::prelude::*;
 
 use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
-use crate::features::app::server_permissions::ServerPermissionsContext;
 
 use super::image_attachment::ChatImageAttachment;
 
 /// Рендерит одну строку сообщения текстового чата.
 #[component]
-pub(super) fn ChatMessageItem(
+pub(crate) fn ChatMessageItem(
     message: TextChatMessage,
     animate: bool,
     removing: bool,
+    can_delete_messages: bool,
     on_delete: EventHandler<String>,
 ) -> Element {
     use_avatar_seed(message.author_user_id.clone());
     let current_user = use_context::<CurrentUserContext>().require_user();
-    let permissions = use_context::<ServerPermissionsContext>();
     let is_own = message.author_user_id == current_user.id;
-    let can_delete = is_own || permissions.can_delete_messages;
+    let can_delete = is_own || can_delete_messages;
     let mut menu_pos = use_signal(|| None::<(f64, f64)>);
 
     let outer_class = match (animate, removing) {

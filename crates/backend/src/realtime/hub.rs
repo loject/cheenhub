@@ -224,6 +224,24 @@ impl RealtimeHub {
         recipients
     }
 
+    /// Возвращает активные потоки модуля для конкретных пользователей.
+    pub(crate) async fn recipients_for_users(
+        &self,
+        module: RealtimeModule,
+        user_ids: &[Uuid],
+    ) -> Vec<RealtimeRecipient> {
+        self.streams
+            .lock()
+            .await
+            .iter()
+            .filter(|stream| stream.module == module && user_ids.contains(&stream.user_id))
+            .map(|stream| RealtimeRecipient {
+                stream_id: stream.id,
+                user_id: stream.user_id,
+            })
+            .collect()
+    }
+
     /// Вещает событие, ограниченное сервером, выбранным потокам одного модуля realtime.
     pub(crate) async fn fanout_to_streams<P>(
         &self,
@@ -263,6 +281,25 @@ impl RealtimeHub {
             }
         }))
         .await;
+    }
+
+    /// Вещает событие выбранным пользователям без server-scoped проверки.
+    pub(crate) async fn fanout_to_user_streams<P>(
+        &self,
+        module: RealtimeModule,
+        kind: RealtimeKind,
+        user_ids: &[Uuid],
+        payload: P,
+    ) where
+        P: Serialize + Clone,
+    {
+        let recipients = self.recipients_for_users(module, user_ids).await;
+        let stream_ids = recipients
+            .iter()
+            .map(|recipient| recipient.stream_id)
+            .collect::<Vec<_>>();
+        self.fanout_to_streams(module, &Uuid::nil(), kind, &stream_ids, payload)
+            .await;
     }
 
     async fn should_warn_slow_datagram_fanout(&self) -> bool {

@@ -12,9 +12,11 @@ use super::server_rail_button::ServerRailButton;
 pub(crate) fn ServerRail(
     servers: Vec<ServerSummary>,
     active_server_id: Option<String>,
+    social_active: bool,
     is_loading: bool,
     status: String,
     on_select_server: EventHandler<String>,
+    on_open_social: EventHandler<()>,
     on_add_server: EventHandler<()>,
 ) -> Element {
     let list_class = if !is_loading && servers.is_empty() {
@@ -22,10 +24,19 @@ pub(crate) fn ServerRail(
     } else {
         "space-y-2 overflow-y-auto pb-3"
     };
+    let logo_class = if social_active {
+        "mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-400/35 bg-blue-500/15 text-blue-100 shadow-[0_0_0_1px_rgba(59,130,246,0.12)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px"
+    } else {
+        "mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-100 text-zinc-950 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-blue-400/30 hover:bg-blue-50"
+    };
 
     rsx! {
         aside { class: "server-rail flex w-[76px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 p-3 backdrop-blur-xl",
-            div { class: "mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-100 text-zinc-950",
+            button {
+                r#type: "button",
+                class: logo_class,
+                "aria-label": "Друзья и личные сообщения",
+                onclick: move |_| on_open_social.call(()),
                 LogoIcon { class_name: "h-7 w-7" }
             }
             div { class: list_class,
@@ -65,7 +76,10 @@ pub(crate) fn ServerRail(
                 }
             }
             div { class: "mt-auto border-t border-zinc-800/80 pt-3",
-                button { r#type: "button", class: "transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900/80 text-zinc-400 hover:border-accent/30 hover:bg-accent/10 hover:text-zinc-200", "aria-label": "Добавить сервер",
+                button {
+                    r#type: "button",
+                    class: "flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900/80 text-zinc-400 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-accent/30 hover:bg-accent/10 hover:text-zinc-200",
+                    "aria-label": "Добавить сервер",
                     onclick: move |_| on_add_server.call(()),
                     svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 5v14m-7-7h14" }

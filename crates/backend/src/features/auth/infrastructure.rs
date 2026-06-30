@@ -85,6 +85,13 @@ pub(crate) trait AuthStore: Send + Sync {
     /// Находит пользователя по идентификатору.
     async fn find_user_by_id(&self, user_id: &Uuid) -> anyhow::Result<Option<UserAccount>>;
 
+    /// Ищет пользователей по части никнейма.
+    async fn search_users_by_nickname(
+        &self,
+        query: &str,
+        limit: u64,
+    ) -> anyhow::Result<Vec<UserAccount>>;
+
     /// Обновляет публичный никнейм пользователя.
     async fn update_user_nickname(
         &self,

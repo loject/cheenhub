@@ -9,6 +9,7 @@ use crate::features::auth::infrastructure::AuthStore;
 use crate::features::auth::security::keys::AuthKeys;
 use crate::features::images::infrastructure::ImageStore;
 use crate::features::servers::infrastructure::ServerStore;
+use crate::features::social::infrastructure::SocialStore;
 use crate::features::text_chat::infrastructure::{ChatAttachmentObjectStore, TextChatStore};
 use crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore;
 use crate::realtime::hub::RealtimeHub;
@@ -22,6 +23,8 @@ pub(crate) struct AppState {
     pub(crate) auth_mailer: Arc<dyn AuthMailer>,
     /// Бэкенд хранения серверов.
     pub(crate) server_store: Arc<dyn ServerStore>,
+    /// Бэкенд хранения друзей и личных сообщений.
+    pub(crate) social_store: Arc<dyn SocialStore>,
     /// Бэкенд хранения текстового чата.
     pub(crate) text_chat_store: Arc<dyn TextChatStore>,
     /// Бэкенд объектного хранения вложений текстового чата.

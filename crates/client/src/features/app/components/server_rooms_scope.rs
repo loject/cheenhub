@@ -6,18 +6,17 @@ use dioxus::prelude::*;
 use crate::features::app::api;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::server_settings::ServerSettingsScope;
-use crate::features::user_settings::UserSettingsScope;
-use crate::features::voice_chat::{SidebarVoiceControls, VoiceConnectionHandle};
+use crate::features::voice_chat::VoiceConnectionHandle;
 
 use crate::features::app::server_permissions::ServerPermissionsContext;
 
 use super::app_shell::{AppModal, ServerShellState, room_kind_attr};
-use super::avatar::{UserAvatar, use_avatar_seed};
+use super::app_sidebar_footer::AppSidebarFooter;
+use super::avatar::use_avatar_seed;
 use super::room_editor_modal::RoomEditorModal;
 use super::room_instance::RoomInstance;
 use super::room_list_item::RoomListItem;
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
-use super::server_realtime_status::ServerRealtimeStatus;
 use super::server_rooms_sidebar_styles as sidebar_styles;
 use super::server_rooms_state::{
     ServerWorkspace, active_room, chat_open_for_room, ensure_workspace_mounted, room_by_id,
@@ -48,7 +47,6 @@ pub(crate) fn ServerRoomsScope(
     let mut room_action_status = use_signal(String::new);
     let mut room_modal = use_signal(|| None::<RoomModal>);
     let mut is_server_menu_open = use_signal(|| false);
-    let mut is_user_settings_open = use_signal(|| false);
     let mut active_workspace = use_signal(|| None::<ServerWorkspace>);
     let mut mounted_workspaces = use_signal(Vec::<ServerWorkspace>::new);
     let mut mobile_workspace_open = use_signal(|| false);
@@ -89,9 +87,6 @@ pub(crate) fn ServerRoomsScope(
         sidebar_styles::rooms_sidebar_header_icon_class(settings_workspace_active);
     let room_section_title_class =
         sidebar_styles::room_section_title_class(settings_workspace_active);
-    let sidebar_voice_class = sidebar_styles::sidebar_voice_class(settings_workspace_active);
-    let user_bar_class = sidebar_styles::user_bar_class(settings_workspace_active);
-    let user_details_class = sidebar_styles::user_details_class(settings_workspace_active);
     let voice_loader = voice.clone();
 
     use_effect(move || {
@@ -344,36 +339,10 @@ pub(crate) fn ServerRoomsScope(
                     }
                 }
             }
-            div { class: "relative z-40 border-t border-zinc-800/80 p-3",
-                ServerRealtimeStatus {
-                    server_name: server_name.clone(),
-                    settings_workspace_active: settings_workspace_active,
-                }
-                div { class: sidebar_voice_class,
-                    SidebarVoiceControls {}
-                }
-                div { class: user_bar_class,
-                    UserAvatar {
-                        nickname: current_user.nickname.clone(),
-                        avatar_url: current_user.avatar_url.clone(),
-                        class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-[12px] font-bold text-white".to_owned(),
-                        avatar_seed: Some(current_user.id.clone()),
-                    }
-                    div { class: user_details_class,
-                        div { class: "truncate text-[12px] font-medium text-zinc-100", "{current_user.nickname}" }
-                        div { class: "truncate text-[11px] text-zinc-500", "в приложении" }
-                    }
-                    button {
-                        r#type: "button",
-                        class: "rounded-lg p-2 text-zinc-500 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-zinc-800 hover:text-zinc-200",
-                        "aria-label": "Настройки пользователя",
-                        onclick: move |_| is_user_settings_open.set(true),
-                        svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.075.04.149.083.22.127.324.2.72.226 1.075.091l1.217-.462a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.82c-.293.24-.438.613-.431.992a7.723 7.723 0 0 1 0 .255c-.007.379.138.752.431.992l1.003.82c.433.354.54.972.26 1.431l-1.296 2.247a1.125 1.125 0 0 1-1.37.49l-1.217-.462c-.355-.135-.751-.109-1.076.091a6.72 6.72 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.542-.56.94-1.11.94h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.063-.374-.313-.686-.645-.87a6.52 6.52 0 0 1-.22-.127c-.324-.2-.72-.226-1.075-.091l-1.217.462a1.125 1.125 0 0 1-1.37-.49l-1.296-2.247a1.125 1.125 0 0 1 .26-1.431l1.003-.82c.293-.24.438-.613.431-.992a6.932 6.932 0 0 1 0-.255c.007-.379-.138-.752-.431-.992l-1.003-.82a1.125 1.125 0 0 1-.26-1.431l1.296-2.247a1.125 1.125 0 0 1 1.37-.49l1.217.462c.355-.135.751-.109 1.076-.091.071-.044.145-.087.220-.128.331-.183.581-.495.644-.869l.213-1.281Z" }
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" }
-                        }
-                    }
-                }
+            AppSidebarFooter {
+                realtime_label: server_name.clone(),
+                settings_workspace_active,
+                show_voice_controls: true,
             }
         }
         for workspace in mounted_workspaces() {
@@ -479,9 +448,6 @@ pub(crate) fn ServerRoomsScope(
                     ));
                 },
             }
-        }
-        if is_user_settings_open() {
-            UserSettingsScope { on_close: move |_| is_user_settings_open.set(false) }
         }
     }
 }

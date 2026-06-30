@@ -382,6 +382,7 @@ fn uses_cached_stream(module: RealtimeModule) -> bool {
         module,
         RealtimeModule::Control
             | RealtimeModule::Network
+            | RealtimeModule::Social
             | RealtimeModule::TextChat
             | RealtimeModule::VoiceChat
     )

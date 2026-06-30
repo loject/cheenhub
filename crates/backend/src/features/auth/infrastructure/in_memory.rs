@@ -83,6 +83,25 @@ impl AuthStore for InMemoryAuthStore {
             .map(|user| user.account.clone()))
     }
 
+    async fn search_users_by_nickname(
+        &self,
+        query: &str,
+        limit: u64,
+    ) -> anyhow::Result<Vec<UserAccount>> {
+        let needle = query.to_lowercase();
+        let limit = usize::try_from(limit).unwrap_or(20);
+        let state = self.state.lock().map_err(|_| poisoned())?;
+        let mut users = state
+            .users
+            .iter()
+            .filter(|user| user.account.nickname.to_lowercase().contains(&needle))
+            .map(|user| user.account.clone())
+            .collect::<Vec<_>>();
+        users.sort_by(|left, right| left.nickname.cmp(&right.nickname));
+        users.truncate(limit);
+        Ok(users)
+    }
+
     async fn update_user_nickname(
         &self,
         user_id: &Uuid,

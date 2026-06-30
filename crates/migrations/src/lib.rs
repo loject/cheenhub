@@ -25,6 +25,7 @@ mod m20260519_000021_add_text_message_deleted_at;
 mod m20260519_000022_add_text_message_deleted_by_user_id;
 mod m20260519_000023_create_text_chat_attachments_table;
 mod m20260519_000024_create_session_user_agents_table;
+mod m20260630_000025_create_social_tables;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -59,6 +60,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260519_000022_add_text_message_deleted_by_user_id::Migration),
             Box::new(m20260519_000023_create_text_chat_attachments_table::Migration),
             Box::new(m20260519_000024_create_session_user_agents_table::Migration),
+            Box::new(m20260630_000025_create_social_tables::Migration),
         ]
     }
 }

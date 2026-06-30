@@ -15,6 +15,7 @@ use crate::features::auth::email::tests::TestAuthMailer;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
 use crate::features::auth::security::{keys::AuthKeys, refresh_token};
 use crate::features::servers::infrastructure::InMemoryServerStore;
+use crate::features::social::infrastructure::InMemorySocialStore;
 use crate::features::text_chat::infrastructure::InMemoryTextChatStore;
 use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
@@ -305,6 +306,7 @@ pub(super) fn state_with_mailer() -> (AppState, Arc<TestAuthMailer>) {
         auth_store: Arc::new(InMemoryAuthStore::default()),
         auth_mailer: mailer.clone(),
         server_store: Arc::new(InMemoryServerStore::default()),
+        social_store: Arc::new(InMemorySocialStore::default()),
         text_chat_store: Arc::new(InMemoryTextChatStore::default()),
         chat_attachment_object_store: Arc::new(
             crate::features::text_chat::infrastructure::InMemoryChatAttachmentObjectStore::new(

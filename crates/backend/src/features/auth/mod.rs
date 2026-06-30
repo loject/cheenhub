@@ -1,7 +1,7 @@
 //! Функция аутентификации по email и паролю.
 
 pub(crate) mod application;
-mod domain;
+pub(crate) mod domain;
 pub(crate) mod email;
 pub(crate) mod error;
 pub(crate) mod infrastructure;

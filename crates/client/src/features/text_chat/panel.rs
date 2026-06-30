@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use futures_util::StreamExt;
 
 use crate::features::app::components::app_shell::ActiveRoom;
+use crate::features::app::server_permissions::ServerPermissionsContext;
 use crate::features::realtime::RealtimeHandle;
 use crate::features::runtime::sleep_duration;
 
@@ -20,11 +21,13 @@ use super::message_item::ChatMessageItem;
 use super::messages::{append_message, is_appearing_message, remove_message};
 use super::realtime::{self, TextChatEvent};
 use super::scroll::{ScrollCommand, apply_scroll_command, update_scroll_state};
+use super::{CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, CHAT_STATUS_CLASS};
 
 /// Рендерит панель realtime-текстового чата для одной комнаты.
 #[component]
 pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) -> Element {
     let realtime = use_context::<RealtimeHandle>();
+    let permissions = use_context::<ServerPermissionsContext>();
     let mut messages = use_signal(Vec::<TextChatMessage>::new);
     let mut appearing_message_ids = use_signal(Vec::<String>::new);
     let mut removing_message_ids = use_signal(Vec::<String>::new);
@@ -94,7 +97,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let inner_class = if compact {
         "space-y-4"
     } else {
-        "mx-auto flex w-full max-w-3xl flex-col gap-4"
+        CHAT_CONTENT_CLASS
     };
     let input_outer_class = if compact {
         "shrink-0 border-t border-zinc-800/80 bg-zinc-950/35 p-3"
@@ -104,7 +107,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let input_wrap_class = if compact {
         "chat-input-wrap flex items-end gap-2 rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.8)] p-2 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
     } else {
-        "chat-input-wrap mx-auto flex max-w-3xl items-end gap-2 rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.8)] p-2 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
+        CHAT_COMPOSER_CLASS
     };
     let appearing_message_ids_list = appearing_message_ids();
     let removing_message_ids_list = removing_message_ids();
@@ -332,6 +335,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                                     &appearing_message_ids_list,
                                 ),
                                 removing: removing_message_ids_list.contains(&message.id),
+                                can_delete_messages: permissions.can_delete_messages,
                                 message: message.clone(),
                                 on_delete: move |id| on_delete_message.call(id),
                             }
@@ -358,7 +362,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 }
             }
             if !status().is_empty() {
-                p { class: "mx-auto w-full max-w-3xl px-4 pb-2 text-[11px] leading-4 text-red-200",
+                p { class: CHAT_STATUS_CLASS,
                     "{status()}"
                 }
             }

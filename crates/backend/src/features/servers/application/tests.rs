@@ -20,6 +20,7 @@ use crate::features::auth::infrastructure::InMemoryAuthStore;
 use crate::features::auth::security::keys::AuthKeys;
 use crate::features::servers::error::ServerError;
 use crate::features::servers::infrastructure::{InMemoryServerStore, ServerStore};
+use crate::features::social::infrastructure::InMemorySocialStore;
 use crate::features::text_chat::infrastructure::InMemoryTextChatStore;
 use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
@@ -41,6 +42,7 @@ fn state_with_store(server_store: Arc<InMemoryServerStore>) -> AppState {
         auth_store: Arc::new(InMemoryAuthStore::default()),
         auth_mailer: Arc::new(crate::features::auth::email::tests::TestAuthMailer::default()),
         server_store,
+        social_store: Arc::new(InMemorySocialStore::default()),
         text_chat_store: Arc::new(InMemoryTextChatStore::default()),
         chat_attachment_object_store: Arc::new(
             crate::features::text_chat::infrastructure::InMemoryChatAttachmentObjectStore::new(

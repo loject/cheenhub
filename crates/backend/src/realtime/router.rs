@@ -4,7 +4,7 @@ use cheenhub_contracts::realtime::{RealtimeEnvelope, RealtimeModule, RejectionCo
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
 
-use crate::features::{servers, text_chat, voice_chat};
+use crate::features::{servers, social, text_chat, voice_chat};
 use crate::state::AppState;
 
 use super::protocol::send_rejection;
@@ -25,6 +25,7 @@ pub(crate) async fn dispatch(
         RealtimeModule::Control => control::handle(state, send, envelope).await,
         RealtimeModule::Network => network::handle(state, send, envelope).await,
         RealtimeModule::Server => servers::realtime::handle(state, user_id, send, envelope).await,
+        RealtimeModule::Social => social::realtime::handle(state, user_id, send, envelope).await,
         RealtimeModule::TextChat => {
             text_chat::realtime::handle(state, user, user_id, send, envelope).await
         }
@@ -46,6 +47,7 @@ pub(crate) async fn cleanup_stream(state: &AppState, module: RealtimeModule, str
         RealtimeModule::Control
         | RealtimeModule::Network
         | RealtimeModule::Server
+        | RealtimeModule::Social
         | RealtimeModule::TextChat => {}
     }
 }

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
-    Set,
+    QueryOrder, QuerySelect, Set,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -23,6 +23,19 @@ impl PostgresAuthStore {
     pub(crate) fn new(database: DatabaseConnection) -> Self {
         Self { database }
     }
+}
+
+fn escape_like_pattern(value: &str) -> String {
+    value.chars().fold(String::new(), |mut escaped, ch| {
+        match ch {
+            '%' | '_' | '\\' => {
+                escaped.push('\\');
+                escaped.push(ch);
+            }
+            _ => escaped.push(ch),
+        }
+        escaped
+    })
 }
 
 #[async_trait]
@@ -71,6 +84,23 @@ impl AuthStore for PostgresAuthStore {
             .one(&self.database)
             .await?
             .map(Into::into))
+    }
+
+    async fn search_users_by_nickname(
+        &self,
+        query: &str,
+        limit: u64,
+    ) -> anyhow::Result<Vec<UserAccount>> {
+        let pattern = format!("%{}%", escape_like_pattern(query));
+        Ok(users::Entity::find()
+            .filter(users::Column::Nickname.like(pattern))
+            .order_by_asc(users::Column::Nickname)
+            .limit(limit)
+            .all(&self.database)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
     }
 
     async fn update_user_nickname(

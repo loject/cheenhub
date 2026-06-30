@@ -2,6 +2,7 @@
 
 pub(crate) mod add_server_modal;
 pub(crate) mod app_shell;
+pub(crate) mod app_sidebar_footer;
 pub(crate) mod avatar;
 pub(crate) mod create_server_modal;
 pub(crate) mod empty_servers_panel;

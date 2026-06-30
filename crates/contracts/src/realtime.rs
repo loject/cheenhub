@@ -4,6 +4,7 @@ mod control;
 mod envelope;
 mod network;
 mod server;
+mod social;
 mod text_chat;
 mod voice_chat;
 
@@ -21,6 +22,7 @@ pub use server::{
     ServerRoleDraft, ServerRoleEntry, ServerRoleKind, ServerRoleList, ServerRolePermission,
     ServerRoleSummary, ServerRolesSaved,
 };
+pub use social::{SocialChangeReason, SocialChanged, SocialKind, SocialReady, SubscribeSocial};
 pub use text_chat::{
     ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
     LoadChatImage, LoadRoomHistory, MessageDeletedPayload, RoomHistory, SendMessage,
@@ -146,6 +148,28 @@ mod tests {
             decoded.kind,
             RealtimeKind::Server(ServerKind::ListServerInvites)
         );
+        assert!(decoded.has_matching_module_kind());
+    }
+
+    #[test]
+    fn social_changed_envelope_round_trips() {
+        let envelope = RealtimeEnvelope::new(
+            RealtimeModule::Social,
+            RealtimeKind::Social(SocialKind::Changed),
+            None,
+            SocialChanged {
+                reason: SocialChangeReason::DirectMessages,
+                conversation_id: Some(Uuid::new_v4().to_string()),
+            },
+        )
+        .expect("envelope serializes");
+
+        let json = serde_json::to_string(&envelope).expect("envelope serializes");
+        assert!(json.contains("\"module\":\"social\""));
+        assert!(json.contains("\"kind\":\"changed\""));
+        let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+
+        assert_eq!(decoded.kind, RealtimeKind::Social(SocialKind::Changed));
         assert!(decoded.has_matching_module_kind());
     }
 

@@ -557,6 +557,12 @@
     transform-origin: bottom left;
   }
 
+  .chat-message-removing {
+    animation: chat-message-out 0.18s ease-in both;
+    pointer-events: none;
+    transform-origin: bottom left;
+  }
+
   .volume-slider {
     appearance: none;
     -webkit-appearance: none;
@@ -716,6 +722,18 @@
   }
 }
 
+@keyframes chat-message-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+
 @keyframes pulse-bar {
   0%,
   100% {
@@ -804,7 +822,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-message {
+  .chat-message,
+  .chat-message-removing {
     animation: none;
   }
 }

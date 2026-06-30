@@ -1,4 +1,4 @@
-//! Поверхность realtime-статуса в боковой панели сервера.
+//! Поверхность realtime-статуса в боковой панели приложения.
 
 use dioxus::prelude::*;
 use futures_util::StreamExt;
@@ -8,12 +8,9 @@ use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle, Realti
 
 use super::server_rooms_sidebar_styles as sidebar_styles;
 
-/// Рендерит строку realtime-статуса в боковой панели сервера.
+/// Рендерит строку realtime-статуса в боковой панели приложения.
 #[component]
-pub(crate) fn ServerRealtimeStatus(
-    server_name: String,
-    settings_workspace_active: bool,
-) -> Element {
+pub(crate) fn ServerRealtimeStatus(label: String, settings_workspace_active: bool) -> Element {
     let realtime = use_context::<RealtimeHandle>();
     let mut realtime_status = use_signal(|| realtime.connection_status());
     let connection_status_class =
@@ -38,7 +35,7 @@ pub(crate) fn ServerRealtimeStatus(
         div { class: connection_status_class,
             RealtimeConnectionStatusIndicator {}
             div { class: connection_details_class,
-                div { class: "truncate text-[11px] font-medium text-zinc-100", "{server_name}" }
+                div { class: "truncate text-[11px] font-medium text-zinc-100", "{label}" }
                 div { class: "truncate text-[11px] text-zinc-500", "{realtime_status_label}" }
             }
         }
