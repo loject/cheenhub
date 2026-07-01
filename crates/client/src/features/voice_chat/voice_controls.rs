@@ -14,6 +14,7 @@ use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 use super::realtime;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget};
 use super::video_streams::{ParticipantVideoFrame, ParticipantVideoHandle, ParticipantVideoSource};
+use super::voice_frame_sender;
 
 /// Renders floating controls for the active voice room.
 #[component]
@@ -116,31 +117,11 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                         if output_muted {
                             unmute_playback.set_muted(false);
                         }
-                        let send_realtime = microphone_realtime_handle.clone();
-                        let send_server_id = microphone_server_id.clone();
-                        let send_room_id = microphone_room_id.clone();
-                        toggle_microphone.toggle(Rc::new(move |frame| {
-                            let frame_realtime = send_realtime.clone();
-                            let frame_server_id = send_server_id.clone();
-                            let frame_room_id = send_room_id.clone();
-                            spawn(async move {
-                                if let Err(error) = realtime::send_voice_frame(
-                                    &frame_realtime,
-                                    &frame_server_id,
-                                    &frame_room_id,
-                                    frame,
-                                )
-                                .await
-                                {
-                                    warn!(
-                                        %error,
-                                        server_id = %frame_server_id,
-                                        room_id = %frame_room_id,
-                                        "failed to send encoded voice frame"
-                                    );
-                                }
-                            });
-                        }));
+                        toggle_microphone.toggle(voice_frame_sender::voice_frame_sender_callback(
+                            microphone_realtime_handle.clone(),
+                            microphone_server_id.clone(),
+                            microphone_room_id.clone(),
+                        ));
                     },
                     span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "{microphone_label}" }
                     if microphone_live {

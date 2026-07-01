@@ -41,7 +41,7 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
         Vec::new()
     };
     let microphone_live = matches!(microphone.status(), MicrophoneStatus::Live);
-    if is_active_room && microphone_live && microphone.level().active {
+    if is_active_room && microphone_live && microphone.level_active() {
         let current_user_id = voice.current_user_id().to_owned();
         if !speaking_user_ids
             .iter()

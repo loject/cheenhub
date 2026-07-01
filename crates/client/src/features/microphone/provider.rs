@@ -10,8 +10,8 @@ use super::backend::{
 };
 use super::input_devices::AudioInputDevice;
 use super::provider_runtime::{
-    gain_from_percent, microphone_callbacks, next_generation, reset_level, status_from_error,
-    threshold_from_percent,
+    gain_from_percent, microphone_callbacks, next_generation, persist_input_device, reset_level,
+    status_from_error, threshold_from_percent,
 };
 use super::storage;
 
@@ -27,6 +27,7 @@ pub(super) enum ActiveCapture {
 pub(crate) struct MicrophoneHandle {
     pub(super) status: Signal<MicrophoneStatus>,
     pub(super) level: Signal<MicrophoneLevel>,
+    pub(super) level_active: Signal<bool>,
     pub(super) session: Signal<Option<Rc<dyn MicrophoneSession>>>,
     pub(super) generation: Signal<u64>,
     pub(super) backend: Rc<dyn MicrophoneBackend>,
@@ -107,10 +108,11 @@ impl MicrophoneHandle {
         status.set(MicrophoneStatus::Starting);
         active_capture.set(capture);
         active_on_frame.set(Some(on_frame.clone()));
-        reset_level(&mut level);
+        let mut level_active = self.level_active;
+        reset_level(&mut level, &mut level_active);
 
         spawn(async move {
-            let callbacks = microphone_callbacks(on_frame.clone(), level);
+            let callbacks = microphone_callbacks(on_frame.clone(), level, level_active);
             let config = MicrophoneConfig {
                 device_id,
                 input_gain,
@@ -138,7 +140,7 @@ impl MicrophoneHandle {
                     let next_status = status_from_error(error.clone());
                     warn!(%error, status = ?next_status, "failed to start microphone capture");
                     session.set(None);
-                    reset_level(&mut level);
+                    reset_level(&mut level, &mut level_active);
                     status.set(next_status);
                     active_capture.set(ActiveCapture::None);
                     active_on_frame.set(None);
@@ -169,7 +171,8 @@ impl MicrophoneHandle {
         status.set(MicrophoneStatus::Starting);
         active_capture.set(capture);
         active_on_frame.set(Some(on_frame.clone()));
-        reset_level(&mut level);
+        let mut level_active = self.level_active;
+        reset_level(&mut level, &mut level_active);
 
         spawn(async move {
             if let Some(previous_session) = previous_session
@@ -181,7 +184,7 @@ impl MicrophoneHandle {
                 return;
             }
 
-            let callbacks = microphone_callbacks(on_frame.clone(), level);
+            let callbacks = microphone_callbacks(on_frame.clone(), level, level_active);
             let config = MicrophoneConfig {
                 device_id,
                 input_gain,
@@ -209,7 +212,7 @@ impl MicrophoneHandle {
                     let next_status = status_from_error(error.clone());
                     warn!(%error, status = ?next_status, "failed to restart microphone capture");
                     session.set(None);
-                    reset_level(&mut level);
+                    reset_level(&mut level, &mut level_active);
                     status.set(next_status);
                     active_capture.set(ActiveCapture::None);
                     active_on_frame.set(None);
@@ -225,9 +228,10 @@ impl MicrophoneHandle {
         let Some(active_session) = self.session.peek().clone() else {
             let mut status = self.status;
             let mut level = self.level;
+            let mut level_active = self.level_active;
             let mut active_capture = self.active_capture;
             let mut active_on_frame = self.active_on_frame;
-            reset_level(&mut level);
+            reset_level(&mut level, &mut level_active);
             status.set(MicrophoneStatus::Idle);
             active_capture.set(ActiveCapture::None);
             active_on_frame.set(None);
@@ -237,6 +241,7 @@ impl MicrophoneHandle {
         let mut session = self.session;
         let mut status = self.status;
         let mut level = self.level;
+        let mut level_active = self.level_active;
         let mut active_capture = self.active_capture;
         let mut active_on_frame = self.active_on_frame;
         spawn(async move {
@@ -247,7 +252,7 @@ impl MicrophoneHandle {
                 return;
             }
             session.set(None);
-            reset_level(&mut level);
+            reset_level(&mut level, &mut level_active);
             status.set(MicrophoneStatus::Idle);
             active_capture.set(ActiveCapture::None);
             active_on_frame.set(None);
@@ -289,6 +294,11 @@ impl MicrophoneHandle {
     #[allow(dead_code)]
     pub(crate) fn level(&self) -> MicrophoneLevel {
         (self.level)()
+    }
+
+    /// Возвращает, открыт ли gate голосовой активности микрофона.
+    pub(crate) fn level_active(&self) -> bool {
+        (self.level_active)()
     }
 
     /// Сохраняет preference устройства ввода; пустой device_id означает системное устройство по умолчанию.
@@ -476,24 +486,5 @@ impl MicrophoneHandle {
                 warn!(%error, bitrate_bps, "failed to update microphone bitrate");
             }
         });
-    }
-}
-
-fn persist_input_device(device_id: Option<&str>, label: Option<&str>) {
-    match device_id {
-        Some(device_id) if !device_id.is_empty() => {
-            storage::save_input_device(device_id, label);
-            info!(
-                has_device = true,
-                "persisted microphone input device preference"
-            );
-        }
-        _ => {
-            storage::clear_input_device_id();
-            info!(
-                has_device = false,
-                "cleared microphone input device preference"
-            );
-        }
     }
 }

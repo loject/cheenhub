@@ -17,6 +17,7 @@ mod surface;
 mod video_fragments;
 mod video_streams;
 mod voice_controls;
+mod voice_frame_sender;
 
 pub(crate) use participant_grid::{VoiceParticipantGrid, VoiceParticipantGridStatus};
 pub(crate) use provider::VoiceConnectionProvider;

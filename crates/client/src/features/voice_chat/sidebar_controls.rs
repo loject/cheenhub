@@ -13,6 +13,7 @@ use crate::features::realtime::RealtimeHandle;
 use super::realtime;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 use super::video_streams::{ParticipantVideoFrame, ParticipantVideoHandle, ParticipantVideoSource};
+use super::voice_frame_sender;
 
 /// Renders animated sidebar voice controls for the active voice connection.
 #[component]
@@ -154,29 +155,11 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                             let Some(target) = target_for_microphone.clone() else {
                                 return;
                             };
-                            let send_realtime = realtime_handle.clone();
-                            toggle_microphone.toggle(Rc::new(move |frame| {
-                                let frame_realtime = send_realtime.clone();
-                                let frame_server_id = target.server_id.clone();
-                                let frame_room_id = target.room_id.clone();
-                                spawn(async move {
-                                    if let Err(error) = realtime::send_voice_frame(
-                                        &frame_realtime,
-                                        &frame_server_id,
-                                        &frame_room_id,
-                                        frame,
-                                    )
-                                    .await
-                                    {
-                                        warn!(
-                                            %error,
-                                            server_id = %frame_server_id,
-                                            room_id = %frame_room_id,
-                                            "failed to send encoded voice frame"
-                                        );
-                                    }
-                                });
-                            }));
+                            toggle_microphone.toggle(voice_frame_sender::voice_frame_sender_callback(
+                                realtime_handle.clone(),
+                                target.server_id.clone(),
+                                target.room_id.clone(),
+                            ));
                         },
                         if microphone_live {
                             span {

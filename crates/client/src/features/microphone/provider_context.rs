@@ -15,6 +15,7 @@ use super::storage;
 pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let status = use_signal(|| MicrophoneStatus::Idle);
     let level = use_signal(default_level);
+    let level_active = use_signal(|| false);
     let session = use_signal(|| None::<Rc<dyn MicrophoneSession>>);
     let generation = use_signal(|| 0);
     let stored_input_device = storage::load_input_device();
@@ -37,6 +38,7 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let handle = MicrophoneHandle {
         status,
         level,
+        level_active,
         session,
         generation,
         backend,

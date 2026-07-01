@@ -52,7 +52,7 @@ pub(crate) fn DirectMessageVoiceSurface(conversation: DmConversationSummary) -> 
     };
     if selected_voice_active
         && matches!(microphone.status(), MicrophoneStatus::Live)
-        && microphone.level().active
+        && microphone.level_active()
         && !selected_voice_speaking_user_ids
             .iter()
             .any(|user_id| user_id == &current_user.id)

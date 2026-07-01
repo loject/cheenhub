@@ -11,6 +11,7 @@ use super::backend::{
     EncodedMicrophoneFrame, MicrophoneConfig, MicrophoneError, MicrophoneFrameCallback,
     MicrophoneLevel, MicrophoneStatus,
 };
+use super::storage;
 
 const MICROPHONE_LEVEL_UPDATE_INTERVAL_US: u64 = 33_000;
 
@@ -23,9 +24,10 @@ struct LevelEmissionState {
 pub(super) fn microphone_callbacks(
     on_frame: MicrophoneFrameCallback,
     level: Signal<MicrophoneLevel>,
+    level_active: Signal<bool>,
 ) -> super::backend::MicrophoneCallbacks {
     let (events, receiver) = mpsc::unbounded();
-    spawn_microphone_callback_relay(receiver, on_frame, level);
+    spawn_microphone_callback_relay(receiver, on_frame, level, level_active);
 
     let frame_events = events.clone();
     super::backend::MicrophoneCallbacks {
@@ -42,6 +44,7 @@ fn spawn_microphone_callback_relay(
     mut receiver: mpsc::UnboundedReceiver<MicrophoneCallbackEvent>,
     on_frame: MicrophoneFrameCallback,
     mut level: Signal<MicrophoneLevel>,
+    mut level_active: Signal<bool>,
 ) {
     spawn(async move {
         let emission = Rc::new(RefCell::new(None::<LevelEmissionState>));
@@ -50,6 +53,9 @@ fn spawn_microphone_callback_relay(
                 MicrophoneCallbackEvent::Frame(frame) => on_frame(frame),
                 MicrophoneCallbackEvent::Level(next_level) => {
                     if should_emit_level(&emission, next_level) {
+                        if *level_active.peek() != next_level.active {
+                            level_active.set(next_level.active);
+                        }
                         level.set(next_level);
                     }
                 }
@@ -78,7 +84,10 @@ pub(super) fn next_generation(generation: &mut Signal<u64>) -> u64 {
     next_generation
 }
 
-pub(super) fn reset_level(level: &mut Signal<MicrophoneLevel>) {
+pub(super) fn reset_level(level: &mut Signal<MicrophoneLevel>, level_active: &mut Signal<bool>) {
+    if *level_active.peek() {
+        level_active.set(false);
+    }
     level.set(default_level());
 }
 
@@ -97,6 +106,25 @@ pub(super) fn gain_from_percent(volume_percent: u32) -> f32 {
 
 pub(super) fn threshold_from_percent(threshold_percent: u32) -> f32 {
     threshold_percent.min(100) as f32 / 1000.0
+}
+
+pub(super) fn persist_input_device(device_id: Option<&str>, label: Option<&str>) {
+    match device_id {
+        Some(device_id) if !device_id.is_empty() => {
+            storage::save_input_device(device_id, label);
+            info!(
+                has_device = true,
+                "persisted microphone input device preference"
+            );
+        }
+        _ => {
+            storage::clear_input_device_id();
+            info!(
+                has_device = false,
+                "cleared microphone input device preference"
+            );
+        }
+    }
 }
 
 fn should_emit_level(
