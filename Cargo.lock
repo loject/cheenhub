@@ -1238,6 +1238,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-tungstenite",
+ "tracing-subscriber",
  "url",
  "uuid",
  "wasm-bindgen",

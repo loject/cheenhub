@@ -50,6 +50,7 @@ desktop = [
     "system-tray",
     "dep:tokio",
     "dep:tokio-tungstenite",
+    "dep:tracing-subscriber",
     "dioxus/desktop",
 ]
 mobile = ["app", "dep:tokio", "dep:tokio-tungstenite", "dioxus/mobile"]
@@ -86,6 +87,7 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tokio-tungstenite = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 wasm-bindgen.workspace = true
