@@ -68,6 +68,12 @@ enum ConnectedTransport {
     WebSocket(WebSocketOutboundSender),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReliableRequestMode {
+    Cached,
+    OneShot,
+}
+
 impl RealtimeHandle {
     /// Sends one raw unreliable datagram message.
     pub(crate) async fn send_unreliable_bytes(&self, bytes: Bytes) -> Result<(), RealtimeError> {
@@ -155,6 +161,36 @@ impl RealtimeHandle {
         P: Serialize,
         R: DeserializeOwned,
     {
+        self.request_with_mode(module, kind, payload, ReliableRequestMode::Cached)
+            .await
+    }
+
+    /// Отправляет один запрос через короткоживущий надежный поток, если активен WebTransport.
+    pub(crate) async fn request_one_shot<P, R>(
+        &self,
+        module: RealtimeModule,
+        kind: RealtimeKind,
+        payload: P,
+    ) -> Result<R, RealtimeError>
+    where
+        P: Serialize,
+        R: DeserializeOwned,
+    {
+        self.request_with_mode(module, kind, payload, ReliableRequestMode::OneShot)
+            .await
+    }
+
+    async fn request_with_mode<P, R>(
+        &self,
+        module: RealtimeModule,
+        kind: RealtimeKind,
+        payload: P,
+        mode: ReliableRequestMode,
+    ) -> Result<R, RealtimeError>
+    where
+        P: Serialize,
+        R: DeserializeOwned,
+    {
         validate_module_kind(module, kind)?;
         let request_id = Uuid::new_v4();
         let envelope =
@@ -169,7 +205,19 @@ impl RealtimeHandle {
         let pending_guard =
             PendingRequestGuard::new(self.inner.pending.clone(), (module, request_id));
 
-        self.write_envelope(envelope).await?;
+        debug!(
+            ?module,
+            ?kind,
+            %request_id,
+            "sending realtime request"
+        );
+        self.write_envelope(envelope, mode).await?;
+        debug!(
+            ?module,
+            ?kind,
+            %request_id,
+            "wrote realtime request"
+        );
 
         let response = receiver
             .await
@@ -187,14 +235,18 @@ impl RealtimeHandle {
         })
     }
 
-    async fn write_envelope(&self, envelope: RealtimeEnvelope) -> Result<(), RealtimeError> {
+    async fn write_envelope(
+        &self,
+        envelope: RealtimeEnvelope,
+        mode: ReliableRequestMode,
+    ) -> Result<(), RealtimeError> {
         let Some(connected) = self.inner.session.lock().await.clone() else {
             return Err(RealtimeError::new("Realtime session is not connected."));
         };
 
         match connected.transport {
             ConnectedTransport::WebTransport(session) => {
-                if uses_cached_stream(envelope.module) {
+                if mode == ReliableRequestMode::Cached && uses_cached_stream(envelope.module) {
                     self.write_webtransport_envelope(envelope, (*session).clone())
                         .await
                 } else {
@@ -256,7 +308,15 @@ impl RealtimeHandle {
             })?;
             let send = Rc::new(Mutex::new(send));
             debug!(module = ?module, "opened one-shot WebTransport realtime stream");
-            webtransport::spawn_stream_reader(module, recv, self.inner.inbound.clone(), None);
+            let pending_key = envelope.request_id.map(|request_id| (module, request_id));
+            webtransport::spawn_stream_reader(
+                module,
+                recv,
+                self.inner.inbound.clone(),
+                self.inner.pending.clone(),
+                pending_key,
+                None,
+            );
 
             match framing::write_envelope(&send, &envelope).await {
                 Ok(()) => return Ok(()),
@@ -294,6 +354,8 @@ impl RealtimeHandle {
             module,
             recv,
             self.inner.inbound.clone(),
+            self.inner.pending.clone(),
+            None,
             Some((self.inner.streams.clone(), send.clone())),
         );
 

@@ -23,8 +23,8 @@ pub(crate) async fn update_user_avatar(
         rooms = rooms.len(),
         "updated active voice presence avatar"
     );
-    for (server_id, room_id) in rooms {
-        let snapshot = super::room_snapshot(state, &server_id, &room_id).await;
-        super::fanout_snapshot(state, snapshot).await;
+    for target in rooms {
+        let snapshot = super::room_snapshot(state, target).await;
+        super::fanout_snapshot(state, target, snapshot).await;
     }
 }

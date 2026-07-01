@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::features::auth::application::{register, update_current_user_avatar};
 use crate::features::images::application::public_image;
-use crate::features::voice_chat::infrastructure::VoicePresence;
+use crate::features::voice_chat::infrastructure::{VoicePresence, VoicePresenceTargetKind};
 
 use super::state;
 
@@ -81,6 +81,7 @@ async fn avatar_upload_updates_active_voice_presence() {
         .join(VoicePresence {
             realtime_stream_id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
+            target_kind: VoicePresenceTargetKind::Server,
             server_id,
             room_id,
             user_id,
@@ -95,7 +96,7 @@ async fn avatar_upload_updates_active_voice_presence() {
         .expect("avatar upload should succeed");
     let participants = state
         .voice_presence_store
-        .room_participants(&server_id, &room_id)
+        .room_participants(VoicePresenceTargetKind::Server, &server_id, &room_id)
         .await;
 
     assert_eq!(participants[0].avatar_url, updated.avatar_url);

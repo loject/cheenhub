@@ -265,6 +265,12 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 &target,
             );
             if playback.is_muted() {
+                info!(
+                    target_kind = ?target.kind,
+                    server_id = %target.server_id,
+                    room_id = %target.room_id,
+                    "voice media start paused while output is muted"
+                );
                 if !mic_paused_by_mute()
                     && matches!(
                         microphone.status_untracked(),
@@ -287,13 +293,26 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                     restart_microphone_for_target(
                         microphone.clone(),
                         realtime.clone(),
-                        target.server_id,
-                        target.room_id,
+                        target.server_id.clone(),
+                        target.room_id.clone(),
                     );
                 }
+                info!(
+                    target_kind = ?target.kind,
+                    server_id = %target.server_id,
+                    room_id = %target.room_id,
+                    microphone_paused_by_mute = paused_by_mute,
+                    "voice media already targets active room"
+                );
                 return;
             }
             microphone_target_room.set(Some(target.room_id.clone()));
+            info!(
+                target_kind = ?target.kind,
+                server_id = %target.server_id,
+                room_id = %target.room_id,
+                "starting voice media for active room"
+            );
             restart_microphone_for_target(
                 microphone.clone(),
                 realtime.clone(),

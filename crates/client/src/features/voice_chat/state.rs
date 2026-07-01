@@ -16,18 +16,14 @@ use super::realtime;
 use super::room_presence::{self, VoiceRoomParticipants};
 use super::speaking::{self, SpeakingUserActivity};
 
-const JOIN_RESPONSE_TIMEOUT_MS: u32 = 12_000;
+mod actions;
+mod status;
+mod target;
 
-/// Voice-capable room target.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct VoiceRoomTarget {
-    /// Server identifier.
-    pub(crate) server_id: String,
-    /// Room identifier.
-    pub(crate) room_id: String,
-    /// Human-readable room name.
-    pub(crate) room_name: String,
-}
+use actions::{ensure_current_user_present, join_target, leave_target};
+pub(crate) use target::VoiceRoomTarget;
+
+const JOIN_RESPONSE_TIMEOUT_MS: u32 = 12_000;
 
 /// Current voice connection state for this client.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,6 +149,28 @@ impl VoiceConnectionHandle {
         });
     }
 
+    /// Loads active direct-message voice room snapshots.
+    pub(crate) fn load_direct_message_voice_rooms(&self) {
+        let realtime = self.realtime.clone();
+        let handle = self.clone();
+        spawn(async move {
+            match realtime::list_direct_message_voice_rooms(&realtime).await {
+                Ok(snapshot) => {
+                    info!(
+                        active_voice_rooms = snapshot.rooms.len(),
+                        "loaded direct message voice room participants"
+                    );
+                    for room in snapshot.rooms {
+                        handle.apply_room_snapshot(room);
+                    }
+                }
+                Err(error) => {
+                    warn!(%error, "failed to load direct message voice room participants");
+                }
+            }
+        });
+    }
+
     /// Marks one user as speaking until no new voice frame refreshes the marker.
     pub(crate) fn mark_user_speaking(&self, user_id: String) {
         speaking::mark_user_speaking(
@@ -183,31 +201,47 @@ impl VoiceConnectionHandle {
             target: target.clone(),
         });
         info!(
+            target_kind = ?target.kind,
             server_id = %target.server_id,
             room_id = %target.room_id,
             "joining voice room"
         );
 
-        spawn(async move {
-            if let Some(previous) = previous
-                && previous.room_id != target.room_id
-                && let Err(error) = realtime::leave_room(
-                    &realtime,
-                    previous.server_id.clone(),
-                    previous.room_id.clone(),
-                )
-                .await
-            {
-                warn!(
-                    %error,
+        if let Some(previous) = previous.filter(|previous| !previous.matches(&target)) {
+            let leave_realtime = realtime.clone();
+            spawn(async move {
+                info!(
+                    target_kind = ?previous.kind,
                     server_id = %previous.server_id,
                     room_id = %previous.room_id,
-                    "failed to leave previous voice room before switching"
+                    "leaving previous voice room while switching"
                 );
-            }
+                if let Err(error) = leave_target(&leave_realtime, &previous).await {
+                    warn!(
+                        %error,
+                        target_kind = ?previous.kind,
+                        server_id = %previous.server_id,
+                        room_id = %previous.room_id,
+                        "failed to leave previous voice room while switching"
+                    );
+                }
+            });
+        }
 
-            let join =
-                realtime::join_room(&realtime, target.server_id.clone(), target.room_id.clone());
+        spawn(async move {
+            info!(
+                target_kind = ?target.kind,
+                server_id = %target.server_id,
+                room_id = %target.room_id,
+                "voice room join task started"
+            );
+            info!(
+                target_kind = ?target.kind,
+                server_id = %target.server_id,
+                room_id = %target.room_id,
+                "requesting voice room join"
+            );
+            let join = join_target(&realtime, &target);
             match select(
                 join.boxed_local(),
                 sleep_ms(JOIN_RESPONSE_TIMEOUT_MS).boxed_local(),
@@ -217,6 +251,7 @@ impl VoiceConnectionHandle {
                 Either::Left((Ok(mut snapshot), _)) => {
                     if !state().is_connecting_to(&target) {
                         info!(
+                            target_kind = ?target.kind,
                             server_id = %target.server_id,
                             room_id = %target.room_id,
                             "ignored stale voice room join response"
@@ -226,6 +261,7 @@ impl VoiceConnectionHandle {
                     ensure_current_user_present(&mut snapshot.participants, &user);
                     handle.apply_room_snapshot(snapshot.clone());
                     info!(
+                        target_kind = ?target.kind,
                         server_id = %target.server_id,
                         room_id = %target.room_id,
                         participants = snapshot.participants.len(),
@@ -239,6 +275,7 @@ impl VoiceConnectionHandle {
                 Either::Left((Err(error), _)) => {
                     if !state().is_connecting_to(&target) {
                         info!(
+                            target_kind = ?target.kind,
                             server_id = %target.server_id,
                             room_id = %target.room_id,
                             "ignored stale voice room join failure"
@@ -247,6 +284,7 @@ impl VoiceConnectionHandle {
                     }
                     warn!(
                         %error,
+                        target_kind = ?target.kind,
                         server_id = %target.server_id,
                         room_id = %target.room_id,
                         "failed to join voice room"
@@ -260,6 +298,7 @@ impl VoiceConnectionHandle {
                 Either::Right((_, _)) => {
                     if !state().is_connecting_to(&target) {
                         info!(
+                            target_kind = ?target.kind,
                             server_id = %target.server_id,
                             room_id = %target.room_id,
                             "ignored stale voice room join timeout"
@@ -268,6 +307,7 @@ impl VoiceConnectionHandle {
                     }
                     warn!(
                         timeout_ms = JOIN_RESPONSE_TIMEOUT_MS,
+                        target_kind = ?target.kind,
                         server_id = %target.server_id,
                         room_id = %target.room_id,
                         "voice room join request timed out"
@@ -311,9 +351,7 @@ impl VoiceConnectionHandle {
         });
 
         spawn(async move {
-            match realtime::leave_room(&realtime, target.server_id.clone(), target.room_id.clone())
-                .await
-            {
+            match leave_target(&realtime, &target).await {
                 Ok(_) => {
                     if state().is_disconnecting_from(&target) {
                         state.set(VoiceConnectionState::Disconnected);
@@ -412,87 +450,4 @@ impl VoiceConnectionHandle {
         let mut room_snapshots = self.room_snapshots;
         room_snapshots.set(next_snapshots);
     }
-}
-
-impl VoiceConnectionState {
-    /// Returns whether the state should show sidebar controls.
-    pub(crate) fn shows_sidebar_controls(&self) -> bool {
-        !matches!(self, Self::Disconnected)
-    }
-
-    /// Returns whether this state belongs to one room.
-    pub(crate) fn is_active_room(&self, server_id: &str, room_id: &str) -> bool {
-        self.active_target()
-            .is_some_and(|target| target.server_id == server_id && target.room_id == room_id)
-    }
-
-    /// Returns whether this state is connected to one room.
-    pub(crate) fn is_connected_room(&self, server_id: &str, room_id: &str) -> bool {
-        matches!(
-            self,
-            Self::Connected { target, .. }
-                if target.server_id == server_id && target.room_id == room_id
-        )
-    }
-
-    /// Returns participants for display.
-    pub(crate) fn participants(&self) -> &[VoiceRoomParticipant] {
-        match self {
-            Self::Connected { participants, .. } | Self::Disconnecting { participants, .. } => {
-                participants
-            }
-            _ => &[],
-        }
-    }
-
-    /// Returns active target when the state is room-scoped.
-    pub(crate) fn active_target(&self) -> Option<VoiceRoomTarget> {
-        match self {
-            Self::Connecting { target }
-            | Self::Connected { target, .. }
-            | Self::Disconnecting { target, .. } => Some(target.clone()),
-            Self::Error { target, .. } => target.clone(),
-            Self::Disconnected => None,
-        }
-    }
-
-    fn is_connected_to(&self, room: &VoiceRoomTarget) -> bool {
-        matches!(
-            self,
-            Self::Connected { target, .. }
-                if target.server_id == room.server_id && target.room_id == room.room_id
-        )
-    }
-
-    fn is_connecting_to(&self, room: &VoiceRoomTarget) -> bool {
-        matches!(
-            self,
-            Self::Connecting { target }
-                if target.server_id == room.server_id && target.room_id == room.room_id
-        )
-    }
-
-    fn is_disconnecting_from(&self, room: &VoiceRoomTarget) -> bool {
-        matches!(
-            self,
-            Self::Disconnecting { target, .. }
-                if target.server_id == room.server_id && target.room_id == room.room_id
-        )
-    }
-}
-
-fn ensure_current_user_present(participants: &mut Vec<VoiceRoomParticipant>, user: &AuthUser) {
-    if participants
-        .iter()
-        .any(|participant| participant.user_id == user.id)
-    {
-        return;
-    }
-
-    participants.push(VoiceRoomParticipant {
-        user_id: user.id.clone(),
-        nickname: user.nickname.clone(),
-        avatar_url: user.avatar_url.clone(),
-        joined_at: String::new(),
-    });
 }

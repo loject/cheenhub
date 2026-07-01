@@ -10,14 +10,22 @@ pub enum VoiceChatKind {
     JoinVoiceRoom,
     /// Покинуть одну комнату с поддержкой голоса.
     LeaveVoiceRoom,
+    /// Присоединиться к голосовому звонку личного диалога.
+    JoinDirectMessageVoiceRoom,
+    /// Покинуть голосовой звонок личного диалога.
+    LeaveDirectMessageVoiceRoom,
     /// Исключить одного участника из голосовой комнаты.
     KickVoiceMember,
     /// Загрузить снимки присутствия участников в активных голосовых комнатах для одного сервера.
     ListServerVoiceRooms,
+    /// Загрузить активные голосовые звонки личных диалогов пользователя.
+    ListDirectMessageVoiceRooms,
     /// Сообщить об остановке локального видеопотока в голосовой комнате.
     StopVideoStream,
     /// Снимки активных голосовых комнат для одного сервера.
     ServerVoiceRoomsSnapshot,
+    /// Снимки активных голосовых звонков личных диалогов.
+    DirectMessageVoiceRoomsSnapshot,
     /// Текущий снимок участников голосовой комнаты.
     VoiceRoomSnapshot,
     /// Событие изменения списка участников голосовой комнаты.
@@ -42,6 +50,20 @@ pub struct LeaveVoiceRoom {
     pub server_id: String,
     /// Идентификатор комнаты.
     pub room_id: String,
+}
+
+/// Полезная нагрузка запроса на присоединение к голосовому звонку личного диалога.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JoinDirectMessageVoiceRoom {
+    /// Идентификатор личного диалога.
+    pub conversation_id: String,
+}
+
+/// Полезная нагрузка запроса на выход из голосового звонка личного диалога.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeaveDirectMessageVoiceRoom {
+    /// Идентификатор личного диалога.
+    pub conversation_id: String,
 }
 
 /// Текущие участники одной голосовой комнаты.
@@ -72,6 +94,10 @@ pub struct ListServerVoiceRooms {
     /// Идентификатор сервера.
     pub server_id: String,
 }
+
+/// Полезная нагрузка запроса на загрузку активных голосовых звонков личных диалогов.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListDirectMessageVoiceRooms;
 
 /// Источник видеопотока голосовой комнаты.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -113,6 +139,13 @@ pub struct ServerVoiceRoomsSnapshot {
     /// Идентификатор сервера.
     pub server_id: String,
     /// Снимки голосовых комнат с активными участниками.
+    pub rooms: Vec<VoiceRoomSnapshot>,
+}
+
+/// Снимки активных голосовых звонков личных диалогов.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectMessageVoiceRoomsSnapshot {
+    /// Снимки голосовых звонков личных диалогов с активными участниками.
     pub rooms: Vec<VoiceRoomSnapshot>,
 }
 

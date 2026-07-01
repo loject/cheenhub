@@ -7,7 +7,6 @@ use dioxus::prelude::*;
 
 use crate::features::app::components::user_context_menu::UserContextMenu;
 use crate::features::app::current_user::CurrentUserContext;
-use crate::features::app::server_permissions::ServerPermissionsContext;
 use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::camera::{CameraHandle, CameraStatus};
 
@@ -49,6 +48,7 @@ pub(crate) fn VoiceParticipantGrid(
     participants: Vec<VoiceRoomParticipant>,
     speaking_user_ids: Vec<String>,
     status: VoiceParticipantGridStatus,
+    can_kick_voice: bool,
     on_retry: EventHandler<()>,
 ) -> Element {
     let mut open_user_menu = use_signal(|| None::<UserMenuState>);
@@ -59,7 +59,6 @@ pub(crate) fn VoiceParticipantGrid(
     let camera = use_context::<CameraHandle>();
     let participant_video = use_context::<ParticipantVideoHandle>();
     let current_user_id = use_context::<CurrentUserContext>().require_user().id;
-    let can_kick_voice = use_context::<ServerPermissionsContext>().can_kick_voice;
     let (title, body) = match &status {
         VoiceParticipantGridStatus::Connecting => (
             "Подключаемся к голосовой комнате",

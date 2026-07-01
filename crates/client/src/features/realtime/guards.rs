@@ -4,7 +4,9 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use cheenhub_contracts::realtime::{RealtimeEnvelope, RealtimeModule};
+use cheenhub_contracts::realtime::{
+    ControlKind, RealtimeEnvelope, RealtimeKind, RealtimeModule, Rejected, RejectionCode,
+};
 use dioxus::prelude::warn;
 use futures_channel::oneshot;
 use futures_util::lock::Mutex;
@@ -110,6 +112,42 @@ pub(super) async fn remove_cached_stream(
         .is_some_and(|current| Rc::ptr_eq(current, &stream));
     if should_remove {
         streams.remove(&module);
+    }
+}
+
+pub(super) fn reject_pending_requests_for_module(
+    pending: &PendingRequests,
+    module: RealtimeModule,
+    message: &str,
+) {
+    let keys = pending
+        .borrow()
+        .keys()
+        .filter(|(pending_module, _)| *pending_module == module)
+        .copied()
+        .collect::<Vec<_>>();
+
+    for key in keys {
+        reject_pending_request(pending, key, message);
+    }
+}
+
+pub(super) fn reject_pending_request(pending: &PendingRequests, key: PendingKey, message: &str) {
+    let Some(sender) = pending.borrow_mut().remove(&key) else {
+        return;
+    };
+    let payload = Rejected {
+        code: RejectionCode::InternalError,
+        message: message.to_owned(),
+    };
+    let envelope = RealtimeEnvelope::new(
+        RealtimeModule::Control,
+        RealtimeKind::Control(ControlKind::Rejected),
+        Some(key.1),
+        payload,
+    );
+    if let Ok(envelope) = envelope {
+        let _ = sender.send(envelope);
     }
 }
 

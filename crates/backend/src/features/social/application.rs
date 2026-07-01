@@ -26,6 +26,93 @@ pub(crate) use direct_messages::{
 
 const USER_SEARCH_LIMIT: u64 = 20;
 
+/// Доступ voice-функции к личному диалогу без раскрытия доменной модели social.
+#[derive(Debug, Clone)]
+pub(crate) struct DirectMessageVoiceAccess {
+    /// Идентификатор личного диалога.
+    pub(crate) conversation_id: Uuid,
+}
+
+/// Проверяет доступ пользователя к голосовому звонку личного диалога.
+pub(crate) async fn direct_message_voice_access(
+    state: &AppState,
+    user_id: &Uuid,
+    conversation_id: &Uuid,
+) -> Result<DirectMessageVoiceAccess, SocialError> {
+    let conversation = state
+        .social_store
+        .conversation_by_id(conversation_id)
+        .await
+        .map_err(SocialError::Internal)?
+        .ok_or_else(|| SocialError::NotFound("Диалог не найден.".to_owned()))?;
+    if conversation.user_low_id != *user_id && conversation.user_high_id != *user_id {
+        tracing::warn!(
+            conversation_id = %conversation.id,
+            user_id = %user_id,
+            "rejected direct message voice access for non-participant"
+        );
+        return Err(SocialError::NotFound("Диалог не найден.".to_owned()));
+    }
+
+    let friend_user_id = if conversation.user_low_id == *user_id {
+        conversation.user_high_id
+    } else {
+        conversation.user_low_id
+    };
+    ensure_accepted_friendship(state, user_id, &friend_user_id).await?;
+    Ok(DirectMessageVoiceAccess {
+        conversation_id: conversation.id,
+    })
+}
+
+/// Возвращает доступные пользователю личные диалоги для списка активных voice-звонков.
+pub(crate) async fn direct_message_voice_accesses_for_user(
+    state: &AppState,
+    user_id: &Uuid,
+) -> Result<Vec<DirectMessageVoiceAccess>, SocialError> {
+    let conversations = state
+        .social_store
+        .conversations_for_user(user_id)
+        .await
+        .map_err(SocialError::Internal)?;
+    let mut access = Vec::new();
+    for conversation in conversations {
+        let friend_user_id = if conversation.user_low_id == *user_id {
+            conversation.user_high_id
+        } else {
+            conversation.user_low_id
+        };
+        if accepted_friendship_exists(state, user_id, &friend_user_id).await? {
+            access.push(DirectMessageVoiceAccess {
+                conversation_id: conversation.id,
+            });
+        }
+    }
+    Ok(access)
+}
+
+/// Возвращает участников личного диалога для fanout voice-событий.
+pub(crate) async fn direct_message_voice_user_ids(
+    state: &AppState,
+    conversation_id: &Uuid,
+) -> Result<Vec<Uuid>, SocialError> {
+    let Some(conversation) = state
+        .social_store
+        .conversation_by_id(conversation_id)
+        .await
+        .map_err(SocialError::Internal)?
+    else {
+        return Ok(Vec::new());
+    };
+    if accepted_friendship_exists(state, &conversation.user_low_id, &conversation.user_high_id)
+        .await?
+    {
+        Ok(vec![conversation.user_low_id, conversation.user_high_id])
+    } else {
+        Ok(Vec::new())
+    }
+}
+
 /// Ищет пользователей по никнейму через auth-хранилище.
 pub(crate) async fn search_users(
     state: &AppState,
@@ -335,6 +422,38 @@ async fn relation_status(
         FriendshipStatus::Pending => Some(UserRelationStatus::PendingIncoming),
         FriendshipStatus::Declined | FriendshipStatus::Cancelled => None,
     })
+}
+
+async fn ensure_accepted_friendship(
+    state: &AppState,
+    current_user_id: &Uuid,
+    friend_user_id: &Uuid,
+) -> Result<(), SocialError> {
+    if accepted_friendship_exists(state, current_user_id, friend_user_id).await? {
+        Ok(())
+    } else {
+        tracing::warn!(
+            user_id = %current_user_id,
+            friend_user_id = %friend_user_id,
+            "rejected direct message voice access for non-friends"
+        );
+        Err(SocialError::Unauthorized(
+            "Звонить можно только друзьям.".to_owned(),
+        ))
+    }
+}
+
+async fn accepted_friendship_exists(
+    state: &AppState,
+    left_user_id: &Uuid,
+    right_user_id: &Uuid,
+) -> Result<bool, SocialError> {
+    let friendship = state
+        .social_store
+        .friendship_between(left_user_id, right_user_id)
+        .await
+        .map_err(SocialError::Internal)?;
+    Ok(friendship.is_some_and(|friendship| friendship.status == FriendshipStatus::Accepted))
 }
 
 #[cfg(test)]

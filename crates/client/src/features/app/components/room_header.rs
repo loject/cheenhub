@@ -85,14 +85,14 @@ pub(crate) fn RoomHeader(
                     class: "join-voice-button group relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent/30 bg-accent/10 text-blue-100 transition hover:border-accent/45 hover:bg-accent/15 hover:text-white disabled:cursor-default disabled:opacity-70",
                     "aria-label": join_label,
                     onclick: {
-                        let target = VoiceRoomTarget {
-                            server_id: server_id.clone(),
-                            room_id: room.id.clone(),
-                            room_name: room.name.clone(),
-                        };
+                        let target = VoiceRoomTarget::server(
+                            server_id.clone(),
+                            room.id.clone(),
+                            room.name.clone(),
+                        );
                         move |_| {
                             if let Some(active_target) = voice.state().active_target()
-                                && active_target.room_id == target.room_id
+                                && active_target.matches(&target)
                             {
                                 return;
                             }

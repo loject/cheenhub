@@ -386,11 +386,13 @@
     display: none;
   }
 
-  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .voice-stage {
+  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .voice-stage,
+  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"] .voice-stage {
     padding-bottom: 18px;
   }
 
-  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .embedded-chat {
+  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .embedded-chat,
+  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"] .embedded-chat {
     height: clamp(24dvh, var(--embedded-chat-height, 38dvh), 84dvh);
     opacity: 1;
     transform: translateY(0);

@@ -13,19 +13,18 @@ use crate::features::app::components::app_sidebar_footer::AppSidebarFooter;
 use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::realtime::RealtimeHandle;
-use crate::features::text_chat::{
-    CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, ChatMessageItem, ScrollCommand, apply_scroll_command,
-    update_near_bottom_state,
-};
+use crate::features::text_chat::{ScrollCommand, apply_scroll_command};
+use crate::features::voice_chat::VoiceConnectionHandle;
 
 use super::api;
+use super::direct_message_voice_button::DirectMessageVoiceButton;
+use super::direct_message_workspace::DirectMessageWorkspace;
 use super::friend_context_menu::FriendContextMenu;
 use super::friend_search_modal::FriendSearchModal;
 use super::friends_section::{FriendMenuRequest, FriendsSection};
 use super::presentation::{
-    MessageRefreshSignals, dm_as_text_message, is_appearing_message, load_messages,
-    load_social_overview, push_message_with_motion, refresh_conversations, refresh_friends,
-    refresh_messages,
+    MessageRefreshSignals, load_messages, load_social_overview, push_message_with_motion,
+    refresh_conversations, refresh_friends, refresh_messages,
 };
 use super::realtime::{subscribe_social_events, subscribe_social_ready_events};
 use super::requests_section::FriendRequestsSection;
@@ -35,6 +34,7 @@ use super::requests_section::FriendRequestsSection;
 pub(crate) fn SocialPage() -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
     let realtime = use_context::<RealtimeHandle>();
+    let voice = use_context::<VoiceConnectionHandle>();
     let friends = use_signal(Vec::<FriendSummary>::new);
     let incoming = use_signal(Vec::<FriendRequestSummary>::new);
     let outgoing = use_signal(Vec::<FriendRequestSummary>::new);
@@ -53,7 +53,7 @@ pub(crate) fn SocialPage() -> Element {
     let mut requests_collapsed = use_signal(|| true);
     let mut friend_menu = use_signal(|| None::<FriendMenuRequest>);
     let is_near_bottom = use_signal(|| true);
-    let mut list_element = use_signal(|| None::<Rc<MountedData>>);
+    let list_element = use_signal(|| None::<Rc<MountedData>>);
     let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
 
     let reload = use_callback(move |_| {
@@ -67,12 +67,14 @@ pub(crate) fn SocialPage() -> Element {
         );
     });
 
+    let voice_loader = voice.clone();
     use_effect(move || {
         if loaded() {
             return;
         }
         loaded.set(true);
         reload.call(());
+        voice_loader.load_direct_message_voice_rooms();
     });
 
     let open_friend = use_callback(move |friend_user_id: String| {
@@ -249,9 +251,6 @@ pub(crate) fn SocialPage() -> Element {
     });
 
     let requests_count = incoming().len() + outgoing().len();
-    let appearing_message_ids_list = appearing_message_ids();
-    let removing_message_ids_list = removing_message_ids();
-
     rsx! {
         section { class: "flex h-full min-h-0 flex-1 bg-zinc-950 text-zinc-100",
             aside { class: "flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/90",
@@ -306,11 +305,11 @@ pub(crate) fn SocialPage() -> Element {
                 AppSidebarFooter {
                     realtime_label: "Друзья".to_owned(),
                     settings_workspace_active: false,
-                    show_voice_controls: false,
+                    show_voice_controls: true,
                 }
             }
 
-            section { class: "flex min-w-0 flex-1 flex-col",
+            section { class: "flex min-h-0 min-w-0 flex-1 flex-col",
                 div { class: "flex min-h-16 shrink-0 items-center gap-3 border-b border-zinc-800/80 px-5",
                     if let Some(conversation) = selected_conversation() {
                         UserAvatar {
@@ -329,105 +328,23 @@ pub(crate) fn SocialPage() -> Element {
                             p { class: "text-[12px] text-zinc-500", "Личные диалоги" }
                         }
                     }
-                    button {
-                        r#type: "button",
-                        disabled: true,
-                        class: "flex h-9 shrink-0 cursor-not-allowed items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 text-[12px] font-medium text-zinc-500 opacity-75",
-                        "aria-label": "Звонок в разработке",
-                        svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.362-.271.527-.734.417-1.173L6.963 3.102A1.125 1.125 0 0 0 5.872 2.25H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z" }
-                        }
-                        "Звонок в разработке"
+                    if let Some(conversation) = selected_conversation() {
+                        DirectMessageVoiceButton { conversation }
                     }
                 }
-
                 if let Some(conversation) = selected_conversation() {
-                    div {
-                        class: "min-h-0 flex-1 overflow-y-auto p-5 lg:p-6",
-                        onmounted: move |event| list_element.set(Some(event.data.clone())),
-                        onscroll: move |_| {
-                            if let Some(element) = list_element.cloned() {
-                                spawn(async move {
-                                    update_near_bottom_state(element, is_near_bottom).await;
-                                });
-                            }
-                        },
-                        div { class: CHAT_CONTENT_CLASS,
-                            if is_loading_messages() {
-                                div { class: "space-y-3",
-                                    div { class: "h-14 animate-pulse rounded-2xl bg-zinc-900/80" }
-                                    div { class: "h-14 animate-pulse rounded-2xl bg-zinc-900/50" }
-                                }
-                            } else if messages().is_empty() {
-                                div { class: "rounded-[20px] border border-zinc-800 bg-zinc-900/60 p-6 text-center",
-                                    p { class: "text-[13px] font-medium text-zinc-100", "Сообщений пока нет" }
-                                    p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Напишите первое личное сообщение." }
-                                }
-                            } else {
-                                for message in messages() {
-                                    ChatMessageItem {
-                                        key: "{message.id}",
-                                        message: dm_as_text_message(message.clone()),
-                                        animate: is_appearing_message(
-                                            &message.id,
-                                            &appearing_message_ids_list,
-                                        ),
-                                        removing: removing_message_ids_list.contains(&message.id),
-                                        can_delete_messages: false,
-                                        on_delete: move |_| {},
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    div { class: "relative",
-                        if !is_near_bottom() && !messages().is_empty() {
-                            div { class: "pointer-events-none absolute bottom-3 right-4 z-20",
-                                button {
-                                    r#type: "button",
-                                    class: "group pointer-events-auto relative flex h-10 w-10 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950/85 text-blue-200 shadow-[0_8px_22px_rgba(0,0,0,0.35)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-white/15 hover:bg-zinc-900/90 hover:text-blue-100",
-                                    "aria-label": "Перейти к последнему сообщению",
-                                    onclick: move |_| pending_scroll.set(Some(ScrollCommand::SmoothBottom)),
-                                    span { class: "pointer-events-none absolute bottom-[calc(100%+8px)] right-0 whitespace-nowrap rounded-lg border border-zinc-800 bg-zinc-950/95 px-2 py-1 text-[11px] font-medium text-zinc-300 opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] transition-[opacity,transform] duration-150 group-hover:opacity-100",
-                                        "К последнему сообщению"
-                                    }
-                                    svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
-                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 5v14m0 0 6-6m-6 6-6-6" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    div { class: "shrink-0 border-t border-zinc-800/80 bg-zinc-950/55 p-4 backdrop-blur-xl",
-                        div { class: CHAT_COMPOSER_CLASS,
-                            textarea {
-                                rows: "1",
-                                value: "{draft()}",
-                                placeholder: "Сообщение для {conversation.friend_nickname}",
-                                class: "max-h-28 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600",
-                                oninput: move |event| draft.set(event.value()),
-                                onkeydown: move |event| {
-                                    if event.key() == Key::Enter && !event.modifiers().shift() {
-                                        event.prevent_default();
-                                        send_message.call(());
-                                    }
-                                },
-                            }
-                            button {
-                                r#type: "button",
-                                disabled: draft().trim().is_empty() || is_sending(),
-                                class: "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500 text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-45",
-                                "aria-label": "Отправить сообщение",
-                                onclick: move |_| send_message.call(()),
-                                if is_sending() {
-                                    span { class: "h-4 w-4 animate-spin rounded-full border-2 border-blue-200/40 border-t-white" }
-                                } else {
-                                    svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
-                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6 12 3.269 3.126A59.77 59.77 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.876L6 12Zm0 0h7.5" }
-                                    }
-                                }
-                            }
-                        }
+                    DirectMessageWorkspace {
+                        conversation,
+                        messages,
+                        appearing_message_ids,
+                        removing_message_ids,
+                        is_loading_messages,
+                        draft,
+                        is_sending,
+                        is_near_bottom,
+                        list_element,
+                        pending_scroll,
+                        on_send_message: move |_| send_message.call(()),
                     }
                 } else {
                     div { class: "flex h-full items-center justify-center px-6 text-center",

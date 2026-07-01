@@ -1,5 +1,6 @@
 //! Voice nickname update tests.
 
+use crate::features::voice_chat::infrastructure::VoicePresenceTargetKind;
 use cheenhub_contracts::realtime::JoinVoiceRoom;
 use cheenhub_contracts::rest::ServerRoomKind;
 
@@ -32,7 +33,7 @@ async fn nickname_update_changes_active_voice_presence() {
     let room_uuid = uuid::Uuid::parse_str(&room_id).expect("room id should parse");
     let participants = state
         .voice_presence_store
-        .room_participants(&server_uuid, &room_uuid)
+        .room_participants(VoicePresenceTargetKind::Server, &server_uuid, &room_uuid)
         .await;
     assert_eq!(participants[0].nickname, "renamed_voice");
 }

@@ -1,7 +1,8 @@
 //! Voice chat realtime adapter.
 
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, ListServerVoiceRooms, RealtimeEnvelope,
+    JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom,
+    LeaveVoiceRoom, ListDirectMessageVoiceRooms, ListServerVoiceRooms, RealtimeEnvelope,
     RealtimeKind, RealtimeModule, RejectionCode, StopVoiceVideoStream, VoiceChatKind,
 };
 use cheenhub_contracts::rest::AuthUser;
@@ -68,6 +69,56 @@ pub(crate) async fn handle(
                 Err(error) => reject_application_error(send, Some(request_id), error).await,
             }
         }
+        RealtimeKind::VoiceChat(VoiceChatKind::JoinDirectMessageVoiceRoom) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: JoinDirectMessageVoiceRoom = decode_payload(&envelope)?;
+            match application::join_direct_message_room(
+                state,
+                realtime_stream_id,
+                session_id,
+                user,
+                user_id,
+                payload,
+            )
+            .await
+            {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::VoiceRoomSnapshot),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::LeaveDirectMessageVoiceRoom) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: LeaveDirectMessageVoiceRoom = decode_payload(&envelope)?;
+            match application::leave_direct_message_room(
+                state,
+                realtime_stream_id,
+                user_id,
+                payload,
+            )
+            .await
+            {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::VoiceRoomSnapshot),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
         RealtimeKind::VoiceChat(VoiceChatKind::KickVoiceMember) => {
             let request_id = require_request_id(&envelope)?;
             let payload: KickVoiceMember = decode_payload(&envelope)?;
@@ -94,6 +145,23 @@ pub(crate) async fn handle(
                         send,
                         RealtimeModule::VoiceChat,
                         RealtimeKind::VoiceChat(VoiceChatKind::ServerVoiceRoomsSnapshot),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::ListDirectMessageVoiceRooms) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: ListDirectMessageVoiceRooms = decode_payload(&envelope)?;
+            match application::list_direct_message_voice_rooms(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::DirectMessageVoiceRoomsSnapshot),
                         Some(request_id),
                         response,
                     )

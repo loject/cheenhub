@@ -15,6 +15,15 @@ use axum::{
 
 use crate::state::AppState;
 
+pub(crate) use application::{
+    DirectMessageVoiceAccess, direct_message_voice_access, direct_message_voice_accesses_for_user,
+    direct_message_voice_user_ids,
+};
+pub(crate) use error::SocialError;
+
+#[cfg(test)]
+pub(crate) use application::{accept_friend_request, open_dm_conversation, send_friend_request};
+
 /// Собирает маршруты друзей.
 pub(crate) fn friend_routes() -> Router<AppState> {
     Router::new()

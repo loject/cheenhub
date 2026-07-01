@@ -17,6 +17,8 @@ pub(crate) struct VoicePresence {
     pub(crate) realtime_stream_id: Uuid,
     /// Аутентифицированная сессия WebTransport, получающая медиадатаграммы.
     pub(crate) session_id: Uuid,
+    /// Тип цели голосового присутствия.
+    pub(crate) target_kind: VoicePresenceTargetKind,
     /// Сервер, содержащий присоединенную комнату.
     pub(crate) server_id: Uuid,
     /// Идентификатор присоединенной комнаты.
@@ -29,6 +31,26 @@ pub(crate) struct VoicePresence {
     pub(crate) avatar_url: Option<String>,
     /// Время присоединения.
     pub(crate) joined_at: DateTime<Utc>,
+}
+
+/// Тип цели голосового присутствия.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum VoicePresenceTargetKind {
+    /// Серверная голосовая комната.
+    Server,
+    /// Голосовой звонок личного диалога.
+    DirectMessage,
+}
+
+/// Ключ цели голосового присутствия.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct VoicePresenceTarget {
+    /// Тип цели.
+    pub(crate) kind: VoicePresenceTargetKind,
+    /// Маршрутный идентификатор цели.
+    pub(crate) server_id: Uuid,
+    /// Идентификатор комнаты или личного диалога.
+    pub(crate) room_id: Uuid,
 }
 
 impl InMemoryVoicePresenceStore {
@@ -65,11 +87,13 @@ impl InMemoryVoicePresenceStore {
     pub(crate) async fn leave_room(
         &self,
         realtime_stream_id: &Uuid,
+        target_kind: VoicePresenceTargetKind,
         server_id: &Uuid,
         room_id: &Uuid,
     ) -> Vec<VoicePresence> {
         self.remove_presence(|entry| {
             &entry.realtime_stream_id == realtime_stream_id
+                && entry.target_kind == target_kind
                 && &entry.server_id == server_id
                 && &entry.room_id == room_id
         })
@@ -84,7 +108,10 @@ impl InMemoryVoicePresenceStore {
         room_id: &Uuid,
     ) -> Vec<VoicePresence> {
         self.remove_presence(|entry| {
-            &entry.user_id == user_id && &entry.server_id == server_id && &entry.room_id == room_id
+            entry.target_kind == VoicePresenceTargetKind::Server
+                && &entry.user_id == user_id
+                && &entry.server_id == server_id
+                && &entry.room_id == room_id
         })
         .await
     }
@@ -111,6 +138,7 @@ impl InMemoryVoicePresenceStore {
     /// Перечисляет активных участников одной комнаты.
     pub(crate) async fn room_participants(
         &self,
+        target_kind: VoicePresenceTargetKind,
         server_id: &Uuid,
         room_id: &Uuid,
     ) -> Vec<VoicePresence> {
@@ -119,7 +147,11 @@ impl InMemoryVoicePresenceStore {
             .lock()
             .await
             .iter()
-            .filter(|entry| &entry.server_id == server_id && &entry.room_id == room_id)
+            .filter(|entry| {
+                entry.target_kind == target_kind
+                    && &entry.server_id == server_id
+                    && &entry.room_id == room_id
+            })
             .cloned()
             .collect::<Vec<_>>();
         participants.sort_by_key(|presence| presence.joined_at);
@@ -136,7 +168,10 @@ impl InMemoryVoicePresenceStore {
             .lock()
             .await
             .iter()
-            .filter(|entry| &entry.server_id == server_id)
+            .filter(|entry| {
+                entry.target_kind == VoicePresenceTargetKind::Server
+                    && &entry.server_id == server_id
+            })
             .cloned()
             .collect::<Vec<_>>();
         entries.sort_by_key(|presence| (presence.room_id, presence.joined_at));
@@ -157,6 +192,7 @@ impl InMemoryVoicePresenceStore {
     /// Возвращает активное присутствие одного пользователя в одной комнате.
     pub(crate) async fn room_presence_for_user(
         &self,
+        target_kind: VoicePresenceTargetKind,
         room_id: &Uuid,
         user_id: &Uuid,
     ) -> Option<VoicePresence> {
@@ -164,7 +200,11 @@ impl InMemoryVoicePresenceStore {
             .lock()
             .await
             .iter()
-            .find(|entry| &entry.room_id == room_id && &entry.user_id == user_id)
+            .find(|entry| {
+                entry.target_kind == target_kind
+                    && &entry.room_id == room_id
+                    && &entry.user_id == user_id
+            })
             .cloned()
     }
 
@@ -173,13 +213,13 @@ impl InMemoryVoicePresenceStore {
         &self,
         user_id: &Uuid,
         nickname: String,
-    ) -> Vec<(Uuid, Uuid)> {
+    ) -> Vec<VoicePresenceTarget> {
         let mut entries = self.entries.lock().await;
-        let mut rooms = Vec::<(Uuid, Uuid)>::new();
+        let mut rooms = Vec::<VoicePresenceTarget>::new();
 
         for entry in entries.iter_mut().filter(|entry| &entry.user_id == user_id) {
             entry.nickname = nickname.clone();
-            let room = (entry.server_id, entry.room_id);
+            let room = entry.target();
             if !rooms.contains(&room) {
                 rooms.push(room);
             }
@@ -193,13 +233,13 @@ impl InMemoryVoicePresenceStore {
         &self,
         user_id: &Uuid,
         avatar_url: Option<String>,
-    ) -> Vec<(Uuid, Uuid)> {
+    ) -> Vec<VoicePresenceTarget> {
         let mut entries = self.entries.lock().await;
-        let mut rooms = Vec::<(Uuid, Uuid)>::new();
+        let mut rooms = Vec::<VoicePresenceTarget>::new();
 
         for entry in entries.iter_mut().filter(|entry| &entry.user_id == user_id) {
             entry.avatar_url = avatar_url.clone();
-            let room = (entry.server_id, entry.room_id);
+            let room = entry.target();
             if !rooms.contains(&room) {
                 rooms.push(room);
             }
@@ -211,6 +251,7 @@ impl InMemoryVoicePresenceStore {
     /// Перечисляет активных получателей медиа в одной комнате, исключая одну сессию отправителя.
     pub(crate) async fn media_recipient_sessions(
         &self,
+        target_kind: VoicePresenceTargetKind,
         room_id: &Uuid,
         sender_session_id: &Uuid,
     ) -> Vec<Uuid> {
@@ -218,9 +259,31 @@ impl InMemoryVoicePresenceStore {
             .lock()
             .await
             .iter()
-            .filter(|entry| &entry.room_id == room_id && &entry.session_id != sender_session_id)
+            .filter(|entry| {
+                entry.target_kind == target_kind
+                    && &entry.room_id == room_id
+                    && &entry.session_id != sender_session_id
+            })
             .map(|entry| entry.session_id)
             .collect()
+    }
+}
+
+impl VoicePresence {
+    /// Возвращает ключ цели присутствия.
+    pub(crate) fn target(&self) -> VoicePresenceTarget {
+        VoicePresenceTarget {
+            kind: self.target_kind,
+            server_id: self.server_id,
+            room_id: self.room_id,
+        }
+    }
+}
+
+impl VoicePresenceTarget {
+    /// Возвращает маршрутный идентификатор для payload'ов старого формата.
+    pub(crate) fn route_id(self) -> Uuid {
+        self.server_id
     }
 }
 
@@ -229,7 +292,7 @@ mod tests {
     use chrono::Utc;
     use uuid::Uuid;
 
-    use super::{InMemoryVoicePresenceStore, VoicePresence};
+    use super::{InMemoryVoicePresenceStore, VoicePresence, VoicePresenceTargetKind};
 
     fn presence(
         realtime_stream_id: Uuid,
@@ -241,6 +304,7 @@ mod tests {
         VoicePresence {
             realtime_stream_id,
             session_id,
+            target_kind: VoicePresenceTargetKind::Server,
             server_id,
             room_id,
             user_id,
@@ -258,7 +322,7 @@ mod tests {
 
         assert!(
             store
-                .room_presence_for_user(&room_id, &user_id)
+                .room_presence_for_user(VoicePresenceTargetKind::Server, &room_id, &user_id)
                 .await
                 .is_none()
         );
@@ -275,7 +339,7 @@ mod tests {
 
         assert!(
             store
-                .room_presence_for_user(&room_id, &user_id)
+                .room_presence_for_user(VoicePresenceTargetKind::Server, &room_id, &user_id)
                 .await
                 .is_some()
         );
@@ -320,7 +384,11 @@ mod tests {
             .await;
 
         let recipients = store
-            .media_recipient_sessions(&room_id, &sender_session_id)
+            .media_recipient_sessions(
+                VoicePresenceTargetKind::Server,
+                &room_id,
+                &sender_session_id,
+            )
             .await;
 
         assert_eq!(recipients, vec![recipient_session_id]);
@@ -357,13 +425,13 @@ mod tests {
 
         assert!(
             store
-                .room_presence_for_user(&first_room_id, &user_id)
+                .room_presence_for_user(VoicePresenceTargetKind::Server, &first_room_id, &user_id)
                 .await
                 .is_none()
         );
         assert_eq!(
             store
-                .room_presence_for_user(&second_room_id, &user_id)
+                .room_presence_for_user(VoicePresenceTargetKind::Server, &second_room_id, &user_id)
                 .await
                 .expect("new presence should remain")
                 .session_id,

@@ -4,6 +4,7 @@ use cheenhub_contracts::rest::ServerRoomKind;
 use dioxus::prelude::*;
 
 use crate::features::app::components::app_shell::ActiveRoom;
+use crate::features::app::server_permissions::ServerPermissionsContext;
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 
 use super::participant_grid::{VoiceParticipantGrid, VoiceParticipantGridStatus};
@@ -14,6 +15,7 @@ use super::voice_controls::VoiceControls;
 #[component]
 pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
+    let permissions = use_context::<ServerPermissionsContext>();
     let microphone = use_context::<MicrophoneHandle>();
     let state = voice.state();
     let is_active_room = state.is_active_room(&server_id, &room.id);
@@ -58,11 +60,9 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
     } else {
         "Войти в голосовую комнату"
     };
-    let retry_target = VoiceRoomTarget {
-        server_id: server_id.clone(),
-        room_id: room.id.clone(),
-        room_name: room.name.clone(),
-    };
+    let retry_target =
+        VoiceRoomTarget::server(server_id.clone(), room.id.clone(), room.name.clone());
+    let controls_target = retry_target.clone();
 
     rsx! {
         div { class: "voice-room-surface relative flex min-h-0 flex-1 flex-col",
@@ -73,6 +73,7 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
                     participants,
                     speaking_user_ids,
                     status: grid_status,
+                    can_kick_voice: permissions.can_kick_voice,
                     on_retry: move |_| voice.join(retry_target.clone()),
                 }
             } else {
@@ -97,11 +98,11 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
                                 disabled: is_busy,
                                 class: "mt-4 inline-flex h-10 items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white transition hover:bg-blue-400 disabled:cursor-wait disabled:opacity-70",
                                 onclick: {
-                                    let target = VoiceRoomTarget {
-                                        server_id: server_id.clone(),
-                                        room_id: room.id.clone(),
-                                        room_name: room.name.clone(),
-                                    };
+                                    let target = VoiceRoomTarget::server(
+                                        server_id.clone(),
+                                        room.id.clone(),
+                                        room.name.clone(),
+                                    );
                                     move |_| voice.join(target.clone())
                                 },
                                 "{join_label}"
@@ -111,8 +112,7 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
                 }
             }
             VoiceControls {
-                server_id: server_id.clone(),
-                room_id: room.id.clone(),
+                target: controls_target,
             }
         }
     }

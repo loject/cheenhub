@@ -1,21 +1,29 @@
 //! Voice chat presence application flows.
 
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, ListServerVoiceRooms, RealtimeKind,
-    RealtimeModule, ServerRoleKind, ServerRolePermission, ServerVoiceRoomsSnapshot,
-    StopVoiceVideoStream, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
-    VoiceVideoStreamEnded,
+    DirectMessageVoiceRoomsSnapshot, JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember,
+    LeaveDirectMessageVoiceRoom, LeaveVoiceRoom, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
+    RealtimeKind, RealtimeModule, ServerRoleKind, ServerRolePermission, ServerVoiceRoomsSnapshot,
+    StopVoiceVideoStream, VoiceChatKind, VoiceRoomSnapshot, VoiceVideoStreamEnded,
 };
 use cheenhub_contracts::rest::{AuthUser, ServerRoomKind};
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::features::social::{self, DirectMessageVoiceAccess, SocialError};
 use crate::features::voice_chat::infrastructure::VoicePresence;
 use crate::state::AppState;
 
 mod avatar;
+mod fanout;
+mod presence;
 
 pub(crate) use avatar::update_user_avatar;
+use fanout::{
+    direct_message_voice_target, fanout_removed_rooms, fanout_snapshot, participant_summary,
+    room_snapshot, server_voice_target,
+};
+use presence::active_presence_for_user;
 
 /// Входит в одну комнату с поддержкой голоса и возвращает текущий снимок участников.
 pub(crate) async fn join_room(
@@ -29,11 +37,13 @@ pub(crate) async fn join_room(
     let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
     let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
     ensure_room_voice_available(state, user_id, &server_id, &room_id).await?;
+    let target = server_voice_target(server_id, room_id);
     let removed = state
         .voice_presence_store
         .join(VoicePresence {
             realtime_stream_id,
             session_id,
+            target_kind: target.kind,
             server_id,
             room_id,
             user_id: *user_id,
@@ -43,9 +53,9 @@ pub(crate) async fn join_room(
         })
         .await;
 
-    fanout_removed_rooms(state, removed, Some((server_id, room_id))).await;
-    let snapshot = room_snapshot(state, &server_id, &room_id).await;
-    fanout_snapshot(state, snapshot.clone()).await;
+    fanout_removed_rooms(state, removed, Some(target)).await;
+    let snapshot = room_snapshot(state, target).await;
+    fanout_snapshot(state, target, snapshot.clone()).await;
 
     Ok(snapshot)
 }
@@ -59,18 +69,93 @@ pub(crate) async fn leave_room(
 ) -> Result<VoiceRoomSnapshot, VoiceChatApplicationError> {
     let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
     let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
+    let target = server_voice_target(server_id, room_id);
     let removed = state
         .voice_presence_store
-        .leave_room(&realtime_stream_id, &server_id, &room_id)
+        .leave_room(&realtime_stream_id, target.kind, &server_id, &room_id)
         .await;
 
     if removed.is_empty() {
         ensure_room_voice_available(state, user_id, &server_id, &room_id).await?;
-        return Ok(room_snapshot(state, &server_id, &room_id).await);
+        return Ok(room_snapshot(state, target).await);
     }
 
-    let snapshot = room_snapshot(state, &server_id, &room_id).await;
-    fanout_snapshot(state, snapshot.clone()).await;
+    let snapshot = room_snapshot(state, target).await;
+    fanout_snapshot(state, target, snapshot.clone()).await;
+
+    Ok(snapshot)
+}
+
+/// Входит в голосовой звонок личного диалога и возвращает текущий снимок участников.
+pub(crate) async fn join_direct_message_room(
+    state: &AppState,
+    realtime_stream_id: Uuid,
+    session_id: Uuid,
+    user: &AuthUser,
+    user_id: &Uuid,
+    request: JoinDirectMessageVoiceRoom,
+) -> Result<VoiceRoomSnapshot, VoiceChatApplicationError> {
+    let conversation_id = parse_id(&request.conversation_id, "Диалог не найден.")?;
+    let access = ensure_direct_message_voice_available(state, user_id, &conversation_id).await?;
+    let target = direct_message_voice_target(access.conversation_id);
+    let removed = state
+        .voice_presence_store
+        .join(VoicePresence {
+            realtime_stream_id,
+            session_id,
+            target_kind: target.kind,
+            server_id: target.server_id,
+            room_id: target.room_id,
+            user_id: *user_id,
+            nickname: user.nickname.clone(),
+            avatar_url: user.avatar_url.clone(),
+            joined_at: Utc::now(),
+        })
+        .await;
+
+    tracing::info!(
+        conversation_id = %access.conversation_id,
+        user_id = %user_id,
+        "joined direct message voice room"
+    );
+    fanout_removed_rooms(state, removed, Some(target)).await;
+    let snapshot = room_snapshot(state, target).await;
+    fanout_snapshot(state, target, snapshot.clone()).await;
+
+    Ok(snapshot)
+}
+
+/// Покидает голосовой звонок личного диалога и возвращает текущий снимок участников.
+pub(crate) async fn leave_direct_message_room(
+    state: &AppState,
+    realtime_stream_id: Uuid,
+    user_id: &Uuid,
+    request: LeaveDirectMessageVoiceRoom,
+) -> Result<VoiceRoomSnapshot, VoiceChatApplicationError> {
+    let conversation_id = parse_id(&request.conversation_id, "Диалог не найден.")?;
+    let target = direct_message_voice_target(conversation_id);
+    let removed = state
+        .voice_presence_store
+        .leave_room(
+            &realtime_stream_id,
+            target.kind,
+            &target.server_id,
+            &target.room_id,
+        )
+        .await;
+
+    if removed.is_empty() {
+        ensure_direct_message_voice_available(state, user_id, &conversation_id).await?;
+        return Ok(room_snapshot(state, target).await);
+    }
+
+    tracing::info!(
+        conversation_id = %conversation_id,
+        user_id = %user_id,
+        "left direct message voice room"
+    );
+    let snapshot = room_snapshot(state, target).await;
+    fanout_snapshot(state, target, snapshot.clone()).await;
 
     Ok(snapshot)
 }
@@ -111,8 +196,9 @@ pub(crate) async fn kick_member(
         ));
     }
 
-    let snapshot = room_snapshot(state, &server_id, &room_id).await;
-    fanout_snapshot(state, snapshot.clone()).await;
+    let target = server_voice_target(server_id, room_id);
+    let snapshot = room_snapshot(state, target).await;
+    fanout_snapshot(state, target, snapshot.clone()).await;
 
     Ok(snapshot)
 }
@@ -157,6 +243,33 @@ pub(crate) async fn list_server_voice_rooms(
     })
 }
 
+/// Перечисляет активные голосовые звонки личных диалогов пользователя.
+pub(crate) async fn list_direct_message_voice_rooms(
+    state: &AppState,
+    user_id: &Uuid,
+    _request: ListDirectMessageVoiceRooms,
+) -> Result<DirectMessageVoiceRoomsSnapshot, VoiceChatApplicationError> {
+    let conversations = social::direct_message_voice_accesses_for_user(state, user_id)
+        .await
+        .map_err(social_error)?;
+    let mut rooms = Vec::new();
+    for conversation in conversations {
+        let target = direct_message_voice_target(conversation.conversation_id);
+        let snapshot = room_snapshot(state, target).await;
+        if !snapshot.participants.is_empty() {
+            rooms.push(snapshot);
+        }
+    }
+
+    tracing::debug!(
+        user_id = %user_id,
+        active_direct_message_voice_rooms = rooms.len(),
+        "listed direct message voice room participants"
+    );
+
+    Ok(DirectMessageVoiceRoomsSnapshot { rooms })
+}
+
 /// Рассылает участникам комнаты событие остановки видеопотока отправителя.
 pub(crate) async fn stop_video_stream(
     state: &AppState,
@@ -167,17 +280,13 @@ pub(crate) async fn stop_video_stream(
 ) -> Result<(), VoiceChatApplicationError> {
     let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
     let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
-    let Some(presence) = state
-        .voice_presence_store
-        .room_presence_for_user(&room_id, user_id)
-        .await
-    else {
+    let Some(presence) = active_presence_for_user(state, &room_id, user_id).await else {
         return Err(VoiceChatApplicationError::NotFound(
             "Пользователь не находится в этой голосовой комнате.".to_owned(),
         ));
     };
 
-    if presence.server_id != server_id {
+    if presence.server_id != server_id || presence.room_id != room_id {
         return Err(VoiceChatApplicationError::BadRequest(
             "Комната не найдена.".to_owned(),
         ));
@@ -190,7 +299,7 @@ pub(crate) async fn stop_video_stream(
 
     let recipients = state
         .voice_presence_store
-        .room_participants(&server_id, &room_id)
+        .room_participants(presence.target_kind, &server_id, &room_id)
         .await;
     let stream_ids = recipients
         .iter()
@@ -200,6 +309,7 @@ pub(crate) async fn stop_video_stream(
     tracing::info!(
         server_id = %server_id,
         room_id = %room_id,
+        target_kind = ?presence.target_kind,
         user_id = %user_id,
         source = ?request.source,
         recipients = stream_ids.len(),
@@ -249,9 +359,9 @@ pub(crate) async fn update_user_nickname(state: &AppState, user_id: &Uuid, nickn
         rooms = rooms.len(),
         "updated active voice presence nickname"
     );
-    for (server_id, room_id) in rooms {
-        let snapshot = room_snapshot(state, &server_id, &room_id).await;
-        fanout_snapshot(state, snapshot).await;
+    for target in rooms {
+        let snapshot = room_snapshot(state, target).await;
+        fanout_snapshot(state, target, snapshot).await;
     }
 }
 
@@ -359,85 +469,29 @@ async fn user_has_server_access(
         .is_some())
 }
 
-async fn fanout_removed_rooms(
+async fn ensure_direct_message_voice_available(
     state: &AppState,
-    removed: Vec<VoicePresence>,
-    skip: Option<(Uuid, Uuid)>,
-) {
-    let mut rooms = Vec::<(Uuid, Uuid)>::new();
-    for presence in removed {
-        let room = (presence.server_id, presence.room_id);
-        if Some(room) == skip || rooms.contains(&room) {
-            continue;
-        }
-        rooms.push(room);
-    }
-
-    for (server_id, room_id) in rooms {
-        let snapshot = room_snapshot(state, &server_id, &room_id).await;
-        fanout_snapshot(state, snapshot).await;
-    }
-}
-
-async fn room_snapshot(state: &AppState, server_id: &Uuid, room_id: &Uuid) -> VoiceRoomSnapshot {
-    let participants = state
-        .voice_presence_store
-        .room_participants(server_id, room_id)
+    user_id: &Uuid,
+    conversation_id: &Uuid,
+) -> Result<DirectMessageVoiceAccess, VoiceChatApplicationError> {
+    social::direct_message_voice_access(state, user_id, conversation_id)
         .await
-        .iter()
-        .map(participant_summary)
-        .collect();
-
-    VoiceRoomSnapshot {
-        server_id: server_id.to_string(),
-        room_id: room_id.to_string(),
-        participants,
-    }
+        .map_err(social_error)
 }
 
-async fn fanout_snapshot(state: &AppState, snapshot: VoiceRoomSnapshot) {
-    let Ok(server_id) = Uuid::parse_str(&snapshot.server_id) else {
-        return;
-    };
-    let recipients = state
-        .realtime_hub
-        .recipients(state, RealtimeModule::VoiceChat, &server_id)
-        .await;
-    let stream_ids = recipients
-        .iter()
-        .map(|recipient| recipient.stream_id)
-        .collect::<Vec<_>>();
-    tracing::debug!(
-        server_id = %snapshot.server_id,
-        room_id = %snapshot.room_id,
-        participants = snapshot.participants.len(),
-        recipients = stream_ids.len(),
-        "fanning out voice room participants changed event"
-    );
-
-    state
-        .realtime_hub
-        .fanout_to_streams(
-            RealtimeModule::VoiceChat,
-            &server_id,
-            RealtimeKind::VoiceChat(VoiceChatKind::ParticipantsChanged),
-            &stream_ids,
-            snapshot,
-        )
-        .await;
+fn social_error(error: SocialError) -> VoiceChatApplicationError {
+    match error {
+        SocialError::BadRequest(message) => VoiceChatApplicationError::BadRequest(message),
+        SocialError::Unauthorized(message) | SocialError::Conflict(message) => {
+            VoiceChatApplicationError::Unauthorized(message)
+        }
+        SocialError::NotFound(message) => VoiceChatApplicationError::NotFound(message),
+        SocialError::Internal(error) => VoiceChatApplicationError::Internal(error),
+    }
 }
 
 fn parse_id(value: &str, message: &str) -> Result<Uuid, VoiceChatApplicationError> {
     Uuid::parse_str(value).map_err(|_| VoiceChatApplicationError::BadRequest(message.to_owned()))
-}
-
-fn participant_summary(presence: &VoicePresence) -> VoiceRoomParticipant {
-    VoiceRoomParticipant {
-        user_id: presence.user_id.to_string(),
-        nickname: presence.nickname.clone(),
-        avatar_url: presence.avatar_url.clone(),
-        joined_at: presence.joined_at.to_rfc3339(),
-    }
 }
 
 #[cfg(test)]

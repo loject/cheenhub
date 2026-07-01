@@ -1,13 +1,12 @@
 //! Voice chat realtime helpers.
 
 use bytes::Bytes;
-use cheenhub_contracts::media::{
-    MEDIA_DATAGRAM_FLAG_KEY_FRAME, MediaCodec, MediaDatagram, MediaDatagramKind,
-};
+use cheenhub_contracts::media::{MediaCodec, MediaDatagram, MediaDatagramKind};
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, ListServerVoiceRooms, RealtimeEnvelope,
+    DirectMessageVoiceRoomsSnapshot, JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember,
+    LeaveDirectMessageVoiceRoom, LeaveVoiceRoom, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
     RealtimeKind, RealtimeModule, ServerVoiceRoomsSnapshot, StopVoiceVideoStream, VoiceChatKind,
-    VoiceRoomSnapshot, VoiceVideoStreamEnded, VoiceVideoStreamSource,
+    VoiceRoomSnapshot, VoiceVideoStreamSource,
 };
 use futures_channel::mpsc;
 use futures_util::StreamExt;
@@ -20,6 +19,9 @@ use crate::features::screen_share::{EncodedScreenShareFrame, ScreenShareCodec};
 use crate::features::camera::{CameraCodec, EncodedCameraFrame};
 
 use super::video_fragments::{self, OutboundVideoFrame};
+
+#[path = "realtime_decode.rs"]
+mod realtime_decode;
 
 /// Inbound relayed voice frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +102,34 @@ pub(crate) async fn leave_room(
         .await
 }
 
+/// Joins one direct-message voice call.
+pub(crate) async fn join_direct_message_room(
+    realtime: &RealtimeHandle,
+    conversation_id: String,
+) -> Result<VoiceRoomSnapshot, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::JoinDirectMessageVoiceRoom),
+            JoinDirectMessageVoiceRoom { conversation_id },
+        )
+        .await
+}
+
+/// Leaves one direct-message voice call.
+pub(crate) async fn leave_direct_message_room(
+    realtime: &RealtimeHandle,
+    conversation_id: String,
+) -> Result<VoiceRoomSnapshot, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::LeaveDirectMessageVoiceRoom),
+            LeaveDirectMessageVoiceRoom { conversation_id },
+        )
+        .await
+}
+
 /// Kicks one participant from a voice room.
 pub(crate) async fn kick_voice_member(
     realtime: &RealtimeHandle,
@@ -126,10 +156,23 @@ pub(crate) async fn list_server_voice_rooms(
     server_id: String,
 ) -> Result<ServerVoiceRoomsSnapshot, RealtimeError> {
     realtime
-        .request(
+        .request_one_shot(
             RealtimeModule::VoiceChat,
             RealtimeKind::VoiceChat(VoiceChatKind::ListServerVoiceRooms),
             ListServerVoiceRooms { server_id },
+        )
+        .await
+}
+
+/// Loads active direct-message voice call participant snapshots for the current user.
+pub(crate) async fn list_direct_message_voice_rooms(
+    realtime: &RealtimeHandle,
+) -> Result<DirectMessageVoiceRoomsSnapshot, RealtimeError> {
+    realtime
+        .request_one_shot(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::ListDirectMessageVoiceRooms),
+            ListDirectMessageVoiceRooms,
         )
         .await
 }
@@ -144,7 +187,7 @@ pub(crate) fn subscribe_voice_chat(
     dioxus::prelude::spawn(async move {
         let mut events = events;
         while let Some(envelope) = events.next().await {
-            let Some(snapshot) = decode_participants_changed(envelope) else {
+            let Some(snapshot) = realtime_decode::participants_changed(envelope) else {
                 continue;
             };
             if sender.unbounded_send(snapshot).is_err() {
@@ -166,7 +209,7 @@ pub(crate) fn subscribe_video_stream_ended(
     dioxus::prelude::spawn(async move {
         let mut events = events;
         while let Some(envelope) = events.next().await {
-            let Some(event) = decode_video_stream_ended(envelope) else {
+            let Some(event) = realtime_decode::video_stream_ended(envelope) else {
                 continue;
             };
             if sender.unbounded_send(event).is_err() {
@@ -188,7 +231,7 @@ pub(crate) fn subscribe_voice_frames(
     dioxus::prelude::spawn(async move {
         let mut datagrams = datagrams;
         while let Some(bytes) = datagrams.next().await {
-            let Some(frame) = decode_voice_frame(&bytes) else {
+            let Some(frame) = realtime_decode::voice_frame(&bytes) else {
                 continue;
             };
             if sender.unbounded_send(frame).is_err() {
@@ -211,13 +254,15 @@ pub(crate) fn subscribe_screen_frames(
         let mut datagrams = datagrams;
         let mut reassembler = video_fragments::VideoFrameReassembler::default();
         while let Some(bytes) = datagrams.next().await {
-            let Some(datagram) = decode_screen_datagram(&bytes) else {
+            let Some(datagram) = realtime_decode::screen_datagram(&bytes) else {
                 continue;
             };
             let frame = if video_fragments::is_fragmented(&datagram) {
-                reassembler.push(datagram).map(video_frame_from_datagram)
+                reassembler
+                    .push(datagram)
+                    .map(realtime_decode::video_frame_from_datagram)
             } else {
-                Some(video_frame_from_datagram(datagram))
+                Some(realtime_decode::video_frame_from_datagram(datagram))
             };
             let Some(frame) = frame else {
                 continue;
@@ -242,13 +287,15 @@ pub(crate) fn subscribe_camera_frames(
         let mut datagrams = datagrams;
         let mut reassembler = video_fragments::VideoFrameReassembler::default();
         while let Some(bytes) = datagrams.next().await {
-            let Some(datagram) = decode_camera_datagram(&bytes) else {
+            let Some(datagram) = realtime_decode::camera_datagram(&bytes) else {
                 continue;
             };
             let frame = if video_fragments::is_fragmented(&datagram) {
-                reassembler.push(datagram).map(video_frame_from_datagram)
+                reassembler
+                    .push(datagram)
+                    .map(realtime_decode::video_frame_from_datagram)
             } else {
-                Some(video_frame_from_datagram(datagram))
+                Some(realtime_decode::video_frame_from_datagram(datagram))
             };
             let Some(frame) = frame else {
                 continue;
@@ -409,76 +456,4 @@ async fn send_video_stream_stopped(
             },
         )
         .await
-}
-
-fn decode_participants_changed(envelope: RealtimeEnvelope) -> Option<VoiceRoomSnapshot> {
-    if envelope.module != RealtimeModule::VoiceChat
-        || envelope.kind != RealtimeKind::VoiceChat(VoiceChatKind::ParticipantsChanged)
-    {
-        return None;
-    }
-
-    serde_json::from_value::<VoiceRoomSnapshot>(envelope.payload).ok()
-}
-
-fn decode_video_stream_ended(envelope: RealtimeEnvelope) -> Option<InboundVideoStreamEnded> {
-    if envelope.module != RealtimeModule::VoiceChat
-        || envelope.kind != RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded)
-    {
-        return None;
-    }
-
-    let event = serde_json::from_value::<VoiceVideoStreamEnded>(envelope.payload).ok()?;
-    Some(InboundVideoStreamEnded {
-        server_id: event.server_id,
-        room_id: event.room_id,
-        sender_user_id: event.user_id,
-        source: event.source,
-    })
-}
-
-fn decode_voice_frame(bytes: &[u8]) -> Option<InboundVoiceFrame> {
-    let datagram = MediaDatagram::decode(bytes).ok()?;
-    if datagram.kind != MediaDatagramKind::VoiceFrame || datagram.codec != MediaCodec::Opus {
-        return None;
-    }
-
-    Some(InboundVoiceFrame {
-        room_id: datagram.room_id.to_string(),
-        sender_user_id: datagram.sender_user_id.to_string(),
-        sequence: datagram.sequence,
-        timestamp_us: datagram.timestamp_us,
-        duration_us: datagram.duration_us,
-        bytes: datagram.payload,
-    })
-}
-
-fn decode_screen_datagram(bytes: &[u8]) -> Option<MediaDatagram> {
-    let datagram = MediaDatagram::decode(bytes).ok()?;
-    if datagram.kind != MediaDatagramKind::ScreenFrame || datagram.codec != MediaCodec::Vp9 {
-        return None;
-    }
-
-    Some(datagram)
-}
-
-fn decode_camera_datagram(bytes: &[u8]) -> Option<MediaDatagram> {
-    let datagram = MediaDatagram::decode(bytes).ok()?;
-    if datagram.kind != MediaDatagramKind::CameraFrame || datagram.codec != MediaCodec::Vp9 {
-        return None;
-    }
-
-    Some(datagram)
-}
-
-fn video_frame_from_datagram(datagram: MediaDatagram) -> InboundVideoFrame {
-    InboundVideoFrame {
-        room_id: datagram.room_id.to_string(),
-        sender_user_id: datagram.sender_user_id.to_string(),
-        sequence: datagram.sequence,
-        timestamp_us: datagram.timestamp_us,
-        duration_us: datagram.duration_us,
-        bytes: datagram.payload,
-        key_frame: datagram.flags & MEDIA_DATAGRAM_FLAG_KEY_FRAME != 0,
-    }
 }

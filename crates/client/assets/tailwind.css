@@ -939,11 +939,13 @@ video {
   display: none;
 }
 
-#app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .voice-stage {
+#app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .voice-stage,
+  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"] .voice-stage {
   padding-bottom: 18px;
 }
 
-#app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .embedded-chat {
+#app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .embedded-chat,
+  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"] .embedded-chat {
   height: clamp(24dvh, var(--embedded-chat-height, 38dvh), 84dvh);
   opacity: 1;
   transform: translateY(0);
@@ -2776,6 +2778,10 @@ video {
 
 .border-emerald-500\/25 {
   border-color: rgb(16 185 129 / 0.25);
+}
+
+.border-emerald-500\/30 {
+  border-color: rgb(16 185 129 / 0.3);
 }
 
 .border-emerald-500\/35 {
@@ -4967,6 +4973,10 @@ video {
 
 .hover\:border-emerald-400\/35:hover {
   border-color: rgb(52 211 153 / 0.35);
+}
+
+.hover\:border-emerald-400\/40:hover {
+  border-color: rgb(52 211 153 / 0.4);
 }
 
 .hover\:border-emerald-400\/45:hover {

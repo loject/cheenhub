@@ -32,9 +32,10 @@ pub use text_chat::{
     SendMessageAccepted, TextChatImageAttachment, TextChatKind, TextChatMessage, UploadChatImage,
 };
 pub use voice_chat::{
-    JoinVoiceRoom, KickVoiceMember, LeaveVoiceRoom, ListServerVoiceRooms, ServerVoiceRoomsSnapshot,
-    StopVoiceVideoStream, VoiceChatKind, VoiceRoomParticipant, VoiceRoomSnapshot,
-    VoiceVideoStreamEnded, VoiceVideoStreamSource,
+    DirectMessageVoiceRoomsSnapshot, JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember,
+    LeaveDirectMessageVoiceRoom, LeaveVoiceRoom, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
+    ServerVoiceRoomsSnapshot, StopVoiceVideoStream, VoiceChatKind, VoiceRoomParticipant,
+    VoiceRoomSnapshot, VoiceVideoStreamEnded, VoiceVideoStreamSource,
 };
 
 #[cfg(test)]

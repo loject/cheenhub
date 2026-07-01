@@ -6,12 +6,11 @@ use dioxus::prelude::*;
 
 use super::app_shell::{ActiveRoom, ServerShellState};
 use super::room_header::RoomHeader;
+use super::workspace_split::{
+    EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO, clamp_embedded_chat_height, finish_embedded_chat_resize,
+};
 use crate::features::text_chat::{RoomChatSurface, RoomChatSurfaceMode};
 use crate::features::voice_chat::{VoiceConnectionHandle, VoiceRoomSurface};
-
-const EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO: f64 = 0.38;
-const EMBEDDED_CHAT_MIN_WORKSPACE_RATIO: f64 = 0.24;
-const VOICE_CHAT_MIN_WORKSPACE_RATIO: f64 = 0.16;
 
 /// Рендерит одну рабочую область комнаты с локальным UI-состоянием, ограниченным этой комнатой.
 #[component]
@@ -198,39 +197,4 @@ fn chat_open_for_room(chat_open_by_room: &[(String, bool)], room_id: &str) -> bo
         .iter()
         .find_map(|(saved_room_id, chat_open)| (saved_room_id == room_id).then_some(*chat_open))
         .unwrap_or(false)
-}
-
-fn clamp_embedded_chat_height(height_px: f64, workspace_height_px: f64) -> f64 {
-    if workspace_height_px <= 0.0 {
-        return height_px.max(0.0);
-    }
-
-    let min_text_height = workspace_height_px * EMBEDDED_CHAT_MIN_WORKSPACE_RATIO;
-    let max_text_height = workspace_height_px * (1.0 - VOICE_CHAT_MIN_WORKSPACE_RATIO);
-    height_px.clamp(min_text_height, max_text_height.max(min_text_height))
-}
-
-fn finish_embedded_chat_resize(
-    mut resize_origin: Signal<Option<(f64, f64, f64)>>,
-    height_px: Signal<Option<f64>>,
-    room_id: &str,
-) {
-    let Some((_, _, workspace_height_px)) = resize_origin() else {
-        return;
-    };
-
-    resize_origin.set(None);
-    if let Some(height_px) = height_px() {
-        let height_percent = if workspace_height_px > 0.0 {
-            (height_px / workspace_height_px * 100.0).round() as i64
-        } else {
-            0
-        };
-        debug!(
-            room_id,
-            height_px = height_px.round() as i64,
-            height_percent,
-            "embedded text chat resize finished"
-        );
-    }
 }

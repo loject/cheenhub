@@ -18,7 +18,9 @@ mod video_fragments;
 mod video_streams;
 mod voice_controls;
 
+pub(crate) use participant_grid::{VoiceParticipantGrid, VoiceParticipantGridStatus};
 pub(crate) use provider::VoiceConnectionProvider;
 pub(crate) use sidebar_controls::SidebarVoiceControls;
 pub(crate) use state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget};
 pub(crate) use surface::VoiceRoomSurface;
+pub(crate) use voice_controls::VoiceControls;

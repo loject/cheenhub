@@ -12,12 +12,12 @@ use crate::features::realtime::RealtimeHandle;
 use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 
 use super::realtime;
-use super::state::{VoiceConnectionHandle, VoiceConnectionState};
+use super::state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget};
 use super::video_streams::{ParticipantVideoFrame, ParticipantVideoHandle, ParticipantVideoSource};
 
 /// Renders floating controls for the active voice room.
 #[component]
-pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
+pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
     let microphone = use_context::<MicrophoneHandle>();
     let camera = use_context::<CameraHandle>();
@@ -31,7 +31,9 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
     let camera_status = camera.status();
     let screen_share_status = screen_share.status();
     let microphone_level = microphone.level();
-    let is_active_room = state.is_active_room(&server_id, &room_id);
+    let is_active_room = state
+        .active_target()
+        .is_some_and(|active| active.matches(&target));
     let is_leaving = matches!(state, VoiceConnectionState::Disconnecting { .. });
     let media_controls_enabled = matches!(state, VoiceConnectionState::Connected { .. });
     let output_muted = playback.is_muted();
@@ -78,16 +80,16 @@ pub(crate) fn VoiceControls(server_id: String, room_id: String) -> Element {
     let leave_screen_share = screen_share.clone();
     let unmute_playback = playback.clone();
     let microphone_realtime_handle = realtime_handle.clone();
-    let microphone_server_id = server_id.clone();
-    let microphone_room_id = room_id.clone();
+    let microphone_server_id = target.server_id.clone();
+    let microphone_room_id = target.room_id.clone();
     let camera_realtime_handle = realtime_handle.clone();
-    let camera_server_id = server_id.clone();
-    let camera_room_id = room_id.clone();
+    let camera_server_id = target.server_id.clone();
+    let camera_room_id = target.room_id.clone();
     let camera_current_user_id = current_user_id.clone();
     let camera_participant_video = participant_video.clone();
     let screen_realtime_handle = realtime_handle.clone();
-    let screen_server_id = server_id.clone();
-    let screen_room_id = room_id.clone();
+    let screen_server_id = target.server_id.clone();
+    let screen_room_id = target.room_id.clone();
 
     if !is_active_room {
         return rsx! {};

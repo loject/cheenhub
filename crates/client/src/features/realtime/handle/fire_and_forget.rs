@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::features::realtime::error::RealtimeError;
 use crate::features::realtime::websocket::WebSocketOutbound;
 
-use super::{ConnectedTransport, RealtimeHandle, validate_module_kind};
+use super::{ConnectedTransport, RealtimeHandle, ReliableRequestMode, validate_module_kind};
 
 impl RealtimeHandle {
     /// Sends one reliable fire-and-forget message.
@@ -25,7 +25,8 @@ impl RealtimeHandle {
         let envelope = RealtimeEnvelope::new(module, kind, None, payload).map_err(|error| {
             RealtimeError::new(format!("Failed to encode realtime payload: {error}"))
         })?;
-        self.write_envelope(envelope).await
+        self.write_envelope(envelope, ReliableRequestMode::Cached)
+            .await
     }
 
     /// Sends one unreliable datagram message.
