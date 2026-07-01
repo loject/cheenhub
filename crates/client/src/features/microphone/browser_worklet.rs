@@ -14,12 +14,20 @@ use web_sys::{
 use super::backend::MicrophoneError;
 use super::browser_errors::js_error_message;
 
-const MICROPHONE_WORKLET_URL: &str = "/audio/microphone-worklet.js?v=1";
+const MICROPHONE_WORKLET_URL: &str = "/audio/microphone-worklet.js?v=3";
 const WORKLET_PROCESSOR_NAME: &str = "cheenhub-microphone-capture";
 const WORKLET_CHUNK_MS: u32 = 10;
 
 pub(super) fn worklet_chunk_ms() -> u32 {
     WORKLET_CHUNK_MS
+}
+
+pub(super) fn browser_media_diagnostics_enabled() -> bool {
+    cfg!(feature = "browser-media-diagnostics")
+}
+
+pub(super) fn worklet_output_connected() -> bool {
+    !browser_media_diagnostics_enabled()
 }
 
 pub(super) fn create_audio_context(sample_rate_hz: u32) -> Result<AudioContext, MicrophoneError> {
@@ -49,11 +57,20 @@ pub(super) fn create_worklet_node(
         "frameCount",
         &JsValue::from_f64(f64::from(worklet_frame_count(sample_rate_hz))),
     )?;
+    set_property(
+        &processor_options,
+        "diagnosticsEnabled",
+        &JsValue::from_bool(browser_media_diagnostics_enabled()),
+    )?;
 
     let options = AudioWorkletNodeOptions::new();
     options.set_number_of_inputs(1);
-    options.set_number_of_outputs(1);
-    options.set_output_channel_count(&output_channel_count().into());
+    if worklet_output_connected() {
+        options.set_number_of_outputs(1);
+        options.set_output_channel_count(&output_channel_count().into());
+    } else {
+        options.set_number_of_outputs(0);
+    }
     options.set_processor_options(Some(&processor_options));
 
     let context = context.unchecked_ref::<BaseAudioContext>();
@@ -64,18 +81,23 @@ pub(super) fn create_worklet_node(
 pub(super) fn connect_capture_graph(
     source: &MediaStreamAudioSourceNode,
     worklet: &AudioWorkletNode,
-    silent_gain: &GainNode,
+    silent_gain: Option<&GainNode>,
     context: &AudioContext,
 ) -> Result<(), MicrophoneError> {
     source
         .connect_with_audio_node(worklet.as_ref())
         .map_err(microphone_error)?;
-    worklet
-        .connect_with_audio_node(silent_gain.as_ref())
-        .map_err(microphone_error)?;
-    silent_gain
-        .connect_with_audio_node(context.destination().as_ref())
-        .map_err(microphone_error)?;
+    if worklet_output_connected() {
+        let silent_gain = silent_gain.ok_or_else(|| {
+            MicrophoneError::new("Для графа захвата микрофона нужен silent gain node.")
+        })?;
+        worklet
+            .connect_with_audio_node(silent_gain.as_ref())
+            .map_err(microphone_error)?;
+        silent_gain
+            .connect_with_audio_node(&context.destination())
+            .map_err(microphone_error)?;
+    }
     Ok(())
 }
 

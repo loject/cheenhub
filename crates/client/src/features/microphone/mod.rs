@@ -4,6 +4,7 @@ mod backend;
 mod browser;
 mod browser_bindings;
 mod browser_capture;
+mod browser_diagnostics;
 mod browser_encoding;
 mod browser_errors;
 mod browser_worklet;

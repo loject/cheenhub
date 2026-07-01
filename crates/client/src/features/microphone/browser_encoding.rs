@@ -10,22 +10,26 @@ use js_sys::{Float32Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::MessageEvent;
-use web_time::{SystemTime, UNIX_EPOCH};
+use web_time::Instant;
 
 use super::backend::{
     EncodedMicrophoneFrame, MicrophoneCallbacks, MicrophoneCodec, MicrophoneConfig,
     MicrophoneError, MicrophoneFrameCallback, MicrophoneLevel,
 };
 use super::browser_bindings::{AudioData, AudioEncoder, EncodedAudioChunk};
+use super::browser_diagnostics::{
+    EncoderInputTiming, EncoderOutputTiming, MicrophoneEncoderOutputDiagnostics,
+    MicrophoneWorkletDiagnostics, WorkletDeliveryTiming, WorkletProcessingTiming,
+    WorkletProcessorProfileTiming, enabled as microphone_diagnostics_enabled,
+};
 use super::browser_errors::js_error_message;
 use super::vad::{VoiceActivityDetector, rms_level};
 
 const MICROPHONE_ENCODER_QUEUE_WARN_FRAMES: u32 = 8;
-const MICROPHONE_WORKLET_DELIVERY_WARN_MS: u64 = 120;
-const MICROPHONE_WARNING_INTERVAL_MS: u64 = 5_000;
 
 pub(super) struct BrowserEncoder {
     pub(super) encoder: AudioEncoder,
+    pub(super) diagnostics: Rc<MicrophoneEncoderOutputDiagnostics>,
     pub(super) output_closure: Closure<dyn FnMut(EncodedAudioChunk)>,
     pub(super) error_closure: Closure<dyn FnMut(JsValue)>,
 }
@@ -39,25 +43,47 @@ pub(super) fn create_encoder(
     let output_sequence = sequence.clone();
     let sample_rate_hz = config.sample_rate_hz;
     let channels = config.channels;
+    let output_diagnostics = Rc::new(MicrophoneEncoderOutputDiagnostics::new());
+    let output_callback_diagnostics = output_diagnostics.clone();
     let output_closure = Closure::wrap(Box::new(move |chunk: EncodedAudioChunk| {
+        let diagnostics_enabled = microphone_diagnostics_enabled();
+        let started_at = diagnostics_enabled.then(Instant::now);
+        let timestamp_us = chunk.timestamp().max(0.0) as u64;
+        let duration_us = chunk.duration().unwrap_or(0.0).max(0.0) as u32;
         let byte_length = chunk.byte_length();
         let destination = Uint8Array::new_with_length(byte_length);
+        let copy_chunk_started_at = diagnostics_enabled.then(Instant::now);
         if chunk.copy_to(&destination).is_err() {
             return;
         }
+        let copy_chunk_elapsed_us = elapsed_us_since(&copy_chunk_started_at);
+        let vec_copy_started_at = diagnostics_enabled.then(Instant::now);
         let mut bytes = vec![0; byte_length as usize];
         destination.copy_to(&mut bytes);
+        let vec_copy_elapsed_us = elapsed_us_since(&vec_copy_started_at);
         let sequence = output_sequence.get();
         output_sequence.set(sequence.saturating_add(1));
+        let on_frame_started_at = diagnostics_enabled.then(Instant::now);
         on_frame(EncodedMicrophoneFrame {
             sequence,
-            timestamp_us: chunk.timestamp().max(0.0) as u64,
-            duration_us: chunk.duration().unwrap_or(0.0).max(0.0) as u32,
+            timestamp_us,
+            duration_us,
             codec: MicrophoneCodec::Opus,
             sample_rate_hz,
             channels,
             bytes,
         });
+        let on_frame_elapsed_us = elapsed_us_since(&on_frame_started_at);
+        if diagnostics_enabled {
+            output_callback_diagnostics.record_output(EncoderOutputTiming {
+                duration_us,
+                payload_bytes: byte_length,
+                total_elapsed_us: elapsed_us_since(&started_at),
+                copy_chunk_elapsed_us,
+                vec_copy_elapsed_us,
+                on_frame_elapsed_us,
+            });
+        }
     }) as Box<dyn FnMut(EncodedAudioChunk)>);
     let error_closure = Closure::wrap(Box::new(move |error: JsValue| {
         warn!(
@@ -75,6 +101,7 @@ pub(super) fn create_encoder(
 
     Ok(BrowserEncoder {
         encoder,
+        diagnostics: output_diagnostics,
         output_closure,
         error_closure,
     })
@@ -86,24 +113,25 @@ pub(super) fn microphone_message_closure(
     config: MicrophoneConfig,
     sample_rate_hz: u32,
     closed: Rc<Cell<bool>>,
+    encoder_diagnostics: Rc<MicrophoneEncoderOutputDiagnostics>,
 ) -> Closure<dyn FnMut(MessageEvent)> {
     let detector = Rc::new(RefCell::new(VoiceActivityDetector::new(config.clone())));
-    let diagnostics = Rc::new(MicrophoneWorkletDiagnostics {
-        encoder_queue_warning_ms: Rc::new(Cell::new(0)),
-        chunk_timing: Rc::new(RefCell::new(MicrophoneChunkTiming::default())),
-    });
+    let diagnostics = Rc::new(MicrophoneWorkletDiagnostics::new());
     Closure::wrap(Box::new(move |event: MessageEvent| {
         if closed.get() {
             return;
         }
         if let Err(error) = handle_worklet_message(
             event.data(),
-            &encoder,
-            &detector,
-            &callbacks,
-            sample_rate_hz,
-            config.input_gain,
-            diagnostics.as_ref(),
+            WorkletMessageContext {
+                encoder: &encoder,
+                detector: &detector,
+                callbacks: &callbacks,
+                sample_rate_hz,
+                input_gain: config.input_gain,
+                diagnostics: diagnostics.as_ref(),
+                encoder_diagnostics: encoder_diagnostics.as_ref(),
+            },
         ) {
             warn!(
                 %error,
@@ -191,55 +219,105 @@ pub(super) fn close_encoder_lossy(encoder: &AudioEncoder) {
 
 fn handle_worklet_message(
     data: JsValue,
-    encoder: &AudioEncoder,
-    detector: &Rc<RefCell<VoiceActivityDetector>>,
-    callbacks: &MicrophoneCallbacks,
-    sample_rate_hz: u32,
-    input_gain: f32,
-    diagnostics: &MicrophoneWorkletDiagnostics,
+    context: WorkletMessageContext<'_>,
 ) -> Result<(), MicrophoneError> {
-    let chunk = PcmChunk::from_message(data)?;
+    let diagnostics_enabled = microphone_diagnostics_enabled();
+    let started_at = diagnostics_enabled.then(Instant::now);
+    let message = WorkletMessage::from_message(data)?;
+    let chunk = match message {
+        WorkletMessage::Chunk(chunk) => chunk,
+        WorkletMessage::ProcessorProfile(profile) => {
+            context.diagnostics.record_processor_profile(profile);
+            return Ok(());
+        }
+    };
     if chunk.samples.is_empty() {
         return Ok(());
     }
+    let parse_elapsed_us = elapsed_us_since(&started_at);
 
-    let duration_us = duration_us(chunk.samples.len(), sample_rate_hz);
-    warn_if_worklet_delivery_is_late(&chunk, duration_us, &diagnostics.chunk_timing);
+    let duration_us = duration_us(chunk.samples.len(), context.sample_rate_hz);
+    context
+        .diagnostics
+        .warn_if_delivery_is_late(WorkletDeliveryTiming {
+            timestamp_us: chunk.timestamp_us,
+            duration_us,
+        });
     let mut samples = chunk.samples;
-    apply_input_gain(&mut samples, input_gain);
+    apply_input_gain(&mut samples, context.input_gain);
     let rms = rms_level(&samples);
-    let previous_active = detector.borrow().is_active();
-    let active = detector.borrow_mut().update(rms, duration_us);
+    let previous_active = context.detector.borrow().is_active();
+    let active = context.detector.borrow_mut().update(rms, duration_us);
     if active != previous_active {
         debug!(
             rms,
             active,
-            threshold = detector_threshold(detector),
+            threshold = detector_threshold(context.detector),
             timestamp_us = chunk.timestamp_us,
             "microphone voice activation changed"
         );
     }
-    (callbacks.on_level)(MicrophoneLevel {
+    (context.callbacks.on_level)(MicrophoneLevel {
         rms,
         active,
-        threshold: detector_threshold(detector),
+        threshold: detector_threshold(context.detector),
         timestamp_us: chunk.timestamp_us,
     });
+    let level_elapsed_us = elapsed_us_since(&started_at).saturating_sub(parse_elapsed_us);
 
     if !active {
+        if diagnostics_enabled {
+            context
+                .diagnostics
+                .record_processing(WorkletProcessingTiming {
+                    timestamp_us: chunk.timestamp_us,
+                    duration_us,
+                    active,
+                    total_elapsed_us: elapsed_us_since(&started_at),
+                    parse_elapsed_us,
+                    level_elapsed_us,
+                    audio_data_elapsed_us: 0,
+                    encode_elapsed_us: 0,
+                    close_elapsed_us: 0,
+                    queue_size: context.encoder.encode_queue_size(),
+                });
+        }
         return Ok(());
     }
 
-    let audio = audio_data_from_samples(&samples, sample_rate_hz, chunk.timestamp_us)?;
-    let encode_result = encoder.encode(audio.as_ref());
+    let audio_data_started_at = diagnostics_enabled.then(Instant::now);
+    let audio = audio_data_from_samples(&samples, context.sample_rate_hz, chunk.timestamp_us)?;
+    let audio_data_elapsed_us = elapsed_us_since(&audio_data_started_at);
+    let encode_started_at = diagnostics_enabled.then(Instant::now);
+    let encode_result = context.encoder.encode(audio.as_ref());
+    let encode_elapsed_us = elapsed_us_since(&encode_started_at);
+    let close_started_at = diagnostics_enabled.then(Instant::now);
     let close_result = audio.close();
-    let queue_size = encoder.encode_queue_size();
+    let close_elapsed_us = elapsed_us_since(&close_started_at);
+    let queue_size = context.encoder.encode_queue_size();
+    if diagnostics_enabled && encode_result.is_ok() {
+        context
+            .encoder_diagnostics
+            .record_input(EncoderInputTiming { duration_us });
+    }
+    if diagnostics_enabled {
+        context
+            .diagnostics
+            .record_processing(WorkletProcessingTiming {
+                timestamp_us: chunk.timestamp_us,
+                duration_us,
+                active,
+                total_elapsed_us: elapsed_us_since(&started_at),
+                parse_elapsed_us,
+                level_elapsed_us,
+                audio_data_elapsed_us,
+                encode_elapsed_us,
+                close_elapsed_us,
+                queue_size,
+            });
+    }
     if queue_size >= MICROPHONE_ENCODER_QUEUE_WARN_FRAMES
-        && should_emit_cell_warning(
-            &diagnostics.encoder_queue_warning_ms,
-            browser_now_ms(),
-            MICROPHONE_WARNING_INTERVAL_MS,
-        )
+        && context.diagnostics.should_emit_encoder_queue_warning()
     {
         warn!(
             queue_size,
@@ -253,74 +331,52 @@ fn handle_worklet_message(
     Ok(())
 }
 
-struct MicrophoneWorkletDiagnostics {
-    encoder_queue_warning_ms: Rc<Cell<u64>>,
-    chunk_timing: Rc<RefCell<MicrophoneChunkTiming>>,
+struct WorkletMessageContext<'a> {
+    encoder: &'a AudioEncoder,
+    detector: &'a Rc<RefCell<VoiceActivityDetector>>,
+    callbacks: &'a MicrophoneCallbacks,
+    sample_rate_hz: u32,
+    input_gain: f32,
+    diagnostics: &'a MicrophoneWorkletDiagnostics,
+    encoder_diagnostics: &'a MicrophoneEncoderOutputDiagnostics,
 }
 
-#[derive(Default)]
-struct MicrophoneChunkTiming {
-    first_timestamp_us: Option<u64>,
-    first_wall_ms: u64,
-    last_timestamp_us: Option<u64>,
-    last_warning_ms: u64,
+enum WorkletMessage {
+    Chunk(PcmChunk),
+    ProcessorProfile(WorkletProcessorProfileTiming),
+}
+
+impl WorkletMessage {
+    fn from_message(data: JsValue) -> Result<Self, MicrophoneError> {
+        if Reflect::get(&data, &JsValue::from_str("kind"))
+            .map_err(microphone_error)?
+            .as_string()
+            .as_deref()
+            == Some("profile")
+        {
+            return Ok(Self::ProcessorProfile(WorkletProcessorProfileTiming {
+                process_count: profile_u64(&data, "processCount")?,
+                chunk_count: profile_u64(&data, "chunkCount")?,
+                input_empty_count: profile_u64(&data, "inputEmptyCount")?,
+                frames: profile_u64(&data, "frames")?,
+                window_ms: profile_u64(&data, "windowMs")?,
+                total_elapsed_us: u128::from(profile_u64(&data, "totalElapsedUs")?),
+                clear_elapsed_us: u128::from(profile_u64(&data, "clearElapsedUs")?),
+                copy_elapsed_us: u128::from(profile_u64(&data, "copyElapsedUs")?),
+                post_elapsed_us: u128::from(profile_u64(&data, "postElapsedUs")?),
+                allocate_elapsed_us: u128::from(profile_u64(&data, "allocateElapsedUs")?),
+                max_process_us: u128::from(profile_u64(&data, "maxProcessUs")?),
+                max_channels: profile_u64(&data, "maxChannels")?.min(u64::from(u32::MAX)) as u32,
+            }));
+        }
+
+        PcmChunk::from_message(data).map(Self::Chunk)
+    }
 }
 
 struct PcmChunk {
     samples: Vec<f32>,
     timestamp_us: u64,
-}
-
-fn warn_if_worklet_delivery_is_late(
-    chunk: &PcmChunk,
-    duration_us: u32,
-    timing: &Rc<RefCell<MicrophoneChunkTiming>>,
-) {
-    let now_ms = browser_now_ms();
-    let mut timing = timing.borrow_mut();
-    let first_timestamp_us = match timing.first_timestamp_us {
-        Some(timestamp_us) => timestamp_us,
-        None => {
-            timing.first_timestamp_us = Some(chunk.timestamp_us);
-            timing.first_wall_ms = now_ms;
-            timing.last_timestamp_us = Some(chunk.timestamp_us);
-            return;
-        }
-    };
-
-    let expected_wall_ms = timing.first_wall_ms.saturating_add(
-        chunk
-            .timestamp_us
-            .saturating_sub(first_timestamp_us)
-            .checked_div(1_000)
-            .unwrap_or_default(),
-    );
-    let delivery_late_ms = now_ms.saturating_sub(expected_wall_ms);
-    let previous_timestamp_us = timing.last_timestamp_us.replace(chunk.timestamp_us);
-    let timestamp_gap_us = previous_timestamp_us
-        .map(|previous_timestamp_us| chunk.timestamp_us.saturating_sub(previous_timestamp_us))
-        .unwrap_or_default();
-    let timestamp_gap_ms = timestamp_gap_us.checked_div(1_000).unwrap_or_default();
-    let expected_gap_ms = u64::from(duration_us)
-        .checked_div(1_000)
-        .unwrap_or_default();
-    if delivery_late_ms < MICROPHONE_WORKLET_DELIVERY_WARN_MS {
-        return;
-    }
-    if timing.last_warning_ms != 0
-        && now_ms.saturating_sub(timing.last_warning_ms) < MICROPHONE_WARNING_INTERVAL_MS
-    {
-        return;
-    }
-
-    timing.last_warning_ms = now_ms;
-    warn!(
-        delivery_late_ms,
-        timestamp_gap_ms,
-        expected_gap_ms,
-        timestamp_us = chunk.timestamp_us,
-        "microphone audio worklet chunk reached main thread late"
-    );
 }
 
 impl PcmChunk {
@@ -341,6 +397,14 @@ impl PcmChunk {
             timestamp_us,
         })
     }
+}
+
+fn profile_u64(data: &JsValue, name: &str) -> Result<u64, MicrophoneError> {
+    Ok(Reflect::get(data, &JsValue::from_str(name))
+        .map_err(microphone_error)?
+        .as_f64()
+        .unwrap_or(0.0)
+        .max(0.0) as u64)
 }
 
 fn audio_data_from_samples(
@@ -389,21 +453,11 @@ fn duration_us(frames: usize, sample_rate_hz: u32) -> u32 {
     .min(u64::from(u32::MAX)) as u32
 }
 
-fn should_emit_cell_warning(last_warning_ms: &Cell<u64>, now_ms: u64, interval_ms: u64) -> bool {
-    let last_ms = last_warning_ms.get();
-    if last_ms != 0 && now_ms.saturating_sub(last_ms) < interval_ms {
-        return false;
-    }
-
-    last_warning_ms.set(now_ms);
-    true
-}
-
-fn browser_now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
-        .unwrap_or(0)
+fn elapsed_us_since(started_at: &Option<Instant>) -> u128 {
+    started_at
+        .as_ref()
+        .map(|started_at| started_at.elapsed().as_micros())
+        .unwrap_or_default()
 }
 
 fn microphone_error(error: JsValue) -> MicrophoneError {

@@ -3,6 +3,8 @@
 
 #[path = "browser_bindings.rs"]
 mod browser_bindings;
+#[path = "browser_diagnostics.rs"]
+mod browser_diagnostics;
 #[path = "browser_helpers.rs"]
 mod browser_helpers;
 #[path = "jitter_buffer.rs"]
@@ -22,8 +24,11 @@ use dioxus::prelude::*;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::AudioContext;
-use web_time::{SystemTime, UNIX_EPOCH};
+use web_time::{Instant, SystemTime, UNIX_EPOCH};
 
+use self::browser_diagnostics::{
+    AudioPlaybackDiagnostics, DecodeInputTiming, diagnostics_enabled, elapsed_us_since,
+};
 use self::browser_helpers::{apply_output_device_to_context, js_error_message, stop_audio_source};
 use self::jitter_buffer::JitterBuffer;
 use self::playback_pipeline::{
@@ -58,6 +63,7 @@ pub(super) struct AudioPlaybackInner {
     pub(in crate::features::audio_playback::web) jitter_warning_at_ms: HashMap<String, u64>,
     pub(in crate::features::audio_playback::web) decoder_queue_warning_at_ms: HashMap<String, u64>,
     pub(in crate::features::audio_playback::web) playback_schedule_warning_at: HashMap<String, f64>,
+    pub(in crate::features::audio_playback::web) diagnostics: AudioPlaybackDiagnostics,
     pub(in crate::features::audio_playback::web) scheduled_sources:
         HashMap<String, Vec<ScheduledAudioSource>>,
     pub(in crate::features::audio_playback::web) scheduled_until: HashMap<String, f64>,
@@ -208,6 +214,7 @@ impl AudioPlaybackHandle {
             inner.jitter_warning_at_ms.remove(sender_user_id);
             inner.decoder_queue_warning_at_ms.remove(sender_user_id);
             inner.playback_schedule_warning_at.remove(sender_user_id);
+            inner.diagnostics.remove_sender(sender_user_id);
             let sources = inner
                 .scheduled_sources
                 .remove(sender_user_id)
@@ -280,10 +287,19 @@ impl AudioPlaybackHandle {
     }
 
     pub(super) fn decode_voice_frame(&self, frame: VoiceFrame) -> Result<(), JsValue> {
+        let should_record_diagnostics = diagnostics_enabled();
+        let started_at = should_record_diagnostics.then(Instant::now);
         let sender_user_id = frame.sender_user_id.clone();
         let sequence = frame.sequence;
+        let timestamp_us = frame.timestamp_us;
+        let payload_bytes = frame.bytes.len();
+        let context_started_at = should_record_diagnostics.then(Instant::now);
         let context = self.context()?;
+        let context_elapsed_us = elapsed_us_since(&context_started_at);
+        let chunk_started_at = should_record_diagnostics.then(Instant::now);
         let chunk = encoded_audio_chunk(&frame)?;
+        let chunk_elapsed_us = elapsed_us_since(&chunk_started_at);
+        let sender_started_at = should_record_diagnostics.then(Instant::now);
         let decoder = {
             let mut inner = self.inner.borrow_mut();
             if inner.muted {
@@ -309,11 +325,29 @@ impl AudioPlaybackHandle {
                 .get(&sender_user_id)
                 .map(|sender| sender.decoder.clone())
         };
+        let sender_elapsed_us = elapsed_us_since(&sender_started_at);
         let Some(decoder) = decoder else {
             return Ok(());
         };
+        let decode_started_at = should_record_diagnostics.then(Instant::now);
         let result = decoder.decode(&chunk);
+        let decode_elapsed_us = elapsed_us_since(&decode_started_at);
         let queue_size = decoder.decode_queue_size();
+        if should_record_diagnostics {
+            self.inner.borrow_mut().diagnostics.record_decode_input(
+                &sender_user_id,
+                DecodeInputTiming {
+                    timestamp_us,
+                    payload_bytes,
+                    total_elapsed_us: elapsed_us_since(&started_at),
+                    context_elapsed_us,
+                    chunk_elapsed_us,
+                    sender_elapsed_us,
+                    decode_elapsed_us,
+                    queue_size,
+                },
+            );
+        }
         if queue_size >= AUDIO_DECODER_QUEUE_WARN_FRAMES {
             let should_warn = {
                 let mut inner = self.inner.borrow_mut();
@@ -409,6 +443,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             jitter_warning_at_ms: HashMap::new(),
             decoder_queue_warning_at_ms: HashMap::new(),
             playback_schedule_warning_at: HashMap::new(),
+            diagnostics: AudioPlaybackDiagnostics::new(),
             scheduled_sources: HashMap::new(),
             scheduled_until: HashMap::new(),
             user_volumes: HashMap::new(),

@@ -55,6 +55,7 @@ desktop = [
 ]
 mobile = ["app", "dep:tokio", "dep:tokio-tungstenite", "dioxus/mobile"]
 system-tray = []
+browser-media-diagnostics = []
 # Windows-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
 windows = ["dep:cpal", "dep:opus"]
 # Linux-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.

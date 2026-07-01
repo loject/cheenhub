@@ -77,6 +77,26 @@ args = [
     "${DIOXUS_PORT}",
 ]
 
+[tasks.dioxus-web-release]
+description = "Run the Dioxus web server with a release client build and no hot reload."
+dependencies = ["install-dioxus-cli", "build-microphone-worker-wasm-release"]
+command = "dx"
+args = [
+    "serve",
+    "--web",
+    "--release",
+    "--watch",
+    "false",
+    "--package",
+    "cheenhub_client",
+    "--bin",
+    "cheen_hub",
+    "--addr",
+    "${DIOXUS_ADDR}",
+    "--port",
+    "${DIOXUS_PORT}",
+]
+
 [tasks.dioxus-desktop]
 description = "Run the Dioxus desktop dev app."
 linux_alias = "dioxus-desktop-linux"

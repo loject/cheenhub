@@ -118,6 +118,19 @@
     "allow_concurrent_runs": false
   },
   {
+    "label": "CheenHub: dioxus web release",
+    "command": "cargo",
+    "args": [
+      "make",
+      "dioxus-web-release"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
     "label": "CheenHub: dioxus desktop profile",
     "command": "cargo",
     "args": [

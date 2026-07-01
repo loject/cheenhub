@@ -31,7 +31,7 @@ use super::browser_encoding::{
 use super::browser_errors::js_error_message;
 use super::browser_worklet::{
     connect_capture_graph, create_audio_context, create_worklet_node, load_worklet_module,
-    worklet_chunk_ms,
+    worklet_chunk_ms, worklet_output_connected,
 };
 
 /// Browser microphone implementation backed by AudioWorklet and WebCodecs.
@@ -53,7 +53,7 @@ struct BrowserMicrophoneSession {
     track: web_sys::MediaStreamTrack,
     source: MediaStreamAudioSourceNode,
     worklet: AudioWorkletNode,
-    silent_gain: GainNode,
+    silent_gain: Option<GainNode>,
     port: MessagePort,
     closed: Rc<Cell<bool>>,
     _message_closure: Closure<dyn FnMut(MessageEvent)>,
@@ -83,7 +83,9 @@ impl MicrophoneSession for BrowserMicrophoneSession {
             worklet.set_onprocessorerror(None);
             disconnect_audio_node(source.as_ref());
             disconnect_audio_node(worklet.as_ref());
-            disconnect_audio_node(silent_gain.as_ref());
+            if let Some(silent_gain) = silent_gain {
+                disconnect_audio_node(silent_gain.as_ref());
+            }
             track.stop();
             encoder.close().map_err(microphone_error)?;
             JsFuture::from(context.close().map_err(microphone_error)?)
@@ -157,17 +159,15 @@ async fn start_browser_session(
             return Err(error);
         }
     };
-    let silent_gain = match context.create_gain() {
-        Ok(gain) => gain,
+    let silent_gain = match create_silent_gain(&context) {
+        Ok(silent_gain) => silent_gain,
         Err(error) => {
             stop_media_stream(&stream);
             close_encoder_lossy(&encoder.encoder);
             close_context_lossy(&context).await;
-            return Err(microphone_error(error));
+            return Err(error);
         }
     };
-    silent_gain.gain().set_value(0.0);
-
     let closed = Rc::new(Cell::new(false));
     let port = match worklet.port() {
         Ok(port) => port,
@@ -184,6 +184,7 @@ async fn start_browser_session(
         config.clone(),
         sample_rate_hz,
         closed.clone(),
+        encoder.diagnostics.clone(),
     );
     port.set_onmessage(Some(message_closure.as_ref().unchecked_ref()));
     port.start();
@@ -196,7 +197,7 @@ async fn start_browser_session(
     }) as Box<dyn FnMut(JsValue)>);
     worklet.set_onprocessorerror(Some(processor_error_closure.as_ref().unchecked_ref()));
 
-    if let Err(error) = connect_capture_graph(&source, &worklet, &silent_gain, &context) {
+    if let Err(error) = connect_capture_graph(&source, &worklet, silent_gain.as_ref(), &context) {
         stop_media_stream(&stream);
         close_encoder_lossy(&encoder.encoder);
         close_context_lossy(&context).await;
@@ -212,6 +213,7 @@ async fn start_browser_session(
     info!(
         sample_rate_hz,
         chunk_ms = worklet_chunk_ms(),
+        output_connected = worklet_output_connected(),
         "browser microphone audio worklet capture started"
     );
     Ok(Rc::new(BrowserMicrophoneSession {
@@ -229,6 +231,16 @@ async fn start_browser_session(
         _error_closure: encoder.error_closure,
         bitrate_bps: Rc::new(Cell::new(config.bitrate_bps)),
     }))
+}
+
+fn create_silent_gain(context: &AudioContext) -> Result<Option<GainNode>, MicrophoneError> {
+    if !worklet_output_connected() {
+        return Ok(None);
+    }
+
+    let gain = context.create_gain().map_err(microphone_error)?;
+    gain.gain().set_value(0.0);
+    Ok(Some(gain))
 }
 
 fn validate_config(config: &MicrophoneConfig) -> Result<(), MicrophoneError> {

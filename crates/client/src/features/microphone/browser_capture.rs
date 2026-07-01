@@ -13,6 +13,7 @@ use super::backend::{MicrophoneConfig, MicrophoneError};
 use super::browser_errors::{
     is_device_constraint_error, is_permission_denied_error, js_error_message,
 };
+use super::browser_worklet::browser_media_diagnostics_enabled;
 
 pub(super) async fn request_microphone_stream(
     config: MicrophoneConfig,
@@ -65,11 +66,26 @@ pub(super) fn log_selected_audio_track(
     requested_device_id: Option<&str>,
 ) {
     let actual_device_id = track_settings_device_id(track);
-    debug!(
-        requested_device = requested_device_id.map(device_log_key),
-        actual_device = actual_device_id.as_deref().map(device_log_key),
-        "browser microphone capture track selected"
-    );
+    if browser_media_diagnostics_enabled() {
+        let settings = track_settings_summary(track);
+        debug!(
+            requested_device = requested_device_id.map(device_log_key),
+            actual_device = actual_device_id.as_deref().map(device_log_key),
+            channel_count = settings.channel_count,
+            sample_rate = settings.sample_rate,
+            echo_cancellation = settings.echo_cancellation,
+            noise_suppression = settings.noise_suppression,
+            auto_gain_control = settings.auto_gain_control,
+            voice_isolation = settings.voice_isolation,
+            "browser microphone capture track selected"
+        );
+    } else {
+        debug!(
+            requested_device = requested_device_id.map(device_log_key),
+            actual_device = actual_device_id.as_deref().map(device_log_key),
+            "browser microphone capture track selected"
+        );
+    }
     if requested_device_id.is_some()
         && actual_device_id.is_some()
         && requested_device_id != actual_device_id.as_deref()
@@ -106,9 +122,10 @@ async fn request_default_microphone_stream(
 fn microphone_track_constraints(config: &MicrophoneConfig) -> MediaTrackConstraints {
     let audio = MediaTrackConstraints::new();
     audio.set_channel_count(&JsValue::from_f64(f64::from(config.channels)));
-    audio.set_echo_cancellation(&JsValue::TRUE);
-    audio.set_noise_suppression(&JsValue::TRUE);
-    audio.set_auto_gain_control(&JsValue::TRUE);
+    let browser_voice_processing = JsValue::from_bool(browser_voice_processing_enabled());
+    audio.set_echo_cancellation(&browser_voice_processing);
+    audio.set_noise_suppression(&browser_voice_processing);
+    audio.set_auto_gain_control(&browser_voice_processing);
     // Усиленная ML-изоляция голоса Chrome (deep noise suppression) поверх обычного
     // noiseSuppression: лучше давит постоянный фоновый шум (вентилятор, улица, набор
     // на клавиатуре). Это нестандартный constraint, поэтому задаем его через Reflect;
@@ -116,7 +133,7 @@ fn microphone_track_constraints(config: &MicrophoneConfig) -> MediaTrackConstrai
     let _ = Reflect::set(
         audio.as_ref(),
         &JsValue::from_str("voiceIsolation"),
-        &JsValue::TRUE,
+        &browser_voice_processing,
     );
     if let Some(ref device_id) = config.device_id
         && !device_id.is_empty()
@@ -126,22 +143,77 @@ fn microphone_track_constraints(config: &MicrophoneConfig) -> MediaTrackConstrai
     audio
 }
 
+fn browser_voice_processing_enabled() -> bool {
+    !browser_media_diagnostics_enabled()
+}
+
 fn exact_device_id_constraint(device_id: &str) -> JsValue {
     let exact = Object::new();
     set_property(&exact, "exact", &JsValue::from_str(device_id));
     exact.into()
 }
 
+struct TrackSettingsSummary {
+    channel_count: Option<u32>,
+    sample_rate: Option<u32>,
+    echo_cancellation: Option<bool>,
+    noise_suppression: Option<bool>,
+    auto_gain_control: Option<bool>,
+    voice_isolation: Option<bool>,
+}
+
 fn track_settings_device_id(track: &web_sys::MediaStreamTrack) -> Option<String> {
-    let get_settings = Reflect::get(track.as_ref(), &JsValue::from_str("getSettings"))
-        .ok()?
-        .dyn_into::<Function>()
-        .ok()?;
-    let settings = get_settings.call0(track.as_ref()).ok()?;
+    let settings = track_settings(track)?;
     Reflect::get(&settings, &JsValue::from_str("deviceId"))
         .ok()
         .and_then(|value| value.as_string())
         .filter(|value| !value.is_empty())
+}
+
+fn track_settings_summary(track: &web_sys::MediaStreamTrack) -> TrackSettingsSummary {
+    let settings = track_settings(track);
+    TrackSettingsSummary {
+        channel_count: settings
+            .as_ref()
+            .and_then(|settings| optional_u32(settings, "channelCount")),
+        sample_rate: settings
+            .as_ref()
+            .and_then(|settings| optional_u32(settings, "sampleRate")),
+        echo_cancellation: settings
+            .as_ref()
+            .and_then(|settings| optional_bool(settings, "echoCancellation")),
+        noise_suppression: settings
+            .as_ref()
+            .and_then(|settings| optional_bool(settings, "noiseSuppression")),
+        auto_gain_control: settings
+            .as_ref()
+            .and_then(|settings| optional_bool(settings, "autoGainControl")),
+        voice_isolation: settings
+            .as_ref()
+            .and_then(|settings| optional_bool(settings, "voiceIsolation")),
+    }
+}
+
+fn track_settings(track: &web_sys::MediaStreamTrack) -> Option<JsValue> {
+    let get_settings = Reflect::get(track.as_ref(), &JsValue::from_str("getSettings"))
+        .ok()?
+        .dyn_into::<Function>()
+        .ok()?;
+    get_settings.call0(track.as_ref()).ok()
+}
+
+fn optional_bool(settings: &JsValue, name: &str) -> Option<bool> {
+    Reflect::get(settings, &JsValue::from_str(name))
+        .ok()
+        .and_then(|value| value.as_bool())
+}
+
+fn optional_u32(settings: &JsValue, name: &str) -> Option<u32> {
+    Reflect::get(settings, &JsValue::from_str(name))
+        .ok()
+        .and_then(|value| value.as_f64())
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .map(|value| value.min(f64::from(u32::MAX)) as u32)
 }
 
 fn device_log_key(device_id: &str) -> String {

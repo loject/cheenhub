@@ -7,9 +7,13 @@ use dioxus::prelude::{debug, warn};
 use js_sys::{Float32Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 use web_sys::{AudioBufferSourceNode, AudioContext, GainNode};
+use web_time::Instant;
 
 use super::AudioPlaybackInner;
 use super::browser_bindings::{AudioData, AudioDecoder, EncodedAudioChunk};
+use super::browser_diagnostics::{
+    DecodeOutputTiming, ScheduleAudioTiming, diagnostics_enabled, elapsed_us_since,
+};
 use super::browser_helpers::{js_error_message, set_property};
 use crate::features::audio_playback::backend::VoiceFrame;
 
@@ -41,14 +45,54 @@ pub(super) fn create_sender_playback(
 
     let output_sender_id = sender_user_id.clone();
     let output_closure = Closure::wrap(Box::new(move |audio: AudioData| {
-        if let Err(error) = schedule_audio_data(&context, &inner, &output_sender_id, &audio) {
+        let should_record_diagnostics = diagnostics_enabled();
+        let started_at = should_record_diagnostics.then(Instant::now);
+        let frames = audio.number_of_frames();
+        let channels = audio.number_of_channels().max(1);
+        let timestamp_us = audio.timestamp().max(0.0) as u64;
+        let schedule_started_at = should_record_diagnostics.then(Instant::now);
+        let schedule_result = schedule_audio_data(
+            &context,
+            &inner,
+            &output_sender_id,
+            &audio,
+            should_record_diagnostics,
+        );
+        let schedule_elapsed_us = elapsed_us_since(&schedule_started_at);
+        let close_started_at = should_record_diagnostics.then(Instant::now);
+        let close_result = audio.close();
+        let close_elapsed_us = elapsed_us_since(&close_started_at);
+        if should_record_diagnostics && let Ok(Some(schedule_timing)) = &schedule_result {
+            let mut inner = inner.borrow_mut();
+            inner
+                .diagnostics
+                .record_schedule(&output_sender_id, schedule_timing.clone());
+            inner.diagnostics.record_decode_output(
+                &output_sender_id,
+                DecodeOutputTiming {
+                    timestamp_us,
+                    frames,
+                    channels,
+                    total_elapsed_us: elapsed_us_since(&started_at),
+                    schedule_elapsed_us,
+                    close_elapsed_us,
+                },
+            );
+        }
+        if let Err(error) = schedule_result {
             warn!(
                 error = %js_error_message(error),
                 sender_user_id = %output_sender_id,
                 "failed to schedule decoded audio"
             );
         }
-        let _ = audio.close();
+        if let Err(error) = close_result {
+            warn!(
+                error = %js_error_message(error),
+                sender_user_id = %output_sender_id,
+                "failed to close decoded audio data"
+            );
+        }
     }) as Box<dyn FnMut(AudioData)>);
     let error_sender_id = sender_user_id.clone();
     let error_closure = Closure::wrap(Box::new(move |error: JsValue| {
@@ -103,25 +147,38 @@ fn schedule_audio_data(
     inner: &Rc<RefCell<AudioPlaybackInner>>,
     sender_user_id: &str,
     audio: &AudioData,
-) -> Result<(), JsValue> {
+    record_diagnostics: bool,
+) -> Result<Option<ScheduleAudioTiming>, JsValue> {
+    let started_at = record_diagnostics.then(Instant::now);
     if inner.borrow().muted {
-        return Ok(());
+        return Ok(None);
     }
 
     let frames = audio.number_of_frames();
     if frames == 0 {
-        return Ok(());
+        return Ok(None);
     }
     let channels = audio.number_of_channels().max(1);
     let sample_rate = audio.sample_rate().max(1.0) as f32;
+    let create_buffer_started_at = record_diagnostics.then(Instant::now);
     let buffer = context.create_buffer(channels, frames, sample_rate)?;
+    let create_buffer_elapsed_us = elapsed_us_since(&create_buffer_started_at);
 
+    let mut copy_to_elapsed_us = 0_u128;
+    let mut copy_channel_elapsed_us = 0_u128;
     for channel in 0..channels {
         let samples = Float32Array::new_with_length(frames);
+        let copy_to_started_at = record_diagnostics.then(Instant::now);
         audio.copy_to(&samples, &copy_options(channel))?;
+        copy_to_elapsed_us =
+            copy_to_elapsed_us.saturating_add(elapsed_us_since(&copy_to_started_at));
+        let copy_channel_started_at = record_diagnostics.then(Instant::now);
         buffer.copy_to_channel_with_f32_array(&samples, channel as i32)?;
+        copy_channel_elapsed_us =
+            copy_channel_elapsed_us.saturating_add(elapsed_us_since(&copy_channel_started_at));
     }
 
+    let source_setup_started_at = record_diagnostics.then(Instant::now);
     let source = context.create_buffer_source()?;
     source.set_buffer(Some(&buffer));
     let gain_node = inner
@@ -133,7 +190,9 @@ fn schedule_audio_data(
         Some(gain) => source.connect_with_audio_node(&gain)?,
         None => source.connect_with_audio_node(&context.destination())?,
     };
+    let source_setup_elapsed_us = elapsed_us_since(&source_setup_started_at);
 
+    let schedule_state_started_at = record_diagnostics.then(Instant::now);
     let now = context.current_time();
     let mut inner = inner.borrow_mut();
     let previous_until = inner.scheduled_until.get(sender_user_id).copied();
@@ -193,15 +252,33 @@ fn schedule_audio_data(
     inner
         .scheduled_until
         .insert(sender_user_id.to_owned(), end_time);
+    let source_start_started_at = record_diagnostics.then(Instant::now);
     source.start_with_when(start_at)?;
+    let source_start_elapsed_us = elapsed_us_since(&source_start_started_at);
     let sources = inner
         .scheduled_sources
         .entry(sender_user_id.to_owned())
         .or_default();
     sources.retain(|source| source.end_time > now);
     sources.push(ScheduledAudioSource { source, end_time });
+    let schedule_state_elapsed_us = elapsed_us_since(&schedule_state_started_at);
 
-    Ok(())
+    if !record_diagnostics {
+        return Ok(None);
+    }
+
+    Ok(Some(ScheduleAudioTiming {
+        frames,
+        channels,
+        total_elapsed_us: elapsed_us_since(&started_at),
+        create_buffer_elapsed_us,
+        copy_to_elapsed_us,
+        copy_channel_elapsed_us,
+        source_setup_elapsed_us,
+        source_start_elapsed_us,
+        schedule_state_elapsed_us,
+        scheduled_sources: sources.len(),
+    }))
 }
 
 fn should_warn_playback_schedule(

@@ -46,6 +46,9 @@ extern "C" {
     #[wasm_bindgen(method, getter, js_name = sampleRate)]
     pub(super) fn sample_rate(this: &AudioData) -> f64;
 
+    #[wasm_bindgen(method, getter, js_name = timestamp)]
+    pub(super) fn timestamp(this: &AudioData) -> f64;
+
     #[wasm_bindgen(method, catch, js_name = copyTo)]
     pub(super) fn copy_to(
         this: &AudioData,
