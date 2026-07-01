@@ -1,6 +1,5 @@
 //! Контекстный хэндл демонстрации экрана.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
@@ -8,10 +7,10 @@ use dioxus::prelude::*;
 use crate::features::toast::ToastHandle;
 
 use super::backend::{
-    ScreenShareBackend, ScreenShareCallbacks, ScreenShareConfig, ScreenShareFrameCallback,
-    ScreenShareSession, ScreenShareStatus,
+    ScreenShareBackend, ScreenShareConfig, ScreenShareFrameCallback, ScreenShareSession,
+    ScreenShareStatus,
 };
-use super::provider_runtime::{next_generation, status_from_error};
+use super::provider_runtime::{next_generation, screen_share_callbacks, status_from_error};
 
 /// Контекстный хэндл, используемый функциями, которым нужен захват экрана.
 #[derive(Clone)]
@@ -43,22 +42,7 @@ impl ScreenShareHandle {
 
         info!("starting screen sharing capture");
         spawn(async move {
-            let ended_session = Rc::new(RefCell::new(session));
-            let ended_status = Rc::new(RefCell::new(status));
-            let ended_generation = Rc::new(RefCell::new(generation));
-            let callbacks = ScreenShareCallbacks {
-                on_frame: on_frame.clone(),
-                on_ended: Rc::new(move || {
-                    let ended_generation_value =
-                        next_generation(&mut ended_generation.borrow_mut());
-                    ended_session.borrow_mut().set(None);
-                    ended_status.borrow_mut().set(ScreenShareStatus::Idle);
-                    info!(
-                        generation = ended_generation_value,
-                        "screen sharing capture ended by browser"
-                    );
-                }),
-            };
+            let callbacks = screen_share_callbacks(on_frame.clone(), session, status, generation);
             match backend.start(ScreenShareConfig::default(), callbacks).await {
                 Ok(next_session) => {
                     if generation() != start_generation {

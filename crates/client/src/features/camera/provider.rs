@@ -1,6 +1,5 @@
 //! Контекстный хэндл камеры.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
@@ -8,9 +7,9 @@ use dioxus::prelude::*;
 use crate::features::toast::ToastHandle;
 
 use super::backend::{
-    CameraBackend, CameraCallbacks, CameraConfig, CameraFrameCallback, CameraSession, CameraStatus,
+    CameraBackend, CameraConfig, CameraFrameCallback, CameraSession, CameraStatus,
 };
-use super::provider_runtime::{next_generation, status_from_error};
+use super::provider_runtime::{camera_callbacks, next_generation, status_from_error};
 
 /// Контекстный хэндл, используемый функциями, которым нужен захват камеры.
 #[derive(Clone)]
@@ -39,22 +38,7 @@ impl CameraHandle {
 
         info!("starting camera capture");
         spawn(async move {
-            let ended_session = Rc::new(RefCell::new(session));
-            let ended_status = Rc::new(RefCell::new(status));
-            let ended_generation = Rc::new(RefCell::new(generation));
-            let callbacks = CameraCallbacks {
-                on_frame: on_frame.clone(),
-                on_ended: Rc::new(move || {
-                    let ended_generation_value =
-                        next_generation(&mut ended_generation.borrow_mut());
-                    ended_session.borrow_mut().set(None);
-                    ended_status.borrow_mut().set(CameraStatus::Idle);
-                    info!(
-                        generation = ended_generation_value,
-                        "camera capture ended by browser"
-                    );
-                }),
-            };
+            let callbacks = camera_callbacks(on_frame.clone(), session, status, generation);
             match backend.start(CameraConfig::default(), callbacks).await {
                 Ok(next_session) => {
                     if generation() != start_generation {
