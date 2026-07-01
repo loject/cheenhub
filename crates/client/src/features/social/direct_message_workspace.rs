@@ -8,17 +8,13 @@ use dioxus::prelude::*;
 use crate::features::app::components::workspace_split::{
     EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO, clamp_embedded_chat_height, finish_embedded_chat_resize,
 };
-use crate::features::app::current_user::CurrentUserContext;
-use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::text_chat::{
     CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, ChatMessageItem, ScrollCommand,
     update_near_bottom_state,
 };
-use crate::features::voice_chat::{
-    VoiceConnectionHandle, VoiceConnectionState, VoiceControls, VoiceParticipantGrid,
-    VoiceParticipantGridStatus,
-};
+use crate::features::voice_chat::{VoiceConnectionHandle, VoiceConnectionState};
 
+use super::direct_message_voice_surface::DirectMessageVoiceSurface;
 use super::presentation::{dm_as_text_message, is_appearing_message};
 use super::voice_target::direct_message_voice_target;
 
@@ -37,9 +33,7 @@ pub(crate) fn DirectMessageWorkspace(
     mut pending_scroll: Signal<Option<ScrollCommand>>,
     on_send_message: EventHandler<()>,
 ) -> Element {
-    let current_user = use_context::<CurrentUserContext>().require_user();
     let voice = use_context::<VoiceConnectionHandle>();
-    let microphone = use_context::<MicrophoneHandle>();
     let mut embedded_chat_height_px = use_signal(|| None::<f64>);
     let mut embedded_chat_resize_origin = use_signal(|| None::<(f64, f64, f64)>);
     let mut content_split_element = use_signal(|| None::<Rc<MountedData>>);
@@ -56,42 +50,6 @@ pub(crate) fn DirectMessageWorkspace(
             ..
         } if connected_target.matches(&target)
     );
-    let selected_voice_participants = if selected_voice_active {
-        voice_state.participants().to_vec()
-    } else {
-        Vec::new()
-    };
-    let selected_voice_status = match &voice_state {
-        VoiceConnectionState::Connecting {
-            target: connecting_target,
-        } if connecting_target.matches(&target) => VoiceParticipantGridStatus::Connecting,
-        VoiceConnectionState::Error {
-            target: error_target,
-            message,
-        } if error_target
-            .as_ref()
-            .is_some_and(|error_target| error_target.matches(&target)) =>
-        {
-            VoiceParticipantGridStatus::Error {
-                message: message.clone(),
-            }
-        }
-        _ => VoiceParticipantGridStatus::Empty,
-    };
-    let mut selected_voice_speaking_user_ids = if selected_voice_active {
-        voice.speaking_user_ids()
-    } else {
-        Vec::new()
-    };
-    if selected_voice_active
-        && matches!(microphone.status(), MicrophoneStatus::Live)
-        && microphone.level().active
-        && !selected_voice_speaking_user_ids
-            .iter()
-            .any(|user_id| user_id == &current_user.id)
-    {
-        selected_voice_speaking_user_ids.push(current_user.id.clone());
-    }
     let chat_resizing = embedded_chat_resize_origin().is_some();
     let chat_resizing_attr = if chat_resizing { "true" } else { "false" };
     let workspace_style = embedded_chat_height_px()
@@ -109,7 +67,6 @@ pub(crate) fn DirectMessageWorkspace(
     };
     let appearing_message_ids_list = appearing_message_ids();
     let removing_message_ids_list = removing_message_ids();
-    let retry_voice = voice.clone();
     let conversation_id = conversation.id.clone();
 
     use_effect(move || {
@@ -168,21 +125,8 @@ pub(crate) fn DirectMessageWorkspace(
                     }
                 },
                 if selected_voice_active {
-                    div { class: "voice-room-surface relative flex min-h-0 flex-1 flex-col",
-                        VoiceParticipantGrid {
-                            server_id: target.server_id.clone(),
-                            room_id: target.room_id.clone(),
-                            participants: selected_voice_participants.clone(),
-                            speaking_user_ids: selected_voice_speaking_user_ids.clone(),
-                            status: selected_voice_status.clone(),
-                            can_kick_voice: false,
-                            on_retry: {
-                                let retry_voice = retry_voice.clone();
-                                let retry_target = target.clone();
-                                move |_| retry_voice.join(retry_target.clone())
-                            },
-                        }
-                        VoiceControls { target: target.clone() }
+                    DirectMessageVoiceSurface {
+                        conversation: conversation.clone(),
                     }
                 }
                 div {

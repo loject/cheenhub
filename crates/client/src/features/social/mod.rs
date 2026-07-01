@@ -2,6 +2,7 @@
 
 pub(crate) mod api;
 mod direct_message_voice_button;
+mod direct_message_voice_surface;
 mod direct_message_workspace;
 mod friend_context_menu;
 mod friend_search_modal;
