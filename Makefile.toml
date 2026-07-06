@@ -697,6 +697,6 @@ command = "cargo"
 args = ["run", "-p", "xtask", "--", "release-version", "print-tag"]
 
 [tasks.create-git-tag]
-description = "Create the git tag derived from the workspace release version."
+description = "Ask for a release tag, update the workspace version, and create the git tag."
 command = "cargo"
 args = ["run", "-p", "xtask", "--", "release-version", "tag"]

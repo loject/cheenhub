@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -37,7 +38,7 @@ fn run() -> XtaskResult<()> {
 
 fn print_usage() -> XtaskResult<()> {
     println!(
-        "Usage:\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>\n  cargo run -p xtask -- release-artifacts publish <release-tag> <asset-dir>"
+        "Usage:\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag [<release-tag>]\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>\n  cargo run -p xtask -- release-artifacts publish <release-tag> <asset-dir>"
     );
     Ok(())
 }
@@ -110,29 +111,35 @@ fn run_release_version(args: Vec<String>) -> XtaskResult<()> {
     env::set_current_dir(repo_root.trim())
         .map_err(|error| format!("failed to enter repository root: {error}"))?;
 
-    let workspace = Workspace::read(Path::new(ROOT_MANIFEST))?;
-    let expected_tag = format!("v{}", workspace.version);
-
     match action {
         "check" => {
+            let workspace = Workspace::read(Path::new(ROOT_MANIFEST))?;
+            let expected_tag = release_tag_from_version(&workspace.version);
             workspace.check_release_version()?;
             println!("Release version check passed: {expected_tag}");
         }
         "print-tag" => {
+            let workspace = Workspace::read(Path::new(ROOT_MANIFEST))?;
+            let expected_tag = release_tag_from_version(&workspace.version);
             workspace.check_release_version()?;
             println!("{expected_tag}");
         }
         "tag" => {
+            let release = release_target_from_args(&args[1..])?;
+            ensure_clean_worktree("before updating the release version")?;
+            update_workspace_version(Path::new(ROOT_MANIFEST), &release.version)?;
+            let workspace = Workspace::read(Path::new(ROOT_MANIFEST))?;
             workspace.check_release_version()?;
-            ensure_clean_worktree("before cargo build")?;
             run_release_build()?;
-            commit_release_build_changes(&expected_tag)?;
+            commit_release_changes(&release.tag)?;
             ensure_clean_worktree("before creating the git tag")?;
-            create_git_tag(&expected_tag)?;
-            println!("Created git tag {expected_tag}.");
+            create_git_tag(&release.tag)?;
+            println!("Created git tag {}.", release.tag);
         }
         "-h" | "--help" | "help" => {
-            println!("Usage: cargo run -p xtask -- release-version <check|print-tag|tag>");
+            println!(
+                "Usage: cargo run -p xtask -- release-version <check|print-tag|tag [<release-tag>]>"
+            );
         }
         unknown => {
             return Err(format!("unknown release-version action: {unknown}"));
@@ -140,6 +147,65 @@ fn run_release_version(args: Vec<String>) -> XtaskResult<()> {
     }
 
     Ok(())
+}
+
+struct ReleaseTarget {
+    tag: String,
+    version: String,
+}
+
+fn release_target_from_args(args: &[String]) -> XtaskResult<ReleaseTarget> {
+    match args {
+        [] => prompt_release_target(),
+        [tag] => release_target_from_tag(tag),
+        _ => Err("release-version tag expects at most one <release-tag> argument.".to_owned()),
+    }
+}
+
+fn prompt_release_target() -> XtaskResult<ReleaseTarget> {
+    print!("New release tag (for example v0.13.0): ");
+    io::stdout()
+        .flush()
+        .map_err(|error| format!("failed to flush release tag prompt: {error}"))?;
+
+    let mut tag = String::new();
+    io::stdin()
+        .read_line(&mut tag)
+        .map_err(|error| format!("failed to read release tag: {error}"))?;
+
+    release_target_from_tag(&tag)
+}
+
+fn release_target_from_tag(input: &str) -> XtaskResult<ReleaseTarget> {
+    let tag = input.trim();
+    if tag.is_empty() {
+        return Err("release tag cannot be empty.".to_owned());
+    }
+    if tag.chars().any(char::is_whitespace) {
+        return Err(format!("release tag must not contain whitespace: {tag}"));
+    }
+
+    let version = tag
+        .strip_prefix('v')
+        .or_else(|| tag.strip_prefix('V'))
+        .unwrap_or(tag);
+    if version.is_empty() {
+        return Err("release tag must contain a version after the v prefix.".to_owned());
+    }
+    if version.chars().any(|value| matches!(value, '/' | '\\')) {
+        return Err(format!(
+            "release version must not contain path separators: {version}"
+        ));
+    }
+
+    Ok(ReleaseTarget {
+        tag: release_tag_from_version(version),
+        version: version.to_owned(),
+    })
+}
+
+fn release_tag_from_version(version: &str) -> String {
+    format!("v{version}")
 }
 
 struct Workspace {
@@ -195,6 +261,68 @@ impl Workspace {
 
 fn read_file(path: &Path) -> XtaskResult<String> {
     fs::read_to_string(path).map_err(|error| format!("failed to read {}: {error}", path.display()))
+}
+
+fn update_workspace_version(path: &Path, version: &str) -> XtaskResult<()> {
+    let content = read_file(path)?;
+    let updated = replace_workspace_version(&content, version)?;
+    if updated == content {
+        println!("Cargo.toml already uses release version {version}.");
+        return Ok(());
+    }
+
+    fs::write(path, updated)
+        .map_err(|error| format!("failed to update {}: {error}", path.display()))?;
+    println!("Updated Cargo.toml workspace version to {version}.");
+    Ok(())
+}
+
+fn replace_workspace_version(content: &str, version: &str) -> XtaskResult<String> {
+    let mut updated = String::with_capacity(content.len());
+    let mut in_workspace_package = false;
+    let mut replaced = false;
+
+    for line in content.split_inclusive('\n') {
+        let newline = if line.ends_with("\r\n") {
+            "\r\n"
+        } else if line.ends_with('\n') {
+            "\n"
+        } else {
+            ""
+        };
+        let body = line.trim_end_matches(['\r', '\n']);
+        let stripped = strip_comment(body).trim();
+
+        if is_section_header(stripped) {
+            in_workspace_package = stripped == "[workspace.package]";
+        }
+
+        if in_workspace_package
+            && stripped
+                .split_once('=')
+                .is_some_and(|(name, _)| name.trim() == "version")
+        {
+            let indent: String = body
+                .chars()
+                .take_while(|value| value.is_whitespace())
+                .collect();
+            updated.push_str(&indent);
+            updated.push_str("version = \"");
+            updated.push_str(version);
+            updated.push('"');
+            updated.push_str(newline);
+            replaced = true;
+            continue;
+        }
+
+        updated.push_str(line);
+    }
+
+    if !replaced {
+        return Err("Cargo.toml [workspace.package] must define version.".to_owned());
+    }
+
+    Ok(updated)
 }
 
 fn read_section<'a>(content: &'a str, section: &str) -> Option<&'a str> {
@@ -363,24 +491,22 @@ fn ensure_clean_worktree(stage: &str) -> XtaskResult<()> {
     ))
 }
 
-fn commit_release_build_changes(tag: &str) -> XtaskResult<()> {
+fn commit_release_changes(tag: &str) -> XtaskResult<()> {
     let status = git_status()?;
     if status.trim().is_empty() {
-        println!("cargo build did not create repository changes.");
+        println!("release preparation did not create repository changes.");
         return Ok(());
     }
 
-    println!(
-        "cargo build created repository changes; committing them before creating the git tag."
-    );
+    println!("Committing release preparation changes before creating the git tag.");
     checked_command(Command::new("git").args(["add", "-A"]))?;
     checked_command(
         Command::new("git")
             .arg("commit")
             .arg("-m")
-            .arg(format!("build: refresh generated files for {tag}")),
+            .arg(format!("chore: prepare release {tag}")),
     )?;
-    println!("Committed cargo build changes for {tag}.");
+    println!("Committed release preparation changes for {tag}.");
     Ok(())
 }
 
@@ -436,4 +562,35 @@ fn strip_comment(line: &str) -> &str {
 
 fn is_section_header(line: &str) -> bool {
     line.starts_with('[') && line.ends_with(']')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{release_target_from_tag, replace_workspace_version};
+
+    #[test]
+    fn normalizes_release_tag_to_workspace_version() {
+        let release = release_target_from_tag("v0.13.0").expect("valid release tag");
+
+        assert_eq!(release.tag, "v0.13.0");
+        assert_eq!(release.version, "0.13.0");
+    }
+
+    #[test]
+    fn accepts_release_version_without_prefix() {
+        let release = release_target_from_tag("0.13.0").expect("valid release version");
+
+        assert_eq!(release.tag, "v0.13.0");
+        assert_eq!(release.version, "0.13.0");
+    }
+
+    #[test]
+    fn replaces_workspace_package_version_only() {
+        let content = "[workspace]\nmembers = [\"xtask\"]\n\n[workspace.package]\nversion = \"0.12.0\"\nedition = \"2024\"\n\n[package]\nversion = \"ignored\"\n";
+
+        let updated = replace_workspace_version(content, "0.13.0").expect("updated manifest");
+
+        assert!(updated.contains("[workspace.package]\nversion = \"0.13.0\"\nedition = \"2024\""));
+        assert!(updated.contains("[package]\nversion = \"ignored\""));
+    }
 }
