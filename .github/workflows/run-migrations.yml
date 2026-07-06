@@ -4,12 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       backend_image_ref:
-        description: "Full backend image reference, for example ghcr.io/loject/cheenhub/backend:v1.0.0."
-        required: true
+        description: "Optional full backend image reference. Defaults to ghcr.io/<owner>/<repo>/backend:latest."
+        required: false
+        default: ""
         type: string
       web_image_ref:
-        description: "Full web image reference, for example ghcr.io/loject/cheenhub/web:v1.0.0."
-        required: true
+        description: "Optional full web image reference. Defaults to ghcr.io/<owner>/<repo>/web:latest."
+        required: false
+        default: ""
         type: string
       compose_project_dir:
         description: "Absolute path to the checked-out CheenHub directory on the Ubuntu server."
@@ -43,18 +45,30 @@ jobs:
           INPUT_BACKEND_IMAGE_REF: ${{ inputs.backend_image_ref }}
           INPUT_WEB_IMAGE_REF: ${{ inputs.web_image_ref }}
         run: |
-          backend_image_ref="${INPUT_BACKEND_IMAGE_REF}"
-          web_image_ref="${INPUT_WEB_IMAGE_REF}"
+          repo="${GITHUB_REPOSITORY,,}"
+          default_backend_image_ref="ghcr.io/${repo}/backend:latest"
+          default_web_image_ref="ghcr.io/${repo}/web:latest"
 
-          if [[ "${backend_image_ref}" != *":"* ]]; then
-            echo "backend_image_ref must include a tag, for example ghcr.io/loject/cheenhub/backend:v1.0.0" >&2
-            exit 1
-          fi
+          resolve_image_ref() {
+            local input_ref="$1"
+            local default_ref="$2"
+            local input_name="$3"
+            local image_ref
 
-          if [[ "${web_image_ref}" != *":"* ]]; then
-            echo "web_image_ref must include a tag, for example ghcr.io/loject/cheenhub/web:v1.0.0" >&2
-            exit 1
-          fi
+            image_ref="${input_ref:-${default_ref}}"
+            if [[ "${image_ref##*/}" != *":"* ]]; then
+              echo "${input_name} must include a tag, for example ${default_ref}" >&2
+              exit 1
+            fi
+
+            printf '%s\n' "${image_ref}"
+          }
+
+          backend_image_ref="$(resolve_image_ref "${INPUT_BACKEND_IMAGE_REF}" "${default_backend_image_ref}" "backend_image_ref")"
+          web_image_ref="$(resolve_image_ref "${INPUT_WEB_IMAGE_REF}" "${default_web_image_ref}" "web_image_ref")"
+
+          echo "Resolved backend image: ${backend_image_ref}"
+          echo "Resolved web image: ${web_image_ref}"
 
           echo "backend=${backend_image_ref}" >> "$GITHUB_OUTPUT"
           echo "web=${web_image_ref}" >> "$GITHUB_OUTPUT"
