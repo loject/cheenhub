@@ -8,6 +8,8 @@ mod implementation {
     use cpal::traits::{DeviceTrait, HostTrait};
     use dioxus::prelude::{debug, warn};
 
+    use crate::features::microphone::native::device_key::input_device_id;
+
     /// Одно устройство ввода аудио.
     #[derive(Debug, Clone, PartialEq)]
     pub(crate) struct AudioInputDevice {
@@ -51,7 +53,7 @@ mod implementation {
             .default_input_device()
             .and_then(|device| device.name().ok());
         let mut audio_inputs = Vec::new();
-        for device in devices {
+        for (ordinal, device) in devices.enumerate() {
             let label = match device.name() {
                 Ok(name) => name,
                 Err(error) => {
@@ -63,7 +65,7 @@ mod implementation {
                 }
             };
             audio_inputs.push(AudioInputDevice {
-                device_id: label.clone(),
+                device_id: input_device_id(ordinal, &label),
                 label,
             });
         }

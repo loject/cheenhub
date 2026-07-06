@@ -20,6 +20,8 @@ use super::super::backend::{
 use encoding::{frame_samples, spawn_encoder_worker, spawn_event_relay};
 use samples::capture_callback;
 
+use super::device_key::parse_input_device_id;
+
 const INPUT_BACKLOG_WARN_CHUNKS: usize = 24;
 
 /// Native backend микрофона на базе `cpal` и libopus.
@@ -153,12 +155,51 @@ fn input_device(
             .ok_or_else(|| MicrophoneError::new("Системный микрофон по умолчанию не найден."));
     };
 
-    let mut devices = host.input_devices().map_err(cpal_error)?;
-    let device =
-        devices.find(|device| device.name().map(|name| name == device_id).unwrap_or(false));
+    if let Some((ordinal, label)) = parse_input_device_id(device_id) {
+        if let Some(device) = find_input_device(host, |device_ordinal, name| {
+            device_ordinal == ordinal && name == label
+        })? {
+            return Ok(device);
+        }
+
+        warn!(
+            selected_device_ordinal = ordinal,
+            selected_device = label,
+            "keyed native microphone input device is unavailable; falling back to label lookup"
+        );
+        if let Some(device) = find_input_device(host, |_, name| name == label)? {
+            return Ok(device);
+        }
+    }
+
+    let device = find_input_device(host, |_, name| name == device_id)?;
     device.ok_or_else(|| {
         MicrophoneError::new("Выбранный native-микрофон недоступен. Проверьте устройство ввода.")
     })
+}
+
+fn find_input_device(
+    host: &cpal::Host,
+    mut matches: impl FnMut(usize, &str) -> bool,
+) -> Result<Option<cpal::Device>, MicrophoneError> {
+    let devices = host.input_devices().map_err(cpal_error)?;
+    for (ordinal, device) in devices.enumerate() {
+        let name = match device.name() {
+            Ok(name) => name,
+            Err(error) => {
+                debug!(
+                    error = %error,
+                    "skipped native microphone input device without readable name"
+                );
+                continue;
+            }
+        };
+        if matches(ordinal, &name) {
+            return Ok(Some(device));
+        }
+    }
+
+    Ok(None)
 }
 
 fn select_input_config(
