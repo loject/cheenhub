@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 use super::handle::{
     ApplicationUpdateHandle, UpdateDeferralDelay, UpdateUiStatus, now_epoch_seconds,
 };
+use super::notifications::application_update_notifications_enabled;
 use super::shutdown::{ApplicationUpdateShutdown, use_application_update_shutdown};
 use super::types::{AvailableUpdate, UpdateDownloadStatus};
 use crate::features::runtime::sleep_duration;
@@ -32,6 +33,11 @@ pub(super) fn ApplicationUpdateEffects(children: Element) -> Element {
         }
 
         auto_check_started.set(true);
+        if !application_update_notifications_enabled() {
+            debug!("automatic application update check is disabled on this platform");
+            return;
+        }
+
         handle.check_now();
     });
 
@@ -60,6 +66,13 @@ pub(super) fn ApplicationUpdateEffects(children: Element) -> Element {
     });
 
     use_effect(move || {
+        if !application_update_notifications_enabled() {
+            if shown_notification_version().is_some() {
+                shown_notification_version.set(None);
+            }
+            return;
+        }
+
         let Some(update) = handle.should_show_notification() else {
             if shown_notification_version().is_some() {
                 shown_notification_version.set(None);

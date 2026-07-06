@@ -4,6 +4,7 @@ mod api;
 mod download;
 mod effects;
 mod handle;
+mod notifications;
 mod provider;
 mod shutdown;
 mod storage;
