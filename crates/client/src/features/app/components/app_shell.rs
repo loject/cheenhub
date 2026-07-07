@@ -96,6 +96,7 @@ pub(crate) fn AppShell() -> Element {
                 is_loading: is_loading_servers(),
                 status: server_status(),
                 on_select_server: move |server_id: String| {
+                    info!(%server_id, "switching app shell to server workspace");
                     let next_shell_state =
                         saved_server_shell_state(&shell_state_by_server(), &server_id)
                             .unwrap_or_else(default_server_shell_state);
@@ -103,20 +104,25 @@ pub(crate) fn AppShell() -> Element {
                     active_server_id.set(Some(server_id));
                     shell_state.set(next_shell_state);
                 },
-                on_open_social: move |_| active_area.set(ActiveAppArea::Social),
+                on_open_social: move |_| {
+                    info!("switching app shell to social workspace");
+                    active_area.set(ActiveAppArea::Social);
+                },
                 on_add_server: move |_| is_add_server_open.set(true),
             }
             if active_area() == ActiveAppArea::Social {
                 SocialPage {}
-            } else if show_empty_servers {
+            }
+            if active_area() == ActiveAppArea::Server && show_empty_servers {
                 EmptyServersPanel {
                     on_create_server: move |_| is_add_server_open.set(true),
                 }
-            } else {
+            } else if !show_empty_servers {
                 for server in servers() {
                     ServerInstance {
                         key: "{server.id}",
-                        active: active_server_id().as_deref() == Some(server.id.as_str()),
+                        active: active_area() == ActiveAppArea::Server
+                            && active_server_id().as_deref() == Some(server.id.as_str()),
                         server,
                         on_state_change: move |(server_id, next_state): (String, ServerShellState)| {
                             let mut next_states = shell_state_by_server();
