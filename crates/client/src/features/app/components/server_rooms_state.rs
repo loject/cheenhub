@@ -1,6 +1,7 @@
 //! Server room workspace state helpers.
 
 use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomSummary};
+use dioxus::prelude::{Signal, WritableExt};
 
 use super::app_shell::ActiveRoom;
 
@@ -19,11 +20,43 @@ pub(super) enum ServerWorkspace {
 pub(super) fn ensure_workspace_mounted(
     workspaces: &mut Vec<ServerWorkspace>,
     workspace: ServerWorkspace,
-) {
-    // TODO: Vec::contains is linear, which is fine for UI workspaces. Use IndexSet if
-    // this grows into many tabs or frequently mounted workspace kinds.
+) -> bool {
+    // TODO: Vec::contains линейный, но для UI-workspace это приемлемо.
+    // Если список вырастет, заменить на IndexSet.
     if !workspaces.contains(&workspace) {
         workspaces.push(workspace);
+        return true;
+    }
+
+    false
+}
+
+pub(super) fn clear_workspace_selection_if_needed(
+    mut active_workspace: Signal<Option<ServerWorkspace>>,
+    mut reported_room_id: Signal<Option<String>>,
+) {
+    if active_workspace().is_some() || reported_room_id().is_some() {
+        active_workspace.set(None);
+        reported_room_id.set(None);
+    }
+}
+
+pub(super) fn mount_workspace_if_missing(
+    mut mounted_workspaces: Signal<Vec<ServerWorkspace>>,
+    workspace: ServerWorkspace,
+) {
+    let mut next_workspaces = mounted_workspaces();
+    if ensure_workspace_mounted(&mut next_workspaces, workspace) {
+        mounted_workspaces.set(next_workspaces);
+    }
+}
+
+pub(super) fn set_active_workspace_if_needed(
+    mut active_workspace: Signal<Option<ServerWorkspace>>,
+    workspace: ServerWorkspace,
+) {
+    if active_workspace() != Some(workspace.clone()) {
+        active_workspace.set(Some(workspace));
     }
 }
 
