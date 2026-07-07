@@ -26,6 +26,7 @@ pub(crate) fn AppPage() -> Element {
     let mut profile_error = use_signal(|| None::<String>);
     let mut load_attempt = use_signal(|| 0_u32);
     let mut started_attempt = use_signal(|| None::<u32>);
+    let mut saved_workspace_route = use_signal(|| None::<(String, String)>);
     let current_user_context = CurrentUserContext::new(user);
     use_context_provider(move || current_user_context);
 
@@ -92,7 +93,19 @@ pub(crate) fn AppPage() -> Element {
                 navigator.replace(next_route);
             }
             _ if AppWorkspaceRoute::from_route(&route).is_some() => {
+                let route_text = route.to_string();
+                let saved_route_key = (current_user.id.clone(), route_text.clone());
+                if saved_workspace_route() == Some(saved_route_key.clone()) {
+                    return;
+                }
+
+                debug!(
+                    user_id = %current_user.id,
+                    route = %route_text,
+                    "saving authenticated app workspace route"
+                );
                 workspace_route_storage::save(&current_user.id, &route);
+                saved_workspace_route.set(Some(saved_route_key));
             }
             _ => {}
         }

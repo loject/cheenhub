@@ -58,6 +58,7 @@ pub(crate) fn AppShell() -> Element {
         && !is_loading_servers()
         && servers().is_empty()
         && server_status().is_empty();
+    let social_workspace_active = workspace.is_social();
 
     let route_active_server_id_for_sync = route_active_server_id.clone();
     use_effect(move || {
@@ -119,7 +120,7 @@ pub(crate) fn AppShell() -> Element {
             ServerRail {
                 servers: servers(),
                 active_server_id: active_server_id(),
-                social_active: workspace.is_social(),
+                social_active: social_workspace_active,
                 is_loading: is_loading_servers(),
                 status: server_status(),
                 on_select_server: move |server_id: String| {
@@ -136,20 +137,20 @@ pub(crate) fn AppShell() -> Element {
                 },
                 on_add_server: move |_| is_add_server_open.set(true),
             }
-            if workspace.is_social() {
+            if social_workspace_active {
                 SocialPage {
                     selected_conversation_id,
                 }
             }
-            if !workspace.is_social() && show_empty_servers {
+            if !social_workspace_active && show_empty_servers {
                 EmptyServersPanel {
                     on_create_server: move |_| is_add_server_open.set(true),
                 }
-            } else if !show_empty_servers {
+            } else if !social_workspace_active && !show_empty_servers {
                 for server in servers() {
                     ServerInstance {
                         key: "{server.id}",
-                        active: !workspace.is_social()
+                        active: !social_workspace_active
                             && active_server_id().as_deref() == Some(server.id.as_str()),
                         requested_room_id: if active_server_id().as_deref() == Some(server.id.as_str()) {
                             workspace.room_id().map(ToOwned::to_owned)
