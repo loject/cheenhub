@@ -8,8 +8,8 @@ mod routes;
 mod update_mode;
 
 use routes::{
-    AppHome, ForgotPassword, Invite, Landing, Login, NotFound, OAuthCallback, Register,
-    ResetPassword,
+    AppDirectMessage, AppFriends, AppHome, AppServer, AppServerRoom, ForgotPassword, Invite,
+    Landing, Login, NotFound, OAuthCallback, Register, ResetPassword,
 };
 
 use crate::features::application_update::ApplicationUpdateProvider;
@@ -48,8 +48,20 @@ enum Route {
         handoff_code: Option<String>,
         error: Option<String>,
     },
-    #[route("/app")]
+    #[nest("/app")]
+    #[layout(crate::features::app::AppPage)]
+    #[route("/")]
     AppHome {},
+    #[route("/friends")]
+    AppFriends {},
+    #[route("/friends/dm/:conversation_id")]
+    AppDirectMessage { conversation_id: String },
+    #[route("/servers/:server_id")]
+    AppServer { server_id: String },
+    #[route("/servers/:server_id/rooms/:room_id")]
+    AppServerRoom { server_id: String, room_id: String },
+    #[end_layout]
+    #[end_nest]
     #[route("/invite/:code")]
     Invite { code: String },
     #[route("/:..route")]

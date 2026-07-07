@@ -2,11 +2,8 @@
 
 use dioxus::prelude::*;
 
-use crate::features::app::AppPage;
-
+/// Рендерит пустой корневой app-маршрут, который layout заменит на workspace.
 #[component]
 pub(crate) fn AppHome() -> Element {
-    rsx! {
-        AppPage {}
-    }
+    rsx! {}
 }

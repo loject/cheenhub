@@ -9,6 +9,7 @@ use cheenhub_contracts::{
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
+use crate::Route;
 use crate::features::app::components::app_sidebar_footer::AppSidebarFooter;
 use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::current_user::CurrentUserContext;
@@ -31,8 +32,9 @@ use super::requests_section::FriendRequestsSection;
 
 /// Рендерит рабочую область друзей и личных сообщений.
 #[component]
-pub(crate) fn SocialPage() -> Element {
+pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
+    let navigator = use_navigator();
     let realtime = use_context::<RealtimeHandle>();
     let voice = use_context::<VoiceConnectionHandle>();
     let friends = use_signal(Vec::<FriendSummary>::new);
@@ -40,7 +42,7 @@ pub(crate) fn SocialPage() -> Element {
     let outgoing = use_signal(Vec::<FriendRequestSummary>::new);
     let mut conversations = use_signal(Vec::<DmConversationSummary>::new);
     let mut selected_conversation = use_signal(|| None::<DmConversationSummary>);
-    let messages = use_signal(Vec::<DmMessageSummary>::new);
+    let mut messages = use_signal(Vec::<DmMessageSummary>::new);
     let appearing_message_ids = use_signal(Vec::<String>::new);
     let removing_message_ids = use_signal(Vec::<String>::new);
     let mut draft = use_signal(String::new);
@@ -55,6 +57,7 @@ pub(crate) fn SocialPage() -> Element {
     let is_near_bottom = use_signal(|| true);
     let list_element = use_signal(|| None::<Rc<MountedData>>);
     let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
+    let mut loaded_route_conversation_id = use_signal(|| None::<String>);
 
     let reload = use_callback(move |_| {
         load_social_overview(
@@ -84,8 +87,9 @@ pub(crate) fn SocialPage() -> Element {
                 Ok(conversation) => {
                     let conversation_id = conversation.id.clone();
                     selected_conversation.set(Some(conversation));
+                    loaded_route_conversation_id.set(Some(conversation_id.clone()));
                     load_messages(
-                        conversation_id,
+                        conversation_id.clone(),
                         messages,
                         conversations,
                         friends,
@@ -93,6 +97,7 @@ pub(crate) fn SocialPage() -> Element {
                         is_loading_messages,
                         pending_scroll,
                     );
+                    navigator.push(Route::AppDirectMessage { conversation_id });
                     if let Ok(next_conversations) = api::list_dm_conversations().await {
                         conversations.set(next_conversations);
                     }
@@ -100,6 +105,59 @@ pub(crate) fn SocialPage() -> Element {
                 Err(error) => status.set(error),
             }
         });
+    });
+
+    let routed_conversation_id = selected_conversation_id.clone();
+    use_effect(move || {
+        let Some(conversation_id) = routed_conversation_id.clone() else {
+            if selected_conversation().is_some() {
+                debug!("clearing selected direct message after opening friends route");
+                selected_conversation.set(None);
+                loaded_route_conversation_id.set(None);
+                messages.set(Vec::new());
+                draft.set(String::new());
+            }
+            return;
+        };
+
+        let selected_matches_route = selected_conversation()
+            .as_ref()
+            .is_some_and(|conversation| conversation.id == conversation_id);
+        if selected_matches_route
+            && loaded_route_conversation_id().as_deref() == Some(conversation_id.as_str())
+        {
+            return;
+        }
+
+        let Some(conversation) = conversations()
+            .into_iter()
+            .find(|conversation| conversation.id == conversation_id)
+        else {
+            if loaded() && !is_loading() {
+                warn!(
+                    %conversation_id,
+                    "saved direct message route is unavailable; opening friends"
+                );
+                navigator.replace(Route::AppFriends {});
+            }
+            return;
+        };
+
+        debug!(
+            %conversation_id,
+            "selecting direct message from route"
+        );
+        selected_conversation.set(Some(conversation));
+        loaded_route_conversation_id.set(Some(conversation_id.clone()));
+        load_messages(
+            conversation_id,
+            messages,
+            conversations,
+            friends,
+            status,
+            is_loading_messages,
+            pending_scroll,
+        );
     });
 
     let delete_friend = use_callback(move |friend_user_id: String| {

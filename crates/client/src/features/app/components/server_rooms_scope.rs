@@ -3,6 +3,7 @@
 use cheenhub_contracts::rest::{ServerRoomSummary, ServerSummary};
 use dioxus::prelude::*;
 
+use crate::Route;
 use crate::features::app::api;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::server_settings::ServerSettingsScope;
@@ -19,27 +20,23 @@ use super::room_list_item::RoomListItem;
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
 use super::server_rooms_sidebar_styles as sidebar_styles;
 use super::server_rooms_state::{
-    ServerWorkspace, active_room, chat_open_for_room, ensure_workspace_mounted, room_by_id,
-    upsert_room,
+    RoomModal, ServerWorkspace, active_room, chat_open_for_room, ensure_workspace_mounted,
+    resolve_active_room_id, room_by_id, upsert_room,
 };
-
-#[derive(Clone, PartialEq)]
-enum RoomModal {
-    Create,
-    Edit(ServerRoomSummary),
-}
 
 /// Owns room state for one server and renders the room sidebar and active room.
 #[component]
 pub(crate) fn ServerRoomsScope(
     server: ServerSummary,
     active: bool,
+    requested_room_id: Option<String>,
     on_state_change: EventHandler<(String, ServerShellState)>,
     on_open_modal: EventHandler<AppModal>,
     on_left_server: EventHandler<String>,
     on_server_updated: EventHandler<ServerSummary>,
 ) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
+    let navigator = use_navigator();
     let voice = use_context::<VoiceConnectionHandle>();
     use_avatar_seed(current_user.id.clone());
     let mut rooms = use_signal(|| None::<Vec<ServerRoomSummary>>);
@@ -51,6 +48,7 @@ pub(crate) fn ServerRoomsScope(
     let mut mounted_workspaces = use_signal(Vec::<ServerWorkspace>::new);
     let mut mobile_workspace_open = use_signal(|| false);
     let mut voice_sidebar_loaded = use_signal(|| false);
+    let mut reported_room_id = use_signal(|| None::<String>);
     let chat_open_by_room = use_signal(Vec::<(String, bool)>::new);
     let server_id = server.id.clone();
     let load_server_id = server.id.clone();
@@ -88,6 +86,7 @@ pub(crate) fn ServerRoomsScope(
     let room_section_title_class =
         sidebar_styles::room_section_title_class(settings_workspace_active);
     let voice_loader = voice.clone();
+    let voice_load_server_id = server_id.clone();
 
     use_effect(move || {
         if rooms().is_some() {
@@ -98,24 +97,55 @@ pub(crate) fn ServerRoomsScope(
             return;
         };
 
-        let next_active_room_id = next_rooms.first().map(|room| room.id.clone());
-        active_room_id.set(next_active_room_id.clone());
-        rooms.set(Some(next_rooms.clone()));
+        rooms.set(Some(next_rooms));
         if !voice_sidebar_loaded() {
             voice_sidebar_loaded.set(true);
-            voice_loader.load_server_voice_rooms(server_id.clone());
+            voice_loader.load_server_voice_rooms(voice_load_server_id.clone());
+        }
+    });
+
+    let requested_room_id_for_sync = requested_room_id.clone();
+    use_effect(move || {
+        let Some(current_rooms) = rooms() else {
+            return;
+        };
+
+        let next_active_room_id = resolve_active_room_id(
+            &current_rooms,
+            requested_room_id_for_sync.as_deref(),
+            active_room_id().as_deref(),
+        );
+        if active_room_id() != next_active_room_id {
+            active_room_id.set(next_active_room_id.clone());
         }
 
-        if let Some(room_id) = next_active_room_id.clone() {
-            let workspace = ServerWorkspace::Room(room_id);
-            let mut next_mounted_workspaces = mounted_workspaces();
-            ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
-            mounted_workspaces.set(next_mounted_workspaces);
-            active_workspace.set(Some(workspace));
+        let Some(room_id) = next_active_room_id else {
+            active_workspace.set(None);
+            reported_room_id.set(None);
+            return;
+        };
+
+        let workspace = ServerWorkspace::Room(room_id.clone());
+        let mut next_mounted_workspaces = mounted_workspaces();
+        ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
+        mounted_workspaces.set(next_mounted_workspaces);
+        active_workspace.set(Some(workspace));
+
+        if active && requested_room_id_for_sync.as_deref() != Some(room_id.as_str()) {
+            info!(
+                server_id = %server_id,
+                room_id = %room_id,
+                "replacing server workspace route with resolved room"
+            );
+            navigator.replace(Route::AppServerRoom {
+                server_id: server_id.clone(),
+                room_id: room_id.clone(),
+            });
         }
 
-        if let Some(room_id) = next_active_room_id
-            && let Some(room) = active_room(&next_rooms, Some(room_id.as_str()))
+        if active
+            && reported_room_id().as_deref() != Some(room_id.as_str())
+            && let Some(room) = active_room(&current_rooms, Some(room_id.as_str()))
         {
             on_state_change.call((
                 server_id.clone(),
@@ -124,6 +154,7 @@ pub(crate) fn ServerRoomsScope(
                     room_kind: room_kind_attr(room.kind),
                 },
             ));
+            reported_room_id.set(Some(room_id));
         }
     });
 
@@ -273,6 +304,10 @@ pub(crate) fn ServerRoomsScope(
                                                     room_kind: room_kind_attr(room.kind),
                                                 },
                                             ));
+                                            navigator.push(Route::AppServerRoom {
+                                                server_id: select_server_id.clone(),
+                                                room_id: room.id.clone(),
+                                            });
                                         }
                                     }
                                 },
@@ -319,6 +354,14 @@ pub(crate) fn ServerRoomsScope(
                                                                 room_kind: room_kind_attr(next_room.kind),
                                                             },
                                                         ));
+                                                        navigator.replace(Route::AppServerRoom {
+                                                            server_id: state_server_id.clone(),
+                                                            room_id: next_room.id.clone(),
+                                                        });
+                                                    } else {
+                                                        navigator.replace(Route::AppServer {
+                                                            server_id: state_server_id.clone(),
+                                                        });
                                                     }
                                                 }
                                                 Err(error) => {
@@ -446,6 +489,10 @@ pub(crate) fn ServerRoomsScope(
                             room_kind: room_kind_attr(saved_room.kind),
                         },
                     ));
+                    navigator.push(Route::AppServerRoom {
+                        server_id: save_server_id.clone(),
+                        room_id: saved_room.id.clone(),
+                    });
                 },
             }
         }

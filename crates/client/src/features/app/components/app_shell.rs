@@ -3,7 +3,9 @@
 use cheenhub_contracts::rest::{ServerRoomKind, ServerSummary};
 use dioxus::prelude::*;
 
+use crate::Route;
 use crate::features::app::api;
+use crate::features::app::workspace_route::AppWorkspaceRoute;
 use crate::features::social::SocialPage;
 
 use super::add_server_modal::AddServerModal;
@@ -34,17 +36,16 @@ pub(crate) enum AppModal {
     },
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ActiveAppArea {
-    Social,
-    Server,
-}
-
 /// Renders the static room UI shell.
 #[component]
 pub(crate) fn AppShell() -> Element {
+    let navigator = use_navigator();
+    let route = use_route::<Route>();
+    let workspace = AppWorkspaceRoute::from_route(&route).unwrap_or(AppWorkspaceRoute::Friends);
+    let route_active_server_id = workspace.server_id().map(ToOwned::to_owned);
+    let selected_conversation_id = workspace.conversation_id().map(ToOwned::to_owned);
     let mut servers = use_signal(Vec::<ServerSummary>::new);
-    let mut active_server_id = use_signal(|| None::<String>);
+    let mut active_server_id = use_signal(|| route_active_server_id.clone());
     let mut loaded_servers = use_signal(|| false);
     let mut is_loading_servers = use_signal(|| false);
     let mut server_status = use_signal(String::new);
@@ -53,11 +54,17 @@ pub(crate) fn AppShell() -> Element {
     let mut shell_state = use_signal(default_server_shell_state);
     let mut shell_state_by_server = use_signal(Vec::<(String, ServerShellState)>::new);
     let mut app_modal = use_signal(|| None::<AppModal>);
-    let mut active_area = use_signal(|| ActiveAppArea::Server);
     let show_empty_servers = loaded_servers()
         && !is_loading_servers()
         && servers().is_empty()
         && server_status().is_empty();
+
+    let route_active_server_id_for_sync = route_active_server_id.clone();
+    use_effect(move || {
+        if active_server_id() != route_active_server_id_for_sync {
+            active_server_id.set(route_active_server_id_for_sync.clone());
+        }
+    });
 
     use_effect(move || {
         if loaded_servers() {
@@ -69,9 +76,6 @@ pub(crate) fn AppShell() -> Element {
         spawn(async move {
             match api::list_servers().await {
                 Ok(next_servers) => {
-                    if active_server_id().is_none() {
-                        active_server_id.set(next_servers.first().map(|server| server.id.clone()));
-                    }
                     servers.set(next_servers);
                     server_status.set(String::new());
                 }
@@ -83,6 +87,29 @@ pub(crate) fn AppShell() -> Element {
         });
     });
 
+    use_effect(move || {
+        if !loaded_servers() || is_loading_servers() {
+            return;
+        }
+
+        let Some(server_id) = active_server_id() else {
+            return;
+        };
+
+        if servers()
+            .iter()
+            .any(|server| server.id.as_str() == server_id.as_str())
+        {
+            return;
+        }
+
+        warn!(
+            %server_id,
+            "saved app workspace references unavailable server; opening friends"
+        );
+        navigator.replace(Route::AppFriends {});
+    });
+
     rsx! {
         main {
             id: "app-shell",
@@ -92,7 +119,7 @@ pub(crate) fn AppShell() -> Element {
             ServerRail {
                 servers: servers(),
                 active_server_id: active_server_id(),
-                social_active: active_area() == ActiveAppArea::Social,
+                social_active: workspace.is_social(),
                 is_loading: is_loading_servers(),
                 status: server_status(),
                 on_select_server: move |server_id: String| {
@@ -100,20 +127,21 @@ pub(crate) fn AppShell() -> Element {
                     let next_shell_state =
                         saved_server_shell_state(&shell_state_by_server(), &server_id)
                             .unwrap_or_else(default_server_shell_state);
-                    active_area.set(ActiveAppArea::Server);
-                    active_server_id.set(Some(server_id));
                     shell_state.set(next_shell_state);
+                    navigator.push(Route::AppServer { server_id });
                 },
                 on_open_social: move |_| {
                     info!("switching app shell to social workspace");
-                    active_area.set(ActiveAppArea::Social);
+                    navigator.push(Route::AppFriends {});
                 },
                 on_add_server: move |_| is_add_server_open.set(true),
             }
-            if active_area() == ActiveAppArea::Social {
-                SocialPage {}
+            if workspace.is_social() {
+                SocialPage {
+                    selected_conversation_id,
+                }
             }
-            if active_area() == ActiveAppArea::Server && show_empty_servers {
+            if !workspace.is_social() && show_empty_servers {
                 EmptyServersPanel {
                     on_create_server: move |_| is_add_server_open.set(true),
                 }
@@ -121,8 +149,13 @@ pub(crate) fn AppShell() -> Element {
                 for server in servers() {
                     ServerInstance {
                         key: "{server.id}",
-                        active: active_area() == ActiveAppArea::Server
+                        active: !workspace.is_social()
                             && active_server_id().as_deref() == Some(server.id.as_str()),
+                        requested_room_id: if active_server_id().as_deref() == Some(server.id.as_str()) {
+                            workspace.room_id().map(ToOwned::to_owned)
+                        } else {
+                            None
+                        },
                         server,
                         on_state_change: move |(server_id, next_state): (String, ServerShellState)| {
                             let mut next_states = shell_state_by_server();
@@ -142,12 +175,10 @@ pub(crate) fn AppShell() -> Element {
                             next_states.retain(|(server_id, _)| server_id != &left_server_id);
                             shell_state_by_server.set(next_states.clone());
 
-                            let next_active_server_id =
-                                if active_server_id().as_deref() == Some(left_server_id.as_str()) {
-                                    next_servers.first().map(|server| server.id.clone())
-                                } else {
-                                    active_server_id()
-                                };
+                            let next_active_server_id = active_server_id()
+                                .as_ref()
+                                .filter(|server_id| server_id.as_str() != left_server_id.as_str())
+                                .cloned();
                             let next_shell_state = next_active_server_id
                                 .as_deref()
                                 .and_then(|server_id| {
@@ -156,9 +187,11 @@ pub(crate) fn AppShell() -> Element {
                                 .unwrap_or_else(default_server_shell_state);
 
                             servers.set(next_servers);
-                            active_server_id.set(next_active_server_id);
                             shell_state.set(next_shell_state);
                             server_status.set(String::new());
+                            if active_server_id().as_deref() == Some(left_server_id.as_str()) {
+                                navigator.replace(Route::AppFriends {});
+                            }
                         },
                         on_server_updated: move |server: ServerSummary| {
                             let mut next_servers = servers();
@@ -178,12 +211,13 @@ pub(crate) fn AppShell() -> Element {
                     },
                     on_joined_server: move |server: ServerSummary| {
                         shell_state.set(default_server_shell_state());
-                        active_server_id.set(Some(server.id.clone()));
+                        let server_id = server.id.clone();
                         let mut next_servers = servers();
                         upsert_server_summary(&mut next_servers, server);
                         servers.set(next_servers);
                         server_status.set(String::new());
                         is_add_server_open.set(false);
+                        navigator.push(Route::AppServer { server_id });
                     },
                 }
             }
@@ -192,11 +226,12 @@ pub(crate) fn AppShell() -> Element {
                     on_close: move |_| is_create_server_open.set(false),
                     on_created: move |server: ServerSummary| {
                         shell_state.set(default_server_shell_state());
-                        active_server_id.set(Some(server.id.clone()));
+                        let server_id = server.id.clone();
                         let mut next_servers = servers();
                         next_servers.push(server);
                         servers.set(next_servers);
                         server_status.set(String::new());
+                        navigator.push(Route::AppServer { server_id });
                     },
                 }
             }

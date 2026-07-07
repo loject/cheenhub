@@ -4,6 +4,12 @@ use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomSummary};
 
 use super::app_shell::ActiveRoom;
 
+#[derive(Clone, PartialEq)]
+pub(super) enum RoomModal {
+    Create,
+    Edit(ServerRoomSummary),
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub(super) enum ServerWorkspace {
     Room(String),
@@ -34,6 +40,18 @@ pub(super) fn active_room(
         kind: room.kind,
         name: room.name.clone(),
     })
+}
+
+pub(super) fn resolve_active_room_id(
+    rooms: &[ServerRoomSummary],
+    requested_room_id: Option<&str>,
+    current_room_id: Option<&str>,
+) -> Option<String> {
+    requested_room_id
+        .filter(|room_id| rooms.iter().any(|room| room.id == *room_id))
+        .or_else(|| current_room_id.filter(|room_id| rooms.iter().any(|room| room.id == *room_id)))
+        .or_else(|| rooms.first().map(|room| room.id.as_str()))
+        .map(ToOwned::to_owned)
 }
 
 pub(super) fn room_by_id(rooms: &[ServerRoomSummary], room_id: &str) -> Option<ActiveRoom> {

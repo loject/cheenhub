@@ -5,6 +5,8 @@ use dioxus::prelude::*;
 use crate::Route;
 use crate::features::app::components::app_shell::AppShell;
 use crate::features::app::current_user::CurrentUserContext;
+use crate::features::app::workspace_route::AppWorkspaceRoute;
+use crate::features::app::workspace_route_storage;
 use crate::features::audio_playback::AudioPlaybackProvider;
 use crate::features::auth::{TokenRefresher, api};
 use crate::features::camera::CameraProvider;
@@ -18,6 +20,7 @@ use crate::features::voice_chat::VoiceConnectionProvider;
 #[component]
 pub(crate) fn AppPage() -> Element {
     let navigator = use_navigator();
+    let route = use_route::<Route>();
     let user = use_signal(|| None);
     let mut loading_profile = use_signal(|| false);
     let mut profile_error = use_signal(|| None::<String>);
@@ -73,6 +76,28 @@ pub(crate) fn AppPage() -> Element {
         });
     });
 
+    use_effect(move || {
+        let Some(current_user) = user() else {
+            return;
+        };
+
+        match route.clone() {
+            Route::AppHome {} => {
+                let saved_route = workspace_route_storage::load(&current_user.id);
+                let next_route = saved_route.unwrap_or(Route::AppFriends {});
+                info!(
+                    route = %next_route,
+                    "restoring authenticated app workspace route"
+                );
+                navigator.replace(next_route);
+            }
+            _ if AppWorkspaceRoute::from_route(&route).is_some() => {
+                workspace_route_storage::save(&current_user.id, &route);
+            }
+            _ => {}
+        }
+    });
+
     if user().is_none() {
         if profile_error().is_some() {
             let retrying = loading_profile();
@@ -118,6 +143,7 @@ pub(crate) fn AppPage() -> Element {
                         ScreenShareProvider {
                             VoiceConnectionProvider {
                                 AppShell {}
+                                Outlet::<Route> {}
                             }
                         }
                     }
