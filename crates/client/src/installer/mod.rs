@@ -11,10 +11,7 @@ mod payload {
     include!(concat!(env!("OUT_DIR"), "/installer_payload.rs"));
 }
 
-static TAILWIND_CSS: Asset = asset!(
-    "/assets/tailwind.css",
-    AssetOptions::css().with_static_head(true)
-);
+const INSTALLER_CSS: &str = include_str!("../../assets/tailwind.css");
 static CONFIG: OnceLock<InstallerConfig> = OnceLock::new();
 
 #[derive(Clone, Debug)]
@@ -111,7 +108,7 @@ fn InstallerApp() -> Element {
     let is_complete = state_value.stage == InstallerStage::Complete;
 
     rsx! {
-        document::Stylesheet { href: TAILWIND_CSS }
+        document::Style { "{INSTALLER_CSS}" }
         main { class: "grid h-screen place-items-center overflow-hidden bg-zinc-950 px-6 py-8 text-zinc-100 selection:bg-zinc-700/40",
             div { class: "grid-bg absolute inset-0" }
             section { class: "relative w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950/90 p-6 shadow-[0_30px_110px_rgba(0,0,0,.65)]",
