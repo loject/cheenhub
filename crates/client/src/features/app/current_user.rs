@@ -25,4 +25,10 @@ impl CurrentUserContext {
         let mut current = self.user;
         current.set(Some(user));
     }
+
+    /// Очищает текущего пользователя после завершения локальной сессии.
+    pub(crate) fn clear_user(&self) {
+        let mut current = self.user;
+        current.set(None);
+    }
 }
