@@ -156,8 +156,8 @@ pub(crate) fn SocialPage() -> Element {
         spawn(async move {
             match api::send_dm_message(&conversation.id, body).await {
                 Ok(message) => {
-                    push_message_with_motion(messages, appearing_message_ids, message);
-                    if is_near_bottom() {
+                    if push_message_with_motion(messages, appearing_message_ids, message) {
+                        debug!("scrolling direct messages after current user message send");
                         pending_scroll.set(Some(ScrollCommand::Bottom));
                     }
                     draft.set(String::new());

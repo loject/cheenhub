@@ -194,12 +194,6 @@ pub(super) fn push_message_with_motion(
     true
 }
 
-pub(super) fn is_appearing_message(message_id: &str, appearing_message_ids: &[String]) -> bool {
-    appearing_message_ids
-        .iter()
-        .any(|appearing_message_id| appearing_message_id == message_id)
-}
-
 fn set_messages_with_motion(
     mut messages: Signal<Vec<DmMessageSummary>>,
     mut appearing_message_ids: Signal<Vec<String>>,

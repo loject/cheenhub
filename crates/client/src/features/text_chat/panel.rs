@@ -17,8 +17,8 @@ use super::history::{
     HistoryState, HistoryTarget, load_initial_history, load_initial_history_when_connected,
     load_older_history,
 };
-use super::message_item::ChatMessageItem;
-use super::messages::{append_message, is_appearing_message, remove_message};
+use super::message_group::ChatMessageGroup;
+use super::messages::{append_message, group_consecutive_messages, remove_message};
 use super::realtime::{self, TextChatEvent};
 use super::scroll::{ScrollCommand, apply_scroll_command, update_scroll_state};
 use super::{CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, CHAT_STATUS_CLASS};
@@ -85,7 +85,6 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         appearing_message_ids,
         status,
         is_sending,
-        is_near_bottom,
         pending_scroll,
     };
     let placeholder_prefix = if compact { "&" } else { "#" };
@@ -111,6 +110,15 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     };
     let appearing_message_ids_list = appearing_message_ids();
     let removing_message_ids_list = removing_message_ids();
+    let rendered_messages = messages();
+    let has_messages = !rendered_messages.is_empty();
+    let message_groups = group_consecutive_messages(&rendered_messages)
+        .into_iter()
+        .filter_map(|group| {
+            let group_key = group.first()?.id.clone();
+            Some((group_key, group))
+        })
+        .collect::<Vec<_>>();
 
     use_hook(move || {
         load_initial_history_when_connected(history_target, history_state);
@@ -244,9 +252,8 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
 
             match result {
                 Ok(accepted) => {
-                    if append_message(&mut messages, &mut appearing_message_ids, accepted.message)
-                        && is_near_bottom()
-                    {
+                    if append_message(&mut messages, &mut appearing_message_ids, accepted.message) {
+                        debug!("scrolling text chat after current user image send");
                         pending_scroll.set(Some(ScrollCommand::Bottom));
                     }
                 }
@@ -294,7 +301,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             }
                         }
                     }
-                    if initial_loading() && messages().is_empty() {
+                    if initial_loading() && !has_messages {
                         div { class: "space-y-3",
                             div { class: "h-14 animate-pulse rounded-2xl bg-zinc-900/80" }
                             div { class: "h-14 animate-pulse rounded-2xl bg-zinc-900/60" }
@@ -319,7 +326,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                                 "Повторить"
                             }
                         }
-                    } else if messages().is_empty() {
+                    } else if !has_messages {
                         div { class: "rounded-[20px] border border-zinc-800 bg-zinc-900/60 p-6 text-center",
                             p { class: "text-[13px] font-medium text-zinc-100", "Сообщений пока нет" }
                             p { class: "mt-1 text-[12px] leading-5 text-zinc-500",
@@ -327,16 +334,13 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             }
                         }
                     } else {
-                        for message in messages() {
-                            ChatMessageItem {
-                                key: "{message.id}",
-                                animate: is_appearing_message(
-                                    &message.id,
-                                    &appearing_message_ids_list,
-                                ),
-                                removing: removing_message_ids_list.contains(&message.id),
+                        for (group_key, group) in message_groups.iter().cloned() {
+                            ChatMessageGroup {
+                                key: "{group_key}",
+                                messages: group,
+                                appearing_message_ids: appearing_message_ids_list.clone(),
+                                removing_message_ids: removing_message_ids_list.clone(),
                                 can_delete_messages: permissions.can_delete_messages,
-                                message: message.clone(),
                                 on_delete: move |id| on_delete_message.call(id),
                             }
                         }
@@ -344,7 +348,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 }
             }
             div { class: "relative",
-                if !is_near_bottom() && !messages().is_empty() {
+                if !is_near_bottom() && has_messages {
                     div { class: "pointer-events-none absolute bottom-3 right-4 z-20",
                     button {
                         r#type: "button",

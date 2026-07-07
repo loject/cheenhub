@@ -57,3 +57,25 @@ pub(super) fn is_appearing_message(message_id: &str, appearing_message_ids: &[St
         .iter()
         .any(|appearing_message_id| appearing_message_id == message_id)
 }
+
+/// Группирует соседние сообщения одного автора без изменения порядка сообщений.
+pub(crate) fn group_consecutive_messages(
+    messages: &[TextChatMessage],
+) -> Vec<Vec<TextChatMessage>> {
+    let mut groups = Vec::<Vec<TextChatMessage>>::new();
+
+    for message in messages {
+        match groups.last_mut() {
+            Some(group)
+                if group
+                    .last()
+                    .is_some_and(|last| last.author_user_id == message.author_user_id) =>
+            {
+                group.push(message.clone());
+            }
+            _ => groups.push(vec![message.clone()]),
+        }
+    }
+
+    groups
+}

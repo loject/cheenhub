@@ -9,13 +9,13 @@ use crate::features::app::components::workspace_split::{
     EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO, clamp_embedded_chat_height, finish_embedded_chat_resize,
 };
 use crate::features::text_chat::{
-    CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, ChatMessageItem, ScrollCommand,
-    update_near_bottom_state,
+    CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, ChatMessageGroup, ScrollCommand,
+    group_consecutive_messages, update_near_bottom_state,
 };
 use crate::features::voice_chat::{VoiceConnectionHandle, VoiceConnectionState};
 
 use super::direct_message_voice_surface::DirectMessageVoiceSurface;
-use super::presentation::{dm_as_text_message, is_appearing_message};
+use super::presentation::dm_as_text_message;
 use super::voice_target::direct_message_voice_target;
 
 /// Рендерит сообщения и голосовую область выбранного личного диалога.
@@ -67,6 +67,20 @@ pub(crate) fn DirectMessageWorkspace(
     };
     let appearing_message_ids_list = appearing_message_ids();
     let removing_message_ids_list = removing_message_ids();
+    let rendered_messages = messages();
+    let has_messages = !rendered_messages.is_empty();
+    let rendered_text_messages = rendered_messages
+        .iter()
+        .cloned()
+        .map(dm_as_text_message)
+        .collect::<Vec<_>>();
+    let message_groups = group_consecutive_messages(&rendered_text_messages)
+        .into_iter()
+        .filter_map(|group| {
+            let group_key = group.first()?.id.clone();
+            Some((group_key, group))
+        })
+        .collect::<Vec<_>>();
     let conversation_id = conversation.id.clone();
 
     use_effect(move || {
@@ -197,21 +211,18 @@ pub(crate) fn DirectMessageWorkspace(
                                         div { class: "h-14 animate-pulse rounded-2xl bg-zinc-900/80" }
                                         div { class: "h-14 animate-pulse rounded-2xl bg-zinc-900/50" }
                                     }
-                                } else if messages().is_empty() {
+                                } else if !has_messages {
                                     div { class: "rounded-[20px] border border-zinc-800 bg-zinc-900/60 p-6 text-center",
                                         p { class: "text-[13px] font-medium text-zinc-100", "Сообщений пока нет" }
                                         p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Напишите первое личное сообщение." }
                                     }
                                 } else {
-                                    for message in messages() {
-                                        ChatMessageItem {
-                                            key: "{message.id}",
-                                            message: dm_as_text_message(message.clone()),
-                                            animate: is_appearing_message(
-                                                &message.id,
-                                                &appearing_message_ids_list,
-                                            ),
-                                            removing: removing_message_ids_list.contains(&message.id),
+                                    for (group_key, group) in message_groups.iter().cloned() {
+                                        ChatMessageGroup {
+                                            key: "{group_key}",
+                                            messages: group,
+                                            appearing_message_ids: appearing_message_ids_list.clone(),
+                                            removing_message_ids: removing_message_ids_list.clone(),
                                             can_delete_messages: false,
                                             on_delete: move |_| {},
                                         }
@@ -220,7 +231,7 @@ pub(crate) fn DirectMessageWorkspace(
                             }
                         }
                         div { class: "relative",
-                            if !is_near_bottom() && !messages().is_empty() {
+                            if !is_near_bottom() && has_messages {
                                 div { class: "pointer-events-none absolute bottom-3 right-4 z-20",
                                     button {
                                         r#type: "button",

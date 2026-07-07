@@ -16,7 +16,6 @@ pub(super) struct ComposeState {
     pub(super) appearing_message_ids: Signal<Vec<String>>,
     pub(super) status: Signal<String>,
     pub(super) is_sending: Signal<bool>,
-    pub(super) is_near_bottom: Signal<bool>,
     pub(super) pending_scroll: Signal<Option<ScrollCommand>>,
 }
 
@@ -41,8 +40,8 @@ pub(super) fn send_current_message(
                     &mut state.messages,
                     &mut state.appearing_message_ids,
                     accepted.message,
-                ) && (state.is_near_bottom)()
-                {
+                ) {
+                    debug!("scrolling text chat after current user message send");
                     state.pending_scroll.set(Some(ScrollCommand::Bottom));
                 }
             }

@@ -3,6 +3,7 @@
 mod compose;
 mod history;
 mod image_attachment;
+mod message_group;
 mod message_item;
 mod messages;
 mod panel;
@@ -22,6 +23,7 @@ pub(crate) const CHAT_CONTENT_CLASS: &str = "mx-auto flex w-full max-w-5xl flex-
 pub(crate) const CHAT_STATUS_CLASS: &str =
     "mx-auto w-full max-w-5xl px-4 pb-2 text-[11px] leading-4 text-red-200";
 
-pub(crate) use message_item::ChatMessageItem;
+pub(crate) use message_group::ChatMessageGroup;
+pub(crate) use messages::group_consecutive_messages;
 pub(crate) use scroll::{ScrollCommand, apply_scroll_command, update_near_bottom_state};
 pub(crate) use surface::{RoomChatSurface, RoomChatSurfaceMode};

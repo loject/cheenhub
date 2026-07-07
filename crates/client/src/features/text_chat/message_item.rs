@@ -3,7 +3,6 @@
 use cheenhub_contracts::{realtime::TextChatMessage, rest::DmMessageDeliveryStatus};
 use dioxus::prelude::*;
 
-use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
 
 use super::image_attachment::ChatImageAttachment;
@@ -17,7 +16,6 @@ pub(crate) fn ChatMessageItem(
     can_delete_messages: bool,
     on_delete: EventHandler<String>,
 ) -> Element {
-    use_avatar_seed(message.author_user_id.clone());
     let current_user = use_context::<CurrentUserContext>().require_user();
     let is_own = message.author_user_id == current_user.id;
     let can_delete = is_own || can_delete_messages;
@@ -27,6 +25,11 @@ pub(crate) fn ChatMessageItem(
         (_, true) => "chat-message-removing flex gap-3",
         (true, false) => "chat-message flex gap-3",
         (false, false) => "flex gap-3",
+    };
+    let bubble_class = if is_own {
+        "message-bubble flex items-end gap-2 whitespace-pre-wrap break-words rounded-[20px] border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-[13px] leading-5 text-blue-100 transition-[border-color,background] duration-200 hover:border-blue-400/40 hover:bg-blue-500/15"
+    } else {
+        "message-bubble flex items-end gap-2 whitespace-pre-wrap break-words rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.72)] px-3 py-2 text-[13px] leading-5 text-zinc-300 transition-[border-color,background] duration-200 hover:border-white/15 hover:bg-[rgba(39,39,42,.84)]"
     };
 
     rsx! {
@@ -41,23 +44,9 @@ pub(crate) fn ChatMessageItem(
                 let p = event.client_coordinates();
                 menu_pos.set(Some((p.x, p.y)));
             },
-            UserAvatar {
-                nickname: message.author_nickname.clone(),
-                avatar_url: message.author_avatar_url.clone(),
-                class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-800 text-[12px] font-bold text-zinc-100".to_owned(),
-                avatar_seed: Some(message.author_user_id.clone()),
-            }
             div { class: "min-w-0 flex-1",
-                div { class: "mb-1 flex items-center gap-2",
-                    span { class: "truncate text-[12px] font-semibold text-zinc-100",
-                        "{message.author_nickname}"
-                    }
-                    span { class: "shrink-0 text-[10px] text-zinc-600",
-                        "{message_time(&message.created_at)}"
-                    }
-                }
                 if !message.body.is_empty() {
-                    div { class: "message-bubble flex items-end gap-2 whitespace-pre-wrap break-words rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.72)] px-3 py-2 text-[13px] leading-5 text-zinc-300 transition-[border-color,background] duration-200 hover:border-white/15 hover:bg-[rgba(39,39,42,.84)]",
+                    div { class: bubble_class,
                         span { class: "min-w-0 flex-1", "{message.body}" }
                         if is_own {
                             if let Some(status) = message.delivery_status {
@@ -115,7 +104,7 @@ pub(crate) fn ChatMessageItem(
     }
 }
 
-fn message_time(created_at: &str) -> String {
+pub(super) fn message_time(created_at: &str) -> String {
     created_at
         .split('T')
         .nth(1)
