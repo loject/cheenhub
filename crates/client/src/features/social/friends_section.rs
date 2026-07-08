@@ -57,9 +57,18 @@ pub(super) fn FriendsSection(
                         let unread_count = friend_unread_count(&friend, &conversations);
                         (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname, unread_count)
                     }) {
-                        div {
+                        button {
                             key: "{friend.user_id}",
-                            class: "group flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-zinc-900/70",
+                            r#type: "button",
+                            class: "group flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition hover:bg-zinc-900/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400/70",
+                            "aria-label": "Открыть диалог с {friend.nickname}",
+                            onclick: move |_| {
+                                debug!(
+                                    friend_user_id = %open_friend_user_id,
+                                    "opening direct message from friend list"
+                                );
+                                on_open_friend.call(open_friend_user_id.clone());
+                            },
                             oncontextmenu: move |event| {
                                 event.prevent_default();
                                 event.stop_propagation();
@@ -81,12 +90,9 @@ pub(super) fn FriendsSection(
                                 class: "h-9 w-9 shrink-0 rounded-lg border border-zinc-800 bg-zinc-900 text-[12px] font-bold text-zinc-100".to_owned(),
                                 avatar_seed: Some(friend.user_id.clone()),
                             }
-                            button {
-                                r#type: "button",
-                                class: "min-w-0 flex-1 text-left",
-                                onclick: move |_| on_open_friend.call(open_friend_user_id.clone()),
-                                p { class: "truncate text-[13px] font-medium text-zinc-100", "{friend.nickname}" }
-                                p { class: "text-[11px] text-zinc-500", "Открыть диалог" }
+                            span { class: "min-w-0 flex-1",
+                                span { class: "block truncate text-[13px] font-medium text-zinc-100", "{friend.nickname}" }
+                                span { class: "block text-[11px] text-zinc-500", "Открыть диалог" }
                             }
                             if unread_count > 0 {
                                 span {
