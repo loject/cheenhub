@@ -1,7 +1,8 @@
 //! Desktop-реализация системного трея.
 
 use dioxus::desktop::{
-    WindowCloseBehaviour, icon_from_memory, trayicon, use_tray_menu_event_handler, use_window,
+    DesktopContext, WindowCloseBehaviour, icon_from_memory, trayicon, use_tray_menu_event_handler,
+    use_window,
 };
 use dioxus::prelude::*;
 
@@ -49,9 +50,7 @@ pub(crate) fn SystemTrayPlatformEffects(minimize_to_tray_on_close: Signal<bool>)
             info!("opened CheenHub window from system tray menu");
         }
         QUIT_MENU_ID => {
-            tray_window.set_close_behavior(WindowCloseBehaviour::WindowCloses);
-            tray_window.close();
-            info!("closing CheenHub from system tray menu");
+            quit_from_system_tray(&tray_window);
         }
         _ => {}
     });
@@ -69,4 +68,10 @@ fn build_tray_menu() -> trayicon::DioxusTrayMenu {
     menu.append_items(&[&open, &separator, &quit])
         .expect("failed to build CheenHub tray menu");
     menu
+}
+
+fn quit_from_system_tray(window: &DesktopContext) -> ! {
+    window.set_close_behavior(WindowCloseBehaviour::WindowCloses);
+    info!("exiting CheenHub from system tray menu");
+    std::process::exit(0);
 }
