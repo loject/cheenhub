@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 
 use crate::features::landing::components::logo_icon::LogoIcon;
 
+use super::native_client_download::NativeClientDownload;
 use super::server_rail_button::ServerRailButton;
 
 /// Renders the server switcher rail.
@@ -31,7 +32,7 @@ pub(crate) fn ServerRail(
     };
 
     rsx! {
-        aside { class: "server-rail flex w-[76px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/85 p-3 backdrop-blur-xl",
+        aside { class: "server-rail relative z-[90] flex w-[76px] shrink-0 flex-col overflow-visible border-r border-zinc-800/80 bg-zinc-950/85 p-3 backdrop-blur-xl",
             button {
                 r#type: "button",
                 class: logo_class,
@@ -85,6 +86,7 @@ pub(crate) fn ServerRail(
                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 5v14m-7-7h14" }
                     }
                 }
+                NativeClientDownload {}
             }
         }
     }

@@ -30,6 +30,31 @@ pub(crate) struct TechGroup {
     pub(crate) items: &'static [TechItem],
 }
 
+/// Возвращает версию приложения в формате GitHub Release tag.
+pub(crate) fn release_version_tag() -> String {
+    let app_version = app_version();
+
+    if app_version.starts_with('v') {
+        app_version.to_owned()
+    } else {
+        format!("v{app_version}")
+    }
+}
+
+/// Возвращает версию приложения из build-time окружения.
+pub(crate) fn app_version() -> &'static str {
+    env!("CHEENHUB_APP_VERSION")
+}
+
+/// Возвращает ссылку на Windows-установщик последнего релиза.
+pub(crate) fn windows_installer_url() -> String {
+    let release_version = release_version_tag();
+
+    format!(
+        "https://github.com/loject/cheenhub/releases/latest/download/cheenhub-{release_version}-windows-x64-setup.exe"
+    )
+}
+
 pub(crate) const FEATURES: &[Feature] = &[
     Feature {
         title: "Низкая задержка",

@@ -5,21 +5,12 @@ use dioxus::prelude::*;
 use crate::features::landing::components::chevron_down_icon::ChevronDownIcon;
 use crate::features::landing::components::download_icon::DownloadIcon;
 use crate::features::landing::components::download_link::DownloadLink;
+use crate::features::landing::data::{app_version, windows_installer_url};
 
 #[component]
 pub(crate) fn DownloadDropdown(opens_up: bool, large: bool) -> Element {
-    let app_version = env!("CHEENHUB_APP_VERSION");
-
-    let release_version = if app_version.starts_with('v') {
-        app_version.to_string()
-    } else {
-        format!("v{app_version}")
-    };
-
-    let windows_installer_url = format!(
-        "https://github.com/loject/cheenhub/releases/latest/download/cheenhub-{release_version}-windows-x64-setup.exe"
-    );
-
+    let app_version = app_version();
+    let windows_installer_url = windows_installer_url();
     let mut is_open = use_signal(|| false);
 
     let install_pwa = move |_| {
