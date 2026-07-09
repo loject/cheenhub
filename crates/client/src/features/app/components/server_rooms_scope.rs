@@ -4,6 +4,7 @@ use cheenhub_contracts::rest::{ServerRoomSummary, ServerSummary};
 use dioxus::prelude::*;
 
 use crate::Route;
+use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::api;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::server_settings::ServerSettingsScope;
@@ -39,6 +40,7 @@ pub(crate) fn ServerRoomsScope(
     let current_user = use_context::<CurrentUserContext>().require_user();
     let navigator = use_navigator();
     let voice = use_context::<VoiceConnectionHandle>();
+    let active_room_ctx = use_context::<ActiveRoomContext>();
     use_avatar_seed(current_user.id.clone());
     let mut rooms = use_signal(|| None::<Vec<ServerRoomSummary>>);
     let mut active_room_id = use_signal(|| None::<String>);
@@ -118,6 +120,11 @@ pub(crate) fn ServerRoomsScope(
         );
         if active_room_id() != next_active_room_id {
             active_room_id.set(next_active_room_id.clone());
+        }
+
+        // Обновляем глобальный контекст активной комнаты для фильтрации уведомлений.
+        if active {
+            active_room_ctx.set(next_active_room_id.clone());
         }
 
         let Some(room_id) = next_active_room_id else {

@@ -1,5 +1,6 @@
 //! Authenticated application feature.
 
+pub(crate) mod active_room;
 pub(crate) mod api;
 pub(crate) mod components;
 pub(crate) mod current_user;

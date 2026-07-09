@@ -4,6 +4,7 @@ use cheenhub_contracts::rest::{ServerRoomKind, ServerSummary};
 use dioxus::prelude::*;
 
 use crate::Route;
+use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::api;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
 use crate::features::social::SocialPage;
@@ -59,6 +60,15 @@ pub(crate) fn AppShell() -> Element {
         && servers().is_empty()
         && server_status().is_empty();
     let social_workspace_active = workspace.is_social();
+    let active_room = use_context::<ActiveRoomContext>();
+
+    // Синхронизируем активную комнату и активный DM-диалог с маршрутом.
+    let route_room_id = workspace.room_id().map(ToOwned::to_owned);
+    let route_conversation_id = workspace.conversation_id().map(ToOwned::to_owned);
+    use_effect(move || {
+        active_room.set(route_room_id.clone());
+        active_room.set_conversation_id(route_conversation_id.clone());
+    });
 
     let route_active_server_id_for_sync = route_active_server_id.clone();
     use_effect(move || {

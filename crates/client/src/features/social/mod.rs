@@ -9,7 +9,7 @@ mod friend_search_modal;
 mod friends_section;
 mod page;
 mod presentation;
-mod realtime;
+pub(crate) mod realtime;
 mod requests_section;
 mod voice_target;
 
