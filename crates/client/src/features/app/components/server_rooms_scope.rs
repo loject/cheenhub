@@ -4,6 +4,7 @@ use cheenhub_contracts::rest::{ServerRoomSummary, ServerSummary};
 use dioxus::prelude::*;
 
 use crate::Route;
+use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::api;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::server_settings::ServerSettingsScope;
@@ -20,8 +21,9 @@ use super::room_list_item::RoomListItem;
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
 use super::server_rooms_sidebar_styles as sidebar_styles;
 use super::server_rooms_state::{
-    RoomModal, ServerWorkspace, active_room, chat_open_for_room, ensure_workspace_mounted,
-    resolve_active_room_id, room_by_id, upsert_room,
+    RoomModal, ServerWorkspace, active_room, chat_open_for_room,
+    clear_workspace_selection_if_needed, ensure_workspace_mounted, mount_workspace_if_missing,
+    resolve_active_room_id, room_by_id, set_active_workspace_if_needed, upsert_room,
 };
 
 /// Owns room state for one server and renders the room sidebar and active room.
@@ -38,6 +40,7 @@ pub(crate) fn ServerRoomsScope(
     let current_user = use_context::<CurrentUserContext>().require_user();
     let navigator = use_navigator();
     let voice = use_context::<VoiceConnectionHandle>();
+    let active_room_ctx = use_context::<ActiveRoomContext>();
     use_avatar_seed(current_user.id.clone());
     let mut rooms = use_signal(|| None::<Vec<ServerRoomSummary>>);
     let mut active_room_id = use_signal(|| None::<String>);
@@ -119,17 +122,19 @@ pub(crate) fn ServerRoomsScope(
             active_room_id.set(next_active_room_id.clone());
         }
 
+        // Обновляем глобальный контекст активной комнаты для фильтрации уведомлений.
+        if active {
+            active_room_ctx.set(next_active_room_id.clone());
+        }
+
         let Some(room_id) = next_active_room_id else {
-            active_workspace.set(None);
-            reported_room_id.set(None);
+            clear_workspace_selection_if_needed(active_workspace, reported_room_id);
             return;
         };
 
         let workspace = ServerWorkspace::Room(room_id.clone());
-        let mut next_mounted_workspaces = mounted_workspaces();
-        ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
-        mounted_workspaces.set(next_mounted_workspaces);
-        active_workspace.set(Some(workspace));
+        mount_workspace_if_missing(mounted_workspaces, workspace.clone());
+        set_active_workspace_if_needed(active_workspace, workspace);
 
         if active && requested_room_id_for_sync.as_deref() != Some(room_id.as_str()) {
             info!(

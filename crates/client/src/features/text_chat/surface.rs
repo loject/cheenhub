@@ -23,13 +23,14 @@ pub(crate) fn RoomChatSurface(
     server_id: String,
     room: ActiveRoom,
     mode: RoomChatSurfaceMode,
+    active: bool,
     embedded_resizing: bool,
     on_embedded_resize_start: EventHandler<(f64, Option<f64>)>,
 ) -> Element {
     match mode {
         RoomChatSurfaceMode::Full => rsx! {
             div { id: "text-room-view", class: "text-room-view hidden min-h-0 flex-1 flex-col",
-                ChatRoomPanel { server_id, room, compact: false }
+                ChatRoomPanel { server_id, room, compact: false, active }
             }
         },
         RoomChatSurfaceMode::Embedded => {
@@ -67,7 +68,7 @@ pub(crate) fn RoomChatSurface(
                             });
                         },
                     }
-                    ChatRoomPanel { server_id, room, compact: true }
+                    ChatRoomPanel { server_id, room, compact: true, active }
                 }
             }
             }

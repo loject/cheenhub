@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use cheenhub_contracts::rest::ServerRoomKind;
 use dioxus::prelude::*;
 
 use super::app_shell::{ActiveRoom, ServerShellState};
@@ -53,6 +54,10 @@ pub(crate) fn RoomInstance(
     let workspace_style = embedded_chat_height_px()
         .map(|height_px| format!("--embedded-chat-height: {}px;", height_px.round()))
         .unwrap_or_default();
+    let full_chat_active = active
+        && (matches!(room.kind, ServerRoomKind::Text)
+            || matches!(room.kind, ServerRoomKind::TextAndVoice) && !voice_room_active);
+    let embedded_chat_active = active && voice_room_active && chat_open;
 
     rsx! {
         div { class: wrapper_class, "data-mobile-workspace-open": mobile_workspace_open_attr,
@@ -112,6 +117,7 @@ pub(crate) fn RoomInstance(
                         server_id: server_id.clone(),
                         room: room.clone(),
                         mode: RoomChatSurfaceMode::Embedded,
+                        active: embedded_chat_active,
                         embedded_resizing: chat_resizing,
                         on_embedded_resize_start: move |(start_y, measured_height_px): (f64, Option<f64>)| {
                             let split_element = content_split_element.cloned();
@@ -149,6 +155,7 @@ pub(crate) fn RoomInstance(
                     server_id: server_id.clone(),
                     room: room.clone(),
                     mode: RoomChatSurfaceMode::Full,
+                    active: full_chat_active,
                     embedded_resizing: false,
                     on_embedded_resize_start: move |(_, _)| {},
                 }

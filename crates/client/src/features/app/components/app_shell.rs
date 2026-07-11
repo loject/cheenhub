@@ -4,6 +4,7 @@ use cheenhub_contracts::rest::{ServerRoomKind, ServerSummary};
 use dioxus::prelude::*;
 
 use crate::Route;
+use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::api;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
 use crate::features::social::SocialPage;
@@ -48,6 +49,9 @@ pub(crate) fn AppShell() -> Element {
     let mut active_server_id = use_signal(|| route_active_server_id.clone());
     let mut loaded_servers = use_signal(|| false);
     let mut is_loading_servers = use_signal(|| false);
+    let mut server_load_attempt = use_signal(|| 0_u32);
+    let mut started_server_load_attempt = use_signal(|| None::<u32>);
+    let mut retried_server_route = use_signal(|| None::<String>);
     let mut server_status = use_signal(String::new);
     let mut is_add_server_open = use_signal(|| false);
     let mut is_create_server_open = use_signal(|| false);
@@ -59,6 +63,15 @@ pub(crate) fn AppShell() -> Element {
         && servers().is_empty()
         && server_status().is_empty();
     let social_workspace_active = workspace.is_social();
+    let active_room = use_context::<ActiveRoomContext>();
+
+    // Синхронизируем активную комнату и активный DM-диалог с маршрутом.
+    let route_room_id = workspace.room_id().map(ToOwned::to_owned);
+    let route_conversation_id = workspace.conversation_id().map(ToOwned::to_owned);
+    use_effect(move || {
+        active_room.set(route_room_id.clone());
+        active_room.set_conversation_id(route_conversation_id.clone());
+    });
 
     let route_active_server_id_for_sync = route_active_server_id.clone();
     use_effect(move || {
@@ -68,19 +81,34 @@ pub(crate) fn AppShell() -> Element {
     });
 
     use_effect(move || {
-        if loaded_servers() {
+        let attempt = server_load_attempt();
+        if started_server_load_attempt() == Some(attempt) {
             return;
         }
+
+        started_server_load_attempt.set(Some(attempt));
         loaded_servers.set(true);
         is_loading_servers.set(true);
 
         spawn(async move {
+            debug!(attempt, "loading available app servers");
             match api::list_servers().await {
                 Ok(next_servers) => {
+                    info!(
+                        attempt,
+                        server_count = next_servers.len(),
+                        "available app servers loaded"
+                    );
                     servers.set(next_servers);
                     server_status.set(String::new());
+                    retried_server_route.set(None);
                 }
                 Err(error) => {
+                    warn!(
+                        attempt,
+                        %error,
+                        "failed to load available app servers"
+                    );
                     server_status.set(error);
                 }
             }
@@ -88,8 +116,44 @@ pub(crate) fn AppShell() -> Element {
         });
     });
 
+    let route_active_server_id_for_retry = route_active_server_id.clone();
+    use_effect(move || {
+        let Some(server_id) = route_active_server_id_for_retry.clone() else {
+            if retried_server_route().is_some() {
+                retried_server_route.set(None);
+            }
+            return;
+        };
+
+        if is_loading_servers() || server_status().is_empty() {
+            return;
+        }
+
+        if servers()
+            .iter()
+            .any(|server| server.id.as_str() == server_id.as_str())
+        {
+            return;
+        }
+
+        if retried_server_route().as_deref() == Some(server_id.as_str()) {
+            return;
+        }
+
+        info!(
+            %server_id,
+            "retrying app server list load after opening server workspace"
+        );
+        retried_server_route.set(Some(server_id));
+        server_load_attempt.with_mut(|attempt| *attempt = attempt.saturating_add(1));
+    });
+
     use_effect(move || {
         if !loaded_servers() || is_loading_servers() {
+            return;
+        }
+
+        if !server_status().is_empty() {
             return;
         }
 

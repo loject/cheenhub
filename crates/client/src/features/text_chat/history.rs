@@ -1,16 +1,22 @@
 //! Загрузка истории текстового чата.
 
 use std::rc::Rc;
+use std::time::Duration;
 
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;
+use futures_util::FutureExt;
 use futures_util::StreamExt;
+use futures_util::future::{Either, select};
 
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
+use crate::features::runtime::sleep_duration;
 
 use super::messages::prepend_messages;
 use super::realtime;
 use super::scroll::{ScrollCommand, capture_scroll_position};
+
+const INITIAL_HISTORY_TIMEOUT: Duration = Duration::from_secs(12);
 
 #[derive(Clone)]
 pub(super) struct HistoryTarget {
@@ -38,15 +44,13 @@ pub(super) fn load_initial_history(target: HistoryTarget, mut state: HistoryStat
     spawn(async move {
         let server_id = target.server_id;
         let room_id = target.room_id;
-        match realtime::load_room_history(
-            &target.realtime,
-            server_id.clone(),
-            room_id.clone(),
-            None,
-        )
-        .await
-        {
-            Ok(history) => {
+        let history_request =
+            realtime::load_room_history(&target.realtime, server_id.clone(), room_id.clone(), None)
+                .boxed_local();
+        let timeout = sleep_duration(INITIAL_HISTORY_TIMEOUT).boxed_local();
+
+        match select(history_request, timeout).await {
+            Either::Left((Ok(history), _)) => {
                 info!(
                     server_id = %server_id,
                     room_id = %room_id,
@@ -59,7 +63,7 @@ pub(super) fn load_initial_history(target: HistoryTarget, mut state: HistoryStat
                 state.has_more.set(history.has_more);
                 state.pending_scroll.set(Some(ScrollCommand::Bottom));
             }
-            Err(error) => {
+            Either::Left((Err(error), _)) => {
                 warn!(
                     %error,
                     server_id = %server_id,
@@ -67,6 +71,17 @@ pub(super) fn load_initial_history(target: HistoryTarget, mut state: HistoryStat
                     "failed to load initial text chat history"
                 );
                 state.history_error.set(Some(error.to_string()));
+            }
+            Either::Right(((), _)) => {
+                warn!(
+                    server_id = %server_id,
+                    room_id = %room_id,
+                    timeout_ms = INITIAL_HISTORY_TIMEOUT.as_millis(),
+                    "initial text chat history load timed out"
+                );
+                state.history_error.set(Some(
+                    "История сообщений не загрузилась вовремя. Попробуй ещё раз.".to_owned(),
+                ));
             }
         }
         state.initial_loading.set(false);

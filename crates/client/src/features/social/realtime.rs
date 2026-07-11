@@ -82,7 +82,7 @@ pub(super) fn subscribe_social_ready_events(
 }
 
 /// Подписывается на входящие social-события текущей вкладки.
-pub(super) fn subscribe_social_events(
+pub(crate) fn subscribe_social_events(
     realtime: &RealtimeHandle,
 ) -> mpsc::UnboundedReceiver<SocialChanged> {
     let events = realtime.subscribe_events();

@@ -25,7 +25,12 @@ use super::{CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, CHAT_STATUS_CLASS};
 
 /// Рендерит панель realtime-текстового чата для одной комнаты.
 #[component]
-pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) -> Element {
+pub(crate) fn ChatRoomPanel(
+    server_id: String,
+    room: ActiveRoom,
+    compact: bool,
+    active: bool,
+) -> Element {
     let realtime = use_context::<RealtimeHandle>();
     let permissions = use_context::<ServerPermissionsContext>();
     let mut messages = use_signal(Vec::<TextChatMessage>::new);
@@ -44,6 +49,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let mut list_element = use_signal(|| None::<Rc<MountedData>>);
     let mut compose_input_element = use_signal(|| None::<Rc<MountedData>>);
     let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
+    let mut activation_retry_room_id = use_signal(|| None::<String>);
     let event_room_id = room.id.clone();
     let history_server_id = server_id.clone();
     let history_room_id = room.id.clone();
@@ -58,6 +64,9 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let event_realtime = realtime.clone();
     let older_realtime = realtime.clone();
     let send_realtime = realtime.clone();
+    let activation_realtime = realtime.clone();
+    let activation_server_id = server_id.clone();
+    let activation_room_id = room.id.clone();
     let history_target = HistoryTarget {
         realtime: history_realtime,
         server_id: history_server_id,
@@ -122,6 +131,38 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
 
     use_hook(move || {
         load_initial_history_when_connected(history_target, history_state);
+    });
+
+    use_effect(move || {
+        if !active {
+            if activation_retry_room_id().is_some() {
+                activation_retry_room_id.set(None);
+            }
+            return;
+        }
+
+        if activation_retry_room_id().as_deref() == Some(activation_room_id.as_str()) {
+            return;
+        }
+
+        if initial_loading() || !messages().is_empty() {
+            return;
+        }
+
+        activation_retry_room_id.set(Some(activation_room_id.clone()));
+        info!(
+            server_id = %activation_server_id,
+            room_id = %activation_room_id,
+            "retrying initial text chat history after room activation"
+        );
+        load_initial_history_when_connected(
+            HistoryTarget {
+                realtime: activation_realtime.clone(),
+                server_id: activation_server_id.clone(),
+                room_id: activation_room_id.clone(),
+            },
+            history_state,
+        );
     });
 
     use_hook(move || {

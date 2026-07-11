@@ -7,7 +7,7 @@ mod message_group;
 mod message_item;
 mod messages;
 mod panel;
-mod realtime;
+pub(crate) mod realtime;
 mod scroll;
 mod surface;
 

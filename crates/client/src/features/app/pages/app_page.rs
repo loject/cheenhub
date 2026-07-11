@@ -3,6 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::Route;
+use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::components::app_shell::AppShell;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
@@ -11,6 +12,7 @@ use crate::features::audio_playback::AudioPlaybackProvider;
 use crate::features::auth::{TokenRefresher, api};
 use crate::features::camera::CameraProvider;
 use crate::features::microphone::MicrophoneProvider;
+use crate::features::notifications::NotificationsProvider;
 use crate::features::realtime::RealtimeProvider;
 use crate::features::runtime::sleep_ms;
 use crate::features::screen_share::ScreenShareProvider;
@@ -29,6 +31,11 @@ pub(crate) fn AppPage() -> Element {
     let mut saved_workspace_route = use_signal(|| None::<(String, String)>);
     let current_user_context = CurrentUserContext::new(user);
     use_context_provider(move || current_user_context);
+    // Контекст активной комнаты для фильтрации уведомлений.
+    let active_room_id = use_signal(|| None::<String>);
+    let active_conversation_id = use_signal(|| None::<String>);
+    let active_room_context = ActiveRoomContext::new(active_room_id, active_conversation_id);
+    use_context_provider(move || active_room_context);
 
     use_effect(move || {
         if !api::has_tokens() {
@@ -155,8 +162,10 @@ pub(crate) fn AppPage() -> Element {
                     CameraProvider {
                         ScreenShareProvider {
                             VoiceConnectionProvider {
-                                AppShell {}
-                                Outlet::<Route> {}
+                                NotificationsProvider {
+                                    AppShell {}
+                                    Outlet::<Route> {}
+                                }
                             }
                         }
                     }

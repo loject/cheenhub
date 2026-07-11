@@ -121,6 +121,8 @@ web-sys = { workspace = true, optional = true, features = [
     "MessageEvent",
     "MessagePort",
     "Navigator",
+    "Notification",
+    "NotificationOptions",
     "Response",
     "Window",
     "BinaryType",

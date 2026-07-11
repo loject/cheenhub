@@ -29,7 +29,7 @@ pub(crate) async fn load_room_history(
     before_message_id: Option<String>,
 ) -> Result<RoomHistory, RealtimeError> {
     realtime
-        .request(
+        .request_one_shot(
             RealtimeModule::TextChat,
             RealtimeKind::TextChat(TextChatKind::LoadRoomHistory),
             LoadRoomHistory {
