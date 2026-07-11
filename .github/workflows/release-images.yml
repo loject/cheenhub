@@ -520,7 +520,16 @@ jobs:
       - name: Build APK package
         shell: bash
         run: |
-          dx bundle --android --package cheenhub_client --bin cheen_hub --release --package-types apk --out-dir dist/android/raw
+          dx bundle \
+            --android \
+            --target aarch64-linux-android \
+            --package cheenhub_client \
+            --bin cheen_hub \
+            --release \
+            --no-default-features \
+            --features android \
+            --package-types apk \
+            --out-dir dist/android/raw
 
       - name: Normalize Android release asset
         shell: bash
