@@ -192,6 +192,9 @@ pub(crate) fn AppShell() -> Element {
                     let next_shell_state =
                         saved_server_shell_state(&shell_state_by_server(), &server_id)
                             .unwrap_or_else(default_server_shell_state);
+                    // Маршрут обновляется асинхронно для уже смонтированной оболочки.
+                    // Выбираем сервер до навигации, чтобы его рабочая область не осталась скрытой.
+                    active_server_id.set(Some(server_id.clone()));
                     shell_state.set(next_shell_state);
                     navigator.push(Route::AppServer { server_id });
                 },
@@ -277,6 +280,7 @@ pub(crate) fn AppShell() -> Element {
                     on_joined_server: move |server: ServerSummary| {
                         shell_state.set(default_server_shell_state());
                         let server_id = server.id.clone();
+                        active_server_id.set(Some(server_id.clone()));
                         let mut next_servers = servers();
                         upsert_server_summary(&mut next_servers, server);
                         servers.set(next_servers);
@@ -292,6 +296,7 @@ pub(crate) fn AppShell() -> Element {
                     on_created: move |server: ServerSummary| {
                         shell_state.set(default_server_shell_state());
                         let server_id = server.id.clone();
+                        active_server_id.set(Some(server_id.clone()));
                         let mut next_servers = servers();
                         next_servers.push(server);
                         servers.set(next_servers);
