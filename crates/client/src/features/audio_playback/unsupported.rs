@@ -142,6 +142,9 @@ impl AudioPlaybackHandle {
     /// Останавливает все активное воспроизведение.
     pub(crate) fn stop_all(&self) {}
 
+    /// Останавливает голосовое воспроизведение без backend'а.
+    pub(crate) fn stop_voice_playback(&self) {}
+
     /// На native пока только отмечает отсутствие backend'а воспроизведения.
     pub(crate) fn resume(&self) {
         if self.is_muted() {
@@ -170,6 +173,16 @@ impl AudioPlaybackHandle {
             "skipped notification sound without native playback backend"
         );
     }
+
+    /// Отмечает отсутствие поддержки повторяющегося сигнала соединения.
+    pub(crate) fn start_connection_signal_loop(&self) {
+        if !self.is_muted() {
+            debug!("skipped connection signal loop without native playback backend");
+        }
+    }
+
+    /// Останавливает отсутствующий повторяющийся сигнал соединения.
+    pub(crate) fn stop_connection_signal_loop(&self) {}
 
     fn set_output_device_preference(&self, device_id: Option<String>, label: Option<String>) {
         if self.selected_output_device_id.peek().as_deref() == device_id.as_deref()

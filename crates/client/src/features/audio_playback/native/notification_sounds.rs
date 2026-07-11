@@ -4,7 +4,7 @@ use dioxus::prelude::{debug, warn};
 
 use crate::features::audio_playback::NotificationSound;
 
-use super::mixer::queue_sender_samples;
+use super::mixer::{loop_sender_samples, queue_sender_samples, remove_sender};
 use super::{AUDIO_SAMPLE_RATE_HZ, AudioPlaybackHandle};
 
 const NOTIFICATION_PREROLL_MS: u32 = 40;
@@ -26,9 +26,12 @@ const SCREEN_SHARE_ENABLED: &[u8] =
 const SCREEN_SHARE_DISABLED: &[u8] =
     include_bytes!("../../../../public/audio/notifications/screen-share-disabled.wav");
 const CONNECTION_LOST: &[u8] =
-    include_bytes!("../../../../public/audio/notifications/connection-lost.wav");
+    include_bytes!("../../../../public/audio/notifications/cheenhub_signal_lost.wav");
 const CONNECTION_RESTORED: &[u8] =
-    include_bytes!("../../../../public/audio/notifications/connection-restored.wav");
+    include_bytes!("../../../../public/audio/notifications/cheenhub_signal_restored.wav");
+const CONNECTION_SIGNAL_LOOP: &[u8] =
+    include_bytes!("../../../../public/audio/notifications/cheenhub_signal_loop.wav");
+const CONNECTION_SIGNAL_LOOP_SENDER_ID: &str = "notification:connection-signal-loop";
 
 impl AudioPlaybackHandle {
     /// Проигрывает короткий системный звук уведомления.
@@ -79,6 +82,49 @@ impl AudioPlaybackHandle {
             sample_count, output_volume_percent, "queued native notification sound"
         );
     }
+
+    /// Запускает повторяющийся сигнал потери соединения для активного голосового чата.
+    pub(crate) fn start_connection_signal_loop(&self) {
+        if self.is_muted() {
+            return;
+        }
+        if let Err(error) = self.ensure_engine() {
+            warn!(%error, "failed to initialize native connection signal loop");
+            return;
+        }
+        let samples = match notification_samples(NotificationSound::ConnectionSignalLoop) {
+            Ok(samples) => samples,
+            Err(error) => {
+                warn!(%error, "failed to decode native connection signal loop");
+                return;
+            }
+        };
+        let Some(mixer) = self
+            .inner
+            .borrow()
+            .engine
+            .as_ref()
+            .map(|engine| engine.mixer.clone())
+        else {
+            return;
+        };
+        loop_sender_samples(&mixer, CONNECTION_SIGNAL_LOOP_SENDER_ID, samples, 1.0);
+        debug!("started native connection signal loop");
+    }
+
+    /// Останавливает повторяющийся сигнал потери соединения.
+    pub(crate) fn stop_connection_signal_loop(&self) {
+        let mixer = self
+            .inner
+            .borrow()
+            .engine
+            .as_ref()
+            .map(|engine| engine.mixer.clone());
+        if let Some(mixer) = mixer {
+            remove_sender(&mixer, CONNECTION_SIGNAL_LOOP_SENDER_ID);
+            debug!("stopped native connection signal loop");
+        }
+    }
 }
 
 fn notification_samples(sound: NotificationSound) -> Result<Vec<f32>, String> {
@@ -93,6 +139,7 @@ fn notification_samples(sound: NotificationSound) -> Result<Vec<f32>, String> {
         NotificationSound::ScreenShareDisabled => SCREEN_SHARE_DISABLED,
         NotificationSound::ConnectionLost => CONNECTION_LOST,
         NotificationSound::ConnectionRestored => CONNECTION_RESTORED,
+        NotificationSound::ConnectionSignalLoop => CONNECTION_SIGNAL_LOOP,
     };
     let wav = decode_pcm_wav(bytes)?;
     let samples = resample_linear(wav.samples, wav.sample_rate_hz, AUDIO_SAMPLE_RATE_HZ);
@@ -266,6 +313,7 @@ mod tests {
             NotificationSound::ScreenShareDisabled,
             NotificationSound::ConnectionLost,
             NotificationSound::ConnectionRestored,
+            NotificationSound::ConnectionSignalLoop,
         ];
 
         for sound in sounds {

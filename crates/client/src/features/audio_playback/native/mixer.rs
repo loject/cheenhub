@@ -24,6 +24,8 @@ pub(super) struct MixerState {
 struct SenderMixerState {
     samples: VecDeque<f32>,
     gain: f32,
+    loop_samples: Option<Vec<f32>>,
+    loop_position: usize,
 }
 
 /// Создает пустой микшер с общей громкостью вывода.
@@ -108,7 +110,16 @@ impl MixerState {
         let output_gain = self.output_gain;
         let mut mixed = 0.0_f32;
         for sender in self.senders.values_mut() {
-            if let Some(sample) = sender.samples.pop_front() {
+            let sample = sender.samples.pop_front().or_else(|| {
+                let loop_samples = sender.loop_samples.as_ref()?;
+                if loop_samples.is_empty() {
+                    return None;
+                }
+                let sample = loop_samples[sender.loop_position % loop_samples.len()];
+                sender.loop_position = sender.loop_position.wrapping_add(1);
+                Some(sample)
+            });
+            if let Some(sample) = sample {
                 mixed += sample * sender.gain * output_gain;
             }
         }
@@ -144,6 +155,8 @@ pub(super) fn queue_sender_samples(
         .or_insert_with(|| SenderMixerState {
             samples: VecDeque::new(),
             gain,
+            loop_samples: None,
+            loop_position: 0,
         });
     sender.gain = gain;
     if sender.samples.len() > SENDER_BACKLOG_DROP_SAMPLES {
@@ -162,6 +175,35 @@ pub(super) fn queue_sender_samples(
     sender
         .samples
         .extend(samples.into_iter().map(|sample| sample.clamp(-1.0, 1.0)));
+}
+
+/// Запускает бесконечное воспроизведение PCM-образца для одного отправителя.
+pub(super) fn loop_sender_samples(
+    mixer: &MixerHandle,
+    sender_user_id: &str,
+    samples: Vec<f32>,
+    gain: f32,
+) {
+    if samples.is_empty() {
+        return;
+    }
+    let Ok(mut mixer) = mixer.lock() else {
+        warn!(%sender_user_id, "native audio mixer lock is poisoned; failed to loop samples");
+        return;
+    };
+    let sender = mixer
+        .senders
+        .entry(sender_user_id.to_owned())
+        .or_insert_with(|| SenderMixerState {
+            samples: VecDeque::new(),
+            gain,
+            loop_samples: None,
+            loop_position: 0,
+        });
+    sender.samples.clear();
+    sender.gain = gain;
+    sender.loop_samples = Some(samples);
+    sender.loop_position = 0;
 }
 
 /// Возвращает количество PCM samples в очереди одного отправителя.
@@ -193,6 +235,8 @@ pub(super) fn update_sender_gain(mixer: &MixerHandle, sender_user_id: &str, gain
         .or_insert_with(|| SenderMixerState {
             samples: VecDeque::new(),
             gain,
+            loop_samples: None,
+            loop_position: 0,
         })
         .gain = gain;
 }
@@ -228,6 +272,17 @@ pub(super) fn clear_mixer(mixer: &MixerHandle) {
     mixer.senders.clear();
 }
 
+/// Очищает голосовые очереди, оставляя системные notification-звуки.
+pub(super) fn clear_voice_senders(mixer: &MixerHandle) {
+    let Ok(mut mixer) = mixer.lock() else {
+        warn!("native audio mixer lock is poisoned; failed to clear voice playback");
+        return;
+    };
+    mixer
+        .senders
+        .retain(|sender_id, _| sender_id.starts_with("notification:"));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,6 +296,8 @@ mod tests {
                     SenderMixerState {
                         samples: VecDeque::from(vec![0.75]),
                         gain: 1.0,
+                        loop_samples: None,
+                        loop_position: 0,
                     },
                 ),
                 (
@@ -248,6 +305,8 @@ mod tests {
                     SenderMixerState {
                         samples: VecDeque::from(vec![0.75]),
                         gain: 1.0,
+                        loop_samples: None,
+                        loop_position: 0,
                     },
                 ),
             ]),
@@ -267,6 +326,17 @@ mod tests {
         assert_eq!(resampler.next_sample(&mut mixer), 0.25);
         assert_eq!(resampler.next_sample(&mut mixer), 0.5);
         assert_eq!(resampler.next_sample(&mut mixer), 0.75);
+    }
+
+    #[test]
+    fn looped_sender_restarts_after_last_sample() {
+        let mixer = new_mixer(1.0);
+        loop_sender_samples(&mixer, "signal", vec![0.25, 0.5], 1.0);
+        let mut mixer = mixer.lock().expect("mixer lock");
+
+        assert_eq!(mixer.next_sample(), 0.25);
+        assert_eq!(mixer.next_sample(), 0.5);
+        assert_eq!(mixer.next_sample(), 0.25);
     }
 
     #[test]

@@ -194,6 +194,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             let mut statuses = status_realtime.subscribe_connection_status();
             while let Some(status) = statuses.next().await {
                 let connected = matches!(status, RealtimeConnectionStatus::Connected(_));
+                let voice_chat_active = status_handle.state().active_target().is_some();
                 if matches!(status, RealtimeConnectionStatus::Disconnected) {
                     let mut state = state;
                     state.set(VoiceConnectionState::Disconnected);
@@ -201,9 +202,11 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                     status_participant_video.clear();
                     status_playback.stop_all();
                 }
-                status_connection_sounds
-                    .borrow_mut()
-                    .record(connected, &status_playback);
+                status_connection_sounds.borrow_mut().record(
+                    connected,
+                    voice_chat_active,
+                    &status_playback,
+                );
             }
         })
     });
@@ -365,7 +368,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             }
             effect_handle.clear_speaking_users();
             if effect_voice_sounds.borrow().is_current_user_connected() {
-                playback.stop_all();
+                playback.stop_voice_playback();
             }
             effect_voice_sounds.borrow_mut().record_inactive(&playback);
 

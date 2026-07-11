@@ -48,6 +48,8 @@ pub(crate) enum NotificationSound {
     ConnectionLost,
     /// Realtime-соединение восстановлено.
     ConnectionRestored,
+    /// Повторяющийся сигнал потери соединения во время голосового чата.
+    ConnectionSignalLoop,
 }
 
 impl NotificationSound {
@@ -62,8 +64,9 @@ impl NotificationSound {
             Self::CameraDisabled => "/audio/notifications/camera-disabled.wav",
             Self::ScreenShareEnabled => "/audio/notifications/screen-share-enabled.wav",
             Self::ScreenShareDisabled => "/audio/notifications/screen-share-disabled.wav",
-            Self::ConnectionLost => "/audio/notifications/connection-lost.wav",
-            Self::ConnectionRestored => "/audio/notifications/connection-restored.wav",
+            Self::ConnectionLost => "/audio/notifications/cheenhub_signal_lost.wav",
+            Self::ConnectionRestored => "/audio/notifications/cheenhub_signal_restored.wav",
+            Self::ConnectionSignalLoop => "/audio/notifications/cheenhub_signal_loop.wav",
         }
     }
 
@@ -80,6 +83,7 @@ impl NotificationSound {
             Self::ScreenShareDisabled => "screen-share-disabled",
             Self::ConnectionLost => "connection-lost",
             Self::ConnectionRestored => "connection-restored",
+            Self::ConnectionSignalLoop => "connection-signal-loop",
         }
     }
 }

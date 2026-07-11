@@ -18,7 +18,9 @@ use web_time::{SystemTime, UNIX_EPOCH};
 
 use self::engine::{NativePlaybackEngine, create_engine};
 use self::jitter_buffer::JitterBuffer;
-use self::mixer::{clear_mixer, remove_sender, update_output_gain, update_sender_gain};
+use self::mixer::{
+    clear_mixer, clear_voice_senders, remove_sender, update_output_gain, update_sender_gain,
+};
 use crate::features::audio_playback::output_devices::AudioOutputDevice;
 use crate::features::audio_playback::storage;
 
@@ -211,6 +213,23 @@ impl AudioPlaybackHandle {
             clear_mixer(&mixer);
         }
         debug!("native audio playback state cleared");
+    }
+
+    /// Останавливает голосовое воспроизведение, не прерывая системные notification-звуки.
+    pub(crate) fn stop_voice_playback(&self) {
+        let mixer = {
+            let mut inner = self.inner.borrow_mut();
+            inner.decoders.clear();
+            inner.jitter_buffers.clear();
+            inner.jitter_drainers.clear();
+            inner.jitter_warning_at_ms.clear();
+            inner.decoder_warning_at_ms.clear();
+            inner.engine.as_ref().map(|engine| engine.mixer.clone())
+        };
+        if let Some(mixer) = mixer {
+            clear_voice_senders(&mixer);
+        }
+        debug!("native voice playback state cleared");
     }
 
     /// Запускает native output stream, если воспроизведение разрешено.

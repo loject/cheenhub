@@ -1,6 +1,5 @@
 //! Web-провайдер контекста воспроизведения аудио.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
-
 #[path = "browser_bindings.rs"]
 mod browser_bindings;
 #[path = "browser_diagnostics.rs"]
@@ -15,17 +14,8 @@ mod jitter_runtime;
 mod playback_pipeline;
 #[path = "web_notifications.rs"]
 mod web_notifications;
-
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
-
-use dioxus::prelude::*;
-use wasm_bindgen::JsValue;
-use wasm_bindgen_futures::{JsFuture, spawn_local};
-use web_sys::AudioContext;
-use web_time::{Instant, SystemTime, UNIX_EPOCH};
-
+#[path = "web_voice_playback.rs"]
+mod web_voice_playback;
 use self::browser_diagnostics::{
     AudioPlaybackDiagnostics, DecodeInputTiming, diagnostics_enabled, elapsed_us_since,
 };
@@ -34,9 +24,18 @@ use self::jitter_buffer::JitterBuffer;
 use self::playback_pipeline::{
     ScheduledAudioSource, SenderPlayback, create_sender_playback, encoded_audio_chunk,
 };
+use self::web_notifications::ConnectionSignalLoopState;
 use super::backend::VoiceFrame;
 use super::output_devices::AudioOutputDevice;
 use super::storage;
+use dioxus::prelude::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+use wasm_bindgen::JsValue;
+use wasm_bindgen_futures::{JsFuture, spawn_local};
+use web_sys::AudioContext;
+use web_time::{Instant, SystemTime, UNIX_EPOCH};
 
 const AUDIO_DECODER_QUEUE_WARN_FRAMES: u32 = 8;
 pub(super) const AUDIO_PLAYBACK_WARNING_INTERVAL_MS: u64 = 5_000;
@@ -67,6 +66,7 @@ pub(super) struct AudioPlaybackInner {
     pub(in crate::features::audio_playback::web) scheduled_sources:
         HashMap<String, Vec<ScheduledAudioSource>>,
     pub(in crate::features::audio_playback::web) scheduled_until: HashMap<String, f64>,
+    pub(in crate::features::audio_playback::web) connection_signal_loop: ConnectionSignalLoopState,
     /// Значения усиления для каждого пользователя (0.0–2.0, по умолчанию 1.0).
     /// Сохраняется, чтобы громкость, заданная до первого фрейма, применялась при первом создании отправителя.
     pub(in crate::features::audio_playback::web) user_volumes: HashMap<String, f64>,
@@ -246,24 +246,8 @@ impl AudioPlaybackHandle {
 
     /// Stops all active playback state.
     pub(crate) fn stop_all(&self) {
-        let sender_ids = {
-            let inner = self.inner.borrow();
-            let mut sender_ids = inner.senders.keys().cloned().collect::<Vec<_>>();
-            for sender_id in inner.scheduled_sources.keys() {
-                if !sender_ids.iter().any(|known_id| known_id == sender_id) {
-                    sender_ids.push(sender_id.clone());
-                }
-            }
-            for sender_id in inner.jitter_buffers.keys() {
-                if !sender_ids.iter().any(|known_id| known_id == sender_id) {
-                    sender_ids.push(sender_id.clone());
-                }
-            }
-            sender_ids
-        };
-        for sender_id in sender_ids {
-            self.stop_sender(&sender_id);
-        }
+        self.stop_connection_signal_loop();
+        self.stop_voice_playback();
     }
 
     /// Resumes the browser audio context after a user gesture.
@@ -446,6 +430,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             diagnostics: AudioPlaybackDiagnostics::new(),
             scheduled_sources: HashMap::new(),
             scheduled_until: HashMap::new(),
+            connection_signal_loop: ConnectionSignalLoopState::default(),
             user_volumes: HashMap::new(),
             output_gain,
         })),

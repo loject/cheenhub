@@ -115,9 +115,15 @@ pub(super) struct ConnectionNotificationSoundState {
 
 impl ConnectionNotificationSoundState {
     /// Проигрывает lost/restored только после первого успешного соединения.
-    pub(super) fn record(&mut self, connected: bool, playback: &AudioPlaybackHandle) {
+    pub(super) fn record(
+        &mut self,
+        connected: bool,
+        voice_chat_active: bool,
+        playback: &AudioPlaybackHandle,
+    ) {
         if connected {
             if self.lost_after_connect {
+                playback.stop_connection_signal_loop();
                 playback.play_notification_sound(NotificationSound::ConnectionRestored);
             }
             self.has_connected = true;
@@ -127,6 +133,10 @@ impl ConnectionNotificationSoundState {
 
         if self.has_connected && !self.lost_after_connect {
             playback.play_notification_sound(NotificationSound::ConnectionLost);
+            if voice_chat_active {
+                playback.start_connection_signal_loop();
+                debug!("started connection signal loop for active voice chat");
+            }
             self.lost_after_connect = true;
         }
     }
