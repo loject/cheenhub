@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
 
-use super::message_item::{ChatMessageItem, message_time};
+use super::message_item::ChatMessageItem;
 use super::messages::is_appearing_message;
 
 /// Рендерит последовательные сообщения одного автора с закрепленной шапкой автора.
@@ -38,10 +38,10 @@ pub(crate) fn ChatMessageGroup(
 
     rsx! {
         div {
-            class: "relative grid gap-3",
+            class: "chat-message-group relative grid gap-3",
             style: "grid-template-columns: 2.25rem minmax(0, 1fr) 2.25rem;",
             div {
-                class: "sticky top-0 z-20 shrink-0 self-start pt-1",
+                class: "chat-message-avatar-column sticky top-0 z-20 shrink-0 self-start pt-1",
                 style: avatar_column_style,
                 UserAvatar {
                     nickname: first_message.author_nickname.clone(),
@@ -51,14 +51,11 @@ pub(crate) fn ChatMessageGroup(
                 }
             }
             div {
-                class: "min-w-0",
+                class: "chat-message-content min-w-0",
                 style: "grid-column: 2; grid-row: 1;",
                 div { class: header_class,
                     span { class: "truncate text-[12px] font-semibold text-zinc-100",
                         "{first_message.author_nickname}"
-                    }
-                    span { class: "shrink-0 text-[10px] text-zinc-600",
-                        "{message_time(&first_message.created_at)}"
                     }
                 }
                 div { class: "flex flex-col gap-2",

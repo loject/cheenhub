@@ -82,7 +82,7 @@ pub(crate) fn UserAvatar(
     );
 
     rsx! {
-        div { class: "{class} relative overflow-hidden",
+        div { class: "user-avatar {class} relative overflow-hidden",
             if show_image {
                 img {
                     class: "absolute inset-0 h-full w-full object-cover",

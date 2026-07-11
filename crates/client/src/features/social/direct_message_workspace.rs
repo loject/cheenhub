@@ -196,7 +196,7 @@ pub(crate) fn DirectMessageWorkspace(
                             }
                         }
                         div {
-                            class: "min-h-0 flex-1 overflow-y-auto p-5 lg:p-6",
+                            class: "direct-message-list min-h-0 flex-1 overflow-y-auto p-5 lg:p-6",
                             onmounted: move |event| list_element.set(Some(event.data.clone())),
                             onscroll: move |_| {
                                 if let Some(element) = list_element.cloned() {
@@ -248,7 +248,7 @@ pub(crate) fn DirectMessageWorkspace(
                                 }
                             }
                         }
-                        div { class: "shrink-0 border-t border-zinc-800/80 bg-zinc-950/55 p-4 backdrop-blur-xl",
+                        div { class: "direct-message-composer-shell shrink-0 border-t border-zinc-800/80 bg-zinc-950/55 p-4 backdrop-blur-xl",
                             div { class: CHAT_COMPOSER_CLASS,
                                 textarea {
                                     rows: "1",

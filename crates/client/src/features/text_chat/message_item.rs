@@ -31,6 +31,12 @@ pub(crate) fn ChatMessageItem(
     } else {
         "message-bubble flex items-end gap-2 whitespace-pre-wrap break-words rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.72)] px-3 py-2 text-[13px] leading-5 text-zinc-300 transition-[border-color,background] duration-200 hover:border-white/15 hover:bg-[rgba(39,39,42,.84)]"
     };
+    let time_class = if is_own {
+        "mb-[1px] shrink-0 text-[10px] leading-none text-blue-300/70"
+    } else {
+        "mb-[1px] shrink-0 text-[10px] leading-none text-zinc-500"
+    };
+    let sent_time = message_time(&message.created_at);
 
     rsx! {
         div {
@@ -48,6 +54,11 @@ pub(crate) fn ChatMessageItem(
                 if !message.body.is_empty() {
                     div { class: bubble_class,
                         span { class: "min-w-0 flex-1", "{message.body}" }
+                        span {
+                            class: time_class,
+                            title: "Отправлено в {sent_time}",
+                            "{sent_time}"
+                        }
                         if is_own {
                             if let Some(status) = message.delivery_status {
                                 {delivery_status_marks(status)}

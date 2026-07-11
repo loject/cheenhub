@@ -309,9 +309,17 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
     });
 
     let requests_count = incoming().len() + outgoing().len();
+    let mobile_conversation_open = if selected_conversation().is_some() {
+        "true"
+    } else {
+        "false"
+    };
+
     rsx! {
-        section { class: "flex h-full min-h-0 flex-1 bg-zinc-950 text-zinc-100",
-            aside { class: "flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/90",
+        section {
+            class: "social-workspace flex h-full min-h-0 flex-1 bg-zinc-950 text-zinc-100",
+            "data-mobile-conversation-open": "{mobile_conversation_open}",
+            aside { class: "social-sidebar flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/90",
                 div { class: "flex h-16 shrink-0 items-center justify-between gap-3 border-b border-zinc-800/80 px-4",
                     div { class: "min-w-0",
                         h1 { class: "text-[15px] font-semibold text-zinc-50", "Друзья" }
@@ -367,8 +375,26 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
                 }
             }
 
-            section { class: "flex min-h-0 min-w-0 flex-1 flex-col",
-                div { class: "flex min-h-16 shrink-0 items-center gap-3 border-b border-zinc-800/80 px-5",
+            section { class: "social-conversation flex min-h-0 min-w-0 flex-1 flex-col",
+                div { class: "social-conversation-header flex min-h-16 shrink-0 items-center gap-3 border-b border-zinc-800/80 px-5",
+                    if selected_conversation().is_some() {
+                        button {
+                            r#type: "button",
+                            class: "social-mobile-back-button h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-400 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100",
+                            "aria-label": "Назад к друзьям",
+                            onclick: move |_| {
+                                info!("closing direct message mobile workspace");
+                                selected_conversation.set(None);
+                                loaded_route_conversation_id.set(None);
+                                messages.set(Vec::new());
+                                draft.set(String::new());
+                                navigator.push(Route::AppFriends {});
+                            },
+                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 18 9 12l6-6" }
+                            }
+                        }
+                    }
                     if let Some(conversation) = selected_conversation() {
                         UserAvatar {
                             nickname: conversation.friend_nickname.clone(),
