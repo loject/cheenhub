@@ -474,7 +474,7 @@ fn create_git_tag(tag: &str) -> XtaskResult<()> {
 
 fn run_release_build() -> XtaskResult<()> {
     println!("Running cargo build before creating the git tag.");
-    checked_status(Command::new("cargo").arg("build"))?;
+    checked_status(Command::new("cargo").args(["build", "--workspace", "--exclude", "xtask"]))?;
     println!("cargo build finished.");
     Ok(())
 }
