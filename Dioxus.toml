@@ -3,6 +3,7 @@ name = "CheenHub"
 default_platform = "web"
 asset_dir = "crates/client/assets"
 sub_package = "cheenhub_client"
+android_main_activity = "android/MainActivity.kt"
 
 [bundle]
 identifier = "ru.cheenhub"
@@ -43,8 +44,16 @@ depends = [
 identifier = "ru.cheenhub"
 min_sdk = 24
 target_sdk = 35
+compile_sdk = 35
+foreground_service_types = ["microphone", "mediaPlayback", "camera", "mediaProjection"]
 
 [android.permissions]
 "android.permission.INTERNET" = { description = "Network access for CheenHub API and realtime transport" }
 "android.permission.RECORD_AUDIO" = { description = "Voice chat microphone capture" }
 "android.permission.CAMERA" = { description = "Camera capture" }
+"android.permission.MODIFY_AUDIO_SETTINGS" = { description = "Voice audio routing and communication mode" }
+"android.permission.FOREGROUND_SERVICE" = { description = "Keep active voice and media capture sessions running" }
+"android.permission.FOREGROUND_SERVICE_MICROPHONE" = { description = "Keep microphone capture running during an active voice session" }
+"android.permission.FOREGROUND_SERVICE_CAMERA" = { description = "Keep camera capture running during an active video session" }
+"android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" = { description = "Keep an explicitly approved screen sharing session running" }
+"android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" = { description = "Keep voice playback running during an active voice session" }

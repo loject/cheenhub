@@ -2,9 +2,16 @@
 
 #[cfg(all(
     not(target_arch = "wasm32"),
-    any(feature = "windows", feature = "linux", feature = "macos")
+    any(
+        feature = "android",
+        feature = "windows",
+        feature = "linux",
+        feature = "macos"
+    )
 ))]
 mod implementation {
+    #[cfg(feature = "android")]
+    use crate::features::runtime::android::{AndroidPermission, PermissionResult, android_bridge};
     use cpal::traits::{DeviceTrait, HostTrait};
     use dioxus::prelude::{debug, warn};
 
@@ -82,15 +89,57 @@ mod implementation {
         }
     }
 
-    /// Возвращает список устройств ввода, потому что desktop-платформы не требуют browser permission.
+    /// Запрашивает runtime-разрешение Android или сразу перечисляет устройства на desktop.
     pub(crate) async fn request_microphone_permission() -> AudioInputDevicesResult {
+        #[cfg(feature = "android")]
+        {
+            let bridge = match android_bridge() {
+                Ok(bridge) => bridge,
+                Err(error) => {
+                    warn!(error = %error, "Android microphone permission bridge is unavailable");
+                    return AudioInputDevicesResult::NotSupported;
+                }
+            };
+            let (sender, receiver) = futures_channel::oneshot::channel();
+            if let Err(error) = bridge.request_permission(
+                AndroidPermission::RecordAudio,
+                Box::new(move |result| {
+                    let _ = sender.send(result);
+                }),
+            ) {
+                warn!(error = %error, "failed to request Android microphone permission");
+                return AudioInputDevicesResult::NotSupported;
+            }
+
+            return match receiver.await {
+                Ok(Ok(PermissionResult::Granted)) => enumerate_audio_input_devices().await,
+                Ok(Ok(PermissionResult::Denied | PermissionResult::DeniedPermanently)) => {
+                    AudioInputDevicesResult::PermissionDenied
+                }
+                Ok(Err(error)) => {
+                    warn!(error = %error, "Android microphone permission request failed");
+                    AudioInputDevicesResult::NotSupported
+                }
+                Err(error) => {
+                    warn!(error = %error, "Android microphone permission callback was dropped");
+                    AudioInputDevicesResult::NotSupported
+                }
+            };
+        }
+
+        #[cfg(not(feature = "android"))]
         enumerate_audio_input_devices().await
     }
 }
 
 #[cfg(all(
     not(target_arch = "wasm32"),
-    not(any(feature = "windows", feature = "linux", feature = "macos"))
+    not(any(
+        feature = "android",
+        feature = "windows",
+        feature = "linux",
+        feature = "macos"
+    ))
 ))]
 mod implementation {
     use dioxus::prelude::debug;

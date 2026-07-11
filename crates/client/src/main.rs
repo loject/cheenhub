@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! Точка входа web-клиента CheenHub.
+//! Точка входа клиента CheenHub.
 
 use dioxus::prelude::*;
 
@@ -21,12 +21,26 @@ static TAILWIND_CSS: Asset = asset!(
     AssetOptions::css().with_static_head(true)
 );
 
+fn configure_storage() {
+    #[cfg(target_os = "android")]
+    {
+        dioxus_sdk_storage::set_directory(std::path::PathBuf::from(
+            "/data/user/0/ru.cheenhub/files/storage",
+        ));
+    }
+
+    #[cfg(all(not(target_os = "android"), not(target_family = "wasm")))]
+    {
+        dioxus_sdk_storage::set_dir!();
+    }
+}
+
 fn main() {
     if update_mode::run_if_requested() {
         return;
     }
 
-    dioxus_sdk_storage::set_dir!();
+    configure_storage();
     features::runtime::launch_client(App);
 }
 

@@ -53,6 +53,19 @@
     "allow_concurrent_runs": false
   },
   {
+    "label": "CheenHub: dev stack Android",
+    "command": "cargo",
+    "args": [
+      "make",
+      "dev-stack-android"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
     "label": "CheenHub: dev stack desktop profile",
     "command": "cargo",
     "args": [
@@ -71,6 +84,19 @@
     "args": [
       "make",
       "dev-services"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "CheenHub: dev services Android",
+    "command": "cargo",
+    "args": [
+      "make",
+      "dev-services-android"
     ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",
@@ -123,6 +149,19 @@
     "args": [
       "make",
       "dioxus-web-release"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "CheenHub: dioxus Android",
+    "command": "cargo",
+    "args": [
+      "make",
+      "dioxus-android"
     ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",

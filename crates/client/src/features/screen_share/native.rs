@@ -14,7 +14,12 @@ fn default_backend_platform() -> Rc<dyn ScreenShareBackend> {
     Rc::new(super::browser::BrowserScreenShareBackend)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_os = "android")]
+fn default_backend_platform() -> Rc<dyn ScreenShareBackend> {
+    Rc::new(super::android::AndroidScreenShareBackend)
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 fn default_backend_platform() -> Rc<dyn ScreenShareBackend> {
     Rc::new(super::unsupported::UnavailableScreenShareBackend)
 }

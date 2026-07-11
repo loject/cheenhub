@@ -1,5 +1,7 @@
 //! Выбор реализации воспроизведения аудио для конкретной платформы.
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "android"))]
+mod android;
 #[cfg(all(not(target_arch = "wasm32"), feature = "linux"))]
 mod linux;
 #[cfg(all(not(target_arch = "wasm32"), feature = "macos"))]
@@ -9,11 +11,18 @@ mod windows;
 
 #[cfg(all(
     not(target_arch = "wasm32"),
-    not(any(feature = "windows", feature = "linux", feature = "macos"))
+    not(any(
+        feature = "android",
+        feature = "windows",
+        feature = "linux",
+        feature = "macos"
+    ))
 ))]
 pub(crate) use super::unsupported::{AudioPlaybackHandle, AudioPlaybackProvider};
 #[cfg(target_arch = "wasm32")]
 pub(crate) use super::web::{AudioPlaybackHandle, AudioPlaybackProvider};
+#[cfg(all(not(target_arch = "wasm32"), feature = "android"))]
+pub(crate) use android::{AudioPlaybackHandle, AudioPlaybackProvider};
 #[cfg(all(not(target_arch = "wasm32"), feature = "linux"))]
 pub(crate) use linux::{AudioPlaybackHandle, AudioPlaybackProvider};
 #[cfg(all(not(target_arch = "wasm32"), feature = "macos"))]

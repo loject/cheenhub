@@ -26,6 +26,11 @@ description = "Ensure local infrastructure and run the backend watcher plus Diox
 dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
 run_task = "dev-services-desktop"
 
+[tasks.dev-stack-android]
+description = "Ensure local infrastructure and run the backend watcher plus Dioxus Android app on a connected device."
+dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
+run_task = "dev-services-android"
+
 [tasks.ensure-local-jwt-env]
 description = "Ensure local .env contains a valid matching JWT Ed25519 key pair."
 command = "cargo"
@@ -51,6 +56,10 @@ run_task = { name = ["backend-watch", "microphone-worker-watch", "dioxus-web"], 
 description = "Run the backend watcher and Dioxus desktop app in parallel."
 run_task = { name = ["backend-watch", "dioxus-desktop"], fork = true, parallel = true }
 
+[tasks.dev-services-android]
+description = "Run the backend watcher and Dioxus Android app in parallel."
+run_task = { name = ["backend-watch", "dioxus-android"], fork = true, parallel = true }
+
 [tasks.dev-services-desktop-profile]
 description = "Run the backend watcher and Dioxus desktop app with Dioxus render profiling."
 run_task = { name = ["backend-watch", "dioxus-desktop-profile"], fork = true, parallel = true }
@@ -58,6 +67,7 @@ run_task = { name = ["backend-watch", "dioxus-desktop-profile"], fork = true, pa
 [tasks.backend-watch]
 description = "Run the backend through cargo-watch."
 dependencies = ["install-cargo-watch"]
+env_files = [".env"]
 command = "cargo"
 args = ["watch", "-x", "run -p cheenhub_backend"]
 
@@ -150,6 +160,30 @@ args = [
     "--features",
     "desktop,windows",
 ]
+
+[tasks.dioxus-android]
+description = "Run the Dioxus Android dev app on a connected ARM64 device."
+dependencies = ["install-dioxus-cli", "ensure-android-arm64-target"]
+env = { CMAKE_GENERATOR = "Ninja" }
+command = "dx"
+args = [
+    "serve",
+    "--android",
+    "--target",
+    "aarch64-linux-android",
+    "--package",
+    "cheenhub_client",
+    "--bin",
+    "cheen_hub",
+    "--no-default-features",
+    "--features",
+    "android",
+]
+
+[tasks.ensure-android-arm64-target]
+private = true
+command = "rustup"
+args = ["target", "add", "aarch64-linux-android"]
 
 [tasks.dioxus-desktop-profile]
 description = "Run the Dioxus desktop dev app with Dioxus render profiling."
@@ -317,15 +351,21 @@ args = [
 [tasks.bundle-android-apk-release]
 description = "Build the Android APK client package."
 dependencies = ["install-dioxus-cli", "check-release-version"]
+env = { CMAKE_GENERATOR = "Ninja" }
 command = "dx"
 args = [
     "bundle",
     "--android",
+    "--target",
+    "aarch64-linux-android",
     "--package",
     "cheenhub_client",
     "--bin",
     "cheen_hub",
     "--release",
+    "--no-default-features",
+    "--features",
+    "android",
     "--package-types",
     "apk",
     "--out-dir",

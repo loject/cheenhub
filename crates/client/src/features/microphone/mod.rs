@@ -14,6 +14,13 @@ mod provider;
 mod provider_context;
 mod provider_runtime;
 mod storage;
+#[cfg(not(any(
+    feature = "web",
+    feature = "android",
+    feature = "windows",
+    feature = "linux",
+    feature = "macos"
+)))]
 mod unsupported;
 mod vad;
 

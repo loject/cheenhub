@@ -14,7 +14,12 @@ fn default_backend_platform() -> Rc<dyn CameraBackend> {
     Rc::new(super::web::WebCameraBackend)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_os = "android")]
+fn default_backend_platform() -> Rc<dyn CameraBackend> {
+    Rc::new(super::android::AndroidCameraBackend)
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 fn default_backend_platform() -> Rc<dyn CameraBackend> {
     Rc::new(super::unsupported::UnavailableCameraBackend)
 }

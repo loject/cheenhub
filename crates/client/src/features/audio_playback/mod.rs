@@ -4,6 +4,15 @@ mod backend;
 mod native;
 mod output_devices;
 mod storage;
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(
+        feature = "android",
+        feature = "windows",
+        feature = "linux",
+        feature = "macos"
+    ))
+))]
 mod unsupported;
 mod web;
 

@@ -1,5 +1,6 @@
 //! Платформенные runtime-помощники клиента.
 
+pub(crate) mod android;
 mod native;
 mod unsupported;
 mod web;

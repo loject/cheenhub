@@ -2,7 +2,12 @@
 
 #[cfg(all(
     not(target_arch = "wasm32"),
-    any(feature = "windows", feature = "linux", feature = "macos")
+    any(
+        feature = "android",
+        feature = "windows",
+        feature = "linux",
+        feature = "macos"
+    )
 ))]
 mod implementation {
     use cpal::traits::{DeviceTrait, HostTrait};
@@ -81,7 +86,12 @@ mod implementation {
 
 #[cfg(all(
     not(target_arch = "wasm32"),
-    not(any(feature = "windows", feature = "linux", feature = "macos"))
+    not(any(
+        feature = "android",
+        feature = "windows",
+        feature = "linux",
+        feature = "macos"
+    ))
 ))]
 mod implementation {
     use dioxus::prelude::debug;

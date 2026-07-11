@@ -54,6 +54,7 @@ desktop = [
     "dioxus/desktop",
 ]
 mobile = ["app", "dep:tokio", "dep:tokio-tungstenite", "dioxus/mobile"]
+android = ["mobile", "dep:cpal", "dep:opus", "dep:jni", "dep:ndk-context", "dep:wry"]
 system-tray = []
 browser-media-diagnostics = []
 # Windows-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
@@ -82,6 +83,8 @@ futures-channel = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 gloo-timers = { workspace = true, optional = true }
 js-sys = { workspace = true, optional = true }
+jni = { version = "0.21", optional = true }
+ndk-context = { version = "0.1", optional = true }
 opus = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
@@ -131,6 +134,7 @@ web-sys = { workspace = true, optional = true, features = [
     "WebSocket",
     "console",
 ] }
+wry = { version = "0.53.5", optional = true }
 
 [build-dependencies]
 dotenvy.workspace = true

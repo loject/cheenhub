@@ -106,7 +106,7 @@ fn write_installer_payload_module(
 }
 
 fn validate_platform_features() {
-    let enabled_features = ["web", "windows", "linux", "macos"]
+    let enabled_features = ["web", "windows", "linux", "macos", "android"]
         .into_iter()
         .filter(|feature| cargo_feature_enabled(feature))
         .collect::<Vec<_>>();
@@ -133,6 +133,10 @@ fn validate_platform_features() {
                 }
             );
         }
+    }
+
+    if cargo_feature_enabled("mobile") && !cargo_feature_enabled("android") {
+        panic!("Mobile client build must explicitly enable the android platform feature.");
     }
 }
 
