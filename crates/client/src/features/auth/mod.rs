@@ -6,8 +6,11 @@ mod domain;
 pub(crate) mod guest_guard;
 mod http;
 pub(crate) mod jwt;
+mod messages;
 mod pages;
 mod profile_api;
+mod refresh;
+mod refresh_lock;
 pub(crate) mod sessions_api;
 mod storage;
 

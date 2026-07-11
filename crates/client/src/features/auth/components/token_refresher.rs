@@ -38,12 +38,13 @@ pub(crate) fn TokenRefresher(on_session_expired: EventHandler<()>) -> Element {
                 }
 
                 if let Err(error) = api::refresh_access_token().await {
-                    if api::is_network_error(&error) {
-                        warn!("access token refresh deferred while network is unavailable");
+                    if api::is_retryable_refresh_error(&error) {
+                        warn!(%error, "access token refresh deferred");
                         sleep_ms(5_000).await;
                         continue;
                     }
 
+                    warn!(%error, "access token refresh failed; expiring client session");
                     storage::clear();
                     on_session_expired.call(());
                     break;

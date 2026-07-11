@@ -25,6 +25,16 @@ pub(crate) fn load() -> Option<StoredTokens> {
     Some(tokens)
 }
 
+/// Возвращает текущий access token, если сохраненная пара токенов уже изменилась.
+pub(crate) fn access_token_if_changed(tokens: &StoredTokens) -> Option<String> {
+    let stored = load()?;
+    if stored.access_token == tokens.access_token && stored.refresh_token == tokens.refresh_token {
+        return None;
+    }
+
+    Some(stored.access_token)
+}
+
 fn load_from<S>() -> Option<StoredTokens>
 where
     S: StorageBacking<Key = String>,

@@ -228,6 +228,8 @@ pub(crate) async fn refresh_with_user_agent(
             .map_err(AuthError::Internal)?
         {
             tracing::warn!("detected refresh token reuse; revoked the entire session");
+        } else {
+            tracing::warn!("rejected inactive or unknown refresh token");
         }
         return Err(expired_session());
     };
@@ -248,6 +250,12 @@ pub(crate) async fn refresh_with_user_agent(
         )
         .await
         .map_err(AuthError::Internal)?;
+
+    tracing::info!(
+        session_id = %refresh_session.session_id,
+        user_id = %refresh_session.user.id,
+        "rotated auth refresh token"
+    );
 
     Ok(AuthResponse {
         access_token: jwt::sign_access_token(

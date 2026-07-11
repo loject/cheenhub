@@ -3,20 +3,21 @@
 use cheenhub_contracts::rest::{
     ApiError, AuthResponse, AuthUser, LoginRequest, LogoutRequest, OAuthFlow,
     OAuthRegistrationRequest, OAuthStartRequest, PasswordResetConfirmRequest, PasswordResetRequest,
-    RefreshRequest, RegisterRequest,
+    RegisterRequest,
 };
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::features::auth::{jwt, storage};
+use crate::features::auth::{jwt, messages, storage};
 
-const NETWORK_ERROR_MESSAGE: &str = "Не удалось связаться с сервером.";
+const NETWORK_ERROR_MESSAGE: &str = messages::NETWORK_ERROR_MESSAGE;
 
 pub(crate) use super::http::{delete, get, patch, post, put};
 pub(crate) use super::profile_api::{
     change_current_user_password, update_current_user, update_current_user_avatar,
 };
+pub(crate) use super::refresh::{is_retryable_refresh_error, refresh_access_token};
 
 /// Регистрирует новую учетную запись и сохраняет возвращенные токены.
 pub(crate) async fn register(request: RegisterRequest) -> Result<AuthUser, String> {
@@ -200,35 +201,6 @@ pub(crate) async fn fresh_access_token() -> Result<String, String> {
     }
 
     refresh_access_token().await
-}
-
-pub(crate) async fn refresh_access_token() -> Result<String, String> {
-    let Some(tokens) = storage::load() else {
-        return Err("Войди, чтобы продолжить.".to_owned());
-    };
-    let response: AuthResponse = match post_json(
-        "/auth/refresh",
-        &RefreshRequest {
-            refresh_token: tokens.refresh_token.clone(),
-        },
-    )
-    .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            if let Some(access_token) = changed_access_token(&tokens) {
-                return Ok(access_token);
-            }
-            if !is_network_error(&error) {
-                storage::clear();
-            }
-            return Err(error);
-        }
-    };
-
-    jwt::verify(&response.access_token)?;
-    storage::save(&response.access_token, &response.refresh_token);
-    Ok(response.access_token)
 }
 
 /// Результат завершения OAuth, возвращаемый auth API.
@@ -418,15 +390,6 @@ async fn parse_linked_accounts(response: reqwest::Response) -> Result<Vec<Linked
 
     serde_json::from_value::<Vec<LinkedAccount>>(accounts)
         .map_err(|_| "Не удалось прочитать список связанных аккаунтов.".to_owned())
-}
-
-fn changed_access_token(tokens: &storage::StoredTokens) -> Option<String> {
-    let stored = storage::load()?;
-    if stored.access_token == tokens.access_token && stored.refresh_token == tokens.refresh_token {
-        return None;
-    }
-
-    Some(stored.access_token)
 }
 
 async fn post_json<T>(path: &str, request: &T) -> Result<AuthResponse, String>
