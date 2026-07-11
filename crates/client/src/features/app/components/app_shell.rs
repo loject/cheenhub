@@ -75,8 +75,12 @@ pub(crate) fn AppShell() -> Element {
 
     let route_active_server_id_for_sync = route_active_server_id.clone();
     use_effect(move || {
-        if active_server_id() != route_active_server_id_for_sync {
-            active_server_id.set(route_active_server_id_for_sync.clone());
+        let Some(route_server_id) = route_active_server_id_for_sync.clone() else {
+            return;
+        };
+
+        if active_server_id().as_deref() != Some(route_server_id.as_str()) {
+            active_server_id.set(Some(route_server_id));
         }
     });
 

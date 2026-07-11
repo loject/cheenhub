@@ -44,9 +44,14 @@ pub(super) fn spawn_stream_reader(
     pending: PendingRequests,
     pending_key: Option<PendingKey>,
     cached_stream: Option<(ModuleStreams, Rc<Mutex<SendStream>>)>,
+    send_keepalive: Option<Rc<Mutex<SendStream>>>,
 ) {
     spawn_task(async move {
+        // Одноразовый двунаправленный поток нельзя закрывать до ответа backend.
+        let one_shot = send_keepalive.is_some();
+        let _send_keepalive = send_keepalive;
         let rejects_module_pending = cached_stream.is_some();
+        let mut received_one_shot_response = false;
         let close_reason = loop {
             let envelope = match framing::read_envelope(&mut recv).await {
                 Ok(Some(envelope)) => envelope,
@@ -75,8 +80,14 @@ pub(super) fn spawn_stream_reader(
                 debug!(module = ?module, "realtime inbound dispatcher closed");
                 break "Realtime inbound dispatcher closed before the request completed.";
             }
+            if one_shot {
+                received_one_shot_response = true;
+                break "Realtime one-shot response received.";
+            }
         };
-        if rejects_module_pending {
+        if received_one_shot_response {
+            // Завершение задачи освобождает send-половину и сообщает backend, что one-shot завершён.
+        } else if rejects_module_pending {
             reject_pending_requests_for_module(&pending, module, close_reason);
         } else if let Some(key) = pending_key {
             reject_pending_request(&pending, key, close_reason);

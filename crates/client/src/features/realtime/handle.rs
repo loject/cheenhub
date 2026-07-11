@@ -316,6 +316,7 @@ impl RealtimeHandle {
                 self.inner.pending.clone(),
                 pending_key,
                 None,
+                Some(send.clone()),
             );
 
             match framing::write_envelope(&send, &envelope).await {
@@ -357,6 +358,7 @@ impl RealtimeHandle {
             self.inner.pending.clone(),
             None,
             Some((self.inner.streams.clone(), send.clone())),
+            None,
         );
 
         Ok(send)
