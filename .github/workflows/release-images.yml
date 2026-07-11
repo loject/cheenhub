@@ -216,13 +216,16 @@ jobs:
           rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal
           rustup default $env:RUST_TOOLCHAIN
 
-      - name: Cache Rust build outputs
+      - name: Cache Rust and Dioxus build outputs
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: windows-client-release
           cache-on-failure: true
+          cache-workspace-crates: true
           workspaces: |
             . -> target
+          cache-directories: |
+            target/dx
 
       - name: Cache Dioxus CLI
         uses: actions/cache@v5
@@ -250,7 +253,7 @@ jobs:
       - name: Build Windows installers
         shell: pwsh
         run: |
-          dx bundle --windows --package cheenhub_client --bin cheen_hub --release --no-default-features --features desktop,windows --package-types nsis --package-types msi --out-dir dist/windows/raw
+          dx bundle --windows --package cheenhub_client --bin cheen_hub --release --no-default-features --features desktop,windows --package-types nsis --out-dir dist/windows/raw
           $payload = Get-ChildItem -Path dist/windows/raw -Recurse -Filter *.exe | Sort-Object FullName | Select-Object -First 1
           if (-not $payload) {
             throw "Dioxus Windows NSIS installer was not found in dist/windows/raw."
