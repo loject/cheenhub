@@ -3,6 +3,8 @@
 mod compose;
 mod history;
 mod image_attachment;
+mod message_date;
+mod message_date_divider;
 mod message_group;
 mod message_item;
 mod messages;
@@ -23,6 +25,8 @@ pub(crate) const CHAT_CONTENT_CLASS: &str = "mx-auto flex w-full max-w-5xl flex-
 pub(crate) const CHAT_STATUS_CLASS: &str =
     "mx-auto w-full max-w-5xl px-4 pb-2 text-[11px] leading-4 text-red-200";
 
+pub(crate) use message_date::{friendly_message_date, message_day_key};
+pub(crate) use message_date_divider::ChatMessageDateDivider;
 pub(crate) use message_group::ChatMessageGroup;
 pub(crate) use messages::group_consecutive_messages;
 pub(crate) use scroll::{ScrollCommand, apply_scroll_command, update_near_bottom_state};

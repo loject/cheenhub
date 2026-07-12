@@ -9,8 +9,9 @@ use crate::features::app::components::workspace_split::{
     EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO, clamp_embedded_chat_height, finish_embedded_chat_resize,
 };
 use crate::features::text_chat::{
-    CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, ChatMessageGroup, ScrollCommand,
-    group_consecutive_messages, update_near_bottom_state,
+    CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, ChatMessageDateDivider, ChatMessageGroup,
+    ScrollCommand, friendly_message_date, group_consecutive_messages, message_day_key,
+    update_near_bottom_state,
 };
 use crate::features::voice_chat::{VoiceConnectionHandle, VoiceConnectionState};
 
@@ -74,11 +75,16 @@ pub(crate) fn DirectMessageWorkspace(
         .cloned()
         .map(dm_as_text_message)
         .collect::<Vec<_>>();
+    let mut previous_day_key = None;
     let message_groups = group_consecutive_messages(&rendered_text_messages)
         .into_iter()
         .filter_map(|group| {
-            let group_key = group.first()?.id.clone();
-            Some((group_key, group))
+            let first_message = group.first()?;
+            let day_key = message_day_key(&first_message.created_at);
+            let date_label = (previous_day_key.as_ref() != Some(&day_key))
+                .then(|| friendly_message_date(&first_message.created_at));
+            previous_day_key = Some(day_key);
+            Some((first_message.id.clone(), date_label, group))
         })
         .collect::<Vec<_>>();
     let conversation_id = conversation.id.clone();
@@ -217,14 +223,18 @@ pub(crate) fn DirectMessageWorkspace(
                                         p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Напишите первое личное сообщение." }
                                     }
                                 } else {
-                                    for (group_key, group) in message_groups.iter().cloned() {
-                                        ChatMessageGroup {
-                                            key: "{group_key}",
-                                            messages: group,
-                                            appearing_message_ids: appearing_message_ids_list.clone(),
-                                            removing_message_ids: removing_message_ids_list.clone(),
-                                            can_delete_messages: false,
-                                            on_delete: move |_| {},
+                                    for (group_key, date_label, group) in message_groups.iter().cloned() {
+                                        div { key: "{group_key}", class: "contents",
+                                            if let Some(label) = date_label {
+                                                ChatMessageDateDivider { label }
+                                            }
+                                            ChatMessageGroup {
+                                                messages: group,
+                                                appearing_message_ids: appearing_message_ids_list.clone(),
+                                                removing_message_ids: removing_message_ids_list.clone(),
+                                                can_delete_messages: false,
+                                                on_delete: move |_| {},
+                                            }
                                         }
                                     }
                                 }

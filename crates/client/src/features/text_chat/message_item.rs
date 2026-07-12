@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 use crate::features::app::current_user::CurrentUserContext;
 
 use super::image_attachment::ChatImageAttachment;
+use super::message_date::full_message_datetime;
 
 /// Рендерит одну строку сообщения текстового чата.
 #[component]
@@ -37,6 +38,7 @@ pub(crate) fn ChatMessageItem(
         "mb-[1px] shrink-0 text-[10px] leading-none text-zinc-500"
     };
     let sent_time = message_time(&message.created_at);
+    let sent_datetime = full_message_datetime(&message.created_at);
 
     rsx! {
         div {
@@ -54,10 +56,13 @@ pub(crate) fn ChatMessageItem(
                 if !message.body.is_empty() {
                     div { class: bubble_class,
                         span { class: "min-w-0 flex-1", "{message.body}" }
-                        span {
-                            class: time_class,
-                            title: "Отправлено в {sent_time}",
-                            "{sent_time}"
+                        span { class: "group/message-time relative inline-flex shrink-0",
+                            span { class: time_class, "{sent_time}" }
+                            span {
+                                role: "tooltip",
+                                class: "pointer-events-none absolute bottom-[calc(100%+8px)] right-0 z-30 w-max max-w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-zinc-800 bg-zinc-950/95 px-2.5 py-1.5 text-[11px] font-medium leading-4 text-zinc-200 opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-[opacity,transform] duration-150 group-hover/message-time:opacity-100 group-focus-within/message-time:opacity-100",
+                                "Отправлено {sent_datetime}"
+                            }
                         }
                         if is_own {
                             if let Some(status) = message.delivery_status {

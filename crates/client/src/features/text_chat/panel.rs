@@ -17,11 +17,13 @@ use super::history::{
     HistoryState, HistoryTarget, load_initial_history, load_initial_history_when_connected,
     load_older_history,
 };
-use super::message_group::ChatMessageGroup;
 use super::messages::{append_message, group_consecutive_messages, remove_message};
 use super::realtime::{self, TextChatEvent};
 use super::scroll::{ScrollCommand, apply_scroll_command, update_scroll_state};
-use super::{CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, CHAT_STATUS_CLASS};
+use super::{
+    CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, CHAT_STATUS_CLASS, ChatMessageDateDivider,
+    ChatMessageGroup, friendly_message_date, message_day_key,
+};
 
 /// Рендерит панель realtime-текстового чата для одной комнаты.
 #[component]
@@ -121,11 +123,16 @@ pub(crate) fn ChatRoomPanel(
     let removing_message_ids_list = removing_message_ids();
     let rendered_messages = messages();
     let has_messages = !rendered_messages.is_empty();
+    let mut previous_day_key = None;
     let message_groups = group_consecutive_messages(&rendered_messages)
         .into_iter()
         .filter_map(|group| {
-            let group_key = group.first()?.id.clone();
-            Some((group_key, group))
+            let first_message = group.first()?;
+            let day_key = message_day_key(&first_message.created_at);
+            let date_label = (previous_day_key.as_ref() != Some(&day_key))
+                .then(|| friendly_message_date(&first_message.created_at));
+            previous_day_key = Some(day_key);
+            Some((first_message.id.clone(), date_label, group))
         })
         .collect::<Vec<_>>();
 
@@ -375,14 +382,18 @@ pub(crate) fn ChatRoomPanel(
                             }
                         }
                     } else {
-                        for (group_key, group) in message_groups.iter().cloned() {
-                            ChatMessageGroup {
-                                key: "{group_key}",
-                                messages: group,
-                                appearing_message_ids: appearing_message_ids_list.clone(),
-                                removing_message_ids: removing_message_ids_list.clone(),
-                                can_delete_messages: permissions.can_delete_messages,
-                                on_delete: move |id| on_delete_message.call(id),
+                        for (group_key, date_label, group) in message_groups.iter().cloned() {
+                            div { key: "{group_key}", class: "contents",
+                                if let Some(label) = date_label {
+                                    ChatMessageDateDivider { label }
+                                }
+                                ChatMessageGroup {
+                                    messages: group,
+                                    appearing_message_ids: appearing_message_ids_list.clone(),
+                                    removing_message_ids: removing_message_ids_list.clone(),
+                                    can_delete_messages: permissions.can_delete_messages,
+                                    on_delete: move |id| on_delete_message.call(id),
+                                }
                             }
                         }
                     }

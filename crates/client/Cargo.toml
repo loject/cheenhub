@@ -27,6 +27,7 @@ app = [
     "dep:base64",
     "dep:bytes",
     "dep:cheenhub_contracts",
+    "dep:chrono",
     "dep:dioxus",
     "dep:dioxus-sdk-storage",
     "dep:ed25519-dalek",
@@ -78,6 +79,7 @@ microphone_worker = []
 base64 = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 cheenhub_contracts = { path = "../contracts", optional = true }
+chrono = { workspace = true, optional = true }
 cpal = { workspace = true, optional = true }
 dioxus = { workspace = true, features = [
     "devtools",

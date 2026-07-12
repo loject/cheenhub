@@ -67,9 +67,11 @@ pub(crate) fn group_consecutive_messages(
     for message in messages {
         match groups.last_mut() {
             Some(group)
-                if group
-                    .last()
-                    .is_some_and(|last| last.author_user_id == message.author_user_id) =>
+                if group.last().is_some_and(|last| {
+                    last.author_user_id == message.author_user_id
+                        && super::message_date::message_day_key(&last.created_at)
+                            == super::message_date::message_day_key(&message.created_at)
+                }) =>
             {
                 group.push(message.clone());
             }
