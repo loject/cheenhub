@@ -31,6 +31,8 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
     let quality = network_quality.current();
     let latest_ping = quality.latest_rtt_ms.map(format_ping);
     let ping_text = latest_ping.as_deref().unwrap_or("пинг ожидается");
+    let latest_jitter = quality.latest_jitter_ms.map(format_ping);
+    let jitter_text = latest_jitter.as_deref().unwrap_or("ожидается");
     let (label, tooltip, class) = match status() {
         RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebTransport) => (
             "Подключен",
@@ -54,6 +56,13 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
         .samples
         .iter()
         .map(|sample| sample.rtt_ms)
+        .reduce(f64::max)
+        .map(format_ping)
+        .unwrap_or_else(|| "нет данных".to_string());
+    let max_jitter = quality
+        .samples
+        .iter()
+        .map(|sample| sample.jitter_ms)
         .reduce(f64::max)
         .map(format_ping)
         .unwrap_or_else(|| "нет данных".to_string());
@@ -90,6 +99,16 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
                         div { class: "text-right",
                             span { class: "block text-[13px] font-semibold text-zinc-100", "{ping_text}" }
                             span { class: "mt-1 block text-[11px] text-zinc-500", "пик {max_ping}" }
+                        }
+                    }
+                    div { class: "mt-3 flex items-center justify-between gap-3 border-t border-zinc-800/80 pt-3",
+                        div {
+                            span { class: "block text-[12px] font-semibold text-zinc-100", "Джиттер" }
+                            span { class: "mt-1 block text-[11px] text-zinc-500", "Сглаженное изменение RTT" }
+                        }
+                        div { class: "text-right",
+                            span { class: "block text-[13px] font-semibold text-zinc-100", "{jitter_text}" }
+                            span { class: "mt-1 block text-[11px] text-zinc-500", "пик {max_jitter}" }
                         }
                     }
                     div { class: "mt-3 h-[84px] rounded-lg border border-zinc-800/80 bg-zinc-900/45 p-2",
