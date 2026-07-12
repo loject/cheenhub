@@ -389,7 +389,7 @@ jobs:
           java-version: "17"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android SDK packages
         shell: bash
@@ -476,7 +476,7 @@ jobs:
             signing_key_password="${ANDROID_RELEASE_KEY_PASSWORD}"
             printf '%s' "${ANDROID_RELEASE_KEYSTORE_BASE64}" | base64 --decode > "${signing_keystore_path}"
           else
-            echo "::warning::Android release signing secrets are not configured; generating a temporary CI keystore. APK updates will require reinstalling unless stable ANDROID_RELEASE_* secrets are added."
+            echo "::notice::Android release signing secrets are not configured; generating a temporary CI keystore. APK updates will require reinstalling unless stable ANDROID_RELEASE_* secrets are added."
             signing_keystore_path="${signing_keystore_dir}/ci-release.jks"
             signing_keystore_password="cheenhub-ci-release-store"
             signing_key_alias="cheenhub-ci-release"
@@ -527,7 +527,7 @@ jobs:
             --bin cheen_hub \
             --release \
             --no-default-features \
-            --features android \
+            --features mobile \
             --package-types apk \
             --out-dir dist/android/raw
 

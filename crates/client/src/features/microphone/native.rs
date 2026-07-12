@@ -4,17 +4,17 @@ use std::rc::Rc;
 
 use super::backend::MicrophoneBackend;
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 mod android;
 #[cfg(any(
-    feature = "android",
+    target_os = "android",
     feature = "windows",
     feature = "linux",
     feature = "macos"
 ))]
 mod cpal_capture;
 #[cfg(any(
-    feature = "android",
+    target_os = "android",
     feature = "windows",
     feature = "linux",
     feature = "macos"
@@ -28,7 +28,7 @@ pub(super) fn default_backend() -> Rc<dyn MicrophoneBackend> {
         Rc::new(super::browser::BrowserMicrophoneBackend)
     }
 
-    #[cfg(feature = "android")]
+    #[cfg(target_os = "android")]
     {
         Rc::new(android::AndroidMicrophoneBackend)
     }
@@ -40,7 +40,7 @@ pub(super) fn default_backend() -> Rc<dyn MicrophoneBackend> {
 
     #[cfg(not(any(
         feature = "web",
-        feature = "android",
+        target_os = "android",
         feature = "windows",
         feature = "linux",
         feature = "macos"

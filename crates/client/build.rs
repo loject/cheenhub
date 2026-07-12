@@ -106,13 +106,13 @@ fn write_installer_payload_module(
 }
 
 fn validate_platform_features() {
-    let enabled_features = ["web", "windows", "linux", "macos", "android"]
+    let enabled_features = ["web", "windows", "linux", "macos", "mobile"]
         .into_iter()
         .filter(|feature| cargo_feature_enabled(feature))
         .collect::<Vec<_>>();
     if enabled_features.len() > 1 {
         panic!(
-            "Выберите ровно одну platform feature для клиента: web, windows, linux или macos. Сейчас включены: {}.",
+            "Выберите ровно одну platform feature для клиента: web, windows, linux, macos или mobile. Сейчас включены: {}.",
             enabled_features.join(", ")
         );
     }
@@ -133,10 +133,6 @@ fn validate_platform_features() {
                 }
             );
         }
-    }
-
-    if cargo_feature_enabled("mobile") && !cargo_feature_enabled("android") {
-        panic!("Mobile client build must explicitly enable the android platform feature.");
     }
 }
 

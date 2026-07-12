@@ -19,6 +19,9 @@ use super::room_editor_modal::RoomEditorModal;
 use super::room_instance::RoomInstance;
 use super::room_list_item::RoomListItem;
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
+use super::server_rooms_action_error::ServerRoomsActionError;
+use super::server_rooms_load_error::ServerRoomsLoadError;
+use super::server_rooms_loading::ServerRoomsLoading;
 use super::server_rooms_sidebar_styles as sidebar_styles;
 use super::server_rooms_state::{
     RoomModal, ServerWorkspace, active_room, chat_open_for_room,
@@ -246,15 +249,9 @@ pub(crate) fn ServerRoomsScope(
                 }
 
                 if is_loading_rooms {
-                    div { class: "space-y-2 px-1 py-2",
-                        div { class: "h-9 animate-pulse rounded-lg bg-zinc-900/80" }
-                        div { class: "h-9 animate-pulse rounded-lg bg-zinc-900/60" }
-                        div { class: "h-9 animate-pulse rounded-lg bg-zinc-900/40" }
-                    }
+                    ServerRoomsLoading {}
                 } else if let Some(error) = initial_room_error.clone() {
-                    div { class: "rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] leading-5 text-red-200",
-                        "{error}"
-                    }
+                    ServerRoomsLoadError { message: error }
                 } else if current_rooms.is_empty() {
                     div { class: "rounded-xl border border-zinc-800 bg-zinc-900/70 p-3",
                         p { class: "text-[12px] font-medium text-zinc-100", "Комнат пока нет" }
@@ -382,9 +379,7 @@ pub(crate) fn ServerRoomsScope(
                 }
 
                 if !room_action_status().is_empty() {
-                    p { class: "mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[11px] leading-4 text-red-200",
-                        "{room_action_status()}"
-                    }
+                    ServerRoomsActionError { message: room_action_status() }
                 }
             }
             AppSidebarFooter {

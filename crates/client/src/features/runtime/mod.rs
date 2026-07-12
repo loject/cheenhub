@@ -1,5 +1,6 @@
 //! Платформенные runtime-помощники клиента.
 
+#[cfg(target_os = "android")]
 pub(crate) mod android;
 mod native;
 mod unsupported;

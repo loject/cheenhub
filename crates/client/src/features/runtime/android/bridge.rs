@@ -1,47 +1,47 @@
 //! Android-реализация реестра Activity/Service bridge.
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 use std::collections::HashMap;
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 use std::sync::{Arc, Mutex, OnceLock};
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 use super::{
     AndroidBridge, AndroidBridgeError, AndroidPermission, ForegroundServiceKind,
     MediaProjectionGrant, PermissionResult,
 };
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 use jni::JNIEnv;
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 use jni::objects::{GlobalRef, JObject, JValue};
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 use jni::sys::{jboolean, jint};
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 static ANDROID_BRIDGE: OnceLock<Arc<dyn AndroidBridge>> = OnceLock::new();
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 type PermissionCallback =
     Box<dyn FnOnce(Result<PermissionResult, AndroidBridgeError>) + Send + 'static>;
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 type ProjectionCallback =
     Box<dyn FnOnce(Result<Option<MediaProjectionGrant>, AndroidBridgeError>) + Send + 'static>;
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 static PERMISSION_CALLBACKS: OnceLock<Mutex<HashMap<i32, PermissionCallback>>> = OnceLock::new();
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 static PROJECTION_CALLBACKS: OnceLock<Mutex<HashMap<i32, ProjectionCallback>>> = OnceLock::new();
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 static PROJECTION_GRANTS: OnceLock<Mutex<HashMap<u64, GlobalRef>>> = OnceLock::new();
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 static NEXT_REQUEST_ID: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(1000);
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 static NEXT_GRANT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 struct JniAndroidBridge;
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 impl AndroidBridge for JniAndroidBridge {
     fn request_permission(
         &self,
@@ -109,12 +109,12 @@ impl AndroidBridge for JniAndroidBridge {
 }
 
 /// Возвращает установленный Android Activity/Service bridge.
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 pub(crate) fn android_bridge() -> Result<&'static Arc<dyn AndroidBridge>, AndroidBridgeError> {
     Ok(ANDROID_BRIDGE.get_or_init(|| Arc::new(JniAndroidBridge)))
 }
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 pub(crate) fn take_media_projection_grant(
     grant: MediaProjectionGrant,
 ) -> Result<GlobalRef, AndroidBridgeError> {
@@ -127,7 +127,7 @@ pub(crate) fn take_media_projection_grant(
         })
 }
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 fn dispatch_service(method: &'static str, kind: ForegroundServiceKind) {
     let kind = match kind {
         ForegroundServiceKind::Voice => "voice",
@@ -147,32 +147,32 @@ fn dispatch_service(method: &'static str, kind: ForegroundServiceKind) {
     });
 }
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 fn next_request_id() -> i32 {
     NEXT_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 fn permission_callbacks() -> &'static Mutex<HashMap<i32, PermissionCallback>> {
     PERMISSION_CALLBACKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 fn projection_callbacks() -> &'static Mutex<HashMap<i32, ProjectionCallback>> {
     PROJECTION_CALLBACKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 fn projection_grants() -> &'static Mutex<HashMap<u64, GlobalRef>> {
     PROJECTION_GRANTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 fn lock_error<T>(_error: std::sync::PoisonError<T>) -> AndroidBridgeError {
     AndroidBridgeError::new("Android bridge state повреждён")
 }
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_dioxus_main_MainActivity_nativeOnCheenHubPermissionResult(
     _env: JNIEnv<'_>,
@@ -196,7 +196,7 @@ pub extern "system" fn Java_dev_dioxus_main_MainActivity_nativeOnCheenHubPermiss
     }
 }
 
-#[cfg(feature = "android")]
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_dioxus_main_MainActivity_nativeOnCheenHubMediaProjectionResult(
     env: JNIEnv<'_>,

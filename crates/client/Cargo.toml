@@ -53,8 +53,17 @@ desktop = [
     "dep:tracing-subscriber",
     "dioxus/desktop",
 ]
-mobile = ["app", "dep:tokio", "dep:tokio-tungstenite", "dioxus/mobile"]
-android = ["mobile", "dep:cpal", "dep:opus", "dep:jni", "dep:ndk-context", "dep:wry"]
+mobile = [
+    "app",
+    "dep:cpal",
+    "dep:jni",
+    "dep:ndk-context",
+    "dep:opus",
+    "dep:tokio",
+    "dep:tokio-tungstenite",
+    "dep:wry",
+    "dioxus/mobile",
+]
 system-tray = []
 browser-media-diagnostics = []
 # Windows-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.

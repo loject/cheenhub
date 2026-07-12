@@ -16,7 +16,7 @@ mod provider_runtime;
 mod storage;
 #[cfg(not(any(
     feature = "web",
-    feature = "android",
+    target_os = "android",
     feature = "windows",
     feature = "linux",
     feature = "macos"

@@ -3,14 +3,14 @@
 #[cfg(all(
     not(target_arch = "wasm32"),
     any(
-        feature = "android",
+        target_os = "android",
         feature = "windows",
         feature = "linux",
         feature = "macos"
     )
 ))]
 mod implementation {
-    #[cfg(feature = "android")]
+    #[cfg(target_os = "android")]
     use crate::features::runtime::android::{AndroidPermission, PermissionResult, android_bridge};
     use cpal::traits::{DeviceTrait, HostTrait};
     use dioxus::prelude::{debug, warn};
@@ -91,7 +91,7 @@ mod implementation {
 
     /// Запрашивает runtime-разрешение Android или сразу перечисляет устройства на desktop.
     pub(crate) async fn request_microphone_permission() -> AudioInputDevicesResult {
-        #[cfg(feature = "android")]
+        #[cfg(target_os = "android")]
         {
             let bridge = match android_bridge() {
                 Ok(bridge) => bridge,
@@ -127,7 +127,7 @@ mod implementation {
             };
         }
 
-        #[cfg(not(feature = "android"))]
+        #[cfg(not(target_os = "android"))]
         enumerate_audio_input_devices().await
     }
 }
@@ -135,7 +135,7 @@ mod implementation {
 #[cfg(all(
     not(target_arch = "wasm32"),
     not(any(
-        feature = "android",
+        target_os = "android",
         feature = "windows",
         feature = "linux",
         feature = "macos"

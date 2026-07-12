@@ -177,7 +177,7 @@ args = [
     "cheen_hub",
     "--no-default-features",
     "--features",
-    "android",
+    "mobile",
 ]
 
 [tasks.ensure-android-arm64-target]
@@ -365,7 +365,7 @@ args = [
     "--release",
     "--no-default-features",
     "--features",
-    "android",
+    "mobile",
     "--package-types",
     "apk",
     "--out-dir",

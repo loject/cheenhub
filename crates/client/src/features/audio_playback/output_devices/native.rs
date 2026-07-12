@@ -3,7 +3,7 @@
 #[cfg(all(
     not(target_arch = "wasm32"),
     any(
-        feature = "android",
+        target_os = "android",
         feature = "windows",
         feature = "linux",
         feature = "macos"
@@ -87,7 +87,7 @@ mod implementation {
 #[cfg(all(
     not(target_arch = "wasm32"),
     not(any(
-        feature = "android",
+        target_os = "android",
         feature = "windows",
         feature = "linux",
         feature = "macos"

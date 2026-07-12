@@ -1,6 +1,6 @@
 //! Контракты между Rust feature-модулями и Android Activity/Service слоем.
 
-#![cfg(feature = "android")]
+#![cfg(target_os = "android")]
 
 use std::fmt;
 
