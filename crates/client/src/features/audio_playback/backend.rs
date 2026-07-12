@@ -28,6 +28,8 @@ pub(crate) struct VoiceFrame {
 /// Короткий системный звук уведомления.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NotificationSound {
+    /// Получено новое личное сообщение.
+    MessageReceived,
     /// Текущий пользователь вошёл в голосовую комнату.
     CurrentUserJoined,
     /// Текущий пользователь вышел из голосовой комнаты.
@@ -56,6 +58,7 @@ impl NotificationSound {
     /// Возвращает путь к ассету внутри публичной директории клиента.
     pub(crate) fn asset_path(self) -> &'static str {
         match self {
+            Self::MessageReceived => "/audio/notifications/message_received.wav",
             Self::CurrentUserJoined => "/audio/notifications/current-user-joined.wav",
             Self::CurrentUserLeft => "/audio/notifications/current-user-left.wav",
             Self::OtherUserJoined => "/audio/notifications/other-user-joined.wav",
@@ -73,6 +76,7 @@ impl NotificationSound {
     /// Возвращает стабильное имя события для логов и native mixer.
     pub(crate) fn event_name(self) -> &'static str {
         match self {
+            Self::MessageReceived => "message-received",
             Self::CurrentUserJoined => "current-user-joined",
             Self::CurrentUserLeft => "current-user-left",
             Self::OtherUserJoined => "other-user-joined",

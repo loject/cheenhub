@@ -2,6 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
+.direct-message-list {
+    overflow-anchor: none;
+}
+
+@keyframes dm-unread-badge-in {
+    from {
+        opacity: 0;
+        transform: scale(0.72);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes dm-unread-badge-flip {
+    from {
+        opacity: 0;
+        transform: translateY(-0.7em);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.dm-unread-badge {
+    animation: dm-unread-badge-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.dm-unread-badge-value {
+    display: block;
+    animation: dm-unread-badge-flip 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 @layer base {
   * {
     -webkit-font-smoothing: antialiased;

@@ -39,7 +39,7 @@ pub(super) async fn update_scroll_state(
     }
 }
 
-pub(super) async fn capture_scroll_position(element: Rc<MountedData>) -> Option<(f64, f64)> {
+pub(crate) async fn capture_scroll_position(element: Rc<MountedData>) -> Option<(f64, f64)> {
     let offset = element.get_scroll_offset().await.ok()?;
     let scroll_size = element.get_scroll_size().await.ok()?;
 

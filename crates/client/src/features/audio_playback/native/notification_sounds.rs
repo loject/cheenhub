@@ -1,6 +1,7 @@
 //! Воспроизведение коротких WAV-уведомлений на Windows, Linux и macOS.
 
 use dioxus::prelude::{debug, warn};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::features::audio_playback::NotificationSound;
 
@@ -9,6 +10,8 @@ use super::{AUDIO_SAMPLE_RATE_HZ, AudioPlaybackHandle};
 
 const NOTIFICATION_PREROLL_MS: u32 = 40;
 
+const MESSAGE_RECEIVED: &[u8] =
+    include_bytes!("../../../../public/audio/notifications/message_received.wav");
 const CURRENT_USER_JOINED: &[u8] =
     include_bytes!("../../../../public/audio/notifications/current-user-joined.wav");
 const CURRENT_USER_LEFT: &[u8] =
@@ -32,6 +35,7 @@ const CONNECTION_RESTORED: &[u8] =
 const CONNECTION_SIGNAL_LOOP: &[u8] =
     include_bytes!("../../../../public/audio/notifications/cheenhub_signal_loop.wav");
 const CONNECTION_SIGNAL_LOOP_SENDER_ID: &str = "notification:connection-signal-loop";
+static NEXT_NOTIFICATION_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
 
 impl AudioPlaybackHandle {
     /// Проигрывает короткий системный звук уведомления.
@@ -73,7 +77,7 @@ impl AudioPlaybackHandle {
             return;
         };
 
-        let sender_id = format!("notification:{}", sound.event_name());
+        let sender_id = notification_sender_id(sound);
         let sample_count = samples.len();
         let output_volume_percent = self.output_volume_percent();
         queue_sender_samples(&mixer, &sender_id, samples, 1.0, 0);
@@ -127,8 +131,17 @@ impl AudioPlaybackHandle {
     }
 }
 
+fn notification_sender_id(sound: NotificationSound) -> String {
+    if sound == NotificationSound::MessageReceived {
+        let instance_id = NEXT_NOTIFICATION_INSTANCE_ID.fetch_add(1, Ordering::Relaxed);
+        return format!("notification:{}:{instance_id}", sound.event_name());
+    }
+    format!("notification:{}", sound.event_name())
+}
+
 fn notification_samples(sound: NotificationSound) -> Result<Vec<f32>, String> {
     let bytes = match sound {
+        NotificationSound::MessageReceived => MESSAGE_RECEIVED,
         NotificationSound::CurrentUserJoined => CURRENT_USER_JOINED,
         NotificationSound::CurrentUserLeft => CURRENT_USER_LEFT,
         NotificationSound::OtherUserJoined => OTHER_USER_JOINED,
@@ -303,6 +316,7 @@ mod tests {
     #[test]
     fn decodes_all_notification_assets() {
         let sounds = [
+            NotificationSound::MessageReceived,
             NotificationSound::CurrentUserJoined,
             NotificationSound::CurrentUserLeft,
             NotificationSound::OtherUserJoined,

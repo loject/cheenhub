@@ -27,11 +27,14 @@ pub(crate) fn DirectMessageWorkspace(
     appearing_message_ids: Signal<Vec<String>>,
     removing_message_ids: Signal<Vec<String>>,
     is_loading_messages: Signal<bool>,
+    has_more_messages: Signal<bool>,
+    older_messages_loading: Signal<bool>,
     mut draft: Signal<String>,
     is_sending: Signal<bool>,
     is_near_bottom: Signal<bool>,
     mut list_element: Signal<Option<Rc<MountedData>>>,
     mut pending_scroll: Signal<Option<ScrollCommand>>,
+    on_load_older: EventHandler<()>,
     on_send_message: EventHandler<()>,
 ) -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
@@ -208,6 +211,20 @@ pub(crate) fn DirectMessageWorkspace(
                                 if let Some(element) = list_element.cloned() {
                                     spawn(async move {
                                         update_near_bottom_state(element, is_near_bottom).await;
+                                    });
+                                }
+                                if has_more_messages()
+                                    && !older_messages_loading()
+                                    && let Some(element) = list_element.cloned()
+                                {
+                                    spawn(async move {
+                                        if element
+                                            .get_scroll_offset()
+                                            .await
+                                            .is_ok_and(|offset| offset.y <= 48.0)
+                                        {
+                                            on_load_older.call(());
+                                        }
                                     });
                                 }
                             },

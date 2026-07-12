@@ -96,9 +96,10 @@ pub(super) fn FriendsSection(
                             }
                             if unread_count > 0 {
                                 span {
-                                    class: "shrink-0 rounded-full bg-blue-500 px-2 py-0.5 text-[10px] font-bold text-white",
+                                    key: "unread-badge-{friend.user_id}-{unread_count}",
+                                    class: "dm-unread-badge shrink-0 rounded-full bg-blue-500 px-2 py-0.5 text-[10px] font-bold text-white",
                                     title: "{unread_count} непрочитанных",
-                                    "{unread_badge_label(unread_count)}"
+                                    span { class: "dm-unread-badge-value", "{unread_badge_label(unread_count)}" }
                                 }
                             }
                         }

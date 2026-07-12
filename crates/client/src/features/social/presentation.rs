@@ -9,8 +9,9 @@ use cheenhub_contracts::rest::{
 };
 use dioxus::prelude::*;
 
+use crate::features::notifications::application_is_focused;
 use crate::features::runtime::sleep_duration;
-use crate::features::text_chat::ScrollCommand;
+use crate::features::text_chat::{ScrollCommand, capture_scroll_position};
 
 use super::api;
 
@@ -121,16 +122,23 @@ pub(super) fn load_messages(
     friends: Signal<Vec<FriendSummary>>,
     mut status: Signal<String>,
     mut is_loading_messages: Signal<bool>,
+    mut has_more: Signal<bool>,
     mut pending_scroll: Signal<Option<ScrollCommand>>,
 ) {
     is_loading_messages.set(true);
     status.set(String::new());
     spawn(async move {
-        match api::list_dm_messages(&conversation_id).await {
+        match api::list_dm_messages(&conversation_id, None).await {
             Ok(response) => {
+                has_more.set(response.has_more);
                 let next_messages = response.messages;
-                mark_latest_message_read(&conversation_id, &next_messages, conversations, friends)
-                    .await;
+                mark_latest_message_read_if_focused(
+                    &conversation_id,
+                    &next_messages,
+                    conversations,
+                    friends,
+                )
+                .await;
                 messages.set(next_messages);
                 pending_scroll.set(Some(ScrollCommand::Bottom));
             }
@@ -140,9 +148,52 @@ pub(super) fn load_messages(
     });
 }
 
+pub(super) fn load_older_messages(
+    conversation_id: String,
+    mut messages: Signal<Vec<DmMessageSummary>>,
+    mut has_more: Signal<bool>,
+    mut older_loading: Signal<bool>,
+    mut status: Signal<String>,
+    list_element: Signal<Option<std::rc::Rc<MountedData>>>,
+    mut pending_scroll: Signal<Option<ScrollCommand>>,
+) {
+    if older_loading() || !has_more() {
+        return;
+    }
+    let Some(before_message_id) = messages().first().map(|message| message.id.clone()) else {
+        return;
+    };
+    older_loading.set(true);
+    spawn(async move {
+        let before_scroll = match list_element.cloned() {
+            Some(element) => capture_scroll_position(element).await,
+            None => None,
+        };
+        match api::list_dm_messages(&conversation_id, Some(&before_message_id)).await {
+            Ok(response) => {
+                let mut next = response.messages;
+                next.extend(messages());
+                next.sort_by(|left, right| left.created_at.cmp(&right.created_at));
+                next.dedup_by(|left, right| left.id == right.id);
+                messages.set(next);
+                has_more.set(response.has_more);
+                if let Some((offset_y, height)) = before_scroll {
+                    pending_scroll.set(Some(ScrollCommand::Preserve { offset_y, height }));
+                }
+                debug!(conversation_id, "loaded older direct messages");
+            }
+            Err(error) => {
+                warn!(conversation_id, %error, "failed to load older direct messages");
+                status.set(error);
+            }
+        }
+        older_loading.set(false);
+    });
+}
+
 pub(super) fn refresh_messages(conversation_id: String, mut signals: MessageRefreshSignals) {
     spawn(async move {
-        match api::list_dm_messages(&conversation_id).await {
+        match api::list_dm_messages(&conversation_id, None).await {
             Ok(response) => {
                 let next_messages = response.messages;
                 debug!(
@@ -156,7 +207,7 @@ pub(super) fn refresh_messages(conversation_id: String, mut signals: MessageRefr
                     signals.removing_message_ids,
                     next_messages,
                 );
-                if (signals.is_near_bottom)() {
+                if (signals.is_near_bottom)() && application_is_focused() {
                     mark_latest_message_read(
                         &conversation_id,
                         &(signals.messages)(),
@@ -165,6 +216,11 @@ pub(super) fn refresh_messages(conversation_id: String, mut signals: MessageRefr
                     )
                     .await;
                     signals.pending_scroll.set(Some(ScrollCommand::Bottom));
+                } else if (signals.is_near_bottom)() {
+                    debug!(
+                        conversation_id = %conversation_id,
+                        "preserved direct message unread state while application is unfocused"
+                    );
                 }
             }
             Err(error) => {
@@ -315,6 +371,22 @@ pub(super) fn relation_label(relation: Option<UserRelationStatus>) -> &'static s
         Some(UserRelationStatus::PendingIncoming) => "Ждёт вашего ответа",
         None => "Можно добавить",
     }
+}
+
+async fn mark_latest_message_read_if_focused(
+    conversation_id: &str,
+    messages: &[DmMessageSummary],
+    conversations: Signal<Vec<DmConversationSummary>>,
+    friends: Signal<Vec<FriendSummary>>,
+) {
+    if !application_is_focused() {
+        debug!(
+            conversation_id,
+            "preserved direct message unread state while application is unfocused"
+        );
+        return;
+    }
+    mark_latest_message_read(conversation_id, messages, conversations, friends).await;
 }
 
 async fn mark_latest_message_read(

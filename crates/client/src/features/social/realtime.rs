@@ -27,7 +27,7 @@ pub(super) async fn subscribe_social(
 }
 
 /// Поддерживает social-подписку после первого подключения и переподключений.
-pub(super) fn subscribe_social_ready_events(
+pub(crate) fn subscribe_social_ready_events(
     realtime: RealtimeHandle,
 ) -> mpsc::UnboundedReceiver<()> {
     let (sender, receiver) = mpsc::unbounded();

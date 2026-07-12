@@ -11,10 +11,17 @@ use web_sys::{Event, Notification, NotificationOptions};
 use crate::Route;
 use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::current_user::CurrentUserContext;
+use crate::features::audio_playback::{AudioPlaybackHandle, NotificationSound};
 use crate::features::realtime::RealtimeHandle;
+use crate::features::runtime::sleep_ms;
 use crate::features::social::api;
-use crate::features::social::realtime::subscribe_social_events;
+use crate::features::social::realtime::{subscribe_social_events, subscribe_social_ready_events};
 use crate::features::text_chat::realtime::{TextChatEvent, subscribe_text_chat};
+
+use super::direct_messages::{
+    DmNotificationData, extract_notification, load_initial_unread_snapshot,
+};
+use super::focus::ApplicationFocusContext;
 
 /// Максимальная длина текста уведомления.
 const MAX_NOTIFICATION_BODY_LEN: usize = 200;
@@ -25,14 +32,19 @@ pub(crate) fn NotificationsProvider(children: Element) -> Element {
     let realtime = use_context::<RealtimeHandle>();
     let current_user = use_context::<CurrentUserContext>();
     let active_room = use_context::<ActiveRoomContext>();
+    let playback = use_context::<AudioPlaybackHandle>();
     let navigator = use_navigator();
     let mut pending_nav = use_signal(|| None::<Route>);
     let dm_unread_snapshot = use_signal(Vec::<(String, i64)>::new);
+    let focus_state = use_signal(application_is_focused);
+    use_context_provider(move || ApplicationFocusContext::new(focus_state));
 
     use_hook(move || {
         // Запрашиваем разрешение на уведомления при загрузке приложения.
         spawn(request_notification_permission());
-        spawn(load_initial_dm_unread_snapshot(dm_unread_snapshot));
+        spawn(track_application_focus(focus_state));
+        spawn(keep_social_subscription_active(realtime.clone()));
+        spawn(load_initial_unread_snapshot(dm_unread_snapshot));
 
         // Подписываемся на события текстового чата и показываем уведомления
         // для сообщений, которые приходят не в активную комнату.
@@ -49,7 +61,8 @@ pub(crate) fn NotificationsProvider(children: Element) -> Element {
         spawn(listen_for_dm_messages(
             realtime.clone(),
             active_room,
-            active_user_id,
+            current_user,
+            playback,
             pending_nav,
             dm_unread_snapshot,
         ));
@@ -68,6 +81,27 @@ pub(crate) fn NotificationsProvider(children: Element) -> Element {
     rsx! {
         {children}
     }
+}
+
+/// Отслеживает фокус вкладки, чтобы открытый диалог подтверждал прочтение после возврата.
+async fn track_application_focus(mut focus_state: Signal<bool>) {
+    loop {
+        let next_focused = application_is_focused();
+        if focus_state() != next_focused {
+            focus_state.set(next_focused);
+            debug!(next_focused, "updated browser application focus state");
+        }
+        sleep_ms(250).await;
+    }
+}
+
+/// Поддерживает social-поток открытым, пока работает глобальный провайдер уведомлений.
+async fn keep_social_subscription_active(realtime: RealtimeHandle) {
+    let mut ready_events = subscribe_social_ready_events(realtime);
+    while ready_events.next().await.is_some() {
+        debug!("global social realtime subscription is active for notifications");
+    }
+    warn!("global social realtime subscription task stopped");
 }
 
 /// Запрашивает разрешение на браузерные уведомления.
@@ -135,7 +169,8 @@ async fn listen_for_text_chat_messages(
 async fn listen_for_dm_messages(
     realtime: RealtimeHandle,
     active_room: ActiveRoomContext,
-    active_user_id: String,
+    current_user: CurrentUserContext,
+    playback: AudioPlaybackHandle,
     pending_nav: Signal<Option<Route>>,
     dm_unread_snapshot: Signal<Vec<(String, i64)>>,
 ) {
@@ -147,14 +182,39 @@ async fn listen_for_dm_messages(
             continue;
         }
 
-        let dm_notification =
-            extract_dm_notification(&event, &active_room, &active_user_id, dm_unread_snapshot)
-                .await;
+        if let Some(notification) =
+            extract_notification(&event, &current_user, dm_unread_snapshot).await
+        {
+            let conversation_is_open = active_room.conversation_id().as_deref()
+                == Some(notification.conversation_id.as_str());
+            let application_is_focused = application_is_focused();
+            if !application_is_focused || !conversation_is_open {
+                debug!(
+                    conversation_id = %notification.conversation_id,
+                    application_is_focused,
+                    conversation_is_open,
+                    "playing direct message notification sound"
+                );
+                playback.play_notification_sound(NotificationSound::MessageReceived);
+            } else {
+                debug!(
+                    conversation_id = %notification.conversation_id,
+                    "suppressed direct message notification sound for focused open conversation"
+                );
+            }
 
-        if let Some(notification) = dm_notification {
-            show_dm_notification(&notification, &pending_nav);
+            if !conversation_is_open {
+                show_dm_notification(&notification, &pending_nav);
+            }
         }
     }
+}
+
+/// Проверяет, находится ли окно браузера и вкладка приложения в фокусе.
+pub(crate) fn application_is_focused() -> bool {
+    web_sys::window()
+        .and_then(|window| window.document())
+        .is_some_and(|document| !document.hidden() && document.has_focus().unwrap_or(false))
 }
 
 /// Извлекает данные для уведомления о новом личном сообщении.
@@ -163,12 +223,13 @@ async fn listen_for_dm_messages(
 /// - Диалог уже активен (пользователь его смотрит).
 /// - Не удалось загрузить данные диалогов или сообщений.
 /// - Новое сообщение отправил текущий пользователь.
-async fn extract_dm_notification(
+#[allow(dead_code)]
+async fn legacy_extract_dm_notification(
     event: &SocialChanged,
     active_room: &ActiveRoomContext,
     active_user_id: &str,
     mut dm_unread_snapshot: Signal<Vec<(String, i64)>>,
-) -> Option<DmNotificationData> {
+) -> Option<LegacyDmNotificationData> {
     // Если событие привязано к конкретному диалогу и это активный диалог,
     // не показываем уведомление.
     if let Some(ref conv_id) = event.conversation_id
@@ -208,7 +269,7 @@ async fn extract_dm_notification(
         }
     };
 
-    let previous_unread = unread_count_for(&previous_snapshot, &conversation.id);
+    let previous_unread = legacy_unread_count_for(&previous_snapshot, &conversation.id);
     let unread_increased = previous_unread
         .map(|unread_count| conversation.unread_count > unread_count)
         .unwrap_or(false);
@@ -225,7 +286,7 @@ async fn extract_dm_notification(
     }
 
     // Загружаем сообщения этого диалога для получения последнего сообщения.
-    let messages = match api::list_dm_messages(&conversation.id).await {
+    let messages = match api::list_dm_messages(&conversation.id, None).await {
         Ok(resp) => resp.messages,
         Err(err) => {
             debug!(%err, conversation_id = %conversation.id, "failed to load DM messages for notification");
@@ -244,7 +305,7 @@ async fn extract_dm_notification(
         None => return None,
     };
 
-    Some(DmNotificationData {
+    Some(LegacyDmNotificationData {
         conversation_id: conversation.id,
         sender_nickname: message.sender_nickname,
         body: message.body,
@@ -253,7 +314,10 @@ async fn extract_dm_notification(
 
 /// Загружает начальный снимок непрочитанных ЛС, чтобы не показывать старые
 /// уведомления при открытии приложения или страницы друзей.
-async fn load_initial_dm_unread_snapshot(mut dm_unread_snapshot: Signal<Vec<(String, i64)>>) {
+#[allow(dead_code)]
+async fn legacy_load_initial_dm_unread_snapshot(
+    mut dm_unread_snapshot: Signal<Vec<(String, i64)>>,
+) {
     match api::list_dm_conversations().await {
         Ok(conversations) => {
             let snapshot = conversations
@@ -269,7 +333,7 @@ async fn load_initial_dm_unread_snapshot(mut dm_unread_snapshot: Signal<Vec<(Str
     }
 }
 
-fn unread_count_for(snapshot: &[(String, i64)], conversation_id: &str) -> Option<i64> {
+fn legacy_unread_count_for(snapshot: &[(String, i64)], conversation_id: &str) -> Option<i64> {
     snapshot
         .iter()
         .find_map(|(saved_conversation_id, unread_count)| {
@@ -278,7 +342,7 @@ fn unread_count_for(snapshot: &[(String, i64)], conversation_id: &str) -> Option
 }
 
 /// Данные для уведомления о личном сообщении.
-struct DmNotificationData {
+struct LegacyDmNotificationData {
     conversation_id: String,
     sender_nickname: String,
     body: String,

@@ -13,6 +13,7 @@ use crate::Route;
 use crate::features::app::components::app_sidebar_footer::AppSidebarFooter;
 use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::current_user::CurrentUserContext;
+use crate::features::notifications::ApplicationFocusContext;
 use crate::features::realtime::RealtimeHandle;
 use crate::features::text_chat::{ScrollCommand, apply_scroll_command};
 use crate::features::voice_chat::VoiceConnectionHandle;
@@ -24,8 +25,8 @@ use super::friend_context_menu::FriendContextMenu;
 use super::friend_search_modal::FriendSearchModal;
 use super::friends_section::{FriendMenuRequest, FriendsSection};
 use super::presentation::{
-    MessageRefreshSignals, load_messages, load_social_overview, push_message_with_motion,
-    refresh_conversations, refresh_friends, refresh_messages,
+    MessageRefreshSignals, load_messages, load_older_messages, load_social_overview,
+    push_message_with_motion, refresh_conversations, refresh_friends, refresh_messages,
 };
 use super::realtime::{subscribe_social_events, subscribe_social_ready_events};
 use super::requests_section::FriendRequestsSection;
@@ -36,6 +37,7 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
     let navigator = use_navigator();
     let realtime = use_context::<RealtimeHandle>();
+    let application_focus = use_context::<ApplicationFocusContext>();
     let voice = use_context::<VoiceConnectionHandle>();
     let friends = use_signal(Vec::<FriendSummary>::new);
     let incoming = use_signal(Vec::<FriendRequestSummary>::new);
@@ -49,6 +51,8 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
     let mut status = use_signal(String::new);
     let is_loading = use_signal(|| false);
     let is_loading_messages = use_signal(|| false);
+    let has_more_messages = use_signal(|| false);
+    let older_messages_loading = use_signal(|| false);
     let mut is_sending = use_signal(|| false);
     let mut is_search_open = use_signal(|| false);
     let mut loaded = use_signal(|| false);
@@ -95,6 +99,7 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
                         friends,
                         status,
                         is_loading_messages,
+                        has_more_messages,
                         pending_scroll,
                     );
                     navigator.push(Route::AppDirectMessage { conversation_id });
@@ -156,6 +161,7 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
             friends,
             status,
             is_loading_messages,
+            has_more_messages,
             pending_scroll,
         );
     });
@@ -294,6 +300,20 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
     });
 
     use_effect(move || {
+        if !application_focus.is_focused() {
+            return;
+        }
+        let Some(conversation) = selected_conversation() else {
+            return;
+        };
+        debug!(
+            conversation_id = %conversation.id,
+            "refreshing focused direct conversation to confirm read state"
+        );
+        refresh_direct_state.call(Some(conversation.id));
+    });
+
+    use_effect(move || {
         let _message_count = messages.len();
         let Some(command) = pending_scroll() else {
             return;
@@ -423,11 +443,25 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
                         appearing_message_ids,
                         removing_message_ids,
                         is_loading_messages,
+                        has_more_messages,
+                        older_messages_loading,
                         draft,
                         is_sending,
                         is_near_bottom,
                         list_element,
                         pending_scroll,
+                        on_load_older: move |_| {
+                            let Some(conversation) = selected_conversation() else { return; };
+                            load_older_messages(
+                                conversation.id,
+                                messages,
+                                has_more_messages,
+                                older_messages_loading,
+                                status,
+                                list_element,
+                                pending_scroll,
+                            );
+                        },
                         on_send_message: move |_| send_message.call(()),
                     }
                 } else {

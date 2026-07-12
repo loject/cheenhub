@@ -145,10 +145,14 @@ pub(crate) async fn open_dm_conversation(
 /// Загружает сообщения личного диалога.
 pub(crate) async fn list_dm_messages(
     conversation_id: &str,
+    before_message_id: Option<&str>,
 ) -> Result<ListDmMessagesResponse, String> {
+    let query = before_message_id
+        .map(|message_id| format!("?before_message_id={message_id}"))
+        .unwrap_or_default();
     authorized_json::<ListDmMessagesResponse>(
         "GET",
-        &format!("/direct-messages/conversations/{conversation_id}/messages"),
+        &format!("/direct-messages/conversations/{conversation_id}/messages{query}"),
         None::<&()>,
     )
     .await
