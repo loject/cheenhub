@@ -1,8 +1,9 @@
 //! Realtime-адаптер друзей и личных сообщений.
 
 use cheenhub_contracts::realtime::{
-    ConversationReadCheckpoint as ReadCheckpointPayload, RealtimeEnvelope, RealtimeKind,
-    RealtimeModule, RejectionCode, SocialChangeReason, SocialChanged, SocialKind, SocialReady,
+    ConversationReadCheckpoint as ReadCheckpointPayload, DirectMessageCreated, RealtimeEnvelope,
+    RealtimeKind, RealtimeModule, RejectionCode, SocialChangeReason, SocialChanged, SocialKind,
+    SocialReady,
 };
 use uuid::Uuid;
 
@@ -50,6 +51,30 @@ pub(crate) async fn handle(
             .await
         }
     }
+}
+
+/// Отправляет получателю точные данные нового личного сообщения.
+pub(crate) async fn notify_direct_message_created(
+    state: &AppState,
+    recipient_user_id: Uuid,
+    payload: DirectMessageCreated,
+) {
+    tracing::debug!(
+        recipient_user_id = %recipient_user_id,
+        conversation_id = %payload.conversation_id,
+        message_id = %payload.message_id,
+        message_seq = payload.message_seq,
+        "fanning out direct message created event"
+    );
+    state
+        .realtime_hub
+        .fanout_to_user_streams(
+            RealtimeModule::Social,
+            RealtimeKind::Social(SocialKind::DirectMessageCreated),
+            &[recipient_user_id],
+            payload,
+        )
+        .await;
 }
 
 /// Отправляет social-событие во все активные потоки указанных пользователей.

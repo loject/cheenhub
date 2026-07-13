@@ -1,6 +1,6 @@
 //! Сценарии приложения для личных сообщений.
 
-use cheenhub_contracts::realtime::SocialChangeReason;
+use cheenhub_contracts::realtime::{DirectMessageCreated, SocialChangeReason};
 use cheenhub_contracts::rest::{
     ListDmConversationsResponse, ListDmMessagesResponse, MarkDmConversationReadRequest,
     MarkDmConversationReadResponse, OpenDmConversationRequest, OpenDmConversationResponse,
@@ -14,7 +14,7 @@ use crate::features::social::domain::{DmMessage, FriendshipStatus};
 use crate::features::social::error::SocialError;
 use crate::features::social::infrastructure::normalize_unread_count;
 use crate::features::social::realtime::{
-    notify_conversation_read_checkpoint, notify_social_changed,
+    notify_conversation_read_checkpoint, notify_direct_message_created, notify_social_changed,
 };
 use crate::features::social::support::{
     conversation_summaries, conversation_summary, load_user_conversation, map_auth_error,
@@ -237,6 +237,20 @@ pub(crate) async fn send_dm_message(
         seq = message.seq,
         "sent direct message"
     );
+    notify_direct_message_created(
+        state,
+        friend_user_id,
+        DirectMessageCreated {
+            message_id: message.id.to_string(),
+            conversation_id: message.conversation_id.to_string(),
+            message_seq: message.seq,
+            sender_user_id: current_user.id.to_string(),
+            sender_nickname: current_user.nickname.clone(),
+            body: message.body.clone(),
+            created_at: message.created_at.to_rfc3339(),
+        },
+    )
+    .await;
     notify_social_changed(
         state,
         &[current_user.id, friend_user_id],

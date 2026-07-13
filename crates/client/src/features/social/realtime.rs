@@ -1,8 +1,8 @@
 //! Realtime-подписка на social-события.
 
 use cheenhub_contracts::realtime::{
-    RealtimeEnvelope, RealtimeKind, RealtimeModule, SocialChanged, SocialKind, SocialReady,
-    SubscribeSocial,
+    DirectMessageCreated, RealtimeEnvelope, RealtimeKind, RealtimeModule, SocialChanged,
+    SocialKind, SocialReady, SubscribeSocial,
 };
 use dioxus::prelude::{debug, info, warn};
 use futures_channel::mpsc;
@@ -103,6 +103,28 @@ pub(crate) fn subscribe_social_events(
     receiver
 }
 
+/// Подписывается на точные события новых личных сообщений текущего пользователя.
+pub(crate) fn subscribe_direct_message_events(
+    realtime: &RealtimeHandle,
+) -> mpsc::UnboundedReceiver<DirectMessageCreated> {
+    let events = realtime.subscribe_events();
+    let (sender, receiver) = mpsc::unbounded();
+
+    dioxus::prelude::spawn(async move {
+        let mut events = events;
+        while let Some(envelope) = events.next().await {
+            let Some(event) = decode_direct_message_event(envelope) else {
+                continue;
+            };
+            if sender.unbounded_send(event).is_err() {
+                break;
+            }
+        }
+    });
+
+    receiver
+}
+
 fn decode_social_event(envelope: RealtimeEnvelope) -> Option<SocialChanged> {
     if envelope.module != RealtimeModule::Social {
         return None;
@@ -110,6 +132,24 @@ fn decode_social_event(envelope: RealtimeEnvelope) -> Option<SocialChanged> {
     match envelope.kind {
         RealtimeKind::Social(SocialKind::Changed) => {
             serde_json::from_value::<SocialChanged>(envelope.payload).ok()
+        }
+        _ => None,
+    }
+}
+
+fn decode_direct_message_event(envelope: RealtimeEnvelope) -> Option<DirectMessageCreated> {
+    if envelope.module != RealtimeModule::Social {
+        return None;
+    }
+    match envelope.kind {
+        RealtimeKind::Social(SocialKind::DirectMessageCreated) => {
+            match serde_json::from_value::<DirectMessageCreated>(envelope.payload) {
+                Ok(event) => Some(event),
+                Err(error) => {
+                    warn!(%error, "failed to decode direct message realtime event");
+                    None
+                }
+            }
         }
         _ => None,
     }

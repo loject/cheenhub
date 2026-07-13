@@ -23,8 +23,8 @@ pub use server::{
     ServerRoleSummary, ServerRolesSaved,
 };
 pub use social::{
-    ConversationReadCheckpoint, SocialChangeReason, SocialChanged, SocialKind, SocialReady,
-    SubscribeSocial,
+    ConversationReadCheckpoint, DirectMessageCreated, SocialChangeReason, SocialChanged,
+    SocialKind, SocialReady, SubscribeSocial,
 };
 pub use text_chat::{
     ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
@@ -175,6 +175,42 @@ mod tests {
 
         assert_eq!(decoded.kind, RealtimeKind::Social(SocialKind::Changed));
         assert!(decoded.has_matching_module_kind());
+    }
+
+    #[test]
+    fn direct_message_created_envelope_round_trips() {
+        let message_id = Uuid::new_v4().to_string();
+        let conversation_id = Uuid::new_v4().to_string();
+        let sender_user_id = Uuid::new_v4().to_string();
+        let envelope = RealtimeEnvelope::new(
+            RealtimeModule::Social,
+            RealtimeKind::Social(SocialKind::DirectMessageCreated),
+            None,
+            DirectMessageCreated {
+                message_id: message_id.clone(),
+                conversation_id: conversation_id.clone(),
+                message_seq: 42,
+                sender_user_id: sender_user_id.clone(),
+                sender_nickname: "alice".to_owned(),
+                body: "Привет".to_owned(),
+                created_at: "2026-07-13T00:00:00Z".to_owned(),
+            },
+        )
+        .expect("envelope serializes");
+
+        let json = serde_json::to_string(&envelope).expect("envelope serializes");
+        let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+        let payload: DirectMessageCreated =
+            serde_json::from_value(decoded.payload).expect("payload decodes");
+
+        assert_eq!(
+            decoded.kind,
+            RealtimeKind::Social(SocialKind::DirectMessageCreated)
+        );
+        assert_eq!(payload.message_id, message_id);
+        assert_eq!(payload.conversation_id, conversation_id);
+        assert_eq!(payload.sender_user_id, sender_user_id);
+        assert_eq!(payload.message_seq, 42);
     }
 
     #[test]

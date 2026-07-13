@@ -12,6 +12,8 @@ pub enum SocialKind {
     Ready,
     /// У текущего пользователя изменились друзья, заявки или личные сообщения.
     Changed,
+    /// Получатель получил новое личное сообщение.
+    DirectMessageCreated,
     /// Участник подтвердил прочтение личного диалога.
     ConversationReadCheckpoint,
 }
@@ -31,6 +33,25 @@ pub struct SocialChanged {
     pub reason: SocialChangeReason,
     /// Идентификатор личного диалога, если изменение относится к ЛС.
     pub conversation_id: Option<String>,
+}
+
+/// Realtime-событие нового личного сообщения для получателя.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectMessageCreated {
+    /// Стабильный идентификатор сообщения.
+    pub message_id: String,
+    /// Идентификатор личного диалога.
+    pub conversation_id: String,
+    /// Монотонный порядковый номер сообщения внутри диалога.
+    pub message_seq: i64,
+    /// Идентификатор отправителя.
+    pub sender_user_id: String,
+    /// Никнейм отправителя на момент доставки события.
+    pub sender_nickname: String,
+    /// Текст сообщения.
+    pub body: String,
+    /// Серверное время создания сообщения в формате RFC3339.
+    pub created_at: String,
 }
 
 /// Realtime-событие подтверждения прочтения личного диалога.
