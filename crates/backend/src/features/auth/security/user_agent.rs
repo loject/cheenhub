@@ -1,5 +1,7 @@
 //! Вспомогательные функции нормализации User-Agent.
 
+use tracing::debug;
+
 const MAX_USER_AGENT_CHARS: usize = 512;
 
 /// Грубая категория устройства, определенная по User-Agent.
@@ -46,6 +48,9 @@ pub(crate) fn parse(value: Option<&str>) -> ParsedUserAgent {
     let Some(normalized) = normalize(value) else {
         return unknown_user_agent();
     };
+    if let Some(parsed) = parse_native_user_agent(&normalized) {
+        return parsed;
+    }
     let lower = normalized.to_ascii_lowercase();
 
     ParsedUserAgent {
@@ -53,6 +58,36 @@ pub(crate) fn parse(value: Option<&str>) -> ParsedUserAgent {
         os_name: parse_os_name(&lower).to_owned(),
         browser_name: parse_browser_name(&lower).to_owned(),
     }
+}
+
+fn parse_native_user_agent(value: &str) -> Option<ParsedUserAgent> {
+    let native = value.strip_prefix("CheenHub/")?;
+    let native = native.strip_suffix(')')?;
+    let (version, platform) = native.split_once(" (")?;
+    if version.is_empty() || version.chars().any(char::is_whitespace) {
+        return None;
+    }
+
+    let (device_kind, os_name) = match platform {
+        "Windows" => (ParsedDeviceKind::Desktop, "Windows"),
+        "Linux" => (ParsedDeviceKind::Desktop, "Linux"),
+        "macOS" => (ParsedDeviceKind::Desktop, "macOS"),
+        "Android" => (ParsedDeviceKind::Mobile, "Android"),
+        _ => return None,
+    };
+
+    debug!(
+        client = "CheenHub",
+        client_version = version,
+        platform,
+        "Распознан нативный клиент"
+    );
+
+    Some(ParsedUserAgent {
+        device_kind,
+        os_name: os_name.to_owned(),
+        browser_name: "CheenHub".to_owned(),
+    })
 }
 
 fn unknown_user_agent() -> ParsedUserAgent {
@@ -177,6 +212,42 @@ mod tests {
         assert_eq!(parsed.device_kind, ParsedDeviceKind::Mobile);
         assert_eq!(parsed.os_name, "iOS");
         assert_eq!(parsed.browser_name, "Safari");
+    }
+
+    #[test]
+    fn parses_native_cheenhub_on_windows() {
+        let parsed = parse(Some("CheenHub/0.1.0 (Windows)"));
+
+        assert_eq!(parsed.device_kind, ParsedDeviceKind::Desktop);
+        assert_eq!(parsed.os_name, "Windows");
+        assert_eq!(parsed.browser_name, "CheenHub");
+    }
+
+    #[test]
+    fn parses_native_cheenhub_on_linux() {
+        let parsed = parse(Some("CheenHub/0.1.0 (Linux)"));
+
+        assert_eq!(parsed.device_kind, ParsedDeviceKind::Desktop);
+        assert_eq!(parsed.os_name, "Linux");
+        assert_eq!(parsed.browser_name, "CheenHub");
+    }
+
+    #[test]
+    fn parses_native_cheenhub_on_macos() {
+        let parsed = parse(Some("CheenHub/0.1.0 (macOS)"));
+
+        assert_eq!(parsed.device_kind, ParsedDeviceKind::Desktop);
+        assert_eq!(parsed.os_name, "macOS");
+        assert_eq!(parsed.browser_name, "CheenHub");
+    }
+
+    #[test]
+    fn parses_native_cheenhub_on_android() {
+        let parsed = parse(Some("CheenHub/0.1.0 (Android)"));
+
+        assert_eq!(parsed.device_kind, ParsedDeviceKind::Mobile);
+        assert_eq!(parsed.os_name, "Android");
+        assert_eq!(parsed.browser_name, "CheenHub");
     }
 
     #[test]

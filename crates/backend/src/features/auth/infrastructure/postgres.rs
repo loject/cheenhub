@@ -270,6 +270,21 @@ impl AuthStore for PostgresAuthStore {
         super::postgres_refresh::list_active_sessions(&self.database, user_id, now).await
     }
 
+    async fn record_session_user_agent(
+        &self,
+        session_id: &Uuid,
+        user_agent: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        super::postgres_refresh::record_session_user_agent(
+            &self.database,
+            session_id,
+            user_agent,
+            now,
+        )
+        .await
+    }
+
     async fn revoke_user_session(
         &self,
         user_id: &Uuid,

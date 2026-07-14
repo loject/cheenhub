@@ -188,7 +188,7 @@ pub(super) fn revoke_user_session(
     Ok(true)
 }
 
-fn record_session_user_agent(
+pub(super) fn record_session_user_agent(
     state: &mut InMemoryState,
     session_id: Uuid,
     user_agent: &str,

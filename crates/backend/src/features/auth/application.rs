@@ -33,7 +33,7 @@ pub(crate) use oauth::{
     start_google_oauth, unlink_google,
 };
 pub(crate) use sessions::{
-    active_sessions, revoke_current_user_session, revoke_current_user_sessions,
+    active_sessions_with_user_agent, revoke_current_user_session, revoke_current_user_sessions,
 };
 
 /// Регистрирует пользователя и создает аутентифицированную сессию.

@@ -276,7 +276,7 @@ pub(super) async fn revoke_session_on_refresh_reuse(
     Ok(true)
 }
 
-async fn record_session_user_agent(
+pub(super) async fn record_session_user_agent(
     database: &DatabaseConnection,
     session_id: &Uuid,
     user_agent: &str,

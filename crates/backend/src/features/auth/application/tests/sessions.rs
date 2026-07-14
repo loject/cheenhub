@@ -3,8 +3,9 @@
 use cheenhub_contracts::rest::{LoginRequest, RegisterRequest, SessionDeviceKind};
 
 use super::state;
+use crate::features::auth::application::sessions::active_sessions;
 use crate::features::auth::application::{
-    active_sessions, login_with_user_agent, me, register_with_user_agent,
+    active_sessions_with_user_agent, login_with_user_agent, me, register, register_with_user_agent,
     revoke_current_user_session, revoke_current_user_sessions,
 };
 
@@ -43,6 +44,41 @@ async fn active_sessions_show_current_session_and_parse_user_agent() {
     assert_eq!(session.client.device_kind, SessionDeviceKind::Desktop);
     assert_eq!(session.client.os_name, "Linux");
     assert_eq!(session.client.browser_name, "Chrome");
+}
+
+#[tokio::test]
+async fn active_sessions_refresh_current_session_user_agent() {
+    let state = state();
+    let auth = register(
+        &state,
+        RegisterRequest {
+            nickname: "native_session_user".to_owned(),
+            email: "native-session-user@example.com".to_owned(),
+            password: "password123".to_owned(),
+            accepts_policies: true,
+        },
+    )
+    .await
+    .expect("registration should succeed");
+
+    let response = active_sessions_with_user_agent(
+        &state,
+        &auth.access_token,
+        Some("CheenHub/0.16.0 (Windows)".to_owned()),
+    )
+    .await
+    .expect("active sessions should load");
+
+    assert_eq!(response.sessions.len(), 1);
+    let session = &response.sessions[0];
+    assert!(session.current);
+    assert_eq!(session.client.device_kind, SessionDeviceKind::Desktop);
+    assert_eq!(session.client.os_name, "Windows");
+    assert_eq!(session.client.browser_name, "CheenHub");
+    assert_eq!(
+        session.user_agent.as_deref(),
+        Some("CheenHub/0.16.0 (Windows)")
+    );
 }
 
 #[tokio::test]

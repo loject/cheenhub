@@ -86,7 +86,9 @@ pub(crate) async fn active_sessions(
     headers: HeaderMap,
 ) -> Result<Json<ActiveSessionsResponse>, AuthError> {
     let token = bearer_token(&headers)?;
-    application::active_sessions(&state, token).await.map(Json)
+    application::active_sessions_with_user_agent(&state, token, request_user_agent(&headers))
+        .await
+        .map(Json)
 }
 
 /// Аннулирует одну активную сессию, принадлежащую текущему пользователю.

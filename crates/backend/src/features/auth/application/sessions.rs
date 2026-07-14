@@ -13,14 +13,32 @@ use crate::features::auth::security::user_agent;
 use crate::state::AppState;
 
 /// Возвращает активные auth-сессии текущего пользователя.
+#[cfg(test)]
 pub(crate) async fn active_sessions(
     state: &AppState,
     access_token: &str,
 ) -> Result<ActiveSessionsResponse, AuthError> {
+    active_sessions_with_user_agent(state, access_token, None).await
+}
+
+/// Возвращает активные auth-сессии и записывает User-Agent текущего запроса.
+pub(crate) async fn active_sessions_with_user_agent(
+    state: &AppState,
+    access_token: &str,
+    user_agent: Option<String>,
+) -> Result<ActiveSessionsResponse, AuthError> {
     let (user, current_session_id) = require_current_user(state, access_token).await?;
+    let now = Utc::now();
+    if let Some(user_agent) = user_agent.as_deref() {
+        state
+            .auth_store
+            .record_session_user_agent(&current_session_id, user_agent, now)
+            .await
+            .map_err(AuthError::Internal)?;
+    }
     let sessions = state
         .auth_store
-        .list_active_sessions(&user.id, Utc::now())
+        .list_active_sessions(&user.id, now)
         .await
         .map_err(AuthError::Internal)?;
     tracing::info!(

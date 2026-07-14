@@ -254,6 +254,17 @@ impl AuthStore for InMemoryAuthStore {
         refresh::list_active_sessions(&self.state, user_id, now)
     }
 
+    async fn record_session_user_agent(
+        &self,
+        session_id: &Uuid,
+        user_agent: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+        refresh::record_session_user_agent(&mut state, *session_id, user_agent, now);
+        Ok(())
+    }
+
     async fn revoke_user_session(
         &self,
         user_id: &Uuid,

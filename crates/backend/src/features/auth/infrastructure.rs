@@ -195,6 +195,14 @@ pub(crate) trait AuthStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> anyhow::Result<Vec<UserSession>>;
 
+    /// Записывает наблюдаемый User-Agent текущей auth-сессии.
+    async fn record_session_user_agent(
+        &self,
+        session_id: &Uuid,
+        user_agent: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<()>;
+
     /// Отзывает одну активную сессию пользователя.
     async fn revoke_user_session(
         &self,
