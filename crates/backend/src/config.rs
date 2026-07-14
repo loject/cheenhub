@@ -63,6 +63,8 @@ pub(crate) struct AppConfig {
     pub(crate) webtransport_tls_key_path: Option<String>,
     /// Необязательная конфигурация S3-совместимого объектного хранилища для изображений чата.
     pub(crate) chat_images_s3: Option<S3Config>,
+    /// Путь к внешнему JSON service account для FCM HTTP v1.
+    pub(crate) fcm_service_account_path: Option<String>,
 }
 
 /// Конфигурация S3-совместимого объектного хранилища.
@@ -141,6 +143,9 @@ impl AppConfig {
             webtransport_tls_cert_path: env::var("WEBTRANSPORT_TLS_CERT_PATH").ok(),
             webtransport_tls_key_path: env::var("WEBTRANSPORT_TLS_KEY_PATH").ok(),
             chat_images_s3: optional_s3_config()?,
+            fcm_service_account_path: env::var("FCM_SERVICE_ACCOUNT_PATH")
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
         })
     }
 

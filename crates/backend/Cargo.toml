@@ -28,6 +28,7 @@ lettre.workspace = true
 rand_core.workspace = true
 rcgen.workspace = true
 reqwest.workspace = true
+rsa.workspace = true
 rustls-pki-types.workspace = true
 rustls-pemfile.workspace = true
 sea-orm.workspace = true

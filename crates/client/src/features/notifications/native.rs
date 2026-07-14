@@ -6,7 +6,14 @@
 #[cfg(target_arch = "wasm32")]
 pub(crate) use super::web::{NotificationsProvider, application_is_focused};
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
+#[cfg(all(not(target_arch = "wasm32"), target_os = "android"))]
+pub(crate) use super::android::{NotificationsProvider, application_is_focused};
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(target_os = "android"),
+    feature = "desktop"
+))]
 mod impl_ {
     use dioxus::desktop::use_window;
     use dioxus::prelude::*;
@@ -94,12 +101,28 @@ mod impl_ {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(target_os = "android"),
+    feature = "desktop"
+))]
 pub(crate) use impl_::NotificationsProvider;
-#[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(target_os = "android"),
+    feature = "desktop"
+))]
 pub(crate) use impl_::application_is_focused;
 
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "desktop")))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(target_os = "android"),
+    not(feature = "desktop")
+))]
 pub(crate) use super::unsupported::NotificationsProvider;
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "desktop")))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(target_os = "android"),
+    not(feature = "desktop")
+))]
 pub(crate) use super::unsupported::application_is_focused;

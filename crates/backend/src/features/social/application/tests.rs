@@ -292,6 +292,11 @@ fn state() -> AppState {
             "test-chat-images",
         )),
         image_store: Arc::new(InMemoryImageStore::default()),
+        push_notifications: Arc::new(
+            crate::features::push_notifications::application::PushNotifications::disabled(
+                Arc::new(InMemoryAuthStore::default()),
+            ),
+        ),
         image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
         voice_presence_store: Arc::new(InMemoryVoicePresenceStore::default()),
         realtime_hub: Arc::new(RealtimeHub::default()),

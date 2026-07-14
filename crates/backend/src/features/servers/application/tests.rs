@@ -52,6 +52,11 @@ fn state_with_store(server_store: Arc<InMemoryServerStore>) -> AppState {
         image_store: Arc::new(
             crate::features::images::infrastructure::InMemoryImageStore::default(),
         ),
+        push_notifications: Arc::new(
+            crate::features::push_notifications::application::PushNotifications::disabled(
+                Arc::new(InMemoryAuthStore::default()),
+            ),
+        ),
         image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
         voice_presence_store: Arc::new(
             crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore::default(),

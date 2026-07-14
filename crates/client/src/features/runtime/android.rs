@@ -15,6 +15,8 @@ pub(crate) enum AndroidPermission {
     RecordAudio,
     /// Доступ к камере.
     Camera,
+    /// Разрешение Android 13+ на показ системных уведомлений.
+    PostNotifications,
 }
 
 /// Результат Android runtime permission request.
@@ -42,6 +44,15 @@ pub(crate) enum ForegroundServiceKind {
 /// Непрозрачный идентификатор выданного Android MediaProjection consent.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct MediaProjectionGrant(pub(crate) u64);
+
+/// Идентификаторы Android-установки, необходимые для регистрации push-доставки.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AndroidPushInstallation {
+    /// Стабильный локальный UUID установки приложения.
+    pub(crate) installation_id: String,
+    /// Непрозрачный токен Firebase Cloud Messaging.
+    pub(crate) token: String,
+}
 
 /// Ошибка обращения к Android platform bridge.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -87,5 +98,29 @@ pub(crate) trait AndroidBridge: Send + Sync {
     fn stop_foreground_service(
         &self,
         kind: ForegroundServiceKind,
+    ) -> Result<(), AndroidBridgeError>;
+
+    /// Запрашивает текущий UUID установки и FCM token у Android-слоя.
+    fn request_push_installation(
+        &self,
+        callback: Box<dyn FnOnce(Result<AndroidPushInstallation, AndroidBridgeError>) + Send>,
+    ) -> Result<(), AndroidBridgeError>;
+
+    /// Возвращает и удаляет отложенный переход в личный диалог из уведомления.
+    fn take_pending_direct_message_conversation_id(
+        &self,
+        callback: Box<dyn FnOnce(Result<Option<String>, AndroidBridgeError>) + Send>,
+    ) -> Result<(), AndroidBridgeError>;
+
+    /// Передаёт Android-слою открытый личный диалог для подавления лишнего уведомления.
+    fn set_active_direct_message_conversation(
+        &self,
+        conversation_id: Option<String>,
+    ) -> Result<(), AndroidBridgeError>;
+
+    /// Удаляет системное уведомление и локальную историю прочитанного диалога.
+    fn clear_direct_message_notification(
+        &self,
+        conversation_id: String,
     ) -> Result<(), AndroidBridgeError>;
 }

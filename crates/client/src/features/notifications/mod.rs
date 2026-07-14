@@ -1,5 +1,6 @@
 //! Уведомления о новых сообщениях.
 
+mod android;
 mod direct_messages;
 mod focus;
 mod native;

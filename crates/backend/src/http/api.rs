@@ -2,7 +2,7 @@
 
 use axum::{Router, http::StatusCode, routing::get};
 
-use crate::features::{auth, images, servers, social};
+use crate::features::{auth, images, push_notifications, servers, social};
 use crate::realtime;
 use crate::state::AppState;
 
@@ -11,6 +11,7 @@ pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::routes())
         .nest("/images", images::routes())
+        .nest("/push", push_notifications::routes())
         .nest("/friends", social::friend_routes())
         .nest("/direct", social::dm_routes())
         .nest("/direct-messages", social::dm_routes())

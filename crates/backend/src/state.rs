@@ -8,6 +8,7 @@ use crate::features::auth::email::AuthMailer;
 use crate::features::auth::infrastructure::AuthStore;
 use crate::features::auth::security::keys::AuthKeys;
 use crate::features::images::infrastructure::ImageStore;
+use crate::features::push_notifications::application::PushNotifications;
 use crate::features::servers::infrastructure::ServerStore;
 use crate::features::social::infrastructure::SocialStore;
 use crate::features::text_chat::infrastructure::{ChatAttachmentObjectStore, TextChatStore};
@@ -31,6 +32,8 @@ pub(crate) struct AppState {
     pub(crate) chat_attachment_object_store: Arc<dyn ChatAttachmentObjectStore>,
     /// Бэкенд хранения изображений.
     pub(crate) image_store: Arc<dyn ImageStore>,
+    /// Координатор регистрации и постоянной доставки push-уведомлений.
+    pub(crate) push_notifications: Arc<PushNotifications>,
     /// Очередь на уровне процесса, ограничивающая параллельность обработки изображений.
     pub(crate) image_processing_queue: Arc<Semaphore>,
     /// Активное присутствие в голосовых комнатах.

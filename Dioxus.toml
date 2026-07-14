@@ -4,6 +4,7 @@ default_platform = "web"
 asset_dir = "crates/client/assets"
 sub_package = "cheenhub_client"
 android_main_activity = "android/MainActivity.kt"
+android_manifest = "android/AndroidManifest.xml"
 
 [bundle]
 identifier = "ru.cheenhub"
@@ -46,6 +47,7 @@ min_sdk = 24
 target_sdk = 35
 compile_sdk = 35
 foreground_service_types = ["microphone", "mediaPlayback", "camera", "mediaProjection"]
+gradle_dependencies = ["com.google.firebase:firebase-messaging:25.0.1"]
 
 [android.permissions]
 "android.permission.INTERNET" = { description = "Network access for CheenHub API and realtime transport" }
@@ -57,3 +59,4 @@ foreground_service_types = ["microphone", "mediaPlayback", "camera", "mediaProje
 "android.permission.FOREGROUND_SERVICE_CAMERA" = { description = "Keep camera capture running during an active video session" }
 "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" = { description = "Keep an explicitly approved screen sharing session running" }
 "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" = { description = "Keep voice playback running during an active voice session" }
+"android.permission.POST_NOTIFICATIONS" = { description = "Show direct-message and active media notifications" }

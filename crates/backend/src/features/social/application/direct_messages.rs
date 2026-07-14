@@ -10,6 +10,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::features::auth::application::require_current_user;
+use crate::features::push_notifications::DirectMessagePush;
 use crate::features::social::domain::{DmMessage, FriendshipStatus};
 use crate::features::social::error::SocialError;
 use crate::features::social::infrastructure::normalize_unread_count;
@@ -237,6 +238,33 @@ pub(crate) async fn send_dm_message(
         seq = message.seq,
         "sent direct message"
     );
+    let push_payload = DirectMessagePush::new(
+        message.id,
+        message.conversation_id,
+        message.seq,
+        current_user.id,
+        &current_user.nickname,
+        &message.body,
+        message.created_at,
+    );
+    match state
+        .push_notifications
+        .enqueue_direct_message(friend_user_id, push_payload)
+        .await
+    {
+        Ok(enqueued) => tracing::debug!(
+            message_id = %message.id,
+            recipient_user_id = %friend_user_id,
+            installation_count = enqueued,
+            "queued direct message push deliveries"
+        ),
+        Err(error) => tracing::error!(
+            %error,
+            message_id = %message.id,
+            recipient_user_id = %friend_user_id,
+            "failed to queue direct message push deliveries"
+        ),
+    }
     notify_direct_message_created(
         state,
         friend_user_id,

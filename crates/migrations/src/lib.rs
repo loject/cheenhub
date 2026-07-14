@@ -27,6 +27,7 @@ mod m20260519_000023_create_text_chat_attachments_table;
 mod m20260519_000024_create_session_user_agents_table;
 mod m20260630_000025_create_social_tables;
 mod m20260630_000026_add_dm_read_state;
+mod m20260713_000027_create_push_notifications;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -63,6 +64,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260519_000024_create_session_user_agents_table::Migration),
             Box::new(m20260630_000025_create_social_tables::Migration),
             Box::new(m20260630_000026_add_dm_read_state::Migration),
+            Box::new(m20260713_000027_create_push_notifications::Migration),
         ]
     }
 }
