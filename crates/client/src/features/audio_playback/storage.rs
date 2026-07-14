@@ -8,12 +8,12 @@ const OUTPUT_DEVICE_LABEL_KEY: &str = "cheenhub.audio_playback.output_device_lab
 const OUTPUT_VOLUME_PERCENT_KEY: &str = "cheenhub.audio_playback.output_volume_percent";
 const JITTER_BUFFER_MS_KEY: &str = "cheenhub.audio_playback.jitter_buffer_ms";
 const DEFAULT_OUTPUT_VOLUME_PERCENT: u32 = 100;
-/// Задержка джиттер-буфера для входящего голоса по умолчанию, в миллисекундах.
-pub(crate) const DEFAULT_JITTER_BUFFER_MS: u32 = 120;
-/// Минимальная задержка джиттер-буфера для входящего голоса, в миллисекундах.
-pub(crate) const MIN_JITTER_BUFFER_MS: u32 = 40;
-/// Максимальная задержка джиттер-буфера для входящего голоса, в миллисекундах.
-pub(crate) const MAX_JITTER_BUFFER_MS: u32 = 400;
+/// Задержка джиттер-буфера для входящего голоса по умолчанию, в микросекундах.
+pub(crate) const DEFAULT_JITTER_BUFFER_US: u32 = 10_000;
+/// Минимальная задержка джиттер-буфера для входящего голоса, в микросекундах.
+pub(crate) const MIN_JITTER_BUFFER_US: u32 = 500;
+/// Максимальная задержка джиттер-буфера для входящего голоса, в микросекундах.
+pub(crate) const MAX_JITTER_BUFFER_US: u32 = 400_000;
 
 /// Сохраненное предпочтение устройства аудиовывода.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,26 +80,35 @@ pub(crate) fn save_output_volume_percent(volume_percent: u32) {
     );
 }
 
-/// Loads the preferred inbound voice jitter buffer delay.
-pub(crate) fn load_jitter_buffer_ms() -> u32 {
-    let buffer_ms = get::<LocalStorage>(JITTER_BUFFER_MS_KEY)
-        .and_then(|value| value.parse::<u32>().ok())
-        .map(clamp_jitter_buffer_ms)
-        .unwrap_or(DEFAULT_JITTER_BUFFER_MS);
-    info!(buffer_ms, "loaded inbound voice jitter buffer preference");
-    buffer_ms
+/// Загружает предпочтительную задержку jitter buffer входящего голоса в микросекундах.
+pub(crate) fn load_jitter_buffer_us() -> u32 {
+    let buffer_us = get::<LocalStorage>(JITTER_BUFFER_MS_KEY)
+        .and_then(|value| parse_jitter_buffer_us(&value))
+        .map(clamp_jitter_buffer_us)
+        .unwrap_or(DEFAULT_JITTER_BUFFER_US);
+    info!(buffer_us, "loaded inbound voice jitter buffer preference");
+    buffer_us
 }
 
-/// Saves the preferred inbound voice jitter buffer delay.
-pub(crate) fn save_jitter_buffer_ms(buffer_ms: u32) {
-    let buffer_ms = clamp_jitter_buffer_ms(buffer_ms);
+/// Сохраняет предпочтительную задержку jitter buffer входящего голоса в микросекундах.
+pub(crate) fn save_jitter_buffer_us(buffer_us: u32) {
+    let buffer_us = clamp_jitter_buffer_us(buffer_us);
+    let buffer_ms = f64::from(buffer_us) / 1_000.0;
     set::<LocalStorage>(JITTER_BUFFER_MS_KEY, &buffer_ms.to_string());
-    info!(buffer_ms, "saved inbound voice jitter buffer preference");
+    info!(buffer_us, "saved inbound voice jitter buffer preference");
 }
 
-/// Clamps an inbound voice jitter buffer delay to the supported range.
-pub(crate) fn clamp_jitter_buffer_ms(buffer_ms: u32) -> u32 {
-    buffer_ms.clamp(MIN_JITTER_BUFFER_MS, MAX_JITTER_BUFFER_MS)
+/// Ограничивает задержку jitter buffer входящего голоса поддерживаемым диапазоном.
+pub(crate) fn clamp_jitter_buffer_us(buffer_us: u32) -> u32 {
+    buffer_us.clamp(MIN_JITTER_BUFFER_US, MAX_JITTER_BUFFER_US)
+}
+
+fn parse_jitter_buffer_us(value: &str) -> Option<u32> {
+    value
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .map(|buffer_ms| (buffer_ms * 1_000.0).round() as u32)
 }
 
 fn clamp_volume_percent(volume_percent: u32) -> u32 {
@@ -128,4 +137,19 @@ where
     S: StorageBacking<Key = String>,
 {
     S::set(key.to_owned(), &Option::<String>::None);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_jitter_buffer_us;
+
+    #[test]
+    fn reads_legacy_integer_milliseconds_as_microseconds() {
+        assert_eq!(parse_jitter_buffer_us("120"), Some(120_000));
+    }
+
+    #[test]
+    fn reads_fractional_milliseconds_as_microseconds() {
+        assert_eq!(parse_jitter_buffer_us("0.5"), Some(500));
+    }
 }

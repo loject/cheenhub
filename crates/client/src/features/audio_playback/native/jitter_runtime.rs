@@ -1,15 +1,18 @@
 //! Runtime между входящими Opus-фреймами, jitter buffer и native PCM-микшером.
 
+use std::time::Duration;
+
 use dioxus::prelude::{debug, spawn, warn};
 use opus::{Channels, Decoder};
 
 use super::jitter_buffer::JitterBufferPush;
 use super::mixer::{SENDER_BACKLOG_WARN_SAMPLES, queue_sender_samples, queued_sender_samples};
 use super::{
-    AUDIO_SAMPLE_RATE_HZ, AudioPlaybackHandle, playback_now_ms, should_emit_sender_warning,
+    AUDIO_SAMPLE_RATE_HZ, AudioPlaybackHandle, playback_now_ms, playback_now_us,
+    should_emit_sender_warning,
 };
 use crate::features::audio_playback::backend::{PlaybackCodec, VoiceFrame};
-use crate::features::runtime::sleep_ms;
+use crate::features::runtime::sleep_duration;
 
 const MAX_OPUS_FRAME_SAMPLES: usize = 5_760;
 const AUDIO_PLAYBACK_WARNING_INTERVAL_MS: u64 = 5_000;
@@ -46,9 +49,9 @@ impl AudioPlaybackHandle {
                 .jitter_buffers
                 .entry(sender_user_id.clone())
                 .or_default()
-                .push(frame, playback_now_ms())
+                .push(frame, playback_now_us())
         };
-        let target_delay_ms = self.inner.borrow().jitter_buffer_ms;
+        let target_delay_us = self.inner.borrow().jitter_buffer_us;
 
         match outcome {
             JitterBufferPush::Accepted { pending_frames } => {
@@ -56,7 +59,7 @@ impl AudioPlaybackHandle {
                     debug!(
                         %sender_user_id,
                         sequence,
-                        target_delay_ms,
+                        target_delay_us,
                         "started native inbound voice jitter buffer"
                     );
                 }
@@ -67,7 +70,7 @@ impl AudioPlaybackHandle {
                         %sender_user_id,
                         sequence,
                         pending_frames,
-                        target_delay_ms,
+                        target_delay_us,
                         "native inbound voice jitter buffer pending frames are backing up"
                     );
                 }
@@ -133,20 +136,20 @@ impl AudioPlaybackHandle {
         let handle = self.clone();
         spawn(async move {
             loop {
-                let Some(next_wake_ms) = handle.drain_jitter_buffer(&sender_user_id) else {
+                let Some(next_wake_us) = handle.drain_jitter_buffer(&sender_user_id) else {
                     break;
                 };
-                let wake_deadline_ms = playback_now_ms().saturating_add(u64::from(next_wake_ms));
-                sleep_ms(next_wake_ms).await;
-                let woke_at_ms = playback_now_ms();
-                let wake_late_ms = woke_at_ms.saturating_sub(wake_deadline_ms);
+                let wake_deadline_us = playback_now_us().saturating_add(u64::from(next_wake_us));
+                sleep_duration(Duration::from_micros(u64::from(next_wake_us))).await;
+                let woke_at_us = playback_now_us();
+                let wake_late_ms = woke_at_us.saturating_sub(wake_deadline_us) / 1_000;
                 if wake_late_ms >= JITTER_DRAIN_WAKE_LATE_WARN_MS
                     && handle.should_warn_jitter(&sender_user_id)
                 {
                     warn!(
                         %sender_user_id,
                         wake_late_ms,
-                        scheduled_delay_ms = next_wake_ms,
+                        scheduled_delay_us = next_wake_us,
                         "native inbound voice jitter drain woke late"
                     );
                 }
@@ -156,27 +159,27 @@ impl AudioPlaybackHandle {
     }
 
     fn drain_jitter_buffer(&self, sender_user_id: &str) -> Option<u32> {
-        let now_ms = playback_now_ms();
-        let (drain, target_delay_ms, should_warn_jitter_advance) = {
+        let now_us = playback_now_us();
+        let (drain, target_delay_us, should_warn_jitter_advance) = {
             let mut inner = self.inner.borrow_mut();
             if inner.muted {
                 inner.jitter_buffers.remove(sender_user_id);
                 return None;
             }
 
-            let target_delay_ms = inner.jitter_buffer_ms;
+            let target_delay_us = inner.jitter_buffer_us;
             let drain = {
                 let buffer = inner.jitter_buffers.get_mut(sender_user_id)?;
-                buffer.drain_ready(now_ms, u64::from(target_delay_ms))
+                buffer.drain_ready(now_us, u64::from(target_delay_us))
             };
             let should_warn = (drain.skipped_sequences > 0 || drain.dropped_stale_frames > 0)
                 && should_emit_sender_warning(
                     &mut inner.jitter_warning_at_ms,
                     sender_user_id,
-                    now_ms,
+                    playback_now_ms(),
                     AUDIO_PLAYBACK_WARNING_INTERVAL_MS,
                 );
-            (drain, target_delay_ms, should_warn)
+            (drain, target_delay_us, should_warn)
         };
 
         if drain.skipped_sequences > 0 || drain.dropped_stale_frames > 0 {
@@ -185,7 +188,7 @@ impl AudioPlaybackHandle {
                     %sender_user_id,
                     skipped_sequences = drain.skipped_sequences,
                     dropped_stale_frames = drain.dropped_stale_frames,
-                    target_delay_ms,
+                    target_delay_us,
                     "advanced native inbound voice jitter buffer after network jitter"
                 );
             } else {
@@ -193,13 +196,13 @@ impl AudioPlaybackHandle {
                     %sender_user_id,
                     skipped_sequences = drain.skipped_sequences,
                     dropped_stale_frames = drain.dropped_stale_frames,
-                    target_delay_ms,
+                    target_delay_us,
                     "advanced native inbound voice jitter buffer after network jitter"
                 );
             }
         }
 
-        let next_wake_ms = drain.next_wake_ms;
+        let next_wake_us = drain.next_wake_us;
         for frame in drain.ready_frames {
             if let Err(error) = self.decode_voice_frame(frame) {
                 warn!(
@@ -210,7 +213,7 @@ impl AudioPlaybackHandle {
             }
         }
 
-        next_wake_ms
+        next_wake_us
     }
 
     fn decode_voice_frame(&self, frame: VoiceFrame) -> Result<(), String> {

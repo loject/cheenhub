@@ -7,7 +7,10 @@ use gloo_timers::future::TimeoutFuture;
 
 /// Асинхронно ожидает указанную продолжительность через browser timer.
 pub(super) async fn sleep_duration(duration: Duration) {
-    let milliseconds = duration.as_millis().min(u128::from(u32::MAX)) as u32;
+    let milliseconds = duration
+        .as_micros()
+        .div_ceil(1_000)
+        .min(u128::from(u32::MAX)) as u32;
     TimeoutFuture::new(milliseconds).await;
 }
 

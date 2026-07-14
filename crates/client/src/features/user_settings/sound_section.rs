@@ -5,8 +5,8 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 
 use crate::features::audio_playback::{
-    AudioOutputDevice, AudioOutputDevicesResult, AudioPlaybackHandle, MAX_JITTER_BUFFER_MS,
-    MIN_JITTER_BUFFER_MS, enumerate_audio_output_devices,
+    AudioOutputDevice, AudioOutputDevicesResult, AudioPlaybackHandle, MAX_JITTER_BUFFER_US,
+    MIN_JITTER_BUFFER_US, enumerate_audio_output_devices,
 };
 use crate::features::microphone::{
     AudioInputDevice, AudioInputDevicesResult, MicrophoneActivationMode, MicrophoneHandle,
@@ -14,7 +14,7 @@ use crate::features::microphone::{
 };
 
 use super::sound_devices::{input_device_widget, output_device_widget};
-use super::styles::{parse_percent, parse_percent_range, parse_u32_range};
+use super::styles::{parse_percent, parse_percent_range};
 
 /// Renders sound input, output, and voice activation controls.
 #[component]
@@ -40,7 +40,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
 
     let input_volume = mic.input_volume_percent();
     let output_volume = playback.output_volume_percent();
-    let jitter_buffer_ms = playback.jitter_buffer_ms();
+    let jitter_buffer_us = playback.jitter_buffer_us();
     let activation_mode = mic.activation_mode();
     let activation_level = mic.vad_threshold_percent();
     let microphone_status = mic.status();
@@ -173,7 +173,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
                         )}
                     }
                     {volume_slider("Громкость вывода", output_volume, move |value| playback.set_output_volume_percent(value))}
-                    {jitter_buffer_slider(jitter_buffer_ms, move |value| playback_jitter_change.set_jitter_buffer_ms(value))}
+                    {jitter_buffer_slider(jitter_buffer_us, move |value| playback_jitter_change.set_jitter_buffer_us(value))}
                 }
             }
 
@@ -354,34 +354,55 @@ fn volume_slider(
     }
 }
 
-fn jitter_buffer_slider(value: u32, mut on_change: impl FnMut(u32) + 'static) -> Element {
+fn jitter_buffer_slider(value_us: u32, mut on_change: impl FnMut(u32) + 'static) -> Element {
+    let value_ms = f64::from(value_us) / 1_000.0;
+    let value_label = format_jitter_buffer_ms(value_us);
+    let min_ms = f64::from(MIN_JITTER_BUFFER_US) / 1_000.0;
+    let max_ms = f64::from(MAX_JITTER_BUFFER_US) / 1_000.0;
+    let min_label = format_jitter_buffer_ms(MIN_JITTER_BUFFER_US);
+    let max_label = format_jitter_buffer_ms(MAX_JITTER_BUFFER_US);
     rsx! {
         div {
             div { class: "mb-2 flex items-center justify-between gap-3",
                 label { class: "text-[13px] font-medium text-zinc-300", "Буфер входящего звука" }
-                span { class: "shrink-0 text-[12px] text-zinc-500", "{value} мс" }
+                span { class: "shrink-0 text-[12px] text-zinc-500", "{value_label} мс" }
             }
             input {
                 r#type: "range",
-                min: "{MIN_JITTER_BUFFER_MS}",
-                max: "{MAX_JITTER_BUFFER_MS}",
-                step: "10",
-                value,
+                min: "{min_ms}",
+                max: "{max_ms}",
+                step: "0.5",
+                value: value_ms,
                 oninput: move |event| {
-                    on_change(parse_u32_range(
-                        &event.value(),
-                        value,
-                        MIN_JITTER_BUFFER_MS,
-                        MAX_JITTER_BUFFER_MS,
-                    ))
+                    let parsed_us = event
+                        .value()
+                        .parse::<f64>()
+                        .ok()
+                        .filter(|value| value.is_finite())
+                        .map(|value| (value * 1_000.0).round() as u32)
+                        .unwrap_or(value_us)
+                        .clamp(MIN_JITTER_BUFFER_US, MAX_JITTER_BUFFER_US);
+                    on_change(parsed_us)
                 },
                 class: "w-full cursor-pointer accent-blue-500",
             }
             div { class: "mt-1 flex items-center justify-between text-[11px] text-zinc-600",
-                span { "{MIN_JITTER_BUFFER_MS} мс" }
-                span { "{MAX_JITTER_BUFFER_MS} мс" }
+                span { "{min_label} мс" }
+                span { "{max_label} мс" }
             }
         }
+    }
+}
+
+fn format_jitter_buffer_ms(value_us: u32) -> String {
+    let whole_ms = value_us / 1_000;
+    let remainder_us = value_us % 1_000;
+    if remainder_us == 0 {
+        whole_ms.to_string()
+    } else {
+        format!("{whole_ms},{remainder_us:03}")
+            .trim_end_matches('0')
+            .to_owned()
     }
 }
 

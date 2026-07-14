@@ -33,7 +33,7 @@ pub(crate) struct AudioPlaybackHandle {
     selected_output_device_id: Signal<Option<String>>,
     selected_output_device_label: Signal<Option<String>>,
     output_volume_percent: Signal<u32>,
-    jitter_buffer_ms: Signal<u32>,
+    jitter_buffer_us: Signal<u32>,
     inner: Rc<RefCell<AudioPlaybackInner>>,
 }
 
@@ -44,7 +44,7 @@ struct AudioPlaybackInner {
     jitter_buffers: HashMap<String, JitterBuffer>,
     jitter_drainers: HashMap<String, u64>,
     next_jitter_drainer_generation: u64,
-    jitter_buffer_ms: u32,
+    jitter_buffer_us: u32,
     jitter_warning_at_ms: HashMap<String, u64>,
     decoder_warning_at_ms: HashMap<String, u64>,
     user_volumes: HashMap<String, f32>,
@@ -122,23 +122,23 @@ impl AudioPlaybackHandle {
         }
     }
 
-    /// Возвращает текущую задержку jitter buffer для входящего голоса.
-    pub(crate) fn jitter_buffer_ms(&self) -> u32 {
-        (self.jitter_buffer_ms)()
+    /// Возвращает текущую задержку jitter buffer для входящего голоса в микросекундах.
+    pub(crate) fn jitter_buffer_us(&self) -> u32 {
+        (self.jitter_buffer_us)()
     }
 
-    /// Обновляет задержку jitter buffer для входящего голоса.
-    pub(crate) fn set_jitter_buffer_ms(&self, buffer_ms: u32) {
-        let buffer_ms = storage::clamp_jitter_buffer_ms(buffer_ms);
-        if *self.jitter_buffer_ms.peek() == buffer_ms {
+    /// Обновляет задержку jitter buffer для входящего голоса в микросекундах.
+    pub(crate) fn set_jitter_buffer_us(&self, buffer_us: u32) {
+        let buffer_us = storage::clamp_jitter_buffer_us(buffer_us);
+        if *self.jitter_buffer_us.peek() == buffer_us {
             return;
         }
 
-        info!(buffer_ms, "inbound voice jitter buffer preference changed");
-        storage::save_jitter_buffer_ms(buffer_ms);
-        let mut jitter_buffer_signal = self.jitter_buffer_ms;
-        jitter_buffer_signal.set(buffer_ms);
-        self.inner.borrow_mut().jitter_buffer_ms = buffer_ms;
+        info!(buffer_us, "inbound voice jitter buffer preference changed");
+        storage::save_jitter_buffer_us(buffer_us);
+        let mut jitter_buffer_signal = self.jitter_buffer_us;
+        jitter_buffer_signal.set(buffer_us);
+        self.inner.borrow_mut().jitter_buffer_us = buffer_us;
     }
 
     /// Сохраняет предпочитаемое устройство вывода и пересоздает native stream.
@@ -289,7 +289,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
     let muted = use_signal(|| false);
     let stored_output_device = storage::load_output_device();
     let output_volume_value = storage::load_output_volume_percent();
-    let jitter_buffer_ms_value = storage::load_jitter_buffer_ms();
+    let jitter_buffer_us_value = storage::load_jitter_buffer_us();
     let selected_output_device_id = use_signal({
         let stored_output_device = stored_output_device.clone();
         move || {
@@ -301,7 +301,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
     let selected_output_device_label =
         use_signal(move || stored_output_device.and_then(|device| device.label));
     let output_volume_percent = use_signal(move || output_volume_value);
-    let jitter_buffer_ms = use_signal(move || jitter_buffer_ms_value);
+    let jitter_buffer_us = use_signal(move || jitter_buffer_us_value);
     let inner = use_hook(move || {
         Rc::new(RefCell::new(AudioPlaybackInner {
             muted: false,
@@ -310,7 +310,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             jitter_buffers: HashMap::new(),
             jitter_drainers: HashMap::new(),
             next_jitter_drainer_generation: 0,
-            jitter_buffer_ms: jitter_buffer_ms_value,
+            jitter_buffer_us: jitter_buffer_us_value,
             jitter_warning_at_ms: HashMap::new(),
             decoder_warning_at_ms: HashMap::new(),
             user_volumes: HashMap::new(),
@@ -322,7 +322,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
         selected_output_device_id,
         selected_output_device_label,
         output_volume_percent,
-        jitter_buffer_ms,
+        jitter_buffer_us,
         inner,
     };
     use_context_provider(move || handle.clone());
@@ -371,5 +371,12 @@ fn playback_now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
+}
+
+fn playback_now_us() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_micros().min(u128::from(u64::MAX)) as u64)
         .unwrap_or(0)
 }

@@ -21,4 +21,4 @@ pub(crate) use native::{AudioPlaybackHandle, AudioPlaybackProvider};
 pub(crate) use output_devices::{
     AudioOutputDevice, AudioOutputDevicesResult, enumerate_audio_output_devices,
 };
-pub(crate) use storage::{MAX_JITTER_BUFFER_MS, MIN_JITTER_BUFFER_MS};
+pub(crate) use storage::{MAX_JITTER_BUFFER_US, MIN_JITTER_BUFFER_US};

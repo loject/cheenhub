@@ -47,7 +47,7 @@ pub(crate) struct AudioPlaybackHandle {
     selected_output_device_id: Signal<Option<String>>,
     selected_output_device_label: Signal<Option<String>>,
     output_volume_percent: Signal<u32>,
-    jitter_buffer_ms: Signal<u32>,
+    jitter_buffer_us: Signal<u32>,
     pub(super) inner: Rc<RefCell<AudioPlaybackInner>>,
 }
 
@@ -58,7 +58,7 @@ pub(super) struct AudioPlaybackInner {
     pub(in crate::features::audio_playback::web) jitter_buffers: HashMap<String, JitterBuffer>,
     pub(in crate::features::audio_playback::web) jitter_drainers: HashMap<String, u64>,
     pub(in crate::features::audio_playback::web) next_jitter_drainer_generation: u64,
-    pub(in crate::features::audio_playback::web) jitter_buffer_ms: u32,
+    pub(in crate::features::audio_playback::web) jitter_buffer_us: u32,
     pub(in crate::features::audio_playback::web) jitter_warning_at_ms: HashMap<String, u64>,
     pub(in crate::features::audio_playback::web) decoder_queue_warning_at_ms: HashMap<String, u64>,
     pub(in crate::features::audio_playback::web) playback_schedule_warning_at: HashMap<String, f64>,
@@ -145,23 +145,23 @@ impl AudioPlaybackHandle {
         }
     }
 
-    /// Returns the current inbound voice jitter buffer delay in milliseconds.
-    pub(crate) fn jitter_buffer_ms(&self) -> u32 {
-        (self.jitter_buffer_ms)()
+    /// Возвращает текущую задержку jitter buffer для входящего голоса в микросекундах.
+    pub(crate) fn jitter_buffer_us(&self) -> u32 {
+        (self.jitter_buffer_us)()
     }
 
-    /// Updates the inbound voice jitter buffer delay in milliseconds.
-    pub(crate) fn set_jitter_buffer_ms(&self, buffer_ms: u32) {
-        let buffer_ms = storage::clamp_jitter_buffer_ms(buffer_ms);
-        if *self.jitter_buffer_ms.peek() == buffer_ms {
+    /// Обновляет задержку jitter buffer для входящего голоса в микросекундах.
+    pub(crate) fn set_jitter_buffer_us(&self, buffer_us: u32) {
+        let buffer_us = storage::clamp_jitter_buffer_us(buffer_us);
+        if *self.jitter_buffer_us.peek() == buffer_us {
             return;
         }
 
-        info!(buffer_ms, "inbound voice jitter buffer preference changed");
-        storage::save_jitter_buffer_ms(buffer_ms);
-        let mut jitter_buffer_signal = self.jitter_buffer_ms;
-        jitter_buffer_signal.set(buffer_ms);
-        self.inner.borrow_mut().jitter_buffer_ms = buffer_ms;
+        info!(buffer_us, "inbound voice jitter buffer preference changed");
+        storage::save_jitter_buffer_us(buffer_us);
+        let mut jitter_buffer_signal = self.jitter_buffer_us;
+        jitter_buffer_signal.set(buffer_us);
+        self.inner.borrow_mut().jitter_buffer_us = buffer_us;
     }
 
     /// Stores the preferred audio output device and applies it to the active context.
@@ -396,7 +396,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
     let muted = use_signal(|| false);
     let stored_output_device = storage::load_output_device();
     let output_volume_value = storage::load_output_volume_percent();
-    let jitter_buffer_ms_value = storage::load_jitter_buffer_ms();
+    let jitter_buffer_us_value = storage::load_jitter_buffer_us();
     let selected_output_device_id = use_signal({
         let stored_output_device = stored_output_device.clone();
         move || {
@@ -408,14 +408,14 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
     let selected_output_device_label =
         use_signal(move || stored_output_device.and_then(|device| device.label));
     let output_volume_percent = use_signal(move || output_volume_value);
-    let jitter_buffer_ms = use_signal(move || jitter_buffer_ms_value);
+    let jitter_buffer_us = use_signal(move || jitter_buffer_us_value);
     let output_gain = gain_from_percent(output_volume_value);
     let handle = AudioPlaybackHandle {
         muted,
         selected_output_device_id,
         selected_output_device_label,
         output_volume_percent,
-        jitter_buffer_ms,
+        jitter_buffer_us,
         inner: Rc::new(RefCell::new(AudioPlaybackInner {
             context: None,
             muted: false,
@@ -423,7 +423,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             jitter_buffers: HashMap::new(),
             jitter_drainers: HashMap::new(),
             next_jitter_drainer_generation: 0,
-            jitter_buffer_ms: jitter_buffer_ms_value,
+            jitter_buffer_us: jitter_buffer_us_value,
             jitter_warning_at_ms: HashMap::new(),
             decoder_queue_warning_at_ms: HashMap::new(),
             playback_schedule_warning_at: HashMap::new(),

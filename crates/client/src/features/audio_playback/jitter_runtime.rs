@@ -1,9 +1,10 @@
 //! Runtime bridge between inbound voice frames and the jitter buffer.
 
 use dioxus::prelude::{debug, warn};
+use std::time::Duration;
 use web_time::{SystemTime, UNIX_EPOCH};
 
-use crate::features::runtime::sleep_ms;
+use crate::features::runtime::sleep_duration;
 
 use super::browser_helpers::js_error_message;
 use super::jitter_buffer::JitterBufferPush;
@@ -37,9 +38,9 @@ impl AudioPlaybackHandle {
                 .jitter_buffers
                 .entry(sender_user_id.clone())
                 .or_default()
-                .push(frame, jitter_now_ms())
+                .push(frame, jitter_now_us())
         };
-        let target_delay_ms = self.inner.borrow().jitter_buffer_ms;
+        let target_delay_us = self.inner.borrow().jitter_buffer_us;
 
         match outcome {
             JitterBufferPush::Accepted { pending_frames } => {
@@ -47,7 +48,7 @@ impl AudioPlaybackHandle {
                     debug!(
                         %sender_user_id,
                         sequence,
-                        target_delay_ms,
+                        target_delay_us,
                         "started inbound voice jitter buffer"
                     );
                 }
@@ -61,7 +62,7 @@ impl AudioPlaybackHandle {
                             %sender_user_id,
                             sequence,
                             pending_frames,
-                            target_delay_ms,
+                            target_delay_us,
                             "inbound voice jitter buffer pending frames are backing up"
                         );
                     }
@@ -132,23 +133,23 @@ impl AudioPlaybackHandle {
         let handle = self.clone();
         dioxus::prelude::spawn(async move {
             loop {
-                let Some(next_wake_ms) = handle.drain_jitter_buffer(&sender_user_id) else {
+                let Some(next_wake_us) = handle.drain_jitter_buffer(&sender_user_id) else {
                     break;
                 };
-                let wake_deadline_ms = jitter_now_ms().saturating_add(u64::from(next_wake_ms));
-                sleep_ms(next_wake_ms).await;
-                let woke_at_ms = jitter_now_ms();
-                let wake_late_ms = woke_at_ms.saturating_sub(wake_deadline_ms);
+                let wake_deadline_us = jitter_now_us().saturating_add(u64::from(next_wake_us));
+                sleep_duration(Duration::from_micros(u64::from(next_wake_us))).await;
+                let woke_at_us = jitter_now_us();
+                let wake_late_ms = woke_at_us.saturating_sub(wake_deadline_us) / 1_000;
                 if wake_late_ms >= JITTER_DRAIN_WAKE_LATE_WARN_MS {
                     let should_warn = {
                         let mut inner = handle.inner.borrow_mut();
-                        should_warn_jitter(&mut inner, &sender_user_id, woke_at_ms)
+                        should_warn_jitter(&mut inner, &sender_user_id, audio_playback_now_ms())
                     };
                     if should_warn {
                         warn!(
                             %sender_user_id,
                             wake_late_ms,
-                            scheduled_delay_ms = next_wake_ms,
+                            scheduled_delay_us = next_wake_us,
                             "inbound voice jitter drain woke late"
                         );
                     }
@@ -159,22 +160,22 @@ impl AudioPlaybackHandle {
     }
 
     fn drain_jitter_buffer(&self, sender_user_id: &str) -> Option<u32> {
-        let now_ms = jitter_now_ms();
-        let (drain, target_delay_ms, should_warn_jitter_advance) = {
+        let now_us = jitter_now_us();
+        let (drain, target_delay_us, should_warn_jitter_advance) = {
             let mut inner = self.inner.borrow_mut();
             if inner.muted {
                 inner.jitter_buffers.remove(sender_user_id);
                 return None;
             }
 
-            let target_delay_ms = inner.jitter_buffer_ms;
+            let target_delay_us = inner.jitter_buffer_us;
             let drain = {
                 let buffer = inner.jitter_buffers.get_mut(sender_user_id)?;
-                buffer.drain_ready(now_ms, u64::from(target_delay_ms))
+                buffer.drain_ready(now_us, u64::from(target_delay_us))
             };
             let should_warn = (drain.skipped_sequences > 0 || drain.dropped_stale_frames > 0)
-                && should_warn_jitter(&mut inner, sender_user_id, now_ms);
-            (drain, target_delay_ms, should_warn)
+                && should_warn_jitter(&mut inner, sender_user_id, audio_playback_now_ms());
+            (drain, target_delay_us, should_warn)
         };
 
         if drain.skipped_sequences > 0 || drain.dropped_stale_frames > 0 {
@@ -183,7 +184,7 @@ impl AudioPlaybackHandle {
                     %sender_user_id,
                     skipped_sequences = drain.skipped_sequences,
                     dropped_stale_frames = drain.dropped_stale_frames,
-                    target_delay_ms,
+                    target_delay_us,
                     "advanced inbound voice jitter buffer after network jitter"
                 );
             } else {
@@ -191,13 +192,13 @@ impl AudioPlaybackHandle {
                     %sender_user_id,
                     skipped_sequences = drain.skipped_sequences,
                     dropped_stale_frames = drain.dropped_stale_frames,
-                    target_delay_ms,
+                    target_delay_us,
                     "advanced inbound voice jitter buffer after network jitter"
                 );
             }
         }
 
-        let next_wake_ms = drain.next_wake_ms;
+        let next_wake_us = drain.next_wake_us;
         for frame in drain.ready_frames {
             if let Err(error) = self.decode_voice_frame(frame) {
                 warn!(
@@ -208,7 +209,7 @@ impl AudioPlaybackHandle {
             }
         }
 
-        next_wake_ms
+        next_wake_us
     }
 
     fn finish_jitter_drain(&self, sender_user_id: &str, generation: u64) {
@@ -232,9 +233,9 @@ fn should_warn_jitter(inner: &mut AudioPlaybackInner, sender_user_id: &str, now_
     )
 }
 
-fn jitter_now_ms() -> u64 {
+fn jitter_now_us() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .map(|duration| duration.as_micros().min(u128::from(u64::MAX)) as u64)
         .unwrap_or(0)
 }

@@ -25,7 +25,7 @@ pub(crate) struct AudioPlaybackHandle {
     selected_output_device_id: Signal<Option<String>>,
     selected_output_device_label: Signal<Option<String>>,
     output_volume_percent: Signal<u32>,
-    jitter_buffer_ms: Signal<u32>,
+    jitter_buffer_us: Signal<u32>,
     warned_unsupported: Rc<Cell<bool>>,
 }
 
@@ -76,22 +76,22 @@ impl AudioPlaybackHandle {
         volume_signal.set(volume_percent);
     }
 
-    /// Возвращает текущую задержку jitter buffer для входящего голоса.
-    pub(crate) fn jitter_buffer_ms(&self) -> u32 {
-        (self.jitter_buffer_ms)()
+    /// Возвращает текущую задержку jitter buffer для входящего голоса в микросекундах.
+    pub(crate) fn jitter_buffer_us(&self) -> u32 {
+        (self.jitter_buffer_us)()
     }
 
-    /// Обновляет задержку jitter buffer для входящего голоса.
-    pub(crate) fn set_jitter_buffer_ms(&self, buffer_ms: u32) {
-        let buffer_ms = storage::clamp_jitter_buffer_ms(buffer_ms);
-        if *self.jitter_buffer_ms.peek() == buffer_ms {
+    /// Обновляет задержку jitter buffer для входящего голоса в микросекундах.
+    pub(crate) fn set_jitter_buffer_us(&self, buffer_us: u32) {
+        let buffer_us = storage::clamp_jitter_buffer_us(buffer_us);
+        if *self.jitter_buffer_us.peek() == buffer_us {
             return;
         }
 
-        info!(buffer_ms, "inbound voice jitter buffer preference changed");
-        storage::save_jitter_buffer_ms(buffer_ms);
-        let mut jitter_buffer_signal = self.jitter_buffer_ms;
-        jitter_buffer_signal.set(buffer_ms);
+        info!(buffer_us, "inbound voice jitter buffer preference changed");
+        storage::save_jitter_buffer_us(buffer_us);
+        let mut jitter_buffer_signal = self.jitter_buffer_us;
+        jitter_buffer_signal.set(buffer_us);
     }
 
     /// Сохраняет предпочитаемое устройство вывода.
@@ -220,7 +220,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
     let muted = use_signal(|| false);
     let stored_output_device = storage::load_output_device();
     let output_volume_value = storage::load_output_volume_percent();
-    let jitter_buffer_ms_value = storage::load_jitter_buffer_ms();
+    let jitter_buffer_us_value = storage::load_jitter_buffer_us();
     let selected_output_device_id = use_signal({
         let stored_output_device = stored_output_device.clone();
         move || {
@@ -232,13 +232,13 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
     let selected_output_device_label =
         use_signal(move || stored_output_device.and_then(|device| device.label));
     let output_volume_percent = use_signal(move || output_volume_value);
-    let jitter_buffer_ms = use_signal(move || jitter_buffer_ms_value);
+    let jitter_buffer_us = use_signal(move || jitter_buffer_us_value);
     let handle = AudioPlaybackHandle {
         muted,
         selected_output_device_id,
         selected_output_device_label,
         output_volume_percent,
-        jitter_buffer_ms,
+        jitter_buffer_us,
         warned_unsupported: Rc::new(Cell::new(false)),
     };
     use_context_provider(move || handle.clone());
