@@ -73,7 +73,12 @@ windows = ["dep:cpal", "dep:opus"]
 linux = ["dep:cpal", "dep:opus"]
 # macOS-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
 macos = ["dep:cpal", "dep:opus"]
-microphone_worker = []
+microphone_worker = [
+    "dep:cheenhub_contracts",
+    "dep:js-sys",
+    "dep:serde_json",
+    "dep:uuid",
+]
 
 [dependencies]
 base64 = { workspace = true, optional = true }
@@ -142,7 +147,11 @@ web-sys = { workspace = true, optional = true, features = [
     "BinaryType",
     "Worklet",
     "Event",
+    "ErrorEvent",
     "WebSocket",
+    "Worker",
+    "WorkerOptions",
+    "WorkerType",
     "console",
 ] }
 wry = { version = "0.53.5", optional = true }

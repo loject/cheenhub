@@ -4,7 +4,9 @@ use std::rc::Rc;
 
 use dioxus::prelude::*;
 
-use super::backend::{MicrophoneFrameCallback, MicrophoneSession, MicrophoneStatus};
+use super::backend::{
+    MicrophoneFrameCallback, MicrophoneSession, MicrophoneStatus, MicrophoneUplinkConfig,
+};
 use super::native::default_backend;
 use super::provider::{ActiveCapture, MicrophoneHandle};
 use super::provider_runtime::default_level;
@@ -34,6 +36,7 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let vad_threshold_percent = use_signal(storage::load_vad_threshold_percent);
     let active_capture = use_signal(|| ActiveCapture::None);
     let active_on_frame = use_signal(|| None::<MicrophoneFrameCallback>);
+    let active_uplink = use_signal(|| None::<MicrophoneUplinkConfig>);
     let backend = default_backend();
     let handle = MicrophoneHandle {
         status,
@@ -49,6 +52,7 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         vad_threshold_percent,
         active_capture,
         active_on_frame,
+        active_uplink,
     };
     use_context_provider(move || handle.clone());
 

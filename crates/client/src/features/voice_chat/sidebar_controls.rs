@@ -10,10 +10,9 @@ use crate::features::camera::{CameraHandle, CameraStatus};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
 
-use super::realtime;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 use super::video_streams::{ParticipantVideoFrame, ParticipantVideoHandle, ParticipantVideoSource};
-use super::voice_frame_sender;
+use super::{microphone_uplink, realtime};
 
 /// Renders animated sidebar voice controls for the active voice connection.
 #[component]
@@ -155,11 +154,12 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                             let Some(target) = target_for_microphone.clone() else {
                                 return;
                             };
-                            toggle_microphone.toggle(voice_frame_sender::voice_frame_sender_callback(
+                            microphone_uplink::toggle(
+                                toggle_microphone.clone(),
                                 realtime_handle.clone(),
                                 target.server_id.clone(),
                                 target.room_id.clone(),
-                            ));
+                            );
                         },
                         if microphone_live {
                             span {

@@ -88,3 +88,16 @@ fn realtime_cert_sha256() -> Result<Option<Vec<u8>>, RealtimeError> {
 
     Ok(Some(bytes))
 }
+
+/// Возвращает нормализованный SHA-256 fingerprint для browser WebTransport API.
+#[allow(dead_code)]
+pub(crate) fn realtime_cert_sha256_hex() -> Result<Option<String>, RealtimeError> {
+    realtime_cert_sha256().map(|hash| {
+        hash.map(|bytes| {
+            bytes
+                .into_iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect()
+        })
+    })
+}

@@ -21,13 +21,13 @@ use super::local_video::{
     LocalVideoRuntime, LocalVideoTarget, participant_source_from_contract, reconcile_camera_target,
     reconcile_screen_share_target, release_local_video_target,
 };
+use super::microphone_uplink;
 use super::notification_sounds::{
     ConnectionNotificationSoundState, ToggleNotificationSoundState, VoiceNotificationSoundState,
 };
 use super::realtime;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
-use super::voice_frame_sender;
 
 /// Предоставляет состояние голосового соединения аутентифицированным компонентам приложения.
 /// TODO: review, выглядит сложно и как куча бойлерплейта
@@ -289,7 +289,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             }
             if microphone_target_room().as_deref() == Some(target.room_id.as_str()) {
                 if paused_by_mute {
-                    restart_microphone_for_target(
+                    microphone_uplink::restart(
                         microphone.clone(),
                         realtime.clone(),
                         target.server_id.clone(),
@@ -312,7 +312,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 room_id = %target.room_id,
                 "starting voice media for active room"
             );
-            restart_microphone_for_target(
+            microphone_uplink::restart(
                 microphone.clone(),
                 realtime.clone(),
                 target.server_id,
@@ -397,17 +397,4 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             }
         }
     }
-}
-
-fn restart_microphone_for_target(
-    microphone: MicrophoneHandle,
-    realtime_handle: RealtimeHandle,
-    server_id: String,
-    room_id: String,
-) {
-    microphone.restart(voice_frame_sender::voice_frame_sender_callback(
-        realtime_handle,
-        server_id,
-        room_id,
-    ));
 }

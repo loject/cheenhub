@@ -3,9 +3,10 @@
 use bytes::Bytes;
 use cheenhub_contracts::media::{MediaCodec, MediaDatagram, MediaDatagramKind};
 use cheenhub_contracts::realtime::{
-    DirectMessageVoiceRoomsSnapshot, JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember,
-    LeaveDirectMessageVoiceRoom, LeaveVoiceRoom, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
-    RealtimeKind, RealtimeModule, ServerVoiceRoomsSnapshot, StopVoiceVideoStream, VoiceChatKind,
+    DirectMessageVoiceRoomsSnapshot, IssueMicrophoneUplinkGrant, JoinDirectMessageVoiceRoom,
+    JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom, LeaveVoiceRoom,
+    ListDirectMessageVoiceRooms, ListServerVoiceRooms, MicrophoneUplinkGrantIssued, RealtimeKind,
+    RealtimeModule, ServerVoiceRoomsSnapshot, StopVoiceVideoStream, VoiceChatKind,
     VoiceRoomSnapshot, VoiceVideoStreamSource,
 };
 use futures_channel::mpsc;
@@ -126,6 +127,21 @@ pub(crate) async fn leave_direct_message_room(
             RealtimeModule::VoiceChat,
             RealtimeKind::VoiceChat(VoiceChatKind::LeaveDirectMessageVoiceRoom),
             LeaveDirectMessageVoiceRoom { conversation_id },
+        )
+        .await
+}
+
+/// Выдаёт одноразовый grant для отдельной сессии отправки микрофона.
+#[allow(dead_code)]
+pub(crate) async fn issue_microphone_uplink_grant(
+    realtime: &RealtimeHandle,
+    room_id: String,
+) -> Result<MicrophoneUplinkGrantIssued, RealtimeError> {
+    realtime
+        .request_one_shot(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::IssueMicrophoneUplinkGrant),
+            IssueMicrophoneUplinkGrant { room_id },
         )
         .await
 }

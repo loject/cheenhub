@@ -4,10 +4,18 @@ use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+mod uplink;
+
+pub(crate) use uplink::{
+    ConsumeMicrophoneUplinkGrantError, MicrophoneUplinkBinding, MicrophoneUplinkGrant,
+};
+
 /// In-memory-хранилище голосового присутствия для активных потоков realtime-модуля.
 #[derive(Default)]
 pub(crate) struct InMemoryVoicePresenceStore {
     entries: Mutex<Vec<VoicePresence>>,
+    microphone_uplink_grants: Mutex<Vec<MicrophoneUplinkGrant>>,
+    microphone_uplink_bindings: Mutex<Vec<MicrophoneUplinkBinding>>,
 }
 
 /// Активная запись присутствия в голосовой комнате.
@@ -56,20 +64,24 @@ pub(crate) struct VoicePresenceTarget {
 impl InMemoryVoicePresenceStore {
     /// Заменяет присутствие одного пользователя или realtime-потока и возвращает удаленные записи.
     pub(crate) async fn join(&self, presence: VoicePresence) -> Vec<VoicePresence> {
-        let mut entries = self.entries.lock().await;
-        let mut removed = Vec::new();
-        let realtime_stream_id = presence.realtime_stream_id;
-        let user_id = presence.user_id;
+        let removed = {
+            let mut entries = self.entries.lock().await;
+            let mut removed = Vec::new();
+            let realtime_stream_id = presence.realtime_stream_id;
+            let user_id = presence.user_id;
 
-        entries.retain(|entry| {
-            let should_remove =
-                entry.realtime_stream_id == realtime_stream_id || entry.user_id == user_id;
-            if should_remove {
-                removed.push(entry.clone());
-            }
-            !should_remove
-        });
-        entries.push(presence);
+            entries.retain(|entry| {
+                let should_remove =
+                    entry.realtime_stream_id == realtime_stream_id || entry.user_id == user_id;
+                if should_remove {
+                    removed.push(entry.clone());
+                }
+                !should_remove
+            });
+            entries.push(presence);
+            removed
+        };
+        self.revoke_microphone_uplinks_for(&removed).await;
 
         removed
     }
@@ -120,17 +132,21 @@ impl InMemoryVoicePresenceStore {
         &self,
         should_remove: impl Fn(&VoicePresence) -> bool,
     ) -> Vec<VoicePresence> {
-        let mut entries = self.entries.lock().await;
-        let mut removed = Vec::new();
+        let removed = {
+            let mut entries = self.entries.lock().await;
+            let mut removed = Vec::new();
 
-        entries.retain(|entry| {
-            if should_remove(entry) {
-                removed.push(entry.clone());
-                false
-            } else {
-                true
-            }
-        });
+            entries.retain(|entry| {
+                if should_remove(entry) {
+                    removed.push(entry.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+            removed
+        };
+        self.revoke_microphone_uplinks_for(&removed).await;
 
         removed
     }

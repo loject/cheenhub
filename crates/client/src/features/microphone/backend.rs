@@ -11,6 +11,26 @@ pub(crate) type MicrophoneFrameCallback = Rc<dyn Fn(EncodedMicrophoneFrame)>;
 /// Callback invoked for every measured microphone level sample.
 pub(crate) type MicrophoneLevelCallback = Rc<dyn Fn(MicrophoneLevel)>;
 
+/// Callback invoked when an active backend fails after startup.
+pub(crate) type MicrophoneErrorCallback = Rc<dyn Fn(MicrophoneError)>;
+
+/// Настройки отдельного low-latency uplink вне UI runtime.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MicrophoneUplinkConfig {
+    /// Access JWT для аутентификации отдельной realtime-сессии.
+    pub(crate) access_token: String,
+    /// Одноразовый grant для привязки uplink к текущему присутствию.
+    pub(crate) grant: String,
+    /// Идентификатор целевой комнаты.
+    pub(crate) room_id: String,
+    /// URL основного WebTransport endpoint.
+    pub(crate) realtime_url: String,
+    /// URL WebSocket fallback.
+    pub(crate) realtime_websocket_url: String,
+    /// Необязательный SHA-256 fingerprint dev-сертификата.
+    pub(crate) realtime_cert_sha256: Option<String>,
+}
+
 /// Encoded microphone codec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MicrophoneCodec {
@@ -78,6 +98,10 @@ pub(crate) struct MicrophoneCallbacks {
     pub(crate) on_frame: MicrophoneFrameCallback,
     /// Measured input level callback.
     pub(crate) on_level: MicrophoneLevelCallback,
+    /// Ошибка уже запущенной capture/uplink-сессии.
+    pub(crate) on_error: MicrophoneErrorCallback,
+    /// Отдельный uplink, который browser backend должен запустить вместо on_frame path.
+    pub(crate) uplink: Option<MicrophoneUplinkConfig>,
 }
 
 /// One encoded microphone frame.

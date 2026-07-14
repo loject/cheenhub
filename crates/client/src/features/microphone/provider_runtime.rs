@@ -9,7 +9,7 @@ use futures_util::StreamExt;
 
 use super::backend::{
     EncodedMicrophoneFrame, MicrophoneConfig, MicrophoneError, MicrophoneFrameCallback,
-    MicrophoneLevel, MicrophoneStatus,
+    MicrophoneLevel, MicrophoneStatus, MicrophoneUplinkConfig,
 };
 use super::storage;
 
@@ -25,11 +25,14 @@ pub(super) fn microphone_callbacks(
     on_frame: MicrophoneFrameCallback,
     level: Signal<MicrophoneLevel>,
     level_active: Signal<bool>,
+    status: Signal<MicrophoneStatus>,
+    uplink: Option<MicrophoneUplinkConfig>,
 ) -> super::backend::MicrophoneCallbacks {
     let (events, receiver) = mpsc::unbounded();
-    spawn_microphone_callback_relay(receiver, on_frame, level, level_active);
+    spawn_microphone_callback_relay(receiver, on_frame, level, level_active, status);
 
     let frame_events = events.clone();
+    let error_events = events.clone();
     super::backend::MicrophoneCallbacks {
         on_frame: Rc::new(move |frame| {
             let _ = frame_events.unbounded_send(MicrophoneCallbackEvent::Frame(frame));
@@ -37,6 +40,10 @@ pub(super) fn microphone_callbacks(
         on_level: Rc::new(move |next_level| {
             let _ = events.unbounded_send(MicrophoneCallbackEvent::Level(next_level));
         }),
+        on_error: Rc::new(move |error| {
+            let _ = error_events.unbounded_send(MicrophoneCallbackEvent::Error(error));
+        }),
+        uplink,
     }
 }
 
@@ -45,6 +52,7 @@ fn spawn_microphone_callback_relay(
     on_frame: MicrophoneFrameCallback,
     mut level: Signal<MicrophoneLevel>,
     mut level_active: Signal<bool>,
+    mut status: Signal<MicrophoneStatus>,
 ) {
     spawn(async move {
         let emission = Rc::new(RefCell::new(None::<LevelEmissionState>));
@@ -59,6 +67,11 @@ fn spawn_microphone_callback_relay(
                         level.set(next_level);
                     }
                 }
+                MicrophoneCallbackEvent::Error(error) => {
+                    warn!(%error, "active microphone backend failed");
+                    status.set(status_from_error(error));
+                    reset_level(&mut level, &mut level_active);
+                }
             }
         }
         debug!("microphone callback relay stopped");
@@ -68,6 +81,7 @@ fn spawn_microphone_callback_relay(
 enum MicrophoneCallbackEvent {
     Frame(EncodedMicrophoneFrame),
     Level(MicrophoneLevel),
+    Error(MicrophoneError),
 }
 
 pub(super) fn status_from_error(error: MicrophoneError) -> MicrophoneStatus {

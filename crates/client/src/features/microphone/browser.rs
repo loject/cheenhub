@@ -29,6 +29,7 @@ use super::browser_encoding::{
     close_encoder_lossy, create_encoder, encoder_config, microphone_message_closure,
 };
 use super::browser_errors::js_error_message;
+use super::browser_worker::{BrowserWorkerUplink, start_worker_uplink};
 use super::browser_worklet::{
     connect_capture_graph, create_audio_context, create_worklet_node, load_worklet_module,
     worklet_chunk_ms, worklet_output_connected,
@@ -48,18 +49,19 @@ impl MicrophoneBackend for BrowserMicrophoneBackend {
 }
 
 struct BrowserMicrophoneSession {
-    encoder: AudioEncoder,
+    encoder: Option<AudioEncoder>,
     context: AudioContext,
     track: web_sys::MediaStreamTrack,
     source: MediaStreamAudioSourceNode,
     worklet: AudioWorkletNode,
     silent_gain: Option<GainNode>,
-    port: MessagePort,
+    port: Option<MessagePort>,
+    uplink: Option<Rc<BrowserWorkerUplink>>,
     closed: Rc<Cell<bool>>,
-    _message_closure: Closure<dyn FnMut(MessageEvent)>,
+    _message_closure: Option<Closure<dyn FnMut(MessageEvent)>>,
     _processor_error_closure: Closure<dyn FnMut(JsValue)>,
-    _output_closure: Closure<dyn FnMut(EncodedAudioChunk)>,
-    _error_closure: Closure<dyn FnMut(JsValue)>,
+    _output_closure: Option<Closure<dyn FnMut(EncodedAudioChunk)>>,
+    _error_closure: Option<Closure<dyn FnMut(JsValue)>>,
     bitrate_bps: Rc<Cell<u32>>,
 }
 
@@ -72,14 +74,20 @@ impl MicrophoneSession for BrowserMicrophoneSession {
         let worklet = self.worklet.clone();
         let silent_gain = self.silent_gain.clone();
         let port = self.port.clone();
+        let uplink = self.uplink.clone();
         let closed = self.closed.clone();
         async move {
             if closed.replace(true) {
                 return Ok(());
             }
 
-            port.set_onmessage(None);
-            port.close();
+            if let Some(port) = port {
+                port.set_onmessage(None);
+                port.close();
+            }
+            if let Some(uplink) = uplink {
+                uplink.stop();
+            }
             worklet.set_onprocessorerror(None);
             disconnect_audio_node(source.as_ref());
             disconnect_audio_node(worklet.as_ref());
@@ -87,7 +95,9 @@ impl MicrophoneSession for BrowserMicrophoneSession {
                 disconnect_audio_node(silent_gain.as_ref());
             }
             track.stop();
-            encoder.close().map_err(microphone_error)?;
+            if let Some(encoder) = encoder {
+                encoder.close().map_err(microphone_error)?;
+            }
             JsFuture::from(context.close().map_err(microphone_error)?)
                 .await
                 .map_err(microphone_error)?;
@@ -101,6 +111,9 @@ impl MicrophoneSession for BrowserMicrophoneSession {
         bitrate_bps: u32,
     ) -> LocalBoxFuture<'static, Result<(), MicrophoneError>> {
         self.bitrate_bps.set(bitrate_bps);
+        if let Some(uplink) = &self.uplink {
+            uplink.set_bitrate_bps(bitrate_bps);
+        }
         async move { Ok(()) }.boxed_local()
     }
 }
@@ -126,26 +139,17 @@ async fn start_browser_session(
         return Err(error);
     }
 
-    let encoder_config = encoder_config(sample_rate_hz, config.channels, config.bitrate_bps);
-    verify_encoder_support(&context, &encoder_config).await?;
+    let browser_encoder_config =
+        encoder_config(sample_rate_hz, config.channels, config.bitrate_bps);
+    verify_encoder_support(&context, &browser_encoder_config).await?;
     let stream = request_stream_or_close_context(&context, config.clone()).await?;
     let track = first_track_or_cleanup(&stream, &context).await?;
     log_selected_audio_track(&track, config.device_id.as_deref());
-
-    let encoder = match create_encoder(&encoder_config, &config, callbacks.on_frame.clone()) {
-        Ok(encoder) => encoder,
-        Err(error) => {
-            stop_media_stream(&stream);
-            close_context_lossy(&context).await;
-            return Err(error);
-        }
-    };
 
     let source = match context.create_media_stream_source(&stream) {
         Ok(source) => source,
         Err(error) => {
             stop_media_stream(&stream);
-            close_encoder_lossy(&encoder.encoder);
             close_context_lossy(&context).await;
             return Err(microphone_error(error));
         }
@@ -154,7 +158,6 @@ async fn start_browser_session(
         Ok(worklet) => worklet,
         Err(error) => {
             stop_media_stream(&stream);
-            close_encoder_lossy(&encoder.encoder);
             close_context_lossy(&context).await;
             return Err(error);
         }
@@ -163,7 +166,6 @@ async fn start_browser_session(
         Ok(silent_gain) => silent_gain,
         Err(error) => {
             stop_media_stream(&stream);
-            close_encoder_lossy(&encoder.encoder);
             close_context_lossy(&context).await;
             return Err(error);
         }
@@ -173,21 +175,62 @@ async fn start_browser_session(
         Ok(port) => port,
         Err(error) => {
             stop_media_stream(&stream);
-            close_encoder_lossy(&encoder.encoder);
             close_context_lossy(&context).await;
             return Err(microphone_error(error));
         }
     };
-    let message_closure = microphone_message_closure(
-        encoder.encoder.clone(),
-        callbacks,
-        config.clone(),
-        sample_rate_hz,
-        closed.clone(),
-        encoder.diagnostics.clone(),
-    );
-    port.set_onmessage(Some(message_closure.as_ref().unchecked_ref()));
-    port.start();
+    let worker_config = callbacks.uplink.clone();
+    let (encoder, uplink, retained_port, message_closure, output_closure, encoder_error_closure) =
+        if let Some(worker_config) = worker_config {
+            let worker = match start_worker_uplink(
+                port.clone(),
+                &callbacks,
+                &config,
+                worker_config,
+                sample_rate_hz,
+            )
+            .await
+            {
+                Ok(worker) => Rc::new(worker),
+                Err(error) => {
+                    stop_media_stream(&stream);
+                    close_context_lossy(&context).await;
+                    return Err(error);
+                }
+            };
+            (None, Some(worker), None, None, None, None)
+        } else {
+            let browser_encoder = match create_encoder(
+                &browser_encoder_config,
+                &config,
+                callbacks.on_frame.clone(),
+            ) {
+                Ok(encoder) => encoder,
+                Err(error) => {
+                    stop_media_stream(&stream);
+                    close_context_lossy(&context).await;
+                    return Err(error);
+                }
+            };
+            let message_closure = microphone_message_closure(
+                browser_encoder.encoder.clone(),
+                callbacks,
+                config.clone(),
+                sample_rate_hz,
+                closed.clone(),
+                browser_encoder.diagnostics.clone(),
+            );
+            port.set_onmessage(Some(message_closure.as_ref().unchecked_ref()));
+            port.start();
+            (
+                Some(browser_encoder.encoder),
+                None,
+                Some(port),
+                Some(message_closure),
+                Some(browser_encoder.output_closure),
+                Some(browser_encoder.error_closure),
+            )
+        };
 
     let processor_error_closure = Closure::wrap(Box::new(move |error: JsValue| {
         warn!(
@@ -199,13 +242,23 @@ async fn start_browser_session(
 
     if let Err(error) = connect_capture_graph(&source, &worklet, silent_gain.as_ref(), &context) {
         stop_media_stream(&stream);
-        close_encoder_lossy(&encoder.encoder);
+        if let Some(encoder) = &encoder {
+            close_encoder_lossy(encoder);
+        }
+        if let Some(uplink) = &uplink {
+            uplink.stop();
+        }
         close_context_lossy(&context).await;
         return Err(error);
     }
     if let Err(error) = JsFuture::from(context.resume().map_err(microphone_error)?).await {
         stop_media_stream(&stream);
-        close_encoder_lossy(&encoder.encoder);
+        if let Some(encoder) = &encoder {
+            close_encoder_lossy(encoder);
+        }
+        if let Some(uplink) = &uplink {
+            uplink.stop();
+        }
         close_context_lossy(&context).await;
         return Err(microphone_error(error));
     }
@@ -217,18 +270,19 @@ async fn start_browser_session(
         "browser microphone audio worklet capture started"
     );
     Ok(Rc::new(BrowserMicrophoneSession {
-        encoder: encoder.encoder,
+        encoder,
         context,
         track,
         source,
         worklet,
         silent_gain,
-        port,
+        port: retained_port,
+        uplink,
         closed,
         _message_closure: message_closure,
         _processor_error_closure: processor_error_closure,
-        _output_closure: encoder.output_closure,
-        _error_closure: encoder.error_closure,
+        _output_closure: output_closure,
+        _error_closure: encoder_error_closure,
         bitrate_bps: Rc::new(Cell::new(config.bitrate_bps)),
     }))
 }

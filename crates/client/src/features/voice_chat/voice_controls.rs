@@ -11,10 +11,9 @@ use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
 use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 
-use super::realtime;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget};
 use super::video_streams::{ParticipantVideoFrame, ParticipantVideoHandle, ParticipantVideoSource};
-use super::voice_frame_sender;
+use super::{microphone_uplink, realtime};
 
 /// Renders floating controls for the active voice room.
 #[component]
@@ -117,11 +116,12 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                         if output_muted {
                             unmute_playback.set_muted(false);
                         }
-                        toggle_microphone.toggle(voice_frame_sender::voice_frame_sender_callback(
+                        microphone_uplink::toggle(
+                            toggle_microphone.clone(),
                             microphone_realtime_handle.clone(),
                             microphone_server_id.clone(),
                             microphone_room_id.clone(),
-                        ));
+                        );
                     },
                     span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "{microphone_label}" }
                     if microphone_live {

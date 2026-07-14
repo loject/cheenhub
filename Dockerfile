@@ -19,13 +19,17 @@ RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/regist
 FROM source AS web-tools
 RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cheenhub-cargo-git,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=cheenhub-cargo-make-target,target=/tmp/cargo-make-target,sharing=locked \
+    --mount=type=cache,id=cheenhub-wasm-bindgen-cli-target,target=/tmp/wasm-bindgen-cli-target,sharing=locked \
     --mount=type=cache,id=cheenhub-dioxus-cli-target,target=/tmp/dioxus-cli-target,sharing=locked \
     rustup target add wasm32-unknown-unknown \
+    && CARGO_TARGET_DIR=/tmp/cargo-make-target cargo install cargo-make --version 0.37.24 --locked \
+    && CARGO_TARGET_DIR=/tmp/wasm-bindgen-cli-target cargo install wasm-bindgen-cli --version 0.2.120 --locked \
     && CARGO_TARGET_DIR=/tmp/dioxus-cli-target cargo install dioxus-cli --version 0.7.5 --locked
 
 FROM web-tools AS web-builder
 COPY .cargo ./.cargo
-COPY Cargo.toml Cargo.lock Dioxus.toml ./
+COPY Cargo.toml Cargo.lock Dioxus.toml Makefile.toml ./
 COPY build_support ./build_support
 COPY xtask ./xtask
 COPY crates ./crates
@@ -44,7 +48,8 @@ ENV CHEENHUB_REALTIME_CERT_SHA256=${CHEENHUB_REALTIME_CERT_SHA256}
 RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cheenhub-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=cheenhub-web-target,target=/app/target,sharing=locked \
-    dx build --release --platform web --package cheenhub_client --bin cheen_hub --locked --debug-symbols false \
+    cargo make build-microphone-worker-wasm-release \
+    && dx build --release --platform web --package cheenhub_client --bin cheen_hub --locked --debug-symbols false \
     && mkdir -p /app/web-public \
     && cp -a /app/target/dx/cheen_hub/release/web/public/. /app/web-public/
 

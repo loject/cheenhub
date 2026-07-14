@@ -22,6 +22,14 @@ pub enum VoiceChatKind {
     ListDirectMessageVoiceRooms,
     /// Сообщить об остановке локального видеопотока в голосовой комнате.
     StopVideoStream,
+    /// Выдать одноразовый grant для отдельной сессии отправки микрофона.
+    IssueMicrophoneUplinkGrant,
+    /// Одноразовый grant для отдельной сессии отправки микрофона выдан.
+    MicrophoneUplinkGrantIssued,
+    /// Привязать текущую realtime-сессию к отправке микрофона по grant.
+    BindMicrophoneUplink,
+    /// Текущая realtime-сессия привязана к отправке микрофона.
+    MicrophoneUplinkBound,
     /// Снимки активных голосовых комнат для одного сервера.
     ServerVoiceRoomsSnapshot,
     /// Снимки активных голосовых звонков личных диалогов.
@@ -49,6 +57,38 @@ pub struct LeaveVoiceRoom {
     /// Идентификатор сервера.
     pub server_id: String,
     /// Идентификатор комнаты.
+    pub room_id: String,
+}
+
+/// Запрос одноразового grant для отдельной сессии отправки микрофона.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IssueMicrophoneUplinkGrant {
+    /// Идентификатор комнаты, в которой основная сессия уже присутствует.
+    pub room_id: String,
+}
+
+/// Выданный одноразовый grant для отдельной сессии отправки микрофона.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MicrophoneUplinkGrantIssued {
+    /// Непредсказуемый UUID grant, который должен предъявить worker.
+    pub grant: String,
+    /// Идентификатор комнаты, к которой относится grant.
+    pub room_id: String,
+    /// Момент истечения grant в формате RFC3339.
+    pub expires_at: String,
+}
+
+/// Запрос привязки текущей realtime-сессии к отправке микрофона.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BindMicrophoneUplink {
+    /// Одноразовый UUID grant, полученный основной realtime-сессией.
+    pub grant: String,
+}
+
+/// Подтверждение привязки realtime-сессии к отправке микрофона.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MicrophoneUplinkBound {
+    /// Идентификатор комнаты, для которой разрешена отправка микрофона.
     pub room_id: String,
 }
 

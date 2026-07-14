@@ -384,7 +384,7 @@ args = [
     "-w",
     "crates/client/src/workers",
     "-w",
-    "crates/client/src/features/microphone/vad.rs",
+    "crates/client/src/features/microphone/core.rs",
     "-w",
     "crates/client/Cargo.toml",
     "-s",

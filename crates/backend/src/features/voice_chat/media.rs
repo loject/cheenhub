@@ -15,7 +15,7 @@ pub(crate) async fn handle_voice_frame(
     user_id: Uuid,
     datagram: MediaDatagram,
 ) {
-    handle_room_media_frame(state, session_id, user_id, datagram, "voice").await;
+    handle_room_media_frame(state, session_id, user_id, datagram, "voice", true).await;
 }
 
 /// Обрабатывает одну декодированную медиадатаграмму демонстрации экрана.
@@ -25,7 +25,7 @@ pub(crate) async fn handle_screen_frame(
     user_id: Uuid,
     datagram: MediaDatagram,
 ) {
-    handle_room_media_frame(state, session_id, user_id, datagram, "screen").await;
+    handle_room_media_frame(state, session_id, user_id, datagram, "screen", false).await;
 }
 
 /// Обрабатывает одну декодированную медиадатаграмму камеры.
@@ -35,7 +35,7 @@ pub(crate) async fn handle_camera_frame(
     user_id: Uuid,
     datagram: MediaDatagram,
 ) {
-    handle_room_media_frame(state, session_id, user_id, datagram, "camera").await;
+    handle_room_media_frame(state, session_id, user_id, datagram, "camera", false).await;
 }
 
 async fn handle_room_media_frame(
@@ -44,6 +44,7 @@ async fn handle_room_media_frame(
     user_id: Uuid,
     mut datagram: MediaDatagram,
     media_kind: &'static str,
+    allow_microphone_uplink: bool,
 ) {
     debug!(
         %session_id,
@@ -68,14 +69,25 @@ async fn handle_room_media_frame(
         );
         return;
     };
-    if presence.session_id != session_id {
+    let is_presence_session = presence.session_id == session_id;
+    let is_bound_microphone_uplink = allow_microphone_uplink
+        && state
+            .voice_presence_store
+            .microphone_uplink_is_bound(
+                &session_id,
+                &user_id,
+                &datagram.room_id,
+                &presence.session_id,
+            )
+            .await;
+    if !is_presence_session && !is_bound_microphone_uplink {
         debug!(
             %session_id,
             expected_session_id = %presence.session_id,
             %user_id,
             room_id = %datagram.room_id,
             media_kind,
-            "dropping media datagram from stale session"
+            "dropping media datagram from unauthorized session"
         );
         return;
     }
@@ -83,7 +95,11 @@ async fn handle_room_media_frame(
     datagram.sender_user_id = user_id;
     let recipients = state
         .voice_presence_store
-        .media_recipient_sessions(presence.target_kind, &datagram.room_id, &session_id)
+        .media_recipient_sessions(
+            presence.target_kind,
+            &datagram.room_id,
+            &presence.session_id,
+        )
         .await;
     if recipients.is_empty() {
         return;

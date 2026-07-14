@@ -1,9 +1,10 @@
 //! Voice chat realtime adapter.
 
 use cheenhub_contracts::realtime::{
-    JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom,
-    LeaveVoiceRoom, ListDirectMessageVoiceRooms, ListServerVoiceRooms, RealtimeEnvelope,
-    RealtimeKind, RealtimeModule, RejectionCode, StopVoiceVideoStream, VoiceChatKind,
+    BindMicrophoneUplink, IssueMicrophoneUplinkGrant, JoinDirectMessageVoiceRoom, JoinVoiceRoom,
+    KickVoiceMember, LeaveDirectMessageVoiceRoom, LeaveVoiceRoom, ListDirectMessageVoiceRooms,
+    ListServerVoiceRooms, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
+    StopVoiceVideoStream, VoiceChatKind,
 };
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
@@ -183,6 +184,42 @@ pub(crate) async fn handle(
             {
                 Ok(()) => Ok(()),
                 Err(error) => reject_application_error(send, envelope.request_id, error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::IssueMicrophoneUplinkGrant) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: IssueMicrophoneUplinkGrant = decode_payload(&envelope)?;
+            match application::issue_microphone_uplink_grant(state, session_id, user_id, payload)
+                .await
+            {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::MicrophoneUplinkGrantIssued),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::BindMicrophoneUplink) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: BindMicrophoneUplink = decode_payload(&envelope)?;
+            match application::bind_microphone_uplink(state, session_id, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::MicrophoneUplinkBound),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
             }
         }
         RealtimeKind::VoiceChat(_) => {

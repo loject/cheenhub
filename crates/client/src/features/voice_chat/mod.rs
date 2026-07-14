@@ -2,6 +2,8 @@
 
 mod kicked_modal;
 mod local_video;
+mod microphone_uplink;
+mod microphone_uplink_platform;
 mod notification_sounds;
 mod participant_focus_strip;
 mod participant_grid;

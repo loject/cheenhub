@@ -13,6 +13,8 @@ mod websocket;
 mod webtransport;
 
 #[allow(unused_imports)]
+pub(crate) use config::{realtime_cert_sha256_hex, realtime_url, realtime_websocket_url};
+#[allow(unused_imports)]
 pub(crate) use error::RealtimeError;
 #[allow(unused_imports)]
 pub(crate) use handle::RealtimeHandle;

@@ -17,6 +17,7 @@ use crate::state::AppState;
 mod avatar;
 mod fanout;
 mod presence;
+mod uplink;
 
 pub(crate) use avatar::update_user_avatar;
 use fanout::{
@@ -24,6 +25,7 @@ use fanout::{
     room_snapshot, server_voice_target,
 };
 use presence::active_presence_for_user;
+pub(crate) use uplink::{bind_microphone_uplink, issue_microphone_uplink_grant};
 
 /// Входит в одну комнату с поддержкой голоса и возвращает текущий снимок участников.
 pub(crate) async fn join_room(

@@ -3,13 +3,14 @@
 use std::sync::Arc;
 
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, LeaveVoiceRoom, ListServerVoiceRooms, StopVoiceVideoStream,
-    VoiceVideoStreamSource,
+    BindMicrophoneUplink, IssueMicrophoneUplinkGrant, JoinVoiceRoom, LeaveVoiceRoom,
+    ListServerVoiceRooms, StopVoiceVideoStream, VoiceVideoStreamSource,
 };
 use cheenhub_contracts::rest::{RegisterRequest, ServerRoomKind};
 
 use super::{
-    VoiceChatApplicationError, join_room, leave_room, list_server_voice_rooms, stop_video_stream,
+    VoiceChatApplicationError, bind_microphone_uplink, issue_microphone_uplink_grant, join_room,
+    leave_room, list_server_voice_rooms, stop_video_stream,
 };
 use crate::features::auth::application as auth_application;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
@@ -375,6 +376,95 @@ async fn stop_video_stream_rejects_stale_session() {
     )
     .await
     .expect_err("stale session should be rejected");
+
+    assert!(matches!(error, VoiceChatApplicationError::Unauthorized(_)));
+}
+
+#[tokio::test]
+async fn active_presence_session_can_bind_one_worker_with_one_time_grant() {
+    let state = state();
+    let (user, user_id) = registered_user(&state).await;
+    let stream_id = uuid::Uuid::new_v4();
+    let session_id = uuid::Uuid::new_v4();
+    let worker_session_id = uuid::Uuid::new_v4();
+    let (server_id, room_id) = create_room(&state, &user_id, "voice", ServerRoomKind::Voice).await;
+    join_room(
+        &state,
+        stream_id,
+        session_id,
+        &user,
+        &user_id,
+        JoinVoiceRoom {
+            server_id,
+            room_id: room_id.clone(),
+        },
+    )
+    .await
+    .expect("вход в комнату должен быть успешным");
+
+    let issued = issue_microphone_uplink_grant(
+        &state,
+        session_id,
+        &user_id,
+        IssueMicrophoneUplinkGrant {
+            room_id: room_id.clone(),
+        },
+    )
+    .await
+    .expect("основная сессия должна получить grant");
+    let bound = bind_microphone_uplink(
+        &state,
+        worker_session_id,
+        &user_id,
+        BindMicrophoneUplink {
+            grant: issued.grant.clone(),
+        },
+    )
+    .await
+    .expect("worker должен привязаться по grant");
+
+    assert_eq!(bound.room_id, room_id);
+    assert!(
+        bind_microphone_uplink(
+            &state,
+            uuid::Uuid::new_v4(),
+            &user_id,
+            BindMicrophoneUplink {
+                grant: issued.grant,
+            },
+        )
+        .await
+        .is_err()
+    );
+}
+
+#[tokio::test]
+async fn stale_session_cannot_issue_microphone_uplink_grant() {
+    let state = state();
+    let (user, user_id) = registered_user(&state).await;
+    let (server_id, room_id) = create_room(&state, &user_id, "voice", ServerRoomKind::Voice).await;
+    join_room(
+        &state,
+        uuid::Uuid::new_v4(),
+        uuid::Uuid::new_v4(),
+        &user,
+        &user_id,
+        JoinVoiceRoom {
+            server_id,
+            room_id: room_id.clone(),
+        },
+    )
+    .await
+    .expect("вход в комнату должен быть успешным");
+
+    let error = issue_microphone_uplink_grant(
+        &state,
+        uuid::Uuid::new_v4(),
+        &user_id,
+        IssueMicrophoneUplinkGrant { room_id },
+    )
+    .await
+    .expect_err("устаревшая сессия не должна получить grant");
 
     assert!(matches!(error, VoiceChatApplicationError::Unauthorized(_)));
 }

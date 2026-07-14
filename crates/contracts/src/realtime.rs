@@ -32,10 +32,11 @@ pub use text_chat::{
     SendMessageAccepted, TextChatImageAttachment, TextChatKind, TextChatMessage, UploadChatImage,
 };
 pub use voice_chat::{
-    DirectMessageVoiceRoomsSnapshot, JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember,
-    LeaveDirectMessageVoiceRoom, LeaveVoiceRoom, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
-    ServerVoiceRoomsSnapshot, StopVoiceVideoStream, VoiceChatKind, VoiceRoomParticipant,
-    VoiceRoomSnapshot, VoiceVideoStreamEnded, VoiceVideoStreamSource,
+    BindMicrophoneUplink, DirectMessageVoiceRoomsSnapshot, IssueMicrophoneUplinkGrant,
+    JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom,
+    LeaveVoiceRoom, ListDirectMessageVoiceRooms, ListServerVoiceRooms, MicrophoneUplinkBound,
+    MicrophoneUplinkGrantIssued, ServerVoiceRoomsSnapshot, StopVoiceVideoStream, VoiceChatKind,
+    VoiceRoomParticipant, VoiceRoomSnapshot, VoiceVideoStreamEnded, VoiceVideoStreamSource,
 };
 
 #[cfg(test)]
@@ -129,6 +130,42 @@ mod tests {
             RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded)
         );
         assert!(decoded.has_matching_module_kind());
+    }
+
+    #[test]
+    fn microphone_uplink_grant_envelopes_round_trip() {
+        let grant = Uuid::new_v4();
+        let issued = RealtimeEnvelope::new(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::MicrophoneUplinkGrantIssued),
+            Some(Uuid::new_v4()),
+            MicrophoneUplinkGrantIssued {
+                grant: grant.to_string(),
+                room_id: Uuid::new_v4().to_string(),
+                expires_at: "2026-07-14T10:00:00Z".to_owned(),
+            },
+        )
+        .expect("grant envelope serializes");
+        let json = serde_json::to_string(&issued).expect("grant envelope encodes");
+        let decoded: RealtimeEnvelope =
+            serde_json::from_str(&json).expect("grant envelope decodes");
+
+        assert_eq!(
+            decoded.kind,
+            RealtimeKind::VoiceChat(VoiceChatKind::MicrophoneUplinkGrantIssued)
+        );
+        assert!(decoded.has_matching_module_kind());
+
+        let bind = RealtimeEnvelope::new(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::BindMicrophoneUplink),
+            Some(Uuid::new_v4()),
+            BindMicrophoneUplink {
+                grant: grant.to_string(),
+            },
+        )
+        .expect("bind envelope serializes");
+        assert!(bind.has_matching_module_kind());
     }
 
     #[test]

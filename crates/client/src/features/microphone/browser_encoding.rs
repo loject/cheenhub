@@ -23,6 +23,7 @@ use super::browser_diagnostics::{
     WorkletProcessorProfileTiming, enabled as microphone_diagnostics_enabled,
 };
 use super::browser_errors::js_error_message;
+use super::core::{apply_input_gain, duration_us};
 use super::vad::{VoiceActivityDetector, rms_level};
 
 const MICROPHONE_ENCODER_QUEUE_WARN_FRAMES: u32 = 8;
@@ -431,26 +432,8 @@ fn audio_data_from_samples(
     AudioData::new(&init.into()).map_err(microphone_error)
 }
 
-fn apply_input_gain(samples: &mut [f32], input_gain: f32) {
-    if (input_gain - 1.0).abs() < f32::EPSILON {
-        return;
-    }
-
-    for sample in samples {
-        *sample = (*sample * input_gain).clamp(-1.0, 1.0);
-    }
-}
-
 fn detector_threshold(detector: &Rc<RefCell<VoiceActivityDetector>>) -> f32 {
     detector.borrow().config().vad_threshold
-}
-
-fn duration_us(frames: usize, sample_rate_hz: u32) -> u32 {
-    ((frames as u64)
-        .saturating_mul(1_000_000)
-        .checked_div(u64::from(sample_rate_hz.max(1)))
-        .unwrap_or(0))
-    .min(u64::from(u32::MAX)) as u32
 }
 
 fn elapsed_us_since(started_at: &Option<Instant>) -> u128 {

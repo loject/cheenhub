@@ -1,98 +1,48 @@
-//! Volume-based voice activity detection.
-
-#![allow(dead_code, unused_imports)]
+//! Адаптер общего VAD к настройкам microphone feature.
 
 use super::backend::{MicrophoneActivationMode, MicrophoneConfig};
+pub(crate) use super::core::rms_level;
+use super::core::{CoreActivationMode, VoiceActivationConfig};
 
-const VAD_RELEASE_THRESHOLD_RATIO: f32 = 0.65;
-
-/// Stateful voice activation gate.
+/// Stateful voice activation gate для основного client runtime.
 #[derive(Debug, Clone)]
 pub(crate) struct VoiceActivityDetector {
+    detector: super::core::VoiceActivityDetector,
     config: MicrophoneConfig,
-    active: bool,
-    above_threshold_us: u32,
-    below_threshold_us: u32,
 }
 
 impl VoiceActivityDetector {
-    /// Builds a detector from microphone configuration.
+    /// Создает detector из настроек микрофона.
     pub(crate) fn new(config: MicrophoneConfig) -> Self {
-        let initial_active = matches!(
-            config.activation_mode,
-            MicrophoneActivationMode::AlwaysActive
-        );
+        let core = VoiceActivationConfig {
+            mode: match config.activation_mode {
+                MicrophoneActivationMode::AlwaysActive => CoreActivationMode::AlwaysActive,
+                MicrophoneActivationMode::VoiceActivated => CoreActivationMode::VoiceActivated,
+            },
+            threshold: config.vad_threshold,
+            activation_delay_us: config.vad_activation_delay_us,
+            release_delay_us: config.vad_release_delay_us,
+        };
         Self {
+            detector: super::core::VoiceActivityDetector::new(core),
             config,
-            active: initial_active,
-            above_threshold_us: 0,
-            below_threshold_us: 0,
         }
     }
 
-    /// Updates the detector with one level sample and returns whether audio should pass.
+    /// Обновляет detector одним level sample.
     pub(crate) fn update(&mut self, rms: f32, duration_us: u32) -> bool {
-        match self.config.activation_mode {
-            MicrophoneActivationMode::AlwaysActive => {
-                self.active = true;
-            }
-            MicrophoneActivationMode::VoiceActivated => {
-                self.update_voice_activation(rms, duration_us);
-            }
-        }
-
-        self.active
+        self.detector.update(rms, duration_us)
     }
 
-    /// Returns the detector configuration.
+    /// Возвращает настройки микрофона.
     pub(crate) fn config(&self) -> &MicrophoneConfig {
         &self.config
     }
 
-    /// Returns whether the detector currently passes audio.
+    /// Возвращает текущее состояние gate.
     pub(crate) fn is_active(&self) -> bool {
-        self.active
+        self.detector.is_active()
     }
-
-    fn update_voice_activation(&mut self, rms: f32, duration_us: u32) {
-        let open_threshold = self.config.vad_threshold;
-        let release_threshold = open_threshold * VAD_RELEASE_THRESHOLD_RATIO;
-
-        if self.active {
-            if rms >= release_threshold {
-                self.below_threshold_us = 0;
-            } else {
-                self.below_threshold_us = self.below_threshold_us.saturating_add(duration_us);
-                self.above_threshold_us = 0;
-                if self.below_threshold_us >= self.config.vad_release_delay_us {
-                    self.active = false;
-                }
-            }
-        } else if rms >= open_threshold {
-            self.above_threshold_us = self.above_threshold_us.saturating_add(duration_us);
-            self.below_threshold_us = 0;
-            if self.above_threshold_us >= self.config.vad_activation_delay_us {
-                self.active = true;
-            }
-        } else {
-            self.below_threshold_us = self.below_threshold_us.saturating_add(duration_us);
-            self.above_threshold_us = 0;
-        }
-    }
-}
-
-/// Computes normalized RMS amplitude for interleaved sample values.
-pub(crate) fn rms_level(samples: &[f32]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-
-    let square_sum = samples
-        .iter()
-        .map(|sample| sample.clamp(-1.0, 1.0))
-        .map(|sample| sample * sample)
-        .sum::<f32>();
-    (square_sum / samples.len() as f32).sqrt()
 }
 
 #[cfg(test)]
@@ -143,7 +93,6 @@ mod tests {
 
         assert!(detector.update(0.3, 40_000));
         assert!(detector.update(0.15, 80_000));
-        assert!(detector.is_active());
         assert!(detector.update(0.12, 40_000));
         assert!(!detector.update(0.12, 40_000));
     }
