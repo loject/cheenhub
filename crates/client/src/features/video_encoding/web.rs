@@ -16,6 +16,7 @@ use super::backend::{
     VideoEncoderDescriptor, VideoEncodingAccelerator, VideoEncodingAcceleratorKind,
     VideoEncodingError, VideoEncodingManager, VideoFrameEncoder,
 };
+use super::web_frame_source::BrowserVideoFrameReader;
 
 const VP9_WEB_CODECS_CODEC: &str = "vp09.00.10.08";
 const WEB_CODECS_ENCODER_ID: &str = "webcodecs-vp9";
@@ -25,9 +26,10 @@ const WEB_CODECS_ENCODER_ID: &str = "webcodecs-vp9";
 pub(crate) struct BrowserVideoEncodingManager;
 
 impl BrowserVideoEncodingManager {
-    /// Возвращает, доступен ли быстрый browser pipeline из `MediaStreamTrack` в WebCodecs.
-    pub(crate) fn browser_track_pipeline_available(&self) -> bool {
+    /// Возвращает, доступен ли browser pipeline захвата и кодирования видео.
+    pub(crate) fn browser_capture_pipeline_available(&self) -> bool {
         WebCodecsVideoAccelerator.constructors_available()
+            && BrowserVideoFrameReader::capture_available()
     }
 }
 
@@ -87,8 +89,7 @@ pub(crate) struct WebCodecsVideoAccelerator;
 
 impl WebCodecsVideoAccelerator {
     fn constructors_available(&self) -> bool {
-        global_constructor_available("VideoEncoder")
-            && global_constructor_available("MediaStreamTrackProcessor")
+        global_constructor_available("VideoEncoder") && global_constructor_available("VideoFrame")
     }
 }
 
@@ -200,33 +201,6 @@ impl BrowserVideoFrame {
     /// Закрывает кадр и освобождает браузерный ресурс.
     pub(crate) fn close(&self) {
         let _ = self.frame.close();
-    }
-}
-
-/// Reader видео-кадров из `MediaStreamTrackProcessor`.
-pub(crate) struct BrowserVideoFrameReader {
-    reader: JsValue,
-}
-
-impl BrowserVideoFrameReader {
-    /// Создает reader для браузерной видеодорожки.
-    pub(crate) fn from_track(
-        track: &web_sys::MediaStreamTrack,
-    ) -> Result<Self, VideoEncodingError> {
-        let processor = media_stream_track_processor(track)?;
-        Ok(Self {
-            reader: stream_reader(&processor.readable())?,
-        })
-    }
-
-    /// Читает следующий кадр или `None`, если поток завершен.
-    pub(crate) async fn read(&self) -> Result<Option<BrowserVideoFrame>, VideoEncodingError> {
-        let read = read_stream_chunk(&self.reader).await?;
-        if read.done {
-            return Ok(None);
-        }
-
-        Ok(Some(BrowserVideoFrame::from_js_value(&read.value)))
     }
 }
 
@@ -343,50 +317,7 @@ fn encoder_init(error: &Function, output: &Function) -> Result<JsValue, VideoEnc
     Ok(object.into())
 }
 
-fn media_stream_track_processor(
-    track: &web_sys::MediaStreamTrack,
-) -> Result<MediaStreamTrackProcessor, VideoEncodingError> {
-    let init = Object::new();
-    Reflect::set(&init, &JsValue::from_str("track"), track.as_ref()).map_err(video_error)?;
-    MediaStreamTrackProcessor::new(&init.into()).map_err(video_error)
-}
-
-fn stream_reader(readable: &JsValue) -> Result<JsValue, VideoEncodingError> {
-    let get_reader = Reflect::get(readable, &JsValue::from_str("getReader"))
-        .map_err(video_error)?
-        .dyn_into::<Function>()
-        .map_err(|_| VideoEncodingError::unavailable("ReadableStream.getReader недоступен."))?;
-    get_reader.call0(readable).map_err(video_error)
-}
-
-struct StreamRead {
-    done: bool,
-    value: JsValue,
-}
-
-async fn read_stream_chunk(reader: &JsValue) -> Result<StreamRead, VideoEncodingError> {
-    let read = Reflect::get(reader, &JsValue::from_str("read"))
-        .map_err(video_error)?
-        .dyn_into::<Function>()
-        .map_err(|_| VideoEncodingError::unavailable("ReadableStream reader.read недоступен."))?;
-    let promise = read
-        .call0(reader)
-        .map_err(video_error)?
-        .dyn_into::<Promise>()
-        .map_err(|_| {
-            VideoEncodingError::unavailable("ReadableStream reader.read не вернул Promise.")
-        })?;
-    let result = JsFuture::from(promise).await.map_err(video_error)?;
-    let done = Reflect::get(&result, &JsValue::from_str("done"))
-        .map_err(video_error)?
-        .as_bool()
-        .unwrap_or(false);
-    let value = Reflect::get(&result, &JsValue::from_str("value")).map_err(video_error)?;
-
-    Ok(StreamRead { done, value })
-}
-
-fn global_constructor_available(name: &str) -> bool {
+pub(super) fn global_constructor_available(name: &str) -> bool {
     Reflect::get(&js_sys::global(), &JsValue::from_str(name))
         .ok()
         .and_then(|value| value.dyn_into::<Function>().ok())
@@ -465,13 +396,4 @@ extern "C" {
     #[wasm_bindgen(method, catch, js_name = close)]
     fn close(this: &VideoFrame) -> Result<(), JsValue>;
 
-    #[wasm_bindgen(js_name = MediaStreamTrackProcessor)]
-    #[derive(Clone)]
-    type MediaStreamTrackProcessor;
-
-    #[wasm_bindgen(constructor, catch, js_class = MediaStreamTrackProcessor)]
-    fn new(init: &JsValue) -> Result<MediaStreamTrackProcessor, JsValue>;
-
-    #[wasm_bindgen(method, getter)]
-    fn readable(this: &MediaStreamTrackProcessor) -> JsValue;
 }

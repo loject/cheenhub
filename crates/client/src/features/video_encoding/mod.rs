@@ -5,6 +5,7 @@ mod android;
 mod backend;
 mod unsupported;
 mod web;
+mod web_frame_source;
 
 #[cfg(target_os = "android")]
 pub(crate) use android::{
@@ -21,7 +22,5 @@ pub(crate) use backend::{
 };
 #[allow(unused_imports)]
 pub(crate) use unsupported::UnsupportedVideoEncodingManager;
-pub(crate) use web::{
-    BrowserVideoEncoder, BrowserVideoEncoderHandle, BrowserVideoEncodingManager,
-    BrowserVideoFrameReader,
-};
+pub(crate) use web::{BrowserVideoEncoder, BrowserVideoEncoderHandle, BrowserVideoEncodingManager};
+pub(crate) use web_frame_source::{BrowserVideoFrameReader, BrowserVideoFrameReaderHandle};

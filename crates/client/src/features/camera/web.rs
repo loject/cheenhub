@@ -13,8 +13,9 @@ use web_sys::MediaStream;
 
 use crate::features::video_encoding::{
     BrowserVideoEncoder, BrowserVideoEncoderHandle, BrowserVideoEncodingManager,
-    BrowserVideoFrameReader, EncodedVideoFrame, VideoCodec, VideoEncoderConfig,
-    VideoEncodingAcceleratorKind, VideoEncodingError, VideoEncodingManager, VideoFrameEncoder,
+    BrowserVideoFrameReader, BrowserVideoFrameReaderHandle, EncodedVideoFrame, VideoCodec,
+    VideoEncoderConfig, VideoEncodingAcceleratorKind, VideoEncodingError, VideoEncodingManager,
+    VideoFrameEncoder,
 };
 
 use super::backend::{
@@ -48,6 +49,7 @@ struct BrowserCameraSession {
     encoder: BrowserVideoEncoder,
     stream: MediaStream,
     track: web_sys::MediaStreamTrack,
+    frame_reader: BrowserVideoFrameReaderHandle,
     closed: Rc<Cell<bool>>,
 }
 
@@ -56,11 +58,13 @@ impl CameraSession for BrowserCameraSession {
         let encoder = self.encoder.handle();
         let stream = self.stream.clone();
         let track = self.track.clone();
+        let frame_reader = self.frame_reader.clone();
         let closed = self.closed.clone();
         async move {
             if closed.replace(true) {
                 return Ok(());
             }
+            frame_reader.stop();
             track.stop();
             stop_media_stream(&stream);
             encoder.close().map_err(camera_video_encoding_error)?;
@@ -114,12 +118,21 @@ async fn start_browser_session(
             return Err(camera_video_encoding_error(error));
         }
     };
+    let frame_reader = match BrowserVideoFrameReader::from_stream(&track, &stream).await {
+        Ok(reader) => reader,
+        Err(error) => {
+            let _ = encoder.close();
+            stop_media_stream(&stream);
+            return Err(camera_video_encoding_error(error));
+        }
+    };
+    let frame_reader_handle = frame_reader.handle();
 
     let closed = Rc::new(Cell::new(false));
     let key_frame_interval_frames = frame_rate.saturating_mul(KEY_FRAME_INTERVAL_SECONDS).max(1);
     spawn_video_reader(
         stream.clone(),
-        track.clone(),
+        frame_reader,
         encoder.handle(),
         closed.clone(),
         callbacks,
@@ -130,6 +143,7 @@ async fn start_browser_session(
         encoder,
         stream,
         track,
+        frame_reader: frame_reader_handle,
         closed,
     }))
 }
@@ -161,7 +175,7 @@ async fn ensure_video_encoder_available(
 
 fn ensure_browser_camera_support() -> Result<(), CameraError> {
     let manager = BrowserVideoEncodingManager;
-    if !manager.browser_track_pipeline_available() {
+    if !manager.browser_capture_pipeline_available() {
         return Err(CameraError::with_kind(
             UNSUPPORTED_CAMERA_MESSAGE,
             CameraErrorKind::UnsupportedBrowser,
@@ -173,7 +187,7 @@ fn ensure_browser_camera_support() -> Result<(), CameraError> {
 
 fn spawn_video_reader(
     stream: MediaStream,
-    track: web_sys::MediaStreamTrack,
+    reader: BrowserVideoFrameReader,
     encoder: BrowserVideoEncoderHandle,
     closed: Rc<Cell<bool>>,
     callbacks: CameraCallbacks,
@@ -181,15 +195,6 @@ fn spawn_video_reader(
 ) {
     spawn_local(async move {
         let frame_sequence = Rc::new(Cell::new(0_u64));
-        let reader = match BrowserVideoFrameReader::from_track(&track) {
-            Ok(reader) => reader,
-            Err(error) => {
-                warn!(%error, "failed to create camera video frame reader");
-                finish_browser_capture(&stream, &encoder, &closed, &callbacks);
-                return;
-            }
-        };
-
         while !closed.get() {
             let frame = match reader.read().await {
                 Ok(Some(frame)) => frame,
