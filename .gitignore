@@ -1,6 +1,7 @@
 /.env
 /.env.*
 !/.env.example
+/google-services.json
 /target/
 /dist/
 /crates/client/dist/
