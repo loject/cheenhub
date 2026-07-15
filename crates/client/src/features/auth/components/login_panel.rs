@@ -25,7 +25,35 @@ pub(crate) fn LoginPanel() -> Element {
                 p { class: "mt-1.5 text-[13px] leading-5 text-zinc-500", "Используй email и пароль или внешний аккаунт." }
             }
 
-            form { class: "space-y-4",
+            form {
+                class: "space-y-4",
+                onsubmit: move |event| {
+                    event.prevent_default();
+                    if is_busy() {
+                        return;
+                    }
+
+                    is_busy.set(true);
+                    status.set(String::new());
+                    let request = LoginRequest {
+                        email: email(),
+                        password: password(),
+                    };
+                    info!("starting password login");
+                    spawn(async move {
+                        match api::login(request).await {
+                            Ok(_) => {
+                                info!("password login succeeded");
+                                let _ = navigator.replace(Route::AppHome {});
+                            }
+                            Err(error) => {
+                                warn!(%error, "password login failed");
+                                status.set(error);
+                                is_busy.set(false);
+                            }
+                        };
+                    });
+                },
                 TextInput {
                     input_type: "email",
                     label: "Email",
@@ -50,28 +78,9 @@ pub(crate) fn LoginPanel() -> Element {
                     }
                 }
                 button {
-                    r#type: "button",
+                    r#type: "submit",
                     disabled: is_busy(),
                     class: "btn-p flex h-11 w-full items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)]",
-                    onclick: move |_| {
-                        is_busy.set(true);
-                        status.set(String::new());
-                        let request = LoginRequest {
-                            email: email(),
-                            password: password(),
-                        };
-                        spawn(async move {
-                            match api::login(request).await {
-                                Ok(_) => {
-                                    let _ = navigator.replace(Route::AppHome {});
-                                }
-                                Err(error) => {
-                                    status.set(error);
-                                    is_busy.set(false);
-                                }
-                            };
-                        });
-                    },
                     if is_busy() { "Входим..." } else { "Войти" }
                 }
             }
