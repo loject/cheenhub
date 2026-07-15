@@ -81,8 +81,30 @@ FunctionEnd
 Section "Install"
     SetOutPath $INSTDIR
 
-    ; Установка основного бинарника
+    ; Запущенный updater может удерживать старый бинарник. Переименование освобождает исходный путь.
+    IfFileExists "$INSTDIR\{{main_binary_name}}" 0 cheenhub_install_main_binary
+    Delete /REBOOTOK "$INSTDIR\{{main_binary_name}}.previous"
+    ClearErrors
+    Rename "$INSTDIR\{{main_binary_name}}" "$INSTDIR\{{main_binary_name}}.previous"
+    IfErrors cheenhub_replace_main_binary_failed cheenhub_install_main_binary
+
+cheenhub_install_main_binary:
+    ClearErrors
     File "{{main_binary_path}}"
+    IfErrors cheenhub_install_main_binary_failed cheenhub_cleanup_previous_binary
+
+cheenhub_replace_main_binary_failed:
+    SetErrorLevel 1
+    Abort "Не удалось освободить исполняемый файл CheenHub для обновления."
+
+cheenhub_install_main_binary_failed:
+    Delete "$INSTDIR\{{main_binary_name}}"
+    Rename "$INSTDIR\{{main_binary_name}}.previous" "$INSTDIR\{{main_binary_name}}"
+    SetErrorLevel 1
+    Abort "Не удалось установить новый исполняемый файл CheenHub."
+
+cheenhub_cleanup_previous_binary:
+    Delete /REBOOTOK "$INSTDIR\{{main_binary_name}}.previous"
     {{#if installer_icon}}
     File /oname=app.ico "{{installer_icon}}"
     {{/if}}
@@ -149,6 +171,7 @@ SectionEnd
 
 ; Секция удаления
 Section "Uninstall"
+    Delete /REBOOTOK "$INSTDIR\{{main_binary_name}}.previous"
     ; Удаление файлов
     RMDir /r "$INSTDIR"
 

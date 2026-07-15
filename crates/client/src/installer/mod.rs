@@ -52,7 +52,9 @@ pub(crate) fn run() {
         if config.skip_webview2 {
             write_log(&config, "webview2 bootstrapper skip requested");
         }
-        let code = match run_installation_blocking(&config, |_| {}) {
+        let code = match run_installation_blocking(&config, |message| {
+            write_log(&config, message);
+        }) {
             Ok(()) => 0,
             Err(message) => {
                 write_log(&config, &format!("silent installer failed: {message}"));

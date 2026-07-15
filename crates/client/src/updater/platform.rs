@@ -1,5 +1,6 @@
 //! Платформенные операции отдельного апдейтера.
 
+use std::io::{BufReader, Read};
 use std::path::Path;
 use std::process::Command;
 use std::thread;
@@ -42,6 +43,75 @@ pub(super) fn restart_application(restart_path: &Path) -> Result<(), String> {
         .spawn()
         .map_err(|error| format!("Не удалось перезапустить CheenHub: {error}"))?;
     Ok(())
+}
+
+pub(super) fn verify_installed_application(restart_path: &Path) -> Result<(), String> {
+    if !restart_path.is_file() {
+        return Err(format!(
+            "Установщик завершился, но исполняемый файл CheenHub не найден: {}.",
+            restart_path.display()
+        ));
+    }
+
+    let updater_path = std::env::current_exe().map_err(|error| {
+        format!("Не удалось проверить исполняемый файл CheenHub после установки: {error}")
+    })?;
+    if updater_path == restart_path {
+        return Ok(());
+    }
+
+    if files_are_identical(&updater_path, restart_path)? {
+        return Err(
+            "Установщик завершился, но исполняемый файл CheenHub не был обновлен.".to_owned(),
+        );
+    }
+
+    Ok(())
+}
+
+fn files_are_identical(left: &Path, right: &Path) -> Result<bool, String> {
+    let left_file = std::fs::File::open(left).map_err(|error| {
+        format!(
+            "Не удалось открыть updater {} для проверки обновления: {error}",
+            left.display()
+        )
+    })?;
+    let right_file = std::fs::File::open(right).map_err(|error| {
+        format!(
+            "Не удалось открыть установленный файл {} для проверки обновления: {error}",
+            right.display()
+        )
+    })?;
+    let left_len = left_file
+        .metadata()
+        .map_err(|error| format!("Не удалось прочитать размер updater-а: {error}"))?
+        .len();
+    let right_len = right_file
+        .metadata()
+        .map_err(|error| format!("Не удалось прочитать размер установленного файла: {error}"))?
+        .len();
+    if left_len != right_len {
+        return Ok(false);
+    }
+
+    let mut left_reader = BufReader::new(left_file);
+    let mut right_reader = BufReader::new(right_file);
+    let mut left_buffer = [0_u8; 64 * 1024];
+    let mut right_buffer = [0_u8; 64 * 1024];
+    loop {
+        let left_read = left_reader
+            .read(&mut left_buffer)
+            .map_err(|error| format!("Не удалось прочитать updater для проверки: {error}"))?;
+        let right_read = right_reader.read(&mut right_buffer).map_err(|error| {
+            format!("Не удалось прочитать установленный файл для проверки: {error}")
+        })?;
+        if left_read != right_read || left_buffer[..left_read] != right_buffer[..right_read] {
+            return Ok(false);
+        }
+        if left_read == 0 {
+            return Ok(true);
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -157,4 +227,39 @@ fn command_exists(name: &str) -> bool {
         .arg(format!("command -v {name} >/dev/null 2>&1"))
         .status()
         .is_ok_and(|status| status.success())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::files_are_identical;
+
+    fn test_file(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("cheenhub-updater-{name}-{}", std::process::id()))
+    }
+
+    #[test]
+    fn detects_identical_files() {
+        let left = test_file("identical-left");
+        let right = test_file("identical-right");
+        std::fs::write(&left, b"same update binary").expect("left test file should be written");
+        std::fs::write(&right, b"same update binary").expect("right test file should be written");
+
+        assert!(files_are_identical(&left, &right).expect("files should be compared"));
+
+        std::fs::remove_file(left).expect("left test file should be removed");
+        std::fs::remove_file(right).expect("right test file should be removed");
+    }
+
+    #[test]
+    fn detects_different_files() {
+        let left = test_file("different-left");
+        let right = test_file("different-right");
+        std::fs::write(&left, b"old update binary").expect("left test file should be written");
+        std::fs::write(&right, b"new update binary").expect("right test file should be written");
+
+        assert!(!files_are_identical(&left, &right).expect("files should be compared"));
+
+        std::fs::remove_file(left).expect("left test file should be removed");
+        std::fs::remove_file(right).expect("right test file should be removed");
+    }
 }

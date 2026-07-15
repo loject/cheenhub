@@ -266,6 +266,16 @@ async fn run_installation(config: UpdaterConfig, mut state: Signal<UpdaterState>
     }
 
     if let Some(restart_path) = &config.restart_path {
+        write_log(
+            &config,
+            &format!("verifying installed application {}", restart_path.display()),
+        );
+        if let Err(message) = platform::verify_installed_application(restart_path) {
+            fail(&config, &mut state, message);
+            return;
+        }
+        write_log(&config, "installed application replacement verified");
+
         set_stage(
             &mut state,
             UpdaterStage::Restarting,

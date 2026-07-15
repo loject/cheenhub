@@ -177,7 +177,9 @@ fn start_updater(version: &str, file: &DownloadedUpdate) -> Result<(), String> {
         ));
     }
 
-    Command::new(&current_exe)
+    let updater_exe = prepare_updater_executable(&current_exe)?;
+
+    let spawn_result = Command::new(&updater_exe)
         .arg("--cheenhub-update")
         .arg("--installer")
         .arg(&file.path)
@@ -187,16 +189,80 @@ fn start_updater(version: &str, file: &DownloadedUpdate) -> Result<(), String> {
         .arg(&current_exe)
         .arg("--version")
         .arg(version)
-        .spawn()
-        .map_err(|error| format!("Не удалось запустить режим обновления CheenHub: {error}"))?;
+        .spawn();
+
+    if let Err(error) = spawn_result {
+        cleanup_failed_updater_copy(&updater_exe, &current_exe);
+        return Err(format!(
+            "Не удалось запустить режим обновления CheenHub: {error}"
+        ));
+    }
 
     info!(
         update_version = %version,
-        updater_path = %current_exe.display(),
+        updater_path = %updater_exe.display(),
+        restart_path = %current_exe.display(),
         "application update mode started; main window should close"
     );
     Ok(())
 }
+
+#[cfg(target_os = "windows")]
+fn prepare_updater_executable(current_exe: &Path) -> Result<PathBuf, String> {
+    let helpers_dir = std::env::temp_dir().join("cheenhub-update-helpers");
+    if helpers_dir.exists()
+        && let Err(error) = std::fs::remove_dir_all(&helpers_dir)
+    {
+        warn!(
+            path = %helpers_dir.display(),
+            %error,
+            "failed to remove stale application update helpers"
+        );
+    }
+    std::fs::create_dir_all(&helpers_dir).map_err(|error| {
+        format!(
+            "Не удалось подготовить временную папку updater-а {}: {error}",
+            helpers_dir.display()
+        )
+    })?;
+
+    let updater_exe =
+        helpers_dir.join(format!("cheenhub-update-helper-{}.exe", std::process::id()));
+    std::fs::copy(current_exe, &updater_exe).map_err(|error| {
+        format!(
+            "Не удалось подготовить временную копию updater-а {}: {error}",
+            updater_exe.display()
+        )
+    })?;
+    info!(
+        source = %current_exe.display(),
+        destination = %updater_exe.display(),
+        "prepared detached application update helper"
+    );
+    Ok(updater_exe)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn prepare_updater_executable(current_exe: &Path) -> Result<PathBuf, String> {
+    Ok(current_exe.to_path_buf())
+}
+
+#[cfg(target_os = "windows")]
+fn cleanup_failed_updater_copy(updater_exe: &Path, current_exe: &Path) {
+    if updater_exe == current_exe {
+        return;
+    }
+    if let Err(error) = std::fs::remove_file(updater_exe) {
+        warn!(
+            path = %updater_exe.display(),
+            %error,
+            "failed to remove application update helper after launch failure"
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cleanup_failed_updater_copy(_updater_exe: &Path, _current_exe: &Path) {}
 
 #[cfg(not(target_family = "wasm"))]
 fn default_download_dir() -> Result<PathBuf, String> {
