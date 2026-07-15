@@ -25,7 +25,7 @@ const CAMERA_PROFILE: VideoProfile = VideoProfile {
     bitrate_label: "700 кбит/с",
     bitrate_kbps: 700,
     bitrate_max_kbps: 2_000,
-    resolution: "640x360",
+    resolution: "1280x720",
     fps: "24 fps",
 };
 
@@ -35,8 +35,8 @@ const SCREEN_SHARE_PROFILE: VideoProfile = VideoProfile {
     bitrate_label: "1.5 Мбит/с",
     bitrate_kbps: 1_500,
     bitrate_max_kbps: 2_000,
-    resolution: "1280x720",
-    fps: "30 fps",
+    resolution: "1280x720 или 1920x1080",
+    fps: "30 fps или 15 fps",
 };
 
 /// Рендерит секцию настроек качества голоса и видео сервера.

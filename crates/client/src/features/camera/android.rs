@@ -23,16 +23,17 @@ impl CameraBackend for AndroidCameraBackend {
         callbacks: CameraCallbacks,
     ) -> LocalBoxFuture<'static, Result<Rc<dyn CameraSession>, CameraError>> {
         Box::pin(async move {
+            let preset = config.preset_spec();
             let bridge = android_video_capture_bridge().map_err(CameraError::new)?;
             let target = callbacks.on_frame.clone();
             let encoder = AndroidVideoEncodingManager
                 .create_encoder(
                     VideoEncodingAcceleratorKind::Native,
                     VideoEncoderConfig::vp9(
-                        config.width,
-                        config.height,
-                        config.frame_rate,
-                        config.bitrate_bps,
+                        preset.width,
+                        preset.height,
+                        preset.max_fps,
+                        preset.bitrate_bps,
                     ),
                     Rc::new(move |f| {
                         target(EncodedCameraFrame {
@@ -52,9 +53,9 @@ impl CameraBackend for AndroidCameraBackend {
             let capture = bridge
                 .start_camera(
                     encoder.input_surface(),
-                    config.width,
-                    config.height,
-                    config.frame_rate,
+                    preset.width,
+                    preset.height,
+                    preset.max_fps,
                     callbacks.on_ended,
                 )
                 .await

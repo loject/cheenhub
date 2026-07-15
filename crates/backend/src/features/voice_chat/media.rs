@@ -2,10 +2,14 @@
 
 use bytes::Bytes;
 use cheenhub_contracts::media::MediaDatagram;
+use cheenhub_contracts::video_presets::{
+    BASE_CAMERA_VIDEO_PRESETS, BASE_SCREEN_SHARE_VIDEO_PRESETS, VideoPresetId,
+};
 use tracing::{debug, warn};
 use uuid::Uuid;
 
 use super::infrastructure::VoicePresenceTargetKind;
+use super::media_policy::{VideoAdmission, VideoDropReason};
 use crate::state::AppState;
 
 /// Обрабатывает одну декодированную медиадатаграмму голоса.
@@ -15,7 +19,7 @@ pub(crate) async fn handle_voice_frame(
     user_id: Uuid,
     datagram: MediaDatagram,
 ) {
-    handle_room_media_frame(state, session_id, user_id, datagram, "voice", true).await;
+    handle_room_media_frame(state, session_id, user_id, datagram, "voice", true, None).await;
 }
 
 /// Обрабатывает одну декодированную медиадатаграмму демонстрации экрана.
@@ -25,7 +29,16 @@ pub(crate) async fn handle_screen_frame(
     user_id: Uuid,
     datagram: MediaDatagram,
 ) {
-    handle_room_media_frame(state, session_id, user_id, datagram, "screen", false).await;
+    handle_room_media_frame(
+        state,
+        session_id,
+        user_id,
+        datagram,
+        "screen",
+        false,
+        Some(BASE_SCREEN_SHARE_VIDEO_PRESETS),
+    )
+    .await;
 }
 
 /// Обрабатывает одну декодированную медиадатаграмму камеры.
@@ -35,7 +48,16 @@ pub(crate) async fn handle_camera_frame(
     user_id: Uuid,
     datagram: MediaDatagram,
 ) {
-    handle_room_media_frame(state, session_id, user_id, datagram, "camera", false).await;
+    handle_room_media_frame(
+        state,
+        session_id,
+        user_id,
+        datagram,
+        "camera",
+        false,
+        Some(BASE_CAMERA_VIDEO_PRESETS),
+    )
+    .await;
 }
 
 async fn handle_room_media_frame(
@@ -45,6 +67,7 @@ async fn handle_room_media_frame(
     mut datagram: MediaDatagram,
     media_kind: &'static str,
     allow_microphone_uplink: bool,
+    allowed_video_presets: Option<&'static [VideoPresetId]>,
 ) {
     debug!(
         %session_id,
@@ -92,6 +115,23 @@ async fn handle_room_media_frame(
         return;
     }
 
+    if let Some(allowed_video_presets) = allowed_video_presets {
+        let admission = state
+            .voice_presence_store
+            .inspect_video_datagram(session_id, user_id, &datagram, allowed_video_presets)
+            .await;
+        if !video_admission_allows_fanout(
+            admission,
+            session_id,
+            user_id,
+            datagram.room_id,
+            media_kind,
+            datagram.sequence,
+        ) {
+            return;
+        }
+    }
+
     datagram.sender_user_id = user_id;
     let recipients = state
         .voice_presence_store
@@ -123,6 +163,65 @@ async fn handle_room_media_frame(
         .realtime_hub
         .fanout_datagram_to_sessions(&recipients, bytes)
         .await;
+}
+
+fn video_admission_allows_fanout(
+    admission: VideoAdmission,
+    session_id: Uuid,
+    user_id: Uuid,
+    room_id: Uuid,
+    media_kind: &'static str,
+    sequence: u64,
+) -> bool {
+    let VideoAdmission::Drop(reason) = admission else {
+        return true;
+    };
+    match reason {
+        VideoDropReason::UnsupportedResolution { width, height } => warn!(
+            %session_id,
+            %user_id,
+            %room_id,
+            media_kind,
+            sequence,
+            width,
+            height,
+            "blocked video publication with unsupported resolution"
+        ),
+        VideoDropReason::FpsLimitExceeded {
+            max_fps,
+            observed_frames,
+        } => warn!(
+            %session_id,
+            %user_id,
+            %room_id,
+            media_kind,
+            sequence,
+            max_fps,
+            observed_frames,
+            "blocked video publication after sustained FPS limit violation"
+        ),
+        VideoDropReason::InvalidVp9KeyFrame | VideoDropReason::MalformedFragment => warn!(
+            %session_id,
+            %user_id,
+            %room_id,
+            media_kind,
+            sequence,
+            reason = ?reason,
+            "blocked malformed video publication datagram"
+        ),
+        VideoDropReason::AwaitingFirstFragment
+        | VideoDropReason::AwaitingKeyFrame
+        | VideoDropReason::FpsBlockActive => debug!(
+            %session_id,
+            %user_id,
+            %room_id,
+            media_kind,
+            sequence,
+            reason = ?reason,
+            "dropping video datagram while publication is blocked"
+        ),
+    }
+    false
 }
 
 async fn active_presence_for_user(

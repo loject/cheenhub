@@ -23,16 +23,17 @@ impl ScreenShareBackend for AndroidScreenShareBackend {
         callbacks: ScreenShareCallbacks,
     ) -> LocalBoxFuture<'static, Result<Rc<dyn ScreenShareSession>, ScreenShareError>> {
         Box::pin(async move {
+            let preset = config.preset_for_capture(1280, 720);
             let bridge = android_video_capture_bridge().map_err(ScreenShareError::new)?;
             let target = callbacks.on_frame.clone();
             let encoder = AndroidVideoEncodingManager
                 .create_encoder(
                     VideoEncodingAcceleratorKind::Native,
                     VideoEncoderConfig::vp9(
-                        config.fallback_width,
-                        config.fallback_height,
-                        config.frame_rate,
-                        config.bitrate_bps,
+                        preset.width,
+                        preset.height,
+                        preset.max_fps,
+                        preset.bitrate_bps,
                     ),
                     Rc::new(move |f| {
                         target(EncodedScreenShareFrame {
@@ -52,9 +53,9 @@ impl ScreenShareBackend for AndroidScreenShareBackend {
             let capture = bridge
                 .start_screen_share(
                     encoder.input_surface(),
-                    config.fallback_width,
-                    config.fallback_height,
-                    config.frame_rate,
+                    preset.width,
+                    preset.height,
+                    preset.max_fps,
                     callbacks.on_ended,
                 )
                 .await

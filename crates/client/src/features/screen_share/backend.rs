@@ -3,6 +3,9 @@
 use std::fmt;
 use std::rc::Rc;
 
+use cheenhub_contracts::video_presets::{
+    BASE_SCREEN_SHARE_VIDEO_PRESETS, VideoPresetId, VideoPresetSpec, VideoStreamSource,
+};
 use futures_util::future::LocalBoxFuture;
 
 /// Callback, вызываемый для каждого закодированного кадра экрана.
@@ -23,25 +26,59 @@ pub(crate) enum ScreenShareCodec {
 pub(crate) struct ScreenShareConfig {
     /// Preferred encoded codec.
     pub(crate) codec: ScreenShareCodec,
-    /// Requested maximum frame rate.
-    pub(crate) frame_rate: u32,
-    /// Target encoder bitrate in bits per second.
-    pub(crate) bitrate_bps: u32,
-    /// Fallback width used when the browser does not report capture settings.
-    pub(crate) fallback_width: u32,
-    /// Fallback height used when the browser does not report capture settings.
-    pub(crate) fallback_height: u32,
+    /// Пресеты, разрешённые текущими возможностями пользователя.
+    pub(crate) allowed_presets: Vec<VideoPresetId>,
+}
+
+impl ScreenShareConfig {
+    /// Выбирает лучший разрешённый пресет для размеров источника.
+    pub(crate) fn preset_for_capture(&self, width: u32, height: u32) -> VideoPresetSpec {
+        self.allowed_presets
+            .iter()
+            .copied()
+            .filter(|preset| preset.spec().source == VideoStreamSource::ScreenShare)
+            .filter(|preset| {
+                let spec = preset.spec();
+                spec.width <= width && spec.height <= height
+            })
+            .max_by_key(|preset| {
+                let spec = preset.spec();
+                u64::from(spec.width) * u64::from(spec.height)
+            })
+            .or_else(|| {
+                self.allowed_presets
+                    .iter()
+                    .copied()
+                    .find(|preset| preset.spec().source == VideoStreamSource::ScreenShare)
+            })
+            .unwrap_or(VideoPresetId::Screen720p30)
+            .spec()
+    }
 }
 
 impl Default for ScreenShareConfig {
     fn default() -> Self {
         Self {
             codec: ScreenShareCodec::Vp9,
-            frame_rate: 30,
-            bitrate_bps: 1_500_000,
-            fallback_width: 1280,
-            fallback_height: 720,
+            allowed_presets: BASE_SCREEN_SHARE_VIDEO_PRESETS.to_vec(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selects_720p_for_hd_source() {
+        let spec = ScreenShareConfig::default().preset_for_capture(1366, 768);
+        assert_eq!((spec.width, spec.height, spec.max_fps), (1280, 720, 30));
+    }
+
+    #[test]
+    fn selects_1080p_for_full_hd_source() {
+        let spec = ScreenShareConfig::default().preset_for_capture(2560, 1440);
+        assert_eq!((spec.width, spec.height, spec.max_fps), (1920, 1080, 15));
     }
 }
 

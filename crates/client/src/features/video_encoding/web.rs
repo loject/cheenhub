@@ -202,6 +202,11 @@ impl BrowserVideoFrame {
     pub(crate) fn close(&self) {
         let _ = self.frame.close();
     }
+
+    /// Возвращает временную метку входного кадра в микросекундах.
+    pub(crate) fn timestamp_us(&self) -> u64 {
+        self.frame.timestamp().max(0.0).round() as u64
+    }
 }
 
 fn create_webcodecs_encoder(
@@ -395,5 +400,8 @@ extern "C" {
 
     #[wasm_bindgen(method, catch, js_name = close)]
     fn close(this: &VideoFrame) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(method, getter)]
+    fn timestamp(this: &VideoFrame) -> f64;
 
 }

@@ -3,6 +3,7 @@
 use std::fmt;
 use std::rc::Rc;
 
+use cheenhub_contracts::video_presets::{VideoPresetId, VideoPresetSpec};
 use futures_util::future::LocalBoxFuture;
 
 /// Callback, вызываемый для каждого закодированного кадра камеры.
@@ -23,24 +24,22 @@ pub(crate) enum CameraCodec {
 pub(crate) struct CameraConfig {
     /// Предпочитаемый кодек кодирования.
     pub(crate) codec: CameraCodec,
-    /// Запрошенная максимальная частота кадров.
-    pub(crate) frame_rate: u32,
-    /// Целевой bitrate кодировщика в битах в секунду.
-    pub(crate) bitrate_bps: u32,
-    /// Запрошенная ширина камеры.
-    pub(crate) width: u32,
-    /// Запрошенная высота камеры.
-    pub(crate) height: u32,
+    /// Пресет, разрешённый текущими возможностями пользователя.
+    pub(crate) preset: VideoPresetId,
+}
+
+impl CameraConfig {
+    /// Возвращает числовые параметры выбранного пресета камеры.
+    pub(crate) fn preset_spec(&self) -> VideoPresetSpec {
+        self.preset.spec()
+    }
 }
 
 impl Default for CameraConfig {
     fn default() -> Self {
         Self {
             codec: CameraCodec::Vp9,
-            frame_rate: 24,
-            bitrate_bps: 700_000,
-            width: 1280,
-            height: 720,
+            preset: VideoPresetId::Camera720p24,
         }
     }
 }

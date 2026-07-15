@@ -14,7 +14,7 @@ pub(crate) use android::{
 };
 pub(crate) use backend::{
     EncodedVideoFrame, VideoCodec, VideoEncoderConfig, VideoEncodingAcceleratorKind,
-    VideoEncodingError, VideoEncodingManager, VideoFrameEncoder,
+    VideoEncodingError, VideoEncodingManager, VideoFrameEncoder, VideoFrameRateGate,
 };
 #[allow(unused_imports)]
 pub(crate) use backend::{

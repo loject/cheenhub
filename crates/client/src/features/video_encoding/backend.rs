@@ -55,6 +55,40 @@ pub(crate) struct VideoEncoderConfig {
     pub(crate) bitrate_bps: u32,
 }
 
+/// Ограничитель частоты кадров по временным меткам источника.
+#[derive(Debug, Clone)]
+pub(crate) struct VideoFrameRateGate {
+    minimum_interval_us: u64,
+    last_accepted_timestamp_us: Option<u64>,
+}
+
+impl VideoFrameRateGate {
+    /// Создаёт ограничитель для заданной максимальной частоты кадров.
+    pub(crate) fn new(max_fps: u32) -> Self {
+        Self {
+            minimum_interval_us: 1_000_000 / u64::from(max_fps.max(1)),
+            last_accepted_timestamp_us: None,
+        }
+    }
+
+    /// Возвращает, следует ли передать кадр кодировщику.
+    pub(crate) fn accept(&mut self, timestamp_us: u64) -> bool {
+        let Some(previous) = self.last_accepted_timestamp_us else {
+            self.last_accepted_timestamp_us = Some(timestamp_us);
+            return true;
+        };
+        if timestamp_us < previous {
+            self.last_accepted_timestamp_us = Some(timestamp_us);
+            return true;
+        }
+        if timestamp_us.saturating_sub(previous) < self.minimum_interval_us {
+            return false;
+        }
+        self.last_accepted_timestamp_us = Some(timestamp_us);
+        true
+    }
+}
+
 impl VideoEncoderConfig {
     /// Создает конфигурацию VP9-кодирования.
     pub(crate) fn vp9(width: u32, height: u32, frame_rate: u32, bitrate_bps: u32) -> Self {
@@ -186,3 +220,28 @@ impl fmt::Display for VideoEncodingError {
 }
 
 impl std::error::Error for VideoEncodingError {}
+
+#[cfg(test)]
+mod tests {
+    use super::VideoFrameRateGate;
+
+    #[test]
+    fn frame_rate_gate_limits_30_fps_source_to_15_fps() {
+        let mut gate = VideoFrameRateGate::new(15);
+        let timestamps = [0, 33_333, 66_666, 99_999, 133_332];
+        let accepted = timestamps
+            .into_iter()
+            .filter(|timestamp| gate.accept(*timestamp))
+            .collect::<Vec<_>>();
+
+        assert_eq!(accepted, vec![0, 66_666, 133_332]);
+    }
+
+    #[test]
+    fn frame_rate_gate_recovers_after_timestamp_reset() {
+        let mut gate = VideoFrameRateGate::new(24);
+
+        assert!(gate.accept(100_000));
+        assert!(gate.accept(1_000));
+    }
+}

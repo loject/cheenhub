@@ -15,16 +15,14 @@ use crate::features::video_encoding::{
     BrowserVideoEncoder, BrowserVideoEncoderHandle, BrowserVideoEncodingManager,
     BrowserVideoFrameReader, BrowserVideoFrameReaderHandle, EncodedVideoFrame, VideoCodec,
     VideoEncoderConfig, VideoEncodingAcceleratorKind, VideoEncodingError, VideoEncodingManager,
-    VideoFrameEncoder,
+    VideoFrameEncoder, VideoFrameRateGate,
 };
 
 use super::backend::{
     CameraBackend, CameraCallbacks, CameraCodec, CameraConfig, CameraError, CameraErrorKind,
     CameraSession, EncodedCameraFrame,
 };
-use super::browser_capture::{
-    first_video_track, log_selected_video_track, request_camera_stream, video_track_settings,
-};
+use super::browser_capture::{first_video_track, log_selected_video_track, request_camera_stream};
 
 const KEY_FRAME_INTERVAL_SECONDS: u32 = 2;
 const UNSUPPORTED_CAMERA_MESSAGE: &str = concat!(
@@ -92,11 +90,13 @@ async fn start_browser_session(
         }
     };
     log_selected_video_track(&track);
-    let settings = video_track_settings(&track);
-    let width = settings.width.unwrap_or(config.width).max(1);
-    let height = settings.height.unwrap_or(config.height).max(1);
-    let frame_rate = settings.frame_rate.unwrap_or(config.frame_rate).max(1);
-    let encoder_config = VideoEncoderConfig::vp9(width, height, frame_rate, config.bitrate_bps);
+    let preset = config.preset_spec();
+    let encoder_config = VideoEncoderConfig::vp9(
+        preset.width,
+        preset.height,
+        preset.max_fps,
+        preset.bitrate_bps,
+    );
     ensure_video_encoder_available(&stream, encoder_config.clone()).await?;
 
     let output_on_frame = callbacks.on_frame.clone();
@@ -129,7 +129,10 @@ async fn start_browser_session(
     let frame_reader_handle = frame_reader.handle();
 
     let closed = Rc::new(Cell::new(false));
-    let key_frame_interval_frames = frame_rate.saturating_mul(KEY_FRAME_INTERVAL_SECONDS).max(1);
+    let key_frame_interval_frames = preset
+        .max_fps
+        .saturating_mul(KEY_FRAME_INTERVAL_SECONDS)
+        .max(1);
     spawn_video_reader(
         stream.clone(),
         frame_reader,
@@ -137,6 +140,7 @@ async fn start_browser_session(
         closed.clone(),
         callbacks,
         key_frame_interval_frames,
+        preset.max_fps,
     );
 
     Ok(Rc::new(BrowserCameraSession {
@@ -192,9 +196,11 @@ fn spawn_video_reader(
     closed: Rc<Cell<bool>>,
     callbacks: CameraCallbacks,
     key_frame_interval_frames: u32,
+    max_fps: u32,
 ) {
     spawn_local(async move {
         let frame_sequence = Rc::new(Cell::new(0_u64));
+        let mut frame_rate_gate = VideoFrameRateGate::new(max_fps);
         while !closed.get() {
             let frame = match reader.read().await {
                 Ok(Some(frame)) => frame,
@@ -204,6 +210,10 @@ fn spawn_video_reader(
                     break;
                 }
             };
+            if !frame_rate_gate.accept(frame.timestamp_us()) {
+                frame.close();
+                continue;
+            }
             let sequence = frame_sequence.get();
             frame_sequence.set(sequence.saturating_add(1));
             let key_frame = sequence.is_multiple_of(u64::from(key_frame_interval_frames));

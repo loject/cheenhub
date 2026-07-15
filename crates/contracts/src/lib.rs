@@ -9,3 +9,6 @@ pub mod media;
 
 /// Модули контрактов realtime WebTransport.
 pub mod realtime;
+
+/// Пресеты разрешения и частоты исходящего видео.
+pub mod video_presets;

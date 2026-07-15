@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use super::media_policy::VideoPublicationTracker;
+
 mod uplink;
 
 pub(crate) use uplink::{
@@ -16,6 +18,7 @@ pub(crate) struct InMemoryVoicePresenceStore {
     entries: Mutex<Vec<VoicePresence>>,
     microphone_uplink_grants: Mutex<Vec<MicrophoneUplinkGrant>>,
     microphone_uplink_bindings: Mutex<Vec<MicrophoneUplinkBinding>>,
+    pub(super) video_publications: Mutex<VideoPublicationTracker>,
 }
 
 /// Активная запись присутствия в голосовой комнате.
@@ -82,6 +85,7 @@ impl InMemoryVoicePresenceStore {
             removed
         };
         self.revoke_microphone_uplinks_for(&removed).await;
+        self.clear_video_publications_for(&removed).await;
 
         removed
     }
@@ -147,8 +151,16 @@ impl InMemoryVoicePresenceStore {
             removed
         };
         self.revoke_microphone_uplinks_for(&removed).await;
+        self.clear_video_publications_for(&removed).await;
 
         removed
+    }
+
+    async fn clear_video_publications_for(&self, removed: &[VoicePresence]) {
+        self.video_publications
+            .lock()
+            .await
+            .remove_presences(removed);
     }
 
     /// Перечисляет активных участников одной комнаты.

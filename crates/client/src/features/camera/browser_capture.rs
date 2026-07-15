@@ -81,10 +81,11 @@ pub(super) struct VideoTrackSettings {
 }
 
 fn camera_track_constraints(config: &CameraConfig) -> MediaTrackConstraints {
+    let preset = config.preset_spec();
     let video = MediaTrackConstraints::new();
-    video.set_width(&JsValue::from_f64(f64::from(config.width)));
-    video.set_height(&JsValue::from_f64(f64::from(config.height)));
-    video.set_frame_rate(&JsValue::from_f64(f64::from(config.frame_rate)));
+    video.set_width(&JsValue::from_f64(f64::from(preset.width)));
+    video.set_height(&JsValue::from_f64(f64::from(preset.height)));
+    video.set_frame_rate(&JsValue::from_f64(f64::from(preset.max_fps)));
     video
 }
 
