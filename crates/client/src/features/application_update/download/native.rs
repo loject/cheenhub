@@ -207,7 +207,7 @@ fn start_updater(version: &str, file: &DownloadedUpdate) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(not(target_family = "wasm"), target_os = "windows"))]
 fn prepare_updater_executable(current_exe: &Path) -> Result<PathBuf, String> {
     let helpers_dir = std::env::temp_dir().join("cheenhub-update-helpers");
     if helpers_dir.exists()
@@ -242,12 +242,12 @@ fn prepare_updater_executable(current_exe: &Path) -> Result<PathBuf, String> {
     Ok(updater_exe)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "windows")))]
 fn prepare_updater_executable(current_exe: &Path) -> Result<PathBuf, String> {
     Ok(current_exe.to_path_buf())
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(not(target_family = "wasm"), target_os = "windows"))]
 fn cleanup_failed_updater_copy(updater_exe: &Path, current_exe: &Path) {
     if updater_exe == current_exe {
         return;
@@ -261,7 +261,7 @@ fn cleanup_failed_updater_copy(updater_exe: &Path, current_exe: &Path) {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "windows")))]
 fn cleanup_failed_updater_copy(_updater_exe: &Path, _current_exe: &Path) {}
 
 #[cfg(not(target_family = "wasm"))]
