@@ -192,7 +192,17 @@ impl VoiceConnectionHandle {
             return;
         }
 
-        let previous = current.active_target();
+        let previous = if matches!(&current, VoiceConnectionState::Disconnecting { .. }) {
+            info!(
+                target_kind = ?target.kind,
+                server_id = %target.server_id,
+                room_id = %target.room_id,
+                "joining new voice target while previous leave is still in flight"
+            );
+            None
+        } else {
+            current.active_target()
+        };
         let realtime = self.realtime.clone();
         let handle = self.clone();
         let mut state = self.state;

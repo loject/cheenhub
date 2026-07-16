@@ -3,7 +3,7 @@
 use cheenhub_contracts::rest::DmConversationSummary;
 use dioxus::prelude::*;
 
-use crate::features::voice_chat::{VoiceConnectionHandle, VoiceConnectionState};
+use crate::features::voice_chat::VoiceConnectionHandle;
 
 use super::voice_target::direct_message_voice_target;
 
@@ -16,10 +16,7 @@ pub(crate) fn DirectMessageVoiceButton(conversation: DmConversationSummary) -> E
     let selected_voice_active = voice_state
         .active_target()
         .is_some_and(|active| active.matches(&target));
-    let selected_voice_busy = matches!(
-        voice_state,
-        VoiceConnectionState::Connecting { .. } | VoiceConnectionState::Disconnecting { .. }
-    );
+    let selected_voice_busy = voice_state.blocks_join_to(&target);
     let selected_voice_join_label = if selected_voice_busy && selected_voice_active {
         "Подключаемся..."
     } else if selected_voice_active {

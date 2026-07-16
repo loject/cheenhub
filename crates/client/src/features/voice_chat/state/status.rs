@@ -46,6 +46,18 @@ impl VoiceConnectionState {
         }
     }
 
+    /// Возвращает, нужно ли временно блокировать вход в указанную голосовую цель.
+    pub(crate) fn blocks_join_to(&self, target: &VoiceRoomTarget) -> bool {
+        match self {
+            Self::Connecting { .. } => true,
+            Self::Disconnecting {
+                target: leaving_target,
+                ..
+            } => leaving_target.matches(target),
+            _ => false,
+        }
+    }
+
     pub(super) fn is_connected_to(&self, room: &VoiceRoomTarget) -> bool {
         matches!(
             self,
@@ -65,5 +77,39 @@ impl VoiceConnectionState {
             self,
             Self::Disconnecting { target, .. } if target.matches(room)
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{VoiceConnectionState, VoiceRoomTarget};
+
+    #[test]
+    fn leaving_server_does_not_block_joining_direct_message_voice() {
+        let server = VoiceRoomTarget::server(
+            "server".to_owned(),
+            "server-room".to_owned(),
+            "Голосовая".to_owned(),
+        );
+        let direct_message =
+            VoiceRoomTarget::direct_message("conversation".to_owned(), "Друг".to_owned());
+        let state = VoiceConnectionState::Disconnecting {
+            target: server,
+            participants: Vec::new(),
+        };
+
+        assert!(!state.blocks_join_to(&direct_message));
+    }
+
+    #[test]
+    fn leaving_target_stays_blocked_until_its_leave_finishes() {
+        let direct_message =
+            VoiceRoomTarget::direct_message("conversation".to_owned(), "Друг".to_owned());
+        let state = VoiceConnectionState::Disconnecting {
+            target: direct_message.clone(),
+            participants: Vec::new(),
+        };
+
+        assert!(state.blocks_join_to(&direct_message));
     }
 }
