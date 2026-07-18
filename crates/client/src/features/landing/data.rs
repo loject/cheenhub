@@ -32,8 +32,10 @@ pub(crate) struct TechGroup {
 
 /// Возвращает версию приложения в формате GitHub Release tag.
 pub(crate) fn release_version_tag() -> String {
-    let app_version = app_version();
+    normalize_release_version_tag(app_version())
+}
 
+fn normalize_release_version_tag(app_version: &str) -> String {
     if app_version.starts_with('v') {
         app_version.to_owned()
     } else {
@@ -50,8 +52,12 @@ pub(crate) fn app_version() -> &'static str {
 pub(crate) fn windows_installer_url() -> String {
     let release_version = release_version_tag();
 
+    windows_installer_url_for_release(&release_version)
+}
+
+fn windows_installer_url_for_release(release_version: &str) -> String {
     format!(
-        "https://github.com/loject/cheenhub/releases/latest/download/cheenhub-{release_version}-windows-x64-setup.exe"
+        "https://github.com/loject/cheenhub/releases/download/{release_version}/cheenhub-{release_version}-windows-x64-setup.exe"
     )
 }
 
@@ -166,3 +172,26 @@ pub(crate) const TECH_GROUPS: &[TechGroup] = &[
         items: INFRA_TECH,
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_release_version_tag, windows_installer_url_for_release};
+
+    #[test]
+    fn release_version_tag_adds_missing_prefix() {
+        assert_eq!(normalize_release_version_tag("0.18.1"), "v0.18.1");
+    }
+
+    #[test]
+    fn release_version_tag_preserves_existing_prefix() {
+        assert_eq!(normalize_release_version_tag("v0.18.1"), "v0.18.1");
+    }
+
+    #[test]
+    fn windows_installer_url_uses_same_version_for_tag_and_filename() {
+        assert_eq!(
+            windows_installer_url_for_release("v0.18.1"),
+            "https://github.com/loject/cheenhub/releases/download/v0.18.1/cheenhub-v0.18.1-windows-x64-setup.exe"
+        );
+    }
+}

@@ -111,10 +111,12 @@ fn InstallerApp() -> Element {
 
     rsx! {
         document::Style { "{INSTALLER_CSS}" }
-        main { class: "grid h-screen place-items-center overflow-hidden bg-zinc-950 px-6 py-8 text-zinc-100 selection:bg-zinc-700/40",
+        main { class: "grid h-screen place-items-center overflow-hidden bg-zinc-950 px-6 py-4 text-zinc-100 selection:bg-zinc-700/40",
             div { class: "grid-bg absolute inset-0" }
-            section { class: "relative w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950/90 p-6 shadow-[0_30px_110px_rgba(0,0,0,.65)]",
-                div { class: "mb-5 flex items-center gap-3",
+            section {
+                class: "relative w-full max-w-md overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950/90 p-5 shadow-[0_30px_110px_rgba(0,0,0,.65)]",
+                style: "max-height: calc(100vh - 2rem);",
+                div { class: "mb-4 flex items-center gap-3",
                     div { class: "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-[14px] font-bold text-white shadow-[0_14px_36px_rgba(59,130,246,.20)]", "CH" }
                     div {
                         div { class: "text-[14px] font-semibold text-zinc-50", "CheenHub" }
@@ -125,18 +127,18 @@ fn InstallerApp() -> Element {
                 p { class: "mt-2 text-[13px] leading-6 text-zinc-500", "Подготовим приложение и передадим установку штатному установщику CheenHub." }
                 div { class: status_class(is_failed, is_complete),
                     div { class: pulse_class(is_failed, is_complete) }
-                    div {
+                    div { class: "min-w-0",
                         strong { class: "block text-[13px] font-semibold leading-5 text-zinc-100", "{title}" }
-                        span { class: "mt-1 block text-[12px] leading-5 text-zinc-400", "{state_value.detail}" }
+                        span { class: "mt-1 block break-words text-[12px] leading-5 text-zinc-400", "{state_value.detail}" }
                     }
                 }
-                div { class: "mt-5 h-2 overflow-hidden rounded-full bg-zinc-900",
+                div { class: "mt-4 h-2 overflow-hidden rounded-full bg-zinc-900",
                     div {
                         class: progress_fill_class(is_failed),
                         style: "width: {progress}%;"
                     }
                 }
-                div { class: "mt-5 flex items-center justify-between gap-3",
+                div { class: "mt-4 flex items-center justify-between gap-3",
                     span { class: "text-[12px] font-medium text-zinc-500", "{progress}%" }
                     if is_ready {
                         button {
@@ -175,21 +177,21 @@ fn InstallerApp() -> Element {
 
 fn status_class(is_failed: bool, is_complete: bool) -> &'static str {
     if is_failed {
-        "mt-5 flex min-h-14 items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-3"
+        "mt-4 flex min-h-14 items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-3"
     } else if is_complete {
-        "mt-5 flex min-h-14 items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3"
+        "mt-4 flex min-h-14 items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3"
     } else {
-        "mt-5 flex min-h-14 items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3"
+        "mt-4 flex min-h-14 items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3"
     }
 }
 
 fn pulse_class(is_failed: bool, is_complete: bool) -> &'static str {
     if is_failed {
-        "h-2.5 w-2.5 shrink-0 rounded-full bg-red-400"
+        "mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-400"
     } else if is_complete {
-        "h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-300"
+        "mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-300"
     } else {
-        "h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-blue-500 shadow-[0_0_18px_rgba(96,165,250,0.55)]"
+        "mt-1 h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-blue-500 shadow-[0_0_18px_rgba(96,165,250,0.55)]"
     }
 }
 
@@ -372,7 +374,7 @@ fn stage_title(stage: InstallerStage) -> &'static str {
 
 fn stage_progress(stage: InstallerStage) -> u8 {
     match stage {
-        InstallerStage::Ready => 8,
+        InstallerStage::Ready => 0,
         InstallerStage::Extracting => 34,
         InstallerStage::Installing => 76,
         InstallerStage::Complete | InstallerStage::Failed => 100,
@@ -409,4 +411,14 @@ fn write_log(config: &InstallerConfig, message: &str) {
     };
 
     let _ = writeln!(file, "[cheenhub_installer] {message}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InstallerStage, stage_progress};
+
+    #[test]
+    fn ready_stage_starts_without_progress() {
+        assert_eq!(stage_progress(InstallerStage::Ready), 0);
+    }
 }
