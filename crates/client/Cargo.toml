@@ -70,7 +70,7 @@ mobile = [
 system-tray = []
 browser-media-diagnostics = []
 # Windows-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
-windows = ["dep:cpal", "dep:opus"]
+windows = ["dep:cpal", "dep:opus", "dep:windows-sys"]
 # Linux-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
 linux = ["dep:cpal", "dep:opus"]
 # macOS-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
@@ -159,6 +159,12 @@ web-sys = { workspace = true, optional = true, features = [
     "console",
 ] }
 wry = { version = "0.53.5", optional = true }
+windows-sys = { workspace = true, optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+] }
 
 [build-dependencies]
 dotenvy.workspace = true

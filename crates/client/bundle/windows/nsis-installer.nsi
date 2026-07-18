@@ -171,6 +171,8 @@ SectionEnd
 
 ; Секция удаления
 Section "Uninstall"
+    ; Удаление пользовательской регистрации автозапуска CheenHub.
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "CheenHub"
     Delete /REBOOTOK "$INSTDIR\{{main_binary_name}}.previous"
     ; Удаление файлов
     RMDir /r "$INSTDIR"

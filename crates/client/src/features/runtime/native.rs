@@ -28,7 +28,7 @@ pub(super) async fn sleep_duration(duration: Duration) {
 
 /// Запускает desktop-клиент с размером окна CheenHub.
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
-pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element) {
+pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element, started_hidden: bool) {
     use dioxus::desktop::{
         Config, LogicalSize, WindowBuilder, WindowCloseBehaviour, icon_from_memory,
     };
@@ -49,7 +49,8 @@ pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element) {
         .with_title("CheenHub")
         .with_inner_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
         .with_min_inner_size(LogicalSize::new(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT))
-        .with_maximized(true);
+        .with_maximized(true)
+        .with_visible(!started_hidden);
     let close_behaviour = if crate::features::system_tray::load_minimize_to_tray_on_close() {
         WindowCloseBehaviour::WindowHides
     } else {
@@ -157,6 +158,6 @@ fn default_dioxus_profile_log_path() -> std::path::PathBuf {
 }
 
 #[cfg(not(all(feature = "desktop", not(target_arch = "wasm32"))))]
-pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element) {
+pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element, _started_hidden: bool) {
     super::web::launch_client(app);
 }

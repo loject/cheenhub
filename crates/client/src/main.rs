@@ -14,7 +14,9 @@ use routes::{
 
 use crate::features::application_focus::ApplicationFocusProvider;
 use crate::features::application_update::ApplicationUpdateProvider;
+use crate::features::autostart::AutostartProvider;
 use crate::features::pwa::PwaVersionBridge;
+use crate::features::single_instance::SingleInstanceEffects;
 use crate::features::system_tray::SystemTrayProvider;
 
 static TAILWIND_CSS: Asset = asset!(
@@ -39,6 +41,16 @@ fn configure_storage() {
 fn main() {
     if update_mode::run_if_requested() {
         return;
+    }
+
+    match features::single_instance::prepare() {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(error) => {
+            error!(error = %error, "failed to prepare CheenHub single-instance runtime");
+            eprintln!("Не удалось подготовить запуск CheenHub: {error}");
+            return;
+        }
     }
 
     configure_storage();
@@ -88,10 +100,13 @@ fn App() -> Element {
     rsx! {
         document::Stylesheet { href: TAILWIND_CSS }
         PwaVersionBridge {}
-        SystemTrayProvider {
-            ApplicationFocusProvider {
-                ApplicationUpdateProvider {
-                    Router::<Route> {}
+        SingleInstanceEffects {}
+        AutostartProvider {
+            SystemTrayProvider {
+                ApplicationFocusProvider {
+                    ApplicationUpdateProvider {
+                        Router::<Route> {}
+                    }
                 }
             }
         }

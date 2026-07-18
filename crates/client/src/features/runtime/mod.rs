@@ -20,5 +20,5 @@ pub(crate) async fn sleep_duration(duration: Duration) {
 
 /// Запускает клиентское приложение с настройками текущей платформы.
 pub(crate) fn launch_client(app: fn() -> dioxus::prelude::Element) {
-    native::launch_client(app);
+    native::launch_client(app, crate::features::autostart::started_hidden());
 }

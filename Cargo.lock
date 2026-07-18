@@ -1286,6 +1286,7 @@ dependencies = [
  "web-sys",
  "web-time",
  "web-transport",
+ "windows-sys 0.61.2",
  "wry",
 ]
 

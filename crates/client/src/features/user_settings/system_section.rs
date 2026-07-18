@@ -2,6 +2,7 @@
 
 use dioxus::prelude::*;
 
+use crate::features::autostart::AutostartHandle;
 use crate::features::system_tray::SystemTrayHandle;
 
 use super::update_section::UpdateSettingsSection;
@@ -10,8 +11,11 @@ use super::update_section::UpdateSettingsSection;
 #[component]
 pub(crate) fn SystemSettingsSection() -> Element {
     let system_tray = use_context::<SystemTrayHandle>();
+    let autostart = use_context::<AutostartHandle>();
     let minimize_to_tray_on_close = system_tray.minimize_to_tray_on_close();
     let toggle_system_tray = system_tray.clone();
+    let autostart_enabled = autostart.enabled();
+    let toggle_autostart = autostart.clone();
 
     rsx! {
         div { class: "space-y-4",
@@ -40,6 +44,32 @@ pub(crate) fn SystemSettingsSection() -> Element {
                         "aria-hidden": "true",
                         class: toggle_class(minimize_to_tray_on_close),
                         span { class: knob_class(minimize_to_tray_on_close) }
+                    }
+                }
+            }
+            if autostart.is_supported() {
+                div { class: "mt-3 rounded-2xl border border-zinc-800 bg-zinc-900/45 p-4",
+                    label { class: "flex cursor-pointer items-center justify-between gap-4",
+                        span { class: "min-w-0",
+                            span { class: "block text-[14px] font-medium text-zinc-100", "Запускать CheenHub вместе с Windows" }
+                            span { class: "mt-1 block text-[12px] leading-5 text-zinc-500", "После входа в Windows CheenHub запустится в системном трее, не открывая главное окно." }
+                        }
+                        input {
+                            r#type: "checkbox",
+                            class: "peer sr-only",
+                            checked: autostart_enabled,
+                            onchange: move |event| {
+                                toggle_autostart.set_enabled(event.checked());
+                            },
+                        }
+                        span {
+                            "aria-hidden": "true",
+                            class: toggle_class(autostart_enabled),
+                            span { class: knob_class(autostart_enabled) }
+                        }
+                    }
+                    if let Some(error) = autostart.error() {
+                        p { class: "mt-3 text-[12px] leading-5 text-red-300", "{error}" }
                     }
                 }
             }
