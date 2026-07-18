@@ -13,7 +13,7 @@ use crate::Route;
 use crate::features::app::components::app_sidebar_footer::AppSidebarFooter;
 use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::current_user::CurrentUserContext;
-use crate::features::notifications::ApplicationFocusContext;
+use crate::features::application_focus::ApplicationFocusContext;
 use crate::features::realtime::RealtimeHandle;
 use crate::features::text_chat::{ScrollCommand, apply_scroll_command};
 use crate::features::voice_chat::VoiceConnectionHandle;

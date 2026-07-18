@@ -11,14 +11,13 @@ use web_sys::{Event, Notification, NotificationOptions};
 use crate::Route;
 use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::current_user::CurrentUserContext;
+use crate::features::application_focus::application_is_focused;
 use crate::features::audio_playback::{AudioPlaybackHandle, NotificationSound};
 use crate::features::realtime::RealtimeHandle;
-use crate::features::runtime::sleep_ms;
 use crate::features::social::realtime::subscribe_direct_message_events;
 use crate::features::text_chat::realtime::{TextChatEvent, subscribe_text_chat};
 
 use super::direct_messages::{keep_social_subscription_active, requires_attention};
-use super::focus::ApplicationFocusContext;
 
 /// Максимальная длина текста уведомления.
 const MAX_NOTIFICATION_BODY_LEN: usize = 200;
@@ -32,13 +31,10 @@ pub(crate) fn NotificationsProvider(children: Element) -> Element {
     let playback = use_context::<AudioPlaybackHandle>();
     let navigator = use_navigator();
     let mut pending_nav = use_signal(|| None::<Route>);
-    let focus_state = use_signal(application_is_focused);
-    use_context_provider(move || ApplicationFocusContext::new(focus_state));
 
     use_hook(move || {
         // Запрашиваем разрешение на уведомления при загрузке приложения.
         spawn(request_notification_permission());
-        spawn(track_application_focus(focus_state));
         spawn(keep_social_subscription_active(realtime.clone()));
 
         // Подписываемся на события текстового чата и показываем уведомления
@@ -73,18 +69,6 @@ pub(crate) fn NotificationsProvider(children: Element) -> Element {
 
     rsx! {
         {children}
-    }
-}
-
-/// Отслеживает фокус вкладки, чтобы открытый диалог подтверждал прочтение после возврата.
-async fn track_application_focus(mut focus_state: Signal<bool>) {
-    loop {
-        let next_focused = application_is_focused();
-        if focus_state() != next_focused {
-            focus_state.set(next_focused);
-            debug!(next_focused, "updated browser application focus state");
-        }
-        sleep_ms(250).await;
     }
 }
 
@@ -177,13 +161,6 @@ async fn listen_for_dm_messages(
             show_dm_notification(&notification, &pending_nav);
         }
     }
-}
-
-/// Проверяет, находится ли окно браузера и вкладка приложения в фокусе.
-pub(crate) fn application_is_focused() -> bool {
-    web_sys::window()
-        .and_then(|window| window.document())
-        .is_some_and(|document| !document.hidden() && document.has_focus().unwrap_or(false))
 }
 
 /// Создаёт браузерное уведомление о новом сообщении текстового чата

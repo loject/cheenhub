@@ -2,8 +2,8 @@
 
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -12,6 +12,7 @@ use crate::features::auth::domain::{RefreshSession, UserSession};
 use crate::features::auth::infrastructure::entities::{
     refresh_tokens, session_user_agents, sessions, users,
 };
+use crate::features::auth::infrastructure::{RefreshReuseOutcome, RotateRefreshOutcome};
 use crate::features::auth::security::user_agent;
 
 pub(super) async fn create_session(
@@ -157,26 +158,45 @@ pub(super) async fn rotate_refresh(
     user_agent: Option<&str>,
     now: DateTime<Utc>,
     expires_at: DateTime<Utc>,
-) -> anyhow::Result<()> {
-    if let Some(old_refresh) = refresh_tokens::Entity::find_by_id(old_refresh_id.to_owned())
-        .one(database)
-        .await?
-    {
-        let mut old_refresh = old_refresh.into_active_model();
-        old_refresh.rotated_at = Set(Some(now));
-        old_refresh.revoked_at = Set(Some(now));
-        old_refresh.update(database).await?;
+) -> anyhow::Result<RotateRefreshOutcome> {
+    let transaction = database.begin().await?;
+    let consumed = refresh_tokens::Entity::update_many()
+        .col_expr(
+            refresh_tokens::Column::RotatedAt,
+            sea_orm::sea_query::Expr::value(now),
+        )
+        .col_expr(
+            refresh_tokens::Column::RevokedAt,
+            sea_orm::sea_query::Expr::value(now),
+        )
+        .filter(refresh_tokens::Column::Id.eq(*old_refresh_id))
+        .filter(refresh_tokens::Column::SessionId.eq(*session_id))
+        .filter(refresh_tokens::Column::RevokedAt.is_null())
+        .filter(refresh_tokens::Column::ExpiresAt.gt(now))
+        .exec(&transaction)
+        .await?;
+    if consumed.rows_affected != 1 {
+        transaction.rollback().await?;
+        return Ok(RotateRefreshOutcome::AlreadyConsumed);
     }
 
-    if let Some(session) = sessions::Entity::find_by_id(session_id.to_owned())
+    let updated_session = sessions::Entity::update_many()
+        .col_expr(
+            sessions::Column::LastSeenAt,
+            sea_orm::sea_query::Expr::value(now),
+        )
+        .col_expr(
+            sessions::Column::ExpiresAt,
+            sea_orm::sea_query::Expr::value(expires_at),
+        )
+        .filter(sessions::Column::Id.eq(*session_id))
         .filter(sessions::Column::RevokedAt.is_null())
-        .one(database)
-        .await?
-    {
-        let mut session = session.into_active_model();
-        session.last_seen_at = Set(now);
-        session.expires_at = Set(expires_at);
-        session.update(database).await?;
+        .filter(sessions::Column::ExpiresAt.gt(now))
+        .exec(&transaction)
+        .await?;
+    if updated_session.rows_affected != 1 {
+        transaction.rollback().await?;
+        return Ok(RotateRefreshOutcome::AlreadyConsumed);
     }
 
     refresh_tokens::ActiveModel {
@@ -188,14 +208,15 @@ pub(super) async fn rotate_refresh(
         expires_at: Set(expires_at),
         revoked_at: Set(None),
     }
-    .insert(database)
+    .insert(&transaction)
     .await?;
 
     if let Some(user_agent) = user_agent {
-        record_session_user_agent(database, session_id, user_agent, now).await?;
+        record_session_user_agent(&transaction, session_id, user_agent, now).await?;
     }
 
-    Ok(())
+    transaction.commit().await?;
+    Ok(RotateRefreshOutcome::Rotated)
 }
 
 pub(super) async fn revoke_user_session(
@@ -237,18 +258,28 @@ pub(super) async fn revoke_session_on_refresh_reuse(
     database: &DatabaseConnection,
     token_hash: &str,
     now: DateTime<Utc>,
-) -> anyhow::Result<bool> {
+    concurrent_rotation_after: DateTime<Utc>,
+) -> anyhow::Result<RefreshReuseOutcome> {
     let Some(refresh_token) = refresh_tokens::Entity::find()
         .filter(refresh_tokens::Column::TokenHash.eq(token_hash))
         .one(database)
         .await?
     else {
-        return Ok(false);
+        return Ok(RefreshReuseOutcome::NotDetected);
     };
 
     // Активный (не отозванный) токен — это просто просрочка или опечатка, не кража.
     if refresh_token.revoked_at.is_none() {
-        return Ok(false);
+        return Ok(RefreshReuseOutcome::NotDetected);
+    }
+    if refresh_token.rotated_at.is_none() {
+        return Ok(RefreshReuseOutcome::SessionRevoked);
+    }
+    if refresh_token
+        .rotated_at
+        .is_some_and(|rotated_at| rotated_at >= concurrent_rotation_after)
+    {
+        return Ok(RefreshReuseOutcome::ConcurrentRotation);
     }
 
     // Токен уже был ротирован/отозван, но предъявлен снова — вероятная компрометация.
@@ -273,11 +304,11 @@ pub(super) async fn revoke_session_on_refresh_reuse(
         .exec(database)
         .await?;
 
-    Ok(true)
+    Ok(RefreshReuseOutcome::ReusedAndRevoked)
 }
 
-pub(super) async fn record_session_user_agent(
-    database: &DatabaseConnection,
+pub(super) async fn record_session_user_agent<C: ConnectionTrait>(
+    database: &C,
     session_id: &Uuid,
     user_agent: &str,
     now: DateTime<Utc>,

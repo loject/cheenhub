@@ -10,6 +10,7 @@ use crate::features::auth::domain::{RefreshSession, UserSession};
 use crate::features::auth::infrastructure::in_memory::model::{
     InMemoryRefreshToken, InMemorySession, InMemorySessionUserAgent, InMemoryState,
 };
+use crate::features::auth::infrastructure::{RefreshReuseOutcome, RotateRefreshOutcome};
 use crate::features::auth::security::user_agent;
 
 pub(super) fn create_session(
@@ -36,6 +37,7 @@ pub(super) fn create_session(
         session_id,
         token_hash: refresh_hash,
         expires_at,
+        rotated_at: None,
         revoked_at: None,
     });
     if let Some(user_agent) = user_agent {
@@ -129,35 +131,39 @@ pub(super) fn rotate_refresh(
     user_agent: Option<&str>,
     now: DateTime<Utc>,
     expires_at: DateTime<Utc>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<RotateRefreshOutcome> {
     let mut state = state.lock().map_err(|_| poisoned())?;
-    if let Some(refresh_token) = state
-        .refresh_tokens
-        .iter_mut()
-        .find(|refresh_token| refresh_token.id == *old_refresh_id)
-    {
-        refresh_token.revoked_at = Some(now);
-    }
-    if let Some(session) = state
-        .sessions
-        .iter_mut()
-        .find(|session| session.id == *session_id && session.revoked_at.is_none())
-    {
-        session.last_seen_at = now;
-        session.expires_at = expires_at;
-    }
+    let Some(refresh_index) = state.refresh_tokens.iter().position(|refresh_token| {
+        refresh_token.id == *old_refresh_id
+            && refresh_token.session_id == *session_id
+            && refresh_token.revoked_at.is_none()
+            && refresh_token.expires_at > now
+    }) else {
+        return Ok(RotateRefreshOutcome::AlreadyConsumed);
+    };
+    let Some(session_index) = state.sessions.iter().position(|session| {
+        session.id == *session_id && session.revoked_at.is_none() && session.expires_at > now
+    }) else {
+        return Ok(RotateRefreshOutcome::AlreadyConsumed);
+    };
+    state.refresh_tokens[refresh_index].revoked_at = Some(now);
+    state.refresh_tokens[refresh_index].rotated_at = Some(now);
+    let session = &mut state.sessions[session_index];
+    session.last_seen_at = now;
+    session.expires_at = expires_at;
     state.refresh_tokens.push(InMemoryRefreshToken {
         id: Uuid::new_v4(),
         session_id: *session_id,
         token_hash: next_hash,
         expires_at,
+        rotated_at: None,
         revoked_at: None,
     });
     if let Some(user_agent) = user_agent {
         record_session_user_agent(&mut state, *session_id, user_agent, now);
     }
 
-    Ok(())
+    Ok(RotateRefreshOutcome::Rotated)
 }
 
 pub(super) fn revoke_user_session(
@@ -247,7 +253,8 @@ pub(super) fn revoke_session_on_refresh_reuse(
     state: &Mutex<InMemoryState>,
     token_hash: &str,
     now: DateTime<Utc>,
-) -> anyhow::Result<bool> {
+    concurrent_rotation_after: DateTime<Utc>,
+) -> anyhow::Result<RefreshReuseOutcome> {
     let mut state = state.lock().map_err(|_| poisoned())?;
 
     let session_id = {
@@ -256,11 +263,20 @@ pub(super) fn revoke_session_on_refresh_reuse(
             .iter()
             .find(|refresh_token| refresh_token.token_hash == token_hash)
         else {
-            return Ok(false);
+            return Ok(RefreshReuseOutcome::NotDetected);
         };
         // Активный токен — обычная просрочка/опечатка, не кража.
         if refresh_token.revoked_at.is_none() {
-            return Ok(false);
+            return Ok(RefreshReuseOutcome::NotDetected);
+        }
+        if refresh_token.rotated_at.is_none() {
+            return Ok(RefreshReuseOutcome::SessionRevoked);
+        }
+        if refresh_token
+            .rotated_at
+            .is_some_and(|rotated_at| rotated_at >= concurrent_rotation_after)
+        {
+            return Ok(RefreshReuseOutcome::ConcurrentRotation);
         }
         refresh_token.session_id
     };
@@ -280,7 +296,7 @@ pub(super) fn revoke_session_on_refresh_reuse(
         refresh_token.revoked_at = Some(now);
     }
 
-    Ok(true)
+    Ok(RefreshReuseOutcome::ReusedAndRevoked)
 }
 
 fn poisoned() -> anyhow::Error {

@@ -223,6 +223,23 @@ impl IntoResponse for AuthError {
         let (status, code, message) = match self {
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, "bad_request", message),
             Self::Unauthorized(message) => (StatusCode::UNAUTHORIZED, "unauthorized", message),
+            Self::RefreshRejected { reason, message } => {
+                let code = match reason {
+                    super::super::error::RefreshRejection::InvalidOrExpired => {
+                        "refresh_token_invalid_or_expired"
+                    }
+                    super::super::error::RefreshRejection::SessionRevoked => {
+                        "refresh_session_revoked"
+                    }
+                    super::super::error::RefreshRejection::Reused => "refresh_token_reused",
+                };
+                (StatusCode::UNAUTHORIZED, code, message)
+            }
+            Self::RefreshRotationInProgress(message) => (
+                StatusCode::CONFLICT,
+                "refresh_rotation_in_progress",
+                message,
+            ),
             Self::Conflict(message) => (StatusCode::CONFLICT, "conflict", message),
             Self::RateLimited(message) => (StatusCode::TOO_MANY_REQUESTS, "rate_limited", message),
             Self::Misconfigured {

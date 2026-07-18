@@ -12,6 +12,7 @@ use routes::{
     Landing, Login, NotFound, OAuthCallback, Register, ResetPassword,
 };
 
+use crate::features::application_focus::ApplicationFocusProvider;
 use crate::features::application_update::ApplicationUpdateProvider;
 use crate::features::pwa::PwaVersionBridge;
 use crate::features::system_tray::SystemTrayProvider;
@@ -88,8 +89,10 @@ fn App() -> Element {
         document::Stylesheet { href: TAILWIND_CSS }
         PwaVersionBridge {}
         SystemTrayProvider {
-            ApplicationUpdateProvider {
-                Router::<Route> {}
+            ApplicationFocusProvider {
+                ApplicationUpdateProvider {
+                    Router::<Route> {}
+                }
             }
         }
     }

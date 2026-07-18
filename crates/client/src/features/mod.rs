@@ -1,6 +1,7 @@
 //! Модули клиентских функций.
 
 pub(crate) mod app;
+pub(crate) mod application_focus;
 pub(crate) mod application_update;
 pub(crate) mod audio_playback;
 pub(crate) mod auth;

@@ -70,8 +70,20 @@ fn build_tray_menu() -> trayicon::DioxusTrayMenu {
     menu
 }
 
-fn quit_from_system_tray(window: &DesktopContext) -> ! {
+fn quit_from_system_tray(window: &DesktopContext) {
     window.set_close_behavior(WindowCloseBehaviour::WindowCloses);
-    info!("exiting CheenHub from system tray menu");
-    std::process::exit(0);
+    window.close();
+    info!("requested CheenHub shutdown from system tray menu");
+
+    if let Err(error) = std::thread::Builder::new()
+        .name("tray-exit-watchdog".to_owned())
+        .spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            error!("desktop event loop did not finish tray exit; aborting process");
+            std::process::abort();
+        })
+    {
+        error!(%error, "failed to start tray exit watchdog; aborting process");
+        std::process::abort();
+    }
 }

@@ -248,6 +248,8 @@ fn parse_installation_id(value: &str) -> Result<Uuid, PushError> {
 fn map_auth_error(error: AuthError) -> PushError {
     match error {
         AuthError::Unauthorized(message) => PushError::Unauthorized(message),
+        AuthError::RefreshRejected { message, .. }
+        | AuthError::RefreshRotationInProgress(message) => PushError::Unauthorized(message),
         AuthError::Internal(error) => PushError::Internal(error),
         AuthError::BadRequest(message)
         | AuthError::Conflict(message)

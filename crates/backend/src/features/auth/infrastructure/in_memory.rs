@@ -210,7 +210,7 @@ impl AuthStore for InMemoryAuthStore {
         user_agent: Option<&str>,
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<super::RotateRefreshOutcome> {
         refresh::rotate_refresh(
             &self.state,
             old_refresh_id,
@@ -234,8 +234,14 @@ impl AuthStore for InMemoryAuthStore {
         &self,
         token_hash: &str,
         now: DateTime<Utc>,
-    ) -> anyhow::Result<bool> {
-        refresh::revoke_session_on_refresh_reuse(&self.state, token_hash, now)
+        concurrent_rotation_after: DateTime<Utc>,
+    ) -> anyhow::Result<super::RefreshReuseOutcome> {
+        refresh::revoke_session_on_refresh_reuse(
+            &self.state,
+            token_hash,
+            now,
+            concurrent_rotation_after,
+        )
     }
 
     async fn session_is_active(

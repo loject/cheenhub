@@ -9,19 +9,21 @@ use crate::features::app::current_user::CurrentUserContext;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
 use crate::features::app::workspace_route_storage;
 use crate::features::audio_playback::AudioPlaybackProvider;
-use crate::features::auth::{TokenRefresher, api};
+use crate::features::auth::{SessionEnd, TokenRefresher, api};
 use crate::features::camera::CameraProvider;
 use crate::features::microphone::MicrophoneProvider;
 use crate::features::notifications::NotificationsProvider;
 use crate::features::realtime::RealtimeProvider;
 use crate::features::runtime::sleep_ms;
 use crate::features::screen_share::ScreenShareProvider;
+use crate::features::toast::ToastHandle;
 use crate::features::voice_chat::VoiceConnectionProvider;
 
 /// Рендерит домашнюю страницу вошедшего в систему приложения.
 #[component]
 pub(crate) fn AppPage() -> Element {
     let navigator = use_navigator();
+    let toast = use_context::<ToastHandle>();
     let route = use_route::<Route>();
     let user = use_signal(|| None);
     let mut loading_profile = use_signal(|| false);
@@ -66,11 +68,11 @@ pub(crate) fn AppPage() -> Element {
                     profile_error.set(None);
                     loading_profile.set(false);
                 }
-                Err(error) if api::is_network_error(&error) && api::has_tokens() => {
+                Err(error) if api::has_tokens() => {
                     let mut profile_error = profile_error;
                     let mut loading_profile = loading_profile;
                     let mut load_attempt = load_attempt;
-                    warn!("current user load deferred while network is unavailable");
+                    warn!(%error, "current user load deferred while saved session remains available");
                     profile_error.set(Some(error));
                     loading_profile.set(false);
                     sleep_ms(5_000).await;
@@ -78,6 +80,7 @@ pub(crate) fn AppPage() -> Element {
                 }
                 Err(error) => {
                     warn!("current user load failed; redirecting to login: {error}");
+                    toast.session_error(error);
                     let _ = navigator.replace(Route::Login {});
                 }
             }
@@ -152,7 +155,9 @@ pub(crate) fn AppPage() -> Element {
 
     rsx! {
         TokenRefresher {
-            on_session_expired: move |_| {
+            on_session_expired: move |session_end: SessionEnd| {
+                warn!(reason = ?session_end.reason, "showing auth session end reason");
+                toast.session_error(session_end.message);
                 let _ = navigator.replace(Route::Login {});
             },
         }

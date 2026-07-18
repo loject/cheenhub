@@ -224,6 +224,8 @@ pub(super) fn map_auth_error(error: AuthError) -> SocialError {
         AuthError::BadRequest(message) | AuthError::Unauthorized(message) => {
             SocialError::Unauthorized(message)
         }
+        AuthError::RefreshRejected { message, .. }
+        | AuthError::RefreshRotationInProgress(message) => SocialError::Unauthorized(message),
         AuthError::Conflict(message) | AuthError::RateLimited(message) => {
             SocialError::BadRequest(message)
         }

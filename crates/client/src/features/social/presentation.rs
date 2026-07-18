@@ -9,7 +9,7 @@ use cheenhub_contracts::rest::{
 };
 use dioxus::prelude::*;
 
-use crate::features::notifications::application_is_focused;
+use crate::features::application_focus::application_is_focused;
 use crate::features::runtime::sleep_duration;
 use crate::features::text_chat::{ScrollCommand, capture_scroll_position};
 

@@ -127,6 +127,8 @@ fn map_avatar_error(error: AuthError) -> ServerError {
     match error {
         AuthError::BadRequest(message) => ServerError::BadRequest(message),
         AuthError::Unauthorized(message) => ServerError::Unauthorized(message),
+        AuthError::RefreshRejected { message, .. }
+        | AuthError::RefreshRotationInProgress(message) => ServerError::Unauthorized(message),
         AuthError::Conflict(message) | AuthError::RateLimited(message) => {
             ServerError::BadRequest(message)
         }

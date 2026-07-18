@@ -10,8 +10,3 @@ pub(crate) fn NotificationsProvider(children: Element) -> Element {
         {children}
     }
 }
-
-/// На неподдерживаемых платформах не подтверждаем прочтение без проверки фокуса.
-pub(crate) fn application_is_focused() -> bool {
-    false
-}

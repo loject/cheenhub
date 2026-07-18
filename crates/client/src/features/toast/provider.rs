@@ -1,13 +1,9 @@
 //! Провайдер контекста toast-уведомлений.
 
-use std::rc::Rc;
-
 use dioxus::prelude::*;
 
-use crate::features::runtime::sleep_ms;
-
-const TOAST_TTL_MS: u32 = 4_200;
-const TOAST_EXIT_MS: u32 = 180;
+use super::update_available::UpdateAvailableToast;
+use crate::features::application_focus::ApplicationFocusContext;
 const MAX_TOASTS: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,125 +61,63 @@ impl ToastKind {
 }
 
 #[derive(Clone)]
-pub(crate) struct UpdateAvailableToast {
-    current_version: String,
-    update_version: String,
-    title: Option<String>,
-    primary_label: String,
-    primary_disabled: bool,
-    deferral_options: Vec<UpdateToastDeferralOption>,
-    selected_deferral_value: String,
-    on_install: Rc<dyn Fn()>,
-    on_quick_dismiss: Rc<dyn Fn()>,
-    on_defer: Rc<dyn Fn(String)>,
-}
-
-impl UpdateAvailableToast {
-    /// Создает данные toast-уведомления о доступном обновлении.
-    pub(crate) fn new(
-        content: UpdateAvailableToastContent,
-        actions: UpdateAvailableToastActions,
-    ) -> Self {
-        Self {
-            current_version: content.current_version,
-            update_version: content.update_version,
-            title: content.title,
-            primary_label: content.primary_label,
-            primary_disabled: content.primary_disabled,
-            deferral_options: content.deferral_options,
-            selected_deferral_value: content.default_deferral_value,
-            on_install: actions.on_install,
-            on_quick_dismiss: actions.on_quick_dismiss,
-            on_defer: actions.on_defer,
-        }
-    }
-}
-
-/// Текстовые данные toast-уведомления о доступном обновлении.
-pub(crate) struct UpdateAvailableToastContent {
-    current_version: String,
-    update_version: String,
-    title: Option<String>,
-    primary_label: String,
-    primary_disabled: bool,
-    deferral_options: Vec<UpdateToastDeferralOption>,
-    default_deferral_value: String,
-}
-
-impl UpdateAvailableToastContent {
-    /// Создает текстовые данные update-toast.
-    pub(crate) fn new(
-        current_version: impl Into<String>,
-        update_version: impl Into<String>,
-        title: Option<String>,
-        primary_label: impl Into<String>,
-        primary_disabled: bool,
-        deferral_options: Vec<UpdateToastDeferralOption>,
-        default_deferral_value: impl Into<String>,
-    ) -> Self {
-        Self {
-            current_version: current_version.into(),
-            update_version: update_version.into(),
-            title,
-            primary_label: primary_label.into(),
-            primary_disabled,
-            deferral_options,
-            default_deferral_value: default_deferral_value.into(),
-        }
-    }
-}
-
-/// Действия toast-уведомления о доступном обновлении.
-pub(crate) struct UpdateAvailableToastActions {
-    on_install: Rc<dyn Fn()>,
-    on_quick_dismiss: Rc<dyn Fn()>,
-    on_defer: Rc<dyn Fn(String)>,
-}
-
-impl UpdateAvailableToastActions {
-    /// Создает callbacks для update-toast.
-    pub(crate) fn new(
-        on_install: impl Fn() + 'static,
-        on_quick_dismiss: impl Fn() + 'static,
-        on_defer: impl Fn(String) + 'static,
-    ) -> Self {
-        Self {
-            on_install: Rc::new(on_install),
-            on_quick_dismiss: Rc::new(on_quick_dismiss),
-            on_defer: Rc::new(on_defer),
-        }
-    }
-}
-
-/// Пункт выбора времени отсрочки внутри update-toast.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct UpdateToastDeferralOption {
-    value: String,
-    label: String,
-}
-
-impl UpdateToastDeferralOption {
-    /// Создает пункт выбора времени отсрочки.
-    pub(crate) fn new(value: impl Into<String>, label: impl Into<String>) -> Self {
-        Self {
-            value: value.into(),
-            label: label.into(),
-        }
-    }
-}
-
-#[derive(Clone)]
 enum ToastPayload {
     Message(String),
     UpdateAvailable(UpdateAvailableToast),
 }
 
 #[derive(Clone)]
-struct Toast {
+pub(super) struct Toast {
     id: u64,
     kind: ToastKind,
     payload: ToastPayload,
     exiting: bool,
+    hovered: bool,
+    remaining_ms: u32,
+    protected_until_focused: bool,
+}
+
+impl Toast {
+    pub(super) fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub(super) fn timer_paused(&self, application_focused: bool) -> bool {
+        self.hovered || !application_focused
+    }
+
+    pub(super) fn exiting(&self) -> bool {
+        self.exiting
+    }
+
+    pub(super) fn begin_exit(&mut self) -> bool {
+        if self.exiting {
+            return false;
+        }
+        self.exiting = true;
+        true
+    }
+
+    pub(super) fn set_hovered(&mut self, hovered: bool) -> bool {
+        if self.hovered == hovered || self.exiting {
+            return false;
+        }
+        self.hovered = hovered;
+        true
+    }
+
+    pub(super) fn tick(&mut self, elapsed_ms: u32, application_focused: bool) -> bool {
+        let paused = self.timer_paused(application_focused);
+        super::timer::advance_remaining(&mut self.remaining_ms, elapsed_ms, paused)
+    }
+
+    pub(super) fn mark_focused_display(&mut self) -> bool {
+        if !self.protected_until_focused {
+            return false;
+        }
+        self.protected_until_focused = false;
+        true
+    }
 }
 
 /// Контекстный handle для показа глобальных toast-уведомлений.
@@ -191,28 +125,38 @@ struct Toast {
 pub(crate) struct ToastHandle {
     toasts: Signal<Vec<Toast>>,
     next_id: Signal<u64>,
+    application_focus: ApplicationFocusContext,
 }
 
 impl ToastHandle {
     /// Показывает сообщение об успешном действии.
     pub(crate) fn success(&self, message: impl Into<String>) {
-        self.push_message(ToastKind::Success, message.into());
+        self.push_message(ToastKind::Success, message.into(), false);
     }
 
     /// Показывает предупреждение.
     pub(crate) fn warning(&self, message: impl Into<String>) {
-        self.push_message(ToastKind::Warning, message.into());
+        self.push_message(ToastKind::Warning, message.into(), false);
     }
 
     /// Показывает сообщение об ошибке.
     pub(crate) fn error(&self, message: impl Into<String>) {
-        self.push_message(ToastKind::Error, message.into());
+        self.push_message(ToastKind::Error, message.into(), false);
+    }
+
+    /// Показывает причину завершения сеанса и сохраняет её до возврата фокуса.
+    pub(crate) fn session_error(&self, message: impl Into<String>) {
+        self.push(
+            ToastKind::Error,
+            ToastPayload::Message(message.into()),
+            true,
+        );
     }
 
     /// Показывает информационное сообщение.
     #[allow(dead_code)]
     pub(crate) fn info(&self, message: impl Into<String>) {
-        self.push_message(ToastKind::Info, message.into());
+        self.push_message(ToastKind::Info, message.into(), false);
     }
 
     /// Показывает постоянное уведомление о доступном обновлении.
@@ -221,14 +165,19 @@ impl ToastHandle {
         self.push(
             ToastKind::UpdateAvailable,
             ToastPayload::UpdateAvailable(toast),
+            false,
         );
     }
 
-    fn push_message(&self, kind: ToastKind, message: String) {
-        self.push(kind, ToastPayload::Message(message));
+    fn push_message(&self, kind: ToastKind, message: String, protected_until_focused: bool) {
+        self.push(
+            kind,
+            ToastPayload::Message(message),
+            protected_until_focused,
+        );
     }
 
-    fn push(&self, kind: ToastKind, payload: ToastPayload) {
+    fn push(&self, kind: ToastKind, payload: ToastPayload, protected_until_focused: bool) {
         let mut next_id = self.next_id;
         let id = next_id() + 1;
         next_id.set(id);
@@ -243,19 +192,29 @@ impl ToastHandle {
             kind,
             payload,
             exiting: false,
+            hovered: false,
+            remaining_ms: super::timer::TOAST_TTL_MS,
+            protected_until_focused: protected_until_focused
+                && !self.application_focus.is_focused(),
         });
-        if next_toasts.len() > MAX_TOASTS {
-            let overflow = next_toasts.len() - MAX_TOASTS;
-            next_toasts.drain(0..overflow);
+        while next_toasts.len() > MAX_TOASTS {
+            let Some(index) = next_toasts
+                .iter()
+                .position(|toast| !toast.protected_until_focused)
+            else {
+                break;
+            };
+            next_toasts.remove(index);
         }
         toasts.set(next_toasts);
         debug!(toast_id = id, kind = ?kind, "queued toast notification");
 
         if !kind.persistent() {
-            spawn(async move {
-                sleep_ms(TOAST_TTL_MS).await;
-                begin_dismiss_toast(&mut toasts, id);
-            });
+            spawn(super::timer::run_toast_countdown(
+                toasts,
+                id,
+                self.application_focus,
+            ));
         }
     }
 }
@@ -265,7 +224,12 @@ impl ToastHandle {
 pub(crate) fn ToastProvider(children: Element) -> Element {
     let toasts = use_signal(Vec::<Toast>::new);
     let next_id = use_signal(|| 0_u64);
-    let handle = ToastHandle { toasts, next_id };
+    let application_focus = use_context::<ApplicationFocusContext>();
+    let handle = ToastHandle {
+        toasts,
+        next_id,
+        application_focus,
+    };
     use_context_provider(move || handle);
 
     rsx! {
@@ -273,28 +237,38 @@ pub(crate) fn ToastProvider(children: Element) -> Element {
         div {
             class: "pointer-events-none fixed inset-x-0 top-3 z-[1100] flex flex-col items-center gap-2 px-3 sm:inset-x-auto sm:right-4 sm:top-4 sm:w-[420px] sm:items-stretch sm:px-0",
             for toast in toasts() {
-                {render_toast(toast, toasts)}
+                {render_toast(toast, toasts, application_focus.is_focused())}
             }
         }
     }
 }
 
-fn render_toast(toast: Toast, toasts: Signal<Vec<Toast>>) -> Element {
+fn render_toast(toast: Toast, toasts: Signal<Vec<Toast>>, application_focused: bool) -> Element {
     match toast.payload.clone() {
-        ToastPayload::Message(message) => render_message_toast(toast, message, toasts),
+        ToastPayload::Message(message) => {
+            render_message_toast(toast, message, toasts, application_focused)
+        }
         ToastPayload::UpdateAvailable(update) => {
             render_update_available_toast(toast, update, toasts)
         }
     }
 }
 
-fn render_message_toast(toast: Toast, message: String, mut toasts: Signal<Vec<Toast>>) -> Element {
+fn render_message_toast(
+    toast: Toast,
+    message: String,
+    mut toasts: Signal<Vec<Toast>>,
+    _application_focused: bool,
+) -> Element {
+    let progress_scale = toast.remaining_ms as f64 / super::timer::TOAST_TTL_MS as f64;
     rsx! {
         article {
             key: "{toast.id}",
             role: toast.kind.role(),
             "aria-live": toast.kind.live_region(),
             class: toast_class(toast.exiting),
+            onmouseenter: move |_| super::timer::set_toast_hovered(&mut toasts, toast.id, true),
+            onmouseleave: move |_| super::timer::set_toast_hovered(&mut toasts, toast.id, false),
             div { class: "mt-1 flex h-5 w-5 shrink-0 items-center justify-center",
                 span { class: "h-2.5 w-2.5 rounded-full {toast.kind.accent_class()}" }
             }
@@ -306,11 +280,14 @@ fn render_message_toast(toast: Toast, message: String, mut toasts: Signal<Vec<To
                 r#type: "button",
                 "aria-label": "Закрыть уведомление",
                 class: "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[18px] leading-none text-zinc-500 transition hover:bg-white/5 hover:text-zinc-100",
-                onclick: move |_| begin_dismiss_toast(&mut toasts, toast.id),
+                onclick: move |_| super::timer::begin_dismiss_toast(&mut toasts, toast.id),
                 "×"
             }
             if !toast.kind.persistent() {
-                span { class: "toast-progress absolute bottom-0 left-0 h-px {toast.kind.accent_class()}" }
+                span {
+                    class: "toast-progress absolute bottom-0 left-0 h-px {toast.kind.accent_class()}",
+                    style: "transform: scaleX({progress_scale});"
+                }
             }
         }
     }
@@ -355,7 +332,7 @@ fn render_update_available_toast(
                     class: "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[18px] leading-none text-zinc-500 transition hover:bg-white/5 hover:text-zinc-100",
                     onclick: move |_| {
                         (on_quick_dismiss.as_ref())();
-                        begin_dismiss_toast(&mut toasts, toast.id);
+                        super::timer::begin_dismiss_toast(&mut toasts, toast.id);
                     },
                     "×"
                 }
@@ -386,7 +363,7 @@ fn render_update_available_toast(
                         class: "flex h-9 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900/80 px-3 text-[12px] font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-900",
                         onclick: move |_| {
                             (on_defer.as_ref())(selected_deferral_value.clone());
-                            begin_dismiss_toast(&mut toasts, toast.id);
+                            super::timer::begin_dismiss_toast(&mut toasts, toast.id);
                         },
                         "Позже"
                     }
@@ -432,36 +409,4 @@ fn set_update_deferral_value(toasts: &mut Signal<Vec<Toast>>, id: u64, value: St
 
     update.selected_deferral_value = value;
     toasts.set(next_toasts);
-}
-
-fn begin_dismiss_toast(toasts: &mut Signal<Vec<Toast>>, id: u64) {
-    let mut next_toasts = toasts();
-    let Some(toast) = next_toasts.iter_mut().find(|toast| toast.id == id) else {
-        return;
-    };
-    if toast.exiting {
-        return;
-    }
-
-    toast.exiting = true;
-    toasts.set(next_toasts);
-    debug!(toast_id = id, "dismissing toast notification");
-
-    let mut toasts = *toasts;
-    spawn(async move {
-        sleep_ms(TOAST_EXIT_MS).await;
-        remove_toast(&mut toasts, id);
-    });
-}
-
-fn remove_toast(toasts: &mut Signal<Vec<Toast>>, id: u64) {
-    let mut next_toasts = toasts();
-    let before = next_toasts.len();
-    next_toasts.retain(|toast| toast.id != id);
-    if before == next_toasts.len() {
-        return;
-    }
-
-    toasts.set(next_toasts);
-    debug!(toast_id = id, "removed toast notification");
 }

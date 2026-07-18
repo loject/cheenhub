@@ -79,14 +79,6 @@ pub(crate) fn NotificationsProvider(children: Element) -> Element {
     rsx! { {children} }
 }
 
-/// Android Activity считается сфокусированной только пока её native lifecycle помечает foreground.
-///
-/// Social read-state на mobile обновляется через активный UI, поэтому shared-код не должен
-/// подтверждать фокус с помощью desktop/browser API.
-pub(crate) fn application_is_focused() -> bool {
-    false
-}
-
 #[cfg(target_os = "android")]
 async fn register_android_installation() {
     match request_notification_permission().await {

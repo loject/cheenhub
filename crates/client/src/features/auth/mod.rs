@@ -19,3 +19,4 @@ pub(crate) use pages::forgot_password_page::ForgotPasswordPage;
 pub(crate) use pages::login_page::LoginPage;
 pub(crate) use pages::register_page::RegisterPage;
 pub(crate) use pages::reset_password_page::ResetPasswordPage;
+pub(crate) use refresh::SessionEnd;

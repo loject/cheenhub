@@ -108,7 +108,6 @@
 
   .toast-progress {
     transform-origin: left center;
-    animation: toast-progress 4200ms linear forwards;
     opacity: 0.9;
   }
 

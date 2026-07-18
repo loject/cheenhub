@@ -3,16 +3,19 @@
 use std::sync::Arc;
 
 use cheenhub_contracts::rest::{
-    LoginRequest, OAuthRegistrationRequest, PasswordResetConfirmRequest, PasswordResetRequest,
-    RegisterRequest,
+    LoginRequest, LogoutRequest, OAuthRegistrationRequest, PasswordResetConfirmRequest,
+    PasswordResetRequest, RefreshRequest, RegisterRequest,
 };
 use chrono::{Duration, Utc};
 
 use super::{
-    confirm_password_reset, login, me, register, register_with_google_oauth, request_password_reset,
+    confirm_password_reset, login, logout, me, refresh_with_user_agent, register,
+    register_with_google_oauth, request_password_reset,
 };
 use crate::features::auth::email::tests::TestAuthMailer;
+use crate::features::auth::error::AuthError;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
+use crate::features::auth::infrastructure::RefreshReuseOutcome;
 use crate::features::auth::security::{keys::AuthKeys, refresh_token};
 use crate::features::servers::infrastructure::InMemoryServerStore;
 use crate::features::social::infrastructure::InMemorySocialStore;
@@ -25,6 +28,111 @@ mod nickname;
 mod oauth;
 mod password;
 mod sessions;
+
+#[tokio::test]
+async fn concurrent_refresh_preserves_winning_rotation() {
+    let state = state();
+    let auth = registered_user(&state, "refresh_race", "refresh-race@example.com").await;
+    let request = RefreshRequest {
+        refresh_token: auth.refresh_token.clone(),
+    };
+
+    let (first, second) = tokio::join!(
+        refresh_with_user_agent(&state, request.clone(), None),
+        refresh_with_user_agent(&state, request, None),
+    );
+    let (winner, loser) = match (first, second) {
+        (Ok(winner), Err(loser)) | (Err(loser), Ok(winner)) => (winner, loser),
+        outcome => panic!("expected one refresh winner and one loser, got {outcome:?}"),
+    };
+
+    assert!(matches!(loser, AuthError::RefreshRotationInProgress(_)));
+    refresh_with_user_agent(
+        &state,
+        RefreshRequest {
+            refresh_token: winner.refresh_token,
+        },
+        None,
+    )
+    .await
+    .expect("winning refresh chain should remain active");
+}
+
+#[tokio::test]
+async fn explicitly_revoked_refresh_is_not_reported_as_reuse() {
+    let state = state();
+    let auth = registered_user(&state, "revoked_refresh", "revoked-refresh@example.com").await;
+    logout(
+        &state,
+        LogoutRequest {
+            refresh_token: auth.refresh_token.clone(),
+        },
+    )
+    .await
+    .expect("logout should revoke session");
+
+    let error = refresh_with_user_agent(
+        &state,
+        RefreshRequest {
+            refresh_token: auth.refresh_token,
+        },
+        None,
+    )
+    .await
+    .expect_err("revoked refresh must fail");
+
+    assert!(matches!(
+        error,
+        AuthError::RefreshRejected {
+            reason: crate::features::auth::error::RefreshRejection::SessionRevoked,
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn refresh_replay_outside_grace_revokes_session() {
+    let state = state();
+    let auth = registered_user(&state, "refresh_replay", "refresh-replay@example.com").await;
+    let rotated = refresh_with_user_agent(
+        &state,
+        RefreshRequest {
+            refresh_token: auth.refresh_token.clone(),
+        },
+        None,
+    )
+    .await
+    .expect("first refresh should rotate token");
+    let detection_time = Utc::now() + Duration::seconds(10);
+
+    let outcome = state
+        .auth_store
+        .revoke_session_on_refresh_reuse(
+            &refresh_token::hash(&auth.refresh_token),
+            detection_time,
+            detection_time - Duration::seconds(5),
+        )
+        .await
+        .expect("reuse detection should succeed");
+    assert_eq!(outcome, RefreshReuseOutcome::ReusedAndRevoked);
+
+    let error = refresh_with_user_agent(
+        &state,
+        RefreshRequest {
+            refresh_token: rotated.refresh_token,
+        },
+        None,
+    )
+    .await
+    .expect_err("reuse must revoke the winning refresh chain");
+    assert!(matches!(
+        error,
+        AuthError::RefreshRejected {
+            reason: crate::features::auth::error::RefreshRejection::SessionRevoked,
+            ..
+        }
+    ));
+}
 
 #[tokio::test]
 async fn password_reset_request_sends_email_for_existing_user() {

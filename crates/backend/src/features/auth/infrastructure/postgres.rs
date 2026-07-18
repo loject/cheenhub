@@ -224,7 +224,7 @@ impl AuthStore for PostgresAuthStore {
         user_agent: Option<&str>,
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<super::RotateRefreshOutcome> {
         super::postgres_refresh::rotate_refresh(
             &self.database,
             old_refresh_id,
@@ -249,9 +249,15 @@ impl AuthStore for PostgresAuthStore {
         &self,
         token_hash: &str,
         now: DateTime<Utc>,
-    ) -> anyhow::Result<bool> {
-        super::postgres_refresh::revoke_session_on_refresh_reuse(&self.database, token_hash, now)
-            .await
+        concurrent_rotation_after: DateTime<Utc>,
+    ) -> anyhow::Result<super::RefreshReuseOutcome> {
+        super::postgres_refresh::revoke_session_on_refresh_reuse(
+            &self.database,
+            token_hash,
+            now,
+            concurrent_rotation_after,
+        )
+        .await
     }
 
     async fn session_is_active(

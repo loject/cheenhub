@@ -74,6 +74,8 @@ pub(in crate::features::auth::infrastructure) struct InMemoryRefreshToken {
     pub(in crate::features::auth::infrastructure) token_hash: String,
     /// Expiration timestamp.
     pub(in crate::features::auth::infrastructure) expires_at: DateTime<Utc>,
+    /// Rotation timestamp.
+    pub(in crate::features::auth::infrastructure) rotated_at: Option<DateTime<Utc>>,
     /// Revocation timestamp.
     pub(in crate::features::auth::infrastructure) revoked_at: Option<DateTime<Utc>>,
 }

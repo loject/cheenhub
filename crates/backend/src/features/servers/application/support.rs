@@ -178,6 +178,8 @@ pub(super) fn map_auth_error(error: AuthError) -> ServerError {
         AuthError::BadRequest(message) | AuthError::Unauthorized(message) => {
             ServerError::Unauthorized(message)
         }
+        AuthError::RefreshRejected { message, .. }
+        | AuthError::RefreshRotationInProgress(message) => ServerError::Unauthorized(message),
         AuthError::Conflict(message) | AuthError::RateLimited(message) => {
             ServerError::BadRequest(message)
         }

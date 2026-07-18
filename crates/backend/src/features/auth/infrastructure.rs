@@ -63,6 +63,28 @@ pub(crate) enum UpdateUserNicknameError {
     Storage(anyhow::Error),
 }
 
+/// Результат атомарной попытки ротации refresh-токена.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RotateRefreshOutcome {
+    /// Старый токен потреблён, новый токен создан.
+    Rotated,
+    /// Старый токен уже потреблён, отозван или больше не принадлежит активной сессии.
+    AlreadyConsumed,
+}
+
+/// Результат проверки неактивного refresh-токена на повторное использование.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RefreshReuseOutcome {
+    /// Токен неизвестен либо не является ранее ротированным токеном.
+    NotDetected,
+    /// Токен был ротирован совсем недавно конкурентным запросом; сессия сохранена.
+    ConcurrentRotation,
+    /// Токен отозван обычным завершением сессии и не является доказательством reuse.
+    SessionRevoked,
+    /// Токен повторно использован за пределами защитного окна; вся сессия отозвана.
+    ReusedAndRevoked,
+}
+
 /// Граница хранилища аутентификации.
 #[async_trait]
 pub(crate) trait AuthStore: Send + Sync {
@@ -159,7 +181,7 @@ pub(crate) trait AuthStore: Send + Sync {
         user_agent: Option<&str>,
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<()>;
+    ) -> anyhow::Result<RotateRefreshOutcome>;
 
     /// Отзывает refresh-токен и принадлежащую ему сессию.
     async fn revoke_refresh_session(
@@ -179,7 +201,8 @@ pub(crate) trait AuthStore: Send + Sync {
         &self,
         token_hash: &str,
         now: DateTime<Utc>,
-    ) -> anyhow::Result<bool>;
+        concurrent_rotation_after: DateTime<Utc>,
+    ) -> anyhow::Result<RefreshReuseOutcome>;
 
     /// Возвращает, активна ли сессия сейчас.
     async fn session_is_active(

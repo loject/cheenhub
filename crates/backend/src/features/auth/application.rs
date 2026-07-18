@@ -21,6 +21,7 @@ use uuid::Uuid;
 mod avatar;
 mod google;
 mod oauth;
+mod refresh;
 mod sessions;
 
 const NICKNAME_CHANGE_COOLDOWN_DAYS: i64 = 7;
@@ -211,63 +212,7 @@ pub(crate) async fn refresh_with_user_agent(
     request: RefreshRequest,
     user_agent: Option<String>,
 ) -> Result<AuthResponse, AuthError> {
-    let old_hash = refresh_token::hash(&request.refresh_token);
-    let now = Utc::now();
-    let Some(refresh_session) = state
-        .auth_store
-        .find_active_refresh(&old_hash, now)
-        .await
-        .map_err(AuthError::Internal)?
-    else {
-        // Возможна кража токена: если предъявлен уже ротированный/отозванный токен,
-        // отзываем всю сессию целиком, а не просто отвечаем отказом.
-        if state
-            .auth_store
-            .revoke_session_on_refresh_reuse(&old_hash, now)
-            .await
-            .map_err(AuthError::Internal)?
-        {
-            tracing::warn!("detected refresh token reuse; revoked the entire session");
-        } else {
-            tracing::warn!("rejected inactive or unknown refresh token");
-        }
-        return Err(expired_session());
-    };
-
-    let next_refresh = refresh_token::generate();
-    let next_hash = refresh_token::hash(&next_refresh);
-    let session_expires_at = now + Duration::days(state.refresh_token_lifetime_days);
-
-    state
-        .auth_store
-        .rotate_refresh(
-            &refresh_session.refresh_token_id,
-            &refresh_session.session_id,
-            next_hash,
-            user_agent.as_deref(),
-            now,
-            session_expires_at,
-        )
-        .await
-        .map_err(AuthError::Internal)?;
-
-    tracing::info!(
-        session_id = %refresh_session.session_id,
-        user_id = %refresh_session.user.id,
-        "rotated auth refresh token"
-    );
-
-    Ok(AuthResponse {
-        access_token: jwt::sign_access_token(
-            &state.auth_keys.signing_key,
-            &state.auth_keys.key_id,
-            state.access_token_lifetime_minutes,
-            &refresh_session.user,
-            &refresh_session.session_id,
-        )?,
-        refresh_token: next_refresh,
-        user: auth_user(state, &refresh_session.user),
-    })
+    refresh::execute(state, request, user_agent).await
 }
 
 /// Аннулирует текущую сессию refresh-токена.

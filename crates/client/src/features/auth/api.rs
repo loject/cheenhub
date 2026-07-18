@@ -17,7 +17,7 @@ pub(crate) use super::http::{delete, get, patch, post, put};
 pub(crate) use super::profile_api::{
     change_current_user_password, update_current_user, update_current_user_avatar,
 };
-pub(crate) use super::refresh::{is_retryable_refresh_error, refresh_access_token};
+pub(crate) use super::refresh::refresh_access_token;
 
 /// Регистрирует новую учетную запись и сохраняет возвращенные токены.
 pub(crate) async fn register(request: RegisterRequest) -> Result<AuthUser, String> {
@@ -130,11 +130,6 @@ pub(crate) async fn unlink_account(provider: &str) -> Result<(), String> {
 /// Возвращает, доступна ли локально пара токенов.
 pub(crate) fn has_tokens() -> bool {
     storage::load().is_some()
-}
-
-/// Возвращает, вызвана ли ошибка API неудачным сетевым запросом.
-pub(crate) fn is_network_error(error: &str) -> bool {
-    error == NETWORK_ERROR_MESSAGE
 }
 
 /// Загружает текущего аутентифицированного пользователя, обновляя access token при необходимости.
