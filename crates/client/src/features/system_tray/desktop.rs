@@ -1,8 +1,7 @@
 //! Desktop-реализация системного трея.
 
 use dioxus::desktop::{
-    DesktopContext, WindowCloseBehaviour, icon_from_memory, trayicon, use_tray_menu_event_handler,
-    use_window,
+    WindowCloseBehaviour, icon_from_memory, trayicon, use_muda_event_handler, use_window,
 };
 use dioxus::prelude::*;
 
@@ -43,14 +42,15 @@ pub(crate) fn SystemTrayPlatformEffects(minimize_to_tray_on_close: Signal<bool>)
         );
     });
 
-    use_tray_menu_event_handler(move |event| match event.id().as_ref() {
+    // Dioxus/muda передаёт события меню трея через общий обработчик меню.
+    use_muda_event_handler(move |event| match event.id().as_ref() {
         OPEN_MENU_ID => {
             tray_window.set_visible(true);
             tray_window.set_focus();
             info!("opened CheenHub window from system tray menu");
         }
         QUIT_MENU_ID => {
-            quit_from_system_tray(&tray_window);
+            quit_from_system_tray();
         }
         _ => {}
     });
@@ -70,20 +70,7 @@ fn build_tray_menu() -> trayicon::DioxusTrayMenu {
     menu
 }
 
-fn quit_from_system_tray(window: &DesktopContext) {
-    window.set_close_behavior(WindowCloseBehaviour::WindowCloses);
-    window.close();
-    info!("requested CheenHub shutdown from system tray menu");
-
-    if let Err(error) = std::thread::Builder::new()
-        .name("tray-exit-watchdog".to_owned())
-        .spawn(|| {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-            error!("desktop event loop did not finish tray exit; aborting process");
-            std::process::abort();
-        })
-    {
-        error!(%error, "failed to start tray exit watchdog; aborting process");
-        std::process::abort();
-    }
+fn quit_from_system_tray() -> ! {
+    info!(exit_code = 0, "exiting CheenHub from system tray menu");
+    std::process::exit(0);
 }
