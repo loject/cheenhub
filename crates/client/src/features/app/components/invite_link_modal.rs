@@ -3,6 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::features::app::api;
+use crate::features::clipboard::copy_text;
 use crate::features::runtime::sleep_ms;
 use crate::features::toast::ToastHandle;
 
@@ -165,33 +166,27 @@ pub(crate) fn InviteLinkModal(
                                     let link_to_copy = link.clone();
                                     is_copied.set(false);
                                     status.set(String::new());
-                                    match clipboard_copy(link_to_copy) {
-                                        Ok(copy) => {
-                                            spawn(async move {
-                                                match copy.await {
-                                                    Ok(()) => {
-                                                        let next_generation = copy_generation() + 1;
-                                                        copy_generation.set(next_generation);
-                                                        is_copied.set(true);
-                                                        toast.success("Ссылка скопирована.");
-                                                        sleep_ms(1400).await;
+                                    spawn(async move {
+                                        match copy_text(link_to_copy).await {
+                                            Ok(()) => {
+                                                let next_generation = copy_generation() + 1;
+                                                copy_generation.set(next_generation);
+                                                is_copied.set(true);
+                                                toast.success("Ссылка скопирована.");
+                                                info!("copied generated server invite link");
+                                                sleep_ms(1400).await;
 
-                                                        if copy_generation() == next_generation {
-                                                            is_copied.set(false);
-                                                        }
-                                                    }
-                                                    Err(error) => {
-                                                        toast.error(error.clone());
-                                                        status.set(error);
-                                                    }
+                                                if copy_generation() == next_generation {
+                                                    is_copied.set(false);
                                                 }
-                                            });
+                                            }
+                                            Err(error) => {
+                                                warn!(%error, "failed to copy generated server invite link");
+                                                toast.error(error.clone());
+                                                status.set(error);
+                                            }
                                         }
-                                        Err(error) => {
-                                            toast.error(error.clone());
-                                            status.set(error);
-                                        }
-                                    }
+                                    });
                                 },
                                 span { class: "absolute inset-0 flex items-center justify-center transition-[opacity,transform] duration-200 ease-out {copy_icon_class}", style: copy_icon_style, "aria-hidden": "true",
                                     svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24",
@@ -318,25 +313,4 @@ async fn current_invite_url(code: String) -> Result<String, String> {
         "{}/invite/{compact_code}",
         origin.trim_end_matches('/')
     ))
-}
-
-fn clipboard_copy(
-    link: String,
-) -> Result<impl std::future::Future<Output = Result<(), String>>, String> {
-    let eval = document::eval(
-        r#"
-        const link = await dioxus.recv();
-        await navigator.clipboard.writeText(link);
-        return true;
-        "#,
-    );
-    eval.send(link)
-        .map_err(|_| "Не удалось подготовить копирование.".to_owned())?;
-
-    Ok(async move {
-        eval.join::<bool>()
-            .await
-            .map(|_| ())
-            .map_err(|_| "Браузер не разрешил скопировать ссылку.".to_owned())
-    })
 }

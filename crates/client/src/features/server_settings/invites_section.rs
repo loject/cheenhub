@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use super::invite_list_item::{InviteListItem, InviteListItemAction};
 use super::invites_data::{InviteLink, InviteStatus, invite_from_realtime};
 use super::realtime;
+use crate::features::clipboard::copy_text;
 use crate::features::realtime::RealtimeHandle;
 use crate::features::toast::ToastHandle;
 
@@ -193,37 +194,29 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                                     move |action| {
                                     match action {
                                         InviteListItemAction::CopyInvite { invite_code } => {
-                                            match clipboard_copy_invite_link(invite_code.clone()) {
-                                                Ok(copy) => {
-                                                    spawn(async move {
-                                                        match copy.await {
-                                                            Ok(()) => {
-                                                                toast.success("Ссылка приглашения скопирована.");
-                                                                info!(
-                                                                    invite_code = %invite_code,
-                                                                    "copied server invite link in settings ui"
-                                                                );
-                                                            }
-                                                            Err(error) => {
-                                                                toast.error(error.clone());
-                                                                warn!(
-                                                                    %error,
-                                                                    invite_code = %invite_code,
-                                                                    "failed to copy server invite link in settings ui"
-                                                                );
-                                                            }
-                                                        }
-                                                    });
-                                                }
-                                                Err(error) => {
+                                            spawn(async move {
+                                                let result = match current_invite_url(&invite_code).await {
+                                                    Ok(link) => copy_text(link).await,
+                                                    Err(error) => Err(error),
+                                                };
+                                                match result {
+                                                    Ok(()) => {
+                                                        toast.success("Ссылка приглашения скопирована.");
+                                                        info!(
+                                                            invite_code = %invite_code,
+                                                            "copied server invite link in settings ui"
+                                                        );
+                                                    }
+                                                    Err(error) => {
                                                     toast.error(error.clone());
                                                     warn!(
                                                         %error,
                                                         invite_code = %invite_code,
-                                                        "failed to prepare server invite link copying in settings ui"
+                                                        "failed to copy server invite link in settings ui"
                                                     );
+                                                    }
                                                 }
-                                            }
+                                            });
                                         }
                                         InviteListItemAction::RemoveInvite { invite_id, invite_code } => {
                                             if pending_action().is_some() {
@@ -427,25 +420,14 @@ fn refresh_button_class(disabled: bool) -> &'static str {
     }
 }
 
-fn clipboard_copy_invite_link(
-    code: String,
-) -> Result<impl std::future::Future<Output = Result<(), String>>, String> {
+async fn current_invite_url(code: &str) -> Result<String, String> {
+    let origin = document::eval("return window.location.origin;")
+        .join::<String>()
+        .await
+        .map_err(|_| "Не удалось определить адрес приложения.".to_owned())?;
     let compact_code = code.replace('-', "");
-    let eval = document::eval(
-        r#"
-        const compactCode = await dioxus.recv();
-        const origin = window.location.origin.replace(/\/$/, "");
-        await navigator.clipboard.writeText(`${origin}/invite/${compactCode}`);
-        return true;
-        "#,
-    );
-    eval.send(compact_code)
-        .map_err(|_| "Не удалось подготовить копирование.".to_owned())?;
-
-    Ok(async move {
-        eval.join::<bool>()
-            .await
-            .map(|_| ())
-            .map_err(|_| "Браузер не разрешил скопировать ссылку.".to_owned())
-    })
+    Ok(format!(
+        "{}/invite/{compact_code}",
+        origin.trim_end_matches('/')
+    ))
 }
