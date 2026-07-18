@@ -27,6 +27,7 @@ impl From<dm_messages::Model> for DmMessage {
             seq: row.seq,
             sender_user_id: row.sender_user_id,
             body: row.body,
+            image_id: row.image_id,
             created_at: row.created_at,
             updated_at: row.updated_at,
             deleted_at: row.deleted_at,

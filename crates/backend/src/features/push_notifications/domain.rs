@@ -4,6 +4,17 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+const IMAGE_MESSAGE_PREVIEW: &str = "Изображение";
+
+/// Возвращает непустой пользовательский preview сообщения.
+pub(crate) fn direct_message_preview(body: &str, has_image: bool) -> String {
+    if body.trim().is_empty() && has_image {
+        IMAGE_MESSAGE_PREVIEW.to_owned()
+    } else {
+        body.to_owned()
+    }
+}
+
 /// Содержимое push-уведомления о новом личном сообщении.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct DirectMessagePush {
@@ -35,7 +46,7 @@ impl DirectMessagePush {
         message_seq: i64,
         sender_user_id: Uuid,
         sender_nickname: &str,
-        body: &str,
+        body_preview: &str,
         created_at: DateTime<Utc>,
     ) -> Self {
         Self {
@@ -46,7 +57,7 @@ impl DirectMessagePush {
             message_seq: message_seq.to_string(),
             sender_user_id: sender_user_id.to_string(),
             sender_nickname: sender_nickname.chars().take(100).collect(),
-            body_preview: body.chars().take(500).collect(),
+            body_preview: body_preview.chars().take(500).collect(),
             created_at: created_at.to_rfc3339(),
         }
     }
@@ -80,7 +91,7 @@ pub(crate) struct PendingDelivery {
 
 #[cfg(test)]
 mod tests {
-    use super::DirectMessagePush;
+    use super::{DirectMessagePush, direct_message_preview};
     use chrono::{TimeZone, Utc};
     use serde_json::json;
     use uuid::Uuid;
@@ -134,5 +145,20 @@ mod tests {
 
         assert_eq!(payload.sender_nickname.chars().count(), 100);
         assert_eq!(payload.body_preview.chars().count(), 500);
+    }
+
+    #[test]
+    fn image_only_message_has_non_empty_preview() {
+        let payload = DirectMessagePush::new(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            1,
+            Uuid::new_v4(),
+            "Alice",
+            &direct_message_preview("", true),
+            Utc::now(),
+        );
+
+        assert_eq!(payload.body_preview, "Изображение");
     }
 }

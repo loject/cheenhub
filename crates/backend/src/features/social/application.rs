@@ -1,5 +1,6 @@
 //! Сценарии приложения для друзей и личных сообщений.
 
+mod attachments;
 mod direct_messages;
 
 use cheenhub_contracts::realtime::SocialChangeReason;
@@ -19,6 +20,7 @@ use crate::features::social::support::{
 };
 use crate::state::AppState;
 
+pub(crate) use attachments::{attachment_summary, dm_image, upload_dm_image};
 pub(crate) use direct_messages::{
     list_dm_conversations, list_dm_messages, mark_dm_conversation_read, open_dm_conversation,
     send_dm_message,

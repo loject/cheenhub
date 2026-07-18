@@ -28,7 +28,8 @@ pub(crate) const CHAT_STATUS_CLASS: &str =
 pub(crate) use message_date::{friendly_message_date, message_day_key};
 pub(crate) use message_date_divider::ChatMessageDateDivider;
 pub(crate) use message_group::ChatMessageGroup;
-pub(crate) use messages::group_consecutive_messages;
+pub(crate) use message_item::ChatMessageItem;
+pub(crate) use messages::{group_consecutive_messages, is_appearing_message};
 pub(crate) use scroll::{
     ScrollCommand, apply_scroll_command, capture_scroll_position, update_near_bottom_state,
 };

@@ -14,17 +14,7 @@ use crate::features::runtime::sleep_duration;
 use crate::features::text_chat::{ScrollCommand, capture_scroll_position};
 
 use super::api;
-
-pub(super) struct MessageRefreshSignals {
-    pub(super) messages: Signal<Vec<DmMessageSummary>>,
-    pub(super) conversations: Signal<Vec<DmConversationSummary>>,
-    pub(super) friends: Signal<Vec<FriendSummary>>,
-    pub(super) appearing_message_ids: Signal<Vec<String>>,
-    pub(super) removing_message_ids: Signal<Vec<String>>,
-    pub(super) status: Signal<String>,
-    pub(super) is_near_bottom: Signal<bool>,
-    pub(super) pending_scroll: Signal<Option<ScrollCommand>>,
-}
+use super::direct_message_state::DirectMessageState;
 
 pub(super) fn load_social_overview(
     mut friends: Signal<Vec<FriendSummary>>,
@@ -68,130 +58,76 @@ pub(super) fn load_social_overview(
     });
 }
 
-pub(super) fn refresh_conversations(
-    mut conversations: Signal<Vec<DmConversationSummary>>,
-    mut status: Signal<String>,
-) {
-    spawn(async move {
-        match api::list_dm_conversations().await {
-            Ok(next_conversations) => {
-                debug!(
-                    conversation_count = next_conversations.len(),
-                    total_unread_count = next_conversations
-                        .iter()
-                        .map(|conversation| conversation.unread_count)
-                        .sum::<i64>(),
-                    "refreshed direct message conversations"
-                );
-                conversations.set(next_conversations);
-            }
-            Err(error) => {
-                warn!(%error, "failed to refresh direct message conversations");
-                status.set(error);
-            }
-        }
-    });
-}
-
-pub(super) fn refresh_friends(mut friends: Signal<Vec<FriendSummary>>, mut status: Signal<String>) {
-    spawn(async move {
-        match api::list_friends().await {
-            Ok(next_friends) => {
-                debug!(
-                    friend_count = next_friends.len(),
-                    total_unread_count = next_friends
-                        .iter()
-                        .map(|friend| friend.unread_count)
-                        .sum::<i64>(),
-                    "refreshed friends for direct unread counters"
-                );
-                friends.set(next_friends);
-            }
-            Err(error) => {
-                warn!(%error, "failed to refresh friends for direct unread counters");
-                status.set(error);
-            }
-        }
-    });
-}
-
 pub(super) fn load_messages(
     conversation_id: String,
-    mut messages: Signal<Vec<DmMessageSummary>>,
-    conversations: Signal<Vec<DmConversationSummary>>,
-    friends: Signal<Vec<FriendSummary>>,
-    mut status: Signal<String>,
-    mut is_loading_messages: Signal<bool>,
-    mut has_more: Signal<bool>,
-    mut pending_scroll: Signal<Option<ScrollCommand>>,
+    mut state: DirectMessageState,
+    on_overview_changed: Callback<()>,
 ) {
-    is_loading_messages.set(true);
-    status.set(String::new());
+    state.is_loading.set(true);
+    state.status.set(String::new());
     spawn(async move {
         match api::list_dm_messages(&conversation_id, None).await {
             Ok(response) => {
-                has_more.set(response.has_more);
+                state.has_more.set(response.has_more);
                 let next_messages = response.messages;
                 mark_latest_message_read_if_focused(
                     &conversation_id,
                     &next_messages,
-                    conversations,
-                    friends,
+                    on_overview_changed,
                 )
                 .await;
-                messages.set(next_messages);
-                pending_scroll.set(Some(ScrollCommand::Bottom));
+                state.messages.set(next_messages);
+                state.pending_scroll.set(Some(ScrollCommand::Bottom));
             }
-            Err(error) => status.set(error),
+            Err(error) => state.status.set(error),
         }
-        is_loading_messages.set(false);
+        state.is_loading.set(false);
     });
 }
 
-pub(super) fn load_older_messages(
-    conversation_id: String,
-    mut messages: Signal<Vec<DmMessageSummary>>,
-    mut has_more: Signal<bool>,
-    mut older_loading: Signal<bool>,
-    mut status: Signal<String>,
-    list_element: Signal<Option<std::rc::Rc<MountedData>>>,
-    mut pending_scroll: Signal<Option<ScrollCommand>>,
-) {
-    if older_loading() || !has_more() {
+pub(super) fn load_older_messages(conversation_id: String, mut state: DirectMessageState) {
+    if (state.is_loading_older)() || !(state.has_more)() {
         return;
     }
-    let Some(before_message_id) = messages().first().map(|message| message.id.clone()) else {
+    let Some(before_message_id) = (state.messages)().first().map(|message| message.id.clone())
+    else {
         return;
     };
-    older_loading.set(true);
+    state.is_loading_older.set(true);
     spawn(async move {
-        let before_scroll = match list_element.cloned() {
+        let before_scroll = match state.list_element.cloned() {
             Some(element) => capture_scroll_position(element).await,
             None => None,
         };
         match api::list_dm_messages(&conversation_id, Some(&before_message_id)).await {
             Ok(response) => {
                 let mut next = response.messages;
-                next.extend(messages());
+                next.extend((state.messages)());
                 next.sort_by(|left, right| left.created_at.cmp(&right.created_at));
                 next.dedup_by(|left, right| left.id == right.id);
-                messages.set(next);
-                has_more.set(response.has_more);
+                state.messages.set(next);
+                state.has_more.set(response.has_more);
                 if let Some((offset_y, height)) = before_scroll {
-                    pending_scroll.set(Some(ScrollCommand::Preserve { offset_y, height }));
+                    state
+                        .pending_scroll
+                        .set(Some(ScrollCommand::Preserve { offset_y, height }));
                 }
                 debug!(conversation_id, "loaded older direct messages");
             }
             Err(error) => {
                 warn!(conversation_id, %error, "failed to load older direct messages");
-                status.set(error);
+                state.status.set(error);
             }
         }
-        older_loading.set(false);
+        state.is_loading_older.set(false);
     });
 }
 
-pub(super) fn refresh_messages(conversation_id: String, mut signals: MessageRefreshSignals) {
+pub(super) fn refresh_messages(
+    conversation_id: String,
+    mut state: DirectMessageState,
+    on_overview_changed: Callback<()>,
+) {
     spawn(async move {
         match api::list_dm_messages(&conversation_id, None).await {
             Ok(response) => {
@@ -202,21 +138,20 @@ pub(super) fn refresh_messages(conversation_id: String, mut signals: MessageRefr
                     "refreshed direct messages"
                 );
                 set_messages_with_motion(
-                    signals.messages,
-                    signals.appearing_message_ids,
-                    signals.removing_message_ids,
+                    state.messages,
+                    state.appearing_message_ids,
+                    state.removing_message_ids,
                     next_messages,
                 );
-                if (signals.is_near_bottom)() && application_is_focused() {
+                if (state.is_near_bottom)() && application_is_focused() {
                     mark_latest_message_read(
                         &conversation_id,
-                        &(signals.messages)(),
-                        signals.conversations,
-                        signals.friends,
+                        &(state.messages)(),
+                        on_overview_changed,
                     )
                     .await;
-                    signals.pending_scroll.set(Some(ScrollCommand::Bottom));
-                } else if (signals.is_near_bottom)() {
+                    state.pending_scroll.set(Some(ScrollCommand::Bottom));
+                } else if (state.is_near_bottom)() {
                     debug!(
                         conversation_id = %conversation_id,
                         "preserved direct message unread state while application is unfocused"
@@ -225,7 +160,7 @@ pub(super) fn refresh_messages(conversation_id: String, mut signals: MessageRefr
             }
             Err(error) => {
                 warn!(conversation_id = %conversation_id, %error, "failed to refresh direct messages");
-                signals.status.set(error);
+                state.status.set(error);
             }
         }
     });
@@ -376,8 +311,7 @@ pub(super) fn relation_label(relation: Option<UserRelationStatus>) -> &'static s
 async fn mark_latest_message_read_if_focused(
     conversation_id: &str,
     messages: &[DmMessageSummary],
-    conversations: Signal<Vec<DmConversationSummary>>,
-    friends: Signal<Vec<FriendSummary>>,
+    on_overview_changed: Callback<()>,
 ) {
     if !application_is_focused() {
         debug!(
@@ -386,40 +320,26 @@ async fn mark_latest_message_read_if_focused(
         );
         return;
     }
-    mark_latest_message_read(conversation_id, messages, conversations, friends).await;
+    mark_latest_message_read(conversation_id, messages, on_overview_changed).await;
 }
 
 async fn mark_latest_message_read(
     conversation_id: &str,
     messages: &[DmMessageSummary],
-    mut conversations: Signal<Vec<DmConversationSummary>>,
-    mut friends: Signal<Vec<FriendSummary>>,
+    on_overview_changed: Callback<()>,
 ) {
     let Some(last_message) = messages.last() else {
         return;
     };
     match api::mark_dm_conversation_read(conversation_id, last_message.id.clone()).await {
         Ok(read_update) => {
-            match api::list_dm_conversations().await {
-                Ok(next_conversations) => conversations.set(next_conversations),
-                Err(error) => {
-                    warn!(%error, "failed to refresh direct conversations after read checkpoint")
-                }
-            }
-            match api::list_friends().await {
-                Ok(next_friends) => {
-                    debug!(
-                        conversation_id = %conversation_id,
-                        conversation_unread_count = read_update.conversation_unread_count,
-                        total_unread_count = read_update.total_unread_count,
-                        "refreshed friends after direct read checkpoint"
-                    );
-                    friends.set(next_friends);
-                }
-                Err(error) => {
-                    warn!(%error, "failed to refresh friends after direct read checkpoint")
-                }
-            }
+            debug!(
+                conversation_id = %conversation_id,
+                conversation_unread_count = read_update.conversation_unread_count,
+                total_unread_count = read_update.total_unread_count,
+                "marked direct conversation read"
+            );
+            on_overview_changed.call(());
         }
         Err(error) => {
             warn!(conversation_id = %conversation_id, %error, "failed to mark direct conversation read")

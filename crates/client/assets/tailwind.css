@@ -1718,6 +1718,10 @@ video {
   margin-left: 1rem;
 }
 
+.ml-auto {
+  margin-left: auto;
+}
+
 .mt-0 {
   margin-top: 0px;
 }
@@ -1950,6 +1954,10 @@ video {
   max-height: 16rem;
 }
 
+.max-h-\[360px\] {
+  max-height: 360px;
+}
+
 .max-h-\[min\(720px\2c calc\(100vh-48px\)\)\] {
   max-height: min(720px,calc(100vh - 48px));
 }
@@ -1972,6 +1980,10 @@ video {
 
 .min-h-16 {
   min-height: 4rem;
+}
+
+.min-h-24 {
+  min-height: 6rem;
 }
 
 .min-h-9 {
@@ -3128,6 +3140,10 @@ video {
 
 .bg-blue-500\/15 {
   background-color: rgb(59 130 246 / 0.15);
+}
+
+.bg-blue-950\/20 {
+  background-color: rgb(23 37 84 / 0.2);
 }
 
 .bg-current {

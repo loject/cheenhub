@@ -111,6 +111,13 @@ pub(crate) trait SocialStore: Send + Sync {
         message_id: &Uuid,
     ) -> anyhow::Result<Option<DmMessage>>;
 
+    /// Находит сообщение диалога, к которому уже прикреплено изображение.
+    async fn dm_message_by_image_id(
+        &self,
+        conversation_id: &Uuid,
+        image_id: &Uuid,
+    ) -> anyhow::Result<Option<DmMessage>>;
+
     /// Возвращает read-state участника диалога.
     async fn conversation_member_state(
         &self,

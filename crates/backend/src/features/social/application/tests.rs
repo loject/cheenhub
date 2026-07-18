@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
+use axum::body::Bytes;
+use image::{ImageBuffer, ImageFormat, Rgba};
+
 use cheenhub_contracts::rest::{
     DmMessageDeliveryStatus, MarkDmConversationReadRequest, OpenDmConversationRequest,
     RegisterRequest, SendDmMessageRequest, SendFriendRequestRequest,
 };
 
 use super::{
-    accept_friend_request, list_dm_conversations, list_dm_messages, list_friends,
+    accept_friend_request, dm_image, list_dm_conversations, list_dm_messages, list_friends,
     mark_dm_conversation_read, open_dm_conversation, send_dm_message, send_friend_request,
+    upload_dm_image,
 };
 use crate::features::auth::application as auth_application;
 use crate::features::auth::email::tests::TestAuthMailer;
@@ -32,6 +36,7 @@ async fn incoming_direct_message_increments_unread_count() {
         &setup.bob_access_token,
         setup.conversation_id.clone(),
         SendDmMessageRequest {
+            image_id: None,
             body: "Привет".to_owned(),
         },
     )
@@ -63,6 +68,7 @@ async fn mark_as_read_advances_seq_once_and_counts_only_incoming_messages() {
         &setup.bob_access_token,
         setup.conversation_id.clone(),
         SendDmMessageRequest {
+            image_id: None,
             body: "Первое входящее".to_owned(),
         },
     )
@@ -74,6 +80,7 @@ async fn mark_as_read_advances_seq_once_and_counts_only_incoming_messages() {
         &setup.alice_access_token,
         setup.conversation_id.clone(),
         SendDmMessageRequest {
+            image_id: None,
             body: "Мой ответ".to_owned(),
         },
     )
@@ -85,6 +92,7 @@ async fn mark_as_read_advances_seq_once_and_counts_only_incoming_messages() {
         &setup.bob_access_token,
         setup.conversation_id.clone(),
         SendDmMessageRequest {
+            image_id: None,
             body: "Второе входящее".to_owned(),
         },
     )
@@ -173,6 +181,7 @@ async fn outgoing_direct_message_is_read_when_recipient_read_seq_reaches_it() {
         &setup.alice_access_token,
         setup.conversation_id.clone(),
         SendDmMessageRequest {
+            image_id: None,
             body: "Проверка галочек".to_owned(),
         },
     )
@@ -216,6 +225,144 @@ async fn outgoing_direct_message_is_read_when_recipient_read_seq_reaches_it() {
         after_read.messages[0].delivery_status,
         Some(DmMessageDeliveryStatus::Read)
     );
+}
+
+#[tokio::test]
+async fn direct_message_image_upload_send_and_load_is_scoped_and_single_use() {
+    let setup = setup_pair().await;
+    let bytes = test_png();
+    let uploaded = upload_dm_image(
+        &setup.state,
+        &setup.alice_access_token,
+        setup.conversation_id.clone(),
+        Bytes::from(bytes.clone()),
+    )
+    .await
+    .expect("image should upload")
+    .image;
+
+    let orphan_error = dm_image(
+        &setup.state,
+        &setup.alice_access_token,
+        setup.conversation_id.clone(),
+        uploaded.id.clone(),
+    )
+    .await
+    .expect_err("unattached image should not be readable");
+    assert!(matches!(
+        orphan_error,
+        crate::features::social::SocialError::NotFound(_)
+    ));
+
+    let sent = send_dm_message(
+        &setup.state,
+        &setup.alice_access_token,
+        setup.conversation_id.clone(),
+        SendDmMessageRequest {
+            body: String::new(),
+            image_id: Some(uploaded.id.clone()),
+        },
+    )
+    .await
+    .expect("image message should send")
+    .message;
+    assert!(sent.body.is_empty());
+    assert_eq!(
+        sent.image.as_ref().map(|image| image.id.as_str()),
+        Some(uploaded.id.as_str())
+    );
+    assert_eq!(
+        crate::features::push_notifications::direct_message_preview(&sent.body, true),
+        "Изображение"
+    );
+
+    let loaded = dm_image(
+        &setup.state,
+        &setup.bob_access_token,
+        setup.conversation_id.clone(),
+        uploaded.id.clone(),
+    )
+    .await
+    .expect("conversation participant should load attached image");
+    assert_eq!(loaded.data.as_deref(), Some(bytes.as_slice()));
+
+    let reused = send_dm_message(
+        &setup.state,
+        &setup.alice_access_token,
+        setup.conversation_id,
+        SendDmMessageRequest {
+            body: String::new(),
+            image_id: Some(uploaded.id),
+        },
+    )
+    .await
+    .expect_err("attached image must not be reusable");
+    assert!(matches!(
+        reused,
+        crate::features::social::SocialError::BadRequest(_)
+    ));
+}
+
+#[tokio::test]
+async fn direct_message_image_is_hidden_from_unrelated_conversation_member() {
+    let setup = setup_pair().await;
+    let charlie = registered_user(&setup.state, "charlie_dm", "charlie-dm@example.com").await;
+    let dave = registered_user(&setup.state, "dave_dm", "dave-dm@example.com").await;
+    let request = send_friend_request(
+        &setup.state,
+        &charlie.access_token,
+        SendFriendRequestRequest {
+            recipient_user_id: dave.user.id.clone(),
+        },
+    )
+    .await
+    .expect("second pair request should send");
+    accept_friend_request(&setup.state, &dave.access_token, request.request.id)
+        .await
+        .expect("second pair request should accept");
+    let foreign_conversation = open_dm_conversation(
+        &setup.state,
+        &charlie.access_token,
+        OpenDmConversationRequest {
+            friend_user_id: dave.user.id.clone(),
+        },
+    )
+    .await
+    .expect("second pair conversation should open")
+    .conversation;
+    let uploaded = upload_dm_image(
+        &setup.state,
+        &charlie.access_token,
+        foreign_conversation.id.clone(),
+        Bytes::from(test_png()),
+    )
+    .await
+    .expect("foreign image should upload")
+    .image;
+    send_dm_message(
+        &setup.state,
+        &charlie.access_token,
+        foreign_conversation.id.clone(),
+        SendDmMessageRequest {
+            body: String::new(),
+            image_id: Some(uploaded.id.clone()),
+        },
+    )
+    .await
+    .expect("foreign image should attach");
+
+    let denied = dm_image(
+        &setup.state,
+        &setup.alice_access_token,
+        foreign_conversation.id,
+        uploaded.id,
+    )
+    .await
+    .expect_err("unrelated user must not load image");
+    assert!(matches!(
+        denied,
+        crate::features::social::SocialError::NotFound(_)
+    ));
 }
 
 async fn conversation_unread(setup: &PairSetup) -> i64 {
@@ -315,6 +462,15 @@ fn state() -> AppState {
         oauth_registration_lifetime_minutes: 15,
         password_reset_token_lifetime_minutes: 30,
     }
+}
+
+fn test_png() -> Vec<u8> {
+    let image = ImageBuffer::from_pixel(2, 2, Rgba([40_u8, 120, 220, 255]));
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut bytes, ImageFormat::Png)
+        .expect("test image should encode");
+    bytes.into_inner()
 }
 
 struct PairSetup {

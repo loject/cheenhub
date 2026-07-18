@@ -78,6 +78,8 @@ pub mod dm_messages {
         pub sender_user_id: Uuid,
         /// Текст сообщения.
         pub body: String,
+        /// Прикреплённое изображение.
+        pub image_id: Option<Uuid>,
         /// Время создания.
         pub created_at: DateTimeUtc,
         /// Время последнего изменения.

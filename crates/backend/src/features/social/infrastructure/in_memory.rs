@@ -244,6 +244,24 @@ impl SocialStore for InMemorySocialStore {
             .cloned())
     }
 
+    async fn dm_message_by_image_id(
+        &self,
+        conversation_id: &Uuid,
+        image_id: &Uuid,
+    ) -> anyhow::Result<Option<DmMessage>> {
+        Ok(self
+            .messages
+            .lock()
+            .map_err(|_| poisoned())?
+            .iter()
+            .find(|row| {
+                row.conversation_id == *conversation_id
+                    && row.image_id == Some(*image_id)
+                    && row.deleted_at.is_none()
+            })
+            .cloned())
+    }
+
     async fn conversation_member_state(
         &self,
         conversation_id: &Uuid,
@@ -362,6 +380,16 @@ impl SocialStore for InMemorySocialStore {
     }
 
     async fn insert_dm_message(&self, message: DmMessage) -> anyhow::Result<DmMessage> {
+        if let Some(image_id) = message.image_id
+            && self
+                .messages
+                .lock()
+                .map_err(|_| poisoned())?
+                .iter()
+                .any(|row| row.image_id == Some(image_id))
+        {
+            return Err(anyhow::anyhow!("direct message image is already attached"));
+        }
         let next_seq = self
             .messages
             .lock()

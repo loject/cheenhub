@@ -24,12 +24,13 @@ pub use servers::{
     UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest, UpdateServerRoomResponse,
 };
 pub use social::{
-    DmConversationSummary, DmMessageDeliveryStatus, DmMessageSummary, FriendRequestStatus,
-    FriendRequestSummary, FriendSummary, ListDmConversationsResponse, ListDmMessagesResponse,
-    ListFriendRequestsResponse, ListFriendsResponse, MarkDmConversationReadRequest,
-    MarkDmConversationReadResponse, OpenDmConversationRequest, OpenDmConversationResponse,
-    SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
-    SendFriendRequestResponse, UserRelationStatus, UserSearchResult,
+    DmConversationSummary, DmImageAttachmentSummary, DmMessageDeliveryStatus, DmMessageSummary,
+    FriendRequestStatus, FriendRequestSummary, FriendSummary, ListDmConversationsResponse,
+    ListDmMessagesResponse, ListFriendRequestsResponse, ListFriendsResponse,
+    MarkDmConversationReadRequest, MarkDmConversationReadResponse, OpenDmConversationRequest,
+    OpenDmConversationResponse, SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse,
+    SendFriendRequestRequest, SendFriendRequestResponse, UploadDmImageResponse, UserRelationStatus,
+    UserSearchResult,
 };
 
 #[cfg(test)]

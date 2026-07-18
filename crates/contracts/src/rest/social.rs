@@ -166,10 +166,25 @@ pub struct DmMessageSummary {
     pub sender_avatar_url: Option<String>,
     /// Текст сообщения.
     pub body: String,
+    /// Изображение, прикреплённое к сообщению.
+    pub image: Option<DmImageAttachmentSummary>,
     /// Статус доставки для текущего пользователя, если сообщение исходящее.
     pub delivery_status: Option<DmMessageDeliveryStatus>,
     /// Временная метка создания в формате RFC3339.
     pub created_at: String,
+}
+
+/// Метаданные изображения в личном сообщении.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DmImageAttachmentSummary {
+    /// Стабильный идентификатор изображения.
+    pub id: String,
+    /// MIME-тип изображения.
+    pub content_type: String,
+    /// Ширина изображения в пикселях.
+    pub width: i32,
+    /// Высота изображения в пикселях.
+    pub height: i32,
 }
 
 /// Ответ со списком диалогов личных сообщений.
@@ -233,6 +248,15 @@ pub struct MarkDmConversationReadResponse {
 pub struct SendDmMessageRequest {
     /// Текст сообщения.
     pub body: String,
+    /// Ранее загруженное изображение, которое нужно прикрепить.
+    pub image_id: Option<String>,
+}
+
+/// Ответ после загрузки изображения для личного сообщения.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UploadDmImageResponse {
+    /// Метаданные загруженного изображения.
+    pub image: DmImageAttachmentSummary,
 }
 
 /// Ответ на отправку личного сообщения.

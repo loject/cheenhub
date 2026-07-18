@@ -1,10 +1,8 @@
 //! Экран друзей и личных сообщений.
 
-use std::rc::Rc;
-
 use cheenhub_contracts::{
     realtime::SocialChangeReason,
-    rest::{DmConversationSummary, DmMessageSummary, FriendRequestSummary, FriendSummary},
+    rest::{DmConversationSummary, FriendRequestSummary, FriendSummary},
 };
 use dioxus::prelude::*;
 use futures_util::StreamExt;
@@ -13,9 +11,7 @@ use crate::Route;
 use crate::features::app::components::app_sidebar_footer::AppSidebarFooter;
 use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::current_user::CurrentUserContext;
-use crate::features::application_focus::ApplicationFocusContext;
 use crate::features::realtime::RealtimeHandle;
-use crate::features::text_chat::{ScrollCommand, apply_scroll_command};
 use crate::features::voice_chat::VoiceConnectionHandle;
 
 use super::api;
@@ -24,10 +20,7 @@ use super::direct_message_workspace::DirectMessageWorkspace;
 use super::friend_context_menu::FriendContextMenu;
 use super::friend_search_modal::FriendSearchModal;
 use super::friends_section::{FriendMenuRequest, FriendsSection};
-use super::presentation::{
-    MessageRefreshSignals, load_messages, load_older_messages, load_social_overview,
-    push_message_with_motion, refresh_conversations, refresh_friends, refresh_messages,
-};
+use super::presentation::load_social_overview;
 use super::realtime::{subscribe_social_events, subscribe_social_ready_events};
 use super::requests_section::FriendRequestsSection;
 
@@ -37,30 +30,18 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
     let navigator = use_navigator();
     let realtime = use_context::<RealtimeHandle>();
-    let application_focus = use_context::<ApplicationFocusContext>();
     let voice = use_context::<VoiceConnectionHandle>();
     let friends = use_signal(Vec::<FriendSummary>::new);
     let incoming = use_signal(Vec::<FriendRequestSummary>::new);
     let outgoing = use_signal(Vec::<FriendRequestSummary>::new);
     let mut conversations = use_signal(Vec::<DmConversationSummary>::new);
     let mut selected_conversation = use_signal(|| None::<DmConversationSummary>);
-    let mut messages = use_signal(Vec::<DmMessageSummary>::new);
-    let appearing_message_ids = use_signal(Vec::<String>::new);
-    let removing_message_ids = use_signal(Vec::<String>::new);
-    let mut draft = use_signal(String::new);
     let mut status = use_signal(String::new);
     let is_loading = use_signal(|| false);
-    let is_loading_messages = use_signal(|| false);
-    let has_more_messages = use_signal(|| false);
-    let older_messages_loading = use_signal(|| false);
-    let mut is_sending = use_signal(|| false);
     let mut is_search_open = use_signal(|| false);
     let mut loaded = use_signal(|| false);
     let mut requests_collapsed = use_signal(|| true);
     let mut friend_menu = use_signal(|| None::<FriendMenuRequest>);
-    let is_near_bottom = use_signal(|| true);
-    let list_element = use_signal(|| None::<Rc<MountedData>>);
-    let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
     let mut loaded_route_conversation_id = use_signal(|| None::<String>);
 
     let reload = use_callback(move |_| {
@@ -92,16 +73,6 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
                     let conversation_id = conversation.id.clone();
                     selected_conversation.set(Some(conversation));
                     loaded_route_conversation_id.set(Some(conversation_id.clone()));
-                    load_messages(
-                        conversation_id.clone(),
-                        messages,
-                        conversations,
-                        friends,
-                        status,
-                        is_loading_messages,
-                        has_more_messages,
-                        pending_scroll,
-                    );
                     navigator.push(Route::AppDirectMessage { conversation_id });
                     if let Ok(next_conversations) = api::list_dm_conversations().await {
                         conversations.set(next_conversations);
@@ -119,8 +90,6 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
                 debug!("clearing selected direct message after opening friends route");
                 selected_conversation.set(None);
                 loaded_route_conversation_id.set(None);
-                messages.set(Vec::new());
-                draft.set(String::new());
             }
             return;
         };
@@ -154,16 +123,6 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
         );
         selected_conversation.set(Some(conversation));
         loaded_route_conversation_id.set(Some(conversation_id.clone()));
-        load_messages(
-            conversation_id,
-            messages,
-            conversations,
-            friends,
-            status,
-            is_loading_messages,
-            has_more_messages,
-            pending_scroll,
-        );
     });
 
     let delete_friend = use_callback(move |friend_user_id: String| {
@@ -206,78 +165,14 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
         });
     });
 
-    let send_message = use_callback(move |_| {
-        let Some(conversation) = selected_conversation() else {
-            return;
-        };
-        let body = draft().trim().to_owned();
-        if body.is_empty() || is_sending() {
-            return;
-        }
-
-        is_sending.set(true);
-        status.set(String::new());
-        spawn(async move {
-            match api::send_dm_message(&conversation.id, body).await {
-                Ok(message) => {
-                    if push_message_with_motion(messages, appearing_message_ids, message) {
-                        debug!("scrolling direct messages after current user message send");
-                        pending_scroll.set(Some(ScrollCommand::Bottom));
-                    }
-                    draft.set(String::new());
-                    if let Ok(next_conversations) = api::list_dm_conversations().await {
-                        conversations.set(next_conversations);
-                    }
-                }
-                Err(error) => status.set(error),
-            }
-            is_sending.set(false);
-        });
-    });
-
-    let refresh_direct_state = use_callback(move |changed_conversation_id: Option<String>| {
-        let selected = selected_conversation();
-        let selected_conversation_id = selected
-            .as_ref()
-            .map(|conversation| conversation.id.as_str());
-        debug!(
-            selected_conversation_id = ?selected_conversation_id,
-            changed_conversation_id = ?changed_conversation_id,
-            "refreshing social state after direct message change"
-        );
-        refresh_conversations(conversations, status);
-        refresh_friends(friends, status);
-        if let Some(conversation) = selected {
-            let should_refresh_messages = changed_conversation_id
-                .as_deref()
-                .is_none_or(|changed_id| changed_id == conversation.id.as_str());
-            if should_refresh_messages {
-                refresh_messages(
-                    conversation.id,
-                    MessageRefreshSignals {
-                        messages,
-                        conversations,
-                        friends,
-                        appearing_message_ids,
-                        removing_message_ids,
-                        status,
-                        is_near_bottom,
-                        pending_scroll,
-                    },
-                );
-            }
-        }
-    });
-
     use_hook(move || {
         let realtime = realtime.clone();
         let ready_realtime = realtime.clone();
-        let ready_refresh = refresh_direct_state;
         spawn(async move {
             let mut ready = subscribe_social_ready_events(ready_realtime);
             while ready.next().await.is_some() {
                 debug!("refreshing social state after realtime subscription became active");
-                ready_refresh.call(None);
+                reload.call(());
             }
         });
 
@@ -291,40 +186,9 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
                 );
                 match event.reason {
                     SocialChangeReason::Friends => reload.call(()),
-                    SocialChangeReason::DirectMessages => {
-                        refresh_direct_state.call(event.conversation_id);
-                    }
+                    SocialChangeReason::DirectMessages => reload.call(()),
                 }
             }
-        });
-    });
-
-    use_effect(move || {
-        if !application_focus.is_focused() {
-            return;
-        }
-        let Some(conversation) = selected_conversation() else {
-            return;
-        };
-        debug!(
-            conversation_id = %conversation.id,
-            "refreshing focused direct conversation to confirm read state"
-        );
-        refresh_direct_state.call(Some(conversation.id));
-    });
-
-    use_effect(move || {
-        let _message_count = messages.len();
-        let Some(command) = pending_scroll() else {
-            return;
-        };
-        pending_scroll.set(None);
-        let Some(element) = list_element.cloned() else {
-            return;
-        };
-
-        spawn(async move {
-            apply_scroll_command(element, command).await;
         });
     });
 
@@ -406,8 +270,6 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
                                 info!("closing direct message mobile workspace");
                                 selected_conversation.set(None);
                                 loaded_route_conversation_id.set(None);
-                                messages.set(Vec::new());
-                                draft.set(String::new());
                                 navigator.push(Route::AppFriends {});
                             },
                             svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
@@ -438,31 +300,9 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
                 }
                 if let Some(conversation) = selected_conversation() {
                     DirectMessageWorkspace {
+                        key: "{conversation.id}",
                         conversation,
-                        messages,
-                        appearing_message_ids,
-                        removing_message_ids,
-                        is_loading_messages,
-                        has_more_messages,
-                        older_messages_loading,
-                        draft,
-                        is_sending,
-                        is_near_bottom,
-                        list_element,
-                        pending_scroll,
-                        on_load_older: move |_| {
-                            let Some(conversation) = selected_conversation() else { return; };
-                            load_older_messages(
-                                conversation.id,
-                                messages,
-                                has_more_messages,
-                                older_messages_loading,
-                                status,
-                                list_element,
-                                pending_scroll,
-                            );
-                        },
-                        on_send_message: move |_| send_message.call(()),
+                        on_overview_changed: move |_| reload.call(()),
                     }
                 } else {
                     div { class: "flex h-full items-center justify-center px-6 text-center",

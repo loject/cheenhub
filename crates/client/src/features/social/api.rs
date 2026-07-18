@@ -1,11 +1,11 @@
 //! REST API клиента для друзей и личных сообщений.
 
 use cheenhub_contracts::rest::{
-    DmConversationSummary, DmMessageSummary, ListDmConversationsResponse, ListDmMessagesResponse,
-    ListFriendRequestsResponse, ListFriendsResponse, MarkDmConversationReadRequest,
-    MarkDmConversationReadResponse, OpenDmConversationRequest, OpenDmConversationResponse,
-    SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
-    SendFriendRequestResponse, UserSearchResult,
+    DmConversationSummary, DmImageAttachmentSummary, DmMessageSummary, ListDmConversationsResponse,
+    ListDmMessagesResponse, ListFriendRequestsResponse, ListFriendsResponse,
+    MarkDmConversationReadRequest, MarkDmConversationReadResponse, OpenDmConversationRequest,
+    OpenDmConversationResponse, SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse,
+    SendFriendRequestRequest, SendFriendRequestResponse, UploadDmImageResponse, UserSearchResult,
 };
 use reqwest::{Response, StatusCode};
 use serde::Serialize;
@@ -177,14 +177,83 @@ pub(crate) async fn mark_dm_conversation_read(
 pub(crate) async fn send_dm_message(
     conversation_id: &str,
     body: String,
+    image_id: Option<String>,
 ) -> Result<DmMessageSummary, String> {
     authorized_json::<SendDmMessageResponse>(
         "POST",
         &format!("/direct-messages/conversations/{conversation_id}/messages"),
-        Some(&SendDmMessageRequest { body }),
+        Some(&SendDmMessageRequest { body, image_id }),
     )
     .await
     .map(|response| response.message)
+}
+
+/// Загружает изображение для личного сообщения.
+pub(crate) async fn upload_dm_image(
+    conversation_id: &str,
+    bytes: Vec<u8>,
+) -> Result<DmImageAttachmentSummary, String> {
+    let path = format!("/direct-messages/conversations/{conversation_id}/images");
+    let response = authorized_bytes_response("POST", &path, Some(bytes)).await?;
+    if response.status().is_success() {
+        response
+            .json::<UploadDmImageResponse>()
+            .await
+            .map(|value| value.image)
+            .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned())
+    } else {
+        Err(auth_api::read_error(response).await)
+    }
+}
+
+/// Загружает байты изображения личного сообщения.
+pub(crate) async fn load_dm_image(
+    conversation_id: &str,
+    image_id: &str,
+) -> Result<Vec<u8>, String> {
+    let path = format!("/direct-messages/conversations/{conversation_id}/images/{image_id}");
+    let response = authorized_bytes_response("GET", &path, None).await?;
+    if response.status().is_success() {
+        response
+            .bytes()
+            .await
+            .map(|bytes| bytes.to_vec())
+            .map_err(|_| "Не удалось загрузить изображение.".to_owned())
+    } else {
+        Err(auth_api::read_error(response).await)
+    }
+}
+
+async fn authorized_bytes_response(
+    method: &str,
+    path: &str,
+    body: Option<Vec<u8>>,
+) -> Result<Response, String> {
+    let token = auth_api::fresh_access_token().await?;
+    let response = send_bytes(method, path, &token, body.clone()).await?;
+    if response.status() != StatusCode::UNAUTHORIZED {
+        return Ok(response);
+    }
+    let token = auth_api::refresh_access_token().await?;
+    send_bytes(method, path, &token, body).await
+}
+
+async fn send_bytes(
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Option<Vec<u8>>,
+) -> Result<Response, String> {
+    let request = match method {
+        "GET" => auth_api::get(path),
+        _ => auth_api::post(path),
+    }
+    .header("Authorization", format!("Bearer {token}"));
+    request
+        .body(body.unwrap_or_default())
+        .send()
+        .await
+        .map_err(|_| NETWORK_ERROR_MESSAGE.to_owned())
 }
 
 async fn authorized_json<T>(

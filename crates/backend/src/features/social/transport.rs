@@ -2,6 +2,7 @@
 
 use axum::{
     Json,
+    body::Bytes,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
@@ -11,7 +12,7 @@ use cheenhub_contracts::rest::{
     ListFriendsResponse, MarkDmConversationReadRequest, MarkDmConversationReadResponse,
     OpenDmConversationRequest, OpenDmConversationResponse, SearchUsersResponse,
     SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
-    SendFriendRequestResponse,
+    SendFriendRequestResponse, UploadDmImageResponse,
 };
 use serde::Deserialize;
 
@@ -182,6 +183,37 @@ pub(crate) async fn send_dm_message(
     application::send_dm_message(&state, token, conversation_id, request)
         .await
         .map(Json)
+}
+
+/// Загружает изображение для личного сообщения.
+pub(crate) async fn upload_dm_image(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(conversation_id): Path<String>,
+    bytes: Bytes,
+) -> Result<Json<UploadDmImageResponse>, SocialError> {
+    let token = bearer_token(&headers)?;
+    application::upload_dm_image(&state, token, conversation_id, bytes)
+        .await
+        .map(Json)
+}
+
+/// Возвращает изображение участнику личного диалога.
+pub(crate) async fn dm_image(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((conversation_id, image_id)): Path<(String, String)>,
+) -> Result<Response, SocialError> {
+    let token = bearer_token(&headers)?;
+    let image = application::dm_image(&state, token, conversation_id, image_id).await?;
+    let data = image
+        .data
+        .ok_or_else(|| SocialError::NotFound("Изображение не найдено.".to_owned()))?;
+    Ok((
+        [(axum::http::header::CONTENT_TYPE, image.content_type)],
+        data,
+    )
+        .into_response())
 }
 
 /// Помечает личный диалог прочитанным до указанного сообщения.

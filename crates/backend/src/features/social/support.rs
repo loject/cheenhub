@@ -149,6 +149,9 @@ pub(super) async fn message_summary(
         state,
         &ensure_user_exists(state, &message.sender_user_id).await?,
     );
+    let image =
+        super::application::attachment_summary(state, message.conversation_id, message.image_id)
+            .await?;
     Ok(DmMessageSummary {
         id: message.id.to_string(),
         conversation_id: message.conversation_id.to_string(),
@@ -158,6 +161,7 @@ pub(super) async fn message_summary(
         sender_avatar_url: sender.avatar_url,
         delivery_status: delivery_status(&message, current_user_id, recipient_last_read_seq),
         body: message.body,
+        image,
         created_at: message.created_at.to_rfc3339(),
     })
 }

@@ -48,6 +48,8 @@ app = [
 web = ["app", "dioxus/web"]
 desktop = [
     "app",
+    "dep:arboard",
+    "dep:image",
     "system-tray",
     "dep:tokio",
     "dep:tokio-tungstenite",
@@ -81,6 +83,7 @@ microphone_worker = [
 ]
 
 [dependencies]
+arboard = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 cheenhub_contracts = { path = "../contracts", optional = true }
@@ -98,6 +101,7 @@ ed25519-dalek = { workspace = true, optional = true }
 futures-channel = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 gloo-timers = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
 js-sys = { workspace = true, optional = true }
 jni = { version = "0.21", optional = true }
 ndk-context = { version = "0.1", optional = true }

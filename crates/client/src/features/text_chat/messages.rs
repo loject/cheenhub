@@ -52,7 +52,7 @@ pub(super) fn remove_message(messages: &mut Signal<Vec<TextChatMessage>>, messag
     messages.set(next);
 }
 
-pub(super) fn is_appearing_message(message_id: &str, appearing_message_ids: &[String]) -> bool {
+pub(crate) fn is_appearing_message(message_id: &str, appearing_message_ids: &[String]) -> bool {
     appearing_message_ids
         .iter()
         .any(|appearing_message_id| appearing_message_id == message_id)

@@ -272,6 +272,20 @@ impl SocialStore for PostgresSocialStore {
             .map(Into::into))
     }
 
+    async fn dm_message_by_image_id(
+        &self,
+        conversation_id: &Uuid,
+        image_id: &Uuid,
+    ) -> anyhow::Result<Option<DmMessage>> {
+        Ok(dm_messages::Entity::find()
+            .filter(dm_messages::Column::ConversationId.eq(*conversation_id))
+            .filter(dm_messages::Column::ImageId.eq(*image_id))
+            .filter(dm_messages::Column::DeletedAt.is_null())
+            .one(&self.database)
+            .await?
+            .map(Into::into))
+    }
+
     async fn conversation_member_state(
         &self,
         conversation_id: &Uuid,
@@ -397,6 +411,7 @@ impl SocialStore for PostgresSocialStore {
             seq: Set(next_seq),
             sender_user_id: Set(message.sender_user_id),
             body: Set(message.body),
+            image_id: Set(message.image_id),
             created_at: Set(message.created_at),
             updated_at: Set(message.updated_at),
             deleted_at: Set(message.deleted_at),

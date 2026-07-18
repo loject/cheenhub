@@ -10,6 +10,7 @@ mod transport;
 
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     routing::{delete, get, post},
 };
 
@@ -57,6 +58,14 @@ pub(crate) fn dm_routes() -> Router<AppState> {
         .route(
             "/conversations/{conversation_id}/messages",
             get(transport::list_dm_messages).post(transport::send_dm_message),
+        )
+        .route(
+            "/conversations/{conversation_id}/images",
+            post(transport::upload_dm_image).layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
+        .route(
+            "/conversations/{conversation_id}/images/{image_id}",
+            get(transport::dm_image),
         )
         .route(
             "/conversations/{conversation_id}/read",

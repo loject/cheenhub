@@ -9,8 +9,9 @@ use cheenhub_contracts::rest::{
 use chrono::Utc;
 use uuid::Uuid;
 
+use super::attachments::validate_attachment_owner;
 use crate::features::auth::application::require_current_user;
-use crate::features::push_notifications::DirectMessagePush;
+use crate::features::push_notifications::{DirectMessagePush, direct_message_preview};
 use crate::features::social::domain::{DmMessage, FriendshipStatus};
 use crate::features::social::error::SocialError;
 use crate::features::social::infrastructure::normalize_unread_count;
@@ -216,6 +217,19 @@ pub(crate) async fn send_dm_message(
     let conversation = load_user_conversation(state, &conversation_id, &current_user.id).await?;
     let friend_user_id = other_user_id(&conversation, &current_user.id);
     ensure_friendship(state, &current_user.id, &friend_user_id).await?;
+    let image_id = request
+        .image_id
+        .as_deref()
+        .map(|value| parse_id(value, "Изображение недоступно."))
+        .transpose()?;
+    if let Some(image_id) = image_id {
+        validate_attachment_owner(state, conversation_id, image_id, current_user.id).await?;
+    }
+    let body = if request.body.trim().is_empty() && image_id.is_some() {
+        String::new()
+    } else {
+        message_body(request.body)?
+    };
     let now = Utc::now();
     let message = state
         .social_store
@@ -224,7 +238,8 @@ pub(crate) async fn send_dm_message(
             conversation_id,
             seq: 0,
             sender_user_id: current_user.id,
-            body: message_body(request.body)?,
+            body,
+            image_id,
             created_at: now,
             updated_at: now,
             deleted_at: None,
@@ -238,13 +253,14 @@ pub(crate) async fn send_dm_message(
         seq = message.seq,
         "sent direct message"
     );
+    let message_preview = direct_message_preview(&message.body, message.image_id.is_some());
     let push_payload = DirectMessagePush::new(
         message.id,
         message.conversation_id,
         message.seq,
         current_user.id,
         &current_user.nickname,
-        &message.body,
+        &message_preview,
         message.created_at,
     );
     match state
@@ -274,7 +290,7 @@ pub(crate) async fn send_dm_message(
             message_seq: message.seq,
             sender_user_id: current_user.id.to_string(),
             sender_nickname: current_user.nickname.clone(),
-            body: message.body.clone(),
+            body: message_preview,
             created_at: message.created_at.to_rfc3339(),
         },
     )

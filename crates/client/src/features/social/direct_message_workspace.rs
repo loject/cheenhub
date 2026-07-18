@@ -2,42 +2,67 @@
 
 use std::rc::Rc;
 
-use cheenhub_contracts::rest::{DmConversationSummary, DmMessageSummary};
+use cheenhub_contracts::{
+    realtime::SocialChangeReason,
+    rest::{DmConversationSummary, DmMessageSummary},
+};
 use dioxus::prelude::*;
+use futures_util::StreamExt;
 
 use crate::features::app::components::workspace_split::{
     EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO, clamp_embedded_chat_height, finish_embedded_chat_resize,
 };
+use crate::features::application_focus::ApplicationFocusContext;
+use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 use crate::features::text_chat::{
-    CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, ChatMessageDateDivider, ChatMessageGroup,
-    ScrollCommand, friendly_message_date, group_consecutive_messages, message_day_key,
-    update_near_bottom_state,
+    CHAT_CONTENT_CLASS, ChatMessageDateDivider, ScrollCommand, apply_scroll_command,
+    friendly_message_date, group_consecutive_messages, message_day_key, update_near_bottom_state,
 };
 use crate::features::voice_chat::{VoiceConnectionHandle, VoiceConnectionState};
 
+use super::direct_message_composer::{DirectMessageComposer, DirectMessageComposerOutcome};
+use super::direct_message_group::DirectMessageGroup;
+use super::direct_message_state::DirectMessageState;
 use super::direct_message_voice_surface::DirectMessageVoiceSurface;
-use super::presentation::dm_as_text_message;
+use super::presentation::{
+    dm_as_text_message, load_messages, load_older_messages, push_message_with_motion,
+    refresh_messages,
+};
+use super::realtime::subscribe_social_events;
 use super::voice_target::direct_message_voice_target;
 
 /// Рендерит сообщения и голосовую область выбранного личного диалога.
 #[component]
 pub(crate) fn DirectMessageWorkspace(
     conversation: DmConversationSummary,
-    messages: Signal<Vec<DmMessageSummary>>,
-    appearing_message_ids: Signal<Vec<String>>,
-    removing_message_ids: Signal<Vec<String>>,
-    is_loading_messages: Signal<bool>,
-    has_more_messages: Signal<bool>,
-    older_messages_loading: Signal<bool>,
-    mut draft: Signal<String>,
-    is_sending: Signal<bool>,
-    is_near_bottom: Signal<bool>,
-    mut list_element: Signal<Option<Rc<MountedData>>>,
-    mut pending_scroll: Signal<Option<ScrollCommand>>,
-    on_load_older: EventHandler<()>,
-    on_send_message: EventHandler<()>,
+    on_overview_changed: EventHandler<()>,
 ) -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
+    let realtime = use_context::<RealtimeHandle>();
+    let application_focus = use_context::<ApplicationFocusContext>();
+    let messages = use_signal(Vec::<DmMessageSummary>::new);
+    let appearing_message_ids = use_signal(Vec::<String>::new);
+    let removing_message_ids = use_signal(Vec::<String>::new);
+    let is_loading_messages = use_signal(|| false);
+    let has_more_messages = use_signal(|| false);
+    let older_messages_loading = use_signal(|| false);
+    let is_near_bottom = use_signal(|| true);
+    let mut list_element = use_signal(|| None::<Rc<MountedData>>);
+    let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
+    let status = use_signal(String::new);
+    let mut focus_initialized = use_signal(|| false);
+    let state = DirectMessageState {
+        messages,
+        appearing_message_ids,
+        removing_message_ids,
+        is_loading: is_loading_messages,
+        has_more: has_more_messages,
+        is_loading_older: older_messages_loading,
+        status,
+        is_near_bottom,
+        list_element,
+        pending_scroll,
+    };
     let mut embedded_chat_height_px = use_signal(|| None::<f64>);
     let mut embedded_chat_resize_origin = use_signal(|| None::<(f64, f64, f64)>);
     let mut content_split_element = use_signal(|| None::<Rc<MountedData>>);
@@ -87,10 +112,90 @@ pub(crate) fn DirectMessageWorkspace(
             let date_label = (previous_day_key.as_ref() != Some(&day_key))
                 .then(|| friendly_message_date(&first_message.created_at));
             previous_day_key = Some(day_key);
-            Some((first_message.id.clone(), date_label, group))
+            let direct_messages = rendered_messages
+                .iter()
+                .filter(|message| group.iter().any(|item| item.id == message.id))
+                .cloned()
+                .collect::<Vec<_>>();
+            Some((first_message.id.clone(), date_label, direct_messages))
         })
         .collect::<Vec<_>>();
     let conversation_id = conversation.id.clone();
+    let on_overview_changed = Callback::new(move |_| {
+        on_overview_changed.call(());
+    });
+
+    use_effect({
+        let conversation_id = conversation_id.clone();
+        move || {
+            debug!(%conversation_id, "loading keyed direct message workspace");
+            load_messages(conversation_id.clone(), state, on_overview_changed);
+        }
+    });
+
+    use_hook({
+        let realtime = realtime.clone();
+        let status_realtime = realtime.clone();
+        let conversation_id = conversation_id.clone();
+        move || {
+            let ready_conversation_id = conversation_id.clone();
+            spawn(async move {
+                let mut statuses = status_realtime.subscribe_connection_status();
+                let mut first_status = true;
+                while let Some(status) = statuses.next().await {
+                    if first_status {
+                        first_status = false;
+                        continue;
+                    }
+                    if matches!(status, RealtimeConnectionStatus::Connected(_)) {
+                        refresh_messages(ready_conversation_id.clone(), state, on_overview_changed);
+                    }
+                }
+            });
+
+            spawn(async move {
+                let mut events = subscribe_social_events(&realtime);
+                while let Some(event) = events.next().await {
+                    if event.reason == SocialChangeReason::DirectMessages
+                        && event
+                            .conversation_id
+                            .as_deref()
+                            .is_none_or(|changed_id| changed_id == conversation_id)
+                    {
+                        refresh_messages(conversation_id.clone(), state, on_overview_changed);
+                    }
+                }
+            });
+        }
+    });
+
+    use_effect({
+        let conversation_id = conversation_id.clone();
+        move || {
+            let focused = application_focus.is_focused();
+            if !*focus_initialized.peek() {
+                focus_initialized.set(true);
+                return;
+            }
+            if focused {
+                refresh_messages(conversation_id.clone(), state, on_overview_changed);
+            }
+        }
+    });
+
+    use_effect(move || {
+        let _message_count = messages.len();
+        let Some(command) = pending_scroll() else {
+            return;
+        };
+        pending_scroll.set(None);
+        let Some(element) = list_element.cloned() else {
+            return;
+        };
+        spawn(async move {
+            apply_scroll_command(element, command).await;
+        });
+    });
 
     use_effect(move || {
         let next_conversation_id = Some(conversation_id.clone());
@@ -217,13 +322,14 @@ pub(crate) fn DirectMessageWorkspace(
                                     && !older_messages_loading()
                                     && let Some(element) = list_element.cloned()
                                 {
+                                    let conversation_id = conversation.id.clone();
                                     spawn(async move {
                                         if element
                                             .get_scroll_offset()
                                             .await
                                             .is_ok_and(|offset| offset.y <= 48.0)
                                         {
-                                            on_load_older.call(());
+                                            load_older_messages(conversation_id, state);
                                         }
                                     });
                                 }
@@ -245,12 +351,10 @@ pub(crate) fn DirectMessageWorkspace(
                                             if let Some(label) = date_label {
                                                 ChatMessageDateDivider { label }
                                             }
-                                            ChatMessageGroup {
+                                            DirectMessageGroup {
                                                 messages: group,
                                                 appearing_message_ids: appearing_message_ids_list.clone(),
                                                 removing_message_ids: removing_message_ids_list.clone(),
-                                                can_delete_messages: false,
-                                                on_delete: move |_| {},
                                             }
                                         }
                                     }
@@ -275,36 +379,19 @@ pub(crate) fn DirectMessageWorkspace(
                                 }
                             }
                         }
-                        div { class: "direct-message-composer-shell shrink-0 border-t border-zinc-800/80 bg-zinc-950/55 p-4 backdrop-blur-xl",
-                            div { class: CHAT_COMPOSER_CLASS,
-                                textarea {
-                                    rows: "1",
-                                    value: "{draft()}",
-                                    placeholder: "Сообщение для {conversation.friend_nickname}",
-                                    class: "max-h-28 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600",
-                                    oninput: move |event| draft.set(event.value()),
-                                    onkeydown: move |event| {
-                                        if event.key() == Key::Enter && !event.modifiers().shift() {
-                                            event.prevent_default();
-                                            on_send_message.call(());
-                                        }
-                                    },
-                                }
-                                button {
-                                    r#type: "button",
-                                    disabled: draft().trim().is_empty() || is_sending(),
-                                    class: "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500 text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-45",
-                                    "aria-label": "Отправить сообщение",
-                                    onclick: move |_| on_send_message.call(()),
-                                    if is_sending() {
-                                        span { class: "h-4 w-4 animate-spin rounded-full border-2 border-blue-200/40 border-t-white" }
-                                    } else {
-                                        svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
-                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6 12 3.269 3.126A59.77 59.77 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.876L6 12Zm0 0h7.5" }
-                                        }
+                        if !status().is_empty() {
+                            p { class: "mx-auto w-full max-w-5xl px-6 pb-2 text-[11px] leading-4 text-red-200", "{status()}" }
+                        }
+                        DirectMessageComposer {
+                            conversation: conversation.clone(),
+                            on_outcome: move |outcome| match outcome {
+                                DirectMessageComposerOutcome::MessageSent(message) => {
+                                    if push_message_with_motion(messages, appearing_message_ids, message) {
+                                        pending_scroll.set(Some(ScrollCommand::Bottom));
                                     }
+                                    on_overview_changed.call(());
                                 }
-                            }
+                            },
                         }
                     }
                 }

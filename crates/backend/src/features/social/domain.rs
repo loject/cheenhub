@@ -86,6 +86,8 @@ pub(crate) struct DmMessage {
     pub(crate) sender_user_id: Uuid,
     /// Текст сообщения.
     pub(crate) body: String,
+    /// Идентификатор прикреплённого изображения.
+    pub(crate) image_id: Option<Uuid>,
     /// Время создания.
     pub(crate) created_at: DateTime<Utc>,
     /// Время последнего обновления.
