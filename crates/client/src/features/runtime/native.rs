@@ -33,6 +33,7 @@ pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element, started_hidde
         Config, LogicalSize, WindowBuilder, WindowCloseBehaviour, icon_from_memory,
     };
 
+    install_tls_crypto_provider();
     init_dioxus_profile_logger();
 
     const WINDOW_WIDTH: f64 = 1280.0;
@@ -66,6 +67,33 @@ pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element, started_hidde
                 .with_menu(None),
         )
         .launch(app);
+}
+
+/// Явно устанавливает единый криптографический provider для native TLS-клиентов.
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(feature = "desktop", feature = "mobile")
+))]
+fn install_tls_crypto_provider() {
+    use dioxus::logger::tracing::{info, warn};
+    use std::sync::Once;
+
+    static INSTALL_PROVIDER: Once = Once::new();
+
+    INSTALL_PROVIDER.call_once(|| {
+        let provider = rustls::crypto::aws_lc_rs::default_provider();
+        if provider.install_default().is_ok() {
+            info!(
+                provider = "aws-lc-rs",
+                "native TLS crypto provider installed"
+            );
+        } else {
+            warn!(
+                requested_provider = "aws-lc-rs",
+                "native TLS crypto provider was already installed; keeping the process-level provider"
+            );
+        }
+    });
 }
 
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
@@ -157,7 +185,20 @@ fn default_dioxus_profile_log_path() -> std::path::PathBuf {
         .join("dioxus-profile.log")
 }
 
-#[cfg(not(all(feature = "desktop", not(target_arch = "wasm32"))))]
+#[cfg(all(
+    feature = "mobile",
+    not(feature = "desktop"),
+    not(target_arch = "wasm32")
+))]
+pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element, _started_hidden: bool) {
+    install_tls_crypto_provider();
+    super::web::launch_client(app);
+}
+
+#[cfg(any(
+    target_arch = "wasm32",
+    all(not(feature = "desktop"), not(feature = "mobile"))
+))]
 pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element, _started_hidden: bool) {
     super::web::launch_client(app);
 }

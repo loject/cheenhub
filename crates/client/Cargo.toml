@@ -54,6 +54,7 @@ desktop = [
     "dep:tokio",
     "dep:tokio-tungstenite",
     "dep:tracing-subscriber",
+    "dep:rustls",
     "dioxus/desktop",
 ]
 mobile = [
@@ -62,6 +63,7 @@ mobile = [
     "dep:jni",
     "dep:ndk-context",
     "dep:opus",
+    "dep:rustls",
     "dep:tokio",
     "dep:tokio-tungstenite",
     "dep:wry",
@@ -107,6 +109,7 @@ jni = { version = "0.21", optional = true }
 ndk-context = { version = "0.1", optional = true }
 opus = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
+rustls = { workspace = true, features = ["aws-lc-rs"], optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }

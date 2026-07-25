@@ -42,8 +42,9 @@ lettre = { version = "0.11", default-features = false, features = ["builder", "s
 opus = "0.3"
 rand_core = { version = "0.6", features = ["getrandom"] }
 rcgen = "0.13"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots-no-provider"] }
 rsa = { version = "0.9", features = ["sha2"] }
+rustls = { version = "0.23", default-features = false }
 rustls-pki-types = "1"
 rustls-pemfile = "2"
 sea-orm = { version = "1.1", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-chrono", "with-json", "with-uuid"] }
