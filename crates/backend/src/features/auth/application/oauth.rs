@@ -7,6 +7,7 @@ use url::Url;
 use uuid::Uuid;
 
 use super::google::{GoogleIdentity, exchange_google_code, frontend_oauth_url, google_config};
+use super::linked_accounts::linked_account;
 use super::{create_auth_response, expired_session, map_insert_user_error, me};
 use crate::features::auth::domain::*;
 use crate::features::auth::error::AuthError;
@@ -278,46 +279,6 @@ pub(crate) async fn register_with_google_oauth(
     create_auth_response(state, &user, user_agent.as_deref()).await
 }
 
-/// Перечисляет внешние аккаунты, привязанные к текущему пользователю.
-pub(crate) async fn linked_accounts(
-    state: &AppState,
-    access_token: &str,
-) -> Result<LinkedAccountsResponse, AuthError> {
-    let user = me(state, access_token).await?;
-    let user_id = Uuid::parse_str(&user.id).map_err(|_| expired_session())?;
-    let accounts = state
-        .auth_store
-        .list_oauth_accounts(&user_id)
-        .await
-        .map_err(AuthError::Internal)?
-        .iter()
-        .map(linked_account)
-        .collect();
-
-    Ok(LinkedAccountsResponse { accounts })
-}
-
-/// Отвязывает Google от текущего пользователя, если остается другой способ входа.
-pub(crate) async fn unlink_google(
-    state: &AppState,
-    access_token: &str,
-) -> Result<LinkedAccountsResponse, AuthError> {
-    let user = me(state, access_token).await?;
-    let user_id = Uuid::parse_str(&user.id).map_err(|_| expired_session())?;
-    let user = find_user_or_expired(state, &user_id).await?;
-    if user.password_hash.is_none() {
-        return Err(AuthError::BadRequest(
-            "Сначала добавь пароль, чтобы не потерять доступ к аккаунту.".to_owned(),
-        ));
-    }
-    state
-        .auth_store
-        .delete_oauth_account(GOOGLE_PROVIDER, &user_id)
-        .await
-        .map_err(AuthError::Internal)?;
-    linked_accounts(state, access_token).await
-}
-
 async fn google_oauth_callback(
     state: &AppState,
     code: Option<String>,
@@ -346,12 +307,28 @@ async fn google_oauth_callback(
     let config = google_config(state)?;
     let identity = exchange_google_code(&config, &code, &oauth_state.nonce).await?;
 
-    let (kind, user_id, registration_intent_id) = match oauth_state.flow_kind.as_str() {
+    create_google_handoff(
+        state,
+        &oauth_state.flow_kind,
+        oauth_state.user_id,
+        &identity,
+        now,
+    )
+    .await
+}
+
+pub(super) async fn create_google_handoff(
+    state: &AppState,
+    flow_kind: &str,
+    flow_user_id: Option<Uuid>,
+    identity: &GoogleIdentity,
+    now: chrono::DateTime<Utc>,
+) -> Result<String, AuthError> {
+    let (kind, user_id, registration_intent_id) = match flow_kind {
         OAUTH_FLOW_LINK => {
-            let user_id = oauth_state
-                .user_id
+            let user_id = flow_user_id
                 .ok_or_else(|| AuthError::Internal(anyhow!("link oauth state without user")))?;
-            link_google_identity(state, &user_id, &identity, now).await?;
+            link_google_identity(state, &user_id, identity, now).await?;
             info!(%user_id, "linked google oauth account");
             (HANDOFF_LINKED.to_owned(), Some(user_id), None)
         }
@@ -376,7 +353,7 @@ async fn google_oauth_callback(
                     .await
                     .map_err(AuthError::Internal)?
                 {
-                    link_google_identity(state, &user.id, &identity, now).await?;
+                    link_google_identity(state, &user.id, identity, now).await?;
                     info!(user_id = %user.id, "auto-linked google oauth account by verified email");
                     Some(user.id)
                 } else {
@@ -389,9 +366,9 @@ async fn google_oauth_callback(
                         .auth_store
                         .insert_oauth_registration_intent(
                             GOOGLE_PROVIDER.to_owned(),
-                            identity.subject,
-                            identity.email,
-                            identity.display_name,
+                            identity.subject.clone(),
+                            identity.email.clone(),
+                            identity.display_name.clone(),
                             now,
                             now + Duration::minutes(state.oauth_registration_lifetime_minutes),
                         )
@@ -479,15 +456,6 @@ async fn find_user_or_expired(state: &AppState, user_id: &Uuid) -> Result<UserAc
         .await
         .map_err(AuthError::Internal)?
         .ok_or_else(expired_session)
-}
-
-fn linked_account(account: &OAuthAccount) -> LinkedAccount {
-    LinkedAccount {
-        provider: OAuthProvider::Google,
-        email: account.email.clone(),
-        display_name: account.display_name.clone(),
-        linked_at: account.linked_at.to_rfc3339(),
-    }
 }
 
 fn map_oauth_link_error(error: anyhow::Error) -> AuthError {

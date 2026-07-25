@@ -3,6 +3,7 @@
 pub(crate) mod api;
 mod components;
 mod domain;
+pub(crate) mod google_sign_in;
 pub(crate) mod guest_guard;
 mod http;
 pub(crate) mod jwt;

@@ -8,7 +8,8 @@ pub mod social;
 
 pub use auth::{
     ActiveSession, ActiveSessionsResponse, AuthResponse, AuthUser,
-    ChangeCurrentUserPasswordRequest, LinkedAccount, LinkedAccountsResponse, LoginRequest,
+    ChangeCurrentUserPasswordRequest, GoogleNativeAuthCompleteRequest,
+    GoogleNativeAuthStartResponse, LinkedAccount, LinkedAccountsResponse, LoginRequest,
     LogoutRequest, OAuthCompleteRequest, OAuthCompleteResponse, OAuthFlow, OAuthProvider,
     OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse, PasswordResetConfirmRequest,
     PasswordResetRequest, RefreshRequest, RegisterRequest, SessionClientInfo, SessionDeviceKind,

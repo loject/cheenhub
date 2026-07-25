@@ -72,6 +72,26 @@ pub struct OAuthStartResponse {
     pub authorization_url: String,
 }
 
+/// Ответ запуска нативной авторизации Google.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoogleNativeAuthStartResponse {
+    /// Непрозрачный одноразовый challenge, который нужно вернуть при завершении входа.
+    pub challenge: String,
+    /// Нонс, который Android передает Google при запросе ID Token.
+    pub nonce: String,
+    /// Публичный Web OAuth client ID, ожидаемый сервером в claim `aud`.
+    pub server_client_id: String,
+}
+
+/// Тело запроса завершения нативной авторизации Google.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoogleNativeAuthCompleteRequest {
+    /// Непрозрачный одноразовый challenge, полученный при запуске входа.
+    pub challenge: String,
+    /// Подписанный Google ID Token, полученный через Android Credential Manager.
+    pub id_token: String,
+}
+
 /// Тело запроса для завершения передачи OAuth callback.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OAuthCompleteRequest {

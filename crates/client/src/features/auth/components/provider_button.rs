@@ -1,13 +1,17 @@
 //! Компонент кнопки внешнего провайдера аутентификации.
 
 use dioxus::prelude::*;
+use dioxus::router::Navigator;
 
+use crate::Route;
 use crate::features::auth::api;
 use crate::features::auth::components::arrow_right_icon::ArrowRightIcon;
 use crate::features::auth::domain::AuthProvider;
+use crate::features::auth::google_sign_in;
 
 #[component]
 pub(crate) fn ProviderButton(provider: AuthProvider) -> Element {
+    let navigator = use_navigator();
     let mut status = use_signal(String::new);
     let mut is_busy = use_signal(|| false);
     let disabled = !provider.is_available() || is_busy();
@@ -27,22 +31,36 @@ pub(crate) fn ProviderButton(provider: AuthProvider) -> Element {
                     is_busy.set(true);
                     status.set(String::new());
                     spawn(async move {
-                        let result = match oauth_callback_url().await {
-                            Ok(redirect_uri) => api::start_google_oauth(redirect_uri).await,
-                            Err(error) => Err(error),
-                        };
-
-                        match result {
-                            Ok(authorization_url) => {
-                                if let Err(error) = redirect_browser(authorization_url).await {
-                                    status.set(error);
+                        if google_sign_in::is_supported() {
+                            info!("starting native Android Google sign-in");
+                            match google_sign_in::authenticate().await {
+                                Ok(Some(completion)) => {
+                                    if let Err(error) =
+                                        finish_google_sign_in(completion, &navigator)
+                                    {
+                                        warn!(%error, "native Android Google sign-in completion failed");
+                                        status.set(error);
+                                        is_busy.set(false);
+                                    }
+                                }
+                                Ok(None) => {
+                                    info!("native Android Google sign-in was cancelled");
+                                    is_busy.set(false);
+                                }
+                                Err(error) => {
+                                    warn!(%error, "native Android Google sign-in failed");
+                                    status.set(format!("{error} Попробуй ещё раз."));
                                     is_busy.set(false);
                                 }
                             }
-                            Err(error) => {
-                                status.set(error);
-                                is_busy.set(false);
-                            }
+                            return;
+                        }
+
+                        info!("starting browser Google OAuth");
+                        if let Err(error) = browser_google_sign_in().await {
+                            warn!(%error, "browser Google OAuth start failed");
+                            status.set(error);
+                            is_busy.set(false);
                         }
                     });
                 },
@@ -72,6 +90,36 @@ pub(crate) fn ProviderButton(provider: AuthProvider) -> Element {
     }
 }
 
+fn finish_google_sign_in(
+    completion: api::OAuthCompletion,
+    navigator: &Navigator,
+) -> Result<(), String> {
+    match completion {
+        api::OAuthCompletion::Authenticated(_) | api::OAuthCompletion::Linked => {
+            info!("native Android Google sign-in succeeded");
+            let _ = navigator.replace(Route::AppHome {});
+            Ok(())
+        }
+        api::OAuthCompletion::RegistrationRequired(registration) => {
+            if registration.registration_token.is_empty() {
+                return Err("Сервер не вернул токен регистрации Google.".to_owned());
+            }
+            info!("native Android Google sign-in requires registration");
+            let _ = navigator.replace(Route::OAuthCallback {
+                code: None,
+                handoff_code: Some(registration.registration_token),
+                error: None,
+            });
+            Ok(())
+        }
+    }
+}
+
+async fn browser_google_sign_in() -> Result<(), String> {
+    let authorization_url = api::start_google_oauth().await?;
+    redirect_browser(authorization_url).await
+}
+
 fn provider_button_class(provider: AuthProvider, is_busy: bool) -> &'static str {
     if !provider.is_available() {
         "btn-g flex h-11 w-full cursor-not-allowed items-center justify-between rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] font-medium text-zinc-600"
@@ -80,18 +128,6 @@ fn provider_button_class(provider: AuthProvider, is_busy: bool) -> &'static str 
     } else {
         "btn-g flex h-11 w-full items-center justify-between rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] font-medium text-zinc-300"
     }
-}
-
-async fn oauth_callback_url() -> Result<String, String> {
-    let origin = document::eval("return window.location.origin;")
-        .join::<String>()
-        .await
-        .map_err(|_| "Не удалось определить адрес приложения.".to_owned())?;
-
-    Ok(format!(
-        "{}/auth/oauth/google",
-        origin.trim_end_matches('/')
-    ))
 }
 
 async fn redirect_browser(url: String) -> Result<(), String> {

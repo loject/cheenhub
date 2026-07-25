@@ -58,6 +58,14 @@ pub(crate) fn routes() -> Router<AppState> {
             post(transport::handlers::start_google_oauth),
         )
         .route(
+            "/oauth/google/native/start",
+            post(transport::handlers::start_google_native_auth),
+        )
+        .route(
+            "/oauth/google/native/complete",
+            post(transport::handlers::complete_google_native_auth),
+        )
+        .route(
             "/oauth/google/callback",
             get(transport::handlers::google_oauth_callback),
         )

@@ -47,7 +47,12 @@ min_sdk = 24
 target_sdk = 35
 compile_sdk = 35
 foreground_service_types = ["microphone", "mediaPlayback", "camera", "mediaProjection"]
-gradle_dependencies = ["com.google.firebase:firebase-messaging:25.0.1"]
+gradle_dependencies = [
+    "androidx.credentials:credentials:1.6.0",
+    "androidx.credentials:credentials-play-services-auth:1.6.0",
+    "com.google.android.libraries.identity.googleid:googleid:1.2.0",
+    "com.google.firebase:firebase-messaging:25.0.1",
+]
 
 [android.permissions]
 "android.permission.INTERNET" = { description = "Network access for CheenHub API and realtime transport" }

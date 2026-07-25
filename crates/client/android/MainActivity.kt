@@ -21,17 +21,28 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
 import android.util.Range
 import android.view.Surface
+import androidx.credentials.CredentialManager
+import androidx.credentials.CredentialManagerCallback
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetCredentialResponse
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import org.json.JSONArray
 import org.json.JSONObject
 import ru.cheenhub.R
@@ -106,6 +117,97 @@ class MainActivity : WryActivity() {
                 if (token == null) "fcm_token_unavailable" else null,
             )
         }
+    }
+
+    fun requestCheenHubGoogleIdToken(
+        requestId: Int,
+        serverClientId: String,
+        nonce: String,
+    ) {
+        if (serverClientId.isBlank() || nonce.isBlank()) {
+            Log.w(CHEENHUB_AUTH_LOG_TAG, "Google sign-in configuration is incomplete")
+            nativeOnCheenHubGoogleIdTokenResult(
+                requestId,
+                null,
+                "invalid_google_sign_in_configuration",
+                false,
+            )
+            return
+        }
+
+        val option = GetSignInWithGoogleOption.Builder(serverClientId)
+            .setNonce(nonce)
+            .build()
+        val request = GetCredentialRequest.Builder()
+            .addCredentialOption(option)
+            .build()
+        Log.d(CHEENHUB_AUTH_LOG_TAG, "Opening Android Credential Manager for Google sign-in")
+        CredentialManager.create(this).getCredentialAsync(
+            this,
+            request,
+            CancellationSignal(),
+            { command -> runOnUiThread(command) },
+            object : CredentialManagerCallback<GetCredentialResponse, GetCredentialException> {
+                override fun onResult(result: GetCredentialResponse) {
+                    val credential = result.credential
+                    if (
+                        credential !is CustomCredential ||
+                        credential.type !=
+                        GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+                    ) {
+                        Log.w(
+                            CHEENHUB_AUTH_LOG_TAG,
+                            "Credential Manager returned an unexpected credential type",
+                        )
+                        nativeOnCheenHubGoogleIdTokenResult(
+                            requestId,
+                            null,
+                            "unexpected_credential_type",
+                            false,
+                        )
+                        return
+                    }
+                    try {
+                        val idToken = GoogleIdTokenCredential
+                            .createFrom(credential.data)
+                            .idToken
+                        Log.i(CHEENHUB_AUTH_LOG_TAG, "Google ID token was received")
+                        nativeOnCheenHubGoogleIdTokenResult(
+                            requestId,
+                            idToken,
+                            null,
+                            false,
+                        )
+                    } catch (_: GoogleIdTokenParsingException) {
+                        Log.w(CHEENHUB_AUTH_LOG_TAG, "Google ID token response is invalid")
+                        nativeOnCheenHubGoogleIdTokenResult(
+                            requestId,
+                            null,
+                            "google_id_token_parse_failed",
+                            false,
+                        )
+                    }
+                }
+
+                override fun onError(error: GetCredentialException) {
+                    val cancelled = error is GetCredentialCancellationException
+                    if (cancelled) {
+                        Log.d(CHEENHUB_AUTH_LOG_TAG, "Google sign-in was cancelled")
+                    } else {
+                        Log.w(
+                            CHEENHUB_AUTH_LOG_TAG,
+                            "Google sign-in failed: ${error.javaClass.simpleName}",
+                        )
+                    }
+                    nativeOnCheenHubGoogleIdTokenResult(
+                        requestId,
+                        null,
+                        if (cancelled) null else error.javaClass.simpleName,
+                        cancelled,
+                    )
+                }
+            },
+        )
     }
 
     fun consumeCheenHubPendingDirectMessageConversationId(): String? =
@@ -369,6 +471,13 @@ class MainActivity : WryActivity() {
         errorCode: String?,
     )
 
+    private external fun nativeOnCheenHubGoogleIdTokenResult(
+        requestId: Int,
+        idToken: String?,
+        errorCode: String?,
+        cancelled: Boolean,
+    )
+
     private external fun nativeOnCheenHubDirectMessageNotificationOpened(conversationId: String)
 
     override fun onDestroy() {
@@ -419,6 +528,7 @@ class MainActivity : WryActivity() {
 }
 
 private const val CHEENHUB_PUSH_LOG_TAG = "CheenHubPush"
+private const val CHEENHUB_AUTH_LOG_TAG = "CheenHubAuth"
 private const val CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION =
     "ru.cheenhub.action.OPEN_DIRECT_MESSAGE"
 private const val CHEENHUB_CONVERSATION_ID_EXTRA = "cheenhub_conversation_id"

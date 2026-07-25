@@ -231,19 +231,13 @@ pub(crate) fn ProfileSettingsSection() -> Element {
                                     link_status.set(String::new());
                                     link_busy.set(true);
                                     spawn(async move {
-                                        match oauth_callback_url().await {
-                                            Ok(redirect_uri) => match api::start_google_account_link(redirect_uri).await {
-                                                Ok(authorization_url) => {
-                                                    if let Err(error) = redirect_browser(authorization_url).await {
-                                                        link_status.set(error);
-                                                        link_busy.set(false);
-                                                    }
-                                                }
-                                                Err(error) => {
+                                        match api::start_google_account_link().await {
+                                            Ok(authorization_url) => {
+                                                if let Err(error) = redirect_browser(authorization_url).await {
                                                     link_status.set(error);
                                                     link_busy.set(false);
                                                 }
-                                            },
+                                            }
                                             Err(error) => {
                                                 link_status.set(error);
                                                 link_busy.set(false);
@@ -377,18 +371,6 @@ fn account_description(account: &LinkedAccount) -> String {
         .clone()
         .or_else(|| account.display_name.clone())
         .unwrap_or_else(|| "Аккаунт подключен".to_owned())
-}
-
-async fn oauth_callback_url() -> Result<String, String> {
-    let origin = document::eval("return window.location.origin;")
-        .join::<String>()
-        .await
-        .map_err(|_| "Не удалось определить адрес приложения.".to_owned())?;
-
-    Ok(format!(
-        "{}/auth/oauth/google",
-        origin.trim_end_matches('/')
-    ))
 }
 
 async fn redirect_browser(url: String) -> Result<(), String> {

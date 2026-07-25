@@ -7,7 +7,8 @@ use chrono::{Duration, Utc};
 
 use super::{google_only_user, registered_user, state};
 use crate::features::auth::application::{
-    complete_google_oauth, login, register_with_google_oauth, unlink_google,
+    complete_google_oauth, login, register_with_google_oauth, start_google_native_auth,
+    unlink_google,
 };
 use crate::features::auth::security::refresh_token;
 
@@ -63,6 +64,33 @@ async fn google_registration_intent_creates_passwordless_account() {
     )
     .await;
     assert!(password_login.is_err());
+}
+
+#[tokio::test]
+async fn google_native_start_creates_one_time_challenge() {
+    let state = state();
+
+    let start = start_google_native_auth(&state)
+        .await
+        .expect("native auth should start");
+    let stored = state
+        .auth_store
+        .consume_oauth_state(&refresh_token::hash(&start.challenge), Utc::now())
+        .await
+        .expect("challenge lookup should succeed")
+        .expect("challenge should exist");
+
+    assert_eq!(start.server_client_id, "test-google-client");
+    assert_eq!(stored.nonce, start.nonce);
+    assert_eq!(stored.flow_kind, "native_login");
+    assert!(
+        state
+            .auth_store
+            .consume_oauth_state(&refresh_token::hash(&start.challenge), Utc::now())
+            .await
+            .expect("second challenge lookup should succeed")
+            .is_none()
+    );
 }
 
 #[tokio::test]

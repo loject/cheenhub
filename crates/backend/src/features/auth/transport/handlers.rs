@@ -9,10 +9,10 @@ use axum::{
 };
 use cheenhub_contracts::rest::{
     ActiveSessionsResponse, ApiError, AuthResponse, AuthUser, ChangeCurrentUserPasswordRequest,
-    LinkedAccountsResponse, LoginRequest, LogoutRequest, OAuthCompleteRequest,
-    OAuthCompleteResponse, OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse,
-    PasswordResetConfirmRequest, PasswordResetRequest, RefreshRequest, RegisterRequest,
-    UpdateCurrentUserRequest,
+    GoogleNativeAuthCompleteRequest, GoogleNativeAuthStartResponse, LinkedAccountsResponse,
+    LoginRequest, LogoutRequest, OAuthCompleteRequest, OAuthCompleteResponse,
+    OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse, PasswordResetConfirmRequest,
+    PasswordResetRequest, RefreshRequest, RegisterRequest, UpdateCurrentUserRequest,
 };
 use serde::Deserialize;
 
@@ -164,6 +164,26 @@ pub(crate) async fn start_google_oauth(
 ) -> Result<Json<OAuthStartResponse>, AuthError> {
     let token = optional_bearer_token(&headers);
     application::start_google_oauth(&state, token, request)
+        .await
+        .map(Json)
+}
+
+/// Запускает нативный процесс входа через Google.
+pub(crate) async fn start_google_native_auth(
+    State(state): State<AppState>,
+) -> Result<Json<GoogleNativeAuthStartResponse>, AuthError> {
+    application::start_google_native_auth(&state)
+        .await
+        .map(Json)
+}
+
+/// Завершает нативный процесс входа через Google.
+pub(crate) async fn complete_google_native_auth(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<GoogleNativeAuthCompleteRequest>,
+) -> Result<Json<OAuthCompleteResponse>, AuthError> {
+    application::complete_google_native_auth(&state, request, request_user_agent(&headers))
         .await
         .map(Json)
 }

@@ -44,14 +44,12 @@ pub(crate) async fn confirm_password_reset(
 }
 
 /// Запускает вход через Google OAuth и возвращает URL авторизации провайдера.
-pub(crate) async fn start_google_oauth(redirect_uri: String) -> Result<String, String> {
-    let _ = redirect_uri;
+pub(crate) async fn start_google_oauth() -> Result<String, String> {
     start_oauth("/auth/oauth/google/start", OAuthFlow::Login, None).await
 }
 
 /// Запускает привязку аккаунта Google и возвращает URL авторизации провайдера.
-pub(crate) async fn start_google_account_link(redirect_uri: String) -> Result<String, String> {
-    let _ = redirect_uri;
+pub(crate) async fn start_google_account_link() -> Result<String, String> {
     let access_token = fresh_access_token().await?;
     start_oauth(
         "/auth/oauth/google/start",
@@ -212,6 +210,8 @@ pub(crate) enum OAuthCompletion {
 /// Дополнительные данные, необходимые для завершения регистрации OAuth.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct OAuthRegistrationRequired {
+    /// Одноразовый токен завершения регистрации.
+    pub(crate) registration_token: String,
     /// Email address returned by the OAuth provider when available.
     pub(crate) email: Option<String>,
     /// Suggested display name returned by the OAuth provider when available.
@@ -303,7 +303,7 @@ async fn complete_oauth(path: &str, handoff_code: String) -> Result<OAuthComplet
     parse_oauth_completion(value)
 }
 
-fn parse_oauth_completion(value: Value) -> Result<OAuthCompletion, String> {
+pub(super) fn parse_oauth_completion(value: Value) -> Result<OAuthCompletion, String> {
     if let Ok(response) = serde_json::from_value::<AuthResponse>(value.clone()) {
         return save_response(response).map(OAuthCompletion::Authenticated);
     }
@@ -351,6 +351,11 @@ fn registration_required_from_value(value: &Value) -> OAuthRegistrationRequired 
         .unwrap_or(value);
 
     OAuthRegistrationRequired {
+        registration_token: string_field(
+            details,
+            &["registration_token", "registrationToken", "handoff_code"],
+        )
+        .unwrap_or_default(),
         email: string_field(details, &["email", "provider_email"]),
         suggested_nickname: string_field(
             details,
@@ -436,4 +441,29 @@ pub(crate) async fn read_error(response: reqwest::Response) -> String {
         .await
         .map(|error| error.message)
         .unwrap_or_else(|_| "Не удалось выполнить запрос. Попробуй еще раз.".to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{OAuthCompletion, parse_oauth_completion};
+
+    #[test]
+    fn parses_native_google_registration_handoff() {
+        let completion = parse_oauth_completion(json!({
+            "kind": "registration_required",
+            "registration_token": "native-registration-token",
+            "email": "person@example.com",
+            "display_name": "Person"
+        }))
+        .expect("ответ нативной регистрации должен разбираться");
+
+        let OAuthCompletion::RegistrationRequired(registration) = completion else {
+            panic!("ожидался запрос завершения регистрации");
+        };
+        assert_eq!(registration.registration_token, "native-registration-token");
+        assert_eq!(registration.email.as_deref(), Some("person@example.com"));
+        assert_eq!(registration.suggested_nickname.as_deref(), Some("Person"));
+    }
 }

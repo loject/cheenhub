@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
-    Set,
+    Set, sea_query::Expr,
 };
 use uuid::Uuid;
 
@@ -44,26 +44,24 @@ pub(super) async fn consume_oauth_state(
     state_hash: &str,
     now: DateTime<Utc>,
 ) -> anyhow::Result<Option<OAuthState>> {
-    let Some(state) = oauth_states::Entity::find()
+    let Some(state) = oauth_states::Entity::update_many()
+        .col_expr(oauth_states::Column::ConsumedAt, Expr::value(now))
         .filter(oauth_states::Column::StateHash.eq(state_hash))
         .filter(oauth_states::Column::ConsumedAt.is_null())
         .filter(oauth_states::Column::ExpiresAt.gt(now))
-        .one(database)
+        .exec_with_returning(database)
         .await?
+        .into_iter()
+        .next()
     else {
         return Ok(None);
     };
 
-    let result = OAuthState {
-        nonce: state.nonce.clone(),
-        flow_kind: state.flow_kind.clone(),
+    Ok(Some(OAuthState {
+        nonce: state.nonce,
+        flow_kind: state.flow_kind,
         user_id: state.user_id,
-    };
-    let mut active = state.into_active_model();
-    active.consumed_at = Set(Some(now));
-    active.update(database).await?;
-
-    Ok(Some(result))
+    }))
 }
 
 pub(super) async fn find_oauth_account_by_subject(

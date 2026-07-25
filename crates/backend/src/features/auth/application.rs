@@ -20,6 +20,8 @@ use uuid::Uuid;
 
 mod avatar;
 mod google;
+mod google_native;
+mod linked_accounts;
 mod oauth;
 mod refresh;
 mod sessions;
@@ -29,9 +31,11 @@ const NICKNAME_CHANGE_COOLDOWN_DAYS: i64 = 7;
 mod tests;
 
 pub(crate) use avatar::update_current_user_avatar;
+pub(crate) use google_native::{complete_google_native_auth, start_google_native_auth};
+pub(crate) use linked_accounts::{linked_accounts, unlink_google};
 pub(crate) use oauth::{
-    complete_google_oauth, google_oauth_callback_url, linked_accounts, register_with_google_oauth,
-    start_google_oauth, unlink_google,
+    complete_google_oauth, google_oauth_callback_url, register_with_google_oauth,
+    start_google_oauth,
 };
 pub(crate) use sessions::{
     active_sessions_with_user_agent, revoke_current_user_session, revoke_current_user_sessions,
