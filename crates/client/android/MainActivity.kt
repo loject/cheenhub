@@ -34,6 +34,7 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import org.json.JSONArray
 import org.json.JSONObject
+import ru.cheenhub.R
 import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -821,7 +822,7 @@ private object CheenHubNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = builder
-            .setSmallIcon(android.R.drawable.ic_dialog_email)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(history.senderNickname)
             .setContentText(history.messages.lastOrNull()?.bodyPreview ?: "Новое сообщение")
             .setCategory(android.app.Notification.CATEGORY_MESSAGE)
@@ -871,7 +872,7 @@ class DioxusForegroundService : Service() {
             android.app.Notification.Builder(this)
         }
         val builtNotification = notification
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("CheenHub")
             .setContentText("Active voice or media session")
             .setOngoing(true)

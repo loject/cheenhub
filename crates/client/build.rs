@@ -19,9 +19,14 @@ mod file_lines {
     include!("../../build_support/file_lines.rs");
 }
 
+mod android_launcher_icons {
+    include!("../../build_support/android_launcher_icons.rs");
+}
+
 fn main() {
     file_lines::check_workspace_file_lines();
     validate_platform_features();
+    android_launcher_icons::install();
     prepare_installer_payload();
 
     println!("cargo:rerun-if-changed=../../.env");
