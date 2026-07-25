@@ -18,6 +18,7 @@ mod state;
 mod surface;
 mod video_fragments;
 mod video_streams;
+mod voice_call_platform;
 mod voice_controls;
 mod voice_frame_sender;
 

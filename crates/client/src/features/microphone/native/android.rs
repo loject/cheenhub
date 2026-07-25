@@ -1,5 +1,6 @@
-//! Android-backend микрофона с foreground service и захватом через `cpal`.
+//! Android-backend микрофона с захватом через `cpal`.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use dioxus::prelude::{info, warn};
@@ -14,7 +15,7 @@ use super::super::backend::{
     MicrophoneBackend, MicrophoneCallbacks, MicrophoneConfig, MicrophoneError, MicrophoneSession,
 };
 
-/// Android-backend микрофона, владеющий voice foreground service.
+/// Android-backend микрофона с системным запросом разрешения.
 #[derive(Debug, Default)]
 pub(super) struct AndroidMicrophoneBackend;
 
@@ -40,7 +41,9 @@ impl MicrophoneBackend for AndroidMicrophoneBackend {
                 .map_err(android_error)?;
             match receiver
                 .await
-                .map_err(|_| MicrophoneError::new("Android не вернул результат запроса микрофона."))?
+                .map_err(|_| {
+                    MicrophoneError::new("Android не вернул результат запроса микрофона.")
+                })?
                 .map_err(android_error)?
             {
                 PermissionResult::Granted => {}
@@ -51,23 +54,24 @@ impl MicrophoneBackend for AndroidMicrophoneBackend {
                 }
             }
             bridge
-                .start_foreground_service(ForegroundServiceKind::Voice)
+                .start_foreground_service(ForegroundServiceKind::Microphone)
                 .map_err(android_error)?;
-
             let backend = CpalMicrophoneBackend;
             match backend.start(config, callbacks).await {
                 Ok(session) => {
-                    info!("android microphone foreground session started");
-                    Ok(Rc::new(AndroidMicrophoneSession { inner: session })
-                        as Rc<dyn MicrophoneSession>)
+                    info!("Android microphone foreground ownership acquired");
+                    Ok(Rc::new(AndroidMicrophoneSession {
+                        inner: session,
+                        stopped: Cell::new(false),
+                    }) as Rc<dyn MicrophoneSession>)
                 }
                 Err(error) => {
                     if let Err(stop_error) =
-                        bridge.stop_foreground_service(ForegroundServiceKind::Voice)
+                        bridge.stop_foreground_service(ForegroundServiceKind::Microphone)
                     {
                         warn!(
                             error = %stop_error,
-                            "failed to stop Android voice foreground service after microphone startup failure"
+                            "failed to release Android microphone foreground ownership after capture startup failure"
                         );
                     }
                     Err(error)
@@ -80,22 +84,26 @@ impl MicrophoneBackend for AndroidMicrophoneBackend {
 
 struct AndroidMicrophoneSession {
     inner: Rc<dyn MicrophoneSession>,
+    stopped: Cell<bool>,
 }
 
 impl MicrophoneSession for AndroidMicrophoneSession {
     fn stop(&self) -> futures_util::future::LocalBoxFuture<'static, Result<(), MicrophoneError>> {
+        if self.stopped.replace(true) {
+            return async { Ok(()) }.boxed_local();
+        }
         let inner = self.inner.clone();
         async move {
             let capture_result = inner.stop().await;
             let service_result = android_bridge().map_err(android_error).and_then(|bridge| {
                 bridge
-                    .stop_foreground_service(ForegroundServiceKind::Voice)
+                    .stop_foreground_service(ForegroundServiceKind::Microphone)
                     .map_err(android_error)
             });
 
             capture_result?;
             service_result?;
-            info!("android microphone foreground session stopped");
+            info!("Android microphone foreground ownership released");
             Ok(())
         }
         .boxed_local()

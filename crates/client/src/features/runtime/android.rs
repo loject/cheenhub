@@ -33,8 +33,10 @@ pub(crate) enum PermissionResult {
 /// Тип foreground service, владеющего активной media-сессией.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ForegroundServiceKind {
-    /// Захват и воспроизведение голоса.
-    Voice,
+    /// Воспроизведение голоса и системный lifecycle активного звонка.
+    VoicePlayback,
+    /// Активный захват микрофона.
+    Microphone,
     /// Захват камеры.
     Camera,
     /// Демонстрация экрана через MediaProjection.

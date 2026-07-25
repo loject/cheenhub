@@ -60,6 +60,9 @@ typealias BuildConfig = ru.cheenhub.BuildConfig
 class MainActivity : WryActivity() {
     private val captures = ConcurrentHashMap<Int, CaptureResources>()
     private var voiceAudioFocus: AudioFocusRequest? = null
+    private var voiceAudioFocusRequested = false
+    private val voiceAudioFocusChangeListener =
+        AudioManager.OnAudioFocusChangeListener(::handleVoiceAudioFocusChange)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -245,7 +248,7 @@ class MainActivity : WryActivity() {
     }
 
     fun startCheenHubForegroundService(kind: String) {
-        if (kind == "voice") configureVoiceAudio()
+        if (kind == "voicePlayback") configureVoiceAudio()
         val intent = Intent(this, DioxusForegroundService::class.java)
             .setAction(DioxusForegroundService.ACTION_START)
             .putExtra(DioxusForegroundService.EXTRA_KIND, kind)
@@ -253,7 +256,7 @@ class MainActivity : WryActivity() {
     }
 
     fun stopCheenHubForegroundService(kind: String) {
-        if (kind == "voice") releaseVoiceAudio()
+        if (kind == "voicePlayback") releaseVoiceAudio()
         val intent = Intent(this, DioxusForegroundService::class.java)
             .setAction(DioxusForegroundService.ACTION_STOP)
             .putExtra(DioxusForegroundService.EXTRA_KIND, kind)
@@ -390,9 +393,13 @@ class MainActivity : WryActivity() {
     }
 
     private fun configureVoiceAudio() {
+        if (voiceAudioFocusRequested) {
+            Log.d(CHEENHUB_VOICE_LOG_TAG, "Voice audio focus is already requested")
+            return
+        }
         val manager = getSystemService(AudioManager::class.java)
         manager.mode = AudioManager.MODE_IN_COMMUNICATION
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val requestResult = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(
                     AudioAttributes.Builder()
@@ -400,18 +407,60 @@ class MainActivity : WryActivity() {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build(),
                 )
-                .setOnAudioFocusChangeListener { }
+                .setWillPauseWhenDucked(true)
+                .setOnAudioFocusChangeListener(voiceAudioFocusChangeListener)
                 .build()
             voiceAudioFocus = request
             manager.requestAudioFocus(request)
         } else {
             @Suppress("DEPRECATION")
             manager.requestAudioFocus(
-                null,
+                voiceAudioFocusChangeListener,
                 AudioManager.STREAM_VOICE_CALL,
                 AudioManager.AUDIOFOCUS_GAIN,
             )
         }
+        voiceAudioFocusRequested = requestResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        if (voiceAudioFocusRequested) {
+            Log.i(CHEENHUB_VOICE_LOG_TAG, "Voice audio focus granted")
+            nativeOnCheenHubVoiceAudioFocusChanged(AudioManager.AUDIOFOCUS_GAIN)
+        } else {
+            voiceAudioFocus = null
+            manager.mode = AudioManager.MODE_NORMAL
+            Log.w(
+                CHEENHUB_VOICE_LOG_TAG,
+                "Voice audio focus request failed; voice capture and playback will stay paused",
+            )
+            nativeOnCheenHubVoiceAudioFocusChanged(AudioManager.AUDIOFOCUS_LOSS)
+        }
+    }
+
+    private fun handleVoiceAudioFocusChange(focusChange: Int) {
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                Log.i(CHEENHUB_VOICE_LOG_TAG, "Voice audio focus gained")
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                Log.w(CHEENHUB_VOICE_LOG_TAG, "Voice audio focus lost")
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                Log.i(CHEENHUB_VOICE_LOG_TAG, "Voice audio focus lost temporarily")
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                Log.i(
+                    CHEENHUB_VOICE_LOG_TAG,
+                    "Voice audio focus requested ducking; voice media will pause",
+                )
+            }
+            else -> {
+                Log.d(
+                    CHEENHUB_VOICE_LOG_TAG,
+                    "Ignored unknown voice audio focus change=$focusChange",
+                )
+                return
+            }
+        }
+        nativeOnCheenHubVoiceAudioFocusChanged(focusChange)
     }
 
     private fun releaseVoiceAudio() {
@@ -421,9 +470,11 @@ class MainActivity : WryActivity() {
             voiceAudioFocus = null
         } else {
             @Suppress("DEPRECATION")
-            manager.abandonAudioFocus(null)
+            manager.abandonAudioFocus(voiceAudioFocusChangeListener)
         }
+        voiceAudioFocusRequested = false
         manager.mode = AudioManager.MODE_NORMAL
+        Log.i(CHEENHUB_VOICE_LOG_TAG, "Voice audio focus released")
     }
 
     private fun selectFpsRange(manager: CameraManager, cameraId: String, requested: Int): Range<Int>? {
@@ -480,6 +531,8 @@ class MainActivity : WryActivity() {
 
     private external fun nativeOnCheenHubDirectMessageNotificationOpened(conversationId: String)
 
+    private external fun nativeOnCheenHubVoiceAudioFocusChanged(focusChange: Int)
+
     override fun onDestroy() {
         captures.values.forEach(CaptureResources::close)
         captures.clear()
@@ -529,6 +582,7 @@ class MainActivity : WryActivity() {
 
 private const val CHEENHUB_PUSH_LOG_TAG = "CheenHubPush"
 private const val CHEENHUB_AUTH_LOG_TAG = "CheenHubAuth"
+private const val CHEENHUB_VOICE_LOG_TAG = "CheenHubVoice"
 private const val CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION =
     "ru.cheenhub.action.OPEN_DIRECT_MESSAGE"
 private const val CHEENHUB_CONVERSATION_ID_EXTRA = "cheenhub_conversation_id"
@@ -952,7 +1006,7 @@ private object CheenHubNotifications {
 }
 
 class DioxusForegroundService : Service() {
-    private val activeKinds = linkedSetOf<String>()
+    private val activeKindCounts = linkedMapOf<String, Int>()
 
     override fun onCreate() {
         super.onCreate()
@@ -969,12 +1023,33 @@ class DioxusForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val kind = intent?.getStringExtra(EXTRA_KIND) ?: return START_NOT_STICKY
         if (intent.action == ACTION_STOP) {
-            activeKinds.remove(kind)
-            if (activeKinds.isEmpty()) stopSelf()
+            val count = activeKindCounts[kind] ?: 0
+            if (count <= 1) {
+                activeKindCounts.remove(kind)
+            } else {
+                activeKindCounts[kind] = count - 1
+            }
+            if (activeKindCounts.isEmpty()) {
+                Log.i(CHEENHUB_VOICE_LOG_TAG, "Foreground media ownership released")
+                stopSelf()
+            } else {
+                publishForeground()
+            }
             return START_NOT_STICKY
         }
 
-        activeKinds.add(kind)
+        activeKindCounts[kind] = (activeKindCounts[kind] ?: 0) + 1
+        publishForeground()
+        Log.i(
+            CHEENHUB_VOICE_LOG_TAG,
+            "Foreground media ownership acquired; kind=$kind count=${activeKindCounts[kind]}",
+        )
+        return START_NOT_STICKY
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun publishForeground() {
         val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             android.app.Notification.Builder(this, CHANNEL_ID)
         } else {
@@ -988,21 +1063,24 @@ class DioxusForegroundService : Service() {
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, builtNotification, serviceType(kind))
+            startForeground(
+                NOTIFICATION_ID,
+                builtNotification,
+                serviceTypes(activeKindCounts.keys),
+            )
         } else {
             startForeground(NOTIFICATION_ID, builtNotification)
         }
-        return START_NOT_STICKY
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
-
-    private fun serviceType(kind: String): Int = when (kind) {
-        "voice" -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-        "camera" -> ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-        "mediaProjection" -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-        else -> 0
+    private fun serviceTypes(kinds: Set<String>): Int = kinds.fold(0) { types, kind ->
+        types or when (kind) {
+            "voicePlayback" -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            "microphone" -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            "camera" -> ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            "mediaProjection" -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            else -> 0
+        }
     }
 
     companion object {

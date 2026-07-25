@@ -28,6 +28,7 @@ use super::notification_sounds::{
 use super::realtime;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState};
 use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
+use super::voice_call_platform::{self, VoiceAudioFocusEvent};
 
 /// Предоставляет состояние голосового соединения аутентифицированным компонентам приложения.
 /// TODO: review, выглядит сложно и как куча бойлерплейта
@@ -40,6 +41,8 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let screen_share = use_context::<ScreenShareHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
     let state = use_signal(|| VoiceConnectionState::Disconnected);
+    let mut platform_call_active = use_signal(|| false);
+    let mut voice_audio_focused = use_signal(|| true);
     let kicked_from_room = use_signal(|| None::<String>);
     let speaking_users = use_signal(Vec::new);
     let room_snapshots = use_signal(Vec::new);
@@ -60,6 +63,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let mut camera_target_room = use_signal(|| None::<LocalVideoTarget>);
     let mut screen_share_target_room = use_signal(|| None::<LocalVideoTarget>);
     let mut mic_paused_by_mute = use_signal(|| false);
+    let mut mic_paused_by_focus = use_signal(|| false);
     let voice_notification_sounds =
         use_hook(|| Rc::new(RefCell::new(VoiceNotificationSoundState::default())));
     let camera_notification_sounds =
@@ -90,6 +94,26 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             }
         })
     });
+    use_hook(move || {
+        spawn(async move {
+            let mut events = voice_call_platform::subscribe_voice_audio_focus();
+            while let Some(event) = events.next().await {
+                let focused = matches!(event, VoiceAudioFocusEvent::Gained);
+                voice_audio_focused.set(focused);
+                match event {
+                    VoiceAudioFocusEvent::Gained => {
+                        info!("Android voice-call audio focus gained");
+                    }
+                    VoiceAudioFocusEvent::LostTransient => {
+                        warn!("Android voice-call audio focus lost temporarily");
+                    }
+                    VoiceAudioFocusEvent::Lost => {
+                        warn!("Android voice-call audio focus lost");
+                    }
+                }
+            }
+        })
+    });
     let datagram_realtime = realtime.clone();
     let datagram_playback = playback.clone();
     let datagram_current_user_id = current_user.id.clone();
@@ -98,6 +122,9 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         spawn(async move {
             let mut frames = realtime::subscribe_voice_frames(&datagram_realtime);
             while let Some(frame) = frames.next().await {
+                if !voice_audio_focused() {
+                    continue;
+                }
                 let current = state();
                 let Some(target) = current.active_target() else {
                     continue;
@@ -240,6 +267,26 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             target,
             participants,
         } => {
+            if !platform_call_active() {
+                match voice_call_platform::set_voice_call_participating(true) {
+                    Ok(()) => {
+                        platform_call_active.set(true);
+                        info!(
+                            server_id = %target.server_id,
+                            room_id = %target.room_id,
+                            "acquired platform voice-call lifecycle"
+                        );
+                    }
+                    Err(error) => {
+                        warn!(
+                            %error,
+                            server_id = %target.server_id,
+                            room_id = %target.room_id,
+                            "failed to acquire platform voice-call lifecycle"
+                        );
+                    }
+                }
+            }
             effect_voice_sounds.borrow_mut().record_connected(
                 &target,
                 &participants,
@@ -281,14 +328,31 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 microphone.stop();
                 return;
             }
+            if !voice_audio_focused() {
+                if !mic_paused_by_focus()
+                    && matches!(
+                        microphone.status_untracked(),
+                        MicrophoneStatus::Live | MicrophoneStatus::Starting
+                    )
+                {
+                    mic_paused_by_focus.set(true);
+                }
+                microphone.stop();
+                playback.stop_voice_playback();
+                return;
+            }
 
             playback.resume();
             let paused_by_mute = mic_paused_by_mute();
+            let paused_by_focus = mic_paused_by_focus();
             if paused_by_mute {
                 mic_paused_by_mute.set(false);
             }
+            if paused_by_focus {
+                mic_paused_by_focus.set(false);
+            }
             if microphone_target_room().as_deref() == Some(target.room_id.as_str()) {
-                if paused_by_mute {
+                if paused_by_mute || paused_by_focus {
                     microphone_uplink::restart(
                         microphone.clone(),
                         realtime.clone(),
@@ -301,6 +365,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                     server_id = %target.server_id,
                     room_id = %target.room_id,
                     microphone_paused_by_mute = paused_by_mute,
+                    microphone_paused_by_focus = paused_by_focus,
                     "voice media already targets active room"
                 );
                 return;
@@ -329,6 +394,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             let had_screen_share_target = previous_screen_share_target.is_some();
             let had_microphone_target = microphone_target_room().is_some();
             let was_paused_by_mute = mic_paused_by_mute();
+            let was_paused_by_focus = mic_paused_by_focus();
 
             if let Some(target) = previous_camera_target {
                 let local_video_runtime = LocalVideoRuntime {
@@ -366,6 +432,20 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             if was_paused_by_mute {
                 mic_paused_by_mute.set(false);
             }
+            if was_paused_by_focus {
+                mic_paused_by_focus.set(false);
+            }
+            if platform_call_active() {
+                match voice_call_platform::set_voice_call_participating(false) {
+                    Ok(()) => {
+                        platform_call_active.set(false);
+                        info!("released platform voice-call lifecycle");
+                    }
+                    Err(error) => {
+                        warn!(%error, "failed to release platform voice-call lifecycle");
+                    }
+                }
+            }
             effect_handle.clear_speaking_users();
             if effect_voice_sounds.borrow().is_current_user_connected() {
                 playback.stop_voice_playback();
@@ -376,10 +456,12 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 || had_screen_share_target
                 || had_microphone_target
                 || was_paused_by_mute
+                || was_paused_by_focus
             {
                 info!(
                     microphone = had_microphone_target,
                     microphone_paused_by_mute = was_paused_by_mute,
+                    microphone_paused_by_focus = was_paused_by_focus,
                     camera = had_camera_target,
                     screen_share = had_screen_share_target,
                     "released local voice media resources"

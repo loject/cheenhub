@@ -250,7 +250,8 @@ pub(crate) fn take_media_projection_grant(
 #[cfg(target_os = "android")]
 fn dispatch_service(method: &'static str, kind: ForegroundServiceKind) {
     let kind = match kind {
-        ForegroundServiceKind::Voice => "voice",
+        ForegroundServiceKind::VoicePlayback => "voicePlayback",
+        ForegroundServiceKind::Microphone => "microphone",
         ForegroundServiceKind::Camera => "camera",
         ForegroundServiceKind::MediaProjection => "mediaProjection",
     }
