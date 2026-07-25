@@ -7,6 +7,6 @@ RUN apt-get update \
 COPY deploy/bin/cheenhub_backend /usr/local/bin/cheenhub_backend
 COPY deploy/bin/cheenhub_migrations /usr/local/bin/cheenhub_migrations
 
-EXPOSE 3000 4443/tcp 4443/udp
+EXPOSE 3000/tcp 3000/udp
 
 CMD ["cheenhub_backend"]

@@ -21,8 +21,7 @@ env:
   ANDROID_BUILD_TOOLS_VERSION: "35.0.0"
   ANDROID_NDK_VERSION: "27.2.12479018"
   CHEENHUB_DOMAIN: ${{ vars.CHEENHUB_DOMAIN || 'cheenhub.ru' }}
-  CHEENHUB_API_BASE_URL: ${{ vars.CHEENHUB_API_BASE_URL || 'https://cheenhub.ru/api' }}
-  CHEENHUB_REALTIME_URL: ${{ vars.CHEENHUB_REALTIME_URL || 'https://cheenhub.ru/realtime' }}
+  CHEENHUB_BASE_URL: ${{ vars.CHEENHUB_BASE_URL || 'https://cheenhub.ru' }}
   CHEENHUB_REALTIME_CERT_SHA256: ${{ vars.CHEENHUB_REALTIME_CERT_SHA256 || '' }}
   CHEENHUB_JWT_KEY_ID: ${{ vars.CHEENHUB_JWT_KEY_ID || 'prod-ed25519-1' }}
   CHEENHUB_JWT_PUBLIC_KEY_BASE64: ${{ vars.CHEENHUB_JWT_PUBLIC_KEY_BASE64 || '' }}
@@ -171,11 +170,10 @@ jobs:
           tags: ${{ steps.web-meta.outputs.tags }}
           labels: ${{ steps.web-meta.outputs.labels }}
           build-args: |
-            CHEENHUB_API_BASE_URL=${{ env.CHEENHUB_API_BASE_URL }}
+            CHEENHUB_BASE_URL=${{ env.CHEENHUB_BASE_URL }}
             CHEENHUB_APP_VERSION=${{ needs.prepare.outputs.app-version }}
             CHEENHUB_JWT_KEY_ID=${{ env.CHEENHUB_JWT_KEY_ID }}
             CHEENHUB_JWT_PUBLIC_KEY_BASE64=${{ env.CHEENHUB_JWT_PUBLIC_KEY_BASE64 }}
-            CHEENHUB_REALTIME_URL=${{ env.CHEENHUB_REALTIME_URL }}
             CHEENHUB_REALTIME_CERT_SHA256=${{ env.CHEENHUB_REALTIME_CERT_SHA256 }}
           cache-from: |
             type=registry,ref=${{ needs.prepare.outputs.web-image }}:buildcache

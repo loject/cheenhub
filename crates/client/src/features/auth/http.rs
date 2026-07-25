@@ -1,14 +1,21 @@
 //! HTTP-хелперы клиентского REST API.
 
-use dioxus::logger::tracing::debug;
+use dioxus::logger::tracing::{debug, error};
 
 mod native;
 
-const DEFAULT_API_BASE_URL: &str = "http://127.0.0.1:3000/api";
-
 /// Собирает полный URL REST API из относительного пути.
 pub(crate) fn url(path: &str) -> String {
-    format!("{}{}", api_base_url().trim_end_matches('/'), path)
+    crate::config::api_url(path)
+        .map(|url| url.to_string())
+        .unwrap_or_else(|config_error| {
+            error!(
+                error = %config_error,
+                path,
+                "failed to build client REST API URL"
+            );
+            panic!("Некорректная конфигурация CHEENHUB_BASE_URL: {config_error}");
+        })
 }
 
 /// Создает GET-запрос к REST API.
@@ -47,10 +54,6 @@ fn request(method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         "attaching native client identity to auth HTTP request"
     );
     request.header(reqwest::header::USER_AGENT, user_agent)
-}
-
-fn api_base_url() -> &'static str {
-    option_env!("CHEENHUB_API_BASE_URL").unwrap_or(DEFAULT_API_BASE_URL)
 }
 
 #[cfg(test)]

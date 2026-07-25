@@ -37,18 +37,15 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       BACKEND_HOST: 0.0.0.0
       BACKEND_PORT: 3000
-      WEBTRANSPORT_HOST: 0.0.0.0
-      WEBTRANSPORT_PORT: 4443
       WEBTRANSPORT_TLS_CERT_PATH: /etc/letsencrypt/live/cheenhub.ru/fullchain.pem
       WEBTRANSPORT_TLS_KEY_PATH: /etc/letsencrypt/live/cheenhub.ru/privkey.pem
     volumes:
       - letsencrypt:/etc/letsencrypt:ro
     expose:
-      - "3000"
+      - "3000/tcp"
+      - "3000/udp"
     ports:
-      - "443:4443/udp"
-      - "4443:4443/tcp"
-      - "4443:4443/udp"
+      - "443:3000/udp"
     depends_on:
       migrate:
         condition: service_completed_successfully

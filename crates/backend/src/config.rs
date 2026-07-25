@@ -3,6 +3,7 @@
 use std::{env, net::SocketAddr};
 
 use anyhow::{Context, anyhow};
+use url::Url;
 
 /// Конфигурация сервиса бэкенда во время выполнения.
 #[derive(Debug, Clone)]
@@ -31,7 +32,7 @@ pub(crate) struct AppConfig {
     pub(crate) google_oauth_redirect_uri: Option<String>,
     /// Базовый URL браузерного клиента после обратных вызовов OAuth.
     pub(crate) cheenhub_client_base_url: String,
-    /// Публичный базовый URL REST API для сгенерированных ссылок на ресурсы.
+    /// Производный публичный базовый URL REST API для сгенерированных ссылок на ресурсы.
     pub(crate) cheenhub_api_base_url: String,
     /// Время жизни состояния OAuth в минутах.
     pub(crate) oauth_state_lifetime_minutes: i64,
@@ -53,10 +54,6 @@ pub(crate) struct AppConfig {
     pub(crate) password_reset_token_lifetime_minutes: i64,
     /// Бэкенд хранения аутентификации.
     pub(crate) auth_store: AuthStoreConfig,
-    /// Хост-адрес, используемый слушателем WebTransport.
-    pub(crate) webtransport_host: String,
-    /// Порт, используемый слушателем WebTransport.
-    pub(crate) webtransport_port: u16,
     /// Необязательный путь к PEM-сертификату, используемый слушателем WebTransport.
     pub(crate) webtransport_tls_cert_path: Option<String>,
     /// Необязательный путь к PEM-приватному ключу, используемый слушателем WebTransport.
@@ -111,7 +108,10 @@ impl AppConfig {
             google_oauth_client_secret: env::var("GOOGLE_OAUTH_CLIENT_SECRET").ok(),
             google_oauth_redirect_uri: env::var("GOOGLE_OAUTH_REDIRECT_URI").ok(),
             cheenhub_client_base_url: optional("CHEENHUB_CLIENT_BASE_URL", "http://127.0.0.1:8080"),
-            cheenhub_api_base_url: optional("CHEENHUB_API_BASE_URL", "http://127.0.0.1:3000/api"),
+            cheenhub_api_base_url: api_base_url(&optional(
+                "CHEENHUB_BASE_URL",
+                "http://127.0.0.1:3000",
+            ))?,
             oauth_state_lifetime_minutes: optional_positive_i64(
                 "OAUTH_STATE_LIFETIME_MINUTES",
                 10,
@@ -136,10 +136,6 @@ impl AppConfig {
                 30,
             )?,
             auth_store: auth_store_config(&optional("AUTH_STORE", "postgres"))?,
-            webtransport_host: optional("WEBTRANSPORT_HOST", "127.0.0.1"),
-            webtransport_port: optional("WEBTRANSPORT_PORT", "4443")
-                .parse()
-                .context("WEBTRANSPORT_PORT must be a valid u16 port")?,
             webtransport_tls_cert_path: env::var("WEBTRANSPORT_TLS_CERT_PATH").ok(),
             webtransport_tls_key_path: env::var("WEBTRANSPORT_TLS_KEY_PATH").ok(),
             chat_images_s3: optional_s3_config()?,
@@ -160,18 +156,27 @@ impl AppConfig {
                 )
             })
     }
+}
 
-    /// Возвращает socket address, используемый слушателем WebTransport.
-    pub(crate) fn webtransport_socket_addr(&self) -> anyhow::Result<SocketAddr> {
-        format!("{}:{}", self.webtransport_host, self.webtransport_port)
-            .parse()
-            .with_context(|| {
-                format!(
-                    "WEBTRANSPORT_HOST and WEBTRANSPORT_PORT must form a valid socket address: {}:{}",
-                    self.webtransport_host, self.webtransport_port
-                )
-            })
+fn api_base_url(base_url: &str) -> anyhow::Result<String> {
+    let mut url = Url::parse(base_url)
+        .with_context(|| "CHEENHUB_BASE_URL must contain a valid absolute URL")?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(anyhow!(
+            "CHEENHUB_BASE_URL must use the http or https scheme"
+        ));
     }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(anyhow!("CHEENHUB_BASE_URL must not contain credentials"));
+    }
+    if url.path() != "/" || url.query().is_some() || url.fragment().is_some() {
+        return Err(anyhow!(
+            "CHEENHUB_BASE_URL must contain only a scheme, host, and optional port"
+        ));
+    }
+
+    url.set_path("/api");
+    Ok(url.to_string().trim_end_matches('/').to_owned())
 }
 
 fn required(key: &str) -> anyhow::Result<String> {
@@ -256,5 +261,29 @@ fn optional_bool(key: &str, default: bool) -> anyhow::Result<bool> {
         "true" | "1" | "yes" | "y" => Ok(true),
         "false" | "0" | "no" | "n" => Ok(false),
         _ => Err(anyhow!("{key} must be a boolean")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::api_base_url;
+
+    #[test]
+    fn derives_api_url_from_service_base_url() {
+        assert_eq!(
+            api_base_url("http://192.168.2.2:3000").expect("публичный API URL должен собираться"),
+            "http://192.168.2.2:3000/api"
+        );
+        assert_eq!(
+            api_base_url("https://cheenhub.test/").expect("публичный API URL должен собираться"),
+            "https://cheenhub.test/api"
+        );
+    }
+
+    #[test]
+    fn rejects_base_url_with_path_credentials_or_unsupported_scheme() {
+        assert!(api_base_url("https://cheenhub.test/root").is_err());
+        assert!(api_base_url("https://user:secret@cheenhub.test").is_err());
+        assert!(api_base_url("ftp://cheenhub.test").is_err());
     }
 }

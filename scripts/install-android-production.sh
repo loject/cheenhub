@@ -51,37 +51,30 @@ mapfile -d '' -t production_values < <(
     set +u
     source "${production_env}"
     printf '%s\0' \
-        "${CHEENHUB_API_BASE_URL:-https://cheenhub.ru/api}" \
-        "${CHEENHUB_REALTIME_URL:-https://cheenhub.ru/realtime}" \
+        "${CHEENHUB_BASE_URL:-https://cheenhub.ru}" \
         "${CHEENHUB_REALTIME_CERT_SHA256:-}" \
         "${CHEENHUB_JWT_KEY_ID:-prod-ed25519-1}" \
-        "${CHEENHUB_JWT_PUBLIC_KEY_BASE64:-}" \
-        "${CHEENHUB_REALTIME_WS_URL:-}"
+        "${CHEENHUB_JWT_PUBLIC_KEY_BASE64:-}"
 )
 
-if [[ "${#production_values[@]}" -ne 6 ]]; then
+if [[ "${#production_values[@]}" -ne 4 ]]; then
     printf 'Не удалось прочитать client production-конфигурацию из %s.\n' "${production_env}" >&2
     exit 1
 fi
 
-if [[ -z "${production_values[4]}" ]]; then
+if [[ -z "${production_values[3]}" ]]; then
     printf 'В %s отсутствует CHEENHUB_JWT_PUBLIC_KEY_BASE64.\n' "${production_env}" >&2
     exit 1
 fi
 
-realtime_ws_url="${production_values[5]}"
-if [[ -z "${realtime_ws_url}" ]]; then
-    case "${production_values[0]}" in
-        https://*) realtime_ws_url="wss://${production_values[0]#https://}" ;;
-        http://*) realtime_ws_url="ws://${production_values[0]#http://}" ;;
-        *)
-            printf 'Некорректный CHEENHUB_API_BASE_URL в %s: ожидается http:// или https://.\n' \
-                "${production_env}" >&2
-            exit 1
-            ;;
-    esac
-    realtime_ws_url="${realtime_ws_url%/}/realtime/ws"
-fi
+case "${production_values[0]}" in
+    https://* | http://*) ;;
+    *)
+        printf 'Некорректный CHEENHUB_BASE_URL в %s: ожидается http:// или https://.\n' \
+            "${production_env}" >&2
+        exit 1
+        ;;
+esac
 
 release_tag="$(cargo run --quiet -p xtask -- release-version print-tag)"
 commit_sha="$(git rev-parse --short=7 HEAD)"
@@ -95,12 +88,10 @@ export ANDROID_HOME="${sdk_root}"
 export ANDROID_SDK_ROOT="${sdk_root}"
 export JAVA_HOME="${JAVA_HOME:-/opt/android-studio/jbr}"
 export CMAKE_GENERATOR="Ninja"
-export CHEENHUB_API_BASE_URL="${production_values[0]}"
-export CHEENHUB_REALTIME_URL="${production_values[1]}"
-export CHEENHUB_REALTIME_WS_URL="${realtime_ws_url}"
-export CHEENHUB_REALTIME_CERT_SHA256="${production_values[2]}"
-export CHEENHUB_JWT_KEY_ID="${production_values[3]}"
-export CHEENHUB_JWT_PUBLIC_KEY_BASE64="${production_values[4]}"
+export CHEENHUB_BASE_URL="${production_values[0]}"
+export CHEENHUB_REALTIME_CERT_SHA256="${production_values[1]}"
+export CHEENHUB_JWT_KEY_ID="${production_values[2]}"
+export CHEENHUB_JWT_PUBLIC_KEY_BASE64="${production_values[3]}"
 export CHEENHUB_APP_VERSION="${app_version}"
 
 if [[ -z "${ANDROID_NDK_HOME:-}" && -d "${sdk_root}/ndk/27.2.12479018" ]]; then

@@ -3,6 +3,7 @@
 
 use dioxus::prelude::*;
 
+mod config;
 mod features;
 mod routes;
 mod update_mode;

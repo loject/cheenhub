@@ -32,7 +32,7 @@ dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensur
 run_task = "dev-services-android"
 
 [tasks.dev-stack-android-emulator]
-description = "Ensure local infrastructure, start the Android emulator, and run the backend watcher plus Dioxus Android app."
+description = "Ensure local infrastructure and run the backend watcher plus Dioxus Android app on a running emulator."
 dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
 run_task = "dev-services-android-emulator"
 
@@ -183,13 +183,39 @@ args = [
 description = "Run the Dioxus Android dev app on a connected ARM64 device."
 dependencies = ["install-dioxus-cli", "ensure-android-arm64-target"]
 env = { CMAKE_GENERATOR = "Ninja" }
-command = "scripts/run-android-device.sh"
+command = "dx"
+args = [
+    "serve",
+    "--android",
+    "--target",
+    "aarch64-linux-android",
+    "--package",
+    "cheenhub_client",
+    "--bin",
+    "cheen_hub",
+    "--no-default-features",
+    "--features",
+    "mobile",
+]
 
 [tasks.dioxus-android-emulator]
-description = "Start the configured x86_64 Android emulator and run the Dioxus Android dev app in it."
+description = "Run the Dioxus Android dev app on a running x86_64 emulator."
 dependencies = ["install-dioxus-cli", "ensure-android-x86-64-target"]
 env = { CMAKE_GENERATOR = "Ninja" }
-command = "scripts/run-android-emulator.sh"
+command = "dx"
+args = [
+    "serve",
+    "--android",
+    "--target",
+    "x86_64-linux-android",
+    "--package",
+    "cheenhub_client",
+    "--bin",
+    "cheen_hub",
+    "--no-default-features",
+    "--features",
+    "mobile",
+]
 
 [tasks.ensure-android-arm64-target]
 private = true

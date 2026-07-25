@@ -192,7 +192,7 @@ async fn main() -> anyhow::Result<()> {
     if push_notifications.worker_enabled() {
         tokio::spawn(push_notifications.run_delivery_worker());
     }
-    let realtime_address = config.webtransport_socket_addr()?;
+    let realtime_address = address;
     let realtime_cert_path = realtime_tls.cert_path;
     let realtime_key_path = realtime_tls.key_path;
     let realtime_server =

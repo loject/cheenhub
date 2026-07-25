@@ -33,17 +33,15 @@ COPY Cargo.toml Cargo.lock Dioxus.toml Makefile.toml ./
 COPY build_support ./build_support
 COPY xtask ./xtask
 COPY crates ./crates
-ARG CHEENHUB_API_BASE_URL
+ARG CHEENHUB_BASE_URL
 ARG CHEENHUB_APP_VERSION
 ARG CHEENHUB_JWT_KEY_ID
 ARG CHEENHUB_JWT_PUBLIC_KEY_BASE64
-ARG CHEENHUB_REALTIME_URL
 ARG CHEENHUB_REALTIME_CERT_SHA256
-ENV CHEENHUB_API_BASE_URL=${CHEENHUB_API_BASE_URL}
+ENV CHEENHUB_BASE_URL=${CHEENHUB_BASE_URL}
 ENV CHEENHUB_APP_VERSION=${CHEENHUB_APP_VERSION}
 ENV CHEENHUB_JWT_KEY_ID=${CHEENHUB_JWT_KEY_ID}
 ENV CHEENHUB_JWT_PUBLIC_KEY_BASE64=${CHEENHUB_JWT_PUBLIC_KEY_BASE64}
-ENV CHEENHUB_REALTIME_URL=${CHEENHUB_REALTIME_URL}
 ENV CHEENHUB_REALTIME_CERT_SHA256=${CHEENHUB_REALTIME_CERT_SHA256}
 RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cheenhub-cargo-git,target=/usr/local/cargo/git,sharing=locked \
@@ -60,7 +58,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=backend-builder /usr/local/bin/cheenhub_backend /usr/local/bin/cheenhub_backend
 COPY --from=backend-builder /usr/local/bin/cheenhub_migrations /usr/local/bin/cheenhub_migrations
-EXPOSE 3000 4443/tcp 4443/udp
+EXPOSE 3000/tcp 3000/udp
 CMD ["cheenhub_backend"]
 
 FROM nginx:1.27-alpine AS web-runtime

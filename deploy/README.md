@@ -4,9 +4,9 @@
 
 1. Сервер хранит состояние в Docker volumes: Postgres, Let's Encrypt и certbot webroot.
 2. `deploy/compose.yml` запускает `db`, одноразовую миграцию, backend, nginx frontend и certbot.
-3. Backend слушает HTTP API на внутреннем `3000` и WebTransport на `4443`; compose публикует WebTransport по UDP `443`.
+3. Backend слушает HTTP API по TCP и WebTransport по UDP на общем внутреннем порту `3000`; compose публикует WebTransport по UDP `443`.
 4. Nginx принимает TCP `80/443`, отдаёт frontend и проксирует `/api/*` в backend.
-5. Frontend собирается как отдельный Docker image, потому что URL API, URL realtime и публичный JWT-ключ зашиваются на этапе сборки.
+5. Frontend собирается как отдельный Docker image, потому что базовый URL сервиса и публичный JWT-ключ зашиваются на этапе сборки.
 
 ## Первичная подготовка сервера
 
@@ -92,8 +92,7 @@ Workflow `.github/workflows/release-images.yml`:
 
 ```text
 CHEENHUB_DOMAIN=cheenhub.ru
-CHEENHUB_API_BASE_URL=https://cheenhub.ru/api
-CHEENHUB_REALTIME_URL=https://cheenhub.ru/realtime
+CHEENHUB_BASE_URL=https://cheenhub.ru
 CHEENHUB_JWT_KEY_ID=prod-ed25519-1
 CHEENHUB_JWT_PUBLIC_KEY_BASE64=<public key from .env.production>
 CHEENHUB_REALTIME_CERT_SHA256=

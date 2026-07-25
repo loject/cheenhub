@@ -40,9 +40,7 @@ fn main() {
     println!("cargo:rustc-env=CHEENHUB_APP_VERSION={app_version}");
 
     forward_env("CHEENHUB_JWT_PUBLIC_KEY_BASE64");
-    forward_env("CHEENHUB_API_BASE_URL");
-    forward_env("CHEENHUB_REALTIME_URL");
-    forward_env("CHEENHUB_REALTIME_WS_URL");
+    forward_env("CHEENHUB_BASE_URL");
     if !forward_env("CHEENHUB_REALTIME_CERT_SHA256") {
         forward_webtransport_cert_hash();
     }
