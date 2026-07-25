@@ -27,11 +27,18 @@
     "allow_concurrent_runs": false
   },
   {
-    "label": "CheenHub: dev stack",
+    "label": "CheenHub: dev stack · Backend",
     "command": "cargo",
     "args": [
       "make",
-      "dev-stack"
+      "dev-stack-backend"
+    ],
+    "tags": [
+      "cheenhub-dev-stack-web",
+      "cheenhub-dev-stack-desktop",
+      "cheenhub-dev-stack-android",
+      "cheenhub-dev-stack-android-emulator",
+      "cheenhub-dev-stack-desktop-profile"
     ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",
@@ -40,11 +47,14 @@
     "allow_concurrent_runs": false
   },
   {
-    "label": "CheenHub: dev stack desktop",
+    "label": "CheenHub: dev stack · Frontend",
     "command": "cargo",
     "args": [
       "make",
-      "dev-stack-desktop"
+      "dev-frontend"
+    ],
+    "tags": [
+      "cheenhub-dev-stack-web"
     ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",
@@ -53,11 +63,14 @@
     "allow_concurrent_runs": false
   },
   {
-    "label": "CheenHub: dev stack Android",
+    "label": "CheenHub: dev stack desktop · App",
     "command": "cargo",
     "args": [
       "make",
-      "dev-stack-android"
+      "dioxus-desktop"
+    ],
+    "tags": [
+      "cheenhub-dev-stack-desktop"
     ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",
@@ -66,11 +79,46 @@
     "allow_concurrent_runs": false
   },
   {
-    "label": "CheenHub: dev stack desktop profile",
+    "label": "CheenHub: dev stack Android · App",
     "command": "cargo",
     "args": [
       "make",
-      "dev-services-desktop-profile"
+      "dioxus-android"
+    ],
+    "tags": [
+      "cheenhub-dev-stack-android"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "CheenHub: dev stack Android emulator · App",
+    "command": "cargo",
+    "args": [
+      "make",
+      "dioxus-android-emulator"
+    ],
+    "tags": [
+      "cheenhub-dev-stack-android-emulator"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "CheenHub: dev stack desktop profile · App",
+    "command": "cargo",
+    "args": [
+      "make",
+      "dioxus-desktop-profile"
+    ],
+    "tags": [
+      "cheenhub-dev-stack-desktop-profile"
     ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",
@@ -163,6 +211,15 @@
       "make",
       "dioxus-android"
     ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "never",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "CheenHub: install production Android",
+    "command": "scripts/install-android-production.sh",
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",
     "hide": "never",

@@ -31,6 +31,16 @@ description = "Ensure local infrastructure and run the backend watcher plus Diox
 dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
 run_task = "dev-services-android"
 
+[tasks.dev-stack-android-emulator]
+description = "Ensure local infrastructure, start the Android emulator, and run the backend watcher plus Dioxus Android app."
+dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
+run_task = "dev-services-android-emulator"
+
+[tasks.dev-stack-backend]
+description = "Ensure local infrastructure and run the backend watcher."
+dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
+run_task = "backend-watch"
+
 [tasks.ensure-local-jwt-env]
 description = "Ensure local .env contains a valid matching JWT Ed25519 key pair."
 command = "cargo"
@@ -52,6 +62,10 @@ args = [
 description = "Run the backend watcher, microphone worker watcher, and Dioxus dev server in parallel."
 run_task = { name = ["backend-watch", "microphone-worker-watch", "dioxus-web"], fork = true, parallel = true }
 
+[tasks.dev-frontend]
+description = "Run the microphone worker watcher and Dioxus web dev server in parallel."
+run_task = { name = ["microphone-worker-watch", "dioxus-web"], fork = true, parallel = true }
+
 [tasks.dev-services-desktop]
 description = "Run the backend watcher and Dioxus desktop app in parallel."
 run_task = { name = ["backend-watch", "dioxus-desktop"], fork = true, parallel = true }
@@ -59,6 +73,10 @@ run_task = { name = ["backend-watch", "dioxus-desktop"], fork = true, parallel =
 [tasks.dev-services-android]
 description = "Run the backend watcher and Dioxus Android app in parallel."
 run_task = { name = ["backend-watch", "dioxus-android"], fork = true, parallel = true }
+
+[tasks.dev-services-android-emulator]
+description = "Run the backend watcher and Dioxus Android app in the x86_64 emulator in parallel."
+run_task = { name = ["backend-watch", "dioxus-android-emulator"], fork = true, parallel = true }
 
 [tasks.dev-services-desktop-profile]
 description = "Run the backend watcher and Dioxus desktop app with Dioxus render profiling."
@@ -165,25 +183,23 @@ args = [
 description = "Run the Dioxus Android dev app on a connected ARM64 device."
 dependencies = ["install-dioxus-cli", "ensure-android-arm64-target"]
 env = { CMAKE_GENERATOR = "Ninja" }
-command = "dx"
-args = [
-    "serve",
-    "--android",
-    "--target",
-    "aarch64-linux-android",
-    "--package",
-    "cheenhub_client",
-    "--bin",
-    "cheen_hub",
-    "--no-default-features",
-    "--features",
-    "mobile",
-]
+command = "scripts/run-android-device.sh"
+
+[tasks.dioxus-android-emulator]
+description = "Start the configured x86_64 Android emulator and run the Dioxus Android dev app in it."
+dependencies = ["install-dioxus-cli", "ensure-android-x86-64-target"]
+env = { CMAKE_GENERATOR = "Ninja" }
+command = "scripts/run-android-emulator.sh"
 
 [tasks.ensure-android-arm64-target]
 private = true
 command = "rustup"
 args = ["target", "add", "aarch64-linux-android"]
+
+[tasks.ensure-android-x86-64-target]
+private = true
+command = "rustup"
+args = ["target", "add", "x86_64-linux-android"]
 
 [tasks.dioxus-desktop-profile]
 description = "Run the Dioxus desktop dev app with Dioxus render profiling."
