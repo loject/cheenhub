@@ -184,10 +184,12 @@
       transform 160ms ease;
   }
 
-  .role-stat-tile:hover {
-    border-color: rgba(59, 130, 246, 0.22);
-    background: rgba(59, 130, 246, 0.06);
-    transform: translateY(-1px);
+  @media (hover: hover) and (pointer: fine) {
+    .role-stat-tile:hover {
+      border-color: rgba(59, 130, 246, 0.22);
+      background: rgba(59, 130, 246, 0.06);
+      transform: translateY(-1px);
+    }
   }
 
   .role-color-preview {
@@ -198,9 +200,11 @@
       box-shadow 140ms ease;
   }
 
-  .role-color-preview:hover {
-    transform: scale(1.04);
-    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+  @media (hover: hover) and (pointer: fine) {
+    .role-color-preview:hover {
+      transform: scale(1.04);
+      box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+    }
   }
 
   .role-save-bar-inner {
@@ -662,10 +666,16 @@
       border-color 180ms ease;
   }
 
-  .embedded-chat[data-resizing="true"] .chat-resize-handle::before,
-  .chat-resize-handle:hover::before {
+  .embedded-chat[data-resizing="true"] .chat-resize-handle::before {
     width: 58px;
     background: rgba(212, 212, 216, 0.82);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .chat-resize-handle:hover::before {
+      width: 58px;
+      background: rgba(212, 212, 216, 0.82);
+    }
   }
 
   .chat-message {
@@ -700,9 +710,11 @@
     transition: transform 0.1s ease, background 0.1s ease;
   }
 
-  .volume-slider::-webkit-slider-thumb:hover {
-    transform: scale(1.2);
-    background: #ffffff;
+  @media (hover: hover) and (pointer: fine) {
+    .volume-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+      background: #ffffff;
+    }
   }
 
   .volume-slider::-moz-range-thumb {
@@ -717,8 +729,10 @@
     transition: transform 0.1s ease;
   }
 
-  .volume-slider::-moz-range-thumb:hover {
-    transform: scale(1.2);
+  @media (hover: hover) and (pointer: fine) {
+    .volume-slider::-moz-range-thumb:hover {
+      transform: scale(1.2);
+    }
   }
 
   .volume-slider::-moz-range-track {
@@ -790,27 +804,33 @@
     transition: border-color 0.2s, background 0.2s;
   }
 
-  .fcard:hover {
-    border-color: rgba(59, 130, 246, 0.18);
-    background: rgba(59, 130, 246, 0.03);
+  @media (hover: hover) and (pointer: fine) {
+    .fcard:hover {
+      border-color: rgba(59, 130, 246, 0.18);
+      background: rgba(59, 130, 246, 0.03);
+    }
   }
 
   .btn-p {
     transition: background 0.15s, box-shadow 0.15s;
   }
 
-  .btn-p:hover {
-    background: #60a5fa;
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+  @media (hover: hover) and (pointer: fine) {
+    .btn-p:hover {
+      background: #60a5fa;
+      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+    }
   }
 
   .btn-g {
     transition: border-color 0.15s, color 0.15s;
   }
 
-  .btn-g:hover {
-    border-color: rgba(255, 255, 255, 0.18);
-    color: #f4f4f5;
+  @media (hover: hover) and (pointer: fine) {
+    .btn-g:hover {
+      border-color: rgba(255, 255, 255, 0.18);
+      color: #f4f4f5;
+    }
   }
 }
 
