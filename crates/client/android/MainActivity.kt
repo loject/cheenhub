@@ -15,6 +15,7 @@ import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.projection.MediaProjection
@@ -435,6 +436,91 @@ class MainActivity : WryActivity() {
         }
     }
 
+    fun getCheenHubVoiceOutputRoute(): Int {
+        val manager = getSystemService(AudioManager::class.java)
+        if (!hasVoiceOutputRoutes(manager)) {
+            Log.i(
+                CHEENHUB_VOICE_LOG_TAG,
+                "Voice output route switch is unavailable because speaker or earpiece is missing",
+            )
+            return VOICE_OUTPUT_UNSUPPORTED
+        }
+        val speakerEnabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            manager.communicationDevice?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        } else {
+            @Suppress("DEPRECATION")
+            manager.isSpeakerphoneOn
+        }
+        return if (speakerEnabled) VOICE_OUTPUT_SPEAKER else VOICE_OUTPUT_EARPIECE
+    }
+
+    fun setCheenHubVoiceOutputRoute(speaker: Boolean): Boolean {
+        val manager = getSystemService(AudioManager::class.java)
+        if (!voiceAudioFocusRequested) {
+            Log.w(
+                CHEENHUB_VOICE_LOG_TAG,
+                "Ignored voice output route change because no active voice call owns audio focus",
+            )
+            return false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val requestedType = if (speaker) {
+                AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            } else {
+                AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+            }
+            val requestedDevice =
+                manager.availableCommunicationDevices.firstOrNull { it.type == requestedType }
+            if (requestedDevice == null) {
+                manager.clearCommunicationDevice()
+                Log.w(
+                    CHEENHUB_VOICE_LOG_TAG,
+                    "Voice output route unavailable; cleared explicit communication device",
+                )
+                return false
+            }
+            if (!manager.setCommunicationDevice(requestedDevice)) {
+                manager.clearCommunicationDevice()
+                Log.w(
+                    CHEENHUB_VOICE_LOG_TAG,
+                    "Android rejected voice output route; cleared explicit communication device",
+                )
+                return false
+            }
+        } else {
+            if (!hasVoiceOutputRoutes(manager)) {
+                @Suppress("DEPRECATION")
+                manager.isSpeakerphoneOn = false
+                Log.w(
+                    CHEENHUB_VOICE_LOG_TAG,
+                    "Voice output route unavailable; disabled legacy speakerphone override",
+                )
+                return false
+            }
+            @Suppress("DEPRECATION")
+            manager.isSpeakerphoneOn = speaker
+        }
+        Log.i(
+            CHEENHUB_VOICE_LOG_TAG,
+            if (speaker) {
+                "Voice output switched to speakerphone"
+            } else {
+                "Voice output switched to earpiece"
+            },
+        )
+        return true
+    }
+
+    private fun hasVoiceOutputRoutes(manager: AudioManager): Boolean {
+        val outputTypes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            manager.availableCommunicationDevices.map(AudioDeviceInfo::getType)
+        } else {
+            manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map(AudioDeviceInfo::getType)
+        }
+        return AudioDeviceInfo.TYPE_BUILTIN_SPEAKER in outputTypes &&
+            AudioDeviceInfo.TYPE_BUILTIN_EARPIECE in outputTypes
+    }
+
     private fun handleVoiceAudioFocusChange(focusChange: Int) {
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN -> {
@@ -465,6 +551,12 @@ class MainActivity : WryActivity() {
 
     private fun releaseVoiceAudio() {
         val manager = getSystemService(AudioManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            manager.clearCommunicationDevice()
+        } else {
+            @Suppress("DEPRECATION")
+            manager.isSpeakerphoneOn = false
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             voiceAudioFocus?.let(manager::abandonAudioFocusRequest)
             voiceAudioFocus = null
@@ -583,6 +675,9 @@ class MainActivity : WryActivity() {
 private const val CHEENHUB_PUSH_LOG_TAG = "CheenHubPush"
 private const val CHEENHUB_AUTH_LOG_TAG = "CheenHubAuth"
 private const val CHEENHUB_VOICE_LOG_TAG = "CheenHubVoice"
+private const val VOICE_OUTPUT_UNSUPPORTED = 0
+private const val VOICE_OUTPUT_EARPIECE = 1
+private const val VOICE_OUTPUT_SPEAKER = 2
 private const val CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION =
     "ru.cheenhub.action.OPEN_DIRECT_MESSAGE"
 private const val CHEENHUB_CONVERSATION_ID_EXTRA = "cheenhub_conversation_id"

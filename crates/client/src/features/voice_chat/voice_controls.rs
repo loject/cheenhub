@@ -11,6 +11,7 @@ use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
 use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 
+use super::android_output_route_button::AndroidOutputRouteButton;
 use super::state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget};
 use super::video_streams::{ParticipantVideoFrame, ParticipantVideoHandle, ParticipantVideoSource};
 use super::{microphone_uplink, realtime};
@@ -147,6 +148,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                         }
                     }
                 }
+                AndroidOutputRouteButton { enabled: media_controls_enabled }
                 button {
                     r#type: "button",
                     disabled: !media_controls_enabled || camera_starting,

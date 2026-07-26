@@ -1,5 +1,6 @@
 //! Voice chat client feature.
 
+mod android_output_route_button;
 mod kicked_modal;
 mod local_video;
 mod microphone_uplink;
