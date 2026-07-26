@@ -26,24 +26,26 @@ pub(crate) fn SystemSettingsSection() -> Element {
                 p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Поведение окна CheenHub и системного трея." }
             }
 
-            div { class: "mt-4 rounded-2xl border border-zinc-800 bg-zinc-900/45 p-4",
-                label { class: "flex cursor-pointer items-center justify-between gap-4",
-                    span { class: "min-w-0",
-                        span { class: "block text-[14px] font-medium text-zinc-100", "Сворачивать в трей при закрытии" }
-                        span { class: "mt-1 block text-[12px] leading-5 text-zinc-500", "В desktop-приложении кнопка закрытия будет скрывать окно, а CheenHub продолжит работать в системном трее." }
-                    }
-                    input {
-                        r#type: "checkbox",
-                        class: "peer sr-only",
-                        checked: minimize_to_tray_on_close,
-                        onchange: move |event| {
-                            toggle_system_tray.set_minimize_to_tray_on_close(event.checked());
-                        },
-                    }
-                    span {
-                        "aria-hidden": "true",
-                        class: toggle_class(minimize_to_tray_on_close),
-                        span { class: knob_class(minimize_to_tray_on_close) }
+            if system_tray.is_supported() {
+                div { class: "mt-4 rounded-2xl border border-zinc-800 bg-zinc-900/45 p-4",
+                    label { class: "flex cursor-pointer items-center justify-between gap-4",
+                        span { class: "min-w-0",
+                            span { class: "block text-[14px] font-medium text-zinc-100", "Сворачивать в трей при закрытии" }
+                            span { class: "mt-1 block text-[12px] leading-5 text-zinc-500", "В desktop-приложении кнопка закрытия будет скрывать окно, а CheenHub продолжит работать в системном трее." }
+                        }
+                        input {
+                            r#type: "checkbox",
+                            class: "peer sr-only",
+                            checked: minimize_to_tray_on_close,
+                            onchange: move |event| {
+                                toggle_system_tray.set_minimize_to_tray_on_close(event.checked());
+                            },
+                        }
+                        span {
+                            "aria-hidden": "true",
+                            class: toggle_class(minimize_to_tray_on_close),
+                            span { class: knob_class(minimize_to_tray_on_close) }
+                        }
                     }
                 }
             }

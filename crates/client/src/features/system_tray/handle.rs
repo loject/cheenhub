@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 
-use super::storage;
+use super::{native, storage};
 
 /// Контекст управления поведением системного трея.
 #[derive(Clone)]
@@ -16,6 +16,11 @@ impl SystemTrayHandle {
         Self {
             minimize_to_tray_on_close,
         }
+    }
+
+    /// Сообщает, поддерживается ли системный трей на текущей платформе.
+    pub(crate) fn is_supported(&self) -> bool {
+        native::is_supported()
     }
 
     /// Возвращает текущее значение настройки сворачивания окна в трей при закрытии.

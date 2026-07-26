@@ -8,6 +8,11 @@ use dioxus::prelude::*;
 const OPEN_MENU_ID: &str = "cheenhub.system_tray.open";
 const QUIT_MENU_ID: &str = "cheenhub.system_tray.quit";
 
+/// Сообщает, поддерживается ли системный трей на текущей платформе.
+pub(crate) const fn is_supported() -> bool {
+    true
+}
+
 /// Подключает desktop-трей и синхронизирует поведение закрытия окна.
 #[component]
 pub(crate) fn SystemTrayPlatformEffects(minimize_to_tray_on_close: Signal<bool>) -> Element {
