@@ -5,6 +5,7 @@ default_to_workspace = false
 CARGO_MAKE_CRATE_INSTALLATION_LOCKED = true
 DIOXUS_ADDR = { value = "0.0.0.0", condition = { env_not_set = ["DIOXUS_ADDR"] } }
 DIOXUS_PORT = { value = "8080", condition = { env_not_set = ["DIOXUS_PORT"] } }
+DIOXUS_WEB_PORT = { value = "8081", condition = { env_not_set = ["DIOXUS_WEB_PORT"] } }
 POSTGRES_CONTAINER = { value = "cheenhub-postgres", condition = { env_not_set = ["POSTGRES_CONTAINER"] } }
 POSTGRES_USER = { value = "postgres", condition = { env_not_set = ["POSTGRES_USER"] } }
 POSTGRES_PASSWORD = { value = "mysecretpassword", condition = { env_not_set = ["POSTGRES_PASSWORD"] } }
@@ -32,7 +33,7 @@ dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensur
 run_task = "dev-services-android"
 
 [tasks.dev-stack-android-emulator]
-description = "Ensure local infrastructure and run the backend watcher plus Dioxus Android app on a running emulator."
+description = "Ensure local infrastructure and run the backend watcher plus Dioxus Android app on the API 35 emulator."
 dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
 run_task = "dev-services-android-emulator"
 
@@ -102,7 +103,7 @@ args = [
     "--addr",
     "${DIOXUS_ADDR}",
     "--port",
-    "${DIOXUS_PORT}",
+    "${DIOXUS_WEB_PORT}",
 ]
 
 [tasks.dioxus-web-release]
@@ -122,7 +123,7 @@ args = [
     "--addr",
     "${DIOXUS_ADDR}",
     "--port",
-    "${DIOXUS_PORT}",
+    "${DIOXUS_WEB_PORT}",
 ]
 
 [tasks.dioxus-desktop]
@@ -183,8 +184,9 @@ args = [
 description = "Run the Dioxus Android dev app on a connected ARM64 device."
 dependencies = ["install-dioxus-cli", "ensure-android-arm64-target"]
 env = { CMAKE_GENERATOR = "Ninja" }
-command = "dx"
+command = "./scripts/run-on-android-device.sh"
 args = [
+    "dx",
     "serve",
     "--android",
     "--target",
@@ -199,11 +201,12 @@ args = [
 ]
 
 [tasks.dioxus-android-emulator]
-description = "Run the Dioxus Android dev app on a running x86_64 emulator."
+description = "Run the Dioxus Android dev app on the CheenHub API 35 x86_64 emulator."
 dependencies = ["install-dioxus-cli", "ensure-android-x86-64-target"]
 env = { CMAKE_GENERATOR = "Ninja" }
-command = "dx"
+command = "./scripts/run-on-android-emulator.sh"
 args = [
+    "dx",
     "serve",
     "--android",
     "--target",

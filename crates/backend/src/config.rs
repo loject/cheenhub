@@ -107,7 +107,7 @@ impl AppConfig {
             google_oauth_client_id: env::var("GOOGLE_OAUTH_CLIENT_ID").ok(),
             google_oauth_client_secret: env::var("GOOGLE_OAUTH_CLIENT_SECRET").ok(),
             google_oauth_redirect_uri: env::var("GOOGLE_OAUTH_REDIRECT_URI").ok(),
-            cheenhub_client_base_url: optional("CHEENHUB_CLIENT_BASE_URL", "http://127.0.0.1:8080"),
+            cheenhub_client_base_url: optional("CHEENHUB_CLIENT_BASE_URL", "http://127.0.0.1:8081"),
             cheenhub_api_base_url: api_base_url(&optional(
                 "CHEENHUB_BASE_URL",
                 "http://127.0.0.1:3000",
