@@ -9,6 +9,7 @@
 - Do not add repository/service traits, generic abstraction layers, macros, or domain entities before they solve a real problem.
 - Each file should have a current purpose: startup, config, telemetry, database, HTTP shell, contracts, migrations, UI feature, or styling.
 - If a file violates the project file-size limit, decompose it along real ownership and purpose boundaries. Do not satisfy the limit by moving unrelated fragments into arbitrary files, by creating helper modules with no coherent responsibility, or by relying on formatter/linter loopholes such as intentionally unwrapped long lines.
+- Do not add `#[allow(...)]`, `#![allow(...)]`, lower lint levels, or equivalent suppression merely to make warnings or Clippy pass. Remove unused code, correct visibility, or move platform-specific behavior behind the proper module boundary instead. A narrowly scoped suppression is allowed only for a demonstrated compiler/tooling limitation, requires explicit user approval, and must include an adjacent Russian comment explaining why it cannot be expressed safely in code.
 - Use GUID/UUID values for persistent identifiers; expose them at API boundaries as strings only when the wire format requires it.
 
 ## Client Platform Boundaries
