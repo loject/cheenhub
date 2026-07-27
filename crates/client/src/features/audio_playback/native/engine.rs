@@ -4,7 +4,60 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig, SupportedStreamConfig};
 use dioxus::prelude::{debug, info, warn};
 
-use super::mixer::{MixerHandle, new_mixer, output_callback};
+use super::cpal_playback::mixer::{MixerHandle, NativeOutputMixer, new_mixer};
+
+trait CpalOutputSample: Copy + Send + 'static {
+    fn from_f32(sample: f32) -> Self;
+}
+
+impl CpalOutputSample for f32 {
+    fn from_f32(sample: f32) -> Self {
+        sample.clamp(-1.0, 1.0)
+    }
+}
+
+impl CpalOutputSample for f64 {
+    fn from_f32(sample: f32) -> Self {
+        f64::from(sample.clamp(-1.0, 1.0))
+    }
+}
+
+impl CpalOutputSample for i8 {
+    fn from_f32(sample: f32) -> Self {
+        (sample.clamp(-1.0, 1.0) * i8::MAX as f32) as Self
+    }
+}
+
+impl CpalOutputSample for i16 {
+    fn from_f32(sample: f32) -> Self {
+        (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as Self
+    }
+}
+
+impl CpalOutputSample for i32 {
+    fn from_f32(sample: f32) -> Self {
+        (sample.clamp(-1.0, 1.0) * i32::MAX as f32) as Self
+    }
+}
+
+impl CpalOutputSample for u8 {
+    fn from_f32(sample: f32) -> Self {
+        (sample.clamp(-1.0, 1.0) * 128.0 + 128.0).clamp(0.0, u8::MAX as f32) as Self
+    }
+}
+
+impl CpalOutputSample for u16 {
+    fn from_f32(sample: f32) -> Self {
+        (sample.clamp(-1.0, 1.0) * 32_768.0 + 32_768.0).clamp(0.0, u16::MAX as f32) as Self
+    }
+}
+
+impl CpalOutputSample for u32 {
+    fn from_f32(sample: f32) -> Self {
+        (sample.clamp(-1.0, 1.0) * 2_147_483_648.0 + 2_147_483_648.0).clamp(0.0, u32::MAX as f32)
+            as Self
+    }
+}
 
 /// Активный output stream и связанный с ним микшер.
 pub(super) struct NativePlaybackEngine {
@@ -238,6 +291,46 @@ fn build_output_stream(
     stream.map_err(cpal_error)
 }
 
+fn output_callback<T>(
+    channels: u16,
+    source_sample_rate_hz: u32,
+    output_sample_rate_hz: u32,
+    mixer: MixerHandle,
+) -> impl FnMut(&mut [T], &cpal::OutputCallbackInfo) + Send + 'static
+where
+    T: CpalOutputSample,
+{
+    let channels = usize::from(channels.max(1));
+    let mut output = NativeOutputMixer::new(source_sample_rate_hz, output_sample_rate_hz, mixer);
+    move |data, _info| {
+        let frame_count = data.len().div_ceil(channels);
+        output.render_frames(frame_count, |frame_index, sample| {
+            let start = frame_index * channels;
+            let end = (start + channels).min(data.len());
+            for output_sample in &mut data[start..end] {
+                *output_sample = T::from_f32(sample);
+            }
+        });
+    }
+}
+
 fn cpal_error(error: impl std::fmt::Display) -> String {
     format!("cpal backend для Windows/Linux/macOS вернул ошибку: {error}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CpalOutputSample;
+
+    #[test]
+    fn converts_f32_without_overflow() {
+        assert_eq!(f32::from_f32(2.0), 1.0);
+        assert_eq!(f32::from_f32(-2.0), -1.0);
+    }
+
+    #[test]
+    fn converts_unsigned_midpoint_to_silence() {
+        assert_eq!(u8::from_f32(0.0), 128);
+        assert_eq!(u16::from_f32(0.0), 32_768);
+    }
 }

@@ -169,6 +169,9 @@ windows-sys = { workspace = true, optional = true, features = [
     "Win32_System_Threading",
 ] }
 
+[target.'cfg(target_os = "android")'.dependencies]
+oboe = "0.6.1"
+
 [build-dependencies]
 dotenvy.workspace = true
 rcgen.workspace = true

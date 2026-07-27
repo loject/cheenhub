@@ -5,17 +5,15 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::warn;
 
-use super::output_samples::CpalOutputSample;
-
 /// Очередь, после которой выводится warning о задержке воспроизведения.
 pub(super) const SENDER_BACKLOG_WARN_SAMPLES: usize = 48_000;
 const SENDER_BACKLOG_DROP_SAMPLES: usize = 96_000;
 
 /// Разделяемый state микшера.
-pub(super) type MixerHandle = Arc<Mutex<MixerState>>;
+pub(crate) type MixerHandle = Arc<Mutex<MixerState>>;
 
 #[derive(Default)]
-pub(super) struct MixerState {
+pub(crate) struct MixerState {
     senders: HashMap<String, SenderMixerState>,
     output_gain: f32,
 }
@@ -29,35 +27,48 @@ struct SenderMixerState {
 }
 
 /// Создает пустой микшер с общей громкостью вывода.
-pub(super) fn new_mixer(output_gain: f32) -> MixerHandle {
+pub(crate) fn new_mixer(output_gain: f32) -> MixerHandle {
     Arc::new(Mutex::new(MixerState {
         senders: HashMap::new(),
         output_gain,
     }))
 }
 
-/// Возвращает callback для `cpal`, который микширует mono PCM во все каналы устройства.
-pub(super) fn output_callback<T>(
-    channels: u16,
-    source_sample_rate_hz: u32,
-    output_sample_rate_hz: u32,
+/// Состояние вывода микшера и изменения частоты PCM.
+pub(crate) struct NativeOutputMixer {
+    resampler: OutputResampler,
     mixer: MixerHandle,
-) -> impl FnMut(&mut [T], &cpal::OutputCallbackInfo) + Send + 'static
-where
-    T: CpalOutputSample,
-{
-    let channels = usize::from(channels.max(1));
-    let mut resampler = OutputResampler::new(source_sample_rate_hz, output_sample_rate_hz);
-    move |data, _info| {
-        let Ok(mut mixer) = mixer.try_lock() else {
-            write_silence(data);
-            return;
-        };
+}
 
-        for frame in data.chunks_mut(channels) {
-            let sample = resampler.next_sample(&mut mixer);
-            for output in frame {
-                *output = T::from_f32(sample);
+impl NativeOutputMixer {
+    /// Создаёт renderer для конфигурации native output stream.
+    pub(crate) fn new(
+        source_sample_rate_hz: u32,
+        output_sample_rate_hz: u32,
+        mixer: MixerHandle,
+    ) -> Self {
+        Self {
+            resampler: OutputResampler::new(source_sample_rate_hz, output_sample_rate_hz),
+            mixer,
+        }
+    }
+
+    /// Рендерит указанное количество mono PCM-кадров в платформенный адаптер.
+    pub(crate) fn render_frames(
+        &mut self,
+        frame_count: usize,
+        mut write_frame: impl FnMut(usize, f32),
+    ) {
+        match self.mixer.try_lock() {
+            Ok(mut mixer) => {
+                for frame_index in 0..frame_count {
+                    write_frame(frame_index, self.resampler.next_sample(&mut mixer));
+                }
+            }
+            Err(_) => {
+                for frame_index in 0..frame_count {
+                    write_frame(frame_index, 0.0);
+                }
             }
         }
     }
@@ -124,12 +135,6 @@ impl MixerState {
             }
         }
         mixed.clamp(-1.0, 1.0)
-    }
-}
-
-fn write_silence<T: CpalOutputSample>(data: &mut [T]) {
-    for sample in data {
-        *sample = T::from_f32(0.0);
     }
 }
 
@@ -251,7 +256,6 @@ pub(super) fn update_output_gain(mixer: &MixerHandle, output_gain: f32) {
 }
 
 /// Удаляет queued PCM одного отправителя.
-#[allow(dead_code)]
 pub(super) fn remove_sender(mixer: &MixerHandle, sender_user_id: &str) {
     let Ok(mut mixer) = mixer.lock() else {
         warn!(

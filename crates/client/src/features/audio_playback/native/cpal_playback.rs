@@ -1,12 +1,10 @@
-//! Native-провайдер воспроизведения аудио через `cpal`.
+//! Общий native-провайдер воспроизведения поверх платформенного output engine.
 
-mod engine;
 #[path = "../jitter_buffer.rs"]
 mod jitter_buffer;
 mod jitter_runtime;
-mod mixer;
+pub(super) mod mixer;
 mod notification_sounds;
-mod output_samples;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -16,11 +14,11 @@ use dioxus::prelude::*;
 use opus::Decoder;
 use web_time::{SystemTime, UNIX_EPOCH};
 
-use self::engine::{NativePlaybackEngine, create_engine};
 use self::jitter_buffer::JitterBuffer;
 use self::mixer::{
     clear_mixer, clear_voice_senders, remove_sender, update_output_gain, update_sender_gain,
 };
+use super::platform_engine::{NativePlaybackEngine, create_engine};
 use crate::features::audio_playback::output_devices::AudioOutputDevice;
 use crate::features::audio_playback::storage;
 

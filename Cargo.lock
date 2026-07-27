@@ -1268,6 +1268,7 @@ dependencies = [
  "jni 0.21.1",
  "js-sys",
  "ndk-context",
+ "oboe",
  "opus",
  "rcgen",
  "reqwest",
