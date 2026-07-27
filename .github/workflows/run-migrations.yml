@@ -79,10 +79,11 @@ jobs:
           DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
           DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
         run: |
           missing=0
 
-          for name in DEPLOY_SSH_HOST DEPLOY_SSH_USER DEPLOY_SSH_PRIVATE_KEY; do
+          for name in DEPLOY_SSH_HOST DEPLOY_SSH_USER DEPLOY_SSH_PRIVATE_KEY FCM_SERVICE_ACCOUNT_JSON; do
             if [[ -z "${!name}" ]]; then
               echo "${name} secret is required." >&2
               missing=1
@@ -102,6 +103,26 @@ jobs:
           printf '%s\n' "${DEPLOY_SSH_PRIVATE_KEY}" > ~/.ssh/cheenhub_deploy_key
           chmod 600 ~/.ssh/cheenhub_deploy_key
           ssh-keyscan -p "${DEPLOY_SSH_PORT}" "${DEPLOY_SSH_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Upload FCM service account
+        shell: bash
+        env:
+          COMPOSE_PROJECT_DIR: ${{ inputs.compose_project_dir }}
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+          DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
+        run: |
+          secrets_dir="${COMPOSE_PROJECT_DIR}/deploy/secrets"
+          service_account_path="${secrets_dir}/firebase-service-account.json"
+          printf -v quoted_secrets_dir '%q' "${secrets_dir}"
+          printf -v quoted_service_account_path '%q' "${service_account_path}"
+
+          printf '%s' "${FCM_SERVICE_ACCOUNT_JSON}" | ssh \
+            -i ~/.ssh/cheenhub_deploy_key \
+            -p "${DEPLOY_SSH_PORT}" \
+            "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
+            "install -m 700 -d ${quoted_secrets_dir} && install -m 600 /dev/stdin ${quoted_service_account_path}"
 
       - name: Run migrations and deploy services
         shell: bash

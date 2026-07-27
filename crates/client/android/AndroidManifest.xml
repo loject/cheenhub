@@ -25,16 +25,16 @@
         <!-- Публичная конфигурация Firebase Android app; серверные секреты здесь не хранятся. -->
         <meta-data
             android:name="ru.cheenhub.firebase.project_id"
-            android:value="cheenhub-71fef" />
+            android:value="cheenhub" />
         <meta-data
             android:name="ru.cheenhub.firebase.application_id"
-            android:value="1:857976711378:android:b7d0e173aab67a67f5250b" />
+            android:value="1:525012084656:android:23ea7e1805b7386e90d875" />
         <meta-data
             android:name="ru.cheenhub.firebase.api_key"
-            android:value="AIzaSyD3NQbR_Yd51L1tc2iKMOvqNQiwk5ktTns" />
+            android:value="AIzaSyD3IRoutVab69NS7YwhDNeGVOXnJ1NVmFA" />
         <meta-data
             android:name="ru.cheenhub.firebase.sender_id"
-            android:value="857976711378" />
+            android:value="525012084656" />
 
         <activity
             android:name="dev.dioxus.main.MainActivity"

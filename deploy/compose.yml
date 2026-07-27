@@ -37,10 +37,12 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       BACKEND_HOST: 0.0.0.0
       BACKEND_PORT: 3000
+      FCM_SERVICE_ACCOUNT_PATH: /run/secrets/fcm-service-account.json
       WEBTRANSPORT_TLS_CERT_PATH: /etc/letsencrypt/live/cheenhub.ru/fullchain.pem
       WEBTRANSPORT_TLS_KEY_PATH: /etc/letsencrypt/live/cheenhub.ru/privkey.pem
     volumes:
       - letsencrypt:/etc/letsencrypt:ro
+      - ./secrets/firebase-service-account.json:/run/secrets/fcm-service-account.json:ro
     expose:
       - "3000/tcp"
       - "3000/udp"

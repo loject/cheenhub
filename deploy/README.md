@@ -23,6 +23,14 @@ CHEENHUB_BACKEND_IMAGE_REF=ghcr.io/<owner>/<repo>/backend:v1.0.0
 CHEENHUB_WEB_IMAGE_REF=ghcr.io/<owner>/<repo>/web:v1.0.0
 ```
 
+Скопируй Firebase service account на сервер, не добавляя его в Git:
+
+```bash
+install -m 600 /path/to/firebase-service-account.json deploy/secrets/firebase-service-account.json
+```
+
+Compose монтирует этот файл только для чтения в backend-контейнер как `/run/secrets/fcm-service-account.json`.
+
 SSL выпускается через HTTP-01 challenge:
 
 ```bash
@@ -71,6 +79,7 @@ Secrets:
 - `DEPLOY_SSH_USER` - пользователь для SSH.
 - `DEPLOY_SSH_PRIVATE_KEY` - приватный SSH-ключ для деплоя.
 - `DEPLOY_SSH_PORT` - опционально, по умолчанию `22`.
+- `FCM_SERVICE_ACCOUNT_JSON` - полный JSON service account Firebase; workflow передаёт его на сервер через stdin и сохраняет с правами `600` только в gitignored `deploy/secrets`.
 - `GHCR_READ_TOKEN` - опционально, нужен для приватных GHCR packages.
 - `GHCR_USERNAME` - опционально, по умолчанию используется actor workflow.
 

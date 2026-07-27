@@ -41,6 +41,8 @@ CHEENHUB_CLIENT_BASE_URL=https://$host
 CHEENHUB_BASE_URL=https://$host
 CHEENHUB_REALTIME_CERT_SHA256=
 
+FCM_SERVICE_ACCOUNT_PATH=/run/secrets/fcm-service-account.json
+
 WEBTRANSPORT_TLS_CERT_PATH=/etc/letsencrypt/live/cheenhub.ru/fullchain.pem
 WEBTRANSPORT_TLS_KEY_PATH=/etc/letsencrypt/live/cheenhub.ru/privkey.pem
 
@@ -52,4 +54,8 @@ SMTP_PORT=587
 EOF
 
 chmod 600 "$env_file"
+secrets_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/secrets"
+mkdir -p "$secrets_dir"
+chmod 700 "$secrets_dir"
 echo "Wrote $env_file."
+echo "Copy the FCM service account to $secrets_dir/firebase-service-account.json and set mode 600."
