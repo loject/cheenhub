@@ -61,6 +61,9 @@ fn state_with_store(server_store: Arc<InMemoryServerStore>) -> AppState {
         voice_presence_store: Arc::new(
             crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore::default(),
         ),
+        direct_call_store: Arc::new(
+            crate::features::voice_chat::infrastructure::InMemoryDirectCallStore::default(),
+        ),
         realtime_hub: Arc::new(RealtimeHub::default()),
         auth_keys: AuthKeys::generate_for_tests(),
         access_token_lifetime_minutes: 15,

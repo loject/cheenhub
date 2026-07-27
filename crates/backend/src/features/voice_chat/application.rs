@@ -15,16 +15,21 @@ use crate::features::voice_chat::infrastructure::VoicePresence;
 use crate::state::AppState;
 
 mod avatar;
+mod direct_calls;
 mod fanout;
 mod presence;
 mod uplink;
 
 pub(crate) use avatar::update_user_avatar;
+pub(crate) use direct_calls::{
+    cancel_direct_call, end_direct_call, list_direct_calls, respond_direct_call, start_direct_call,
+};
 use fanout::{
     direct_message_voice_target, fanout_removed_rooms, fanout_snapshot, participant_summary,
     room_snapshot, server_voice_target,
 };
 use presence::active_presence_for_user;
+pub(crate) use presence::disconnect_realtime_stream;
 pub(crate) use uplink::{bind_microphone_uplink, issue_microphone_uplink_grant};
 
 /// Входит в одну комнату с поддержкой голоса и возвращает текущий снимок участников.
@@ -148,6 +153,7 @@ pub(crate) async fn leave_direct_message_room(
 
     if removed.is_empty() {
         ensure_direct_message_voice_available(state, user_id, &conversation_id).await?;
+        direct_calls::end_direct_call_for_presence(state, user_id, &conversation_id).await;
         return Ok(room_snapshot(state, target).await);
     }
 
@@ -156,6 +162,7 @@ pub(crate) async fn leave_direct_message_room(
         user_id = %user_id,
         "left direct message voice room"
     );
+    direct_calls::end_direct_call_for_presence(state, user_id, &conversation_id).await;
     let snapshot = room_snapshot(state, target).await;
     fanout_snapshot(state, target, snapshot.clone()).await;
 
@@ -337,15 +344,6 @@ pub(crate) async fn stop_video_stream(
     Ok(())
 }
 
-/// Удаляет присутствие, принадлежащее закрытому realtime-потоку.
-pub(crate) async fn disconnect_realtime_stream(state: &AppState, realtime_stream_id: Uuid) {
-    let removed = state
-        .voice_presence_store
-        .leave_realtime_stream(&realtime_stream_id)
-        .await;
-    fanout_removed_rooms(state, removed, None).await;
-}
-
 /// Обновляет активные снимки голосового присутствия после изменения никнейма профиля.
 pub(crate) async fn update_user_nickname(state: &AppState, user_id: &Uuid, nickname: String) {
     let rooms = state
@@ -370,13 +368,13 @@ pub(crate) async fn update_user_nickname(state: &AppState, user_id: &Uuid, nickn
 /// Ошибка приложения голосового чата.
 #[derive(Debug)]
 pub(crate) enum VoiceChatApplicationError {
-    /// Request shape or target is invalid.
+    /// Форма запроса или целевой ресурс недействительны.
     BadRequest(String),
-    /// User cannot access the requested voice room.
+    /// Пользователь не может получить доступ к запрошенной голосовой комнате.
     Unauthorized(String),
-    /// Resource was not found.
+    /// Запрошенный ресурс не найден.
     NotFound(String),
-    /// Unexpected internal failure.
+    /// Неожиданная внутренняя ошибка.
     Internal(anyhow::Error),
 }
 

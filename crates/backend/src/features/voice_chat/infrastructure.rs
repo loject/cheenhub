@@ -6,8 +6,12 @@ use uuid::Uuid;
 
 use super::media_policy::VideoPublicationTracker;
 
+mod direct_calls;
 mod uplink;
 
+pub(crate) use direct_calls::{
+    DirectCall, DirectCallStoreError, DirectCallTransition, InMemoryDirectCallStore,
+};
 pub(crate) use uplink::{
     ConsumeMicrophoneUplinkGrantError, MicrophoneUplinkBinding, MicrophoneUplinkGrant,
 };

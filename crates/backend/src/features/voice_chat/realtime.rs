@@ -1,10 +1,11 @@
 //! Voice chat realtime adapter.
 
 use cheenhub_contracts::realtime::{
-    BindMicrophoneUplink, IssueMicrophoneUplinkGrant, JoinDirectMessageVoiceRoom, JoinVoiceRoom,
-    KickVoiceMember, LeaveDirectMessageVoiceRoom, LeaveVoiceRoom, ListDirectMessageVoiceRooms,
-    ListServerVoiceRooms, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
-    StopVoiceVideoStream, VoiceChatKind,
+    BindMicrophoneUplink, CancelDirectCall, EndDirectCall, IssueMicrophoneUplinkGrant,
+    JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom,
+    LeaveVoiceRoom, ListDirectCalls, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
+    RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode, RespondDirectCall,
+    StartDirectCall, StopVoiceVideoStream, VoiceChatKind,
 };
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
@@ -112,6 +113,91 @@ pub(crate) async fn handle(
                         send,
                         RealtimeModule::VoiceChat,
                         RealtimeKind::VoiceChat(VoiceChatKind::VoiceRoomSnapshot),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::StartDirectCall) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: StartDirectCall = decode_payload(&envelope)?;
+            match application::start_direct_call(state, user, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::DirectCallLifecycleEvent),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::RespondDirectCall) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: RespondDirectCall = decode_payload(&envelope)?;
+            match application::respond_direct_call(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::DirectCallLifecycleEvent),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::CancelDirectCall) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: CancelDirectCall = decode_payload(&envelope)?;
+            match application::cancel_direct_call(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::DirectCallLifecycleEvent),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::EndDirectCall) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: EndDirectCall = decode_payload(&envelope)?;
+            match application::end_direct_call(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::DirectCallLifecycleEvent),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::ListDirectCalls) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: ListDirectCalls = decode_payload(&envelope)?;
+            match application::list_direct_calls(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::DirectCallsSnapshot),
                         Some(request_id),
                         response,
                     )

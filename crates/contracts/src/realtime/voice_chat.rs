@@ -14,6 +14,20 @@ pub enum VoiceChatKind {
     JoinDirectMessageVoiceRoom,
     /// Покинуть голосовой звонок личного диалога.
     LeaveDirectMessageVoiceRoom,
+    /// Начать личный звонок.
+    StartDirectCall,
+    /// Принять или отклонить входящий личный звонок.
+    RespondDirectCall,
+    /// Отменить исходящий личный звонок до ответа.
+    CancelDirectCall,
+    /// Завершить активный личный звонок.
+    EndDirectCall,
+    /// Загрузить актуальные личные звонки пользователя.
+    ListDirectCalls,
+    /// Снимок актуальных личных звонков пользователя.
+    DirectCallsSnapshot,
+    /// Адресное событие изменения состояния личного звонка.
+    DirectCallLifecycleEvent,
     /// Исключить одного участника из голосовой комнаты.
     KickVoiceMember,
     /// Загрузить снимки присутствия участников в активных голосовых комнатах для одного сервера.
@@ -104,6 +118,123 @@ pub struct JoinDirectMessageVoiceRoom {
 pub struct LeaveDirectMessageVoiceRoom {
     /// Идентификатор личного диалога.
     pub conversation_id: String,
+}
+
+/// Запрос на начало личного звонка.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartDirectCall {
+    /// Идентификатор личного диалога с вызываемым пользователем.
+    pub conversation_id: String,
+}
+
+/// Ответ пользователя на входящий личный звонок.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectCallResponse {
+    /// Принять звонок.
+    Accept,
+    /// Отклонить звонок.
+    Decline,
+}
+
+/// Запрос на принятие или отклонение входящего личного звонка.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RespondDirectCall {
+    /// Идентификатор звонка.
+    pub call_id: String,
+    /// Решение вызываемого пользователя.
+    pub response: DirectCallResponse,
+}
+
+/// Запрос на отмену исходящего личного звонка до ответа.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CancelDirectCall {
+    /// Идентификатор звонка.
+    pub call_id: String,
+}
+
+/// Запрос на завершение активного личного звонка.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EndDirectCall {
+    /// Идентификатор звонка.
+    pub call_id: String,
+}
+
+/// Запрос актуальных личных звонков пользователя.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListDirectCalls;
+
+/// Состояние личного звонка.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectCallState {
+    /// Инициатор ожидает ответа вызываемого пользователя.
+    Ringing,
+    /// Оба пользователя участвуют в звонке.
+    Active,
+    /// Звонок завершён.
+    Ended,
+}
+
+/// Причина завершения личного звонка.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectCallEndReason {
+    /// Инициатор отменил звонок до ответа.
+    Cancelled,
+    /// Вызываемый пользователь отклонил звонок.
+    Declined,
+    /// Вызываемый пользователь не ответил за отведённое время.
+    TimedOut,
+    /// Один из участников завершил активный звонок.
+    Ended,
+}
+
+/// Снимок состояния одного личного звонка.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectCallSnapshot {
+    /// Стабильный UUID звонка.
+    pub call_id: String,
+    /// Идентификатор личного диалога.
+    pub conversation_id: String,
+    /// Идентификатор пользователя, начавшего звонок.
+    pub caller_user_id: String,
+    /// Снимок имени пользователя, начавшего звонок.
+    pub caller_nickname: String,
+    /// Публичный URL изображения аватара инициатора, если он настроен.
+    pub caller_avatar_url: Option<String>,
+    /// Идентификатор вызываемого пользователя.
+    pub callee_user_id: String,
+    /// Снимок имени вызываемого пользователя.
+    pub callee_nickname: String,
+    /// Публичный URL изображения аватара вызываемого пользователя, если он настроен.
+    pub callee_avatar_url: Option<String>,
+    /// Текущее состояние звонка.
+    pub state: DirectCallState,
+    /// Момент начала звонка в формате RFC3339.
+    pub started_at: String,
+    /// Момент принятия звонка в формате RFC3339, если звонок был принят.
+    pub answered_at: Option<String>,
+    /// Момент завершения звонка в формате RFC3339, если звонок завершён.
+    pub ended_at: Option<String>,
+    /// Причина завершения звонка, если звонок завершён.
+    pub end_reason: Option<DirectCallEndReason>,
+}
+
+/// Снимок актуальных личных звонков пользователя.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectCallsSnapshot {
+    /// Незавершённые личные звонки, доступные пользователю.
+    pub calls: Vec<DirectCallSnapshot>,
+}
+
+/// Адресное событие изменения состояния личного звонка.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectCallLifecycleEvent {
+    /// Пользователь, которому предназначено событие.
+    pub recipient_user_id: String,
+    /// Актуальный снимок изменившегося звонка.
+    pub call: DirectCallSnapshot,
 }
 
 /// Текущие участники одной голосовой комнаты.

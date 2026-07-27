@@ -12,7 +12,9 @@ use crate::features::push_notifications::application::PushNotifications;
 use crate::features::servers::infrastructure::ServerStore;
 use crate::features::social::infrastructure::SocialStore;
 use crate::features::text_chat::infrastructure::{ChatAttachmentObjectStore, TextChatStore};
-use crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore;
+use crate::features::voice_chat::infrastructure::{
+    InMemoryDirectCallStore, InMemoryVoicePresenceStore,
+};
 use crate::realtime::hub::RealtimeHub;
 
 /// Общее состояние приложения бэкенда.
@@ -38,6 +40,8 @@ pub(crate) struct AppState {
     pub(crate) image_processing_queue: Arc<Semaphore>,
     /// Активное присутствие в голосовых комнатах.
     pub(crate) voice_presence_store: Arc<InMemoryVoicePresenceStore>,
+    /// Незавершённые приглашения и активные личные звонки.
+    pub(crate) direct_call_store: Arc<InMemoryDirectCallStore>,
     /// Общий реестр потоков realtime и хаб вещания.
     pub(crate) realtime_hub: Arc<RealtimeHub>,
     /// Ключи подписи Access JWT.

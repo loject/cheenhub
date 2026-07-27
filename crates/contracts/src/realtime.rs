@@ -32,10 +32,13 @@ pub use text_chat::{
     SendMessageAccepted, TextChatImageAttachment, TextChatKind, TextChatMessage, UploadChatImage,
 };
 pub use voice_chat::{
-    BindMicrophoneUplink, DirectMessageVoiceRoomsSnapshot, IssueMicrophoneUplinkGrant,
+    BindMicrophoneUplink, CancelDirectCall, DirectCallEndReason, DirectCallLifecycleEvent,
+    DirectCallResponse, DirectCallSnapshot, DirectCallState, DirectCallsSnapshot,
+    DirectMessageVoiceRoomsSnapshot, EndDirectCall, IssueMicrophoneUplinkGrant,
     JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom,
-    LeaveVoiceRoom, ListDirectMessageVoiceRooms, ListServerVoiceRooms, MicrophoneUplinkBound,
-    MicrophoneUplinkGrantIssued, ServerVoiceRoomsSnapshot, StopVoiceVideoStream, VoiceChatKind,
+    LeaveVoiceRoom, ListDirectCalls, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
+    MicrophoneUplinkBound, MicrophoneUplinkGrantIssued, RespondDirectCall,
+    ServerVoiceRoomsSnapshot, StartDirectCall, StopVoiceVideoStream, VoiceChatKind,
     VoiceRoomParticipant, VoiceRoomSnapshot, VoiceVideoStreamEnded, VoiceVideoStreamSource,
 };
 

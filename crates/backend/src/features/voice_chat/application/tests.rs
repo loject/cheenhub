@@ -18,7 +18,9 @@ use crate::features::auth::security::keys::AuthKeys;
 use crate::features::servers::infrastructure::InMemoryServerStore;
 use crate::features::social::infrastructure::InMemorySocialStore;
 use crate::features::text_chat::infrastructure::InMemoryTextChatStore;
-use crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore;
+use crate::features::voice_chat::infrastructure::{
+    InMemoryDirectCallStore, InMemoryVoicePresenceStore,
+};
 use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
 
@@ -47,6 +49,7 @@ pub(super) fn state() -> AppState {
         ),
         image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
         voice_presence_store: Arc::new(InMemoryVoicePresenceStore::default()),
+        direct_call_store: Arc::new(InMemoryDirectCallStore::default()),
         realtime_hub: Arc::new(RealtimeHub::default()),
         auth_keys: AuthKeys::generate_for_tests(),
         access_token_lifetime_minutes: 15,

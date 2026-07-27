@@ -290,7 +290,8 @@ impl RealtimeHub {
         kind: RealtimeKind,
         user_ids: &[Uuid],
         payload: P,
-    ) where
+    ) -> usize
+    where
         P: Serialize + Clone,
     {
         let recipients = self.recipients_for_users(module, user_ids).await;
@@ -298,8 +299,10 @@ impl RealtimeHub {
             .iter()
             .map(|recipient| recipient.stream_id)
             .collect::<Vec<_>>();
+        let recipient_count = stream_ids.len();
         self.fanout_to_streams(module, &Uuid::nil(), kind, &stream_ids, payload)
             .await;
+        recipient_count
     }
 
     async fn should_warn_slow_datagram_fanout(&self) -> bool {
