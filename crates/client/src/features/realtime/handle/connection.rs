@@ -12,7 +12,7 @@ use super::{ConnectedSession, ConnectedTransport, RealtimeHandle};
 use crate::features::realtime::config;
 use crate::features::realtime::error::RealtimeError;
 use crate::features::realtime::status::{RealtimeConnectionStatus, RealtimeTransportKind};
-use crate::features::realtime::{websocket, webtransport};
+use crate::features::realtime::{platform, websocket, webtransport};
 
 impl RealtimeHandle {
     /// Opens and authenticates the realtime session.
@@ -42,12 +42,9 @@ impl RealtimeHandle {
         &self,
         access_token: String,
     ) -> Result<Authenticated, RealtimeError> {
-        let client = config::realtime_client()?;
         let url = config::realtime_url()?;
         info!(%url, "connecting WebTransport realtime session");
-        let session = client.connect(url.clone()).await.map_err(|error| {
-            RealtimeError::new(format!("Failed to connect realtime session: {error}"))
-        })?;
+        let session = platform::connect(url.clone()).await?;
 
         info!(%url, "WebTransport transport connected");
         let generation = self.next_generation();

@@ -6,6 +6,7 @@ mod framing;
 mod guards;
 mod handle;
 mod inbound;
+mod platform;
 mod provider;
 mod status;
 mod task;

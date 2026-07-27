@@ -1,7 +1,6 @@
 //! Конфигурация realtime-клиента.
 
 use url::Url;
-use web_transport::ClientBuilder;
 
 use super::error::RealtimeError;
 
@@ -17,23 +16,8 @@ pub(crate) fn realtime_websocket_url() -> Result<Url, RealtimeError> {
         .map_err(|error| RealtimeError::new(format!("Invalid realtime WebSocket URL: {error}")))
 }
 
-/// Собирает WebTransport-клиент, используя либо системные корни, либо настроенный хеш сертификата.
-pub(crate) fn realtime_client() -> Result<web_transport::Client, RealtimeError> {
-    let builder = ClientBuilder::new();
-    if let Some(hash) = realtime_cert_sha256()? {
-        return builder
-            .with_server_certificate_hashes(vec![hash])
-            .map_err(|error| {
-                RealtimeError::new(format!("Failed to create realtime client: {error}"))
-            });
-    }
-
-    builder
-        .with_system_roots()
-        .map_err(|error| RealtimeError::new(format!("Failed to create realtime client: {error}")))
-}
-
-fn realtime_cert_sha256() -> Result<Option<Vec<u8>>, RealtimeError> {
+/// Возвращает настроенный SHA-256 fingerprint realtime-сертификата.
+pub(super) fn realtime_cert_sha256() -> Result<Option<Vec<u8>>, RealtimeError> {
     let Some(value) = option_env!("CHEENHUB_REALTIME_CERT_SHA256") else {
         return Ok(None);
     };

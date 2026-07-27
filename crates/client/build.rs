@@ -23,10 +23,15 @@ mod android_launcher_icons {
     include!("../../build_support/android_launcher_icons.rs");
 }
 
+mod android_platform_verifier {
+    include!("../../build_support/android_platform_verifier.rs");
+}
+
 fn main() {
     file_lines::check_workspace_file_lines();
     validate_platform_features();
     android_launcher_icons::install();
+    android_platform_verifier::install();
     prepare_installer_payload();
 
     println!("cargo:rerun-if-changed=../../.env");

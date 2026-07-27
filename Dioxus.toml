@@ -53,6 +53,7 @@ gradle_dependencies = [
     "com.google.android.libraries.identity.googleid:googleid:1.2.0",
     "com.google.firebase:firebase-messaging:25.0.1",
 ]
+proguard_rules = ["android/rustls-platform-verifier.pro"]
 
 [android.permissions]
 "android.permission.INTERNET" = { description = "Network access for CheenHub API and realtime transport" }
