@@ -14,12 +14,14 @@ use crate::features::app::components::workspace_split::{
 };
 use crate::features::application_focus::ApplicationFocusContext;
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
+use crate::features::runtime::sleep_ms;
 use crate::features::text_chat::{
     CHAT_CONTENT_CLASS, ChatMessageDateDivider, ScrollCommand, apply_scroll_command,
     friendly_message_date, group_consecutive_messages, message_day_key, update_near_bottom_state,
 };
-use crate::features::voice_chat::{VoiceConnectionHandle, VoiceConnectionState};
+use crate::features::voice_chat::{DirectCallHandle, VoiceConnectionHandle, VoiceConnectionState};
 
+use super::direct_message_chat_platform;
 use super::direct_message_composer::{DirectMessageComposer, DirectMessageComposerOutcome};
 use super::direct_message_group::DirectMessageGroup;
 use super::direct_message_state::DirectMessageState;
@@ -31,6 +33,8 @@ use super::presentation::{
 use super::realtime::subscribe_social_events;
 use super::voice_target::direct_message_voice_target;
 
+const DIRECT_CALL_SURFACE_EXIT_MS: u32 = 160;
+
 /// Рендерит сообщения и голосовую область выбранного личного диалога.
 #[component]
 pub(crate) fn DirectMessageWorkspace(
@@ -38,6 +42,7 @@ pub(crate) fn DirectMessageWorkspace(
     on_overview_changed: EventHandler<()>,
 ) -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
+    let direct_call = use_context::<DirectCallHandle>();
     let realtime = use_context::<RealtimeHandle>();
     let application_focus = use_context::<ApplicationFocusContext>();
     let messages = use_signal(Vec::<DmMessageSummary>::new);
@@ -67,11 +72,14 @@ pub(crate) fn DirectMessageWorkspace(
     let mut embedded_chat_resize_origin = use_signal(|| None::<(f64, f64, f64)>);
     let mut content_split_element = use_signal(|| None::<Rc<MountedData>>);
     let mut direct_workspace_conversation_id = use_signal(|| None::<String>);
+    let mut direct_chat_open = use_signal(direct_message_chat_platform::open_by_default);
     let target = direct_message_voice_target(&conversation);
     let voice_state = voice.state();
-    let selected_voice_active = voice_state
+    let selected_voice_media_active = voice_state
         .active_target()
         .is_some_and(|active| active.matches(&target));
+    let selected_voice_active =
+        selected_voice_media_active || direct_call.is_visible_for_conversation(&conversation.id);
     let selected_voice_connected = matches!(
         &voice_state,
         VoiceConnectionState::Connected {
@@ -79,17 +87,28 @@ pub(crate) fn DirectMessageWorkspace(
             ..
         } if connected_target.matches(&target)
     );
+    let mut displayed_voice_surface = use_signal(|| selected_voice_active);
+    let mut voice_surface_exiting = use_signal(|| false);
+    let mut voice_surface_generation = use_signal(|| 0_u64);
+    let voice_surface_visible = displayed_voice_surface();
+    let voice_layout_active = selected_voice_active || voice_surface_visible;
+    let direct_chat_open_attr = if direct_chat_open() { "true" } else { "false" };
+    let direct_chat_label = if direct_chat_open() {
+        "Скрыть текстовый чат"
+    } else {
+        "Открыть текстовый чат"
+    };
     let chat_resizing = embedded_chat_resize_origin().is_some();
     let chat_resizing_attr = if chat_resizing { "true" } else { "false" };
     let workspace_style = embedded_chat_height_px()
         .map(|height_px| format!("--embedded-chat-height: {}px;", height_px.round()))
         .unwrap_or_default();
-    let direct_chat_surface_class = if selected_voice_active {
+    let direct_chat_surface_class = if voice_layout_active {
         "embedded-chat h-0 shrink-0 translate-y-6 overflow-hidden border-t border-transparent bg-[rgba(9,9,11,.86)] opacity-0 shadow-[0_-1px_0_rgba(255,255,255,0.025),0_-24px_70px_rgba(0,0,0,0.22)] backdrop-blur-[18px] transition-[height,opacity,transform,border-color] duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
     } else {
         "flex min-h-0 flex-1 flex-col"
     };
-    let direct_chat_inner_class = if selected_voice_active {
+    let direct_chat_inner_class = if voice_layout_active {
         "flex h-full min-h-0 flex-col"
     } else {
         "flex min-h-0 flex-1 flex-col"
@@ -208,13 +227,63 @@ pub(crate) fn DirectMessageWorkspace(
         embedded_chat_resize_origin.set(None);
     });
 
+    use_effect({
+        let conversation_id = conversation.id.clone();
+        let target = target.clone();
+        let voice = voice.clone();
+        let direct_call = direct_call.clone();
+        move || {
+            let media_active = voice
+                .state()
+                .active_target()
+                .is_some_and(|active| active.matches(&target));
+            let call_active =
+                media_active || direct_call.is_visible_for_conversation(&conversation_id);
+            let generation = voice_surface_generation.peek().wrapping_add(1);
+            voice_surface_generation.set(generation);
+
+            if call_active {
+                if !*displayed_voice_surface.peek() {
+                    let chat_open = direct_message_chat_platform::open_by_default();
+                    direct_chat_open.set(chat_open);
+                    debug!(
+                        %conversation_id,
+                        chat_open,
+                        "showing direct call surface"
+                    );
+                    displayed_voice_surface.set(true);
+                }
+                if *voice_surface_exiting.peek() {
+                    debug!(%conversation_id, "interrupting direct call surface exit");
+                    voice_surface_exiting.set(false);
+                }
+                return;
+            }
+
+            if !*displayed_voice_surface.peek() || *voice_surface_exiting.peek() {
+                return;
+            }
+
+            debug!(%conversation_id, "animating direct call surface exit");
+            voice_surface_exiting.set(true);
+            spawn(async move {
+                sleep_ms(DIRECT_CALL_SURFACE_EXIT_MS).await;
+                if *voice_surface_generation.peek() == generation {
+                    displayed_voice_surface.set(false);
+                    voice_surface_exiting.set(false);
+                }
+            });
+        }
+    });
+
     rsx! {
         section {
             class: "room-workspace voice-shell relative flex min-h-0 flex-1 flex-col bg-zinc-950/35",
             style: "{workspace_style}",
             "data-room-kind": "direct",
-            "data-voice-room-active": if selected_voice_active { "true" } else { "false" },
+            "data-voice-room-active": if voice_layout_active { "true" } else { "false" },
             "data-voice-connected": if selected_voice_connected { "true" } else { "false" },
+            "data-direct-chat-open": direct_chat_open_attr,
             div {
                 class: "content-split flex min-h-0 flex-1 flex-col",
                 "data-chat-resizing": chat_resizing_attr,
@@ -252,16 +321,17 @@ pub(crate) fn DirectMessageWorkspace(
                         );
                     }
                 },
-                if selected_voice_active {
+                if voice_layout_active {
                     DirectMessageVoiceSurface {
                         conversation: conversation.clone(),
+                        exiting: voice_surface_exiting(),
                     }
                 }
                 div {
                     class: direct_chat_surface_class,
                     "data-resizing": chat_resizing_attr,
                     div { class: direct_chat_inner_class,
-                        if selected_voice_active {
+                        if voice_layout_active {
                             div {
                                 class: "chat-resize-handle flex h-3.5 shrink-0 cursor-ns-resize touch-none items-center justify-center",
                                 role: "separator",
@@ -392,6 +462,33 @@ pub(crate) fn DirectMessageWorkspace(
                                     on_overview_changed.call(());
                                 }
                             },
+                        }
+                    }
+                }
+                if voice_layout_active {
+                    button {
+                        r#type: "button",
+                        class: "chat-corner-toggle group absolute bottom-5 left-5 z-40 flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/85 text-zinc-300 shadow-[0_18px_50px_rgba(0,0,0,0.38)] backdrop-blur-xl transition-[background-color,border-color,color,transform,box-shadow] duration-[180ms] hover:-translate-y-0.5 hover:border-accent/35 hover:bg-accent/10 hover:text-zinc-100 active:scale-[0.96]",
+                        "aria-label": direct_chat_label,
+                        "aria-expanded": direct_chat_open_attr,
+                        onclick: {
+                            let conversation_id = conversation.id.clone();
+                            move |_| {
+                                let next_chat_open = !direct_chat_open();
+                                debug!(
+                                    %conversation_id,
+                                    chat_open = next_chat_open,
+                                    "toggling direct call chat"
+                                );
+                                direct_chat_open.set(next_chat_open);
+                            }
+                        },
+                        span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-0 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 shadow-[0_16px_40px_rgba(0,0,0,.45)] backdrop-blur-xl transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100",
+                            span { class: "chat-tooltip-open", "Открыть текстовый чат" }
+                            span { class: "chat-tooltip-close", "Скрыть текстовый чат" }
+                        }
+                        svg { class: "h-4 w-4 transition-transform duration-200", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "m18 15-6-6-6 6" }
                         }
                     }
                 }

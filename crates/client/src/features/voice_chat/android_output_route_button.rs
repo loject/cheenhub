@@ -22,13 +22,16 @@ pub(super) fn AndroidOutputRouteButton(enabled: bool) -> Element {
         Some(Ok(None)) => rsx! {},
         Some(Err(_error)) => {
             rsx! {
-                button {
-                    r#type: "button",
-                    class: "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-100 transition-[transform,background,border-color,color,opacity] duration-[180ms] hover:border-amber-400/45 hover:bg-amber-500/15 active:scale-[0.96]",
-                    "aria-label": "Повторить определение режима звука",
-                    onclick: move |_| route_load.restart(),
-                    {tooltip("Не удалось определить режим звука. Нажми, чтобы повторить.")}
-                    {warning_icon()}
+                div { class: "relative flex shrink-0",
+                    button {
+                        r#type: "button",
+                        class: "voice-control-button group relative flex h-14 w-14 items-center justify-center rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-100 transition-[transform,background-color,border-color,color,opacity] duration-[180ms] hover:border-amber-400/45 hover:bg-amber-500/15 active:scale-[0.96]",
+                        "aria-label": "Повторить определение режима звука",
+                        onclick: move |_| route_load.restart(),
+                        {tooltip("Повторить определение режима звука")}
+                        {warning_icon()}
+                    }
+                    {route_error("Не удалось определить режим звука. Нажми ещё раз.")}
                 }
             }
         }
@@ -43,44 +46,56 @@ pub(super) fn AndroidOutputRouteButton(enabled: bool) -> Element {
             let pending = switching();
             let disabled = !enabled || pending;
             let error = switch_error();
+            let button_label = if error.is_some() {
+                "Повторить переключение режима звука"
+            } else if pending {
+                "Переключаем режим звука"
+            } else {
+                label
+            };
 
             rsx! {
-                button {
-                    r#type: "button",
-                    disabled,
-                    class: if speaker_enabled {
-                        "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-blue-400/45 bg-blue-500/15 text-blue-100 shadow-[0_0_0_1px_rgba(96,165,250,.16),0_14px_36px_rgba(37,99,235,.14)] transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-blue-300/55 hover:bg-blue-500/20 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
-                    } else {
-                        "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-200 transition-[transform,background,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-zinc-700 hover:bg-zinc-900 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
-                    },
-                    "aria-label": if pending { "Переключаем режим звука" } else { label },
-                    onclick: move |_| {
-                        if disabled {
-                            return;
-                        }
-                        let next_route = if speaker_enabled {
-                            VoiceOutputRoute::Earpiece
+                div { class: "relative flex shrink-0",
+                    button {
+                        r#type: "button",
+                        disabled,
+                        class: if speaker_enabled {
+                            "voice-control-button group relative flex h-14 w-14 items-center justify-center rounded-xl border border-blue-400/45 bg-blue-500/15 text-blue-100 shadow-[0_0_0_1px_rgba(96,165,250,.16),0_14px_36px_rgba(37,99,235,.14)] transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-blue-300/55 hover:bg-blue-500/20 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
                         } else {
-                            VoiceOutputRoute::Speaker
-                        };
-                        switching.set(true);
-                        switch_error.set(None);
-                        spawn(async move {
-                            match voice_call_platform::set_voice_output_route(next_route).await {
-                                Ok(()) => selected_route.set(Some(next_route)),
-                                Err(error) => {
-                                    warn!(%error, ?next_route, "failed to switch Android voice output route");
-                                    switch_error.set(Some(error.to_string()));
-                                }
+                            "voice-control-button group relative flex h-14 w-14 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-200 transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-zinc-700 hover:bg-zinc-900 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
+                        },
+                        "aria-label": button_label,
+                        onclick: move |_| {
+                            if disabled {
+                                return;
                             }
-                            switching.set(false);
-                        });
-                    },
-                    {tooltip(error.as_deref().unwrap_or(label))}
-                    {speaker_icon(speaker_enabled && !pending)}
-                    {earpiece_icon(!speaker_enabled && !pending)}
-                    if pending {
-                        {loading_spinner()}
+                            let next_route = if speaker_enabled {
+                                VoiceOutputRoute::Earpiece
+                            } else {
+                                VoiceOutputRoute::Speaker
+                            };
+                            switching.set(true);
+                            switch_error.set(None);
+                            spawn(async move {
+                                match voice_call_platform::set_voice_output_route(next_route).await {
+                                    Ok(()) => selected_route.set(Some(next_route)),
+                                    Err(error) => {
+                                        warn!(%error, ?next_route, "failed to switch Android voice output route");
+                                        switch_error.set(Some(error.to_string()));
+                                    }
+                                }
+                                switching.set(false);
+                            });
+                        },
+                        {tooltip(label)}
+                        {speaker_icon(speaker_enabled && !pending)}
+                        {earpiece_icon(!speaker_enabled && !pending)}
+                        if pending {
+                            {loading_spinner()}
+                        }
+                    }
+                    if error.is_some() {
+                        {route_error("Не удалось переключить звук. Нажми ещё раз.")}
                     }
                 }
             }
@@ -93,10 +108,20 @@ fn loading_button(label: &'static str) -> Element {
         button {
             r#type: "button",
             disabled: true,
-            class: "group relative flex h-14 w-14 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-300 opacity-60 transition-[transform,background,border-color,color,opacity] duration-[180ms] disabled:cursor-wait",
+            class: "voice-control-button group relative flex h-14 w-14 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-300 opacity-60 transition-[transform,background-color,border-color,color,opacity] duration-[180ms] disabled:cursor-wait",
             "aria-label": label,
             {tooltip(label)}
             {loading_spinner()}
+        }
+    }
+}
+
+fn route_error(message: &str) -> Element {
+    rsx! {
+        span {
+            role: "alert",
+            class: "voice-output-route-error pointer-events-none absolute bottom-[calc(100%+12px)] left-1/2 z-10 w-max max-w-[min(18rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-amber-500/35 bg-zinc-950 px-3 py-2 text-center text-[12px] font-medium leading-4 text-amber-100 shadow-[0_12px_32px_rgba(0,0,0,.36)]",
+            "{message}"
         }
     }
 }

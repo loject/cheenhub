@@ -16,6 +16,7 @@ use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 
+use super::direct_call_provider::DirectCallProvider;
 use super::kicked_modal::KickedFromVoiceModal;
 use super::local_video::{
     LocalVideoRuntime, LocalVideoTarget, participant_source_from_contract, reconcile_camera_target,
@@ -471,7 +472,9 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     });
 
     rsx! {
-        {children}
+        DirectCallProvider {
+            {children}
+        }
         if let Some(room_name) = kicked_from_room() {
             KickedFromVoiceModal {
                 room_name,

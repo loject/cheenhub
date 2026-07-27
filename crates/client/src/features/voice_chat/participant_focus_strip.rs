@@ -37,9 +37,9 @@ pub(super) fn ParticipantFocusStrip(
                         key: "{item.tile_key}",
                         r#type: "button",
                         class: if active_tile_key.as_deref() == Some(item.tile_key.as_str()) {
-                            "group flex min-w-[132px] max-w-[200px] shrink-0 items-center gap-2 rounded-2xl border border-accent/50 bg-accent/15 px-2.5 py-2 text-left text-zinc-50 shadow-[0_12px_34px_rgba(59,130,246,.18)] transition-[background,border-color,color,transform,box-shadow] duration-150 hover:-translate-y-px hover:border-accent/65 hover:bg-accent/20"
+                            "group flex min-w-[132px] max-w-[200px] shrink-0 items-center gap-2 rounded-2xl border border-accent/50 bg-accent/15 px-2.5 py-2 text-left text-zinc-50 shadow-[0_12px_34px_rgba(59,130,246,.18)] transition-[background,border-color,color,transform,box-shadow] duration-150 hover:-translate-y-px hover:border-accent/65 hover:bg-accent/20 active:scale-[0.96]"
                         } else {
-                            "group flex min-w-[132px] max-w-[200px] shrink-0 items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-950/82 px-2.5 py-2 text-left text-zinc-300 shadow-[0_12px_34px_rgba(0,0,0,.24)] transition-[background,border-color,color,transform,box-shadow] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900/92 hover:text-zinc-100"
+                            "group flex min-w-[132px] max-w-[200px] shrink-0 items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-950/82 px-2.5 py-2 text-left text-zinc-300 shadow-[0_12px_34px_rgba(0,0,0,.24)] transition-[background,border-color,color,transform,box-shadow] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900/92 hover:text-zinc-100 active:scale-[0.96]"
                         },
                         "aria-current": if active_tile_key.as_deref() == Some(item.tile_key.as_str()) { "true" } else { "false" },
                         "aria-label": "Сфокусироваться на {item.nickname}",

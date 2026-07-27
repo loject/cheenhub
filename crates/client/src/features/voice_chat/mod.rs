@@ -1,6 +1,11 @@
 //! Voice chat client feature.
 
 mod android_output_route_button;
+mod direct_call_notification_platform;
+mod direct_call_prompt;
+mod direct_call_provider;
+mod direct_call_realtime;
+mod direct_call_state;
 mod kicked_modal;
 mod local_video;
 mod microphone_uplink;
@@ -23,6 +28,7 @@ mod voice_call_platform;
 mod voice_controls;
 mod voice_frame_sender;
 
+pub(crate) use direct_call_state::{DirectCallHandle, DirectCallUiState};
 pub(crate) use participant_grid::{VoiceParticipantGrid, VoiceParticipantGridStatus};
 pub(crate) use provider::VoiceConnectionProvider;
 pub(crate) use sidebar_controls::SidebarVoiceControls;

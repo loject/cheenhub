@@ -38,6 +38,12 @@
 }
 
 @layer base {
+  html,
+  body {
+    min-height: 100dvh;
+    background: #09090b;
+  }
+
   * {
     -webkit-font-smoothing: antialiased;
   }
@@ -58,6 +64,327 @@
 }
 
 @layer components {
+  #app-shell {
+    box-sizing: border-box;
+    height: 100dvh;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+
+  #app-shell .voice-floating-controls {
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
+  }
+
+  .voice-control-button {
+    flex: 0 0 auto;
+    min-width: 3rem;
+    min-height: 3rem;
+    touch-action: manipulation;
+  }
+
+  .direct-call-prompt {
+    animation: direct-call-backdrop-in 180ms ease-out both;
+  }
+
+  .direct-call-prompt-card {
+    animation: direct-call-card-in 320ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+
+  .direct-call-prompt-exit {
+    pointer-events: none;
+    animation: direct-call-backdrop-out 150ms ease-in both;
+  }
+
+  .direct-call-prompt-card-exit {
+    animation: direct-call-card-out 150ms ease-in both;
+  }
+
+  .direct-call-surface {
+    transform-origin: top center;
+    animation: direct-call-surface-in 300ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+
+  .direct-call-surface-exit {
+    pointer-events: none;
+    animation: direct-call-surface-out 160ms ease-in both;
+  }
+
+  .direct-call-avatar {
+    animation:
+      direct-call-avatar-in 360ms 80ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+
+  .direct-call-avatar-ringing {
+    animation:
+      direct-call-avatar-in 360ms 80ms cubic-bezier(0.2, 0, 0, 1) both,
+      direct-call-avatar-ring 2.4s 520ms ease-in-out infinite;
+  }
+
+  .direct-call-enter-segment {
+    animation: direct-call-segment-in 320ms 40ms ease-out both;
+  }
+
+  .direct-call-enter-segment-copy {
+    animation-delay: 140ms;
+  }
+
+  .direct-call-enter-segment-actions {
+    animation-delay: 240ms;
+  }
+
+  .direct-call-status-enter {
+    animation: direct-call-status-in 200ms ease-out both;
+  }
+
+  .voice-controls-panel {
+    animation: voice-controls-in 280ms 120ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+
+  .voice-empty-state {
+    animation: direct-call-stage-in 240ms ease-out both;
+  }
+
+  .participants-grid > article {
+    animation: voice-tile-in 300ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+
+  .participants-grid > article:nth-child(2) {
+    animation-delay: 60ms;
+  }
+
+  .participants-grid > article:nth-child(3) {
+    animation-delay: 120ms;
+  }
+
+  .participants-grid > article:nth-child(n + 4) {
+    animation-delay: 180ms;
+  }
+
+  .participants-grid[data-focused="true"] > article[data-focused="true"] {
+    animation: voice-focus-tile-in 220ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+
+  .voice-focus-strip {
+    animation: voice-focus-strip-in 220ms 60ms ease-out both;
+  }
+
+  @media (max-width: 380px) {
+    #app-shell .voice-controls-panel {
+      max-width: calc(
+        100vw - env(safe-area-inset-left, 0px) -
+          env(safe-area-inset-right, 0px) - 1rem
+      );
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.375rem;
+      border-radius: 1.125rem;
+    }
+
+    #app-shell .voice-controls-panel .voice-control-button {
+      width: 3rem;
+      height: 3rem;
+    }
+  }
+
+  @keyframes direct-call-backdrop-in {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes direct-call-card-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0) scale(0.98);
+      filter: blur(4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes direct-call-backdrop-out {
+    from {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes direct-call-card-out {
+    from {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+      filter: blur(0);
+    }
+
+    to {
+      opacity: 0;
+      transform: translate3d(0, -8px, 0) scale(0.99);
+      filter: blur(4px);
+    }
+  }
+
+  @keyframes direct-call-stage-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 8px, 0);
+      filter: blur(4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes direct-call-surface-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, -16px, 0);
+      filter: blur(4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes direct-call-surface-out {
+    from {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+      filter: blur(0);
+    }
+
+    to {
+      opacity: 0;
+      transform: translate3d(0, -12px, 0);
+      filter: blur(4px);
+    }
+  }
+
+  @keyframes direct-call-avatar-in {
+    from {
+      opacity: 0;
+      transform: scale(0.94);
+      filter: blur(4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes direct-call-avatar-ring {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 0 rgba(52, 211, 153, 0),
+        0 18px 50px rgba(0, 0, 0, 0.3);
+    }
+
+    50% {
+      box-shadow:
+        0 0 0 8px rgba(52, 211, 153, 0.08),
+        0 18px 50px rgba(0, 0, 0, 0.3);
+    }
+  }
+
+  @keyframes direct-call-segment-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 10px, 0);
+      filter: blur(4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes direct-call-status-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, -8px, 0);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  @keyframes voice-controls-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0) scale(0.98);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes voice-tile-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 10px, 0) scale(0.985);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes voice-focus-tile-in {
+    from {
+      opacity: 0;
+      transform: scale(0.985);
+      filter: blur(4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes voice-focus-strip-in {
+    from {
+      opacity: 0;
+      transform: translate3d(-50%, 8px, 0);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(-50%, 0, 0);
+    }
+  }
+
   @keyframes toast-enter {
     from {
       opacity: 0;
@@ -428,20 +755,21 @@
     display: none;
   }
 
-  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .voice-stage,
-  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"] .voice-stage {
+  #app-shell[data-chat-open="true"] .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="true"] .voice-stage,
+  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"][data-direct-chat-open="true"] .voice-stage {
     padding-bottom: 18px;
   }
 
-  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .embedded-chat,
-  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"] .embedded-chat {
+  #app-shell[data-chat-open="true"] .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="true"] .embedded-chat,
+  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"][data-direct-chat-open="true"] .embedded-chat {
     height: clamp(24dvh, var(--embedded-chat-height, 38dvh), 84dvh);
     opacity: 1;
     transform: translateY(0);
     border-top-color: rgba(63, 63, 70, 0.9);
   }
 
-  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .chat-corner-toggle {
+  #app-shell[data-chat-open="true"] .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="true"] .chat-corner-toggle,
+  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"][data-direct-chat-open="true"] .chat-corner-toggle {
     bottom: calc(clamp(24dvh, var(--embedded-chat-height, 38dvh), 84dvh) + 20px);
     border-color: rgba(59, 130, 246, 0.32);
     background: rgba(59, 130, 246, 0.1);
@@ -452,15 +780,18 @@
       0 18px 50px rgba(0, 0, 0, 0.38);
   }
 
-  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .chat-corner-toggle svg {
+  #app-shell[data-chat-open="true"] .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="true"] .chat-corner-toggle svg,
+  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"][data-direct-chat-open="true"] .chat-corner-toggle svg {
     transform: rotate(180deg);
   }
 
-  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .chat-tooltip-open {
+  #app-shell[data-chat-open="true"] .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="true"] .chat-tooltip-open,
+  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"][data-direct-chat-open="true"] .chat-tooltip-open {
     display: none;
   }
 
-  #app-shell[data-chat-open="true"] .room-workspace[data-voice-room-active="true"] .chat-tooltip-close {
+  #app-shell[data-chat-open="true"] .room-workspace[data-room-kind="text_and_voice"][data-voice-room-active="true"] .chat-tooltip-close,
+  #app-shell .room-workspace[data-room-kind="direct"][data-voice-room-active="true"][data-direct-chat-open="true"] .chat-tooltip-close {
     display: inline;
   }
 
@@ -591,6 +922,10 @@
 
     #app-shell .user-avatar {
       display: none;
+    }
+
+    #app-shell .direct-call-prompt .user-avatar {
+      display: flex;
     }
 
     #app-shell .chat-message-group {
@@ -959,7 +1294,25 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chat-message,
-  .chat-message-removing {
+  .chat-message-removing,
+  .direct-call-prompt,
+  .direct-call-prompt-card,
+  .direct-call-surface,
+  .direct-call-surface-exit,
+  .direct-call-stage,
+  .direct-call-avatar,
+  .direct-call-avatar-ringing,
+  .direct-call-enter-segment,
+  .direct-call-status-enter,
+  .voice-controls-panel,
+  .voice-empty-state,
+  .participants-grid > article,
+  .participants-grid[data-focused="true"] > article[data-focused="true"],
+  .voice-focus-strip {
     animation: none;
+  }
+
+  .voice-control-button span {
+    transition-duration: 0.01ms;
   }
 }

@@ -114,7 +114,7 @@ pub(crate) fn VoiceParticipantTile(
             div { class: "absolute right-3 top-3 z-30",
                 button {
                     r#type: "button",
-                    class: "rounded-xl border border-zinc-800 bg-zinc-950 p-2 text-zinc-500 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:text-zinc-200",
+                    class: "rounded-xl border border-zinc-800 bg-zinc-950 p-2 text-zinc-500 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:text-zinc-200 active:scale-[0.96]",
                     "aria-label": "Меню пользователя",
                     onclick: {
                         let nickname = participant.nickname.clone();

@@ -23,11 +23,23 @@ use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
 pub(crate) enum VoiceParticipantGridStatus {
     /// The room is waiting for the join request to complete.
     Connecting,
+    /// Принятый личный звонок подготавливает медиасоединение.
+    DirectCallConnecting {
+        /// Имя собеседника.
+        peer_nickname: String,
+    },
     /// The room is joined but has no visible participants.
     Empty,
     /// The latest room-scoped voice action failed.
     Error {
         /// User-facing error message.
+        message: String,
+    },
+    /// Медиасоединение личного звонка завершилось ошибкой.
+    DirectCallError {
+        /// Имя собеседника.
+        peer_nickname: String,
+        /// Сообщение об ошибке.
         message: String,
     },
 }
@@ -64,6 +76,9 @@ pub(crate) fn VoiceParticipantGrid(
             "Подключаемся к голосовой комнате",
             "Ждём ответ сервера и готовим список участников.",
         ),
+        VoiceParticipantGridStatus::DirectCallConnecting { peer_nickname } => {
+            ("Соединяем звонок", peer_nickname.as_str())
+        }
         VoiceParticipantGridStatus::Empty => (
             "В голосовой комнате пока никого нет",
             "Войди в комнату, чтобы появиться в списке участников.",
@@ -72,13 +87,26 @@ pub(crate) fn VoiceParticipantGrid(
             "Не удалось подключиться к голосовой комнате",
             "Сервер не ответил или вернул ошибку. Можно попробовать подключиться ещё раз.",
         ),
+        VoiceParticipantGridStatus::DirectCallError { .. } => (
+            "Не удалось соединить звонок",
+            "Проверь соединение и попробуй ещё раз.",
+        ),
     };
     let error_message = match &status {
-        VoiceParticipantGridStatus::Error { message } => Some(message.as_str()),
+        VoiceParticipantGridStatus::Error { message }
+        | VoiceParticipantGridStatus::DirectCallError { message, .. } => Some(message.as_str()),
         _ => None,
     };
-    let is_connecting = matches!(status, VoiceParticipantGridStatus::Connecting);
-    let can_retry = matches!(status, VoiceParticipantGridStatus::Error { .. });
+    let is_connecting = matches!(
+        status,
+        VoiceParticipantGridStatus::Connecting
+            | VoiceParticipantGridStatus::DirectCallConnecting { .. }
+    );
+    let can_retry = matches!(
+        status,
+        VoiceParticipantGridStatus::Error { .. }
+            | VoiceParticipantGridStatus::DirectCallError { .. }
+    );
     let kick_user_id = open_user_menu().map(|m| m.user_id.clone());
     let kick_server_id = server_id.clone();
     let kick_room_id = room_id.clone();
@@ -114,7 +142,7 @@ pub(crate) fn VoiceParticipantGrid(
             class: "voice-stage relative flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-5 pt-6 pb-[108px] max-[900px]:pt-4 max-[900px]:pb-[100px] lg:p-6 lg:pt-6 lg:pb-[108px]",
             onclick: move |_| open_user_menu.set(None),
             if participants.is_empty() {
-                div { class: "max-w-sm text-center",
+                div { class: "voice-empty-state max-w-sm text-center",
                     div { class: "mx-auto grid h-16 w-16 place-items-center rounded-2xl border border-zinc-800 bg-zinc-900/80 text-zinc-500",
                         if is_connecting {
                             div { class: "h-7 w-7 animate-spin rounded-full border-2 border-zinc-700 border-t-accent" }
@@ -124,15 +152,15 @@ pub(crate) fn VoiceParticipantGrid(
                             }
                         }
                     }
-                    h2 { class: "mt-4 text-[16px] font-semibold text-zinc-100", "{title}" }
-                    p { class: "mt-2 text-[13px] leading-6 text-zinc-500", "{body}" }
+                    h2 { class: "mt-4 text-balance text-[16px] font-semibold text-zinc-100", "{title}" }
+                    p { class: "mt-2 text-pretty text-[13px] leading-6 text-zinc-500", "{body}" }
                     if let Some(message) = error_message {
                         p { class: "mt-2 text-[12px] leading-5 text-zinc-600", "{message}" }
                     }
                     if can_retry {
                         button {
                             r#type: "button",
-                            class: "mt-4 inline-flex h-10 items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white transition hover:bg-blue-400",
+                            class: "mt-4 inline-flex h-10 items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white transition-[scale,background-color] duration-150 ease-out hover:bg-blue-400 active:scale-[0.96]",
                             onclick: move |_| on_retry.call(()),
                             "Повторить подключение"
                         }
@@ -210,7 +238,7 @@ pub(crate) fn VoiceParticipantGrid(
                 button {
                     r#type: "button",
                     disabled: !focused && preferred_focus_tile_key.is_none(),
-                    class: "voice-display-mode-button group z-40 flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/85 text-zinc-300 shadow-[0_18px_50px_rgba(0,0,0,0.38)] backdrop-blur-xl transition-[background-color,border-color,color,transform,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-accent/35 hover:bg-accent/10 hover:text-zinc-100 disabled:cursor-default disabled:opacity-50",
+                    class: "voice-display-mode-button group z-40 flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/85 text-zinc-300 shadow-[0_18px_50px_rgba(0,0,0,0.38)] backdrop-blur-xl transition-[background-color,border-color,color,transform,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-accent/35 hover:bg-accent/10 hover:text-zinc-100 active:scale-[0.96] disabled:cursor-default disabled:opacity-50",
                     "aria-label": display_mode_label,
                     onclick: {
                         let next_focus_tile_key = preferred_focus_tile_key.clone();

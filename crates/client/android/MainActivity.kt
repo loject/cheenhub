@@ -225,6 +225,19 @@ class MainActivity : WryActivity() {
         CheenHubPushStore.clearConversation(this, conversationId)
     }
 
+    fun showCheenHubIncomingCallNotification(
+        callId: String,
+        conversationId: String,
+        callerNickname: String,
+    ) {
+        if (CheenHubPushStore.isAppForeground(this)) return
+        CheenHubCallNotifications.show(this, callId, conversationId, callerNickname)
+    }
+
+    fun clearCheenHubIncomingCallNotification(callId: String) {
+        CheenHubCallNotifications.clear(this, callId)
+    }
+
     private fun acceptNotificationIntent(intent: Intent?) {
         if (intent?.action != CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION) return
         val conversationId = intent.getStringExtra(CHEENHUB_CONVERSATION_ID_EXTRA) ?: return
@@ -910,6 +923,9 @@ private object CheenHubPushStore {
         preferences(context).edit().putBoolean(APP_FOREGROUND, foreground).apply()
     }
 
+    fun isAppForeground(context: Context): Boolean =
+        preferences(context).getBoolean(APP_FOREGROUND, false)
+
     fun shouldSuppress(context: Context, conversationId: String): Boolean {
         val preferences = preferences(context)
         return preferences.getBoolean(APP_FOREGROUND, false) &&
@@ -1098,6 +1114,77 @@ private object CheenHubNotifications {
             notification,
         )
     }
+}
+
+private object CheenHubCallNotifications {
+    private const val NOTIFICATION_ID = 2002
+    private const val CHANNEL_ID = "cheenhub_personal_calls"
+    private const val RING_TIMEOUT_MILLIS = 45_000L
+
+    fun show(
+        context: Context,
+        callId: String,
+        conversationId: String,
+        callerNickname: String,
+    ) {
+        val normalizedCallId = validUuid(callId) ?: return
+        val normalizedConversationId = validUuid(conversationId) ?: return
+        val nickname = callerNickname.trim().takeIf { it.isNotEmpty() } ?: return
+        ensureChannel(context)
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION)
+            .putExtra(CHEENHUB_CONVERSATION_ID_EXTRA, normalizedConversationId)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            normalizedCallId.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            android.app.Notification.Builder(context, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            android.app.Notification.Builder(context)
+        }
+        val notification = builder
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Входящий звонок")
+            .setContentText(nickname)
+            .setCategory(android.app.Notification.CATEGORY_CALL)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(true)
+            .setTimeoutAfter(RING_TIMEOUT_MILLIS)
+            .build()
+        context.getSystemService(NotificationManager::class.java)
+            .notify(notificationTag(normalizedCallId), NOTIFICATION_ID, notification)
+        Log.i(CHEENHUB_PUSH_LOG_TAG, "Incoming-call notification shown")
+    }
+
+    fun clear(context: Context, callId: String) {
+        val normalizedCallId = validUuid(callId) ?: return
+        context.getSystemService(NotificationManager::class.java)
+            .cancel(notificationTag(normalizedCallId), NOTIFICATION_ID)
+    }
+
+    private fun ensureChannel(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Личные звонки",
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = "Уведомления о входящих личных звонках CheenHub"
+        }
+        context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
+    private fun validUuid(value: String): String? =
+        runCatching { UUID.fromString(value).toString() }.getOrNull()
+
+    private fun notificationTag(callId: String) = "cheenhub_call:$callId"
 }
 
 class DioxusForegroundService : Service() {

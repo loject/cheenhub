@@ -21,7 +21,7 @@ mod status;
 mod target;
 
 use actions::{ensure_current_user_present, join_target, leave_target};
-pub(crate) use target::VoiceRoomTarget;
+pub(crate) use target::{VoiceRoomTarget, VoiceRoomTargetKind};
 
 const JOIN_RESPONSE_TIMEOUT_MS: u32 = 12_000;
 

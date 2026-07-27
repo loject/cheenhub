@@ -10,7 +10,8 @@ use crate::features::camera::{CameraHandle, CameraStatus};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
 
-use super::state::{VoiceConnectionHandle, VoiceConnectionState};
+use super::direct_call_state::DirectCallHandle;
+use super::state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTargetKind};
 use super::video_streams::{ParticipantVideoFrame, ParticipantVideoHandle, ParticipantVideoSource};
 use super::{microphone_uplink, realtime};
 
@@ -18,6 +19,7 @@ use super::{microphone_uplink, realtime};
 #[component]
 pub(crate) fn SidebarVoiceControls() -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
+    let direct_call = use_context::<DirectCallHandle>();
     let microphone = use_context::<MicrophoneHandle>();
     let camera = use_context::<CameraHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
@@ -85,41 +87,51 @@ pub(crate) fn SidebarVoiceControls() -> Element {
         microphone_label
     };
     let camera_button_class = if camera_live {
-        "flex h-9 items-center justify-center rounded-xl border border-cyan-500/35 bg-cyan-500/15 text-cyan-100 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-cyan-400/45 hover:bg-cyan-500/20 disabled:cursor-wait disabled:opacity-60"
+        "flex min-h-12 items-center justify-center rounded-xl border border-cyan-500/35 bg-cyan-500/15 text-cyan-100 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-cyan-400/45 hover:bg-cyan-500/20 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     } else if matches!(
         camera_status,
         CameraStatus::PermissionDenied | CameraStatus::Error(_)
     ) {
-        "flex h-9 items-center justify-center rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-100 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-amber-500/35 hover:bg-amber-500/15 disabled:cursor-wait disabled:opacity-60"
+        "flex min-h-12 items-center justify-center rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-100 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-amber-500/35 hover:bg-amber-500/15 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     } else {
-        "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 disabled:cursor-wait disabled:opacity-60"
+        "flex min-h-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     };
     let microphone_button_class = if microphone_speaking {
-        "relative flex h-9 items-center justify-center overflow-hidden rounded-xl border border-emerald-300/80 bg-emerald-500/20 text-emerald-50 shadow-[0_0_0_1px_rgba(52,211,153,.25),0_10px_28px_rgba(16,185,129,.20)] transition-[background,border-color,color,transform,box-shadow,opacity] duration-150 hover:-translate-y-px hover:border-emerald-300 hover:bg-emerald-500/25 disabled:cursor-wait disabled:opacity-60"
+        "relative flex min-h-12 items-center justify-center overflow-hidden rounded-xl border border-emerald-300/80 bg-emerald-500/20 text-emerald-50 shadow-[0_0_0_1px_rgba(52,211,153,.25),0_10px_28px_rgba(16,185,129,.20)] transition-[background-color,border-color,color,transform,box-shadow,opacity] duration-150 hover:-translate-y-px hover:border-emerald-300 hover:bg-emerald-500/25 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     } else if microphone_live {
-        "flex h-9 items-center justify-center rounded-xl border border-emerald-500/35 bg-emerald-500/15 text-emerald-100 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-emerald-400/45 hover:bg-emerald-500/20 disabled:cursor-wait disabled:opacity-60"
+        "flex min-h-12 items-center justify-center rounded-xl border border-emerald-500/35 bg-emerald-500/15 text-emerald-100 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-emerald-400/45 hover:bg-emerald-500/20 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     } else if matches!(
         microphone_status,
         MicrophoneStatus::PermissionDenied | MicrophoneStatus::Error(_)
     ) {
-        "flex h-9 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/10 text-red-200 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/15 disabled:cursor-wait disabled:opacity-60"
+        "flex min-h-12 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/10 text-red-200 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/15 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     } else {
-        "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 disabled:cursor-wait disabled:opacity-60"
+        "flex min-h-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     };
     let output_button_class = if output_muted {
-        "flex h-9 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-100 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-blue-400/40 hover:bg-blue-500/15"
+        "flex min-h-12 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-100 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-blue-400/40 hover:bg-blue-500/15 active:scale-[0.96]"
     } else {
-        "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900"
+        "flex min-h-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 active:scale-[0.96]"
     };
     let toggle_microphone = microphone.clone();
     let toggle_camera = camera.clone();
     let leave_microphone = microphone.clone();
     let leave_camera = camera.clone();
+    let leave_direct_call = direct_call.clone();
     let output_microphone = microphone.clone();
     let mic_playback = playback.clone();
     let toggle_playback = playback.clone();
     let target_for_microphone = target.clone();
     let target_for_camera = target.clone();
+    let leave_target = target.clone();
+    let leave_label = if target
+        .as_ref()
+        .is_some_and(|target| target.kind == VoiceRoomTargetKind::DirectMessage)
+    {
+        "Завершить звонок"
+    } else {
+        "Выйти из голосового чата"
+    };
     let camera_realtime_handle = realtime_handle.clone();
     let camera_current_user_id = current_user_id.clone();
     let camera_participant_video = participant_video.clone();
@@ -262,12 +274,17 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                     button {
                         r#type: "button",
                         disabled: matches!(state, VoiceConnectionState::Disconnecting { .. }),
-                        class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200 disabled:cursor-wait disabled:opacity-60",
-                        "aria-label": "Выйти из голосового чата",
+                        class: "flex min-h-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-300 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60",
+                        "aria-label": leave_label,
                         onclick: move |_| {
                             leave_microphone.stop();
                             leave_camera.stop();
-                            voice.leave();
+                            if !leave_target
+                                .as_ref()
+                                .is_some_and(|target| leave_direct_call.end_for_target(target))
+                            {
+                                voice.leave();
+                            }
                         },
                         svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" }
