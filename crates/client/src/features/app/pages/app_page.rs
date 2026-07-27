@@ -8,6 +8,7 @@ use crate::features::app::components::app_shell::AppShell;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
 use crate::features::app::workspace_route_storage;
+use crate::features::app::workspace_start_route;
 use crate::features::audio_playback::AudioPlaybackProvider;
 use crate::features::auth::{SessionEnd, TokenRefresher, api};
 use crate::features::camera::CameraProvider;
@@ -95,7 +96,7 @@ pub(crate) fn AppPage() -> Element {
         match route.clone() {
             Route::AppHome {} => {
                 let saved_route = workspace_route_storage::load(&current_user.id);
-                let next_route = saved_route.unwrap_or(Route::AppFriends {});
+                let next_route = workspace_start_route::resolve(saved_route);
                 info!(
                     route = %next_route,
                     "restoring authenticated app workspace route"

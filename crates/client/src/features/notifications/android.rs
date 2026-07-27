@@ -1,4 +1,4 @@
-//! Android-реализация регистрации и навигации системных push-уведомлений.
+//! Android-реализация регистрации системных push-уведомлений.
 #![cfg_attr(not(target_os = "android"), allow(dead_code, unused_imports))]
 
 #[cfg(target_os = "android")]
@@ -9,8 +9,6 @@ use std::sync::{Mutex, OnceLock};
 
 use dioxus::prelude::*;
 #[cfg(target_os = "android")]
-use dioxus::router::Navigator;
-#[cfg(target_os = "android")]
 use futures_channel::{mpsc, oneshot};
 #[cfg(target_os = "android")]
 use futures_util::StreamExt;
@@ -19,8 +17,6 @@ use jni::JNIEnv;
 #[cfg(target_os = "android")]
 use jni::objects::{JObject, JString};
 
-#[cfg(target_os = "android")]
-use crate::Route;
 #[cfg(target_os = "android")]
 use crate::features::app::active_room::ActiveRoomContext;
 #[cfg(target_os = "android")]
@@ -32,27 +28,31 @@ use crate::features::runtime::android::{
 static NOTIFICATION_OPEN_SUBSCRIBERS: OnceLock<Mutex<Vec<mpsc::UnboundedSender<String>>>> =
     OnceLock::new();
 
-/// Регистрирует Android push-установку и связывает notification click с маршрутом ЛС.
+/// Регистрирует Android push-установку без автоматической смены текущего экрана.
 #[component]
 pub(crate) fn NotificationsProvider(children: Element) -> Element {
     #[cfg(target_os = "android")]
     {
         let active_room = use_context::<ActiveRoomContext>();
-        let navigator = use_navigator();
 
         use_hook(move || {
             spawn(register_android_installation());
-            let navigator = navigator.clone();
             spawn(async move {
                 let mut opened = subscribe_notification_opens();
                 if let Ok(Some(conversation_id)) = take_pending_conversation().await {
-                    navigate_to_conversation(&navigator, conversation_id);
+                    debug!(
+                        %conversation_id,
+                        "ignored pending Android notification route; kept current screen"
+                    );
                 }
                 while let Some(conversation_id) = opened.next().await {
-                    // Intent хранится и для cold start. При живом callback сразу потребляем
-                    // сохранённый маршрут, чтобы следующий mount не открыл тот же диалог повторно.
+                    // Intent хранится и для cold start. При живом callback потребляем
+                    // сохранённый маршрут, чтобы следующий mount не обработал его повторно.
                     let _ = take_pending_conversation().await;
-                    navigate_to_conversation(&navigator, conversation_id);
+                    debug!(
+                        %conversation_id,
+                        "ignored Android notification route; kept current screen"
+                    );
                 }
                 warn!("Android notification-open subscription stopped");
             });
@@ -165,12 +165,6 @@ fn subscribe_notification_opens() -> mpsc::UnboundedReceiver<String> {
 #[cfg(target_os = "android")]
 fn notification_open_subscribers() -> &'static Mutex<Vec<mpsc::UnboundedSender<String>>> {
     NOTIFICATION_OPEN_SUBSCRIBERS.get_or_init(|| Mutex::new(Vec::new()))
-}
-
-#[cfg(target_os = "android")]
-fn navigate_to_conversation(navigator: &Navigator, conversation_id: String) {
-    debug!(%conversation_id, "opening direct conversation from Android notification");
-    navigator.push(Route::AppDirectMessage { conversation_id });
 }
 
 /// Передаёт открытие Android-уведомления активному Dioxus provider.
