@@ -44,8 +44,8 @@ depends = [
 [android]
 identifier = "ru.cheenhub"
 min_sdk = 24
-target_sdk = 35
-compile_sdk = 35
+target_sdk = 36
+compile_sdk = 36
 foreground_service_types = ["microphone", "mediaPlayback", "camera", "mediaProjection"]
 gradle_dependencies = [
     "androidx.credentials:credentials:1.6.0",
