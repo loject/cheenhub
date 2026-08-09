@@ -9,6 +9,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
@@ -274,6 +275,23 @@ class MainActivity : WryActivity() {
         val intent = Intent(this, DioxusForegroundService::class.java)
             .setAction(DioxusForegroundService.ACTION_STOP)
             .putExtra(DioxusForegroundService.EXTRA_KIND, kind)
+        startService(intent)
+    }
+
+    fun updateCheenHubVoiceNotification(
+        active: Boolean,
+        targetKind: Int,
+        targetId: String?,
+        targetName: String?,
+        microphoneState: Int,
+    ) {
+        val intent = Intent(this, DioxusForegroundService::class.java)
+            .setAction(DioxusForegroundService.ACTION_UPDATE_VOICE_NOTIFICATION)
+            .putExtra(DioxusForegroundService.EXTRA_VOICE_ACTIVE, active)
+            .putExtra(DioxusForegroundService.EXTRA_VOICE_TARGET_KIND, targetKind)
+            .putExtra(DioxusForegroundService.EXTRA_VOICE_TARGET_ID, targetId)
+            .putExtra(DioxusForegroundService.EXTRA_VOICE_TARGET_NAME, targetName)
+            .putExtra(DioxusForegroundService.EXTRA_VOICE_MICROPHONE_STATE, microphoneState)
         startService(intent)
     }
 
@@ -1189,20 +1207,44 @@ private object CheenHubCallNotifications {
 
 class DioxusForegroundService : Service() {
     private val activeKindCounts = linkedMapOf<String, Int>()
+    private var voiceNotification: ActiveVoiceNotification? = null
+    private var nextVoiceNotificationSessionId = 1L
 
     override fun onCreate() {
         super.onCreate()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Active calls and media",
+                "Активные звонки и медиа",
                 NotificationManager.IMPORTANCE_LOW,
-            )
+            ).apply {
+                description = "Управление активным голосовым подключением и медиа CheenHub"
+            }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_UPDATE_VOICE_NOTIFICATION -> {
+                updateVoiceNotification(intent)
+                if (activeKindCounts.isNotEmpty()) {
+                    publishForeground()
+                } else {
+                    stopSelfResult(startId)
+                }
+                return START_NOT_STICKY
+            }
+            ACTION_TOGGLE_VOICE_MICROPHONE -> {
+                dispatchVoiceNotificationAction(intent, VOICE_ACTION_TOGGLE_MICROPHONE)
+                return START_NOT_STICKY
+            }
+            ACTION_LEAVE_VOICE -> {
+                dispatchVoiceNotificationAction(intent, VOICE_ACTION_LEAVE)
+                return START_NOT_STICKY
+            }
+        }
+
         val kind = intent?.getStringExtra(EXTRA_KIND) ?: return START_NOT_STICKY
         if (intent.action == ACTION_STOP) {
             val count = activeKindCounts[kind] ?: 0
@@ -1232,18 +1274,39 @@ class DioxusForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun publishForeground() {
+        val activeVoice = voiceNotification?.takeIf {
+            activeKindCounts.containsKey(VOICE_PLAYBACK_KIND)
+        }
         val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             android.app.Notification.Builder(this, CHANNEL_ID)
         } else {
             @Suppress("DEPRECATION")
             android.app.Notification.Builder(this)
         }
-        val builtNotification = notification
+        notification
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("CheenHub")
-            .setContentText("Active voice or media session")
+            .setContentTitle(activeVoice?.title() ?: "CheenHub")
+            .setContentText(activeVoice?.microphoneText() ?: "Активная медиа-сессия")
+            .setContentIntent(openAppPendingIntent())
             .setOngoing(true)
-            .build()
+            .setOnlyAlertOnce(true)
+        if (activeVoice != null) {
+            notification.addAction(
+                android.app.Notification.Action.Builder(
+                    Icon.createWithResource(this, android.R.drawable.ic_btn_speak_now),
+                    activeVoice.microphoneActionLabel(),
+                    voiceActionPendingIntent(ACTION_TOGGLE_VOICE_MICROPHONE, activeVoice),
+                ).build(),
+            )
+            notification.addAction(
+                android.app.Notification.Action.Builder(
+                    Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
+                    activeVoice.leaveActionLabel(),
+                    voiceActionPendingIntent(ACTION_LEAVE_VOICE, activeVoice),
+                ).build(),
+            )
+        }
+        val builtNotification = notification.build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -1253,6 +1316,102 @@ class DioxusForegroundService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, builtNotification)
         }
+    }
+
+    private fun updateVoiceNotification(intent: Intent) {
+        if (!intent.getBooleanExtra(EXTRA_VOICE_ACTIVE, false)) {
+            if (voiceNotification != null) {
+                nextVoiceNotificationSessionId += 1
+                voiceNotification = null
+                Log.i(CHEENHUB_VOICE_LOG_TAG, "Active voice notification cleared")
+            }
+            return
+        }
+
+        val targetKind = intent.getIntExtra(EXTRA_VOICE_TARGET_KIND, 0)
+        val targetId = intent.getStringExtra(EXTRA_VOICE_TARGET_ID)?.takeIf { it.isNotBlank() }
+        val targetName = intent.getStringExtra(EXTRA_VOICE_TARGET_NAME)?.trim()
+        val microphoneState = intent.getIntExtra(EXTRA_VOICE_MICROPHONE_STATE, MICROPHONE_OFF)
+        if (targetKind !in setOf(TARGET_SERVER_ROOM, TARGET_DIRECT_CALL) || targetId == null) {
+            Log.w(
+                CHEENHUB_VOICE_LOG_TAG,
+                "Active voice notification update rejected; target_kind=$targetKind",
+            )
+            return
+        }
+        val previous = voiceNotification
+        val sessionId = if (previous == null || previous.targetId != targetId) {
+            nextVoiceNotificationSessionId++
+            nextVoiceNotificationSessionId
+        } else {
+            previous.sessionId
+        }
+        voiceNotification = ActiveVoiceNotification(
+            targetKind = targetKind,
+            targetId = targetId,
+            targetName = targetName?.takeIf { it.isNotBlank() }
+                ?: if (targetKind == TARGET_DIRECT_CALL) "Собеседник" else "Голосовая комната",
+            microphoneState = microphoneState.coerceIn(MICROPHONE_OFF, MICROPHONE_UNAVAILABLE),
+            sessionId = sessionId,
+        )
+        Log.i(
+            CHEENHUB_VOICE_LOG_TAG,
+            "Active voice notification updated; target_kind=$targetKind microphone_state=$microphoneState",
+        )
+    }
+
+    private fun dispatchVoiceNotificationAction(intent: Intent, action: Int) {
+        val activeVoice = voiceNotification
+        val expectedSessionId = intent.getLongExtra(EXTRA_VOICE_SESSION_ID, 0L)
+        if (activeVoice == null || expectedSessionId != activeVoice.sessionId) {
+            Log.w(
+                CHEENHUB_VOICE_LOG_TAG,
+                "Stale voice notification action ignored; action=$action",
+            )
+            return
+        }
+        runCatching { nativeOnCheenHubVoiceNotificationAction(action) }
+            .onSuccess {
+                Log.i(
+                    CHEENHUB_VOICE_LOG_TAG,
+                    "Voice notification action delivered; action=$action target_kind=${activeVoice.targetKind}",
+                )
+            }
+            .onFailure { error ->
+                Log.e(
+                    CHEENHUB_VOICE_LOG_TAG,
+                    "Voice notification action delivery failed; action=$action",
+                    error,
+                )
+            }
+    }
+
+    private fun openAppPendingIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        return PendingIntent.getActivity(
+            this,
+            OPEN_APP_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun voiceActionPendingIntent(
+        action: String,
+        activeVoice: ActiveVoiceNotification,
+    ): PendingIntent {
+        val requestCode = activeVoice.sessionId.hashCode() xor action.hashCode()
+        val intent = Intent(this, DioxusForegroundService::class.java)
+            .setAction(action)
+            .putExtra(EXTRA_VOICE_SESSION_ID, activeVoice.sessionId)
+        return PendingIntent.getService(
+            this,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     private fun serviceTypes(kinds: Set<String>): Int = kinds.fold(0) { types, kind ->
@@ -1265,10 +1424,65 @@ class DioxusForegroundService : Service() {
         }
     }
 
+    private external fun nativeOnCheenHubVoiceNotificationAction(action: Int)
+
+    private data class ActiveVoiceNotification(
+        val targetKind: Int,
+        val targetId: String,
+        val targetName: String,
+        val microphoneState: Int,
+        val sessionId: Long,
+    ) {
+        fun title(): String = if (targetKind == TARGET_DIRECT_CALL) {
+            "Звонок с $targetName"
+        } else {
+            "Голосовая комната: $targetName"
+        }
+
+        fun microphoneText(): String = when (microphoneState) {
+            MICROPHONE_STARTING -> "Микрофон включается…"
+            MICROPHONE_LIVE -> "Микрофон включён"
+            MICROPHONE_UNAVAILABLE -> "Микрофон недоступен"
+            else -> "Микрофон выключен"
+        }
+
+        fun microphoneActionLabel(): String = when (microphoneState) {
+            MICROPHONE_STARTING, MICROPHONE_LIVE -> "Выключить микрофон"
+            else -> "Включить микрофон"
+        }
+
+        fun leaveActionLabel(): String = if (targetKind == TARGET_DIRECT_CALL) {
+            "Завершить звонок"
+        } else {
+            "Выйти"
+        }
+    }
+
     companion object {
         const val ACTION_START = "ru.cheenhub.action.START_MEDIA_SERVICE"
         const val ACTION_STOP = "ru.cheenhub.action.STOP_MEDIA_SERVICE"
+        const val ACTION_UPDATE_VOICE_NOTIFICATION =
+            "ru.cheenhub.action.UPDATE_VOICE_NOTIFICATION"
+        const val ACTION_TOGGLE_VOICE_MICROPHONE =
+            "ru.cheenhub.action.TOGGLE_VOICE_MICROPHONE"
+        const val ACTION_LEAVE_VOICE = "ru.cheenhub.action.LEAVE_VOICE"
         const val EXTRA_KIND = "kind"
+        const val EXTRA_VOICE_ACTIVE = "voiceActive"
+        const val EXTRA_VOICE_TARGET_KIND = "voiceTargetKind"
+        const val EXTRA_VOICE_TARGET_ID = "voiceTargetId"
+        const val EXTRA_VOICE_TARGET_NAME = "voiceTargetName"
+        const val EXTRA_VOICE_MICROPHONE_STATE = "voiceMicrophoneState"
+        const val EXTRA_VOICE_SESSION_ID = "voiceSessionId"
+        private const val VOICE_PLAYBACK_KIND = "voicePlayback"
+        private const val TARGET_SERVER_ROOM = 1
+        private const val TARGET_DIRECT_CALL = 2
+        private const val MICROPHONE_OFF = 0
+        private const val MICROPHONE_STARTING = 1
+        private const val MICROPHONE_LIVE = 2
+        private const val MICROPHONE_UNAVAILABLE = 3
+        private const val VOICE_ACTION_TOGGLE_MICROPHONE = 1
+        private const val VOICE_ACTION_LEAVE = 2
+        private const val OPEN_APP_REQUEST_CODE = 1001
         private const val CHANNEL_ID = "cheenhub_active_media"
         private const val NOTIFICATION_ID = 1001
     }

@@ -8,6 +8,7 @@ use crate::features::audio_playback::{AudioPlaybackHandle, NotificationSound};
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 use crate::features::runtime::sleep_ms;
 
+use super::active_voice_notification_controls::ActiveVoiceNotificationControls;
 use super::direct_call_notification_platform::{
     clear_incoming_call_notification, show_incoming_call_notification,
 };
@@ -107,6 +108,7 @@ pub(super) fn DirectCallProvider(children: Element) -> Element {
     });
 
     rsx! {
+        ActiveVoiceNotificationControls {}
         {children}
         if let Some(call) = displayed_incoming_call() {
             DirectCallPrompt {

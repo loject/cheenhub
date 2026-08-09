@@ -4,7 +4,7 @@ use std::convert::Infallible;
 
 use futures_channel::mpsc;
 
-use super::VoiceOutputRoute;
+use super::{ActiveVoiceNotification, VoiceNotificationAction, VoiceOutputRoute};
 
 /// Изменение доступности системного audio focus.
 #[allow(dead_code)]
@@ -40,6 +40,16 @@ pub(crate) async fn set_voice_output_route(_route: VoiceOutputRoute) -> Result<(
 
 /// Возвращает пустую подписку, потому что платформа не сообщает audio focus.
 pub(crate) fn subscribe_voice_audio_focus() -> mpsc::UnboundedReceiver<VoiceAudioFocusEvent> {
+    let (_sender, receiver) = mpsc::unbounded();
+    receiver
+}
+
+/// На этой платформе системное уведомление активного звонка отсутствует.
+pub(crate) fn update_active_voice_notification(_notification: Option<ActiveVoiceNotification>) {}
+
+/// Возвращает пустую подписку, потому что платформа не показывает системные действия звонка.
+pub(crate) fn subscribe_voice_notification_actions()
+-> mpsc::UnboundedReceiver<VoiceNotificationAction> {
     let (_sender, receiver) = mpsc::unbounded();
     receiver
 }

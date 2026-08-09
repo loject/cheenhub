@@ -1,5 +1,6 @@
 //! Voice chat client feature.
 
+mod active_voice_notification_controls;
 mod android_output_route_button;
 mod direct_call_notification_platform;
 mod direct_call_prompt;
