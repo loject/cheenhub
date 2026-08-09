@@ -26,7 +26,7 @@ use super::guards::{
     ModuleStreams, PendingRequestGuard, PendingRequests, StreamWriteGuard, remove_cached_stream,
 };
 use super::inbound::{EventListeners, spawn_universal_reader};
-use super::status::RealtimeConnectionStatus;
+use super::status::{RealtimeConnectionStatus, RealtimeTransportKind};
 use super::websocket::{WebSocketOutbound, WebSocketOutboundSender};
 use super::webtransport;
 
@@ -137,6 +137,17 @@ impl RealtimeHandle {
     /// Returns the current realtime connection status.
     pub(crate) fn connection_status(&self) -> RealtimeConnectionStatus {
         self.inner.connection_status.get()
+    }
+
+    /// Отмечает выполняемую попытку подключения выбранного realtime-транспорта.
+    pub(crate) fn mark_connecting(&self, transport: RealtimeTransportKind) {
+        let status = match transport {
+            RealtimeTransportKind::WebTransport => RealtimeConnectionStatus::ConnectingWebTransport,
+            RealtimeTransportKind::WebSocketFallback => {
+                RealtimeConnectionStatus::ConnectingWebSocketFallback
+            }
+        };
+        self.set_connection_status(status);
     }
 
     /// Subscribes to realtime connection status changes for this tab.

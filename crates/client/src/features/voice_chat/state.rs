@@ -7,9 +7,10 @@ use std::rc::Rc;
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use cheenhub_contracts::rest::AuthUser;
 use dioxus::prelude::*;
+use futures_util::StreamExt;
 use futures_util::future::{Either, FutureExt, select};
 
-use crate::features::realtime::RealtimeHandle;
+use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle, RealtimeTransportKind};
 use crate::features::runtime::sleep_ms;
 
 use super::realtime;
@@ -129,6 +130,27 @@ impl VoiceConnectionHandle {
         let realtime = self.realtime.clone();
         let handle = self.clone();
         spawn(async move {
+            if !matches!(
+                realtime.connection_status(),
+                RealtimeConnectionStatus::Connected(_)
+            ) {
+                info!(
+                    server_id = %server_id,
+                    "waiting for realtime before loading server voice room sidebar participants"
+                );
+            }
+            let Some(transport) = wait_for_realtime_connection(&realtime).await else {
+                warn!(
+                    server_id = %server_id,
+                    "realtime status subscription closed before server voice room sidebar participants could load"
+                );
+                return;
+            };
+            debug!(
+                ?transport,
+                server_id = %server_id,
+                "realtime is ready; loading server voice room sidebar participants"
+            );
             match realtime::list_server_voice_rooms(&realtime, server_id.clone()).await {
                 Ok(snapshot) => {
                     info!(
@@ -460,4 +482,15 @@ impl VoiceConnectionHandle {
         let mut room_snapshots = self.room_snapshots;
         room_snapshots.set(next_snapshots);
     }
+}
+
+async fn wait_for_realtime_connection(realtime: &RealtimeHandle) -> Option<RealtimeTransportKind> {
+    let mut statuses = realtime.subscribe_connection_status();
+    while let Some(status) = statuses.next().await {
+        if let RealtimeConnectionStatus::Connected(transport) = status {
+            return Some(transport);
+        }
+    }
+
+    None
 }

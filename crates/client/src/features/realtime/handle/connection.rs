@@ -7,12 +7,17 @@ use cheenhub_contracts::realtime::{
 };
 use dioxus::prelude::{info, warn};
 use futures_channel::mpsc;
+use futures_util::FutureExt;
+use futures_util::future::{Either, select};
 
 use super::{ConnectedSession, ConnectedTransport, RealtimeHandle};
 use crate::features::realtime::config;
 use crate::features::realtime::error::RealtimeError;
 use crate::features::realtime::status::{RealtimeConnectionStatus, RealtimeTransportKind};
 use crate::features::realtime::{platform, websocket, webtransport};
+use crate::features::runtime::sleep_ms;
+
+const WEBTRANSPORT_CONNECT_TIMEOUT_MS: u32 = 1_500;
 
 impl RealtimeHandle {
     /// Opens and authenticates the realtime session.
@@ -20,13 +25,25 @@ impl RealtimeHandle {
         &self,
         access_token: String,
     ) -> Result<Authenticated, RealtimeError> {
-        match self.connect_webtransport(access_token.clone()).await {
+        let webtransport = self
+            .connect_webtransport(access_token.clone())
+            .boxed_local();
+        let timeout = sleep_ms(WEBTRANSPORT_CONNECT_TIMEOUT_MS).boxed_local();
+        let webtransport_result = match select(webtransport, timeout).await {
+            Either::Left((result, _)) => result,
+            Either::Right(((), _)) => Err(RealtimeError::new(format!(
+                "WebTransport realtime connection timed out after {WEBTRANSPORT_CONNECT_TIMEOUT_MS} ms"
+            ))),
+        };
+
+        match webtransport_result {
             Ok(authenticated) => Ok(authenticated),
             Err(webtransport_error) => {
                 warn!(
                     %webtransport_error,
                     "WebTransport realtime connection failed; trying WebSocket fallback"
                 );
+                self.mark_connecting(RealtimeTransportKind::WebSocketFallback);
                 self.connect_websocket(access_token)
                     .await
                     .map_err(|websocket_error| {

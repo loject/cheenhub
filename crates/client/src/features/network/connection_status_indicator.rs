@@ -28,12 +28,28 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
         });
     });
 
+    let current_status = status();
+    let is_connecting = matches!(
+        current_status,
+        RealtimeConnectionStatus::ConnectingWebTransport
+            | RealtimeConnectionStatus::ConnectingWebSocketFallback
+    );
     let quality = network_quality.current();
     let latest_ping = quality.latest_rtt_ms.map(format_ping);
     let ping_text = latest_ping.as_deref().unwrap_or("пинг ожидается");
     let latest_jitter = quality.latest_jitter_ms.map(format_ping);
     let jitter_text = latest_jitter.as_deref().unwrap_or("ожидается");
-    let (label, tooltip, class) = match status() {
+    let (label, tooltip, class) = match current_status {
+        RealtimeConnectionStatus::ConnectingWebTransport => (
+            "Подключение",
+            "Пробуем подключиться через WebTransport",
+            "border-blue-500/25 bg-blue-500/10 text-blue-300 hover:border-blue-400/40 hover:bg-blue-500/15",
+        ),
+        RealtimeConnectionStatus::ConnectingWebSocketFallback => (
+            "Подключение",
+            "Пробуем резервное подключение через WebSocket",
+            "border-amber-500/25 bg-amber-500/10 text-amber-300 hover:border-amber-400/40 hover:bg-amber-500/15",
+        ),
         RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebTransport) => (
             "Подключен",
             "Соединение установлено",
@@ -79,13 +95,20 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
                     span { class: "block text-[12px] font-medium text-zinc-100", "{label}" }
                     span { class: "mt-1 block text-[11px] text-zinc-500", "{tooltip}" }
                 }
-                svg { class: "h-[18px] w-[18px]", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 18.5v-3.25" }
-                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M8.5 18.5h7" }
-                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9.25 13.75a4 4 0 0 1 5.5 0" }
-                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6.5 11a8 8 0 0 1 11 0" }
-                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M3.75 8.25a12 12 0 0 1 16.5 0" }
-                    circle { cx: "12", cy: "18.5", r: "1.15", fill: "currentColor", stroke: "none" }
+                if is_connecting {
+                    svg { class: "h-[18px] w-[18px] animate-spin", fill: "none", view_box: "0 0 24 24", "aria-hidden": "true",
+                        circle { class: "opacity-25", cx: "12", cy: "12", r: "9", stroke: "currentColor", stroke_width: "2.5" }
+                        path { class: "opacity-90", d: "M21 12a9 9 0 0 0-9-9", stroke: "currentColor", stroke_width: "2.5", stroke_linecap: "round" }
+                    }
+                } else {
+                    svg { class: "h-[18px] w-[18px]", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 18.5v-3.25" }
+                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M8.5 18.5h7" }
+                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9.25 13.75a4 4 0 0 1 5.5 0" }
+                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6.5 11a8 8 0 0 1 11 0" }
+                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M3.75 8.25a12 12 0 0 1 16.5 0" }
+                        circle { cx: "12", cy: "18.5", r: "1.15", fill: "currentColor", stroke: "none" }
+                    }
                 }
             }
             if is_open() {

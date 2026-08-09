@@ -69,7 +69,9 @@ pub(crate) fn subscribe_social_ready_events(
                         }
                     }
                 }
-                RealtimeConnectionStatus::Disconnected => {
+                RealtimeConnectionStatus::ConnectingWebTransport
+                | RealtimeConnectionStatus::ConnectingWebSocketFallback
+                | RealtimeConnectionStatus::Disconnected => {
                     debug!("waiting for realtime connection before social subscription");
                 }
             }

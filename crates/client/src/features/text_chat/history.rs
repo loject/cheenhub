@@ -105,7 +105,11 @@ pub(super) fn load_initial_history_when_connected(target: HistoryTarget, mut sta
                     load_initial_history(target, state);
                     return;
                 }
-                RealtimeConnectionStatus::Disconnected if !logged_wait => {
+                RealtimeConnectionStatus::ConnectingWebTransport
+                | RealtimeConnectionStatus::ConnectingWebSocketFallback
+                | RealtimeConnectionStatus::Disconnected
+                    if !logged_wait =>
+                {
                     logged_wait = true;
                     debug!(
                         server_id = %target.server_id,
@@ -113,7 +117,9 @@ pub(super) fn load_initial_history_when_connected(target: HistoryTarget, mut sta
                         "waiting for realtime connection before loading initial text chat history"
                     );
                 }
-                RealtimeConnectionStatus::Disconnected => {}
+                RealtimeConnectionStatus::ConnectingWebTransport
+                | RealtimeConnectionStatus::ConnectingWebSocketFallback
+                | RealtimeConnectionStatus::Disconnected => {}
             }
         }
 

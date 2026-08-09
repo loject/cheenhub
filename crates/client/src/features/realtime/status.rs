@@ -12,6 +12,10 @@ pub(crate) enum RealtimeTransportKind {
 /// Текущее состояние realtime-соединения.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RealtimeConnectionStatus {
+    /// Выполняется попытка подключения через WebTransport.
+    ConnectingWebTransport,
+    /// Выполняется попытка резервного подключения через WebSocket.
+    ConnectingWebSocketFallback,
     /// Realtime session is authenticated and ready for requests.
     Connected(RealtimeTransportKind),
     /// Realtime session is not ready.

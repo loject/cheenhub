@@ -7,6 +7,7 @@ use crate::features::network::{NetworkQualityHandle, realtime as network_realtim
 use crate::features::runtime::sleep_ms;
 
 use super::handle::create_handle;
+use super::status::RealtimeTransportKind;
 
 const PING_INTERVAL_MS: u32 = 5_000;
 const RECONNECT_INITIAL_DELAY_MS: u32 = 1_000;
@@ -43,6 +44,7 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                     }
                 };
 
+                realtime.mark_connecting(RealtimeTransportKind::WebTransport);
                 match realtime.connect(access_token).await {
                     Ok(authenticated) => {
                         info!(
@@ -74,6 +76,7 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                     }
                     Err(error) => {
                         network_quality.clear();
+                        realtime.mark_disconnected().await;
                         warn!(
                             %error,
                             delay_ms = reconnect_delay_ms,
