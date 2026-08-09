@@ -10,15 +10,14 @@ adb_bin="${sdk_root}/platform-tools/adb"
 production_env="${workspace_root}/.env.production"
 bundle_out_dir="${workspace_root}/target/cheenhub-production-android"
 
+export PATH="${HOME}/.local/bin:${PATH}"
+
 if [[ ! -x "${adb_bin}" ]]; then
     printf 'ADB не найден в %s. Проверьте ANDROID_HOME.\n' "${sdk_root}" >&2
     exit 1
 fi
 
-if ! command -v dx >/dev/null 2>&1; then
-    printf 'Dioxus CLI не найден. Сначала выполните cargo make setup.\n' >&2
-    exit 1
-fi
+"${workspace_root}/scripts/ensure-cargo-cli.sh" dioxus-cli dx 0.7.5
 
 if [[ ! -f "${production_env}" ]]; then
     printf 'Не найден %s с production JWT-конфигурацией.\n' "${production_env}" >&2

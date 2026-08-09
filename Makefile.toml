@@ -3,6 +3,8 @@ default_to_workspace = false
 
 [env]
 CARGO_MAKE_CRATE_INSTALLATION_LOCKED = true
+CARGO_INSTALL_ROOT = { value = "${HOME}/.local", condition = { env_not_set = ["CARGO_INSTALL_ROOT"] } }
+PATH = "${CARGO_INSTALL_ROOT}/bin:${PATH}"
 DIOXUS_ADDR = { value = "0.0.0.0", condition = { env_not_set = ["DIOXUS_ADDR"] } }
 DIOXUS_PORT = { value = "8080", condition = { env_not_set = ["DIOXUS_PORT"] } }
 DIOXUS_WEB_PORT = { value = "8081", condition = { env_not_set = ["DIOXUS_WEB_PORT"] } }
@@ -761,15 +763,18 @@ dependencies = ["install-cargo-watch", "install-dioxus-cli", "install-wasm-bindg
 
 [tasks.install-cargo-watch]
 private = true
-install_crate = { crate_name = "cargo-watch", binary = "cargo-watch", test_arg = "--version", version = "8.5.3" }
+command = "scripts/ensure-cargo-cli.sh"
+args = ["cargo-watch", "cargo-watch", "8.5.3"]
 
 [tasks.install-dioxus-cli]
 private = true
-install_crate = { crate_name = "dioxus-cli", binary = "dx", test_arg = "--version", version = "0.7.5" }
+command = "scripts/ensure-cargo-cli.sh"
+args = ["dioxus-cli", "dx", "0.7.5"]
 
 [tasks.install-wasm-bindgen-cli]
 private = true
-install_crate = { crate_name = "wasm-bindgen-cli", binary = "wasm-bindgen", test_arg = "--version", version = "0.2.120" }
+command = "scripts/ensure-cargo-cli.sh"
+args = ["wasm-bindgen-cli", "wasm-bindgen", "0.2.120"]
 
 [tasks.check-release-version]
 description = "Check that every package uses the workspace release version."

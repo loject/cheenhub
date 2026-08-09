@@ -1,11 +1,11 @@
 [
   {
     "label": "CheenHub: bootstrap cargo-make",
-    "command": "cargo",
+    "command": "/usr/bin/zsh",
     "args": [
-      "install",
-      "--locked",
-      "cargo-make"
+      "-i",
+      "-c",
+      "cargo install --locked --root \"$HOME/.local\" --version 0.37.24 cargo-make"
     ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",

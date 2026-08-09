@@ -5,8 +5,12 @@
 Проект использует cargo-make для dev-задач и cargo-watch/Dioxus CLI для
 локального dev stack.
 
+Нужен Rust, установленный через rustup. Пользовательские Cargo-инструменты
+устанавливаются в `~/.local/bin`; этот каталог должен находиться в `PATH`.
+
 ```bash
-cargo install --locked cargo-make
+export PATH="$HOME/.local/bin:$PATH"
+cargo install --locked --root "$HOME/.local" --version 0.37.24 cargo-make
 cargo make setup
 cargo make dev-stack
 ```
