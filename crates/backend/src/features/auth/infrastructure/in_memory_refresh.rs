@@ -118,7 +118,7 @@ pub(super) fn list_active_sessions(
                 .map(|observed| observed.user_agent.clone()),
         })
         .collect::<Vec<_>>();
-    sessions.sort_by(|left, right| right.last_seen_at.cmp(&left.last_seen_at));
+    sessions.sort_by_key(|session| std::cmp::Reverse(session.last_seen_at));
 
     Ok(sessions)
 }

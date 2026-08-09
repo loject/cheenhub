@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM rust:1.92-bookworm AS source
+FROM rust:1.97.1-bookworm AS source
 WORKDIR /app
 
 FROM source AS backend-builder

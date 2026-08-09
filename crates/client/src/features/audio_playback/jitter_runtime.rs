@@ -132,10 +132,7 @@ impl AudioPlaybackHandle {
 
         let handle = self.clone();
         dioxus::prelude::spawn(async move {
-            loop {
-                let Some(next_wake_us) = handle.drain_jitter_buffer(&sender_user_id) else {
-                    break;
-                };
+            while let Some(next_wake_us) = handle.drain_jitter_buffer(&sender_user_id) {
                 let wake_deadline_us = jitter_now_us().saturating_add(u64::from(next_wake_us));
                 sleep_duration(Duration::from_micros(u64::from(next_wake_us))).await;
                 let woke_at_us = jitter_now_us();

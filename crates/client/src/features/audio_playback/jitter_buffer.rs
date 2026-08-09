@@ -113,11 +113,7 @@ impl JitterBuffer {
     ) -> JitterBufferDrain {
         let mut drain = JitterBufferDrain::default();
 
-        loop {
-            let Some(expected_sequence) = self.next_sequence else {
-                break;
-            };
-
+        while let Some(expected_sequence) = self.next_sequence {
             self.drop_queued_stale(expected_sequence, &mut drain);
 
             if let Some(queued) = self.pending.get(&expected_sequence) {
