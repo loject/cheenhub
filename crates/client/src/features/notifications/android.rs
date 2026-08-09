@@ -28,8 +28,11 @@ use crate::features::runtime::android::{
 #[cfg(target_os = "android")]
 static NOTIFICATION_OPEN_SUBSCRIBERS: OnceLock<Mutex<Vec<mpsc::UnboundedSender<String>>>> =
     OnceLock::new();
+#[cfg(target_os = "android")]
+static FRIEND_REQUEST_OPEN_SUBSCRIBERS: OnceLock<Mutex<Vec<mpsc::UnboundedSender<()>>>> =
+    OnceLock::new();
 
-/// Регистрирует Android push-установку и открывает личный диалог по явному нажатию уведомления.
+/// Регистрирует Android push-установку и открывает экран из нажатого уведомления.
 ///
 /// Обычное восстановление сохранённой рабочей области остаётся отдельной политикой запуска.
 #[component]
@@ -77,6 +80,37 @@ pub(crate) fn NotificationsProvider(children: Element) -> Element {
                 }
                 warn!("Android notification-open subscription stopped");
             });
+            spawn(async move {
+                match take_pending_friend_requests().await {
+                    Ok(true) => {
+                        info!(
+                            source = "cold_start",
+                            "queued Android friend-request notification route"
+                        );
+                        pending_route.set(Some(friend_requests_route()));
+                    }
+                    Ok(false) => {}
+                    Err(error) => warn!(
+                        %error,
+                        "failed to consume pending Android friend-request route"
+                    ),
+                }
+                let mut opened = subscribe_friend_request_opens();
+                while opened.next().await.is_some() {
+                    if let Err(error) = take_pending_friend_requests().await {
+                        warn!(
+                            %error,
+                            "failed to clear delivered Android friend-request route"
+                        );
+                    }
+                    info!(
+                        source = "activity_intent",
+                        "queued Android friend-request notification route"
+                    );
+                    pending_route.set(Some(friend_requests_route()));
+                }
+                warn!("Android friend-request notification-open subscription stopped");
+            });
         });
 
         use_effect(move || {
@@ -111,6 +145,10 @@ pub(crate) fn NotificationsProvider(children: Element) -> Element {
 
 fn direct_message_route(conversation_id: String) -> Route {
     Route::AppDirectMessage { conversation_id }
+}
+
+fn friend_requests_route() -> Route {
+    Route::AppFriends {}
 }
 
 #[cfg(target_os = "android")]
@@ -188,6 +226,20 @@ async fn take_pending_conversation() -> Result<Option<String>, String> {
 }
 
 #[cfg(target_os = "android")]
+async fn take_pending_friend_requests() -> Result<bool, String> {
+    let (sender, receiver) = oneshot::channel();
+    android_bridge()
+        .map_err(|error| error.to_string())?
+        .take_pending_friend_requests(Box::new(move |result| {
+            let _ = sender.send(result.map_err(|error| error.to_string()));
+        }))
+        .map_err(|error| error.to_string())?;
+    receiver
+        .await
+        .map_err(|_| "Android закрыл callback маршрута заявок в друзья.".to_owned())?
+}
+
+#[cfg(target_os = "android")]
 fn subscribe_notification_opens() -> mpsc::UnboundedReceiver<String> {
     let (sender, receiver) = mpsc::unbounded();
     if let Ok(mut subscribers) = notification_open_subscribers().lock() {
@@ -199,6 +251,20 @@ fn subscribe_notification_opens() -> mpsc::UnboundedReceiver<String> {
 #[cfg(target_os = "android")]
 fn notification_open_subscribers() -> &'static Mutex<Vec<mpsc::UnboundedSender<String>>> {
     NOTIFICATION_OPEN_SUBSCRIBERS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+#[cfg(target_os = "android")]
+fn subscribe_friend_request_opens() -> mpsc::UnboundedReceiver<()> {
+    let (sender, receiver) = mpsc::unbounded();
+    if let Ok(mut subscribers) = friend_request_open_subscribers().lock() {
+        subscribers.push(sender);
+    }
+    receiver
+}
+
+#[cfg(target_os = "android")]
+fn friend_request_open_subscribers() -> &'static Mutex<Vec<mpsc::UnboundedSender<()>>> {
+    FRIEND_REQUEST_OPEN_SUBSCRIBERS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
 /// Передаёт открытие Android-уведомления активному Dioxus provider.
@@ -218,6 +284,19 @@ pub extern "system" fn Java_dev_dioxus_main_MainActivity_nativeOnCheenHubDirectM
     subscribers.retain(|subscriber| subscriber.unbounded_send(conversation_id.clone()).is_ok());
 }
 
+/// Передаёт открытие Android-уведомления о заявке в друзья активному Dioxus provider.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_dioxus_main_MainActivity_nativeOnCheenHubFriendRequestNotificationOpened(
+    _env: JNIEnv<'_>,
+    _activity: JObject<'_>,
+) {
+    let Ok(mut subscribers) = friend_request_open_subscribers().lock() else {
+        return;
+    };
+    subscribers.retain(|subscriber| subscriber.unbounded_send(()).is_ok());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,5 +309,10 @@ mod tests {
             direct_message_route(conversation_id.clone()),
             Route::AppDirectMessage { conversation_id }
         );
+    }
+
+    #[test]
+    fn friend_request_notification_click_targets_friends_route() {
+        assert_eq!(friend_requests_route(), Route::AppFriends {});
     }
 }

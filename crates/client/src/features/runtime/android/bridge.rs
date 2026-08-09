@@ -182,6 +182,24 @@ impl AndroidBridge for JniAndroidBridge {
         Ok(())
     }
 
+    fn take_pending_friend_requests(
+        &self,
+        callback: Box<dyn FnOnce(Result<bool, AndroidBridgeError>) + Send>,
+    ) -> Result<(), AndroidBridgeError> {
+        wry::prelude::dispatch(move |env, activity, _| {
+            let result = env
+                .call_method(activity, "consumeCheenHubPendingFriendRequests", "()Z", &[])
+                .and_then(|value| value.z())
+                .map_err(|error| {
+                    AndroidBridgeError::new(format!(
+                        "Не удалось получить переход к заявкам в друзья: {error}"
+                    ))
+                });
+            callback(result);
+        });
+        Ok(())
+    }
+
     fn set_active_direct_message_conversation(
         &self,
         conversation_id: Option<String>,

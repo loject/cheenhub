@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use tokio::sync::Mutex;
 
-use crate::features::push_notifications::domain::DirectMessagePush;
+use crate::features::push_notifications::domain::PushPayload;
 
 const FCM_SCOPE: &str = "https://www.googleapis.com/auth/firebase.messaging";
 
@@ -62,7 +62,7 @@ impl FcmClient {
     pub(crate) async fn send(
         &self,
         token: &str,
-        payload: &DirectMessagePush,
+        payload: &PushPayload,
     ) -> Result<(), FcmSendError> {
         let access_token = self.access_token().await.map_err(FcmSendError::Retry)?;
         let url = format!(
@@ -216,7 +216,7 @@ struct FcmRequest<'a> {
 #[derive(Debug, Serialize)]
 struct FcmMessage<'a> {
     token: &'a str,
-    data: &'a DirectMessagePush,
+    data: &'a PushPayload,
     android: AndroidConfig<'a>,
 }
 

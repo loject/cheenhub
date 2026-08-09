@@ -114,6 +114,12 @@ pub(crate) trait AndroidBridge: Send + Sync {
         callback: Box<dyn FnOnce(Result<Option<String>, AndroidBridgeError>) + Send>,
     ) -> Result<(), AndroidBridgeError>;
 
+    /// Возвращает и удаляет отложенный переход к входящим заявкам в друзья.
+    fn take_pending_friend_requests(
+        &self,
+        callback: Box<dyn FnOnce(Result<bool, AndroidBridgeError>) + Send>,
+    ) -> Result<(), AndroidBridgeError>;
+
     /// Передаёт Android-слою открытый личный диалог для подавления лишнего уведомления.
     fn set_active_direct_message_conversation(
         &self,

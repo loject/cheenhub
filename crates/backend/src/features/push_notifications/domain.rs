@@ -63,6 +63,70 @@ impl DirectMessagePush {
     }
 }
 
+/// Содержимое push-уведомления о новой заявке в друзья.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct FriendRequestPush {
+    /// Версия схемы data payload.
+    pub(crate) schema_version: String,
+    /// Машиночитаемый вид события.
+    pub(crate) kind: String,
+    /// Идентификатор заявки для дедупликации.
+    pub(crate) request_id: String,
+    /// Идентификатор отправителя заявки.
+    pub(crate) requester_user_id: String,
+    /// Отображаемое имя отправителя заявки.
+    pub(crate) requester_nickname: String,
+    /// RFC 3339 время создания текущей заявки.
+    pub(crate) created_at: String,
+}
+
+impl FriendRequestPush {
+    /// Собирает payload уведомления о новой заявке в друзья.
+    pub(crate) fn new(
+        request_id: Uuid,
+        requester_user_id: Uuid,
+        requester_nickname: &str,
+        created_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            schema_version: "1".to_owned(),
+            kind: "friend_request".to_owned(),
+            request_id: request_id.to_string(),
+            requester_user_id: requester_user_id.to_string(),
+            requester_nickname: requester_nickname.chars().take(100).collect(),
+            created_at: created_at.to_rfc3339(),
+        }
+    }
+}
+
+/// Обратно совместимое содержимое задания push-очереди.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum PushPayload {
+    /// Новое личное сообщение.
+    DirectMessage(DirectMessagePush),
+    /// Новая заявка в друзья.
+    FriendRequest(FriendRequestPush),
+}
+
+impl PushPayload {
+    /// Возвращает идентификатор события для логов и дедупликации.
+    pub(crate) fn event_id(&self) -> &str {
+        match self {
+            Self::DirectMessage(payload) => &payload.message_id,
+            Self::FriendRequest(payload) => &payload.request_id,
+        }
+    }
+
+    /// Возвращает вид события для структурированных логов.
+    pub(crate) fn kind(&self) -> &str {
+        match self {
+            Self::DirectMessage(payload) => &payload.kind,
+            Self::FriendRequest(payload) => &payload.kind,
+        }
+    }
+}
+
 /// Установка, способная принимать push-уведомления.
 #[derive(Debug, Clone)]
 pub(crate) struct PushInstallation {
@@ -85,13 +149,13 @@ pub(crate) struct PendingDelivery {
     pub(crate) token: String,
     /// Число уже выполненных попыток.
     pub(crate) attempts: i32,
-    /// Payload личного сообщения.
-    pub(crate) payload: DirectMessagePush,
+    /// Содержимое системного push-уведомления.
+    pub(crate) payload: PushPayload,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DirectMessagePush, direct_message_preview};
+    use super::{DirectMessagePush, FriendRequestPush, PushPayload, direct_message_preview};
     use chrono::{TimeZone, Utc};
     use serde_json::json;
     use uuid::Uuid;
@@ -116,7 +180,8 @@ mod tests {
         );
 
         assert_eq!(
-            serde_json::to_value(payload).expect("payload should serialize"),
+            serde_json::to_value(PushPayload::DirectMessage(payload))
+                .expect("payload should serialize"),
             json!({
                 "schema_version": "1",
                 "kind": "direct_message",
@@ -129,6 +194,64 @@ mod tests {
                 "created_at": created_at.to_rfc3339(),
             })
         );
+    }
+
+    #[test]
+    fn friend_request_payload_matches_android_data_contract() {
+        let request_id = Uuid::new_v4();
+        let requester_user_id = Uuid::new_v4();
+        let created_at = Utc
+            .with_ymd_and_hms(2026, 8, 9, 10, 20, 30)
+            .single()
+            .expect("test timestamp should be valid");
+        let payload = FriendRequestPush::new(request_id, requester_user_id, "Alice", created_at);
+
+        assert_eq!(
+            serde_json::to_value(PushPayload::FriendRequest(payload))
+                .expect("payload should serialize"),
+            json!({
+                "schema_version": "1",
+                "kind": "friend_request",
+                "request_id": request_id.to_string(),
+                "requester_user_id": requester_user_id.to_string(),
+                "requester_nickname": "Alice",
+                "created_at": created_at.to_rfc3339(),
+            })
+        );
+    }
+
+    #[test]
+    fn queued_payload_deserializes_both_supported_event_kinds() {
+        let direct_message = json!({
+            "schema_version": "1",
+            "kind": "direct_message",
+            "message_id": Uuid::new_v4().to_string(),
+            "conversation_id": Uuid::new_v4().to_string(),
+            "message_seq": "42",
+            "sender_user_id": Uuid::new_v4().to_string(),
+            "sender_nickname": "Alice",
+            "body_preview": "Привет",
+            "created_at": Utc::now().to_rfc3339(),
+        });
+        let friend_request = json!({
+            "schema_version": "1",
+            "kind": "friend_request",
+            "request_id": Uuid::new_v4().to_string(),
+            "requester_user_id": Uuid::new_v4().to_string(),
+            "requester_nickname": "Bob",
+            "created_at": Utc::now().to_rfc3339(),
+        });
+
+        assert!(matches!(
+            serde_json::from_value::<PushPayload>(direct_message)
+                .expect("direct message payload should deserialize"),
+            PushPayload::DirectMessage(_)
+        ));
+        assert!(matches!(
+            serde_json::from_value::<PushPayload>(friend_request)
+                .expect("friend request payload should deserialize"),
+            PushPayload::FriendRequest(_)
+        ));
     }
 
     #[test]

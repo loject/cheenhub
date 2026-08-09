@@ -11,9 +11,7 @@ use sea_orm::{
 use uuid::Uuid;
 
 use self::entities::{delivery_queue, installations};
-use crate::features::push_notifications::domain::{
-    DirectMessagePush, PendingDelivery, PushInstallation,
-};
+use crate::features::push_notifications::domain::{PendingDelivery, PushInstallation, PushPayload};
 
 /// Конкретное Postgres-хранилище push-уведомлений.
 #[derive(Clone)]
@@ -131,13 +129,13 @@ impl PostgresPushStore {
     pub(crate) async fn enqueue(
         &self,
         installation_id: Uuid,
-        message_id: Uuid,
-        payload: &DirectMessagePush,
+        event_id: Uuid,
+        payload: &PushPayload,
         now: DateTime<Utc>,
     ) -> anyhow::Result<()> {
         if delivery_queue::Entity::find()
             .filter(delivery_queue::Column::InstallationId.eq(installation_id))
-            .filter(delivery_queue::Column::MessageId.eq(message_id))
+            .filter(delivery_queue::Column::MessageId.eq(event_id))
             .one(&self.database)
             .await?
             .is_some()
@@ -147,7 +145,7 @@ impl PostgresPushStore {
         delivery_queue::ActiveModel {
             id: Set(Uuid::new_v4()),
             installation_id: Set(installation_id),
-            message_id: Set(message_id),
+            message_id: Set(event_id),
             payload: Set(serde_json::to_value(payload)?),
             attempts: Set(0),
             next_attempt_at: Set(now),

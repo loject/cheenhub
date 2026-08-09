@@ -244,6 +244,9 @@ class MainActivity : WryActivity() {
     fun consumeCheenHubPendingDirectMessageConversationId(): String? =
         CheenHubPushStore.consumePendingConversationId(this)
 
+    fun consumeCheenHubPendingFriendRequests(): Boolean =
+        CheenHubPushStore.consumePendingFriendRequests(this)
+
     fun setCheenHubActiveDirectMessageConversationId(conversationId: String?) {
         CheenHubPushStore.setActiveConversationId(this, conversationId)
     }
@@ -266,22 +269,36 @@ class MainActivity : WryActivity() {
     }
 
     private fun acceptNotificationIntent(intent: Intent?) {
-        if (intent?.action != CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION) return
-        val conversationId = intent.getStringExtra(CHEENHUB_CONVERSATION_ID_EXTRA)
-            ?.let { value -> runCatching { UUID.fromString(value).toString() }.getOrNull() }
-        if (conversationId == null) {
-            Log.w(CHEENHUB_PUSH_LOG_TAG, "Direct-message notification intent rejected")
-            return
-        }
-        CheenHubPushStore.setPendingConversationId(this, conversationId)
-        runCatching { nativeOnCheenHubDirectMessageNotificationOpened(conversationId) }
-            .onFailure {
-                Log.d(
-                    CHEENHUB_PUSH_LOG_TAG,
-                    "Native notification-open callback is not ready; pending destination was stored",
-                )
+        when (intent?.action) {
+            CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION -> {
+                val conversationId = intent.getStringExtra(CHEENHUB_CONVERSATION_ID_EXTRA)
+                    ?.let { value -> runCatching { UUID.fromString(value).toString() }.getOrNull() }
+                if (conversationId == null) {
+                    Log.w(CHEENHUB_PUSH_LOG_TAG, "Direct-message notification intent rejected")
+                    return
+                }
+                CheenHubPushStore.setPendingConversationId(this, conversationId)
+                runCatching { nativeOnCheenHubDirectMessageNotificationOpened(conversationId) }
+                    .onFailure {
+                        Log.d(
+                            CHEENHUB_PUSH_LOG_TAG,
+                            "Native notification-open callback is not ready; pending destination was stored",
+                        )
+                    }
+                Log.i(CHEENHUB_PUSH_LOG_TAG, "Direct-message notification intent accepted")
             }
-        Log.i(CHEENHUB_PUSH_LOG_TAG, "Direct-message notification intent accepted")
+            CHEENHUB_OPEN_FRIEND_REQUESTS_ACTION -> {
+                CheenHubPushStore.setPendingFriendRequests(this)
+                runCatching { nativeOnCheenHubFriendRequestNotificationOpened() }
+                    .onFailure {
+                        Log.d(
+                            CHEENHUB_PUSH_LOG_TAG,
+                            "Native friend-request callback is not ready; pending destination was stored",
+                        )
+                    }
+                Log.i(CHEENHUB_PUSH_LOG_TAG, "Friend-request notification intent accepted")
+            }
+        }
     }
 
     fun requestCheenHubPermission(permission: String, requestCode: Int) {
@@ -685,6 +702,8 @@ class MainActivity : WryActivity() {
 
     private external fun nativeOnCheenHubDirectMessageNotificationOpened(conversationId: String)
 
+    private external fun nativeOnCheenHubFriendRequestNotificationOpened()
+
     private external fun nativeOnCheenHubVoiceAudioFocusChanged(focusChange: Int)
 
     override fun onDestroy() {
@@ -743,6 +762,8 @@ private const val VOICE_OUTPUT_EARPIECE = 1
 private const val VOICE_OUTPUT_SPEAKER = 2
 private const val CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION =
     "ru.cheenhub.action.OPEN_DIRECT_MESSAGE"
+private const val CHEENHUB_OPEN_FRIEND_REQUESTS_ACTION =
+    "ru.cheenhub.action.OPEN_FRIEND_REQUESTS"
 private const val CHEENHUB_CONVERSATION_ID_EXTRA = "cheenhub_conversation_id"
 
 class CheenHubApplication : Application() {
@@ -816,10 +837,20 @@ class CheenHubFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
         val message = CheenHubDirectMessagePayload.parse(remoteMessage.data)
-        if (message == null) {
-            Log.w(CHEENHUB_PUSH_LOG_TAG, "Rejected malformed or unsupported FCM data payload")
+        if (message != null) {
+            handleDirectMessage(message)
             return
         }
+        val friendRequest = CheenHubFriendRequestPayload.parse(remoteMessage.data)
+        if (friendRequest != null) {
+            CheenHubNotifications.showFriendRequest(this, friendRequest)
+            Log.i(CHEENHUB_PUSH_LOG_TAG, "Friend-request notification shown")
+            return
+        }
+        Log.w(CHEENHUB_PUSH_LOG_TAG, "Rejected malformed or unsupported FCM data payload")
+    }
+
+    private fun handleDirectMessage(message: CheenHubDirectMessagePayload) {
         val history = CheenHubPushStore.appendMessage(this, message)
         if (history == null) {
             Log.d(
@@ -911,6 +942,63 @@ private data class CheenHubDirectMessagePayload(
     }
 }
 
+private data class CheenHubFriendRequestPayload(
+    val requestId: String,
+    val requesterUserId: String,
+    val requesterNickname: String,
+    val createdAtMillis: Long,
+) {
+    companion object {
+        private const val SCHEMA_VERSION = "1"
+        private const val KIND = "friend_request"
+        private const val MAX_NICKNAME_LENGTH = 100
+
+        fun parse(data: Map<String, String>): CheenHubFriendRequestPayload? {
+            if (data["schema_version"] != SCHEMA_VERSION || data["kind"] != KIND) return null
+            val requestId = data["request_id"].validUuid() ?: return null
+            val requesterUserId = data["requester_user_id"].validUuid() ?: return null
+            val nickname = data["requester_nickname"].boundedText(MAX_NICKNAME_LENGTH) ?: return null
+            val createdAt = parseTimestamp(data["created_at"] ?: return null) ?: return null
+            return CheenHubFriendRequestPayload(
+                requestId,
+                requesterUserId,
+                nickname,
+                createdAt,
+            )
+        }
+
+        private fun String?.validUuid(): String? = this?.let { value ->
+            runCatching { UUID.fromString(value).toString() }.getOrNull()
+        }
+
+        private fun String?.boundedText(maxLength: Int): String? = this
+            ?.trim()
+            ?.takeIf {
+                it.isNotEmpty() && it.codePointCount(0, it.length) <= maxLength
+            }
+
+        private fun parseTimestamp(value: String): Long? {
+            value.toLongOrNull()?.takeIf { it > 0 }?.let { return it }
+            val patterns = listOf(
+                "yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSSXXX",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+                "yyyy-MM-dd'T'HH:mm:ssXXX",
+            )
+            for (pattern in patterns) {
+                try {
+                    return SimpleDateFormat(pattern, Locale.US).apply {
+                        isLenient = false
+                        timeZone = TimeZone.getTimeZone("UTC")
+                    }.parse(value)?.time
+                } catch (_: ParseException) {
+                    // Следующий формат проверяется без вывода содержимого payload в лог.
+                }
+            }
+            return null
+        }
+    }
+}
+
 private data class CheenHubConversationHistory(
     val conversationId: String,
     val senderUserId: String,
@@ -930,6 +1018,7 @@ private object CheenHubPushStore {
     private const val INSTALLATION_ID = "installation_id"
     private const val FCM_TOKEN = "fcm_token"
     private const val PENDING_CONVERSATION = "pending_conversation_id"
+    private const val PENDING_FRIEND_REQUESTS = "pending_friend_requests"
     private const val ACTIVE_CONVERSATION = "active_conversation_id"
     private const val APP_FOREGROUND = "app_foreground"
     private const val HISTORY = "direct_message_history"
@@ -959,6 +1048,17 @@ private object CheenHubPushStore {
         preferences.getString(PENDING_CONVERSATION, null)?.also {
             preferences.edit().remove(PENDING_CONVERSATION).apply()
         }
+    }
+
+    fun setPendingFriendRequests(context: Context) {
+        preferences(context).edit().putBoolean(PENDING_FRIEND_REQUESTS, true).apply()
+    }
+
+    fun consumePendingFriendRequests(context: Context): Boolean = synchronized(this) {
+        val preferences = preferences(context)
+        val pending = preferences.getBoolean(PENDING_FRIEND_REQUESTS, false)
+        if (pending) preferences.edit().remove(PENDING_FRIEND_REQUESTS).apply()
+        pending
     }
 
     fun setActiveConversationId(context: Context, conversationId: String?) {
@@ -1091,24 +1191,34 @@ private object CheenHubPushStore {
 
 private object CheenHubNotifications {
     const val CONVERSATION_NOTIFICATION_ID = 2001
-    private const val CHANNEL_ID = "cheenhub_direct_messages"
+    private const val FRIEND_REQUEST_NOTIFICATION_ID = 2003
+    private const val DIRECT_MESSAGES_CHANNEL_ID = "cheenhub_direct_messages"
+    private const val FRIEND_REQUESTS_CHANNEL_ID = "cheenhub_friend_requests"
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
+        val directMessages = NotificationChannel(
+            DIRECT_MESSAGES_CHANNEL_ID,
             "Личные сообщения",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "Уведомления о новых личных сообщениях CheenHub"
         }
-        context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        val friendRequests = NotificationChannel(
+            FRIEND_REQUESTS_CHANNEL_ID,
+            "Приглашения в друзья",
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = "Уведомления о новых приглашениях в друзья CheenHub"
+        }
+        context.getSystemService(NotificationManager::class.java)
+            .createNotificationChannels(listOf(directMessages, friendRequests))
     }
 
     fun showConversation(context: Context, history: CheenHubConversationHistory) {
         ensureChannel(context)
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            android.app.Notification.Builder(context, CHANNEL_ID)
+            android.app.Notification.Builder(context, DIRECT_MESSAGES_CHANNEL_ID)
         } else {
             @Suppress("DEPRECATION")
             android.app.Notification.Builder(context)
@@ -1161,6 +1271,41 @@ private object CheenHubNotifications {
         context.getSystemService(NotificationManager::class.java).notify(
             "cheenhub_dm:${history.conversationId}",
             CONVERSATION_NOTIFICATION_ID,
+            notification,
+        )
+    }
+
+    fun showFriendRequest(context: Context, request: CheenHubFriendRequestPayload) {
+        ensureChannel(context)
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(CHEENHUB_OPEN_FRIEND_REQUESTS_ACTION)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            request.requestId.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            android.app.Notification.Builder(context, FRIEND_REQUESTS_CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            android.app.Notification.Builder(context)
+        }
+        val notification = builder
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Новое приглашение в друзья")
+            .setContentText("${request.requesterNickname} хочет добавить вас в друзья")
+            .setCategory(android.app.Notification.CATEGORY_SOCIAL)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(true)
+            .setWhen(request.createdAtMillis)
+            .setContentIntent(pendingIntent)
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify(
+            "cheenhub_friend_request:${request.requestId}",
+            FRIEND_REQUEST_NOTIFICATION_ID,
             notification,
         )
     }

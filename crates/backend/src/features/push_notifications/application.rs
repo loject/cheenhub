@@ -11,7 +11,9 @@ use uuid::Uuid;
 use crate::features::auth::application::require_current_user;
 use crate::features::auth::error::AuthError;
 use crate::features::auth::infrastructure::AuthStore;
-use crate::features::push_notifications::domain::DirectMessagePush;
+use crate::features::push_notifications::domain::{
+    DirectMessagePush, FriendRequestPush, PushPayload,
+};
 use crate::features::push_notifications::error::PushError;
 use crate::features::push_notifications::fcm::{FcmClient, FcmSendError};
 use crate::features::push_notifications::infrastructure::PostgresPushStore;
@@ -62,10 +64,29 @@ impl PushNotifications {
         recipient_user_id: Uuid,
         payload: DirectMessagePush,
     ) -> anyhow::Result<usize> {
+        self.enqueue(recipient_user_id, PushPayload::DirectMessage(payload))
+            .await
+    }
+
+    /// Ставит уведомление о новой заявке в друзья в очередь активных auth-сессий адресата.
+    pub(crate) async fn enqueue_friend_request(
+        &self,
+        recipient_user_id: Uuid,
+        payload: FriendRequestPush,
+    ) -> anyhow::Result<usize> {
+        self.enqueue(recipient_user_id, PushPayload::FriendRequest(payload))
+            .await
+    }
+
+    async fn enqueue(
+        &self,
+        recipient_user_id: Uuid,
+        payload: PushPayload,
+    ) -> anyhow::Result<usize> {
         let Some(store) = self.store.as_ref() else {
             return Ok(0);
         };
-        let message_id = Uuid::parse_str(&payload.message_id)?;
+        let event_id = Uuid::parse_str(payload.event_id())?;
         let mut enqueued = 0;
         for installation in store.active_installations(recipient_user_id).await? {
             if !self
@@ -76,7 +97,7 @@ impl PushNotifications {
                 continue;
             }
             store
-                .enqueue(installation.id, message_id, &payload, Utc::now())
+                .enqueue(installation.id, event_id, &payload, Utc::now())
                 .await?;
             enqueued += 1;
         }
@@ -134,7 +155,12 @@ impl PushNotifications {
                                 if let Err(error) = store.complete(delivery.id).await {
                                     tracing::error!(%error, delivery_id = %delivery.id, "failed to complete delivered push job");
                                 } else {
-                                    tracing::debug!(delivery_id = %delivery.id, message_id = %delivery.payload.message_id, "delivered direct message push");
+                                    tracing::debug!(
+                                        delivery_id = %delivery.id,
+                                        event_id = delivery.payload.event_id(),
+                                        push_kind = delivery.payload.kind(),
+                                        "delivered push notification"
+                                    );
                                 }
                             }
                             Err(FcmSendError::Permanent(error)) => {

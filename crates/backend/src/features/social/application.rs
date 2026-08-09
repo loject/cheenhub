@@ -11,6 +11,7 @@ use cheenhub_contracts::rest::{
 use uuid::Uuid;
 
 use crate::features::auth::application::{auth_user, require_current_user};
+use crate::features::push_notifications::FriendRequestPush;
 use crate::features::social::domain::FriendshipStatus;
 use crate::features::social::error::SocialError;
 use crate::features::social::realtime::notify_social_changed;
@@ -255,6 +256,32 @@ pub(crate) async fn send_friend_request(
         None,
     )
     .await;
+    let push_payload = FriendRequestPush::new(
+        friendship.id,
+        current_user.id,
+        &current_user.nickname,
+        friendship.updated_at,
+    );
+    match state
+        .push_notifications
+        .enqueue_friend_request(recipient_user_id, push_payload)
+        .await
+    {
+        Ok(enqueued) => tracing::debug!(
+            request_id = %friendship.id,
+            requester_user_id = %current_user.id,
+            recipient_user_id = %recipient_user_id,
+            installation_count = enqueued,
+            "queued friend request push deliveries"
+        ),
+        Err(error) => tracing::warn!(
+            %error,
+            request_id = %friendship.id,
+            requester_user_id = %current_user.id,
+            recipient_user_id = %recipient_user_id,
+            "failed to queue friend request push deliveries"
+        ),
+    }
     Ok(SendFriendRequestResponse {
         request: request_summary(state, friendship).await?,
     })
