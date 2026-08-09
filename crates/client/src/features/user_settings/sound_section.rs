@@ -53,9 +53,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
         let mic = mic_effect.clone();
         spawn(async move {
             let result = enumerate_audio_input_devices().await;
-            if let AudioInputDevicesResult::Available(ref devices) = result {
-                mic.reconcile_input_devices(devices);
-            }
+            reconcile_input_devices_result(&mic, &result);
             input_devices_state.set(Some(result));
         });
     });
@@ -65,9 +63,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
         let playback = playback_effect.clone();
         spawn(async move {
             let result = enumerate_audio_output_devices().await;
-            if let AudioOutputDevicesResult::Available(ref devices) = result {
-                playback.reconcile_output_devices(devices);
-            }
+            reconcile_output_devices_result(&playback, &result);
             output_devices_state.set(Some(result));
         });
     });
@@ -319,16 +315,53 @@ async fn refresh_devices_inner(
     } else {
         enumerate_audio_input_devices().await
     };
-    if let AudioInputDevicesResult::Available(ref devices) = input_result {
-        mic.reconcile_input_devices(devices);
-    }
+    reconcile_input_devices_result(&mic, &input_result);
     input_devices_state.set(Some(input_result));
 
     let output_result = enumerate_audio_output_devices().await;
-    if let AudioOutputDevicesResult::Available(ref devices) = output_result {
-        playback.reconcile_output_devices(devices);
-    }
+    reconcile_output_devices_result(&playback, &output_result);
     output_devices_state.set(Some(output_result));
+}
+
+fn reconcile_input_devices_result(mic: &MicrophoneHandle, result: &AudioInputDevicesResult) {
+    match result {
+        AudioInputDevicesResult::Available(devices) => mic.reconcile_input_devices(devices),
+        AudioInputDevicesResult::SystemManaged if mic.input_device_id().is_some() => {
+            info!(
+                platform = "android",
+                management = "system_audio_policy",
+                "clearing stored microphone input device preference"
+            );
+            mic.set_input_device(&AudioInputDevice {
+                device_id: String::new(),
+                label: String::new(),
+            });
+        }
+        _ => {}
+    }
+}
+
+fn reconcile_output_devices_result(
+    playback: &AudioPlaybackHandle,
+    result: &AudioOutputDevicesResult,
+) {
+    match result {
+        AudioOutputDevicesResult::Available(devices) => {
+            playback.reconcile_output_devices(devices);
+        }
+        AudioOutputDevicesResult::SystemManaged if playback.output_device_id().is_some() => {
+            info!(
+                platform = "android",
+                management = "audio_manager",
+                "clearing stored audio output device preference"
+            );
+            playback.set_output_device(&AudioOutputDevice {
+                device_id: String::new(),
+                label: String::new(),
+            });
+        }
+        _ => {}
+    }
 }
 
 fn volume_slider(

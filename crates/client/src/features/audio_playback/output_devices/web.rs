@@ -1,30 +1,11 @@
-//! Browser audio output device discovery.
-#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
+//! Перечисление устройств вывода аудио в браузере.
 
 use js_sys::{Array, Reflect};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::window;
 
-/// One audio output device returned by `enumerateDevices`.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct AudioOutputDevice {
-    pub(crate) device_id: String,
-    pub(crate) label: String,
-}
-
-/// Result of enumerating the browser's audio output devices.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum AudioOutputDevicesResult {
-    /// The browser does not expose the MediaDevices API.
-    NotSupported,
-    /// Devices are listed but have no labels because media permission is not granted.
-    PermissionRequired,
-    /// No audio output devices are exposed by the browser.
-    NoDevices,
-    /// At least one labeled audio output device is available.
-    Available(Vec<AudioOutputDevice>),
-}
+use super::super::contract::{AudioOutputDevice, AudioOutputDevicesResult};
 
 /// Calls `navigator.mediaDevices.enumerateDevices()` and returns audio outputs.
 pub(crate) async fn enumerate_audio_output_devices() -> AudioOutputDevicesResult {

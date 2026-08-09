@@ -1,5 +1,4 @@
-//! Browser audio input device discovery.
-#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
+//! Перечисление устройств ввода аудио в браузере.
 
 use js_sys::{Array, Reflect};
 use wasm_bindgen::JsCast;
@@ -7,29 +6,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{MediaStream, MediaStreamConstraints, window};
 
+use super::super::contract::{AudioInputDevice, AudioInputDevicesResult};
 use crate::features::microphone::browser_errors::is_permission_denied_error;
-
-/// One audio input device returned by `enumerateDevices`.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct AudioInputDevice {
-    pub(crate) device_id: String,
-    pub(crate) label: String,
-}
-
-/// Result of enumerating the browser's audio input devices.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum AudioInputDevicesResult {
-    /// The browser does not expose the MediaDevices API.
-    NotSupported,
-    /// Devices are listed but have no labels because microphone permission is not granted.
-    PermissionRequired,
-    /// The user explicitly denied microphone access.
-    PermissionDenied,
-    /// No audio input devices are connected.
-    NoDevices,
-    /// At least one labeled audio input device is available.
-    Available(Vec<AudioInputDevice>),
-}
 
 /// Calls `navigator.mediaDevices.enumerateDevices()` and returns the audio inputs.
 pub(crate) async fn enumerate_audio_input_devices() -> AudioInputDevicesResult {

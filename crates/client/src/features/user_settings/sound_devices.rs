@@ -62,6 +62,11 @@ pub(super) fn input_device_widget(
             }
         },
 
+        Some(AudioInputDevicesResult::SystemManaged) => system_managed(
+            "🎙",
+            "Android автоматически выбирает подходящий микрофон. Подключённая гарнитура будет использована по правилам системы.",
+        ),
+
         Some(AudioInputDevicesResult::PermissionRequired) => permission_required(
             "🎙",
             "Для выбора устройства разрешите доступ к микрофону.",
@@ -144,6 +149,11 @@ pub(super) fn output_device_widget(
             }
         },
 
+        Some(AudioOutputDevicesResult::SystemManaged) => system_managed(
+            "◉",
+            "Android автоматически выбирает устройство вывода. Динамик и разговорный динамик переключаются в интерфейсе звонка.",
+        ),
+
         Some(AudioOutputDevicesResult::PermissionRequired) => permission_required(
             "◉",
             "Для выбора устройства вывода разрешите доступ к аудио.",
@@ -167,6 +177,15 @@ fn loading_devices() -> Element {
         div { class: "flex h-10 items-center gap-2 text-[13px] text-zinc-500",
             span { class: "inline-block h-3 w-3 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" }
             "Загрузка устройств…"
+        }
+    }
+}
+
+fn system_managed(icon: &'static str, message: &'static str) -> Element {
+    rsx! {
+        div { class: "flex items-start gap-2 rounded-xl border border-blue-500/20 bg-blue-500/8 px-3 py-2.5",
+            span { class: "mt-px shrink-0 text-blue-400", "{icon}" }
+            p { class: "text-[12px] leading-5 text-blue-300", "{message}" }
         }
     }
 }
