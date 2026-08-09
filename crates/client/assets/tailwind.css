@@ -3251,6 +3251,10 @@ html,
   border-color: rgb(59 130 246 / 0.2);
 }
 
+.border-blue-500\/25 {
+  border-color: rgb(59 130 246 / 0.25);
+}
+
 .border-blue-500\/30 {
   border-color: rgb(59 130 246 / 0.3);
 }
@@ -4352,8 +4356,21 @@ html,
   color: rgb(254 243 199 / var(--tw-text-opacity, 1));
 }
 
+.text-amber-100\/70 {
+  color: rgb(254 243 199 / 0.7);
+}
+
 .text-amber-100\/80 {
   color: rgb(254 243 199 / 0.8);
+}
+
+.text-amber-200 {
+  --tw-text-opacity: 1;
+  color: rgb(253 230 138 / var(--tw-text-opacity, 1));
+}
+
+.text-amber-200\/70 {
+  color: rgb(253 230 138 / 0.7);
 }
 
 .text-amber-300 {

@@ -4,7 +4,8 @@ use dioxus::prelude::*;
 
 use crate::features::application_update::{
     ApplicationUpdateHandle, ApplicationUpdateShutdown, AvailableUpdate, UpdateDownloadProgress,
-    UpdateDownloadStatus, UpdateUiStatus, use_application_update_shutdown,
+    UpdateDownloadStatus, UpdateUiStatus, primary_action_presentation,
+    use_application_update_shutdown,
 };
 use crate::features::toast::ToastHandle;
 
@@ -98,7 +99,7 @@ fn available_update_panel(
                     href: "{update.release_url}",
                     target: "_blank",
                     rel: "noreferrer",
-                    class: "flex h-9 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-900",
+                    class: "flex h-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-semibold text-zinc-200 transition-[transform,background-color,border-color,color,opacity] duration-150 ease-out hover:border-zinc-700 hover:bg-zinc-900 active:scale-[0.96]",
                     "Открыть релиз"
                 }
                 {download_update_button(&update, handle, &download_status, toast, update_shutdown)}
@@ -129,7 +130,7 @@ fn deferred_update_panel(
             div { class: "mt-3 flex flex-col gap-2 sm:flex-row",
                 button {
                     r#type: "button",
-                    class: "flex h-9 items-center justify-center rounded-xl border border-amber-300/25 bg-amber-400/10 px-3 text-[12px] font-semibold text-amber-100 transition hover:border-amber-300/40 hover:bg-amber-400/15",
+                    class: "flex h-10 items-center justify-center rounded-xl border border-amber-300/25 bg-amber-400/10 px-3 text-[12px] font-semibold text-amber-100 transition-[transform,background-color,border-color,color,opacity] duration-150 ease-out hover:border-amber-300/40 hover:bg-amber-400/15 active:scale-[0.96]",
                     onclick: move |_| handle.show_deferred_update_now(),
                     "Показать сейчас"
                 }
@@ -148,47 +149,30 @@ fn download_update_button(
     update_shutdown: ApplicationUpdateShutdown,
 ) -> Element {
     let version = update.version.clone();
-    let has_asset = update.download_asset.is_some();
-    let is_downloading = matches!(download_status, UpdateDownloadStatus::Downloading { .. });
-    let is_downloaded = matches!(
-        download_status,
-        UpdateDownloadStatus::Downloaded {
-            version: downloaded_version,
-            ..
-        } if downloaded_version == &version
-    );
-    let disabled = !has_asset || is_downloading;
+    let primary_action = primary_action_presentation(update, download_status);
 
     rsx! {
         button {
             r#type: "button",
-            disabled,
-            class: download_button_class(disabled),
+            disabled: primary_action.disabled,
+            class: download_button_class(primary_action.disabled),
             onclick: move |_| {
                 info!(
                     update_version = %version,
-                    downloaded = is_downloaded,
+                    installs_downloaded = primary_action.installs_downloaded,
                     "application update primary action requested from settings"
                 );
-                if is_downloaded {
+                if primary_action.installs_downloaded {
                     if handle.install_downloaded_update() {
-                        toast.info("Запускаем установщик обновления.");
+                        toast.info(primary_action.requested_message);
                         update_shutdown.close_after_update_started();
                     }
                 } else {
                     handle.download_update();
-                    toast.info("Начинаем скачивание обновления.");
+                    toast.info(primary_action.requested_message);
                 }
             },
-            if is_downloading {
-                "Скачиваем..."
-            } else if is_downloaded {
-                "Установить"
-            } else if has_asset {
-                "Скачать обновление"
-            } else {
-                "Нет установщика"
-            }
+            {primary_action.label}
         }
     }
 }
@@ -198,6 +182,20 @@ fn download_status_panel(status: &UpdateDownloadStatus) -> Element {
         UpdateDownloadStatus::Idle => rsx! {},
         UpdateDownloadStatus::Downloading { version, progress } => rsx! {
             {download_progress_panel(version, *progress)}
+        },
+        UpdateDownloadStatus::OpeningExternal { version } => rsx! {
+            div { class: "mt-3 flex items-center gap-2 rounded-xl border border-blue-400/20 bg-blue-500/10 px-3 py-2",
+                span { class: "inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-blue-300/30 border-t-blue-200" }
+                p { class: "text-[12px] font-semibold text-blue-100", "Открываем браузер для APK {version}..." }
+            }
+        },
+        UpdateDownloadStatus::OpenedExternally { version } => rsx! {
+            div { class: "mt-3 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2",
+                p { class: "text-[12px] font-semibold text-emerald-100", "Загрузка APK {version} открыта в браузере" }
+                p { class: "mt-1 text-[12px] leading-5 text-emerald-200/75",
+                    "После скачивания откройте APK в браузере и подтвердите установку."
+                }
+            }
         },
         UpdateDownloadStatus::Downloaded { version, file } => rsx! {
             div { class: "mt-3 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2",
@@ -209,7 +207,7 @@ fn download_status_panel(status: &UpdateDownloadStatus) -> Element {
         },
         UpdateDownloadStatus::Failed { message, .. } => rsx! {
             div { class: "mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2",
-                p { class: "text-[12px] font-semibold text-red-100", "Не удалось скачать обновление" }
+                p { class: "text-[12px] font-semibold text-red-100", "Не удалось начать обновление" }
                 p { class: "mt-1 text-[12px] leading-5 text-red-200/80", "{message}" }
             }
         },
@@ -287,17 +285,17 @@ fn format_bytes(bytes: u64) -> String {
 
 fn check_button_class(is_checking: bool) -> &'static str {
     if is_checking {
-        "flex h-10 w-full shrink-0 cursor-wait items-center justify-center rounded-xl border border-blue-400/25 bg-blue-500/10 px-3 text-[12px] font-semibold text-blue-100 disabled:opacity-70 sm:h-9 sm:w-auto"
+        "flex h-10 w-full shrink-0 cursor-wait items-center justify-center rounded-xl border border-blue-400/25 bg-blue-500/10 px-3 text-[12px] font-semibold text-blue-100 disabled:opacity-70 sm:w-auto"
     } else {
-        "flex h-10 w-full shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-900 sm:h-9 sm:w-auto"
+        "flex h-10 w-full shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-semibold text-zinc-200 transition-[transform,background-color,border-color,color,opacity] duration-150 ease-out hover:border-zinc-700 hover:bg-zinc-900 active:scale-[0.96] sm:w-auto"
     }
 }
 
 fn download_button_class(disabled: bool) -> &'static str {
     if disabled {
-        "flex h-9 cursor-not-allowed items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 text-[12px] font-semibold text-zinc-500"
+        "flex h-10 cursor-not-allowed items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 text-[12px] font-semibold text-zinc-500"
     } else {
-        "flex h-9 items-center justify-center rounded-xl border border-blue-400/25 bg-blue-500/10 px-3 text-[12px] font-semibold text-blue-100 transition hover:border-blue-400/40 hover:bg-blue-500/15"
+        "flex h-10 items-center justify-center rounded-xl border border-blue-400/25 bg-blue-500/10 px-3 text-[12px] font-semibold text-blue-100 transition-[transform,background-color,border-color,color,opacity] duration-150 ease-out hover:border-blue-400/40 hover:bg-blue-500/15 active:scale-[0.96]"
     }
 }
 

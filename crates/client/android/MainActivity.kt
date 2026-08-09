@@ -21,6 +21,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.CancellationSignal
@@ -213,6 +214,31 @@ class MainActivity : WryActivity() {
                 }
             },
         )
+    }
+
+    fun openCheenHubUpdateDownload(downloadUrl: String): Boolean {
+        val uri = runCatching { Uri.parse(downloadUrl) }.getOrNull()
+        if (uri?.scheme != "https" || uri.host.isNullOrBlank()) {
+            Log.w(CHEENHUB_UPDATE_LOG_TAG, "Rejected invalid application update URL")
+            return false
+        }
+
+        return runCatching {
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+                selector = Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_APP_BROWSER)
+            }
+            startActivity(intent)
+            Log.i(CHEENHUB_UPDATE_LOG_TAG, "Application update download opened in browser")
+            true
+        }.getOrElse { error ->
+            Log.w(
+                CHEENHUB_UPDATE_LOG_TAG,
+                "Application update browser could not be opened: ${error.javaClass.simpleName}",
+            )
+            false
+        }
     }
 
     fun consumeCheenHubPendingDirectMessageConversationId(): String? =
@@ -705,6 +731,7 @@ class MainActivity : WryActivity() {
 
 private const val CHEENHUB_PUSH_LOG_TAG = "CheenHubPush"
 private const val CHEENHUB_AUTH_LOG_TAG = "CheenHubAuth"
+private const val CHEENHUB_UPDATE_LOG_TAG = "CheenHubUpdate"
 private const val CHEENHUB_VOICE_LOG_TAG = "CheenHubVoice"
 private const val VOICE_OUTPUT_UNSUPPORTED = 0
 private const val VOICE_OUTPUT_EARPIECE = 1

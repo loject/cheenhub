@@ -1,25 +1,41 @@
 //! Выбор платформенной реализации скачивания обновлений.
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 use std::io::Write;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 use std::path::{Path, PathBuf};
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 use std::process::Command;
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 use dioxus::prelude::*;
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 use super::USER_AGENT;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
+use super::{PrimaryUpdateActionPresentation, unavailable_action_presentation};
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
+use crate::features::application_update::types::UpdateDownloadOutcome;
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 use crate::features::application_update::{
-    DownloadedUpdate, UpdateDownloadAsset, UpdateDownloadProgress,
+    AvailableUpdate, DownloadedUpdate, UpdateDownloadAsset, UpdateDownloadProgress,
+    UpdateDownloadStatus,
+};
+
+#[cfg(all(not(target_family = "wasm"), target_os = "android"))]
+#[path = "android.rs"]
+mod android;
+
+#[cfg(all(not(target_family = "wasm"), target_os = "android"))]
+pub(crate) use android::{
+    download_update_asset, install_downloaded_update, opens_download_externally,
+    primary_action_presentation, select_update_asset,
 };
 
 #[cfg(target_family = "wasm")]
 pub(crate) use super::web::{
-    download_update_asset, install_downloaded_update, select_update_asset,
+    download_update_asset, install_downloaded_update, opens_download_externally,
+    primary_action_presentation, select_update_asset,
 };
 
 #[cfg(all(
@@ -34,8 +50,6 @@ const PREFERRED_SUFFIXES: &[&str] = &["windows-x64-setup.exe", "windows-x64.msi"
     target_arch = "x86_64"
 ))]
 const PREFERRED_SUFFIXES: &[&str] = &["linux-x64.AppImage", "linux-x64.deb"];
-#[cfg(all(not(target_family = "wasm"), target_os = "android"))]
-const PREFERRED_SUFFIXES: &[&str] = &["android.apk"];
 #[cfg(all(
     not(target_family = "wasm"),
     not(all(target_os = "windows", target_arch = "x86_64")),
@@ -44,7 +58,7 @@ const PREFERRED_SUFFIXES: &[&str] = &["android.apk"];
 ))]
 const PREFERRED_SUFFIXES: &[&str] = &[];
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 pub(crate) fn select_update_asset(assets: &[UpdateDownloadAsset]) -> Option<UpdateDownloadAsset> {
     for suffix in PREFERRED_SUFFIXES {
         if let Some(asset) = assets
@@ -59,11 +73,50 @@ pub(crate) fn select_update_asset(assets: &[UpdateDownloadAsset]) -> Option<Upda
     None
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
+/// Сообщает, открывает ли платформа загрузку во внешнем приложении.
+pub(crate) const fn opens_download_externally() -> bool {
+    false
+}
+
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
+/// Возвращает desktop-представление основного действия обновления.
+pub(crate) fn primary_action_presentation(
+    update: &AvailableUpdate,
+    download_status: &UpdateDownloadStatus,
+) -> PrimaryUpdateActionPresentation {
+    match download_status {
+        UpdateDownloadStatus::Downloading { version, .. } if version == &update.version => {
+            PrimaryUpdateActionPresentation {
+                label: "Скачиваем...",
+                disabled: true,
+                installs_downloaded: false,
+                requested_message: "Начинаем скачивание обновления.",
+            }
+        }
+        UpdateDownloadStatus::Downloaded { version, .. } if version == &update.version => {
+            PrimaryUpdateActionPresentation {
+                label: "Установить",
+                disabled: false,
+                installs_downloaded: true,
+                requested_message: "Запускаем установщик обновления.",
+            }
+        }
+        _ if update.download_asset.is_none() => unavailable_action_presentation(),
+        _ => PrimaryUpdateActionPresentation {
+            label: "Скачать обновление",
+            disabled: false,
+            installs_downloaded: false,
+            requested_message: "Начинаем скачивание обновления.",
+        },
+    }
+}
+
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 pub(crate) async fn download_update_asset(
     asset: UpdateDownloadAsset,
     mut on_progress: impl FnMut(UpdateDownloadProgress) + 'static,
-) -> Result<DownloadedUpdate, String> {
+) -> Result<UpdateDownloadOutcome, String> {
     let file_name = safe_file_name(&asset.name)?;
     let download_dir = default_download_dir()?;
     std::fs::create_dir_all(&download_dir).map_err(|error| {
@@ -146,13 +199,15 @@ pub(crate) async fn download_update_asset(
         "downloaded application update asset"
     );
 
-    Ok(DownloadedUpdate {
-        file_name,
-        path: destination.display().to_string(),
+    Ok(UpdateDownloadOutcome {
+        downloaded_file: Some(DownloadedUpdate {
+            file_name,
+            path: destination.display().to_string(),
+        }),
     })
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 pub(crate) fn install_downloaded_update(
     version: &str,
     file: &DownloadedUpdate,
@@ -165,7 +220,7 @@ pub(crate) fn install_downloaded_update(
     start_updater(version, file)
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 fn start_updater(version: &str, file: &DownloadedUpdate) -> Result<(), String> {
     let current_exe = std::env::current_exe().map_err(|error| {
         format!("Не удалось определить путь к текущему приложению перед обновлением: {error}")
@@ -242,7 +297,11 @@ fn prepare_updater_executable(current_exe: &Path) -> Result<PathBuf, String> {
     Ok(updater_exe)
 }
 
-#[cfg(all(not(target_family = "wasm"), not(target_os = "windows")))]
+#[cfg(all(
+    not(target_family = "wasm"),
+    not(target_os = "windows"),
+    not(target_os = "android")
+))]
 fn prepare_updater_executable(current_exe: &Path) -> Result<PathBuf, String> {
     Ok(current_exe.to_path_buf())
 }
@@ -261,10 +320,14 @@ fn cleanup_failed_updater_copy(updater_exe: &Path, current_exe: &Path) {
     }
 }
 
-#[cfg(all(not(target_family = "wasm"), not(target_os = "windows")))]
+#[cfg(all(
+    not(target_family = "wasm"),
+    not(target_os = "windows"),
+    not(target_os = "android")
+))]
 fn cleanup_failed_updater_copy(_updater_exe: &Path, _current_exe: &Path) {}
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 fn default_download_dir() -> Result<PathBuf, String> {
     if let Some(profile) = std::env::var_os("USERPROFILE") {
         return Ok(PathBuf::from(profile).join("Downloads"));
@@ -277,7 +340,7 @@ fn default_download_dir() -> Result<PathBuf, String> {
         .map_err(|error| format!("Не удалось определить папку для загрузки обновления: {error}"))
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 fn safe_file_name(name: &str) -> Result<String, String> {
     let Some(file_name) = Path::new(name).file_name().and_then(|value| value.to_str()) else {
         return Err("GitHub вернул некорректное имя файла обновления.".to_owned());
@@ -289,7 +352,7 @@ fn safe_file_name(name: &str) -> Result<String, String> {
     Ok(file_name.to_owned())
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 fn unique_destination(directory: &Path, file_name: &str) -> PathBuf {
     let destination = directory.join(file_name);
     if !destination.exists() {

@@ -8,7 +8,7 @@ use web_time::{Instant, SystemTime, UNIX_EPOCH};
 use super::api::{self, UpdateCheckOutcome};
 use super::download;
 use super::storage;
-use super::types::{AvailableUpdate, UpdateDownloadProgress, UpdateDownloadStatus};
+use super::types::{AvailableUpdate, UpdateDownloadStatus};
 
 const QUICK_DISMISS_SECONDS: u32 = 5 * 60;
 
@@ -203,9 +203,11 @@ impl ApplicationUpdateHandle {
                         let keep_download_status = matches!(
                             &state.download_status,
                             UpdateDownloadStatus::Downloading { .. }
+                                | UpdateDownloadStatus::OpeningExternal { .. }
                         ) || matches!(
                             &state.download_status,
                             UpdateDownloadStatus::Downloaded { version, .. }
+                                | UpdateDownloadStatus::OpenedExternally { version }
                                 if version == &update_version
                         );
                         if !keep_download_status {
@@ -239,9 +241,9 @@ impl ApplicationUpdateHandle {
         let version = update.version.clone();
         if matches!(
             (self.state)().download_status,
-            UpdateDownloadStatus::Downloading { .. }
+            UpdateDownloadStatus::Downloading { .. } | UpdateDownloadStatus::OpeningExternal { .. }
         ) {
-            debug!(update_version = %version, "application update download is already running");
+            debug!(update_version = %version, "application update action is already running");
             return;
         }
         if matches!(
@@ -269,16 +271,9 @@ impl ApplicationUpdateHandle {
         };
 
         let mut state = self.state;
-        let initial_progress = UpdateDownloadProgress {
-            downloaded_bytes: 0,
-            total_bytes: (asset.size_bytes > 0).then_some(asset.size_bytes),
-            bytes_per_second: 0,
-        };
+        let initial_status = download::initial_download_status(version.clone(), &asset);
         state.with_mut(|state| {
-            state.download_status = UpdateDownloadStatus::Downloading {
-                version: version.clone(),
-                progress: initial_progress,
-            };
+            state.download_status = initial_status;
         });
 
         spawn(async move {
@@ -300,15 +295,27 @@ impl ApplicationUpdateHandle {
             })
             .await
             {
-                Ok(file) => {
-                    info!(
-                        update_version = %version,
-                        saved_path = %file.path,
-                        "application update download completed"
-                    );
-                    state.with_mut(|state| {
-                        state.download_status = UpdateDownloadStatus::Downloaded { version, file };
-                    });
+                Ok(outcome) => {
+                    if let Some(file) = outcome.downloaded_file {
+                        info!(
+                            update_version = %version,
+                            saved_path = %file.path,
+                            "application update download completed"
+                        );
+                        state.with_mut(|state| {
+                            state.download_status =
+                                UpdateDownloadStatus::Downloaded { version, file };
+                        });
+                    } else {
+                        info!(
+                            update_version = %version,
+                            "application update opened in external application"
+                        );
+                        state.with_mut(|state| {
+                            state.download_status =
+                                UpdateDownloadStatus::OpenedExternally { version };
+                        });
+                    }
                 }
                 Err(message) => {
                     warn!(

@@ -8,6 +8,7 @@ use super::handle::{
     ApplicationUpdateHandle, UpdateDeferralDelay, UpdateUiStatus, now_epoch_seconds,
 };
 use super::notifications::application_update_notifications_enabled;
+use super::primary_action_presentation;
 use super::shutdown::{ApplicationUpdateShutdown, use_application_update_shutdown};
 use super::types::{AvailableUpdate, UpdateDownloadStatus};
 use crate::features::runtime::sleep_duration;
@@ -97,7 +98,9 @@ pub(super) fn ApplicationUpdateEffects(children: Element) -> Element {
     });
 
     use_effect(move || match handle.download_status() {
-        UpdateDownloadStatus::Idle | UpdateDownloadStatus::Downloading { .. } => {
+        UpdateDownloadStatus::Idle
+        | UpdateDownloadStatus::Downloading { .. }
+        | UpdateDownloadStatus::OpeningExternal { .. } => {
             if reported_download_status().is_some() {
                 reported_download_status.set(None);
             }
@@ -110,6 +113,17 @@ pub(super) fn ApplicationUpdateEffects(children: Element) -> Element {
 
             reported_download_status.set(Some(key));
             toast.success(format!("Обновление {version} скачано: {}.", file.file_name));
+        }
+        UpdateDownloadStatus::OpenedExternally { version } => {
+            let key = format!("opened-externally:{version}");
+            if reported_download_status().as_deref() == Some(key.as_str()) {
+                return;
+            }
+
+            reported_download_status.set(Some(key));
+            toast.success(format!(
+                "Загрузка APK {version} открыта во внешнем браузере."
+            ));
         }
         UpdateDownloadStatus::Failed { version, message } => {
             let key = format!("failed:{version}:{message}");
@@ -135,7 +149,7 @@ fn update_available_toast(
     update_shutdown: ApplicationUpdateShutdown,
 ) -> UpdateAvailableToast {
     let action_version = update.version.clone();
-    let primary_state = primary_update_action_state(&update, &download_status);
+    let primary_state = primary_action_presentation(&update, &download_status);
     let download_handle = handle;
     let download_toast = toast;
     let defer_toast = toast;
@@ -160,17 +174,17 @@ fn update_available_toast(
             move || {
                 info!(
                     update_version = %action_version,
-                    downloaded = primary_state.downloaded,
+                    installs_downloaded = primary_state.installs_downloaded,
                     "application update primary action requested from notification"
                 );
-                if primary_state.downloaded {
+                if primary_state.installs_downloaded {
                     if download_handle.install_downloaded_update() {
-                        download_toast.info("Запускаем установщик обновления.");
+                        download_toast.info(primary_state.requested_message);
                         shutdown_after_update_start.close_after_update_started();
                     }
                 } else {
                     download_handle.download_update();
-                    download_toast.info("Начинаем скачивание обновления.");
+                    download_toast.info(primary_state.requested_message);
                 }
             },
             move || quick_dismiss_handle.dismiss_update_for_five_minutes(),
@@ -196,47 +210,14 @@ fn update_notification_key(version: &str, download_status: &UpdateDownloadStatus
             version: download_version,
             ..
         } if download_version == version => "downloaded",
+        UpdateDownloadStatus::OpeningExternal {
+            version: download_version,
+        } if download_version == version => "opening-external",
+        UpdateDownloadStatus::OpenedExternally {
+            version: download_version,
+        } if download_version == version => "opened-externally",
         _ => "available",
     };
 
     format!("{version}:{phase}")
-}
-
-#[derive(Clone, Copy)]
-struct PrimaryUpdateActionState {
-    label: &'static str,
-    disabled: bool,
-    downloaded: bool,
-}
-
-fn primary_update_action_state(
-    update: &AvailableUpdate,
-    download_status: &UpdateDownloadStatus,
-) -> PrimaryUpdateActionState {
-    match download_status {
-        UpdateDownloadStatus::Downloading { version, .. } if version == &update.version => {
-            PrimaryUpdateActionState {
-                label: "Скачиваем...",
-                disabled: true,
-                downloaded: false,
-            }
-        }
-        UpdateDownloadStatus::Downloaded { version, .. } if version == &update.version => {
-            PrimaryUpdateActionState {
-                label: "Установить",
-                disabled: false,
-                downloaded: true,
-            }
-        }
-        _ if update.download_asset.is_none() => PrimaryUpdateActionState {
-            label: "Нет установщика",
-            disabled: true,
-            downloaded: false,
-        },
-        _ => PrimaryUpdateActionState {
-            label: "Скачать обновление",
-            disabled: false,
-            downloaded: false,
-        },
-    }
 }

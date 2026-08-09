@@ -10,6 +10,7 @@ mod shutdown;
 mod storage;
 mod types;
 
+pub(crate) use download::primary_action_presentation;
 pub(crate) use handle::{ApplicationUpdateHandle, UpdateUiStatus, now_epoch_seconds};
 pub(crate) use provider::ApplicationUpdateProvider;
 pub(crate) use shutdown::{ApplicationUpdateShutdown, use_application_update_shutdown};

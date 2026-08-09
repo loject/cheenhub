@@ -20,6 +20,13 @@ pub(crate) struct DownloadedUpdate {
     pub(crate) path: String,
 }
 
+/// Результат запуска платформенной загрузки обновления.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct UpdateDownloadOutcome {
+    /// Сохраненный установщик или `None`, если загрузка передана внешнему приложению.
+    pub(super) downloaded_file: Option<DownloadedUpdate>,
+}
+
 /// Прогресс скачивания файла обновления.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct UpdateDownloadProgress {
@@ -57,6 +64,16 @@ pub(crate) enum UpdateDownloadStatus {
         version: String,
         /// Прогресс скачивания файла.
         progress: UpdateDownloadProgress,
+    },
+    /// Система открывает прямую ссылку на установщик во внешнем приложении.
+    OpeningExternal {
+        /// Версия открываемого обновления.
+        version: String,
+    },
+    /// Прямая ссылка на установщик открыта во внешнем приложении.
+    OpenedExternally {
+        /// Версия открытого обновления.
+        version: String,
     },
     /// Файл обновления сохранен локально.
     Downloaded {
