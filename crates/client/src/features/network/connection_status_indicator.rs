@@ -4,7 +4,9 @@ use dioxus::prelude::*;
 use futures_util::StreamExt;
 
 use crate::features::network::{NetworkQualityHandle, PingSample};
-use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle, RealtimeTransportKind};
+use crate::features::realtime::{
+    RealtimeConnectionStatus, RealtimeFallbackInfo, RealtimeHandle, RealtimeTransportKind,
+};
 
 const GRAPH_WIDTH: f32 = 220.0;
 const GRAPH_HEIGHT: f32 = 76.0;
@@ -16,14 +18,27 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
     let realtime = use_context::<RealtimeHandle>();
     let network_quality = use_context::<NetworkQualityHandle>();
     let mut status = use_signal(|| realtime.connection_status());
+    let mut fallback_info = use_signal(|| realtime.fallback_info());
     let mut is_open = use_signal(|| false);
 
+    let status_realtime = realtime.clone();
     use_hook(move || {
-        let realtime = realtime.clone();
+        let realtime = status_realtime.clone();
         spawn(async move {
             let mut receiver = realtime.subscribe_connection_status();
             while let Some(next_status) = receiver.next().await {
                 status.set(next_status);
+            }
+        });
+    });
+
+    let fallback_realtime = realtime.clone();
+    use_hook(move || {
+        let realtime = fallback_realtime.clone();
+        spawn(async move {
+            let mut receiver = realtime.subscribe_fallback_info();
+            while let Some(next_fallback) = receiver.next().await {
+                fallback_info.set(next_fallback);
             }
         });
     });
@@ -56,8 +71,8 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
             "border-emerald-500/20 bg-emerald-500/10 text-emerald-300 hover:border-emerald-400/35 hover:bg-emerald-500/15",
         ),
         RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebSocketFallback) => (
-            "Fallback",
-            "Используется более медленный WebSocket fallback",
+            "Резерв",
+            "Используется резервное соединение через WebSocket",
             "border-amber-500/25 bg-amber-500/10 text-amber-300 hover:border-amber-400/40 hover:bg-amber-500/15",
         ),
         RealtimeConnectionStatus::Disconnected => (
@@ -66,7 +81,14 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
             "border-red-500/20 bg-red-500/10 text-red-300 hover:border-red-400/35 hover:bg-red-500/15",
         ),
     };
-    let tooltip = format!("{tooltip}. {ping_text}");
+    let active_fallback = active_fallback_info(current_status, fallback_info());
+    let tooltip = match active_fallback {
+        Some(fallback) => format!(
+            "{tooltip}. Код диагностики: {}. {ping_text}",
+            fallback.diagnostic_code()
+        ),
+        None => format!("{tooltip}. {ping_text}"),
+    };
     let points = graph_points(&quality.samples);
     let max_ping = quality
         .samples
@@ -114,6 +136,18 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
             if is_open() {
                 div {
                     class: "absolute bottom-[calc(100%+10px)] left-0 z-[100] w-[260px] rounded-xl border border-zinc-800 bg-zinc-950/95 p-3 text-left text-zinc-200 shadow-[0_18px_46px_rgba(0,0,0,.5)] backdrop-blur-xl",
+                    if let Some(fallback) = active_fallback {
+                        div { class: "mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5",
+                            span { class: "block text-[12px] font-semibold text-amber-200", "Резервный режим" }
+                            span { class: "mt-1 block text-[11px] leading-4 text-amber-100/70",
+                                "WebTransport недоступен, используется WebSocket. Голос и трансляции могут быть менее стабильными."
+                            }
+                            div { class: "mt-2 flex items-center justify-between gap-3 font-mono text-[10px] text-amber-200/70",
+                                span { "{fallback.diagnostic_code()}" }
+                                span { "{fallback.webtransport_elapsed_ms} мс" }
+                            }
+                        }
+                    }
                     div { class: "flex items-start justify-between gap-3",
                         div {
                             span { class: "block text-[12px] font-semibold text-zinc-100", "Пинг" }
@@ -154,6 +188,18 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
             }
         }
     }
+}
+
+fn active_fallback_info(
+    status: RealtimeConnectionStatus,
+    fallback: Option<RealtimeFallbackInfo>,
+) -> Option<RealtimeFallbackInfo> {
+    matches!(
+        status,
+        RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebSocketFallback)
+    )
+    .then_some(fallback)
+    .flatten()
 }
 
 fn format_ping(rtt_ms: f64) -> String {

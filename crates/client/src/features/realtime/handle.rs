@@ -1,6 +1,7 @@
 //! Realtime connection handle.
 
 mod connection;
+mod fallback;
 mod fire_and_forget;
 
 use std::cell::{Cell, RefCell};
@@ -26,7 +27,7 @@ use super::guards::{
     ModuleStreams, PendingRequestGuard, PendingRequests, StreamWriteGuard, remove_cached_stream,
 };
 use super::inbound::{EventListeners, spawn_universal_reader};
-use super::status::{RealtimeConnectionStatus, RealtimeTransportKind};
+use super::status::{RealtimeConnectionStatus, RealtimeFallbackInfo, RealtimeTransportKind};
 use super::websocket::{WebSocketOutbound, WebSocketOutboundSender};
 use super::webtransport;
 
@@ -35,6 +36,7 @@ const DATAGRAM_SEND_WARNING_INTERVAL_MS: u64 = 5_000;
 
 pub(super) type DatagramListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<Bytes>>>>;
 type StatusListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<RealtimeConnectionStatus>>>>;
+type FallbackListeners = Rc<RefCell<Vec<mpsc::UnboundedSender<Option<RealtimeFallbackInfo>>>>>;
 
 /// Cloneable handle exposed by the realtime provider.
 #[derive(Clone)]
@@ -53,6 +55,8 @@ struct RealtimeInner {
     generation: Cell<u64>,
     connection_status: Cell<RealtimeConnectionStatus>,
     status_listeners: StatusListeners,
+    fallback_info: Cell<Option<RealtimeFallbackInfo>>,
+    fallback_listeners: FallbackListeners,
     last_slow_datagram_send_warning_ms: Cell<u64>,
 }
 
@@ -430,6 +434,8 @@ pub(crate) fn create_handle() -> RealtimeHandle {
             generation: Cell::new(0),
             connection_status: Cell::new(RealtimeConnectionStatus::Disconnected),
             status_listeners: Rc::new(RefCell::new(Vec::new())),
+            fallback_info: Cell::new(None),
+            fallback_listeners: Rc::new(RefCell::new(Vec::new())),
             last_slow_datagram_send_warning_ms: Cell::new(0),
         }),
     };

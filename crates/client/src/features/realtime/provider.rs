@@ -3,7 +3,9 @@
 use dioxus::prelude::*;
 
 use crate::features::auth::api as auth_api;
-use crate::features::network::{NetworkQualityHandle, realtime as network_realtime};
+use crate::features::network::{
+    NetworkQualityHandle, RealtimeFallbackNotice, realtime as network_realtime,
+};
 use crate::features::runtime::sleep_ms;
 
 use super::handle::create_handle;
@@ -91,6 +93,7 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
     });
 
     rsx! {
+        RealtimeFallbackNotice {}
         {children}
     }
 }
