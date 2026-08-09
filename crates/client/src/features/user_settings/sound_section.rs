@@ -22,12 +22,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
     let mic = use_context::<MicrophoneHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
     let preview_mic = mic.clone();
-    let _preview_guard = use_hook(move || {
-        preview_mic.start_level_preview();
-        Rc::new(MicrophonePreviewGuard {
-            mic: preview_mic.clone(),
-        })
-    });
+    let _preview_guard = use_hook(move || Rc::new(MicrophonePreviewGuard { mic: preview_mic }));
 
     // Read the stored device preference — this creates a reactive subscription so the
     // select re-renders whenever the stored value changes.
@@ -55,6 +50,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
             let result = enumerate_audio_input_devices().await;
             reconcile_input_devices_result(&mic, &result);
             input_devices_state.set(Some(result));
+            mic.start_level_preview();
         });
     });
 
@@ -317,6 +313,7 @@ async fn refresh_devices_inner(
     };
     reconcile_input_devices_result(&mic, &input_result);
     input_devices_state.set(Some(input_result));
+    mic.start_level_preview();
 
     let output_result = enumerate_audio_output_devices().await;
     reconcile_output_devices_result(&playback, &output_result);

@@ -91,13 +91,21 @@ impl MicrophoneHandle {
     /// Starts microphone capture for settings level preview when no voice capture is active.
     pub(crate) fn start_level_preview(&self) {
         let active_capture = *self.active_capture.peek();
-        if !matches!(self.status_untracked(), MicrophoneStatus::Idle)
-            || active_capture != ActiveCapture::None
-        {
+        let status = self.status_untracked();
+        if !should_start_level_preview(&status, active_capture) {
+            debug!(
+                ?status,
+                ?active_capture,
+                "skipping microphone level preview capture start"
+            );
             return;
         }
 
-        info!("starting microphone level preview capture");
+        info!(
+            previous_status = ?status,
+            ?active_capture,
+            "starting microphone level preview capture"
+        );
         self.start_capture(Rc::new(|_| {}), ActiveCapture::Preview, None);
     }
 
@@ -392,5 +400,59 @@ impl MicrophoneHandle {
                 warn!(%error, bitrate_bps, "failed to update microphone bitrate");
             }
         });
+    }
+}
+
+fn should_start_level_preview(status: &MicrophoneStatus, active_capture: ActiveCapture) -> bool {
+    active_capture == ActiveCapture::None
+        && matches!(
+            status,
+            MicrophoneStatus::Idle
+                | MicrophoneStatus::PermissionDenied
+                | MicrophoneStatus::Error(_)
+        )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ActiveCapture, should_start_level_preview};
+    use crate::features::microphone::MicrophoneStatus;
+
+    #[test]
+    fn level_preview_starts_from_idle_and_terminal_errors_without_active_capture() {
+        assert!(should_start_level_preview(
+            &MicrophoneStatus::Idle,
+            ActiveCapture::None
+        ));
+        assert!(should_start_level_preview(
+            &MicrophoneStatus::PermissionDenied,
+            ActiveCapture::None
+        ));
+        assert!(should_start_level_preview(
+            &MicrophoneStatus::Error("ошибка захвата".to_owned()),
+            ActiveCapture::None
+        ));
+    }
+
+    #[test]
+    fn level_preview_does_not_duplicate_starting_or_live_capture() {
+        assert!(!should_start_level_preview(
+            &MicrophoneStatus::Starting,
+            ActiveCapture::None
+        ));
+        assert!(!should_start_level_preview(
+            &MicrophoneStatus::Live,
+            ActiveCapture::None
+        ));
+    }
+
+    #[test]
+    fn level_preview_does_not_replace_an_active_capture() {
+        for active_capture in [ActiveCapture::Preview, ActiveCapture::Voice] {
+            assert!(!should_start_level_preview(
+                &MicrophoneStatus::PermissionDenied,
+                active_capture
+            ));
+        }
     }
 }
