@@ -444,80 +444,84 @@ jobs:
           ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
         shell: bash
         run: |
+          set -euo pipefail
+
           signing_keystore_dir="${GITHUB_WORKSPACE}/target/android-signing"
           mkdir -p "${signing_keystore_dir}"
 
           missing_secrets=()
-          has_signing_secret=false
           for secret_name in \
             ANDROID_RELEASE_KEYSTORE_BASE64 \
             ANDROID_RELEASE_KEYSTORE_PASSWORD \
             ANDROID_RELEASE_KEY_ALIAS \
             ANDROID_RELEASE_KEY_PASSWORD
           do
-            if [[ -n "${!secret_name}" ]]; then
-              has_signing_secret=true
-            else
+            if [[ -z "${!secret_name}" ]]; then
               missing_secrets+=("${secret_name}")
             fi
           done
 
-          if [[ "${has_signing_secret}" == "true" && "${#missing_secrets[@]}" -gt 0 ]]; then
-            echo "Android release signing secrets are partially configured. Missing: ${missing_secrets[*]}." >&2
+          if [[ "${#missing_secrets[@]}" -gt 0 ]]; then
+            echo "Android release signing requires all permanent secrets. Missing: ${missing_secrets[*]}." >&2
             exit 1
           fi
 
-          if [[ "${has_signing_secret}" == "true" ]]; then
-            signing_keystore_path="${signing_keystore_dir}/release.p12"
-            signing_keystore_password="${ANDROID_RELEASE_KEYSTORE_PASSWORD}"
-            signing_key_alias="${ANDROID_RELEASE_KEY_ALIAS}"
-            signing_key_password="${ANDROID_RELEASE_KEY_PASSWORD}"
-            printf '%s' "${ANDROID_RELEASE_KEYSTORE_BASE64}" | base64 --decode > "${signing_keystore_path}"
-          else
-            echo "::notice::Android release signing secrets are not configured; generating a temporary CI keystore. APK updates will require reinstalling unless stable ANDROID_RELEASE_* secrets are added."
-            signing_keystore_path="${signing_keystore_dir}/ci-release.p12"
-            signing_keystore_password="cheenhub-ci-release-store"
-            signing_key_alias="cheenhub-ci-release"
-            signing_key_password="cheenhub-ci-release-key"
-            keytool -genkeypair \
-              -noprompt \
-              -keystore "${signing_keystore_path}" \
-              -storepass "${signing_keystore_password}" \
-              -keypass "${signing_key_password}" \
-              -alias "${signing_key_alias}" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storetype PKCS12 \
-              -dname "CN=CheenHub CI, OU=CI, O=CheenHub, L=Novosibirsk, ST=Novosibirsk, C=RU"
-          fi
+          signing_keystore_path="${signing_keystore_dir}/release.p12"
+          printf '%s' "${ANDROID_RELEASE_KEYSTORE_BASE64}" | base64 --decode > "${signing_keystore_path}"
 
           chmod 600 "${signing_keystore_path}"
-
-          export ANDROID_SIGNING_KEYSTORE_PATH="${signing_keystore_path}"
-          export ANDROID_SIGNING_KEYSTORE_PASSWORD="${signing_keystore_password}"
-          export ANDROID_SIGNING_KEY_ALIAS="${signing_key_alias}"
-          export ANDROID_SIGNING_KEY_PASSWORD="${signing_key_password}"
 
           python3 - <<'PY'
           import json
           import os
 
           with open("Dioxus.toml", "a", encoding="utf-8") as config:
-              config.write("\n[android.signing]\n")
-              config.write(f"jks_file = {json.dumps(os.environ['ANDROID_SIGNING_KEYSTORE_PATH'])}\n")
-              config.write(f"jks_password = {json.dumps(os.environ['ANDROID_SIGNING_KEYSTORE_PASSWORD'])}\n")
-              config.write(f"key_alias = {json.dumps(os.environ['ANDROID_SIGNING_KEY_ALIAS'])}\n")
-              config.write(f"key_password = {json.dumps(os.environ['ANDROID_SIGNING_KEY_PASSWORD'])}\n")
+              config.write("\n[bundle.android]\n")
+              config.write('jks_file = "target/android-signing/release.p12"\n')
+              config.write(f"jks_password = {json.dumps(os.environ['ANDROID_RELEASE_KEYSTORE_PASSWORD'])}\n")
+              config.write(f"key_alias = {json.dumps(os.environ['ANDROID_RELEASE_KEY_ALIAS'])}\n")
+              config.write(f"key_password = {json.dumps(os.environ['ANDROID_RELEASE_KEY_PASSWORD'])}\n")
           PY
 
       - name: Validate release version
         shell: bash
         run: cargo run --quiet -p xtask -- release-version check
 
+      - name: Resolve Android version metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version_name="${CHEENHUB_APP_VERSION#v}"
+          if [[ ! "${version_name}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Android version must contain exactly three numeric segments: ${version_name}." >&2
+            exit 1
+          fi
+
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+          patch="${BASH_REMATCH[3]}"
+          for segment in "${major}" "${minor}" "${patch}"; do
+            if (( 10#${segment} > 999 )); then
+              echo "Every Android version segment must be between 0 and 999: ${version_name}." >&2
+              exit 1
+            fi
+          done
+
+          version_code=$((10#${major} * 1000000 + 10#${minor} * 1000 + 10#${patch}))
+          if (( version_code == 0 )); then
+            echo "Android versionCode must be positive." >&2
+            exit 1
+          fi
+
+          echo "ANDROID_VERSION_NAME=${version_name}" >> "${GITHUB_ENV}"
+          echo "ANDROID_VERSION_CODE=${version_code}" >> "${GITHUB_ENV}"
+
       - name: Build APK package
         shell: bash
         run: |
+          set -euo pipefail
+
           dx bundle \
             --android \
             --target aarch64-linux-android \
@@ -527,12 +531,98 @@ jobs:
             --no-default-features \
             --features mobile \
             --package-types apk \
-            --out-dir dist/android/raw
+            --out-dir dist/android/dioxus
+
+          generated_android_root="target/dx/cheen_hub/release/android/app"
+          generated_gradle_file="${generated_android_root}/app/build.gradle.kts"
+          if [[ ! -f "${generated_gradle_file}" ]]; then
+            echo "Generated Android Gradle file was not found: ${generated_gradle_file}." >&2
+            exit 1
+          fi
+
+          export GENERATED_ANDROID_GRADLE_FILE="${generated_gradle_file}"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          gradle_file = Path(os.environ["GENERATED_ANDROID_GRADLE_FILE"])
+          contents = gradle_file.read_text(encoding="utf-8")
+          old = "versionCode = 1"
+          replacement = f"versionCode = {os.environ['ANDROID_VERSION_CODE']}"
+          if contents.count(old) != 1:
+              raise SystemExit(
+                  f"Expected exactly one {old!r} in {gradle_file}, "
+                  f"found {contents.count(old)}."
+              )
+          gradle_file.write_text(contents.replace(old, replacement, 1), encoding="utf-8")
+          PY
+
+          chmod +x "${generated_android_root}/gradlew"
+          (
+            cd "${generated_android_root}"
+            ./gradlew --no-daemon assembleRelease
+          )
+
+          generated_release_apk="${generated_android_root}/app/build/outputs/apk/release/app-release.apk"
+          if [[ ! -f "${generated_release_apk}" ]]; then
+            echo "Gradle release APK was not found: ${generated_release_apk}." >&2
+            exit 1
+          fi
+
+          release_dir="dist/android/release"
+          if [[ -e "${release_dir}" ]]; then
+            echo "Android release output directory must be clean: ${release_dir}." >&2
+            exit 1
+          fi
+          mkdir -p "${release_dir}"
+          cp "${generated_release_apk}" "${release_dir}/app-release.apk"
+
+      - name: Validate Android release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apk_path="dist/android/release/app-release.apk"
+          aapt_path="${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS_VERSION}/aapt"
+          apksigner_path="${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS_VERSION}/apksigner"
+
+          for tool_path in "${aapt_path}" "${apksigner_path}"; do
+            if [[ ! -x "${tool_path}" ]]; then
+              echo "Required Android verification tool is unavailable: ${tool_path}." >&2
+              exit 1
+            fi
+          done
+
+          badging="$("${aapt_path}" dump badging "${apk_path}")"
+          package_line="${badging%%$'\n'*}"
+          if [[ "${package_line}" != *"name='ru.cheenhub'"* ]]; then
+            echo "Unexpected Android package metadata: ${package_line}." >&2
+            exit 1
+          fi
+          if [[ "${package_line}" != *"versionName='${ANDROID_VERSION_NAME}'"* ]]; then
+            echo "Android versionName does not match ${ANDROID_VERSION_NAME}: ${package_line}." >&2
+            exit 1
+          fi
+          if [[ "${package_line}" != *"versionCode='${ANDROID_VERSION_CODE}'"* ]]; then
+            echo "Android versionCode does not match ${ANDROID_VERSION_CODE}: ${package_line}." >&2
+            exit 1
+          fi
+          if [[ "${badging}" == *"application-debuggable"* ]]; then
+            echo "Android release APK is marked as debuggable." >&2
+            exit 1
+          fi
+
+          signature_report="$("${apksigner_path}" verify --verbose --print-certs "${apk_path}")"
+          if [[ "${signature_report}" == *"Android Debug"* ]]; then
+            echo "Android release APK is signed with an Android Debug certificate." >&2
+            exit 1
+          fi
+          printf '%s\n' "${package_line}" "${signature_report}"
 
       - name: Normalize Android release asset
         shell: bash
         run: |
-          cargo run --quiet -p xtask -- release-artifacts collect android dist/android/raw dist/client "${GITHUB_REF_NAME}"
+          cargo run --quiet -p xtask -- release-artifacts collect android dist/android/release dist/client "${GITHUB_REF_NAME}"
 
       - name: Publish Android release asset
         env:
