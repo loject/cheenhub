@@ -267,7 +267,12 @@ class MainActivity : WryActivity() {
 
     private fun acceptNotificationIntent(intent: Intent?) {
         if (intent?.action != CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION) return
-        val conversationId = intent.getStringExtra(CHEENHUB_CONVERSATION_ID_EXTRA) ?: return
+        val conversationId = intent.getStringExtra(CHEENHUB_CONVERSATION_ID_EXTRA)
+            ?.let { value -> runCatching { UUID.fromString(value).toString() }.getOrNull() }
+        if (conversationId == null) {
+            Log.w(CHEENHUB_PUSH_LOG_TAG, "Direct-message notification intent rejected")
+            return
+        }
         CheenHubPushStore.setPendingConversationId(this, conversationId)
         runCatching { nativeOnCheenHubDirectMessageNotificationOpened(conversationId) }
             .onFailure {

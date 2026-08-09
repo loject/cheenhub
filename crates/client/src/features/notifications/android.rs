@@ -17,6 +17,7 @@ use jni::JNIEnv;
 #[cfg(target_os = "android")]
 use jni::objects::{JObject, JString};
 
+use crate::Route;
 #[cfg(target_os = "android")]
 use crate::features::app::active_room::ActiveRoomContext;
 #[cfg(target_os = "android")]
@@ -28,34 +29,63 @@ use crate::features::runtime::android::{
 static NOTIFICATION_OPEN_SUBSCRIBERS: OnceLock<Mutex<Vec<mpsc::UnboundedSender<String>>>> =
     OnceLock::new();
 
-/// Регистрирует Android push-установку без автоматической смены текущего экрана.
+/// Регистрирует Android push-установку и открывает личный диалог по явному нажатию уведомления.
+///
+/// Обычное восстановление сохранённой рабочей области остаётся отдельной политикой запуска.
 #[component]
 pub(crate) fn NotificationsProvider(children: Element) -> Element {
     #[cfg(target_os = "android")]
     {
         let active_room = use_context::<ActiveRoomContext>();
+        let navigator = use_navigator();
+        let mut pending_route = use_signal(|| None::<Route>);
 
         use_hook(move || {
             spawn(register_android_installation());
             spawn(async move {
                 let mut opened = subscribe_notification_opens();
-                if let Ok(Some(conversation_id)) = take_pending_conversation().await {
-                    debug!(
-                        %conversation_id,
-                        "ignored pending Android notification route; kept current screen"
-                    );
+                match take_pending_conversation().await {
+                    Ok(Some(conversation_id)) => {
+                        info!(
+                            %conversation_id,
+                            source = "cold_start",
+                            "queued Android direct-message notification route"
+                        );
+                        pending_route.set(Some(direct_message_route(conversation_id)));
+                    }
+                    Ok(None) => {}
+                    Err(error) => warn!(
+                        %error,
+                        "failed to consume pending Android notification route"
+                    ),
                 }
                 while let Some(conversation_id) = opened.next().await {
-                    // Intent хранится и для cold start. При живом callback потребляем
-                    // сохранённый маршрут, чтобы следующий mount не обработал его повторно.
-                    let _ = take_pending_conversation().await;
-                    debug!(
+                    // Intent хранится и для cold start. При живом callback удаляем
+                    // сохранённое значение, чтобы следующий mount не открыл его повторно.
+                    if let Err(error) = take_pending_conversation().await {
+                        warn!(
+                            %error,
+                            "failed to clear delivered Android notification route"
+                        );
+                    }
+                    info!(
                         %conversation_id,
-                        "ignored Android notification route; kept current screen"
+                        source = "activity_intent",
+                        "queued Android direct-message notification route"
                     );
+                    pending_route.set(Some(direct_message_route(conversation_id)));
                 }
                 warn!("Android notification-open subscription stopped");
             });
+        });
+
+        use_effect(move || {
+            let Some(route) = pending_route() else {
+                return;
+            };
+            pending_route.set(None);
+            info!(route = %route, "navigating from Android notification click");
+            navigator.push(route);
         });
 
         use_effect(move || {
@@ -77,6 +107,10 @@ pub(crate) fn NotificationsProvider(children: Element) -> Element {
     }
 
     rsx! { {children} }
+}
+
+fn direct_message_route(conversation_id: String) -> Route {
+    Route::AppDirectMessage { conversation_id }
 }
 
 #[cfg(target_os = "android")]
@@ -182,4 +216,19 @@ pub extern "system" fn Java_dev_dioxus_main_MainActivity_nativeOnCheenHubDirectM
         return;
     };
     subscribers.retain(|subscriber| subscriber.unbounded_send(conversation_id.clone()).is_ok());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn notification_click_targets_direct_message_route() {
+        let conversation_id = "80c993e1-2fe7-49e0-bcc5-c56c790d98c8".to_owned();
+
+        assert_eq!(
+            direct_message_route(conversation_id.clone()),
+            Route::AppDirectMessage { conversation_id }
+        );
+    }
 }
