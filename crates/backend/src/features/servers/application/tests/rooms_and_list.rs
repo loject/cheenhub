@@ -9,7 +9,8 @@ async fn creates_and_lists_servers_for_current_user() {
             nickname: "cheenhero".to_owned(),
             email: "hero@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -41,7 +42,8 @@ async fn new_server_has_default_room() {
             nickname: "room_owner".to_owned(),
             email: "room-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -75,7 +77,8 @@ async fn active_member_can_list_rooms_but_non_member_cannot() {
             nickname: "rooms_access_owner".to_owned(),
             email: "rooms-access-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -86,7 +89,8 @@ async fn active_member_can_list_rooms_but_non_member_cannot() {
             nickname: "rooms_access_guest".to_owned(),
             email: "rooms-access-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -97,7 +101,8 @@ async fn active_member_can_list_rooms_but_non_member_cannot() {
             nickname: "rooms_access_outsider".to_owned(),
             email: "rooms-access-outsider@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -150,7 +155,8 @@ async fn owner_can_create_update_and_delete_room() {
             nickname: "room_crud_owner".to_owned(),
             email: "room-crud-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -218,7 +224,8 @@ async fn non_owner_member_cannot_mutate_rooms() {
             nickname: "room_mutation_owner".to_owned(),
             email: "room-mutation-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -229,7 +236,8 @@ async fn non_owner_member_cannot_mutate_rooms() {
             nickname: "room_mutation_guest".to_owned(),
             email: "room-mutation-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -303,7 +311,8 @@ async fn cannot_delete_last_room() {
             nickname: "last_room_owner".to_owned(),
             email: "last-room-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -342,7 +351,8 @@ async fn room_flows_reject_invalid_ids_and_names() {
             nickname: "invalid_room_owner".to_owned(),
             email: "invalid-room-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -398,7 +408,8 @@ async fn lists_only_current_users_servers() {
             nickname: "first_user".to_owned(),
             email: "first@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -409,7 +420,8 @@ async fn lists_only_current_users_servers() {
             nickname: "second_user".to_owned(),
             email: "second@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await

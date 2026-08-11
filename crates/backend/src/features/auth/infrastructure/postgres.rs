@@ -46,26 +46,19 @@ impl AuthStore for PostgresAuthStore {
         email: String,
         email_normalized: String,
         password_hash: Option<String>,
+        legal_acceptance: RegistrationLegalAcceptance,
         now: DateTime<Utc>,
     ) -> Result<UserAccount, InsertUserError> {
-        let user_id = Uuid::new_v4();
-        let model = users::ActiveModel {
-            id: Set(user_id),
-            nickname: Set(nickname),
-            email: Set(email),
-            email_normalized: Set(email_normalized),
-            password_hash: Set(password_hash),
-            avatar_image_id: Set(None),
-            registered_at: Set(now),
-            nickname_updated_at: Set(now),
-            accepted_terms_at: Set(now),
-            updated_at: Set(now),
-        }
-        .insert(&self.database)
+        super::postgres_user::insert_user(
+            &self.database,
+            nickname,
+            email,
+            email_normalized,
+            password_hash,
+            legal_acceptance,
+            now,
+        )
         .await
-        .map_err(super::postgres_user::map_insert_user_error)?;
-
-        Ok(model.into())
     }
 
     async fn find_user_by_email(

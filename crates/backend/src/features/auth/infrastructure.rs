@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::features::auth::domain::{
     OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, OAuthState, PasswordResetToken,
-    RefreshSession, UserAccount, UserSession,
+    RefreshSession, RegistrationLegalAcceptance, UserAccount, UserSession,
 };
 
 pub(crate) use in_memory::InMemoryAuthStore;
@@ -98,6 +98,7 @@ pub(crate) trait AuthStore: Send + Sync {
         email: String,
         email_normalized: String,
         password_hash: Option<String>,
+        legal_acceptance: RegistrationLegalAcceptance,
         now: DateTime<Utc>,
     ) -> Result<UserAccount, InsertUserError>;
 

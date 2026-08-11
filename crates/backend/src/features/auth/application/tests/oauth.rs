@@ -42,12 +42,29 @@ async fn google_registration_intent_creates_passwordless_account() {
         .await
         .expect("handoff should insert");
 
+    let consent_error = register_with_google_oauth(
+        &state,
+        OAuthRegistrationRequest {
+            registration_token: handoff_code.clone(),
+            nickname: "google_user".to_owned(),
+            accepts_terms: true,
+            accepts_personal_data: false,
+        },
+        None,
+    )
+    .await
+    .expect_err("google registration without separate consent must fail");
+    assert!(
+        matches!(consent_error, crate::features::auth::error::AuthError::BadRequest(message) if message.contains("отдельно"))
+    );
+
     let auth = register_with_google_oauth(
         &state,
         OAuthRegistrationRequest {
             registration_token: handoff_code,
             nickname: "google_user".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
         None,
     )

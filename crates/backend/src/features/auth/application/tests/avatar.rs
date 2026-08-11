@@ -138,7 +138,8 @@ async fn registered_user(state: &crate::state::AppState) -> cheenhub_contracts::
             nickname: "avatar_user".to_owned(),
             email: "avatar@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await

@@ -10,6 +10,9 @@ use crate::features::auth::domain::{OAuthAccount, OAuthRegistrationIntent, UserA
 pub(in crate::features::auth::infrastructure) struct InMemoryState {
     /// User accounts.
     pub(in crate::features::auth::infrastructure) users: Vec<InMemoryUser>,
+    /// Подтверждения юридических документов при регистрации.
+    pub(in crate::features::auth::infrastructure) legal_acceptances:
+        Vec<(Uuid, String, String, String, DateTime<Utc>)>,
     /// Login sessions.
     pub(in crate::features::auth::infrastructure) sessions: Vec<InMemorySession>,
     /// Refresh tokens.

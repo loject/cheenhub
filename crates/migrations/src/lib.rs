@@ -29,6 +29,7 @@ mod m20260630_000025_create_social_tables;
 mod m20260630_000026_add_dm_read_state;
 mod m20260713_000027_create_push_notifications;
 mod m20260718_000028_add_dm_message_images;
+mod m20260811_000029_create_legal_acceptances;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -67,6 +68,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260630_000026_add_dm_read_state::Migration),
             Box::new(m20260713_000027_create_push_notifications::Migration),
             Box::new(m20260718_000028_add_dm_message_images::Migration),
+            Box::new(m20260811_000029_create_legal_acceptances::Migration),
         ]
     }
 }

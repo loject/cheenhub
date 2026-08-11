@@ -3,6 +3,19 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+/// Версии юридических документов, подтверждённых при регистрации.
+#[derive(Debug, Clone)]
+pub(crate) struct RegistrationLegalAcceptance {
+    /// Источник подтверждения в регистрационном потоке.
+    pub(crate) acceptance_source: String,
+    /// Версия принятого пользовательского соглашения.
+    pub(crate) terms_version: String,
+    /// Версия политики, с которой ознакомился пользователь.
+    pub(crate) privacy_policy_version: String,
+    /// Версия отдельного согласия на обработку персональных данных.
+    pub(crate) personal_data_consent_version: String,
+}
+
 /// Данные учетной записи пользователя, используемые в потоках аутентификации.
 #[derive(Debug, Clone)]
 pub(crate) struct UserAccount {

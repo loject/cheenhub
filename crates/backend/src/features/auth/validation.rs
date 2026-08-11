@@ -59,15 +59,11 @@ pub(crate) fn register(
     nickname: String,
     email: String,
     password: String,
-    accepts_policies: bool,
 ) -> Result<ValidRegister, &'static str> {
     let nickname = nickname.trim().to_owned();
     let email = email.trim().to_owned();
     let email_normalized = email.to_lowercase();
 
-    if !accepts_policies {
-        return Err("Нужно принять правила сервиса.");
-    }
     if !is_valid_nickname(&nickname) {
         return Err("Никнейм должен быть длиной 3-32 символа и содержать латиницу, цифры или _.");
     }

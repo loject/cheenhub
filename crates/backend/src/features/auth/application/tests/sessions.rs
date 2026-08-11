@@ -23,7 +23,8 @@ async fn active_sessions_show_current_session_and_parse_user_agent() {
             nickname: "session_user".to_owned(),
             email: "session-user@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
         Some(DESKTOP_CHROME_USER_AGENT.to_owned()),
     )
@@ -55,7 +56,8 @@ async fn active_sessions_refresh_current_session_user_agent() {
             nickname: "native_session_user".to_owned(),
             email: "native-session-user@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -90,7 +92,8 @@ async fn revoke_specific_session_invalidates_that_access_token_and_keeps_current
             nickname: "target_session".to_owned(),
             email: "target-session@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
         Some(DESKTOP_CHROME_USER_AGENT.to_owned()),
     )
@@ -141,7 +144,8 @@ async fn revoke_all_sessions_invalidates_current_access_token() {
             nickname: "all_sessions".to_owned(),
             email: "all-sessions@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
         Some(DESKTOP_CHROME_USER_AGENT.to_owned()),
     )

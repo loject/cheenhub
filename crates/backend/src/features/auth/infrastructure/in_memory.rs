@@ -24,6 +24,7 @@ impl AuthStore for InMemoryAuthStore {
         email: String,
         email_normalized: String,
         password_hash: Option<String>,
+        legal_acceptance: RegistrationLegalAcceptance,
         now: DateTime<Utc>,
     ) -> Result<UserAccount, InsertUserError> {
         let mut state = self
@@ -58,6 +59,29 @@ impl AuthStore for InMemoryAuthStore {
             account: account.clone(),
             email_normalized,
         });
+        state.legal_acceptances.extend([
+            (
+                account.id,
+                "terms".to_owned(),
+                legal_acceptance.terms_version,
+                legal_acceptance.acceptance_source.clone(),
+                now,
+            ),
+            (
+                account.id,
+                "privacy_policy".to_owned(),
+                legal_acceptance.privacy_policy_version,
+                legal_acceptance.acceptance_source.clone(),
+                now,
+            ),
+            (
+                account.id,
+                "personal_data_consent".to_owned(),
+                legal_acceptance.personal_data_consent_version,
+                legal_acceptance.acceptance_source,
+                now,
+            ),
+        ]);
 
         Ok(account)
     }

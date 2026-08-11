@@ -1,9 +1,11 @@
 //! Компонент маршрута OAuth callback.
 
+use cheenhub_contracts::rest::OAuthRegistrationRequest;
 use dioxus::prelude::*;
 
 use crate::Route;
 use crate::features::auth::api::{self, OAuthCompletion, OAuthRegistrationRequired};
+use crate::features::auth::{LegalAcceptanceAction, LegalAcceptanceFields};
 
 /// Обрабатывает callback-ответы OAuth-провайдера.
 #[component]
@@ -16,16 +18,12 @@ pub(crate) fn OAuthCallback(
     let mut state = use_signal(|| OAuthCallbackState::Loading);
     let mut started = use_signal(|| false);
     let mut nickname = use_signal(String::new);
-    let mut accepts_policies = use_signal(|| false);
+    let mut accepts_terms = use_signal(|| false);
+    let mut accepts_personal_data = use_signal(|| false);
     let mut form_error = use_signal(String::new);
     let mut is_submitting = use_signal(|| false);
     let handoff = handoff_code.or(code).unwrap_or_default();
     let has_session = api::has_tokens();
-    let checkbox_class = if accepts_policies() {
-        "flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-accent text-white transition"
-    } else {
-        "flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-transparent transition hover:bg-zinc-700"
-    };
 
     let effect_handoff = handoff.clone();
     use_effect(move || {
@@ -55,7 +53,7 @@ pub(crate) fn OAuthCallback(
                     .await
                     .map(|_| OAuthCompletion::Linked)
             } else {
-                api::complete_google_oauth(handoff_code, None).await
+                api::complete_google_oauth(handoff_code).await
             };
 
             match result {
@@ -107,23 +105,12 @@ pub(crate) fn OAuthCallback(
                                     class: "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-accent focus:ring-2 focus:ring-accent/20",
                                 }
                             }
-                            div { class: "flex items-center gap-3 text-[12px] leading-5 text-zinc-500",
-                                input {
-                                    r#type: "hidden",
-                                    name: "terms",
-                                    value: "{accepts_policies()}"
-                                }
-                                button {
-                                    r#type: "button",
-                                    aria_pressed: "{accepts_policies()}",
-                                    class: "{checkbox_class}",
-                                    onclick: move |_| accepts_policies.set(!accepts_policies()),
-                                    svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "3", view_box: "0 0 24 24",
-                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M5 13l4 4L19 7" }
-                                    }
-                                }
-                                span {
-                                    "Я принимаю правила сервиса, политику конфиденциальности и согласен с обработкой данных аккаунта."
+                            LegalAcceptanceFields {
+                                accepts_terms: accepts_terms(),
+                                accepts_personal_data: accepts_personal_data(),
+                                on_change: move |action| match action {
+                                    LegalAcceptanceAction::TermsChanged(value) => accepts_terms.set(value),
+                                    LegalAcceptanceAction::PersonalDataChanged(value) => accepts_personal_data.set(value),
                                 }
                             }
                             if !form_error().is_empty() {
@@ -132,10 +119,10 @@ pub(crate) fn OAuthCallback(
                             button {
                                 r#type: "button",
                                 class: "flex h-11 w-full items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60",
-                                disabled: is_submitting() || nickname().trim().is_empty() || !accepts_policies(),
+                                disabled: is_submitting() || nickname().trim().is_empty() || !accepts_terms() || !accepts_personal_data(),
                                 onclick: move |_| {
-                                    if !accepts_policies() {
-                                        form_error.set("Нужно принять правила сервиса.".to_owned());
+                                    if !accepts_terms() || !accepts_personal_data() {
+                                        form_error.set("Нужно принять соглашение и отдельно дать согласие на обработку данных.".to_owned());
                                         return;
                                     }
                                     if is_submitting() {
@@ -146,7 +133,12 @@ pub(crate) fn OAuthCallback(
                                     form_error.set(String::new());
                                     is_submitting.set(true);
                                     spawn(async move {
-                                        match api::complete_google_oauth(handoff_code, Some(chosen_nickname)).await {
+                                        match api::register_with_google_oauth(OAuthRegistrationRequest {
+                                            registration_token: handoff_code,
+                                            nickname: chosen_nickname,
+                                            accepts_terms: accepts_terms(),
+                                            accepts_personal_data: accepts_personal_data(),
+                                        }).await {
                                             Ok(OAuthCompletion::Authenticated(_)) => {
                                                 let _ = navigator.replace(Route::AppHome {});
                                             }

@@ -24,6 +24,7 @@ use crate::state::AppState;
 
 mod atomicity;
 mod avatar;
+mod legal;
 mod nickname;
 mod oauth;
 mod password;
@@ -368,7 +369,8 @@ pub(super) async fn registered_user(
             nickname: nickname.to_owned(),
             email: email.to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -408,7 +410,8 @@ pub(super) async fn google_only_user(state: &AppState) -> cheenhub_contracts::re
         OAuthRegistrationRequest {
             registration_token: handoff_code,
             nickname: "google_only".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
         None,
     )

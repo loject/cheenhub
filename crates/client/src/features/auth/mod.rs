@@ -15,6 +15,9 @@ mod refresh_lock;
 pub(crate) mod sessions_api;
 mod storage;
 
+pub(crate) use components::legal_acceptance_fields::{
+    LegalAcceptanceAction, LegalAcceptanceFields,
+};
 pub(crate) use components::token_refresher::TokenRefresher;
 pub(crate) use pages::forgot_password_page::ForgotPasswordPage;
 pub(crate) use pages::login_page::LoginPage;

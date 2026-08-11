@@ -10,7 +10,8 @@ mod update_mode;
 
 use routes::{
     AppDirectMessage, AppFriends, AppHome, AppServer, AppServerRoom, ForgotPassword, Invite,
-    Landing, Login, NotFound, OAuthCallback, Register, ResetPassword,
+    Landing, Login, NotFound, OAuthCallback, PersonalDataConsent, PrivacyPolicy, Register,
+    ResetPassword, Terms,
 };
 
 use crate::features::application_focus::ApplicationFocusProvider;
@@ -66,6 +67,12 @@ enum Route {
     Login {},
     #[route("/register")]
     Register {},
+    #[route("/legal/terms")]
+    Terms {},
+    #[route("/legal/privacy")]
+    PrivacyPolicy {},
+    #[route("/legal/personal-data-consent")]
+    PersonalDataConsent {},
     #[route("/forgot-password")]
     ForgotPassword {},
     #[route("/reset-password?:token")]

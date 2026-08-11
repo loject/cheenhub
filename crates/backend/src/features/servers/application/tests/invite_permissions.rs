@@ -15,7 +15,8 @@ async fn member_with_invite_permission_can_create_server_invite() {
             nickname: "invite_role_owner".to_owned(),
             email: "invite-role-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -26,7 +27,8 @@ async fn member_with_invite_permission_can_create_server_invite() {
             nickname: "invite_role_member".to_owned(),
             email: "invite-role-member@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -153,7 +155,8 @@ async fn member_role_invite_permission_allows_regular_member_to_create_server_in
             nickname: "member_role_invite_owner".to_owned(),
             email: "member-role-invite-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -164,7 +167,8 @@ async fn member_role_invite_permission_allows_regular_member_to_create_server_in
             nickname: "member_role_invite_member".to_owned(),
             email: "member-role-invite-member@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -269,7 +273,8 @@ async fn member_without_invite_permission_cannot_create_server_invite() {
             nickname: "invite_denied_owner".to_owned(),
             email: "invite-denied-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -280,7 +285,8 @@ async fn member_without_invite_permission_cannot_create_server_invite() {
             nickname: "invite_denied_member".to_owned(),
             email: "invite-denied-member@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await

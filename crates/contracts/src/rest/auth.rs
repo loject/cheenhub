@@ -11,8 +11,10 @@ pub struct RegisterRequest {
     pub email: String,
     /// Обычный пароль, отправляемый по HTTPS.
     pub password: String,
-    /// Принял ли пользователь обязательные правила.
-    pub accepts_policies: bool,
+    /// Принял ли пользователь пользовательское соглашение.
+    pub accepts_terms: bool,
+    /// Дал ли пользователь отдельное согласие на обработку персональных данных.
+    pub accepts_personal_data: bool,
 }
 
 /// Тело запроса для входа по email и паролю.
@@ -131,8 +133,10 @@ pub struct OAuthRegistrationRequest {
     pub registration_token: String,
     /// Публичный никнейм, выбранный для новой учетной записи CheenHub.
     pub nickname: String,
-    /// Принял ли пользователь обязательные правила.
-    pub accepts_policies: bool,
+    /// Принял ли пользователь пользовательское соглашение.
+    pub accepts_terms: bool,
+    /// Дал ли пользователь отдельное согласие на обработку персональных данных.
+    pub accepts_personal_data: bool,
 }
 
 /// Тело запроса для обновления профиля текущего аутентифицированного пользователя.

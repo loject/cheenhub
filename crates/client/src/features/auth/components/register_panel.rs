@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 use crate::Route;
 use crate::features::auth::api;
 use crate::features::auth::components::text_input::TextInput;
+use crate::features::auth::{LegalAcceptanceAction, LegalAcceptanceFields};
 
 #[component]
 pub(crate) fn RegisterPanel() -> Element {
@@ -13,14 +14,10 @@ pub(crate) fn RegisterPanel() -> Element {
     let mut nickname = use_signal(String::new);
     let mut email = use_signal(String::new);
     let mut password = use_signal(String::new);
-    let mut accepts_policies = use_signal(|| false);
+    let mut accepts_terms = use_signal(|| false);
+    let mut accepts_personal_data = use_signal(|| false);
     let mut status = use_signal(String::new);
     let mut is_busy = use_signal(|| false);
-    let checkbox_class = if accepts_policies() {
-        "flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-accent text-white transition"
-    } else {
-        "flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-transparent transition hover:bg-zinc-700"
-    };
 
     rsx! {
         div { class: "rounded-[24px] border border-zinc-800 bg-zinc-900/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-6",
@@ -58,23 +55,12 @@ pub(crate) fn RegisterPanel() -> Element {
                     value: password(),
                     oninput: move |value| password.set(value)
                 }
-                div { class: "flex items-center gap-3 text-[12px] leading-5 text-zinc-500",
-                    input {
-                        r#type: "hidden",
-                        name: "terms",
-                        value: "{accepts_policies()}"
-                    }
-                    button {
-                        r#type: "button",
-                        aria_pressed: "{accepts_policies()}",
-                        class: "{checkbox_class}",
-                        onclick: move |_| accepts_policies.set(!accepts_policies()),
-                        svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "3", view_box: "0 0 24 24",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M5 13l4 4L19 7" }
-                        }
-                    }
-                    span {
-                        "Я принимаю правила сервиса, политику конфиденциальности и согласен с обработкой данных аккаунта."
+                LegalAcceptanceFields {
+                    accepts_terms: accepts_terms(),
+                    accepts_personal_data: accepts_personal_data(),
+                    on_change: move |action| match action {
+                        LegalAcceptanceAction::TermsChanged(value) => accepts_terms.set(value),
+                        LegalAcceptanceAction::PersonalDataChanged(value) => accepts_personal_data.set(value),
                     }
                 }
                 if !status().is_empty() {
@@ -84,8 +70,8 @@ pub(crate) fn RegisterPanel() -> Element {
                 }
                 button {
                     r#type: "button",
-                    disabled: is_busy(),
-                    class: "btn-p flex h-11 w-full items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)]",
+                    disabled: is_busy() || !accepts_terms() || !accepts_personal_data(),
+                    class: "btn-p flex h-11 w-full items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)] disabled:cursor-not-allowed disabled:opacity-60",
                     onclick: move |_| {
                         is_busy.set(true);
                         status.set(String::new());
@@ -93,7 +79,8 @@ pub(crate) fn RegisterPanel() -> Element {
                             nickname: nickname(),
                             email: email(),
                             password: password(),
-                            accepts_policies: accepts_policies(),
+                            accepts_terms: accepts_terms(),
+                            accepts_personal_data: accepts_personal_data(),
                         };
                         spawn(async move {
                             match api::register(request).await {

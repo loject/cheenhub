@@ -12,7 +12,8 @@ async fn concurrent_last_invite_use_has_one_winner() {
             nickname: "atomic_invite_owner".to_owned(),
             email: "atomic-invite-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -23,7 +24,8 @@ async fn concurrent_last_invite_use_has_one_winner() {
             nickname: "atomic_invite_first".to_owned(),
             email: "atomic-invite-first@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -34,7 +36,8 @@ async fn concurrent_last_invite_use_has_one_winner() {
             nickname: "atomic_invite_second".to_owned(),
             email: "atomic-invite-second@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await

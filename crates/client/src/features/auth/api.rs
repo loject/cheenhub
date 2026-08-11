@@ -60,24 +60,16 @@ pub(crate) async fn start_google_account_link() -> Result<String, String> {
 }
 
 /// Завершает вход через OAuth с кодом handoff от бэкенда.
-pub(crate) async fn complete_google_oauth(
-    handoff_code: String,
-    nickname: Option<String>,
-) -> Result<OAuthCompletion, String> {
-    if let Some(nickname) = nickname {
-        let response = post_json(
-            "/auth/oauth/google/register",
-            &OAuthRegistrationRequest {
-                registration_token: handoff_code,
-                nickname,
-                accepts_policies: true,
-            },
-        )
-        .await?;
-        return save_response(response).map(OAuthCompletion::Authenticated);
-    }
-
+pub(crate) async fn complete_google_oauth(handoff_code: String) -> Result<OAuthCompletion, String> {
     complete_oauth("/auth/oauth/google/complete", handoff_code).await
+}
+
+/// Завершает регистрацию через Google после отдельных юридических подтверждений.
+pub(crate) async fn register_with_google_oauth(
+    request: OAuthRegistrationRequest,
+) -> Result<OAuthCompletion, String> {
+    let response = post_json("/auth/oauth/google/register", &request).await?;
+    save_response(response).map(OAuthCompletion::Authenticated)
 }
 
 /// Завершает привязку аккаунта через OAuth с кодом handoff от бэкенда.

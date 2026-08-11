@@ -77,7 +77,8 @@ pub(super) async fn registered_user(
             nickname: "voice_owner".to_owned(),
             email: "voice-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await

@@ -6,6 +6,7 @@ pub(super) mod auth_header;
 pub(super) mod auth_hero;
 pub(super) mod auth_metric;
 pub(super) mod forgot_password_panel;
+pub(super) mod legal_acceptance_fields;
 pub(super) mod login_panel;
 pub(super) mod provider_button;
 pub(super) mod register_panel;

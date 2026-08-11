@@ -10,7 +10,8 @@ async fn owner_can_create_server_invite() {
             nickname: "invite_owner".to_owned(),
             email: "invite-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -58,7 +59,8 @@ async fn owner_can_load_server_invite_info() {
             nickname: "info_owner".to_owned(),
             email: "info-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -107,7 +109,8 @@ async fn non_owner_can_load_server_invite_info() {
             nickname: "info_owner_two".to_owned(),
             email: "info-owner-two@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -118,7 +121,8 @@ async fn non_owner_can_load_server_invite_info() {
             nickname: "info_guest".to_owned(),
             email: "info-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -163,7 +167,8 @@ async fn non_member_accepts_invite_and_server_appears_in_list() {
             nickname: "accept_owner".to_owned(),
             email: "accept-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -174,7 +179,8 @@ async fn non_member_accepts_invite_and_server_appears_in_list() {
             nickname: "accept_guest".to_owned(),
             email: "accept-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -232,7 +238,8 @@ async fn member_can_leave_joined_server() {
             nickname: "leave_owner".to_owned(),
             email: "leave-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -243,7 +250,8 @@ async fn member_can_leave_joined_server() {
             nickname: "leave_guest".to_owned(),
             email: "leave-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -291,7 +299,8 @@ async fn owner_cannot_leave_owned_server() {
             nickname: "leave_blocked_owner".to_owned(),
             email: "leave-blocked-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -323,7 +332,8 @@ async fn active_member_accept_returns_already_member_without_new_usage() {
             nickname: "already_owner".to_owned(),
             email: "already-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -371,7 +381,8 @@ async fn accept_invite_accepts_compact_uuid_code() {
             nickname: "compact_accept_owner".to_owned(),
             email: "compact-accept-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -382,7 +393,8 @@ async fn accept_invite_accepts_compact_uuid_code() {
             nickname: "compact_accept_guest".to_owned(),
             email: "compact-accept-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -429,7 +441,8 @@ async fn invite_info_accepts_compact_uuid_code() {
             nickname: "compact_owner".to_owned(),
             email: "compact-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await

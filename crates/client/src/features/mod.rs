@@ -9,6 +9,7 @@ pub(crate) mod autostart;
 pub(crate) mod camera;
 pub(crate) mod clipboard;
 pub(crate) mod landing;
+pub(crate) mod legal;
 pub(crate) mod microphone;
 pub(crate) mod network;
 pub(crate) mod notifications;

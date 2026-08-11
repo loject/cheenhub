@@ -23,8 +23,8 @@ pub struct Model {
     pub registered_at: DateTimeUtc,
     /// Last successful nickname update timestamp.
     pub nickname_updated_at: DateTimeUtc,
-    // TODO: accepted_terms_at всегда совпадает с временем регистрации, может удалить?
-    /// Mandatory policy acceptance timestamp.
+    /// Время исходного подтверждения правил из базовой схемы.
+    /// Версии документов фиксируются отдельно в `legal_acceptances`.
     pub accepted_terms_at: DateTimeUtc,
     /// Last account update timestamp.
     pub updated_at: DateTimeUtc,

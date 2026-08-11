@@ -21,6 +21,7 @@ use uuid::Uuid;
 mod avatar;
 mod google;
 mod google_native;
+mod legal;
 mod linked_accounts;
 mod oauth;
 mod refresh;
@@ -57,13 +58,13 @@ pub(crate) async fn register_with_user_agent(
     request: RegisterRequest,
     user_agent: Option<String>,
 ) -> Result<AuthResponse, AuthError> {
-    let valid = validation::register(
-        request.nickname,
-        request.email,
-        request.password,
-        request.accepts_policies,
-    )
-    .map_err(|message| AuthError::BadRequest(message.to_owned()))?;
+    legal::validate_registration_acceptance(
+        request.accepts_terms,
+        request.accepts_personal_data,
+        "password",
+    )?;
+    let valid = validation::register(request.nickname, request.email, request.password)
+        .map_err(|message| AuthError::BadRequest(message.to_owned()))?;
     let password_hash = password::hash_password(&valid.password)?;
     let now = Utc::now();
     let user = state
@@ -73,10 +74,12 @@ pub(crate) async fn register_with_user_agent(
             valid.email,
             valid.email_normalized,
             Some(password_hash),
+            legal::current_acceptance("password"),
             now,
         )
         .await
         .map_err(map_insert_user_error)?;
+    legal::log_recorded(&user.id, "password");
 
     create_auth_response(state, &user, user_agent.as_deref()).await
 }

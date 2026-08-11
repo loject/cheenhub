@@ -11,7 +11,8 @@ async fn owner_can_list_members_with_invite_used_to_join() {
             nickname: "member_settings_owner".to_owned(),
             email: "member-settings-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -22,7 +23,8 @@ async fn owner_can_list_members_with_invite_used_to_join() {
             nickname: "member_settings_guest".to_owned(),
             email: "member-settings-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -89,7 +91,8 @@ async fn kicked_member_cannot_rejoin_until_exclusion_expires() {
             nickname: "member_kick_owner".to_owned(),
             email: "member-kick-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -100,7 +103,8 @@ async fn kicked_member_cannot_rejoin_until_exclusion_expires() {
             nickname: "member_kick_guest".to_owned(),
             email: "member-kick-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await

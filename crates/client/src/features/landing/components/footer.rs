@@ -2,6 +2,7 @@
 
 use dioxus::prelude::*;
 
+use crate::Route;
 use crate::features::landing::components::logo_icon::LogoIcon;
 use crate::features::landing::components::todo_button::TodoButton;
 
@@ -22,7 +23,9 @@ pub(crate) fn Footer() -> Element {
                     TodoButton { class_name: "bg-transparent p-0 transition hover:text-zinc-400", label: "RuTube" }
                     TodoButton { class_name: "bg-transparent p-0 transition hover:text-zinc-400", label: "Telegram" }
                     span { class: "text-zinc-800", "·" }
-                    span { "Разработка публично" }
+                    Link { to: Route::Terms {}, class: "transition hover:text-zinc-400", "Соглашение" }
+                    Link { to: Route::PrivacyPolicy {}, class: "transition hover:text-zinc-400", "Политика данных" }
+                    Link { to: Route::PersonalDataConsent {}, class: "transition hover:text-zinc-400", "Согласие на обработку данных" }
                 }
             }
         }

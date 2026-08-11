@@ -2069,6 +2069,10 @@ html,
   margin-bottom: 1.75rem;
 }
 
+.mb-8 {
+  margin-bottom: 2rem;
+}
+
 .mb-\[1px\] {
   margin-bottom: 1px;
 }
@@ -2847,6 +2851,14 @@ html,
   resize: both;
 }
 
+.scroll-mt-24 {
+  scroll-margin-top: 6rem;
+}
+
+.list-disc {
+  list-style-type: disc;
+}
+
 .grid-cols-1 {
   grid-template-columns: repeat(1, minmax(0, 1fr));
 }
@@ -2951,6 +2963,15 @@ html,
   gap: 2rem;
 }
 
+.gap-x-5 {
+  -moz-column-gap: 1.25rem;
+       column-gap: 1.25rem;
+}
+
+.gap-y-2 {
+  row-gap: 0.5rem;
+}
+
 .-space-x-1 > :not([hidden]) ~ :not([hidden]) {
   --tw-space-x-reverse: 0;
   margin-right: calc(-0.25rem * var(--tw-space-x-reverse));
@@ -2997,6 +3018,12 @@ html,
   --tw-space-y-reverse: 0;
   margin-top: calc(2rem * calc(1 - var(--tw-space-y-reverse)));
   margin-bottom: calc(2rem * var(--tw-space-y-reverse));
+}
+
+.space-y-9 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(2.25rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(2.25rem * var(--tw-space-y-reverse));
 }
 
 .divide-y > :not([hidden]) ~ :not([hidden]) {
@@ -4076,6 +4103,10 @@ html,
   padding-bottom: 1.5rem;
 }
 
+.pb-8 {
+  padding-bottom: 2rem;
+}
+
 .pb-\[108px\] {
   padding-bottom: 108px;
 }
@@ -4304,6 +4335,10 @@ html,
 
 .tracking-\[-0\.02em\] {
   letter-spacing: -0.02em;
+}
+
+.tracking-\[-0\.035em\] {
+  letter-spacing: -0.035em;
 }
 
 .tracking-\[-0\.03em\] {
@@ -4578,6 +4613,18 @@ html,
 .text-zinc-950 {
   --tw-text-opacity: 1;
   color: rgb(9 9 11 / var(--tw-text-opacity, 1));
+}
+
+.underline {
+  text-decoration-line: underline;
+}
+
+.decoration-zinc-700 {
+  text-decoration-color: #3f3f46;
+}
+
+.underline-offset-2 {
+  text-underline-offset: 2px;
 }
 
 .accent-blue-500 {
@@ -5527,6 +5574,14 @@ html,
   .voice-control-button span {
     transition-duration: 0.01ms;
   }
+}
+
+.marker\:text-zinc-600 *::marker {
+  color: rgb(82 82 91 );
+}
+
+.marker\:text-zinc-600::marker {
+  color: rgb(82 82 91 );
 }
 
 .selection\:bg-zinc-700\/40 *::-moz-selection {
@@ -6512,6 +6567,11 @@ html,
     padding-right: 1.5rem;
   }
 
+  .sm\:py-14 {
+    padding-top: 3.5rem;
+    padding-bottom: 3.5rem;
+  }
+
   .sm\:text-left {
     text-align: left;
   }
@@ -6519,6 +6579,11 @@ html,
   .sm\:text-3xl {
     font-size: 1.875rem;
     line-height: 2.25rem;
+  }
+
+  .sm\:text-4xl {
+    font-size: 2.25rem;
+    line-height: 2.5rem;
   }
 
   .sm\:text-5xl {

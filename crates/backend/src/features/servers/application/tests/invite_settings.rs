@@ -11,7 +11,8 @@ async fn owner_can_list_server_invites_with_joined_members() {
             nickname: "invite_settings_owner".to_owned(),
             email: "invite-settings-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -22,7 +23,8 @@ async fn owner_can_list_server_invites_with_joined_members() {
             nickname: "invite_settings_guest".to_owned(),
             email: "invite-settings-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -86,7 +88,8 @@ async fn non_owner_cannot_manage_server_invites() {
             nickname: "invite_settings_real_owner".to_owned(),
             email: "invite-settings-real-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -97,7 +100,8 @@ async fn non_owner_cannot_manage_server_invites() {
             nickname: "invite_settings_not_owner".to_owned(),
             email: "invite-settings-not-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -135,7 +139,8 @@ async fn revoked_invite_cannot_be_loaded_or_accepted() {
             nickname: "invite_revoke_owner".to_owned(),
             email: "invite-revoke-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -146,7 +151,8 @@ async fn revoked_invite_cannot_be_loaded_or_accepted() {
             nickname: "invite_revoke_guest".to_owned(),
             email: "invite-revoke-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -205,7 +211,8 @@ async fn kicked_invite_member_stays_in_invite_history() {
             nickname: "invite_kick_owner".to_owned(),
             email: "invite-kick-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -216,7 +223,8 @@ async fn kicked_invite_member_stays_in_invite_history() {
             nickname: "invite_kick_guest".to_owned(),
             email: "invite-kick-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await

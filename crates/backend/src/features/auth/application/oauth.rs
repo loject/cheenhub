@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use super::google::{GoogleIdentity, exchange_google_code, frontend_oauth_url, google_config};
 use super::linked_accounts::linked_account;
-use super::{create_auth_response, expired_session, map_insert_user_error, me};
+use super::{create_auth_response, expired_session, legal, map_insert_user_error, me};
 use crate::features::auth::domain::*;
 use crate::features::auth::error::AuthError;
 use crate::features::auth::security::refresh_token;
@@ -195,11 +195,11 @@ pub(crate) async fn register_with_google_oauth(
     request: OAuthRegistrationRequest,
     user_agent: Option<String>,
 ) -> Result<AuthResponse, AuthError> {
-    if !request.accepts_policies {
-        return Err(AuthError::BadRequest(
-            "Нужно принять правила сервиса.".to_owned(),
-        ));
-    }
+    legal::validate_registration_acceptance(
+        request.accepts_terms,
+        request.accepts_personal_data,
+        "google_oauth",
+    )?;
     let nickname = request.nickname.trim().to_owned();
     if !validation::is_valid_nickname(&nickname) {
         return Err(AuthError::BadRequest(
@@ -255,10 +255,12 @@ pub(crate) async fn register_with_google_oauth(
             intent.email.clone(),
             intent.email.to_lowercase(),
             None,
+            legal::current_acceptance("google_oauth"),
             now,
         )
         .await
         .map_err(map_insert_user_error)?;
+    legal::log_recorded(&user.id, "google_oauth");
     state
         .auth_store
         .insert_oauth_account(

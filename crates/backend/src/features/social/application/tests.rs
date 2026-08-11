@@ -421,7 +421,8 @@ async fn registered_user(
             nickname: nickname.to_owned(),
             email: email.to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await

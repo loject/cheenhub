@@ -10,7 +10,8 @@ async fn invite_info_rejects_missing_invalid_and_expired_invites() {
             nickname: "invite_error_owner".to_owned(),
             email: "invite-error-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -61,7 +62,8 @@ async fn accept_invite_rejects_missing_invalid_expired_and_exhausted_invites() {
             nickname: "accept_error_owner".to_owned(),
             email: "accept-error-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -72,7 +74,8 @@ async fn accept_invite_rejects_missing_invalid_expired_and_exhausted_invites() {
             nickname: "accept_error_first_guest".to_owned(),
             email: "accept-error-first-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -83,7 +86,8 @@ async fn accept_invite_rejects_missing_invalid_expired_and_exhausted_invites() {
             nickname: "accept_error_second_guest".to_owned(),
             email: "accept-error-second-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -169,7 +173,8 @@ async fn member_can_join_again_after_soft_leave() {
             nickname: "rejoin_owner".to_owned(),
             email: "rejoin-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -180,7 +185,8 @@ async fn member_can_join_again_after_soft_leave() {
             nickname: "rejoin_guest".to_owned(),
             email: "rejoin-guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -242,7 +248,8 @@ async fn non_owner_cannot_create_server_invite() {
             nickname: "owner_user".to_owned(),
             email: "owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -253,7 +260,8 @@ async fn non_owner_cannot_create_server_invite() {
             nickname: "guest_user".to_owned(),
             email: "guest@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
@@ -295,7 +303,8 @@ async fn create_invite_rejects_invalid_settings() {
             nickname: "invalid_invite_owner".to_owned(),
             email: "invalid-invite-owner@example.com".to_owned(),
             password: "password123".to_owned(),
-            accepts_policies: true,
+            accepts_terms: true,
+            accepts_personal_data: true,
         },
     )
     .await
