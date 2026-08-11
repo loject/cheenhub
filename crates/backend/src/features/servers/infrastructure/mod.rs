@@ -2,10 +2,12 @@
 
 mod entities;
 mod in_memory;
+mod in_memory_invites;
 mod in_memory_roles;
 mod in_memory_rooms;
 mod postgres;
 mod postgres_conversions;
+mod postgres_invites;
 mod postgres_roles;
 mod postgres_rooms;
 
@@ -21,6 +23,23 @@ use crate::features::servers::domain::{
 
 pub(crate) use in_memory::InMemoryServerStore;
 pub(crate) use postgres::PostgresServerStore;
+
+/// Результат атомарной попытки принять приглашение сервера.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AcceptInviteOutcome {
+    /// Пользователь добавлен, использование приглашения записано.
+    Accepted,
+    /// Пользователь уже является активным участником сервера.
+    AlreadyMember,
+    /// Приглашение не существует.
+    NotFound,
+    /// Срок действия приглашения истёк.
+    Expired,
+    /// Приглашение было отозвано.
+    Revoked,
+    /// Лимит использований приглашения исчерпан.
+    Exhausted,
+}
 
 /// Граница хранилища серверов.
 #[async_trait]
@@ -125,15 +144,16 @@ pub(crate) trait ServerStore: Send + Sync {
         now: chrono::DateTime<Utc>,
     ) -> anyhow::Result<Option<ServerMemberExclusion>>;
 
-    /// Вставляет строку об успешном использовании приглашения.
-    async fn insert_server_invite_use(
+    /// Считает успешные использования приглашения.
+    async fn count_server_invite_uses(&self, invite_id: &Uuid) -> anyhow::Result<u32>;
+
+    /// Атомарно проверяет приглашение и записывает членство вместе с использованием.
+    async fn accept_server_invite(
         &self,
         invite_id: &Uuid,
         user_id: &Uuid,
-    ) -> anyhow::Result<ServerInviteUse>;
-
-    /// Считает успешные использования приглашения.
-    async fn count_server_invite_uses(&self, invite_id: &Uuid) -> anyhow::Result<u32>;
+        now: chrono::DateTime<Utc>,
+    ) -> anyhow::Result<AcceptInviteOutcome>;
 
     /// Вставляет новую комнату сервера.
     async fn insert_server_room(

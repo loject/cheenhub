@@ -14,12 +14,12 @@ use crate::features::servers::domain::{
     Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
     ServerRole, ServerRoom,
 };
-use crate::features::servers::infrastructure::ServerStore;
 use crate::features::servers::infrastructure::entities::{
     server_invite_uses, server_invites, server_member_exclusions, server_members, servers,
 };
 use crate::features::servers::infrastructure::postgres_roles;
 use crate::features::servers::infrastructure::postgres_rooms;
+use crate::features::servers::infrastructure::{AcceptInviteOutcome, ServerStore};
 
 /// Postgres-backed server storage.
 pub(crate) struct PostgresServerStore {
@@ -337,23 +337,6 @@ impl ServerStore for PostgresServerStore {
             .map(Into::into))
     }
 
-    async fn insert_server_invite_use(
-        &self,
-        invite_id: &Uuid,
-        user_id: &Uuid,
-    ) -> anyhow::Result<ServerInviteUse> {
-        let model = server_invite_uses::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            invite_id: Set(*invite_id),
-            user_id: Set(*user_id),
-            used_at: Set(Utc::now()),
-        }
-        .insert(&self.database)
-        .await?;
-
-        Ok(model.into())
-    }
-
     async fn count_server_invite_uses(&self, invite_id: &Uuid) -> anyhow::Result<u32> {
         let count = server_invite_uses::Entity::find()
             .filter(server_invite_uses::Column::InviteId.eq(*invite_id))
@@ -361,6 +344,15 @@ impl ServerStore for PostgresServerStore {
             .await?;
 
         Ok(count.try_into().unwrap_or(u32::MAX))
+    }
+
+    async fn accept_server_invite(
+        &self,
+        invite_id: &Uuid,
+        user_id: &Uuid,
+        now: chrono::DateTime<Utc>,
+    ) -> anyhow::Result<AcceptInviteOutcome> {
+        super::postgres_invites::accept_server_invite(&self.database, invite_id, user_id, now).await
     }
 
     async fn insert_server_room(

@@ -10,7 +10,7 @@ use crate::features::servers::domain::{
     Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
     ServerRole, ServerRoom,
 };
-use crate::features::servers::infrastructure::ServerStore;
+use crate::features::servers::infrastructure::{AcceptInviteOutcome, ServerStore};
 /// In-memory-хранилище серверов для локального запуска и тестов.
 #[derive(Default)]
 pub(crate) struct InMemoryServerStore {
@@ -20,10 +20,10 @@ pub(crate) struct InMemoryServerStore {
 #[derive(Default)]
 pub(super) struct InMemoryState {
     servers: Vec<Server>,
-    invites: Vec<ServerInvite>,
-    members: Vec<ServerMember>,
+    pub(super) invites: Vec<ServerInvite>,
+    pub(super) members: Vec<ServerMember>,
     exclusions: Vec<ServerMemberExclusion>,
-    invite_uses: Vec<ServerInviteUse>,
+    pub(super) invite_uses: Vec<ServerInviteUse>,
     pub(super) rooms: Vec<ServerRoom>,
     pub(super) roles: Vec<ServerRole>,
     /// (server_id, user_id, role_id, granted_by_user_id)
@@ -330,24 +330,6 @@ impl ServerStore for InMemoryServerStore {
             .cloned())
     }
 
-    async fn insert_server_invite_use(
-        &self,
-        invite_id: &Uuid,
-        user_id: &Uuid,
-    ) -> anyhow::Result<ServerInviteUse> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let invite_use = ServerInviteUse {
-            id: Uuid::new_v4(),
-            invite_id: *invite_id,
-            user_id: *user_id,
-            used_at: Utc::now(),
-        };
-
-        state.invite_uses.push(invite_use.clone());
-
-        Ok(invite_use)
-    }
-
     async fn count_server_invite_uses(&self, invite_id: &Uuid) -> anyhow::Result<u32> {
         let state = self.state.lock().map_err(|_| poisoned())?;
 
@@ -358,6 +340,15 @@ impl ServerStore for InMemoryServerStore {
             .count()
             .try_into()
             .unwrap_or(u32::MAX))
+    }
+
+    async fn accept_server_invite(
+        &self,
+        invite_id: &Uuid,
+        user_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<AcceptInviteOutcome> {
+        super::in_memory_invites::accept_server_invite(&self.state, invite_id, user_id, now)
     }
 
     async fn insert_server_room(

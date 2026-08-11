@@ -2,8 +2,8 @@
 
 use cheenhub_contracts::realtime::ServerRolePermission;
 use cheenhub_contracts::rest::{
-    AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,
-    CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
+    CreateServerInviteRequest, CreateServerInviteResponse, CreateServerRequest,
+    CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
     ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse, ServerInviteSummary,
     ServerRoomKind, UpdateServerRoomRequest, UpdateServerRoomResponse,
 };
@@ -20,12 +20,14 @@ use self::support::{
     server_for_member_or_owner, server_summary, user_has_server_permission,
 };
 
+mod accept_invite;
 mod invite_settings;
 mod members_settings;
 mod profile;
 mod role_settings;
 mod support;
 
+pub(crate) use accept_invite::accept_invite;
 pub(crate) use invite_settings::{
     kick_server_invite_member, list_server_invites, revoke_server_invite,
 };
@@ -223,109 +225,6 @@ pub(crate) async fn invite_info(
             expires_at: invite.expires_at.map(|expires_at| expires_at.to_rfc3339()),
         },
         server: server_summary(state, &server, &user_id, is_member).await,
-    })
-}
-
-/// Принимает приглашение сервера для текущего пользователя.
-pub(crate) async fn accept_invite(
-    state: &AppState,
-    access_token: &str,
-    code: String,
-) -> Result<AcceptServerInviteResponse, ServerError> {
-    let user = auth_application::me(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
-    let user_id = Uuid::parse_str(&user.id)
-        .map_err(|_| ServerError::Unauthorized("Сессия истекла. Войди снова.".to_owned()))?;
-    let code = Uuid::parse_str(&code)
-        .map_err(|_| ServerError::BadRequest("Приглашение не найдено.".to_owned()))?;
-    let Some(invite) = state
-        .server_store
-        .find_server_invite(&code)
-        .await
-        .map_err(ServerError::Internal)?
-    else {
-        return Err(ServerError::NotFound("Приглашение не найдено.".to_owned()));
-    };
-
-    if invite
-        .expires_at
-        .is_some_and(|expires_at| expires_at <= Utc::now())
-    {
-        return Err(ServerError::BadRequest(
-            "Срок действия приглашения истек.".to_owned(),
-        ));
-    }
-    if invite.revoked_at.is_some() {
-        return Err(ServerError::BadRequest("Приглашение отозвано.".to_owned()));
-    }
-
-    let Some(server) = state
-        .server_store
-        .find_server(&invite.server_id)
-        .await
-        .map_err(ServerError::Internal)?
-    else {
-        return Err(ServerError::NotFound("Сервер не найден.".to_owned()));
-    };
-
-    let is_owner = server.owner_user_id == user_id;
-    let active_member = state
-        .server_store
-        .find_active_server_member(&server.id, &user_id)
-        .await
-        .map_err(ServerError::Internal)?
-        .is_some();
-
-    if is_owner || active_member {
-        return Ok(AcceptServerInviteResponse {
-            server: server_summary(state, &server, &user_id, true).await,
-            already_member: true,
-        });
-    }
-    if let Some(exclusion) = state
-        .server_store
-        .find_active_server_member_exclusion(&server.id, &user_id, Utc::now())
-        .await
-        .map_err(ServerError::Internal)?
-    {
-        tracing::warn!(
-            server_id = %server.id,
-            user_id = %user_id,
-            excluded_until = %exclusion.expires_at,
-            "blocked invite acceptance for excluded server member"
-        );
-        return Err(ServerError::BadRequest(format!(
-            "Ты временно исключен с сервера до {}.",
-            exclusion.expires_at.to_rfc3339()
-        )));
-    }
-
-    let uses = state
-        .server_store
-        .count_server_invite_uses(&invite.id)
-        .await
-        .map_err(ServerError::Internal)?;
-    if invite.max_uses.is_some_and(|max_uses| uses >= max_uses) {
-        return Err(ServerError::BadRequest(
-            "Лимит использований приглашения исчерпан.".to_owned(),
-        ));
-    }
-
-    state
-        .server_store
-        .insert_server_member(&server.id, &user_id)
-        .await
-        .map_err(ServerError::Internal)?;
-    state
-        .server_store
-        .insert_server_invite_use(&invite.id, &user_id)
-        .await
-        .map_err(ServerError::Internal)?;
-
-    Ok(AcceptServerInviteResponse {
-        server: server_summary(state, &server, &user_id, true).await,
-        already_member: false,
     })
 }
 

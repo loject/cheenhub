@@ -25,6 +25,7 @@ use crate::features::text_chat::infrastructure::InMemoryTextChatStore;
 use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
 
+mod invite_atomicity;
 mod invite_errors;
 mod invite_permissions;
 mod invite_settings;
