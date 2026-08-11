@@ -15,7 +15,6 @@ use super::{
 use crate::features::auth::email::tests::TestAuthMailer;
 use crate::features::auth::error::AuthError;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
-use crate::features::auth::infrastructure::RefreshReuseOutcome;
 use crate::features::auth::security::{keys::AuthKeys, refresh_token};
 use crate::features::servers::infrastructure::InMemoryServerStore;
 use crate::features::social::infrastructure::InMemorySocialStore;
@@ -23,10 +22,12 @@ use crate::features::text_chat::infrastructure::InMemoryTextChatStore;
 use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
 
+mod atomicity;
 mod avatar;
 mod nickname;
 mod oauth;
 mod password;
+mod realtime;
 mod sessions;
 
 #[tokio::test]
@@ -62,6 +63,7 @@ async fn concurrent_refresh_preserves_winning_rotation() {
 async fn explicitly_revoked_refresh_is_not_reported_as_reuse() {
     let state = state();
     let auth = registered_user(&state, "revoked_refresh", "revoked-refresh@example.com").await;
+    let realtime_disconnect = realtime::register_test_session(&state, &auth).await;
     logout(
         &state,
         LogoutRequest {
@@ -70,6 +72,7 @@ async fn explicitly_revoked_refresh_is_not_reported_as_reuse() {
     )
     .await
     .expect("logout should revoke session");
+    assert!(*realtime_disconnect.borrow());
 
     let error = refresh_with_user_agent(
         &state,
@@ -103,18 +106,25 @@ async fn refresh_replay_outside_grace_revokes_session() {
     )
     .await
     .expect("first refresh should rotate token");
+    let realtime_disconnect = realtime::register_test_session(&state, &auth).await;
     let detection_time = Utc::now() + Duration::seconds(10);
 
-    let outcome = state
-        .auth_store
-        .revoke_session_on_refresh_reuse(
-            &refresh_token::hash(&auth.refresh_token),
-            detection_time,
-            detection_time - Duration::seconds(5),
-        )
-        .await
-        .expect("reuse detection should succeed");
-    assert_eq!(outcome, RefreshReuseOutcome::ReusedAndRevoked);
+    let error = super::refresh::classify_inactive_token_for_test(
+        &state,
+        &refresh_token::hash(&auth.refresh_token),
+        detection_time,
+        detection_time - Duration::seconds(5),
+    )
+    .await
+    .expect("reuse detection should return an auth rejection");
+    assert!(matches!(
+        error,
+        AuthError::RefreshRejected {
+            reason: crate::features::auth::error::RefreshRejection::Reused,
+            ..
+        }
+    ));
+    assert!(*realtime_disconnect.borrow());
 
     let error = refresh_with_user_agent(
         &state,
@@ -285,6 +295,7 @@ async fn expired_password_reset_token_is_rejected() {
 async fn password_reset_revokes_existing_sessions() {
     let (state, mailer) = state_with_mailer();
     let auth = registered_user(&state, "revoke_reset", "revoke-reset@example.com").await;
+    let realtime_disconnect = realtime::register_test_session(&state, &auth).await;
     request_password_reset(
         &state,
         PasswordResetRequest {
@@ -304,6 +315,7 @@ async fn password_reset_revokes_existing_sessions() {
     )
     .await
     .expect("password reset confirm should succeed");
+    assert!(*realtime_disconnect.borrow());
 
     let current_user = me(&state, &auth.access_token).await;
     assert!(current_user.is_err());
@@ -456,7 +468,7 @@ pub(super) fn state_with_mailer() -> (AppState, Arc<TestAuthMailer>) {
     (state, mailer)
 }
 
-fn reset_token_from_mailer(mailer: &TestAuthMailer) -> String {
+pub(super) fn reset_token_from_mailer(mailer: &TestAuthMailer) -> String {
     let sent = mailer.sent();
     sent.last()
         .and_then(|email| email.reset_url.split("token=").nth(1))

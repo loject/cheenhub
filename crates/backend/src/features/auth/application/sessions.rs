@@ -12,6 +12,17 @@ use crate::features::auth::error::AuthError;
 use crate::features::auth::security::user_agent;
 use crate::state::AppState;
 
+/// Проверяет активность auth-сессии после регистрации realtime-транспорта.
+pub(crate) async fn auth_session_is_active(
+    state: &AppState,
+    session_id: &Uuid,
+) -> anyhow::Result<bool> {
+    state
+        .auth_store
+        .session_is_active(session_id, Utc::now())
+        .await
+}
+
 /// Возвращает активные auth-сессии текущего пользователя.
 #[cfg(test)]
 pub(crate) async fn active_sessions(
@@ -71,10 +82,15 @@ pub(crate) async fn revoke_current_user_session(
         .map_err(AuthError::Internal)?;
 
     if revoked {
+        let disconnected_realtime_sessions = state
+            .realtime_hub
+            .disconnect_auth_session(&target_session_id)
+            .await;
         tracing::info!(
             user_id = %user.id,
             session_id = %target_session_id,
             current = target_session_id == current_session_id,
+            disconnected_realtime_sessions,
             "revoked auth session from security settings"
         );
     } else {
@@ -99,9 +115,12 @@ pub(crate) async fn revoke_current_user_sessions(
         .revoke_user_sessions(&user.id, Utc::now())
         .await
         .map_err(AuthError::Internal)?;
+    let disconnected_realtime_sessions =
+        state.realtime_hub.disconnect_user_sessions(&user.id).await;
     tracing::info!(
         user_id = %user.id,
         current_session_id = %current_session_id,
+        disconnected_realtime_sessions,
         "revoked all auth sessions from security settings"
     );
 

@@ -135,11 +135,13 @@ pub(crate) async fn complete_google_oauth(
                 .user_id
                 .ok_or_else(|| AuthError::Internal(anyhow!("oauth auth handoff without user")))?;
             let user = find_user_or_expired(state, &user_id).await?;
-            state
-                .auth_store
-                .consume_oauth_handoff(&handoff.id, now)
-                .await
-                .map_err(AuthError::Internal)?;
+            consume_handoff_once(
+                state,
+                &handoff.id,
+                now,
+                "Вход через Google истек. Попробуй еще раз.",
+            )
+            .await?;
             Ok(OAuthCompleteResponse::Authenticated {
                 auth: create_auth_response(state, &user, user_agent.as_deref()).await?,
             })
@@ -154,11 +156,13 @@ pub(crate) async fn complete_google_oauth(
                 .await
                 .map_err(AuthError::Internal)?
                 .ok_or_else(|| AuthError::Internal(anyhow!("linked oauth account missing")))?;
-            state
-                .auth_store
-                .consume_oauth_handoff(&handoff.id, now)
-                .await
-                .map_err(AuthError::Internal)?;
+            consume_handoff_once(
+                state,
+                &handoff.id,
+                now,
+                "Вход через Google истек. Попробуй еще раз.",
+            )
+            .await?;
             Ok(OAuthCompleteResponse::Linked {
                 account: linked_account(&account),
             })
@@ -242,6 +246,8 @@ pub(crate) async fn register_with_google_oauth(
         ));
     }
 
+    consume_handoff_once(state, &handoff.id, now, "Регистрация через Google истекла.").await?;
+
     let user = state
         .auth_store
         .insert_user(
@@ -270,13 +276,26 @@ pub(crate) async fn register_with_google_oauth(
         .consume_oauth_registration_intent(&intent_id, now)
         .await
         .map_err(AuthError::Internal)?;
-    state
-        .auth_store
-        .consume_oauth_handoff(&handoff.id, now)
-        .await
-        .map_err(AuthError::Internal)?;
-
     create_auth_response(state, &user, user_agent.as_deref()).await
+}
+
+async fn consume_handoff_once(
+    state: &AppState,
+    handoff_id: &Uuid,
+    now: chrono::DateTime<Utc>,
+    rejected_message: &'static str,
+) -> Result<(), AuthError> {
+    if !state
+        .auth_store
+        .consume_oauth_handoff(handoff_id, now)
+        .await
+        .map_err(AuthError::Internal)?
+    {
+        warn!(%handoff_id, "oauth handoff lost an atomic consumption race");
+        return Err(AuthError::Unauthorized(rejected_message.to_owned()));
+    }
+    info!(%handoff_id, "atomically consumed oauth handoff");
+    Ok(())
 }
 
 async fn google_oauth_callback(

@@ -226,14 +226,14 @@ pub(super) fn revoke_refresh_session(
     state: &Mutex<InMemoryState>,
     token_hash: &str,
     now: DateTime<Utc>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<Uuid>> {
     let mut state = state.lock().map_err(|_| poisoned())?;
     let Some(refresh_token) = state
         .refresh_tokens
         .iter_mut()
         .find(|refresh_token| refresh_token.token_hash == token_hash)
     else {
-        return Ok(());
+        return Ok(None);
     };
     refresh_token.revoked_at = Some(now);
     let session_id = refresh_token.session_id;
@@ -246,7 +246,7 @@ pub(super) fn revoke_refresh_session(
         session.revoked_at = Some(now);
     }
 
-    Ok(())
+    Ok(Some(session_id))
 }
 
 pub(super) fn revoke_session_on_refresh_reuse(
@@ -296,7 +296,7 @@ pub(super) fn revoke_session_on_refresh_reuse(
         refresh_token.revoked_at = Some(now);
     }
 
-    Ok(RefreshReuseOutcome::ReusedAndRevoked)
+    Ok(RefreshReuseOutcome::ReusedAndRevoked { session_id })
 }
 
 fn poisoned() -> anyhow::Error {

@@ -82,7 +82,10 @@ pub(crate) enum RefreshReuseOutcome {
     /// Токен отозван обычным завершением сессии и не является доказательством reuse.
     SessionRevoked,
     /// Токен повторно использован за пределами защитного окна; вся сессия отозвана.
-    ReusedAndRevoked,
+    ReusedAndRevoked {
+        /// Отозванная auth-сессия, realtime-транспорты которой нужно завершить.
+        session_id: Uuid,
+    },
 }
 
 /// Граница хранилища аутентификации.
@@ -138,14 +141,6 @@ pub(crate) trait AuthStore: Send + Sync {
         user_ids: &[Uuid],
     ) -> anyhow::Result<HashMap<Uuid, Uuid>>;
 
-    /// Обновляет хеш пароля пользователя.
-    async fn update_user_password_hash(
-        &self,
-        user_id: &Uuid,
-        password_hash: String,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<()>;
-
     /// Обновляет хеш пароля пользователя и записывает трассировку смены пароля профиля.
     async fn change_user_password(
         &self,
@@ -184,11 +179,14 @@ pub(crate) trait AuthStore: Send + Sync {
     ) -> anyhow::Result<RotateRefreshOutcome>;
 
     /// Отзывает refresh-токен и принадлежащую ему сессию.
+    ///
+    /// Возвращает идентификатор найденной auth-сессии, чтобы вызывающий код
+    /// мог завершить связанные с ней realtime-транспорты.
     async fn revoke_refresh_session(
         &self,
         token_hash: &str,
         now: DateTime<Utc>,
-    ) -> anyhow::Result<()>;
+    ) -> anyhow::Result<Option<Uuid>>;
 
     /// Обнаруживает повторное использование уже ротированного/отозванного
     /// refresh-токена и в этом случае принудительно отзывает всю сессию.
@@ -246,10 +244,18 @@ pub(crate) trait AuthStore: Send + Sync {
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()>;
 
-    /// Потребляет активный токен сброса пароля.
-    async fn consume_password_reset_token(
+    /// Находит активный токен сброса перед затратным хешированием нового пароля.
+    async fn find_active_password_reset_token(
         &self,
         token_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<PasswordResetToken>>;
+
+    /// Атомарно потребляет токен, меняет пароль и отзывает остальные reset-токены пользователя.
+    async fn complete_password_reset(
+        &self,
+        token_hash: &str,
+        password_hash: String,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<PasswordResetToken>>;
 
@@ -320,12 +326,14 @@ pub(crate) trait AuthStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<OAuthHandoff>>;
 
-    /// Помечает OAuth-handoff фронтенда как использованный.
+    /// Атомарно помечает активный OAuth-handoff фронтенда как использованный.
+    ///
+    /// Возвращает `true`, только если текущий вызов первым потребил handoff.
     async fn consume_oauth_handoff(
         &self,
         handoff_id: &Uuid,
         now: DateTime<Utc>,
-    ) -> anyhow::Result<()>;
+    ) -> anyhow::Result<bool>;
 
     /// Вставляет краткоживущее намерение регистрации OAuth.
     async fn insert_oauth_registration_intent(

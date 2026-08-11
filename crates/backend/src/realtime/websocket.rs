@@ -1,6 +1,6 @@
 //! Адаптер WebSocket-резерва для realtime.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::{Context, anyhow};
 use axum::{
@@ -14,14 +14,19 @@ use cheenhub_contracts::media::MediaDatagram;
 use cheenhub_contracts::realtime::{RealtimeEnvelope, RealtimeModule};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
+use tokio::time::timeout;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::features::auth::application as auth_application;
 use crate::state::AppState;
 
 use super::protocol::validate_envelope;
 use super::sink::{DatagramSink, EnvelopeSink, WebSocketOutbound};
 use super::{control, datagram, router};
+
+const AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(10);
+const OUTBOUND_QUEUE_CAPACITY: usize = 256;
 
 /// Обновляет HTTP-запрос до соединения WebSocket-резерва для realtime.
 pub(crate) async fn upgrade(
@@ -35,7 +40,7 @@ pub(crate) async fn upgrade(
 
 async fn handle_socket(state: AppState, session_id: Uuid, socket: WebSocket) {
     let (mut socket_sender, mut socket_receiver) = socket.split();
-    let (outbound_sender, mut outbound_receiver) = mpsc::unbounded_channel();
+    let (outbound_sender, mut outbound_receiver) = mpsc::channel(OUTBOUND_QUEUE_CAPACITY);
     let envelope_sink = EnvelopeSink::websocket(outbound_sender.clone());
     let writer_session_id = session_id;
     let writer = tokio::spawn(async move {
@@ -69,26 +74,71 @@ async fn handle_socket(state: AppState, session_id: Uuid, socket: WebSocket) {
     let mut stream_ids = HashMap::new();
     let mut last_slow_datagram_dispatch_warning_at = None;
     let result = async {
-        let envelope = read_next_envelope(&mut socket_receiver)
-            .await?
-            .ok_or_else(|| anyhow!("websocket closed before authentication"))?;
-        let Some(user) = control::authenticate_session(&state, &envelope_sink, envelope).await?
-        else {
+        let authentication = async {
+            let envelope = read_next_envelope(&mut socket_receiver)
+                .await?
+                .ok_or_else(|| anyhow!("websocket closed before authentication"))?;
+            control::authenticate_session(&state, &envelope_sink, envelope).await
+        };
+        let user = match timeout(AUTHENTICATION_TIMEOUT, authentication).await {
+            Ok(result) => result?,
+            Err(_) => {
+                warn!(
+                    %session_id,
+                    timeout_seconds = AUTHENTICATION_TIMEOUT.as_secs(),
+                    "истёк таймаут первичной аутентификации WebSocket realtime-сессии"
+                );
+                return Ok(());
+            }
+        };
+        let Some(authenticated) = user else {
             info!(%session_id, "closing unauthorized WebSocket realtime fallback session");
             return Ok(());
         };
+        let user = authenticated.user;
+        let auth_session_id = authenticated.auth_session_id;
         let user_id = Uuid::parse_str(&user.id).context("authenticated user id is not a uuid")?;
-        info!(%session_id, %user_id, "authenticated WebSocket realtime fallback session");
-        state
+        info!(%session_id, %user_id, %auth_session_id, "authenticated WebSocket realtime fallback session");
+        let mut disconnect = state
             .realtime_hub
             .register_session(
                 session_id,
                 user_id,
+                auth_session_id,
                 DatagramSink::websocket(outbound_sender.clone()),
             )
             .await;
+        if !auth_application::auth_session_is_active(&state, &auth_session_id).await? {
+            warn!(
+                %session_id,
+                %user_id,
+                %auth_session_id,
+                "closing WebSocket realtime transport whose auth session was revoked during registration"
+            );
+            state
+                .realtime_hub
+                .disconnect_auth_session(&auth_session_id)
+                .await;
+            return Ok(());
+        }
 
-        while let Some(message) = socket_receiver.next().await {
+        loop {
+            let message = tokio::select! {
+                biased;
+                _ = disconnect.changed() => {
+                    info!(
+                        %session_id,
+                        %user_id,
+                        %auth_session_id,
+                        "closing WebSocket realtime transport after auth session revocation"
+                    );
+                    break;
+                }
+                message = socket_receiver.next() => message,
+            };
+            let Some(message) = message else {
+                break;
+            };
             match message.context("failed to read WebSocket realtime message")? {
                 Message::Text(text) => {
                     let envelope = serde_json::from_slice::<RealtimeEnvelope>(text.as_bytes())

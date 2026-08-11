@@ -157,21 +157,6 @@ impl AuthStore for PostgresAuthStore {
             .collect())
     }
 
-    async fn update_user_password_hash(
-        &self,
-        user_id: &Uuid,
-        password_hash: String,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
-        super::postgres_password_reset::update_user_password_hash(
-            &self.database,
-            user_id,
-            password_hash,
-            now,
-        )
-        .await
-    }
-
     async fn change_user_password(
         &self,
         user_id: &Uuid,
@@ -241,7 +226,7 @@ impl AuthStore for PostgresAuthStore {
         &self,
         token_hash: &str,
         now: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<Uuid>> {
         super::postgres_refresh::revoke_refresh_session(&self.database, token_hash, now).await
     }
 
@@ -321,14 +306,29 @@ impl AuthStore for PostgresAuthStore {
         .await
     }
 
-    async fn consume_password_reset_token(
+    async fn find_active_password_reset_token(
         &self,
         token_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<crate::features::auth::domain::PasswordResetToken>> {
-        super::postgres_password_reset::consume_password_reset_token(
+        super::postgres_password_reset::find_active_password_reset_token(
             &self.database,
             token_hash,
+            now,
+        )
+        .await
+    }
+
+    async fn complete_password_reset(
+        &self,
+        token_hash: &str,
+        password_hash: String,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<crate::features::auth::domain::PasswordResetToken>> {
+        super::postgres_password_reset::complete_password_reset(
+            &self.database,
+            token_hash,
+            password_hash,
             now,
         )
         .await
@@ -446,7 +446,7 @@ impl AuthStore for PostgresAuthStore {
         &self,
         handoff_id: &Uuid,
         now: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<bool> {
         super::postgres_oauth::consume_oauth_handoff(&self.database, handoff_id, now).await
     }
 

@@ -195,17 +195,16 @@ pub(super) fn consume_oauth_handoff(
     state: &Mutex<InMemoryState>,
     handoff_id: &Uuid,
     now: DateTime<Utc>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let mut state = state.lock().map_err(|_| super::in_memory::poisoned())?;
-    if let Some(handoff) = state
-        .oauth_handoffs
-        .iter_mut()
-        .find(|handoff| handoff.id == *handoff_id)
-    {
-        handoff.consumed_at = Some(now);
-    }
+    let Some(handoff) = state.oauth_handoffs.iter_mut().find(|handoff| {
+        handoff.id == *handoff_id && handoff.consumed_at.is_none() && handoff.expires_at > now
+    }) else {
+        return Ok(false);
+    };
+    handoff.consumed_at = Some(now);
 
-    Ok(())
+    Ok(true)
 }
 
 pub(super) fn insert_oauth_registration_intent(

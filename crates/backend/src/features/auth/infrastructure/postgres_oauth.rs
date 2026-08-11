@@ -183,17 +183,16 @@ pub(super) async fn consume_oauth_handoff(
     database: &DatabaseConnection,
     handoff_id: &Uuid,
     now: DateTime<Utc>,
-) -> anyhow::Result<()> {
-    if let Some(handoff) = oauth_handoffs::Entity::find_by_id(*handoff_id)
-        .one(database)
-        .await?
-    {
-        let mut handoff = handoff.into_active_model();
-        handoff.consumed_at = Set(Some(now));
-        handoff.update(database).await?;
-    }
+) -> anyhow::Result<bool> {
+    let result = oauth_handoffs::Entity::update_many()
+        .col_expr(oauth_handoffs::Column::ConsumedAt, Expr::value(now))
+        .filter(oauth_handoffs::Column::Id.eq(*handoff_id))
+        .filter(oauth_handoffs::Column::ConsumedAt.is_null())
+        .filter(oauth_handoffs::Column::ExpiresAt.gt(now))
+        .exec(database)
+        .await?;
 
-    Ok(())
+    Ok(result.rows_affected == 1)
 }
 
 pub(super) async fn insert_oauth_registration_intent(

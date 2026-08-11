@@ -85,8 +85,16 @@ async fn classify_inactive_token(
         .await
         .map_err(AuthError::Internal)?;
     Ok(match outcome {
-        RefreshReuseOutcome::ReusedAndRevoked => {
-            tracing::warn!("detected refresh token reuse; revoked the entire session");
+        RefreshReuseOutcome::ReusedAndRevoked { session_id } => {
+            let disconnected_realtime_sessions = state
+                .realtime_hub
+                .disconnect_auth_session(&session_id)
+                .await;
+            tracing::warn!(
+                %session_id,
+                disconnected_realtime_sessions,
+                "detected refresh token reuse; revoked the entire session"
+            );
             reused_error()
         }
         RefreshReuseOutcome::ConcurrentRotation => {
@@ -102,6 +110,16 @@ async fn classify_inactive_token(
             invalid_error()
         }
     })
+}
+
+#[cfg(test)]
+pub(super) async fn classify_inactive_token_for_test(
+    state: &AppState,
+    token_hash: &str,
+    now: chrono::DateTime<Utc>,
+    concurrent_rotation_after: chrono::DateTime<Utc>,
+) -> Result<AuthError, AuthError> {
+    classify_inactive_token(state, token_hash, now, concurrent_rotation_after).await
 }
 
 async fn classify_lost_rotation(
@@ -122,8 +140,20 @@ async fn classify_lost_rotation(
             tracing::info!(%session_id, %user_id, "lost concurrent auth refresh rotation; preserving session during grace window");
             concurrent_error()
         }
-        RefreshReuseOutcome::ReusedAndRevoked => {
-            tracing::warn!(%session_id, %user_id, "lost auth refresh rotation outside grace window; revoked session");
+        RefreshReuseOutcome::ReusedAndRevoked {
+            session_id: revoked_session_id,
+        } => {
+            let disconnected_realtime_sessions = state
+                .realtime_hub
+                .disconnect_auth_session(&revoked_session_id)
+                .await;
+            tracing::warn!(
+                %session_id,
+                %user_id,
+                %revoked_session_id,
+                disconnected_realtime_sessions,
+                "lost auth refresh rotation outside grace window; revoked session"
+            );
             reused_error()
         }
         RefreshReuseOutcome::SessionRevoked => {

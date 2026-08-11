@@ -5,9 +5,9 @@ use std::time::Duration;
 use cheenhub_contracts::realtime::{RealtimeKind, RealtimeModule};
 use futures_util::future::join_all;
 use serde::Serialize;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 use tokio::time::Instant;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -38,7 +38,9 @@ struct RealtimeStream {
 struct RealtimeSession {
     id: Uuid,
     user_id: Uuid,
+    auth_session_id: Uuid,
     datagrams: DatagramSink,
+    disconnect: watch::Sender<bool>,
 }
 
 struct DatagramFanoutOutcome {
@@ -56,6 +58,23 @@ pub(crate) struct RealtimeRecipient {
 }
 
 impl RealtimeHub {
+    /// Регистрирует тестовый WebSocket-транспорт без сетевого соединения.
+    #[cfg(test)]
+    pub(crate) async fn register_test_session(
+        &self,
+        user_id: Uuid,
+        auth_session_id: Uuid,
+    ) -> watch::Receiver<bool> {
+        let (outbound, _receiver) = tokio::sync::mpsc::channel(1);
+        self.register_session(
+            Uuid::new_v4(),
+            user_id,
+            auth_session_id,
+            DatagramSink::websocket(outbound),
+        )
+        .await
+    }
+
     /// Регистрирует надежный поток, привязанный к модулю.
     pub(crate) async fn register_stream(
         &self,
@@ -77,23 +96,31 @@ impl RealtimeHub {
         debug!(%stream_id, ?module, %user_id, "registered realtime stream");
     }
 
-    /// Регистрирует аутентифицированную сессию WebTransport для вещания датаграмм.
+    /// Регистрирует аутентифицированную realtime-сессию для вещания датаграмм.
+    ///
+    /// Возвращает сигнал, который транспорт обязан обработать завершением
+    /// соединения после отзыва связанной auth-сессии.
     pub(crate) async fn register_session(
         &self,
         session_id: Uuid,
         user_id: Uuid,
+        auth_session_id: Uuid,
         datagrams: DatagramSink,
-    ) {
+    ) -> watch::Receiver<bool> {
         let mut sessions = self.sessions.lock().await;
-        if sessions.iter().any(|session| session.id == session_id) {
-            return;
+        if let Some(session) = sessions.iter().find(|session| session.id == session_id) {
+            return session.disconnect.subscribe();
         }
+        let (disconnect, receiver) = watch::channel(false);
         sessions.push(RealtimeSession {
             id: session_id,
             user_id,
+            auth_session_id,
             datagrams,
+            disconnect,
         });
-        debug!(%session_id, %user_id, "registered realtime session");
+        debug!(%session_id, %user_id, %auth_session_id, "registered realtime session");
+        receiver
     }
 
     /// Удаляет аутентифицированную сессию WebTransport.
@@ -101,6 +128,56 @@ impl RealtimeHub {
         let mut sessions = self.sessions.lock().await;
         sessions.retain(|session| session.id != session_id);
         debug!(%session_id, "unregistered realtime session");
+    }
+
+    /// Завершает все realtime-транспорты, связанные с одной auth-сессией.
+    pub(crate) async fn disconnect_auth_session(&self, auth_session_id: &Uuid) -> usize {
+        let mut sessions = self.sessions.lock().await;
+        let mut disconnected = 0;
+        sessions.retain(|session| {
+            if session.auth_session_id != *auth_session_id {
+                return true;
+            }
+
+            disconnected += 1;
+            let _ = session.disconnect.send(true);
+            false
+        });
+        if disconnected > 0 {
+            info!(
+                %auth_session_id,
+                realtime_session_count = disconnected,
+                "disconnecting realtime transports for revoked auth session"
+            );
+        } else {
+            debug!(%auth_session_id, "revoked auth session has no active realtime transports");
+        }
+        disconnected
+    }
+
+    /// Завершает все realtime-транспорты активных auth-сессий пользователя.
+    pub(crate) async fn disconnect_user_sessions(&self, user_id: &Uuid) -> usize {
+        let mut sessions = self.sessions.lock().await;
+        let mut disconnected = 0;
+        sessions.retain(|session| {
+            if session.user_id != *user_id {
+                return true;
+            }
+
+            disconnected += 1;
+            let _ = session.disconnect.send(true);
+            false
+        });
+        if disconnected > 0 {
+            info!(
+                %user_id,
+                realtime_session_count = disconnected,
+                "disconnecting realtime transports for revoked user sessions"
+            );
+        } else {
+            debug!(%user_id, "user has no active realtime transports to disconnect");
+        }
+        disconnected
     }
 
     /// Отправляет одну сырую датаграмму выбранным активным сессиям.

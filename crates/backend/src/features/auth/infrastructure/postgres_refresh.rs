@@ -304,7 +304,7 @@ pub(super) async fn revoke_session_on_refresh_reuse(
         .exec(database)
         .await?;
 
-    Ok(RefreshReuseOutcome::ReusedAndRevoked)
+    Ok(RefreshReuseOutcome::ReusedAndRevoked { session_id })
 }
 
 pub(super) async fn record_session_user_agent<C: ConnectionTrait>(
@@ -348,13 +348,13 @@ pub(super) async fn revoke_refresh_session(
     database: &DatabaseConnection,
     token_hash: &str,
     now: DateTime<Utc>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<Uuid>> {
     let Some(refresh_token) = refresh_tokens::Entity::find()
         .filter(refresh_tokens::Column::TokenHash.eq(token_hash))
         .one(database)
         .await?
     else {
-        return Ok(());
+        return Ok(None);
     };
     let session_id = refresh_token.session_id;
 
@@ -374,5 +374,5 @@ pub(super) async fn revoke_refresh_session(
         session.update(database).await?;
     }
 
-    Ok(())
+    Ok(Some(session_id))
 }

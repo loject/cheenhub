@@ -2,7 +2,7 @@
 
 use cheenhub_contracts::rest::{LoginRequest, RegisterRequest, SessionDeviceKind};
 
-use super::state;
+use super::{realtime::register_test_session, state};
 use crate::features::auth::application::sessions::active_sessions;
 use crate::features::auth::application::{
     active_sessions_with_user_agent, login_with_user_agent, me, register, register_with_user_agent,
@@ -118,10 +118,12 @@ async fn revoke_specific_session_invalidates_that_access_token_and_keeps_current
         .find(|session| !session.current)
         .map(|session| session.id.clone())
         .expect("other session should be present");
+    let revoked_realtime_disconnect = register_test_session(&state, &first_auth).await;
 
     revoke_current_user_session(&state, &current_auth.access_token, &revoked_session_id)
         .await
         .expect("specific session revoke should succeed");
+    assert!(*revoked_realtime_disconnect.borrow());
 
     let revoked_user = me(&state, &first_auth.access_token).await;
     assert!(revoked_user.is_err());
@@ -145,10 +147,12 @@ async fn revoke_all_sessions_invalidates_current_access_token() {
     )
     .await
     .expect("registration should succeed");
+    let realtime_disconnect = register_test_session(&state, &auth).await;
 
     revoke_current_user_sessions(&state, &auth.access_token)
         .await
         .expect("all session revoke should succeed");
+    assert!(*realtime_disconnect.borrow());
 
     let current_user = me(&state, &auth.access_token).await;
     assert!(current_user.is_err());

@@ -38,7 +38,8 @@ pub(crate) use oauth::{
     start_google_oauth,
 };
 pub(crate) use sessions::{
-    active_sessions_with_user_agent, revoke_current_user_session, revoke_current_user_sessions,
+    active_sessions_with_user_agent, auth_session_is_active, revoke_current_user_session,
+    revoke_current_user_sessions,
 };
 
 /// Регистрирует пользователя и создает аутентифицированную сессию.
@@ -177,13 +178,27 @@ pub(crate) async fn confirm_password_reset(
         .map_err(|message| AuthError::BadRequest(message.to_owned()))?;
     let now = Utc::now();
     let token_hash = refresh_token::hash(&valid.token);
+    if state
+        .auth_store
+        .find_active_password_reset_token(&token_hash, now)
+        .await
+        .map_err(AuthError::Internal)?
+        .is_none()
+    {
+        tracing::warn!("rejected invalid password reset token");
+        return Err(AuthError::Unauthorized(
+            "Ссылка для сброса пароля истекла или уже использована.".to_owned(),
+        ));
+    }
+
+    let password_hash = password::hash_password(&valid.new_password)?;
     let Some(reset_token) = state
         .auth_store
-        .consume_password_reset_token(&token_hash, now)
+        .complete_password_reset(&token_hash, password_hash, now)
         .await
         .map_err(AuthError::Internal)?
     else {
-        tracing::warn!("rejected invalid password reset token");
+        tracing::warn!("password reset token lost an atomic consumption race");
         return Err(AuthError::Unauthorized(
             "Ссылка для сброса пароля истекла или уже использована.".to_owned(),
         ));
@@ -191,21 +206,18 @@ pub(crate) async fn confirm_password_reset(
     tracing::info!(
         reset_token_id = %reset_token.id,
         user_id = %reset_token.user_id,
-        "consumed password reset token"
+        "atomically consumed password reset token and changed password"
     );
 
-    let password_hash = password::hash_password(&valid.new_password)?;
-    state
-        .auth_store
-        .update_user_password_hash(&reset_token.user_id, password_hash, now)
-        .await
-        .map_err(AuthError::Internal)?;
-    state
-        .auth_store
-        .revoke_user_sessions(&reset_token.user_id, now)
-        .await
-        .map_err(AuthError::Internal)?;
-    tracing::info!(user_id = %reset_token.user_id, "changed password through reset flow");
+    let disconnected_realtime_sessions = state
+        .realtime_hub
+        .disconnect_user_sessions(&reset_token.user_id)
+        .await;
+    tracing::info!(
+        user_id = %reset_token.user_id,
+        disconnected_realtime_sessions,
+        "changed password through reset flow"
+    );
 
     Ok(())
 }
@@ -222,11 +234,24 @@ pub(crate) async fn refresh_with_user_agent(
 /// Аннулирует текущую сессию refresh-токена.
 pub(crate) async fn logout(state: &AppState, request: LogoutRequest) -> Result<(), AuthError> {
     let token_hash = refresh_token::hash(&request.refresh_token);
-    state
+    let auth_session_id = state
         .auth_store
         .revoke_refresh_session(&token_hash, Utc::now())
         .await
         .map_err(AuthError::Internal)?;
+    let Some(auth_session_id) = auth_session_id else {
+        tracing::debug!("logout token has no matching auth session");
+        return Ok(());
+    };
+    let disconnected_realtime_sessions = state
+        .realtime_hub
+        .disconnect_auth_session(&auth_session_id)
+        .await;
+    tracing::info!(
+        %auth_session_id,
+        disconnected_realtime_sessions,
+        "revoked auth session during logout"
+    );
 
     Ok(())
 }

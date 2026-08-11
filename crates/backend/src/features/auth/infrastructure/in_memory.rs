@@ -146,20 +146,6 @@ impl AuthStore for InMemoryAuthStore {
             .collect())
     }
 
-    async fn update_user_password_hash(
-        &self,
-        user_id: &Uuid,
-        password_hash: String,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
-        super::in_memory_password_reset::update_user_password_hash(
-            &self.state,
-            user_id,
-            password_hash,
-            now,
-        )
-    }
-
     async fn change_user_password(
         &self,
         user_id: &Uuid,
@@ -226,7 +212,7 @@ impl AuthStore for InMemoryAuthStore {
         &self,
         token_hash: &str,
         now: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<Uuid>> {
         refresh::revoke_refresh_session(&self.state, token_hash, now)
     }
 
@@ -288,23 +274,42 @@ impl AuthStore for InMemoryAuthStore {
         &self,
         user_id: &Uuid,
         token_hash: String,
-        _now: DateTime<Utc>,
+        now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
         super::in_memory_password_reset::insert_password_reset_token(
             &self.state,
             user_id,
             token_hash,
+            now,
             expires_at,
         )
     }
 
-    async fn consume_password_reset_token(
+    async fn find_active_password_reset_token(
         &self,
         token_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<PasswordResetToken>> {
-        super::in_memory_password_reset::consume_password_reset_token(&self.state, token_hash, now)
+        super::in_memory_password_reset::find_active_password_reset_token(
+            &self.state,
+            token_hash,
+            now,
+        )
+    }
+
+    async fn complete_password_reset(
+        &self,
+        token_hash: &str,
+        password_hash: String,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<PasswordResetToken>> {
+        super::in_memory_password_reset::complete_password_reset(
+            &self.state,
+            token_hash,
+            password_hash,
+            now,
+        )
     }
 
     async fn insert_oauth_state(
@@ -413,7 +418,7 @@ impl AuthStore for InMemoryAuthStore {
         &self,
         handoff_id: &Uuid,
         now: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<bool> {
         super::in_memory_oauth::consume_oauth_handoff(&self.state, handoff_id, now)
     }
 
