@@ -146,12 +146,19 @@ jobs:
           printf -v quoted_deploy_git_sha '%q' "${DEPLOY_GIT_SHA}"
           printf -v quoted_env_file '%q' "${ENV_FILE}"
           printf -v quoted_ghcr_username '%q' "${GHCR_USERNAME}"
-          printf -v quoted_ghcr_read_token '%q' "${GHCR_READ_TOKEN}"
+
+          if [[ -n "${GHCR_READ_TOKEN}" ]]; then
+            printf '%s' "${GHCR_READ_TOKEN}" | ssh \
+              -i ~/.ssh/cheenhub_deploy_key \
+              -p "${DEPLOY_SSH_PORT}" \
+              "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
+              "docker login ghcr.io -u ${quoted_ghcr_username} --password-stdin"
+          fi
 
           ssh -i ~/.ssh/cheenhub_deploy_key \
             -p "${DEPLOY_SSH_PORT}" \
             "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
-            "BACKEND_IMAGE_REF=${quoted_backend_image_ref} WEB_IMAGE_REF=${quoted_web_image_ref} COMPOSE_PROJECT_DIR=${quoted_compose_project_dir} DEPLOY_GIT_REF=${quoted_deploy_git_ref} DEPLOY_GIT_SHA=${quoted_deploy_git_sha} ENV_FILE=${quoted_env_file} GHCR_USERNAME=${quoted_ghcr_username} GHCR_READ_TOKEN=${quoted_ghcr_read_token} bash -s" <<'REMOTE'
+            "BACKEND_IMAGE_REF=${quoted_backend_image_ref} WEB_IMAGE_REF=${quoted_web_image_ref} COMPOSE_PROJECT_DIR=${quoted_compose_project_dir} DEPLOY_GIT_REF=${quoted_deploy_git_ref} DEPLOY_GIT_SHA=${quoted_deploy_git_sha} ENV_FILE=${quoted_env_file} bash -s" <<'REMOTE'
           set -euo pipefail
 
           cd "${COMPOSE_PROJECT_DIR}"
@@ -168,10 +175,6 @@ jobs:
 
           git fetch --prune origin "${DEPLOY_GIT_REF}"
           git checkout --detach "${DEPLOY_GIT_SHA}"
-
-          if [[ -n "${GHCR_READ_TOKEN}" ]]; then
-            printf '%s\n' "${GHCR_READ_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
-          fi
 
           CHEENHUB_BACKEND_IMAGE_REF="${BACKEND_IMAGE_REF}" docker compose \
             --env-file "${ENV_FILE}" \
