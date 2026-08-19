@@ -23,6 +23,10 @@ mod android_launcher_icons {
     include!("../../build_support/android_launcher_icons.rs");
 }
 
+mod android_network_security {
+    include!("../../build_support/android_network_security.rs");
+}
+
 mod android_platform_verifier {
     include!("../../build_support/android_platform_verifier.rs");
 }
@@ -30,7 +34,9 @@ mod android_platform_verifier {
 fn main() {
     file_lines::check_workspace_file_lines();
     validate_platform_features();
+    dotenvy::from_filename("../../.env").ok();
     android_launcher_icons::install();
+    android_network_security::install();
     android_platform_verifier::install();
     prepare_installer_payload();
 
@@ -38,8 +44,6 @@ fn main() {
     println!("cargo:rerun-if-changed=../../{DEFAULT_DEV_CERT_PATH}");
     println!("cargo:rerun-if-changed=../../{DEFAULT_DEV_KEY_PATH}");
     println!("cargo:rerun-if-env-changed=CHEENHUB_APP_VERSION");
-
-    dotenvy::from_filename("../../.env").ok();
 
     let app_version = resolve_app_version();
     println!("cargo:rustc-env=CHEENHUB_APP_VERSION={app_version}");

@@ -1,5 +1,6 @@
 //! Рендерер аватара пользователя.
 
+use dioxus::logger::tracing::warn;
 use dioxus::prelude::*;
 
 struct AvatarPalette {
@@ -70,8 +71,12 @@ pub(crate) fn UserAvatar(
     class: String,
     avatar_seed: Option<String>,
 ) -> Element {
-    let mut image_failed = use_signal(|| false);
-    let show_image = avatar_url.is_some() && !image_failed();
+    let mut failed_avatar_url = use_signal(|| None::<String>);
+    let avatar_url = avatar_url.filter(|url| !url.trim().is_empty());
+    let show_image = avatar_url
+        .as_ref()
+        .is_some_and(|url| failed_avatar_url().as_ref() != Some(url));
+    let image_url = show_image.then(|| avatar_url.unwrap_or_default());
     let avatar_seed = avatar_seed
         .or_else(|| try_consume_context::<AvatarSeed>().map(|seed| (seed.0)()))
         .unwrap_or_else(|| nickname.clone());
@@ -83,12 +88,15 @@ pub(crate) fn UserAvatar(
 
     rsx! {
         div { class: "user-avatar {class} relative overflow-hidden",
-            if show_image {
+            if let Some(image_url) = image_url {
                 img {
                     class: "absolute inset-0 h-full w-full object-cover",
-                    src: avatar_url.unwrap_or_default(),
+                    src: image_url.clone(),
                     alt: "{nickname}",
-                    onerror: move |_| image_failed.set(true),
+                    onerror: move |_| {
+                        warn!("avatar image load failed; showing generated fallback");
+                        failed_avatar_url.set(Some(image_url.clone()));
+                    },
                 }
             } else {
                 div {
