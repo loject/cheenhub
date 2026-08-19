@@ -12,7 +12,7 @@ use crate::features::app::components::app_sidebar_footer::AppSidebarFooter;
 use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::realtime::RealtimeHandle;
-use crate::features::voice_chat::VoiceConnectionHandle;
+use crate::features::voice_chat::{DirectCallHeader, VoiceConnectionHandle};
 
 use super::api;
 use super::direct_message_voice_button::DirectMessageVoiceButton;
@@ -23,6 +23,7 @@ use super::friends_section::{FriendMenuRequest, FriendsSection};
 use super::presentation::load_social_overview;
 use super::realtime::{subscribe_social_events, subscribe_social_ready_events};
 use super::requests_section::FriendRequestsSection;
+use super::voice_target::direct_message_voice_target;
 
 /// Рендерит рабочую область друзей и личных сообщений.
 #[component]
@@ -286,7 +287,11 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
                         }
                         div { class: "min-w-0 flex-1",
                             h2 { class: "truncate text-[15px] font-semibold text-zinc-50", "{conversation.friend_nickname}" }
-                            p { class: "text-[12px] text-zinc-500", "Личные сообщения" }
+                            DirectCallHeader {
+                                conversation_id: conversation.id.clone(),
+                                peer_user_id: conversation.friend_user_id.clone(),
+                                target: direct_message_voice_target(&conversation),
+                            }
                         }
                     } else {
                         div { class: "min-w-0 flex-1",

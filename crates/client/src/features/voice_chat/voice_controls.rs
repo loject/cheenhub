@@ -5,7 +5,6 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 
 use crate::features::app::current_user::CurrentUserContext;
-use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::camera::{CameraHandle, CameraStatus};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
@@ -27,7 +26,6 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
     let microphone = use_context::<MicrophoneHandle>();
     let camera = use_context::<CameraHandle>();
     let screen_share = use_context::<ScreenShareHandle>();
-    let playback = use_context::<AudioPlaybackHandle>();
     let realtime_handle = use_context::<RealtimeHandle>();
     let current_user_id = use_context::<CurrentUserContext>().require_user().id;
     let participant_video = use_context::<ParticipantVideoHandle>();
@@ -41,7 +39,6 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
         .is_some_and(|active| active.matches(&target));
     let is_leaving = matches!(state, VoiceConnectionState::Disconnecting { .. });
     let media_controls_enabled = matches!(state, VoiceConnectionState::Connected { .. });
-    let output_muted = playback.is_muted();
     let microphone_live = matches!(microphone_status, MicrophoneStatus::Live);
     let microphone_starting = matches!(microphone_status, MicrophoneStatus::Starting);
     let microphone_speaking = microphone_live && microphone_level.active;
@@ -57,11 +54,6 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
         MicrophoneStatus::Live => "Выключить микрофон".to_owned(),
         MicrophoneStatus::PermissionDenied => "Доступ к микрофону запрещен".to_owned(),
         MicrophoneStatus::Error(message) => message.clone(),
-    };
-    let microphone_label = if output_muted {
-        "Включить микрофон (включит звук)".to_owned()
-    } else {
-        microphone_label
     };
     let camera_label = match camera_status {
         CameraStatus::Idle => "Включить камеру",
@@ -90,7 +82,6 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
     } else {
         "Выйти из голосовой комнаты"
     };
-    let unmute_playback = playback.clone();
     let microphone_realtime_handle = realtime_handle.clone();
     let microphone_server_id = target.server_id.clone();
     let microphone_room_id = target.room_id.clone();
@@ -124,9 +115,6 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                     onclick: move |_| {
                         if !media_controls_enabled {
                             return;
-                        }
-                        if output_muted {
-                            unmute_playback.set_muted(false);
                         }
                         microphone_uplink::toggle(
                             toggle_microphone.clone(),

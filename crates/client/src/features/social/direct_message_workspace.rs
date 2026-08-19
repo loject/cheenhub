@@ -93,11 +93,6 @@ pub(crate) fn DirectMessageWorkspace(
     let voice_surface_visible = displayed_voice_surface();
     let voice_layout_active = selected_voice_active || voice_surface_visible;
     let direct_chat_open_attr = if direct_chat_open() { "true" } else { "false" };
-    let direct_chat_label = if direct_chat_open() {
-        "Скрыть текстовый чат"
-    } else {
-        "Открыть текстовый чат"
-    };
     let chat_resizing = embedded_chat_resize_origin().is_some();
     let chat_resizing_attr = if chat_resizing { "true" } else { "false" };
     let workspace_style = embedded_chat_height_px()
@@ -325,6 +320,19 @@ pub(crate) fn DirectMessageWorkspace(
                     DirectMessageVoiceSurface {
                         conversation: conversation.clone(),
                         exiting: voice_surface_exiting(),
+                        chat_open: direct_chat_open(),
+                        on_toggle_chat: {
+                            let conversation_id = conversation.id.clone();
+                            move |_| {
+                                let next_chat_open = !direct_chat_open();
+                                debug!(
+                                    %conversation_id,
+                                    chat_open = next_chat_open,
+                                    "toggling direct call chat from more menu"
+                                );
+                                direct_chat_open.set(next_chat_open);
+                            }
+                        },
                     }
                 }
                 div {
@@ -462,33 +470,6 @@ pub(crate) fn DirectMessageWorkspace(
                                     on_overview_changed.call(());
                                 }
                             },
-                        }
-                    }
-                }
-                if voice_layout_active {
-                    button {
-                        r#type: "button",
-                        class: "chat-corner-toggle group absolute bottom-5 left-5 z-40 flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/85 text-zinc-300 shadow-[0_18px_50px_rgba(0,0,0,0.38)] backdrop-blur-xl transition-[background-color,border-color,color,transform,box-shadow] duration-[180ms] hover:-translate-y-0.5 hover:border-accent/35 hover:bg-accent/10 hover:text-zinc-100 active:scale-[0.96]",
-                        "aria-label": direct_chat_label,
-                        "aria-expanded": direct_chat_open_attr,
-                        onclick: {
-                            let conversation_id = conversation.id.clone();
-                            move |_| {
-                                let next_chat_open = !direct_chat_open();
-                                debug!(
-                                    %conversation_id,
-                                    chat_open = next_chat_open,
-                                    "toggling direct call chat"
-                                );
-                                direct_chat_open.set(next_chat_open);
-                            }
-                        },
-                        span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-0 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 shadow-[0_16px_40px_rgba(0,0,0,.45)] backdrop-blur-xl transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100",
-                            span { class: "chat-tooltip-open", "Открыть текстовый чат" }
-                            span { class: "chat-tooltip-close", "Скрыть текстовый чат" }
-                        }
-                        svg { class: "h-4 w-4 transition-transform duration-200", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "m18 15-6-6-6 6" }
                         }
                     }
                 }

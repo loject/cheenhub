@@ -23,23 +23,11 @@ use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
 pub(crate) enum VoiceParticipantGridStatus {
     /// The room is waiting for the join request to complete.
     Connecting,
-    /// Принятый личный звонок подготавливает медиасоединение.
-    DirectCallConnecting {
-        /// Имя собеседника.
-        peer_nickname: String,
-    },
     /// The room is joined but has no visible participants.
     Empty,
     /// The latest room-scoped voice action failed.
     Error {
         /// User-facing error message.
-        message: String,
-    },
-    /// Медиасоединение личного звонка завершилось ошибкой.
-    DirectCallError {
-        /// Имя собеседника.
-        peer_nickname: String,
-        /// Сообщение об ошибке.
         message: String,
     },
 }
@@ -76,9 +64,6 @@ pub(crate) fn VoiceParticipantGrid(
             "Подключаемся к голосовой комнате",
             "Ждём ответ сервера и готовим список участников.",
         ),
-        VoiceParticipantGridStatus::DirectCallConnecting { peer_nickname } => {
-            ("Соединяем звонок", peer_nickname.as_str())
-        }
         VoiceParticipantGridStatus::Empty => (
             "В голосовой комнате пока никого нет",
             "Войди в комнату, чтобы появиться в списке участников.",
@@ -87,26 +72,13 @@ pub(crate) fn VoiceParticipantGrid(
             "Не удалось подключиться к голосовой комнате",
             "Сервер не ответил или вернул ошибку. Можно попробовать подключиться ещё раз.",
         ),
-        VoiceParticipantGridStatus::DirectCallError { .. } => (
-            "Не удалось соединить звонок",
-            "Проверь соединение и попробуй ещё раз.",
-        ),
     };
     let error_message = match &status {
-        VoiceParticipantGridStatus::Error { message }
-        | VoiceParticipantGridStatus::DirectCallError { message, .. } => Some(message.as_str()),
+        VoiceParticipantGridStatus::Error { message } => Some(message.as_str()),
         _ => None,
     };
-    let is_connecting = matches!(
-        status,
-        VoiceParticipantGridStatus::Connecting
-            | VoiceParticipantGridStatus::DirectCallConnecting { .. }
-    );
-    let can_retry = matches!(
-        status,
-        VoiceParticipantGridStatus::Error { .. }
-            | VoiceParticipantGridStatus::DirectCallError { .. }
-    );
+    let is_connecting = matches!(status, VoiceParticipantGridStatus::Connecting);
+    let can_retry = matches!(status, VoiceParticipantGridStatus::Error { .. });
     let kick_user_id = open_user_menu().map(|m| m.user_id.clone());
     let kick_server_id = server_id.clone();
     let kick_room_id = room_id.clone();

@@ -5,7 +5,7 @@ use dioxus::prelude::*;
 
 use cheenhub_contracts::realtime::{DirectCallEndReason, DirectCallState};
 
-use crate::features::voice_chat::{DirectCallHandle, DirectCallUiState};
+use crate::features::voice_chat::{DirectCallHandle, DirectCallUiState, VoiceConnectionHandle};
 
 use super::voice_target::direct_message_voice_target;
 
@@ -13,6 +13,7 @@ use super::voice_target::direct_message_voice_target;
 #[component]
 pub(crate) fn DirectMessageVoiceButton(conversation: DmConversationSummary) -> Element {
     let direct_call = use_context::<DirectCallHandle>();
+    let voice = use_context::<VoiceConnectionHandle>();
     let target = direct_message_voice_target(&conversation);
     let conversation_id = conversation.id.clone();
     let call = direct_call.call_for_conversation(&conversation_id);
@@ -24,6 +25,10 @@ pub(crate) fn DirectMessageVoiceButton(conversation: DmConversationSummary) -> E
     let active = call
         .as_ref()
         .is_some_and(|call| call.state == DirectCallState::Active);
+    let media_active = voice
+        .state()
+        .active_target()
+        .is_some_and(|active_target| active_target.matches(&target));
     let ringing = call
         .as_ref()
         .is_some_and(|call| call.state == DirectCallState::Ringing);
@@ -58,12 +63,16 @@ pub(crate) fn DirectMessageVoiceButton(conversation: DmConversationSummary) -> E
     let disabled = busy || starting || active || ringing && !incoming || another_call_open;
     let action_call = direct_call.clone();
 
+    if active || media_active {
+        return rsx! {};
+    }
+
     rsx! {
         button {
             r#type: "button",
             disabled,
             class: if highlighted {
-                "flex min-h-12 shrink-0 items-center gap-2 rounded-xl bg-emerald-500/12 px-3 text-[12px] font-medium text-emerald-100 shadow-[0_0_0_1px_rgba(52,211,153,.28)] transition-[scale,background-color,box-shadow,opacity] duration-150 ease-out active:scale-[0.96] disabled:cursor-wait disabled:opacity-70 max-[420px]:w-12 max-[420px]:justify-center max-[420px]:px-0"
+                "flex min-h-12 shrink-0 items-center gap-2 rounded-xl bg-blue-500/14 px-3 text-[12px] font-medium text-blue-100 shadow-[0_0_0_1px_rgba(96,165,250,.30)] transition-[scale,background-color,box-shadow,opacity] duration-150 ease-out active:scale-[0.96] disabled:cursor-wait disabled:opacity-70 max-[420px]:w-12 max-[420px]:justify-center max-[420px]:px-0"
             } else {
                 "flex min-h-12 shrink-0 items-center gap-2 rounded-xl bg-zinc-900/80 px-3 text-[12px] font-medium text-zinc-200 shadow-[0_0_0_1px_rgba(255,255,255,.08)] transition-[scale,background-color,box-shadow,opacity] duration-150 ease-out active:scale-[0.96] disabled:cursor-wait disabled:opacity-70 max-[420px]:w-12 max-[420px]:justify-center max-[420px]:px-0"
             },

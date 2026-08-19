@@ -347,6 +347,13 @@ impl DirectCallHandle {
             "applying direct call lifecycle state"
         );
         let target = self.target_for(&call);
+        if call.state == DirectCallState::Active && call.answered_at.is_none() {
+            warn!(
+                call_id = %call.call_id,
+                conversation_id = %call.conversation_id,
+                "active direct call is missing answered_at; duration will use started_at"
+            );
+        }
         let mut state = self.state;
         state.set(DirectCallUiState::Call(call.clone()));
 

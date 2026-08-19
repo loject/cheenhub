@@ -81,11 +81,6 @@ pub(crate) fn SidebarVoiceControls() -> Element {
         CameraStatus::PermissionDenied => "Доступ к камере запрещен",
         CameraStatus::Error(_) => "Камера недоступна",
     };
-    let microphone_label = if output_muted {
-        "Включить микрофон (включит звук)".to_owned()
-    } else {
-        microphone_label
-    };
     let camera_button_class = if camera_live {
         "flex min-h-12 items-center justify-center rounded-xl border border-cyan-500/35 bg-cyan-500/15 text-cyan-100 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-cyan-400/45 hover:bg-cyan-500/20 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     } else if matches!(
@@ -99,14 +94,9 @@ pub(crate) fn SidebarVoiceControls() -> Element {
     let microphone_button_class = if microphone_speaking {
         "relative flex min-h-12 items-center justify-center overflow-hidden rounded-xl border border-emerald-300/80 bg-emerald-500/20 text-emerald-50 shadow-[0_0_0_1px_rgba(52,211,153,.25),0_10px_28px_rgba(16,185,129,.20)] transition-[background-color,border-color,color,transform,box-shadow,opacity] duration-150 hover:-translate-y-px hover:border-emerald-300 hover:bg-emerald-500/25 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     } else if microphone_live {
-        "flex min-h-12 items-center justify-center rounded-xl border border-emerald-500/35 bg-emerald-500/15 text-emerald-100 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-emerald-400/45 hover:bg-emerald-500/20 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
-    } else if matches!(
-        microphone_status,
-        MicrophoneStatus::PermissionDenied | MicrophoneStatus::Error(_)
-    ) {
-        "flex min-h-12 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/10 text-red-200 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/15 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
+        "flex min-h-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-200 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     } else {
-        "flex min-h-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/70 text-zinc-300 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
+        "flex min-h-12 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/10 text-red-200 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/15 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     };
     let output_button_class = if output_muted {
         "flex min-h-12 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-100 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-blue-400/40 hover:bg-blue-500/15 active:scale-[0.96]"
@@ -118,19 +108,22 @@ pub(crate) fn SidebarVoiceControls() -> Element {
     let leave_microphone = microphone.clone();
     let leave_camera = camera.clone();
     let leave_direct_call = direct_call.clone();
-    let output_microphone = microphone.clone();
-    let mic_playback = playback.clone();
     let toggle_playback = playback.clone();
     let target_for_microphone = target.clone();
     let target_for_camera = target.clone();
     let leave_target = target.clone();
-    let leave_label = if target
+    let direct_call_target = target
         .as_ref()
-        .is_some_and(|target| target.kind == VoiceRoomTargetKind::DirectMessage)
-    {
+        .is_some_and(|target| target.kind == VoiceRoomTargetKind::DirectMessage);
+    let leave_label = if direct_call_target {
         "Завершить звонок"
     } else {
         "Выйти из голосового чата"
+    };
+    let leave_button_class = if direct_call_target {
+        "flex min-h-12 items-center justify-center rounded-xl bg-red-500 text-white shadow-[0_10px_28px_rgba(239,68,68,.24)] transition-[background-color,transform,box-shadow,opacity] duration-150 hover:-translate-y-px hover:bg-red-400 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
+    } else {
+        "flex min-h-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-300 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     };
     let camera_realtime_handle = realtime_handle.clone();
     let camera_current_user_id = current_user_id.clone();
@@ -159,9 +152,6 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                         onclick: move |_| {
                             if !media_controls_enabled {
                                 return;
-                            }
-                            if output_muted {
-                                mic_playback.set_muted(false);
                             }
                             let Some(target) = target_for_microphone.clone() else {
                                 return;
@@ -201,9 +191,6 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                         onclick: move |_| {
                             let next_muted = !toggle_playback.is_muted();
                             toggle_playback.set_muted(next_muted);
-                            if next_muted {
-                                output_microphone.stop();
-                            }
                         },
                         if output_muted {
                             svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
@@ -274,7 +261,7 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                     button {
                         r#type: "button",
                         disabled: matches!(state, VoiceConnectionState::Disconnecting { .. }),
-                        class: "flex min-h-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-300 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60",
+                        class: leave_button_class,
                         "aria-label": leave_label,
                         onclick: move |_| {
                             leave_microphone.stop();
@@ -287,7 +274,11 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                             }
                         },
                         svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" }
+                            if direct_call_target {
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6.6 10.8a8.3 8.3 0 0 1 10.8 0l1.7-1.7a1.5 1.5 0 0 1 2.1 0l.7.7a1.5 1.5 0 0 1 0 2.1l-2.3 2.3a2 2 0 0 1-2.2.4l-2.1-1a8.2 8.2 0 0 0-6.6 0l-2.1 1a2 2 0 0 1-2.2-.4l-2.3-2.3a1.5 1.5 0 0 1 0-2.1l.7-.7a1.5 1.5 0 0 1 2.1 0l1.7 1.7Z" }
+                            } else {
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" }
+                            }
                         }
                     }
                 }

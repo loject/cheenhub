@@ -4,10 +4,15 @@ use dioxus::prelude::*;
 
 use super::voice_call_platform::{self, VoiceOutputRoute};
 
+/// Возвращает, может ли текущая платформа показать переключатель маршрута звука.
+pub(super) fn output_route_control_available() -> bool {
+    voice_call_platform::supports_voice_output_route()
+}
+
 /// Показывает переключатель громкой связи, когда платформа и устройство его поддерживают.
 #[component]
 pub(super) fn AndroidOutputRouteButton(enabled: bool) -> Element {
-    if !voice_call_platform::supports_voice_output_route() {
+    if !output_route_control_available() {
         return rsx! {};
     }
 
@@ -25,7 +30,7 @@ pub(super) fn AndroidOutputRouteButton(enabled: bool) -> Element {
                 div { class: "relative flex shrink-0",
                     button {
                         r#type: "button",
-                        class: "voice-control-button group relative flex h-14 w-14 items-center justify-center rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-100 transition-[transform,background-color,border-color,color,opacity] duration-[180ms] hover:border-amber-400/45 hover:bg-amber-500/15 active:scale-[0.96]",
+                        class: "voice-control-button direct-call-control group relative flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/12 text-amber-100 shadow-[0_0_0_1px_rgba(245,158,11,.25)] transition-[scale,background-color,box-shadow,opacity] duration-[180ms] active:scale-[0.96]",
                         "aria-label": "Повторить определение режима звука",
                         onclick: move |_| route_load.restart(),
                         {tooltip("Повторить определение режима звука")}
@@ -53,16 +58,15 @@ pub(super) fn AndroidOutputRouteButton(enabled: bool) -> Element {
             } else {
                 label
             };
-
             rsx! {
                 div { class: "relative flex shrink-0",
                     button {
                         r#type: "button",
                         disabled,
                         class: if speaker_enabled {
-                            "voice-control-button group relative flex h-14 w-14 items-center justify-center rounded-xl border border-blue-400/45 bg-blue-500/15 text-blue-100 shadow-[0_0_0_1px_rgba(96,165,250,.16),0_14px_36px_rgba(37,99,235,.14)] transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-blue-300/55 hover:bg-blue-500/20 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
+                            "voice-control-button direct-call-control group relative flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/16 text-blue-100 shadow-[0_0_0_1px_rgba(96,165,250,.30)] transition-[scale,background-color,box-shadow,opacity] duration-[180ms] active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
                         } else {
-                            "voice-control-button group relative flex h-14 w-14 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-200 transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-zinc-700 hover:bg-zinc-900 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
+                            "voice-control-button direct-call-control group relative flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-950/65 text-zinc-200 shadow-[0_0_0_1px_rgba(255,255,255,.08)] transition-[scale,background-color,box-shadow,opacity] duration-[180ms] active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
                         },
                         "aria-label": button_label,
                         onclick: move |_| {
@@ -108,7 +112,7 @@ fn loading_button(label: &'static str) -> Element {
         button {
             r#type: "button",
             disabled: true,
-            class: "voice-control-button group relative flex h-14 w-14 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-300 opacity-60 transition-[transform,background-color,border-color,color,opacity] duration-[180ms] disabled:cursor-wait",
+            class: "voice-control-button direct-call-control group relative flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-950/65 text-zinc-300 opacity-60 shadow-[0_0_0_1px_rgba(255,255,255,.08)] transition-[scale,background-color,box-shadow,opacity] duration-[180ms] disabled:cursor-wait",
             "aria-label": label,
             {tooltip(label)}
             {loading_spinner()}
@@ -138,7 +142,7 @@ fn tooltip(label: &str) -> Element {
 fn loading_spinner() -> Element {
     rsx! {
         span {
-            class: "h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-300",
+            class: "voice-control-state-icon h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-300",
             "aria-hidden": "true",
         }
     }
@@ -147,7 +151,7 @@ fn loading_spinner() -> Element {
 fn warning_icon() -> Element {
     rsx! {
         svg {
-            class: "h-5 w-5",
+            class: "voice-control-state-icon h-5 w-5",
             fill: "none",
             stroke: "currentColor",
             stroke_width: "1.9",
@@ -166,9 +170,9 @@ fn speaker_icon(visible: bool) -> Element {
     rsx! {
         span {
             class: if visible {
-                "absolute grid scale-100 place-items-center opacity-100 blur-0 transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
+                "voice-control-state-icon absolute grid scale-100 place-items-center opacity-100 blur-0 transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
             } else {
-                "absolute grid scale-[0.25] place-items-center opacity-0 blur-[4px] transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
+                "voice-control-state-icon absolute grid scale-[0.25] place-items-center opacity-0 blur-[4px] transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
             },
             "aria-hidden": "true",
             svg {
@@ -191,9 +195,9 @@ fn earpiece_icon(visible: bool) -> Element {
     rsx! {
         span {
             class: if visible {
-                "absolute grid scale-100 place-items-center opacity-100 blur-0 transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
+                "voice-control-state-icon absolute grid scale-100 place-items-center opacity-100 blur-0 transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
             } else {
-                "absolute grid scale-[0.25] place-items-center opacity-0 blur-[4px] transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
+                "voice-control-state-icon absolute grid scale-[0.25] place-items-center opacity-0 blur-[4px] transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
             },
             "aria-hidden": "true",
             svg {

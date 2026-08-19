@@ -52,15 +52,15 @@ pub(crate) fn VoiceParticipantTile(
     } else if focused_video {
         "user-tile relative overflow-hidden rounded-lg border border-cyan-400/25 bg-zinc-950 p-0 shadow-none transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-cyan-300/35"
     } else if screen_sharing && speaking {
-        "user-tile relative overflow-hidden rounded-[20px] border border-emerald-400/75 bg-zinc-950 p-4 shadow-[0_0_0_1px_rgba(52,211,153,.24),0_18px_70px_rgba(16,185,129,.18)] transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-emerald-300/80"
+        "user-tile relative overflow-hidden rounded-[20px] bg-zinc-950 p-4 shadow-[0_0_0_2px_rgba(52,211,153,.70)] transition-[background-color,transform,box-shadow] duration-200 ease-in-out"
     } else if screen_sharing {
         "user-tile relative overflow-hidden rounded-[20px] border border-sky-400/35 bg-zinc-950 p-4 shadow-[0_18px_70px_rgba(2,132,199,.16)] transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-sky-300/50"
     } else if camera_on && speaking {
-        "user-tile relative overflow-hidden rounded-[20px] border border-emerald-400/75 bg-zinc-950 p-4 shadow-[0_0_0_1px_rgba(52,211,153,.24),0_18px_70px_rgba(16,185,129,.18)] transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-emerald-300/80"
+        "user-tile relative overflow-hidden rounded-[20px] bg-zinc-950 p-4 shadow-[0_0_0_2px_rgba(52,211,153,.70)] transition-[background-color,transform,box-shadow] duration-200 ease-in-out"
     } else if camera_on {
         "user-tile relative overflow-hidden rounded-[20px] border border-cyan-400/35 bg-zinc-950 p-4 shadow-[0_18px_70px_rgba(6,182,212,.14)] transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-cyan-300/50"
     } else if speaking {
-        "user-tile relative overflow-hidden rounded-[20px] border border-emerald-400/75 bg-[var(--avatar-bg,rgba(24,24,27,.8))] bg-cover bg-center p-4 shadow-[0_0_0_1px_rgba(52,211,153,.24),0_18px_70px_rgba(16,185,129,.18)] transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-emerald-300/80"
+        "user-tile relative overflow-hidden rounded-[20px] bg-[var(--avatar-bg,rgba(24,24,27,.8))] bg-cover bg-center p-4 shadow-[0_0_0_2px_rgba(52,211,153,.70)] transition-[background-color,transform,box-shadow] duration-200 ease-in-out"
     } else {
         "user-tile relative overflow-hidden rounded-[20px] border border-accent/25 bg-[var(--avatar-bg,rgba(24,24,27,.8))] bg-cover bg-center p-4 transition-[border-color,background,transform,box-shadow] duration-200 ease-in-out hover:border-white/15"
     };
@@ -74,7 +74,6 @@ pub(crate) fn VoiceParticipantTile(
             "data-video": if video_on { "true" } else { "false" },
             style: "--avatar-bg: rgba(24,24,27,.80);",
             class: tile_class,
-            onclick: move |_| on_toggle_focus.call(()),
             oncontextmenu: {
                 let nickname = participant.nickname.clone();
                 let user_id = participant.user_id.clone();
@@ -102,19 +101,19 @@ pub(crate) fn VoiceParticipantTile(
                     div { class: "pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-zinc-950/65 via-transparent to-zinc-950/20" }
                 }
             }
-            if speaking {
-                div { class: if focused_video { "pointer-events-none absolute inset-0 rounded-lg bg-emerald-400/[0.02]" } else { "pointer-events-none absolute inset-0 rounded-[20px] bg-emerald-400/[0.035]" } }
-                div { class: "pointer-events-none absolute inset-x-4 bottom-12 z-0 flex h-10 justify-center items-end gap-1 text-emerald-300/55",
-                    span { class: "inline-block h-4 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current" }
-                    span { class: "inline-block h-7 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current [animation-delay:.10s]" }
-                    span { class: "inline-block h-5 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current [animation-delay:.20s]" }
-                    span { class: "inline-block h-8 w-1 origin-bottom animate-[voice-pulse-bar_.82s_ease-in-out_infinite] rounded-full bg-current [animation-delay:.30s]" }
-                }
+            button {
+                r#type: "button",
+                class: if focused_video { "absolute inset-0 z-10 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-accent" } else { "absolute inset-0 z-10 rounded-[20px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-accent" },
+                "aria-label": if focused { "Вернуться к сетке участников" } else { "Сфокусировать участника" },
+                onclick: move |event| {
+                    event.stop_propagation();
+                    on_toggle_focus.call(());
+                },
             }
             div { class: "absolute right-3 top-3 z-30",
                 button {
                     r#type: "button",
-                    class: "rounded-xl border border-zinc-800 bg-zinc-950 p-2 text-zinc-500 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:text-zinc-200 active:scale-[0.96]",
+                    class: "flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-950/88 text-zinc-400 shadow-[0_0_0_1px_rgba(255,255,255,.08)] transition-[scale,background-color,color,box-shadow] duration-150 hover:bg-zinc-900 hover:text-zinc-100 active:scale-[0.96]",
                     "aria-label": "Меню пользователя",
                     onclick: {
                         let nickname = participant.nickname.clone();
@@ -135,7 +134,7 @@ pub(crate) fn VoiceParticipantTile(
                     UserAvatar {
                         nickname: participant.nickname.clone(),
                         avatar_url: participant.avatar_url.clone(),
-                        class: "flex h-20 w-20 items-center justify-center rounded-full border border-white/10 bg-zinc-900/80 text-[26px] font-bold text-zinc-100 shadow-[0_16px_36px_rgba(0,0,0,.24)]".to_owned(),
+                        class: "flex h-20 w-20 items-center justify-center rounded-full bg-zinc-900/80 text-[26px] font-bold text-zinc-100 shadow-[0_16px_36px_rgba(0,0,0,.24)] outline outline-1 -outline-offset-1 outline-white/10".to_owned(),
                         avatar_seed: Some(participant.user_id.clone()),
                     }
                 }
@@ -143,6 +142,10 @@ pub(crate) fn VoiceParticipantTile(
             div { class: "absolute inset-x-4 bottom-4 z-20 flex justify-center",
                 div { class: "max-w-full rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-1.5 text-[13px] font-semibold text-zinc-100 shadow-[0_12px_30px_rgba(0,0,0,.32)] backdrop-blur-xl",
                     div { class: "flex min-w-0 items-center gap-1.5",
+                        if speaking {
+                            span { class: "h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,.12)]" }
+                            span { class: "sr-only", "Говорит" }
+                        }
                         if screen_sharing {
                             svg { class: "h-3.5 w-3.5 shrink-0 opacity-80", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                                 rect { x: "3", y: "4", width: "18", height: "12", rx: "2" }

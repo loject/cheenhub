@@ -3,7 +3,6 @@
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
-use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::camera::CameraHandle;
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
@@ -25,7 +24,6 @@ pub(super) fn ActiveVoiceNotificationControls() -> Element {
     let microphone = use_context::<MicrophoneHandle>();
     let camera = use_context::<CameraHandle>();
     let screen_share = use_context::<ScreenShareHandle>();
-    let playback = use_context::<AudioPlaybackHandle>();
     let realtime = use_context::<RealtimeHandle>();
 
     let notification_voice = voice.clone();
@@ -68,9 +66,6 @@ pub(super) fn ActiveVoiceNotificationControls() -> Element {
                             room_id = %target.room_id,
                             "handling Android notification microphone toggle"
                         );
-                        if playback.is_muted() {
-                            playback.set_muted(false);
-                        }
                         microphone_uplink::toggle(
                             microphone.clone(),
                             realtime.clone(),

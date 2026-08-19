@@ -63,7 +63,6 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let mut microphone_target_room = use_signal(|| None::<String>);
     let mut camera_target_room = use_signal(|| None::<LocalVideoTarget>);
     let mut screen_share_target_room = use_signal(|| None::<LocalVideoTarget>);
-    let mut mic_paused_by_mute = use_signal(|| false);
     let mut mic_paused_by_focus = use_signal(|| false);
     let voice_notification_sounds =
         use_hook(|| Rc::new(RefCell::new(VoiceNotificationSoundState::default())));
@@ -311,24 +310,6 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 &mut screen_share_target_room,
                 &target,
             );
-            if playback.is_muted() {
-                info!(
-                    target_kind = ?target.kind,
-                    server_id = %target.server_id,
-                    room_id = %target.room_id,
-                    "voice media start paused while output is muted"
-                );
-                if !mic_paused_by_mute()
-                    && matches!(
-                        microphone.status_untracked(),
-                        MicrophoneStatus::Live | MicrophoneStatus::Starting
-                    )
-                {
-                    mic_paused_by_mute.set(true);
-                }
-                microphone.stop();
-                return;
-            }
             if !voice_audio_focused() {
                 if !mic_paused_by_focus()
                     && matches!(
@@ -344,16 +325,12 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             }
 
             playback.resume();
-            let paused_by_mute = mic_paused_by_mute();
             let paused_by_focus = mic_paused_by_focus();
-            if paused_by_mute {
-                mic_paused_by_mute.set(false);
-            }
             if paused_by_focus {
                 mic_paused_by_focus.set(false);
             }
             if microphone_target_room().as_deref() == Some(target.room_id.as_str()) {
-                if paused_by_mute || paused_by_focus {
+                if paused_by_focus {
                     microphone_uplink::restart(
                         microphone.clone(),
                         realtime.clone(),
@@ -365,7 +342,6 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                     target_kind = ?target.kind,
                     server_id = %target.server_id,
                     room_id = %target.room_id,
-                    microphone_paused_by_mute = paused_by_mute,
                     microphone_paused_by_focus = paused_by_focus,
                     "voice media already targets active room"
                 );
@@ -376,6 +352,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 target_kind = ?target.kind,
                 server_id = %target.server_id,
                 room_id = %target.room_id,
+                output_muted = playback.is_muted(),
                 "starting voice media for active room"
             );
             microphone_uplink::restart(
@@ -394,7 +371,6 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             let had_camera_target = previous_camera_target.is_some();
             let had_screen_share_target = previous_screen_share_target.is_some();
             let had_microphone_target = microphone_target_room().is_some();
-            let was_paused_by_mute = mic_paused_by_mute();
             let was_paused_by_focus = mic_paused_by_focus();
 
             if let Some(target) = previous_camera_target {
@@ -430,9 +406,6 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 microphone_target_room.set(None);
                 microphone.stop();
             }
-            if was_paused_by_mute {
-                mic_paused_by_mute.set(false);
-            }
             if was_paused_by_focus {
                 mic_paused_by_focus.set(false);
             }
@@ -456,12 +429,10 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             if had_camera_target
                 || had_screen_share_target
                 || had_microphone_target
-                || was_paused_by_mute
                 || was_paused_by_focus
             {
                 info!(
                     microphone = had_microphone_target,
-                    microphone_paused_by_mute = was_paused_by_mute,
                     microphone_paused_by_focus = was_paused_by_focus,
                     camera = had_camera_target,
                     screen_share = had_screen_share_target,

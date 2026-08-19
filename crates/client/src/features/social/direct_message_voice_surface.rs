@@ -7,10 +7,12 @@ use dioxus::prelude::*;
 use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
+use crate::features::runtime::sleep_ms;
 use crate::features::voice_chat::{
-    DirectCallHandle, DirectCallUiState, VoiceConnectionHandle, VoiceConnectionState,
-    VoiceControls, VoiceParticipantGrid, VoiceParticipantGridStatus,
+    DirectCallControls, DirectCallControlsVisibility, DirectCallHandle, DirectCallStage,
+    DirectCallStageStatus, DirectCallUiState, VoiceConnectionHandle, VoiceConnectionState,
 };
+use web_time::Instant;
 
 use super::voice_target::direct_message_voice_target;
 
@@ -19,11 +21,28 @@ use super::voice_target::direct_message_voice_target;
 pub(crate) fn DirectMessageVoiceSurface(
     conversation: DmConversationSummary,
     exiting: bool,
+    chat_open: bool,
+    on_toggle_chat: EventHandler<()>,
 ) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
     let voice = use_context::<VoiceConnectionHandle>();
     let direct_call = use_context::<DirectCallHandle>();
     let microphone = use_context::<MicrophoneHandle>();
+    let controls_visible = use_signal(|| true);
+    let controls_locked = use_signal(|| false);
+    let controls_last_activity = use_signal(Instant::now);
+    let controls_visibility = DirectCallControlsVisibility::new(
+        controls_visible,
+        controls_locked,
+        controls_last_activity,
+    );
+    use_context_provider(|| controls_visibility);
+    use_future(move || async move {
+        loop {
+            sleep_ms(250).await;
+            controls_visibility.hide_if_idle();
+        }
+    });
     let target = direct_message_voice_target(&conversation);
     let call = direct_call.call_for_conversation(&conversation.id);
     let starting = direct_call.is_starting_conversation(&conversation.id);
@@ -37,14 +56,21 @@ pub(crate) fn DirectMessageVoiceSurface(
     } else {
         Vec::new()
     };
+    let peer_present = selected_voice_participants
+        .iter()
+        .any(|participant| participant.user_id == conversation.friend_user_id);
     let selected_voice_status = match &voice_state {
         VoiceConnectionState::Connecting {
             target: connecting_target,
-        } if connecting_target.matches(&target) => {
-            VoiceParticipantGridStatus::DirectCallConnecting {
-                peer_nickname: conversation.friend_nickname.clone(),
-            }
-        }
+        } if connecting_target.matches(&target) => DirectCallStageStatus::Connecting,
+        VoiceConnectionState::Connected {
+            target: connected_target,
+            ..
+        } if connected_target.matches(&target) && peer_present => DirectCallStageStatus::Connected,
+        VoiceConnectionState::Connected {
+            target: connected_target,
+            ..
+        } if connected_target.matches(&target) => DirectCallStageStatus::WaitingForPeer,
         VoiceConnectionState::Error {
             target: error_target,
             message,
@@ -52,12 +78,11 @@ pub(crate) fn DirectMessageVoiceSurface(
             .as_ref()
             .is_some_and(|error_target| error_target.matches(&target)) =>
         {
-            VoiceParticipantGridStatus::DirectCallError {
-                peer_nickname: conversation.friend_nickname.clone(),
+            DirectCallStageStatus::Error {
                 message: message.clone(),
             }
         }
-        _ => VoiceParticipantGridStatus::Empty,
+        _ => DirectCallStageStatus::Recovering,
     };
     let mut selected_voice_speaking_user_ids = if selected_voice_active {
         voice.speaking_user_ids()
@@ -123,6 +148,9 @@ pub(crate) fn DirectMessageVoiceSurface(
             } else {
                 "direct-call-surface voice-room-surface relative flex min-h-0 flex-1 flex-col"
             },
+            onclick: move |_| controls_visibility.reveal(),
+            onfocusin: move |_| controls_visibility.reveal(),
+            onmousemove: move |_| controls_visibility.reveal(),
             if waiting || signaling_error.is_some() && !selected_voice_active {
                 div { class: "direct-call-stage voice-stage flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-5 pb-[112px]",
                     div { class: "direct-call-waiting-content w-full max-w-sm text-center",
@@ -167,7 +195,7 @@ pub(crate) fn DirectMessageVoiceSurface(
                                 button {
                                     r#type: "button",
                                     disabled: direct_call.busy(),
-                                    class: "min-h-12 rounded-2xl bg-emerald-500 px-4 text-[13px] font-semibold text-emerald-950 transition-[scale,background-color,opacity] duration-150 ease-out active:scale-[0.96] disabled:cursor-wait disabled:opacity-60",
+                                    class: "min-h-12 rounded-2xl bg-accent px-4 text-[13px] font-semibold text-white transition-[scale,background-color,opacity] duration-150 ease-out active:scale-[0.96] disabled:cursor-wait disabled:opacity-60",
                                     onclick: move |_| accept_call.accept(),
                                     "Ответить"
                                 }
@@ -189,24 +217,29 @@ pub(crate) fn DirectMessageVoiceSurface(
             } else {
                 if let Some(message) = active_signaling_error {
                     p {
-                        class: "direct-call-status-enter absolute left-1/2 top-4 z-20 w-[min(90%,360px)] -translate-x-1/2 rounded-xl bg-red-950/95 px-3 py-2 text-center text-pretty text-[12px] leading-5 text-red-100 shadow-[0_0_0_1px_rgba(248,113,113,.28),0_12px_32px_rgba(0,0,0,.30)]",
+                        class: "direct-call-status-enter absolute left-1/2 top-4 z-30 w-[min(90%,360px)] -translate-x-1/2 rounded-xl bg-red-950/95 px-3 py-2 text-center text-pretty text-[12px] leading-5 text-red-100 shadow-[0_0_0_1px_rgba(248,113,113,.28),0_12px_32px_rgba(0,0,0,.30)]",
                         role: "alert",
                         "{message}"
                     }
                 }
-                VoiceParticipantGrid {
-                    server_id: target.server_id.clone(),
-                    room_id: target.room_id.clone(),
+                DirectCallStage {
+                    peer_nickname: conversation.friend_nickname.clone(),
+                    peer_avatar_url: conversation.friend_avatar_url.clone(),
+                    peer_user_id: conversation.friend_user_id.clone(),
+                    current_user_id: current_user.id.clone(),
                     participants: selected_voice_participants,
                     speaking_user_ids: selected_voice_speaking_user_ids,
                     status: selected_voice_status,
-                    can_kick_voice: false,
                     on_retry: {
                         let retry_target = target.clone();
                         move |_| retry_voice.join(retry_target.clone())
                     },
                 }
-                VoiceControls { target }
+                DirectCallControls {
+                    target,
+                    chat_open,
+                    on_toggle_chat,
+                }
             }
         }
     }
