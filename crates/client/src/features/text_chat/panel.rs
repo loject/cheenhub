@@ -9,6 +9,7 @@ use futures_util::StreamExt;
 
 use crate::features::app::components::app_shell::ActiveRoom;
 use crate::features::app::server_permissions::ServerPermissionsContext;
+use crate::features::image_picker::{ImagePickerButton, ImagePickerOutcome, PickedImage};
 use crate::features::realtime::RealtimeHandle;
 use crate::features::runtime::sleep_duration;
 
@@ -24,6 +25,8 @@ use super::{
     CHAT_COMPOSER_CLASS, CHAT_CONTENT_CLASS, CHAT_STATUS_CLASS, ChatMessageDateDivider,
     ChatMessageGroup, friendly_message_date, message_day_key,
 };
+
+const MAX_CHAT_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 
 /// Рендерит панель realtime-текстового чата для одной комнаты.
 #[component]
@@ -42,6 +45,7 @@ pub(crate) fn ChatRoomPanel(
     let mut status = use_signal(String::new);
     let is_sending = use_signal(|| false);
     let mut is_uploading_image = use_signal(|| false);
+    let mut is_selecting_image = use_signal(|| false);
     let initial_loading = use_signal(|| true);
     let older_loading = use_signal(|| false);
     let history_error = use_signal(|| None::<String>);
@@ -217,12 +221,19 @@ pub(crate) fn ChatRoomPanel(
         });
     });
 
-    let can_send = !is_sending() && !is_uploading_image() && !draft().trim().is_empty();
+    let can_send = !is_sending()
+        && !is_uploading_image()
+        && !is_selecting_image()
+        && !draft().trim().is_empty();
     let submit_realtime = send_realtime.clone();
     let submit_server_id = send_server_id.clone();
     let submit_room_id = send_room_id.clone();
     let submit_message = use_callback(move |_| {
-        if !is_sending() && !draft().trim().is_empty() {
+        if !is_sending()
+            && !is_uploading_image()
+            && !is_selecting_image()
+            && !draft().trim().is_empty()
+        {
             send_current_message(
                 submit_realtime.clone(),
                 submit_server_id.clone(),
@@ -248,54 +259,43 @@ pub(crate) fn ChatRoomPanel(
             removing_message_ids.write().retain(|id| id != &message_id);
         });
     });
-    let upload_image = use_callback(move |event: Event<FormData>| {
+    let upload_image = use_callback(move |outcome: ImagePickerOutcome| {
         if is_uploading_image() {
             return;
         }
-        let Some(file) = event.files().into_iter().next() else {
-            return;
+        let PickedImage { file_name, bytes } = match outcome {
+            ImagePickerOutcome::Selected(image) => image,
+            ImagePickerOutcome::Failed(error) => {
+                warn!(%error, "text chat image selection failed");
+                status.set(error);
+                return;
+            }
         };
-        if file.size() > 10 * 1024 * 1024 {
-            status.set("Изображение слишком большое. Загрузи файл до 10 МБ.".to_owned());
-            return;
-        }
 
         let realtime = send_realtime.clone();
         let server_id = send_server_id.clone();
         let room_id = send_room_id.clone();
-        let original_filename = Some(file.name());
+        let byte_size = bytes.len();
         is_uploading_image.set(true);
         status.set(String::new());
         info!(
-            file_name = original_filename.as_deref().unwrap_or(""),
-            file_size = file.size(),
-            "uploading text chat image over realtime"
+            has_file_name = file_name.is_some(),
+            byte_size, "uploading text chat image over realtime"
         );
         spawn(async move {
-            let result = match file.read_bytes().await {
-                Ok(bytes) => {
-                    match realtime::upload_chat_image(
-                        &realtime,
-                        server_id.clone(),
-                        room_id.clone(),
-                        original_filename,
-                        bytes.to_vec(),
-                    )
-                    .await
-                    {
-                        Ok(uploaded) => {
-                            realtime::send_image_message(&realtime, server_id, room_id, uploaded.id)
-                                .await
-                        }
-                        Err(error) => Err(error),
-                    }
+            let result = match realtime::upload_chat_image(
+                &realtime,
+                server_id.clone(),
+                room_id.clone(),
+                file_name,
+                bytes,
+            )
+            .await
+            {
+                Ok(uploaded) => {
+                    realtime::send_image_message(&realtime, server_id, room_id, uploaded.id).await
                 }
-                Err(error) => {
-                    warn!(?error, "failed to read selected text chat image");
-                    Err(crate::features::realtime::RealtimeError::new(
-                        "Не удалось прочитать выбранный файл.",
-                    ))
-                }
+                Err(error) => Err(error),
             };
 
             match result {
@@ -424,23 +424,12 @@ pub(crate) fn ChatRoomPanel(
             }
             div { class: input_outer_class,
                 div { class: input_wrap_class,
-                    label {
-                        class: "flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-white/15 hover:bg-zinc-800 hover:text-zinc-100 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-45 has-[:disabled]:hover:translate-y-0",
-                        title: "Прикрепить изображение",
-                        input {
-                            class: "sr-only",
-                            r#type: "file",
-                            accept: "image/png,image/jpeg,image/gif,image/webp,image/*",
-                            disabled: is_sending() || is_uploading_image(),
-                            onchange: move |event| upload_image.call(event),
-                        }
-                        if is_uploading_image() {
-                            span { class: "h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-300" }
-                        } else {
-                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
-                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94a3 3 0 1 1 4.243 4.243L8.552 18.32a1.5 1.5 0 1 1-2.121-2.121l9.879-9.879" }
-                            }
-                        }
+                    ImagePickerButton {
+                        disabled: is_sending(),
+                        busy: is_uploading_image() || is_selecting_image(),
+                        max_bytes: MAX_CHAT_IMAGE_BYTES,
+                        on_outcome: move |outcome| upload_image.call(outcome),
+                        on_active_change: move |active| is_selecting_image.set(active),
                     }
                     textarea {
                         rows: "1",

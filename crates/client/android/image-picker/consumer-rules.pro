@@ -1,0 +1,2 @@
+-keep class ru.cheenhub.imagepicker.CheenHubImagePickerPlugin { *; }
+-keep class ru.cheenhub.imagepicker.CheenHubImagePickerActivity { *; }

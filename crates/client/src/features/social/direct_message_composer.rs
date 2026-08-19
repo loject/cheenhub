@@ -3,6 +3,8 @@
 use cheenhub_contracts::rest::{DmConversationSummary, DmMessageSummary};
 use dioxus::prelude::*;
 
+use crate::features::image_picker::{ImagePickerButton, ImagePickerOutcome, PickedImage};
+
 use super::{api, clipboard};
 
 const MAX_DM_IMAGE_BYTES: usize = 8 * 1024 * 1024;
@@ -24,8 +26,10 @@ pub(super) fn DirectMessageComposer(
     let mut status = use_signal(String::new);
     let mut is_sending = use_signal(|| false);
     let mut is_uploading_image = use_signal(|| false);
+    let mut is_selecting_image = use_signal(|| false);
     let mut is_reading_clipboard = use_signal(|| false);
-    let busy = is_sending() || is_uploading_image() || is_reading_clipboard();
+    let busy =
+        is_sending() || is_uploading_image() || is_selecting_image() || is_reading_clipboard();
     let conversation_id = conversation.id.clone();
     let friend_nickname = conversation.friend_nickname.clone();
 
@@ -55,26 +59,28 @@ pub(super) fn DirectMessageComposer(
     });
 
     let select_image_conversation_id = conversation_id.clone();
-    let select_image = use_callback(move |event: Event<FormData>| {
-        if busy {
+    let select_image = use_callback(move |outcome: ImagePickerOutcome| {
+        if is_uploading_image() {
             return;
         }
-        let Some(file) = event.files().into_iter().next() else {
-            return;
+        let PickedImage { bytes, .. } = match outcome {
+            ImagePickerOutcome::Selected(image) => image,
+            ImagePickerOutcome::Failed(error) => {
+                warn!(conversation_id = %select_image_conversation_id, %error, "direct message image selection failed");
+                status.set(error);
+                return;
+            }
         };
-        if file.size() > MAX_DM_IMAGE_BYTES as u64 {
-            status.set("Изображение слишком большое. Выберите файл до 8 МБ.".to_owned());
-            return;
-        }
         let conversation_id = select_image_conversation_id.clone();
         is_uploading_image.set(true);
         status.set(String::new());
-        info!(conversation_id, file_name = %file.name(), file_size = file.size(), "reading selected direct message image");
+        info!(
+            conversation_id,
+            byte_size = bytes.len(),
+            "uploading selected direct message image"
+        );
         spawn(async move {
-            let result = match file.read_bytes().await {
-                Ok(bytes) => upload_and_send_image(&conversation_id, bytes.to_vec()).await,
-                Err(_) => Err("Не удалось прочитать выбранное изображение.".to_owned()),
-            };
+            let result = upload_and_send_image(&conversation_id, bytes).await;
             finish_image_send(result, &conversation_id, on_outcome, status);
             is_uploading_image.set(false);
         });
@@ -83,23 +89,12 @@ pub(super) fn DirectMessageComposer(
     rsx! {
         div { class: "direct-message-composer-shell shrink-0 border-t border-zinc-800/80 bg-zinc-950/55 p-4 backdrop-blur-xl",
             div { class: crate::features::text_chat::CHAT_COMPOSER_CLASS,
-                label {
-                    class: "flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-300 transition hover:bg-zinc-800 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-45",
-                    title: "Прикрепить изображение",
-                    input {
-                        class: "sr-only",
-                        r#type: "file",
-                        accept: "image/png,image/jpeg,image/gif,image/webp,image/*",
-                        disabled: busy,
-                        onchange: move |event| select_image.call(event),
-                    }
-                    if is_uploading_image() || is_reading_clipboard() {
-                        span { class: "h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-300" }
-                    } else {
-                        svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94a3 3 0 1 1 4.243 4.243L8.552 18.32a1.5 1.5 0 1 1-2.121-2.121l9.879-9.879" }
-                        }
-                    }
+                ImagePickerButton {
+                    disabled: is_sending() || is_reading_clipboard(),
+                    busy: is_uploading_image() || is_selecting_image(),
+                    max_bytes: MAX_DM_IMAGE_BYTES,
+                    on_outcome: move |outcome| select_image.call(outcome),
+                    on_active_change: move |active| is_selecting_image.set(active),
                 }
                 textarea {
                     rows: "1",
