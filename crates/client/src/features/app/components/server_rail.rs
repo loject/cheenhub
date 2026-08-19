@@ -20,6 +20,7 @@ pub(crate) fn ServerRail(
     on_open_social: EventHandler<()>,
     on_add_server: EventHandler<()>,
 ) -> Element {
+    let mut show_empty_server_hint = use_signal(|| true);
     let list_class = if !is_loading && servers.is_empty() {
         "space-y-2 overflow-visible pb-3"
     } else {
@@ -56,9 +57,23 @@ pub(crate) fn ServerRail(
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 5v14m-7-7h14" }
                             }
                         }
-                        div { class: "pointer-events-none absolute left-[calc(100%+12px)] top-0 z-[80] w-[230px] rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-2 text-left shadow-[0_16px_40px_rgba(0,0,0,.45)] backdrop-blur-xl",
-                            p { class: "text-[12px] font-semibold text-zinc-100", "Здесь появятся твои серверы" }
-                            p { class: "mt-1 text-[11px] leading-4 text-zinc-400", "Создай первый сервер для друзей или команды." }
+                        if show_empty_server_hint() {
+                            div { class: "pointer-events-none absolute left-[calc(100%+12px)] top-0 z-[80] w-[230px] rounded-xl border border-zinc-800 bg-zinc-950/95 py-2 pl-3 pr-10 text-left shadow-[0_16px_40px_rgba(0,0,0,.45)] backdrop-blur-xl",
+                                p { class: "text-pretty text-[12px] font-semibold text-zinc-100", "Здесь появятся твои серверы" }
+                                p { class: "mt-1 text-pretty text-[11px] leading-4 text-zinc-400", "Создай первый сервер для друзей или команды." }
+                                button {
+                                    r#type: "button",
+                                    class: "pointer-events-auto absolute right-0 top-0 flex size-10 items-center justify-center rounded-xl text-zinc-500 transition-[background-color,color,scale] duration-150 ease-out hover:bg-white/5 hover:text-zinc-200 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70",
+                                    "aria-label": "Закрыть подсказку о серверах",
+                                    onclick: move |_| {
+                                        info!("dismissed empty server rail hint");
+                                        show_empty_server_hint.set(false);
+                                    },
+                                    svg { class: "size-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
+                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6 6l12 12M18 6L6 18" }
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {
