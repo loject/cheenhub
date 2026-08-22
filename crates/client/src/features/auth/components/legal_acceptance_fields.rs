@@ -34,7 +34,7 @@ pub(crate) fn LegalAcceptanceFields(
                 }
                 label { r#for: "accepts-terms", class: "cursor-pointer",
                     "Я принимаю "
-                    Link { to: Route::Terms {}, class: "text-zinc-200 underline decoration-zinc-700 underline-offset-2 transition hover:text-white", "Пользовательское соглашение" }
+                    Link { to: Route::Terms { return_to: Some("registration".to_string()) }, class: "text-zinc-200 underline decoration-zinc-700 underline-offset-2 transition hover:text-white", "Пользовательское соглашение" }
                     "."
                 }
             }
@@ -49,9 +49,9 @@ pub(crate) fn LegalAcceptanceFields(
                 }
                 label { r#for: "accepts-personal-data", class: "cursor-pointer",
                     "Я даю отдельное "
-                    Link { to: Route::PersonalDataConsent {}, class: "text-zinc-200 underline decoration-zinc-700 underline-offset-2 transition hover:text-white", "Согласие на обработку персональных данных" }
+                    Link { to: Route::PersonalDataConsent { return_to: Some("registration".to_string()) }, class: "text-zinc-200 underline decoration-zinc-700 underline-offset-2 transition hover:text-white", "Согласие на обработку персональных данных" }
                     " и подтверждаю, что ознакомился с "
-                    Link { to: Route::PrivacyPolicy {}, class: "text-zinc-200 underline decoration-zinc-700 underline-offset-2 transition hover:text-white", "Политикой обработки персональных данных" }
+                    Link { to: Route::PrivacyPolicy { return_to: Some("registration".to_string()) }, class: "text-zinc-200 underline decoration-zinc-700 underline-offset-2 transition hover:text-white", "Политикой обработки персональных данных" }
                     "."
                 }
             }

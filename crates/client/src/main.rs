@@ -67,12 +67,12 @@ enum Route {
     Login {},
     #[route("/register")]
     Register {},
-    #[route("/legal/terms")]
-    Terms {},
-    #[route("/legal/privacy")]
-    PrivacyPolicy {},
-    #[route("/legal/personal-data-consent")]
-    PersonalDataConsent {},
+    #[route("/legal/terms?:return_to")]
+    Terms { return_to: Option<String> },
+    #[route("/legal/privacy?:return_to")]
+    PrivacyPolicy { return_to: Option<String> },
+    #[route("/legal/personal-data-consent?:return_to")]
+    PersonalDataConsent { return_to: Option<String> },
     #[route("/forgot-password")]
     ForgotPassword {},
     #[route("/reset-password?:token")]

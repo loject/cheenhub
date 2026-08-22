@@ -6034,6 +6034,10 @@ html,
     border-color: rgb(96 165 250 / 0.5);
   }
 
+  .hover\:border-blue-400\/70:hover {
+    border-color: rgb(96 165 250 / 0.7);
+  }
+
   .hover\:border-cyan-300\/35:hover {
     border-color: rgb(103 232 249 / 0.35);
   }

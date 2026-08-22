@@ -35,11 +35,12 @@ pub(crate) struct LegalDocument {
 
 /// Показывает юридический документ с общей навигацией и реквизитами оператора.
 #[component]
-pub(crate) fn LegalDocumentPage(document: LegalDocument) -> Element {
+pub(crate) fn LegalDocumentPage(document: LegalDocument, return_to_registration: bool) -> Element {
     use_effect(move || {
         info!(
             document = document.key,
             version = document.version,
+            return_to_registration,
             "opened public legal document"
         );
     });
@@ -54,10 +55,18 @@ pub(crate) fn LegalDocumentPage(document: LegalDocument) -> Element {
                         span { class: "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-zinc-700 bg-zinc-100 text-[11px] font-bold text-zinc-950", "CH" }
                         span { class: "truncate text-sm font-semibold text-zinc-50", "CheenHub" }
                     }
-                    Link {
-                        to: Route::Landing {},
-                        class: "rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-zinc-300 transition hover:border-zinc-700 hover:text-zinc-100",
-                        "На главную"
+                    if return_to_registration {
+                        Link {
+                            to: Route::Register {},
+                            class: "rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-1.5 text-[12px] font-medium text-blue-100 transition hover:border-blue-400/70 hover:bg-blue-500/20",
+                            "Вернуться к регистрации"
+                        }
+                    } else {
+                        Link {
+                            to: Route::Landing {},
+                            class: "rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-zinc-300 transition hover:border-zinc-700 hover:text-zinc-100",
+                            "На главную"
+                        }
                     }
                 }
             }
@@ -105,9 +114,9 @@ pub(crate) fn LegalDocumentPage(document: LegalDocument) -> Element {
             footer { class: "border-t border-zinc-800/80 px-5 py-8 lg:px-8",
                 div { class: "mx-auto flex max-w-3xl flex-col gap-5 text-[12px] text-zinc-500",
                     nav { class: "flex flex-wrap gap-x-5 gap-y-2",
-                        Link { to: Route::Terms {}, class: "transition hover:text-zinc-200", "Пользовательское соглашение" }
-                        Link { to: Route::PrivacyPolicy {}, class: "transition hover:text-zinc-200", "Политика обработки данных" }
-                        Link { to: Route::PersonalDataConsent {}, class: "transition hover:text-zinc-200", "Согласие на обработку данных" }
+                        Link { to: document_route(Route::Terms { return_to: None }, return_to_registration), class: "transition hover:text-zinc-200", "Пользовательское соглашение" }
+                        Link { to: document_route(Route::PrivacyPolicy { return_to: None }, return_to_registration), class: "transition hover:text-zinc-200", "Политика обработки данных" }
+                        Link { to: document_route(Route::PersonalDataConsent { return_to: None }, return_to_registration), class: "transition hover:text-zinc-200", "Согласие на обработку данных" }
                     }
                     p {
                         "Вопросы по документам и персональным данным: "
@@ -116,5 +125,25 @@ pub(crate) fn LegalDocumentPage(document: LegalDocument) -> Element {
                 }
             }
         }
+    }
+}
+
+/// Формирует маршрут документа, сохраняя переход из регистрации.
+fn document_route(route: Route, return_to_registration: bool) -> Route {
+    if !return_to_registration {
+        return route;
+    }
+
+    match route {
+        Route::Terms { .. } => Route::Terms {
+            return_to: Some("registration".to_string()),
+        },
+        Route::PrivacyPolicy { .. } => Route::PrivacyPolicy {
+            return_to: Some("registration".to_string()),
+        },
+        Route::PersonalDataConsent { .. } => Route::PersonalDataConsent {
+            return_to: Some("registration".to_string()),
+        },
+        _ => route,
     }
 }
