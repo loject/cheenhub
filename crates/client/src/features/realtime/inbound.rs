@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use cheenhub_contracts::realtime::{ControlKind, RealtimeEnvelope, RealtimeKind, RealtimeModule};
+use dioxus::prelude::debug;
 use futures_channel::mpsc;
 use futures_util::StreamExt;
 
@@ -40,6 +41,13 @@ pub(super) fn spawn_universal_reader(
                 {
                     let _ = sender.send(envelope);
                 }
+            } else {
+                debug!(
+                    module = ?envelope.module,
+                    kind = ?envelope.kind,
+                    %request_id,
+                    "received realtime response without pending receiver"
+                );
             }
         }
     });

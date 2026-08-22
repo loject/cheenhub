@@ -3,6 +3,7 @@
 mod connection;
 mod fallback;
 mod fire_and_forget;
+mod one_shot;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -207,11 +208,24 @@ impl RealtimeHandle {
         R: DeserializeOwned,
     {
         validate_module_kind(module, kind)?;
-        let request_id = Uuid::new_v4();
+        let request_id = new_request_id();
         let envelope =
             RealtimeEnvelope::new(module, kind, Some(request_id), payload).map_err(|error| {
                 RealtimeError::new(format!("Failed to encode realtime payload: {error}"))
             })?;
+        if mode == ReliableRequestMode::OneShot
+            && let Some(session) = self.webtransport_session().await
+        {
+            debug!(
+                ?module,
+                ?kind,
+                %request_id,
+                "sending one-shot realtime request"
+            );
+            let response = one_shot::request(envelope, session, request_id).await?;
+            return decode_response(response);
+        }
+
         let (sender, receiver) = oneshot::channel();
         self.inner
             .pending
@@ -238,16 +252,7 @@ impl RealtimeHandle {
             .await
             .map_err(|_| RealtimeError::new("Realtime response channel closed."))?;
         pending_guard.disarm();
-        if response.kind == RealtimeKind::Control(ControlKind::Rejected) {
-            let rejected =
-                serde_json::from_value::<Rejected>(response.payload).map_err(|error| {
-                    RealtimeError::new(format!("Failed to decode realtime rejection: {error}"))
-                })?;
-            return Err(RealtimeError::new(rejected.message));
-        }
-        serde_json::from_value(response.payload).map_err(|error| {
-            RealtimeError::new(format!("Failed to decode realtime response: {error}"))
-        })
+        decode_response(response)
     }
 
     async fn write_envelope(
@@ -260,15 +265,15 @@ impl RealtimeHandle {
         };
 
         match connected.transport {
-            ConnectedTransport::WebTransport(session) => {
-                if mode == ReliableRequestMode::Cached && uses_cached_stream(envelope.module) {
-                    self.write_webtransport_envelope(envelope, (*session).clone())
-                        .await
-                } else {
-                    self.write_webtransport_one_shot(envelope, (*session).clone())
-                        .await
-                }
+            ConnectedTransport::WebTransport(session)
+                if mode == ReliableRequestMode::Cached && uses_cached_stream(envelope.module) =>
+            {
+                self.write_webtransport_envelope(envelope, (*session).clone())
+                    .await
             }
+            ConnectedTransport::WebTransport(_) => Err(RealtimeError::new(
+                "One-shot realtime request was not opened through its response-owning path.",
+            )),
             ConnectedTransport::WebSocket(sender) => sender
                 .unbounded_send(WebSocketOutbound::Envelope(envelope))
                 .map_err(|_| RealtimeError::new("Realtime WebSocket fallback writer is closed.")),
@@ -309,46 +314,12 @@ impl RealtimeHandle {
         Err(last_error.unwrap_or_else(|| RealtimeError::new("Failed to write realtime frame.")))
     }
 
-    async fn write_webtransport_one_shot(
-        &self,
-        envelope: RealtimeEnvelope,
-        session: Session,
-    ) -> Result<(), RealtimeError> {
-        let module = envelope.module;
-        let mut last_error = None;
-
-        for attempt in 0..2 {
-            let (send, recv) = session.open_bi().await.map_err(|error| {
-                RealtimeError::new(format!("Failed to open realtime stream: {error}"))
-            })?;
-            let send = Rc::new(Mutex::new(send));
-            debug!(module = ?module, "opened one-shot WebTransport realtime stream");
-            let pending_key = envelope.request_id.map(|request_id| (module, request_id));
-            webtransport::spawn_stream_reader(
-                module,
-                recv,
-                self.inner.inbound.clone(),
-                self.inner.pending.clone(),
-                pending_key,
-                None,
-                Some(send.clone()),
-            );
-
-            match framing::write_envelope(&send, &envelope).await {
-                Ok(()) => return Ok(()),
-                Err(error) => {
-                    warn!(
-                        module = ?module,
-                        attempt,
-                        %error,
-                        "failed to write one-shot WebTransport realtime frame"
-                    );
-                    last_error = Some(error);
-                }
-            }
+    async fn webtransport_session(&self) -> Option<Session> {
+        let connected = self.inner.session.lock().await.clone()?;
+        match connected.transport {
+            ConnectedTransport::WebTransport(session) => Some((*session).clone()),
+            ConnectedTransport::WebSocket(_) => None,
         }
-
-        Err(last_error.unwrap_or_else(|| RealtimeError::new("Failed to write realtime frame.")))
     }
 
     async fn stream_for(
@@ -458,6 +429,21 @@ fn validate_module_kind(module: RealtimeModule, kind: RealtimeKind) -> Result<()
     }
 }
 
+fn decode_response<R: DeserializeOwned>(response: RealtimeEnvelope) -> Result<R, RealtimeError> {
+    if response.kind == RealtimeKind::Control(ControlKind::Rejected) {
+        let rejected = serde_json::from_value::<Rejected>(response.payload).map_err(|error| {
+            RealtimeError::new(format!("Failed to decode realtime rejection: {error}"))
+        })?;
+        return Err(RealtimeError::new(rejected.message));
+    }
+    serde_json::from_value(response.payload)
+        .map_err(|error| RealtimeError::new(format!("Failed to decode realtime response: {error}")))
+}
+
+fn new_request_id() -> Uuid {
+    Uuid::new_v4()
+}
+
 fn uses_cached_stream(module: RealtimeModule) -> bool {
     matches!(
         module,
@@ -484,4 +470,14 @@ fn realtime_now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::new_request_id;
+
+    #[test]
+    fn retry_attempt_uses_a_new_request_id() {
+        assert_ne!(new_request_id(), new_request_id());
+    }
 }
