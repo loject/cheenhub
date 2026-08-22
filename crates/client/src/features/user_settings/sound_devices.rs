@@ -18,7 +18,36 @@ pub(super) fn input_device_widget(
     match state {
         None => loading_devices(),
 
-        Some(AudioInputDevicesResult::Available(devices)) => rsx! {
+        Some(state) if state.system_managed => system_managed(
+            "🎙",
+            "Android автоматически выбирает подходящий микрофон. Подключённая гарнитура будет использована по правилам системы.",
+        ),
+
+        Some(state) if state.permission_required => permission_required(
+            "🎙",
+            "Для выбора устройства разрешите доступ к микрофону.",
+            requesting_permission,
+            on_request_permission,
+        ),
+
+        Some(state) if state.permission_denied => rsx! {
+            div { class: "flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2.5",
+                span { class: "mt-px shrink-0 text-red-400", "⊘" }
+                p { class: "text-[12px] leading-5 text-red-300",
+                    "Доступ к микрофону запрещён. Разрешите его в настройках системы или браузера и обновите список."
+                }
+            }
+        },
+
+        Some(state) if state.devices.as_ref().is_some_and(Vec::is_empty) => no_devices(
+            "Устройства ввода не обнаружены. Подключите микрофон и повторите.",
+            on_retry,
+        ),
+
+        Some(AudioInputDevicesResult {
+            devices: Some(devices),
+            ..
+        }) => rsx! {
             {
                 let change_devices = devices.clone();
                 rsx! {
@@ -62,35 +91,7 @@ pub(super) fn input_device_widget(
             }
         },
 
-        Some(AudioInputDevicesResult::SystemManaged) => system_managed(
-            "🎙",
-            "Android автоматически выбирает подходящий микрофон. Подключённая гарнитура будет использована по правилам системы.",
-        ),
-
-        Some(AudioInputDevicesResult::PermissionRequired) => permission_required(
-            "🎙",
-            "Для выбора устройства разрешите доступ к микрофону.",
-            requesting_permission,
-            on_request_permission,
-        ),
-
-        Some(AudioInputDevicesResult::PermissionDenied) => rsx! {
-            div { class: "flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2.5",
-                span { class: "mt-px shrink-0 text-red-400", "⊘" }
-                p { class: "text-[12px] leading-5 text-red-300",
-                    "Доступ к микрофону запрещён. Разрешите его в настройках системы или браузера и обновите список."
-                }
-            }
-        },
-
-        Some(AudioInputDevicesResult::NoDevices) => no_devices(
-            "Устройства ввода не обнаружены. Подключите микрофон и повторите.",
-            on_retry,
-        ),
-
-        Some(AudioInputDevicesResult::NotSupported) => {
-            not_supported("Текущая платформа не поддерживает выбор устройств аудиовхода.")
-        }
+        Some(_) => not_supported("Текущая платформа не поддерживает выбор устройств аудиовхода."),
     }
 }
 
@@ -105,7 +106,27 @@ pub(super) fn output_device_widget(
     match state {
         None => loading_devices(),
 
-        Some(AudioOutputDevicesResult::Available(devices)) => rsx! {
+        Some(state) if state.system_managed => system_managed(
+            "◉",
+            "Android автоматически выбирает устройство вывода. Динамик и разговорный динамик переключаются в интерфейсе звонка.",
+        ),
+
+        Some(state) if state.permission_required => permission_required(
+            "◉",
+            "Для выбора устройства вывода разрешите доступ к аудио.",
+            requesting_permission,
+            on_request_permission,
+        ),
+
+        Some(state) if state.devices.as_ref().is_some_and(Vec::is_empty) => no_devices(
+            "Устройства вывода не обнаружены. Подключите устройство и повторите.",
+            on_retry,
+        ),
+
+        Some(AudioOutputDevicesResult {
+            devices: Some(devices),
+            ..
+        }) => rsx! {
             {
                 let change_devices = devices.clone();
                 rsx! {
@@ -149,26 +170,7 @@ pub(super) fn output_device_widget(
             }
         },
 
-        Some(AudioOutputDevicesResult::SystemManaged) => system_managed(
-            "◉",
-            "Android автоматически выбирает устройство вывода. Динамик и разговорный динамик переключаются в интерфейсе звонка.",
-        ),
-
-        Some(AudioOutputDevicesResult::PermissionRequired) => permission_required(
-            "◉",
-            "Для выбора устройства вывода разрешите доступ к аудио.",
-            requesting_permission,
-            on_request_permission,
-        ),
-
-        Some(AudioOutputDevicesResult::NoDevices) => no_devices(
-            "Устройства вывода не обнаружены. Подключите устройство и повторите.",
-            on_retry,
-        ),
-
-        Some(AudioOutputDevicesResult::NotSupported) => {
-            not_supported("Текущая платформа не поддерживает выбор устройств аудиовывода.")
-        }
+        Some(_) => not_supported("Текущая платформа не поддерживает выбор устройств аудиовывода."),
     }
 }
 

@@ -11,15 +11,13 @@ pub(crate) struct AudioOutputDevice {
 
 /// Результат перечисления устройств вывода аудио.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum AudioOutputDevicesResult {
-    /// API перечисления устройств недоступен.
-    NotSupported,
+pub(crate) struct AudioOutputDevicesResult {
+    /// `None`, если API перечисления устройств недоступен.
+    ///
+    /// Пустой список означает, что API доступен, но устройства не найдены.
+    pub(crate) devices: Option<Vec<AudioOutputDevice>>,
     /// Выбор конкретного устройства выполняет системная audio policy.
-    SystemManaged,
-    /// Устройства есть, но подписи скрыты до выдачи разрешения.
-    PermissionRequired,
-    /// Устройства вывода аудио не найдены.
-    NoDevices,
-    /// Доступен список устройств вывода аудио.
-    Available(Vec<AudioOutputDevice>),
+    pub(crate) system_managed: bool,
+    /// Подписи устройств скрыты до выдачи разрешения.
+    pub(crate) permission_required: bool,
 }

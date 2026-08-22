@@ -11,5 +11,9 @@ pub(crate) async fn enumerate_audio_output_devices() -> AudioOutputDevicesResult
         management = "audio_manager",
         "audio output device selection is managed by the system"
     );
-    AudioOutputDevicesResult::SystemManaged
+    AudioOutputDevicesResult {
+        devices: Some(Vec::new()),
+        system_managed: true,
+        permission_required: false,
+    }
 }

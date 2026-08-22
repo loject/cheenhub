@@ -15,7 +15,7 @@ pub(crate) async fn enumerate_audio_output_devices() -> AudioOutputDevicesResult
                 error = %error,
                 "failed to enumerate native audio output devices"
             );
-            return AudioOutputDevicesResult::NotSupported;
+            return unavailable_output_devices();
         }
     };
 
@@ -45,9 +45,17 @@ pub(crate) async fn enumerate_audio_output_devices() -> AudioOutputDevicesResult
         has_default_device = default_output_name.is_some(),
         "enumerated native audio output devices"
     );
-    if audio_outputs.is_empty() {
-        AudioOutputDevicesResult::NoDevices
-    } else {
-        AudioOutputDevicesResult::Available(audio_outputs)
+    AudioOutputDevicesResult {
+        devices: Some(audio_outputs),
+        system_managed: false,
+        permission_required: false,
+    }
+}
+
+fn unavailable_output_devices() -> AudioOutputDevicesResult {
+    AudioOutputDevicesResult {
+        devices: None,
+        system_managed: false,
+        permission_required: false,
     }
 }

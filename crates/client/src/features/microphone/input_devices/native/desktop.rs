@@ -4,7 +4,6 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use dioxus::prelude::{debug, warn};
 
 use super::super::contract::{AudioInputDevice, AudioInputDevicesResult};
-use crate::features::microphone::native::device_key::input_device_id;
 
 /// Возвращает список устройств ввода через `cpal`.
 pub(crate) async fn enumerate_audio_input_devices() -> AudioInputDevicesResult {
@@ -16,7 +15,7 @@ pub(crate) async fn enumerate_audio_input_devices() -> AudioInputDevicesResult {
                 error = %error,
                 "failed to enumerate native microphone input devices"
             );
-            return AudioInputDevicesResult::NotSupported;
+            return unavailable_input_devices();
         }
     };
 
@@ -46,11 +45,25 @@ pub(crate) async fn enumerate_audio_input_devices() -> AudioInputDevicesResult {
         has_default_device = default_input_name.is_some(),
         "enumerated native microphone input devices"
     );
-    if audio_inputs.is_empty() {
-        AudioInputDevicesResult::NoDevices
-    } else {
-        AudioInputDevicesResult::Available(audio_inputs)
+    AudioInputDevicesResult {
+        devices: Some(audio_inputs),
+        system_managed: false,
+        permission_required: false,
+        permission_denied: false,
     }
+}
+
+fn unavailable_input_devices() -> AudioInputDevicesResult {
+    AudioInputDevicesResult {
+        devices: None,
+        system_managed: false,
+        permission_required: false,
+        permission_denied: false,
+    }
+}
+
+fn input_device_id(ordinal: usize, label: &str) -> String {
+    format!("cpal-input:{ordinal}:{label}")
 }
 
 /// На desktop повторно перечисляет устройства без отдельного runtime-разрешения.

@@ -321,20 +321,22 @@ async fn refresh_devices_inner(
 }
 
 fn reconcile_input_devices_result(mic: &MicrophoneHandle, result: &AudioInputDevicesResult) {
-    match result {
-        AudioInputDevicesResult::Available(devices) => mic.reconcile_input_devices(devices),
-        AudioInputDevicesResult::SystemManaged if mic.input_device_id().is_some() => {
-            info!(
-                platform = "android",
-                management = "system_audio_policy",
-                "clearing stored microphone input device preference"
-            );
-            mic.set_input_device(&AudioInputDevice {
-                device_id: String::new(),
-                label: String::new(),
-            });
-        }
-        _ => {}
+    if result.system_managed && mic.input_device_id().is_some() {
+        info!(
+            platform = "android",
+            management = "system_audio_policy",
+            "clearing stored microphone input device preference"
+        );
+        mic.set_input_device(&AudioInputDevice {
+            device_id: String::new(),
+            label: String::new(),
+        });
+    } else if let Some(devices) = result
+        .devices
+        .as_ref()
+        .filter(|devices| !devices.is_empty())
+    {
+        mic.reconcile_input_devices(devices);
     }
 }
 
@@ -342,22 +344,22 @@ fn reconcile_output_devices_result(
     playback: &AudioPlaybackHandle,
     result: &AudioOutputDevicesResult,
 ) {
-    match result {
-        AudioOutputDevicesResult::Available(devices) => {
-            playback.reconcile_output_devices(devices);
-        }
-        AudioOutputDevicesResult::SystemManaged if playback.output_device_id().is_some() => {
-            info!(
-                platform = "android",
-                management = "audio_manager",
-                "clearing stored audio output device preference"
-            );
-            playback.set_output_device(&AudioOutputDevice {
-                device_id: String::new(),
-                label: String::new(),
-            });
-        }
-        _ => {}
+    if result.system_managed && playback.output_device_id().is_some() {
+        info!(
+            platform = "android",
+            management = "audio_manager",
+            "clearing stored audio output device preference"
+        );
+        playback.set_output_device(&AudioOutputDevice {
+            device_id: String::new(),
+            label: String::new(),
+        });
+    } else if let Some(devices) = result
+        .devices
+        .as_ref()
+        .filter(|devices| !devices.is_empty())
+    {
+        playback.reconcile_output_devices(devices);
     }
 }
 

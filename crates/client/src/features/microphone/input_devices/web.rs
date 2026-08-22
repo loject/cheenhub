@@ -12,16 +12,16 @@ use crate::features::microphone::browser_errors::is_permission_denied_error;
 /// Calls `navigator.mediaDevices.enumerateDevices()` and returns the audio inputs.
 pub(crate) async fn enumerate_audio_input_devices() -> AudioInputDevicesResult {
     let Some(window) = window() else {
-        return AudioInputDevicesResult::NotSupported;
+        return unavailable_input_devices();
     };
     let Ok(media_devices) = window.navigator().media_devices() else {
-        return AudioInputDevicesResult::NotSupported;
+        return unavailable_input_devices();
     };
     let Ok(promise) = media_devices.enumerate_devices() else {
-        return AudioInputDevicesResult::NotSupported;
+        return unavailable_input_devices();
     };
     let Ok(result) = JsFuture::from(promise).await else {
-        return AudioInputDevicesResult::NotSupported;
+        return unavailable_input_devices();
     };
 
     let array = Array::from(&result);
@@ -48,24 +48,24 @@ pub(crate) async fn enumerate_audio_input_devices() -> AudioInputDevicesResult {
     }
 
     if audio_inputs.is_empty() {
-        return AudioInputDevicesResult::NoDevices;
+        return available_input_devices(audio_inputs, false);
     }
 
     let has_labels = audio_inputs.iter().any(|d| !d.label.is_empty());
     if !has_labels {
-        return AudioInputDevicesResult::PermissionRequired;
+        return available_input_devices(audio_inputs, true);
     }
 
-    AudioInputDevicesResult::Available(audio_inputs)
+    available_input_devices(audio_inputs, false)
 }
 
 /// Requests microphone permission, stops the temporary stream, then re-enumerates devices.
 pub(crate) async fn request_microphone_permission() -> AudioInputDevicesResult {
     let Some(window) = window() else {
-        return AudioInputDevicesResult::NotSupported;
+        return unavailable_input_devices();
     };
     let Ok(media_devices) = window.navigator().media_devices() else {
-        return AudioInputDevicesResult::NotSupported;
+        return unavailable_input_devices();
     };
 
     let constraints = MediaStreamConstraints::new();
@@ -73,7 +73,7 @@ pub(crate) async fn request_microphone_permission() -> AudioInputDevicesResult {
     constraints.set_video(&JsValue::FALSE);
 
     let Ok(promise) = media_devices.get_user_media_with_constraints(&constraints) else {
-        return AudioInputDevicesResult::NotSupported;
+        return unavailable_input_devices();
     };
 
     match JsFuture::from(promise).await {
@@ -90,10 +90,36 @@ pub(crate) async fn request_microphone_permission() -> AudioInputDevicesResult {
         }
         Err(error) => {
             if is_permission_denied_error(&error) {
-                AudioInputDevicesResult::PermissionDenied
+                AudioInputDevicesResult {
+                    devices: None,
+                    system_managed: false,
+                    permission_required: false,
+                    permission_denied: true,
+                }
             } else {
-                AudioInputDevicesResult::NotSupported
+                unavailable_input_devices()
             }
         }
+    }
+}
+
+fn available_input_devices(
+    devices: Vec<AudioInputDevice>,
+    permission_required: bool,
+) -> AudioInputDevicesResult {
+    AudioInputDevicesResult {
+        devices: Some(devices),
+        system_managed: false,
+        permission_required,
+        permission_denied: false,
+    }
+}
+
+fn unavailable_input_devices() -> AudioInputDevicesResult {
+    AudioInputDevicesResult {
+        devices: None,
+        system_managed: false,
+        permission_required: false,
+        permission_denied: false,
     }
 }

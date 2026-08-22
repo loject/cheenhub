@@ -12,7 +12,12 @@ pub(crate) async fn enumerate_audio_input_devices() -> AudioInputDevicesResult {
         management = "system_audio_policy",
         "microphone input device selection is managed by the system"
     );
-    AudioInputDevicesResult::SystemManaged
+    AudioInputDevicesResult {
+        devices: Some(Vec::new()),
+        system_managed: true,
+        permission_required: false,
+        permission_denied: false,
+    }
 }
 
 /// Запрашивает runtime-разрешение Android на запись звука.
@@ -26,7 +31,7 @@ pub(crate) async fn request_microphone_permission() -> AudioInputDevicesResult {
         Ok(bridge) => bridge,
         Err(error) => {
             warn!(error = %error, "Android microphone permission bridge is unavailable");
-            return AudioInputDevicesResult::NotSupported;
+            return unavailable_input_devices();
         }
     };
     let (sender, receiver) = futures_channel::oneshot::channel();
@@ -37,7 +42,7 @@ pub(crate) async fn request_microphone_permission() -> AudioInputDevicesResult {
         }),
     ) {
         warn!(error = %error, "failed to request Android microphone permission");
-        return AudioInputDevicesResult::NotSupported;
+        return unavailable_input_devices();
     }
 
     match receiver.await {
@@ -57,15 +62,29 @@ pub(crate) async fn request_microphone_permission() -> AudioInputDevicesResult {
                 granted = false,
                 "microphone permission request completed"
             );
-            AudioInputDevicesResult::PermissionDenied
+            AudioInputDevicesResult {
+                devices: None,
+                system_managed: false,
+                permission_required: false,
+                permission_denied: true,
+            }
         }
         Ok(Err(error)) => {
             warn!(error = %error, "Android microphone permission request failed");
-            AudioInputDevicesResult::NotSupported
+            unavailable_input_devices()
         }
         Err(error) => {
             warn!(error = %error, "Android microphone permission callback was dropped");
-            AudioInputDevicesResult::NotSupported
+            unavailable_input_devices()
         }
+    }
+}
+
+fn unavailable_input_devices() -> AudioInputDevicesResult {
+    AudioInputDevicesResult {
+        devices: None,
+        system_managed: false,
+        permission_required: false,
+        permission_denied: false,
     }
 }

@@ -10,16 +10,16 @@ use super::super::contract::{AudioOutputDevice, AudioOutputDevicesResult};
 /// Calls `navigator.mediaDevices.enumerateDevices()` and returns audio outputs.
 pub(crate) async fn enumerate_audio_output_devices() -> AudioOutputDevicesResult {
     let Some(window) = window() else {
-        return AudioOutputDevicesResult::NotSupported;
+        return unavailable_output_devices();
     };
     let Ok(media_devices) = window.navigator().media_devices() else {
-        return AudioOutputDevicesResult::NotSupported;
+        return unavailable_output_devices();
     };
     let Ok(promise) = media_devices.enumerate_devices() else {
-        return AudioOutputDevicesResult::NotSupported;
+        return unavailable_output_devices();
     };
     let Ok(result) = JsFuture::from(promise).await else {
-        return AudioOutputDevicesResult::NotSupported;
+        return unavailable_output_devices();
     };
 
     let array = Array::from(&result);
@@ -46,13 +46,33 @@ pub(crate) async fn enumerate_audio_output_devices() -> AudioOutputDevicesResult
     }
 
     if audio_outputs.is_empty() {
-        return AudioOutputDevicesResult::NoDevices;
+        return AudioOutputDevicesResult {
+            devices: Some(audio_outputs),
+            system_managed: false,
+            permission_required: false,
+        };
     }
 
     let has_labels = audio_outputs.iter().any(|device| !device.label.is_empty());
     if !has_labels {
-        return AudioOutputDevicesResult::PermissionRequired;
+        return AudioOutputDevicesResult {
+            devices: Some(audio_outputs),
+            system_managed: false,
+            permission_required: true,
+        };
     }
 
-    AudioOutputDevicesResult::Available(audio_outputs)
+    AudioOutputDevicesResult {
+        devices: Some(audio_outputs),
+        system_managed: false,
+        permission_required: false,
+    }
+}
+
+fn unavailable_output_devices() -> AudioOutputDevicesResult {
+    AudioOutputDevicesResult {
+        devices: None,
+        system_managed: false,
+        permission_required: false,
+    }
 }
