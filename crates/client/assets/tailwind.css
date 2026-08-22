@@ -2104,6 +2104,10 @@ html,
   margin-bottom: 1.25rem;
 }
 
+.-mt-2 {
+  margin-top: -0.5rem;
+}
+
 .mb-1 {
   margin-bottom: 0.25rem;
 }
