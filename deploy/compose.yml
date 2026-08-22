@@ -40,6 +40,7 @@ services:
       FCM_SERVICE_ACCOUNT_PATH: /run/secrets/fcm-service-account.json
       WEBTRANSPORT_TLS_CERT_PATH: /etc/letsencrypt/live/cheenhub.ru/fullchain.pem
       WEBTRANSPORT_TLS_KEY_PATH: /etc/letsencrypt/live/cheenhub.ru/privkey.pem
+      WEBTRANSPORT_TLS_RELOAD_INTERVAL_SECONDS: ${WEBTRANSPORT_TLS_RELOAD_INTERVAL_SECONDS:-5}
     volumes:
       - letsencrypt:/etc/letsencrypt:ro
       - ./secrets/firebase-service-account.json:/run/secrets/fcm-service-account.json:ro

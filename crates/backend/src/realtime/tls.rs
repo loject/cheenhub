@@ -3,8 +3,10 @@
 use std::fs::{self, File};
 use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
+use quinn::crypto::rustls::QuicServerConfig;
 use rcgen::{CertificateParams, KeyPair};
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use time::{Duration, OffsetDateTime};
@@ -22,6 +24,37 @@ pub(crate) struct TlsConfig {
     pub(crate) cert_path: String,
     /// Путь к PEM-приватному ключу, используемому слушателем.
     pub(crate) key_path: String,
+}
+
+/// Строит конфигурацию QUIC с TLS 1.3 и ALPN WebTransport.
+pub(crate) fn build_server_config(
+    cert_path: &str,
+    key_path: &str,
+) -> anyhow::Result<quinn::ServerConfig> {
+    let certificates = load_certificates(cert_path)?;
+    let private_key = load_private_key(key_path)?;
+    build_server_config_from_parts(certificates, private_key)
+}
+
+/// Строит конфигурацию QUIC из уже прочитанных сертификатов и ключа.
+pub(crate) fn build_server_config_from_parts(
+    certificates: Vec<CertificateDer<'static>>,
+    private_key: PrivateKeyDer<'static>,
+) -> anyhow::Result<quinn::ServerConfig> {
+    // Повторяет ServerBuilder::with_certificate из web-transport-quinn 0.11.9.
+    let mut config = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_protocol_versions(&[&rustls::version::TLS13])
+    .context("failed to configure TLS 1.3 for WebTransport")?
+    .with_no_client_auth()
+    .with_single_cert(certificates, private_key)
+    .context("failed to configure WebTransport TLS certificate and private key")?;
+    config.alpn_protocols = vec![web_transport_quinn::ALPN.as_bytes().to_vec()];
+
+    let config = QuicServerConfig::try_from(config)
+        .context("failed to convert WebTransport TLS configuration for QUIC")?;
+    Ok(quinn::ServerConfig::with_crypto(Arc::new(config)))
 }
 
 /// Проверяет наличие файлов TLS WebTransport перед запуском бэкенда.
@@ -227,11 +260,26 @@ fn write_private_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn certificate_sha256_hex(certificate: &CertificateDer<'_>) -> String {
+pub(crate) fn certificate_sha256_hex(certificate: &CertificateDer<'_>) -> String {
     use sha2::{Digest, Sha256};
 
     let digest = Sha256::digest(certificate.as_ref());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+pub(crate) fn certificate_chain_sha256_hex(certificates: &[CertificateDer<'_>]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut digest = Sha256::new();
+    for certificate in certificates {
+        digest.update((certificate.as_ref().len() as u64).to_be_bytes());
+        digest.update(certificate.as_ref());
+    }
+    digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 #[cfg(test)]
@@ -318,6 +366,42 @@ mod tests {
             b"do not overwrite"
         );
         assert!(!key_path.exists());
+
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn validates_certificate_and_private_key_pair_before_reload() {
+        let directory =
+            std::env::temp_dir().join(format!("cheenhub-webtransport-test-{}", Uuid::new_v4()));
+        let first_cert = directory.join("first-cert.pem");
+        let first_key = directory.join("first-key.pem");
+        let second_cert = directory.join("second-cert.pem");
+        let second_key = directory.join("second-key.pem");
+
+        generate_dev_certificate(
+            first_cert.to_str().expect("utf-8 cert path"),
+            first_key.to_str().expect("utf-8 key path"),
+        )
+        .expect("first TLS pair is generated");
+        generate_dev_certificate(
+            second_cert.to_str().expect("utf-8 cert path"),
+            second_key.to_str().expect("utf-8 key path"),
+        )
+        .expect("second TLS pair is generated");
+
+        build_server_config(
+            first_cert.to_str().expect("utf-8 cert path"),
+            first_key.to_str().expect("utf-8 key path"),
+        )
+        .expect("matching pair is accepted");
+        assert!(
+            build_server_config(
+                first_cert.to_str().expect("utf-8 cert path"),
+                second_key.to_str().expect("utf-8 key path"),
+            )
+            .is_err()
+        );
 
         let _ = fs::remove_dir_all(directory);
     }

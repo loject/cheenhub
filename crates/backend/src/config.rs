@@ -58,6 +58,8 @@ pub(crate) struct AppConfig {
     pub(crate) webtransport_tls_cert_path: Option<String>,
     /// Необязательный путь к PEM-приватному ключу, используемый слушателем WebTransport.
     pub(crate) webtransport_tls_key_path: Option<String>,
+    /// Интервал проверки обновления TLS WebTransport в секундах.
+    pub(crate) webtransport_tls_reload_interval_seconds: u64,
     /// Необязательная конфигурация S3-совместимого объектного хранилища для изображений чата.
     pub(crate) chat_images_s3: Option<S3Config>,
     /// Путь к внешнему JSON service account для FCM HTTP v1.
@@ -138,6 +140,10 @@ impl AppConfig {
             auth_store: auth_store_config(&optional("AUTH_STORE", "postgres"))?,
             webtransport_tls_cert_path: env::var("WEBTRANSPORT_TLS_CERT_PATH").ok(),
             webtransport_tls_key_path: env::var("WEBTRANSPORT_TLS_KEY_PATH").ok(),
+            webtransport_tls_reload_interval_seconds: optional_reload_interval_seconds(
+                "WEBTRANSPORT_TLS_RELOAD_INTERVAL_SECONDS",
+                5,
+            )?,
             chat_images_s3: optional_s3_config()?,
             fcm_service_account_path: env::var("FCM_SERVICE_ACCOUNT_PATH")
                 .ok()
@@ -206,6 +212,18 @@ fn optional_positive_i64(key: &str, default: i64) -> anyhow::Result<i64> {
         .with_context(|| format!("{key} must be a valid i64"))?;
     if parsed <= 0 {
         return Err(anyhow!("{key} must be greater than zero"));
+    }
+
+    Ok(parsed)
+}
+
+fn optional_reload_interval_seconds(key: &str, default: u64) -> anyhow::Result<u64> {
+    let value = env::var(key).unwrap_or_else(|_| default.to_string());
+    let parsed: u64 = value
+        .parse()
+        .with_context(|| format!("{key} must be a valid unsigned integer"))?;
+    if !(1..=3600).contains(&parsed) {
+        return Err(anyhow!("{key} must be between 1 and 3600 seconds"));
     }
 
     Ok(parsed)

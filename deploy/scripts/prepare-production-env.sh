@@ -45,6 +45,7 @@ FCM_SERVICE_ACCOUNT_PATH=/run/secrets/fcm-service-account.json
 
 WEBTRANSPORT_TLS_CERT_PATH=/etc/letsencrypt/live/cheenhub.ru/fullchain.pem
 WEBTRANSPORT_TLS_KEY_PATH=/etc/letsencrypt/live/cheenhub.ru/privkey.pem
+WEBTRANSPORT_TLS_RELOAD_INTERVAL_SECONDS=5
 
 OAUTH_STATE_LIFETIME_MINUTES=10
 OAUTH_HANDOFF_LIFETIME_MINUTES=5

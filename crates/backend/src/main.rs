@@ -196,13 +196,21 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(push_notifications.run_delivery_worker());
     }
     let realtime_address = address;
-    let realtime_cert_path = realtime_tls.cert_path;
-    let realtime_key_path = realtime_tls.key_path;
-    let realtime_server =
-        realtime::bind(realtime_address, &realtime_cert_path, &realtime_key_path)?;
-
+    let realtime_server = realtime::bind(
+        realtime_address,
+        &realtime_tls.cert_path,
+        &realtime_tls.key_path,
+    )?;
     tokio::spawn(async move {
-        if let Err(error) = realtime::serve(state, realtime_address, realtime_server).await {
+        if let Err(error) = realtime::serve(
+            state,
+            realtime_address,
+            realtime_server,
+            realtime_tls,
+            config.webtransport_tls_reload_interval_seconds,
+        )
+        .await
+        {
             tracing::error!(%error, "webtransport realtime listener stopped");
         }
     });

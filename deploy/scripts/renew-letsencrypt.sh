@@ -11,4 +11,3 @@ compose() {
 
 compose run --rm --entrypoint certbot certbot renew --webroot -w /var/www/certbot
 compose exec web nginx -s reload
-compose restart backend

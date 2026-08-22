@@ -28,7 +28,9 @@ lettre.workspace = true
 rand_core.workspace = true
 rcgen.workspace = true
 reqwest = { workspace = true, features = ["rustls-tls"] }
+quinn.workspace = true
 rsa.workspace = true
+rustls.workspace = true
 rustls-pki-types.workspace = true
 rustls-pemfile.workspace = true
 sea-orm.workspace = true

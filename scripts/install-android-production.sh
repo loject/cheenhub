@@ -66,6 +66,14 @@ if [[ -z "${production_values[3]}" ]]; then
     exit 1
 fi
 
+realtime_fingerprint="${production_values[1]//:/}"
+realtime_fingerprint="${realtime_fingerprint//[[:space:]]/}"
+if [[ -n "${production_values[1]}" ]] && [[ ! "${realtime_fingerprint}" =~ ^[[:xdigit:]]{64}$ ]]; then
+    printf '%s\n' \
+        "Некорректный CHEENHUB_REALTIME_CERT_SHA256 в ${production_env}: ожидаются ровно 64 hex-символа; ':' и пробелы допустимы." >&2
+    exit 1
+fi
+
 case "${production_values[0]}" in
     https://* | http://*) ;;
     *)

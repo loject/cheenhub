@@ -48,6 +48,12 @@ docker compose --env-file .env.production -f deploy/compose.yml up --force-recre
 docker compose --env-file .env.production -f deploy/compose.yml up -d --no-deps backend web certbot
 ```
 
+## TLS renewal и WebTransport
+
+Backend проверяет `fullchain.pem` и `privkey.pem` каждые `WEBTRANSPORT_TLS_RELOAD_INTERVAL_SECONDS` секунд (по умолчанию 5). Одинаковый валидный candidate применяется после двух проверок только для новых WebTransport соединений; UDP listener и действующие сессии сохраняются.
+
+`deploy/scripts/renew-letsencrypt.sh` выполняет certbot renewal и reload nginx. Backend сам применяет изменения cert/key для новых WebTransport соединений без restart.
+
 Полная ссылка на Docker image называется **image reference**. Для GHCR она выглядит так:
 
 ```text
@@ -83,7 +89,7 @@ Secrets:
 - `GHCR_READ_TOKEN` - опционально, нужен для приватных GHCR packages.
 - `GHCR_USERNAME` - опционально, по умолчанию используется actor workflow.
 
-Workflow подключается по SSH, проверяет что `compose_project_dir` является чистым git checkout, делает `git fetch` и `git checkout --detach` на commit workflow, затем использует `deploy/compose.migrate.yml`: делает `docker compose pull migrate`, поднимает `db` и запускает одноразовый service `migrate` из указанного backend image. После успешной миграции workflow использует `deploy/compose.yml`, подтягивает `backend`, `web`, `certbot` и перезапускает `backend`, `web`, `certbot` через `up -d --no-deps`.
+Workflow подключается по SSH, проверяет что `compose_project_dir` является чистым git checkout, делает `git fetch` и `git checkout --detach` на commit workflow, затем использует `deploy/compose.migrate.yml`: делает `docker compose pull migrate`, поднимает `db` и запускает одноразовый service `migrate` из указанного backend image. После успешной миграции workflow использует `deploy/compose.yml`, подтягивает и перезапускает `backend`, `web` и `certbot`.
 
 Для локальной сборки на сервере можно добавить `deploy/compose.build.yml`, а для ручного frontend-артефакта оставить текущий overlay `deploy/compose.artifact.yml`.
 
