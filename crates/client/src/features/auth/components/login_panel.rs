@@ -104,10 +104,6 @@ pub(crate) fn LoginPanel() -> Element {
                 ProviderButton { provider: AuthProvider::Discord }
             }
 
-            div { class: "mt-5 rounded-2xl border border-zinc-800 bg-zinc-950/80 px-4 py-3 text-[12px] leading-5 text-zinc-500",
-                "Мы бережно относимся к входу в аккаунт: выбирай привычный способ и продолжай общение без лишних шагов."
-            }
-
             div { class: "mt-4 text-center text-[13px] text-zinc-500",
                 "Нет аккаунта? "
                 Link {
