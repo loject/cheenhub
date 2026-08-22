@@ -809,11 +809,94 @@
     z-index: 1100;
     min-height: 100dvh;
     height: 100dvh;
+    background: rgba(9, 9, 11, 0.68);
+    backdrop-filter: blur(18px);
+    animation: chat-image-viewer-backdrop-in 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .chat-image-viewer[data-closing="true"] {
+    pointer-events: none;
+    animation: chat-image-viewer-backdrop-out 240ms ease-in forwards;
+  }
+
+  .chat-image-viewer-close,
+  .chat-image-viewer-controls {
+    position: absolute;
+    z-index: 2;
+    top: max(0.75rem, env(safe-area-inset-top));
+  }
+
+  .chat-image-viewer-close {
+    left: max(0.75rem, env(safe-area-inset-left));
+  }
+
+  .chat-image-viewer-controls {
+    left: max(4.25rem, calc(env(safe-area-inset-left) + 3.5rem));
+    right: max(0.75rem, env(safe-area-inset-right));
+  }
+
+  .chat-image-viewer-surface {
+    padding-top: max(4.5rem, calc(env(safe-area-inset-top) + 3.75rem));
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
   }
 
   .chat-image-viewer-image {
     max-width: calc(100vw - 3rem);
-    max-height: calc(100dvh - 7rem);
+    max-height: calc(100dvh - 6.5rem);
+  }
+
+  .chat-image-viewer-shared { line-height: 0; transform-origin: top left; will-change: opacity, transform; }
+  .chat-image-viewer-shared-pending { opacity: 0; }
+  .chat-image-viewer-shared-enter { animation: chat-image-viewer-shared-enter 280ms cubic-bezier(0.22, 1, 0.36, 1); }
+  .chat-image-viewer-shared-exit { animation: chat-image-viewer-shared-exit 240ms ease-in forwards; }
+  .chat-image-viewer-shared-fallback-enter { animation: chat-image-viewer-shared-fallback-enter 280ms cubic-bezier(0.22, 1, 0.36, 1); }
+  .chat-image-viewer-shared-fallback-exit { animation: chat-image-viewer-shared-fallback-exit 240ms ease-in forwards; }
+
+  .chat-image-viewer-exit-sentinel {
+    position: absolute;
+    pointer-events: none;
+    animation: chat-image-viewer-exit-complete 240ms linear;
+  }
+
+  @keyframes chat-image-viewer-backdrop-in {
+    from {
+      background: rgba(9, 9, 11, 0);
+      backdrop-filter: blur(0);
+    }
+    to {
+      background: rgba(9, 9, 11, 0.68);
+      backdrop-filter: blur(18px);
+    }
+  }
+
+  @keyframes chat-image-viewer-backdrop-out {
+    from {
+      background: rgba(9, 9, 11, 0.68);
+      backdrop-filter: blur(18px);
+    }
+    to {
+      background: rgba(9, 9, 11, 0);
+      backdrop-filter: blur(0);
+    }
+  }
+
+  @keyframes chat-image-viewer-shared-enter { from { transform: translate(var(--flip-x), var(--flip-y)) scale(var(--flip-scale)); } to { transform: translate(0, 0) scale(1); } }
+  @keyframes chat-image-viewer-shared-exit { from { transform: translate(0, 0) scale(1); } to { transform: translate(var(--flip-x), var(--flip-y)) scale(var(--flip-scale)); } }
+  @keyframes chat-image-viewer-shared-fallback-enter { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+  @keyframes chat-image-viewer-shared-fallback-exit { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.97); } }
+
+  @keyframes chat-image-viewer-exit-complete {
+    from { opacity: 0; }
+    to { opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chat-image-viewer,
+    .chat-image-viewer[data-closing="true"],
+    .chat-image-viewer-shared,
+    .chat-image-viewer-exit-sentinel {
+      animation-duration: 1ms;
+    }
   }
 
   .mobile-room-back-button {

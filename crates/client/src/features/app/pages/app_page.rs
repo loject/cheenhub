@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use crate::Route;
 use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::components::app_shell::AppShell;
+use crate::features::app::components::chat_image_viewer::ChatImageViewerProvider;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
 use crate::features::app::workspace_route_storage;
@@ -169,8 +170,10 @@ pub(crate) fn AppPage() -> Element {
                         ScreenShareProvider {
                             VoiceConnectionProvider {
                                 NotificationsProvider {
-                                    AppShell {}
-                                    Outlet::<Route> {}
+                                    ChatImageViewerProvider {
+                                        AppShell {}
+                                        Outlet::<Route> {}
+                                    }
                                 }
                             }
                         }
