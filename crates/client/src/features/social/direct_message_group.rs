@@ -57,14 +57,13 @@ pub(super) fn DirectMessageGroup(
                 }
                 div { class: "flex flex-col gap-2",
                     for message in messages.iter().cloned() {
-                        div { key: "{message.id}", class: "contents",
-                            ChatMessageItem {
-                                message: dm_as_text_message(message.clone()),
-                                animate: is_appearing_message(&message.id, &appearing_message_ids),
-                                removing: removing_message_ids.contains(&message.id),
-                                can_delete_messages: false,
-                                on_delete: move |_| {},
-                            }
+                        ChatMessageItem {
+                            key: "{message.id}",
+                            message: dm_as_text_message(message.clone()),
+                            animate: is_appearing_message(&message.id, &appearing_message_ids),
+                            removing: removing_message_ids.contains(&message.id),
+                            can_delete_messages: false,
+                            on_delete: move |_| {},
                             if let Some(image) = message.image.clone() {
                                 DirectMessageImage {
                                     conversation_id: message.conversation_id.clone(),

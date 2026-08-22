@@ -17,6 +17,8 @@ pub(crate) fn ChatMessageGroup(
     removing_message_ids: Vec<String>,
     can_delete_messages: bool,
     on_delete: EventHandler<String>,
+    server_id: String,
+    room_id: String,
 ) -> Element {
     let Some(first_message) = messages.first().cloned() else {
         return rsx! {};
@@ -67,6 +69,15 @@ pub(crate) fn ChatMessageGroup(
                             removing: removing_message_ids.contains(&message.id),
                             can_delete_messages,
                             on_delete: move |id| on_delete.call(id),
+                            for attachment in message.attachments.iter().cloned() {
+                                super::image_attachment::ChatImageAttachment {
+                                    key: "{super::image_attachment::ChatImageLoadKey::render_key(&server_id, &room_id, &attachment.id)}",
+                                    server_id: server_id.clone(),
+                                    room_id: room_id.clone(),
+                                    attachment,
+                                    is_own: message.author_user_id == current_user.id,
+                                }
+                            }
                         }
                     }
                 }

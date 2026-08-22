@@ -5,7 +5,6 @@ use dioxus::prelude::*;
 
 use crate::features::app::current_user::CurrentUserContext;
 
-use super::image_attachment::ChatImageAttachment;
 use super::message_date::full_message_datetime;
 
 /// Рендерит одну строку сообщения текстового чата.
@@ -16,21 +15,30 @@ pub(crate) fn ChatMessageItem(
     removing: bool,
     can_delete_messages: bool,
     on_delete: EventHandler<String>,
+    children: Element,
 ) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
     let is_own = message.author_user_id == current_user.id;
     let can_delete = is_own || can_delete_messages;
     let mut menu_pos = use_signal(|| None::<(f64, f64)>);
 
-    let outer_class = match (animate, removing) {
-        (_, true) => "chat-message-removing flex gap-3",
-        (true, false) => "chat-message flex gap-3",
-        (false, false) => "flex gap-3",
+    let row_class = match (animate, removing, is_own) {
+        (_, true, true) => "chat-message-removing flex w-full justify-end",
+        (_, true, false) => "chat-message-removing flex w-full justify-start",
+        (true, false, true) => "chat-message flex w-full justify-end",
+        (true, false, false) => "chat-message flex w-full justify-start",
+        (false, false, true) => "flex w-full justify-end",
+        (false, false, false) => "flex w-full justify-start",
+    };
+    let content_stack_class = if is_own {
+        "flex min-w-0 max-w-[min(100%,42rem)] flex-col items-end gap-2"
+    } else {
+        "flex min-w-0 max-w-[min(100%,42rem)] flex-col items-start gap-2"
     };
     let bubble_class = if is_own {
-        "message-bubble flex items-end gap-2 whitespace-pre-wrap break-words rounded-[20px] border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-[13px] leading-5 text-blue-100 transition-[border-color,background] duration-200 hover:border-blue-400/40 hover:bg-blue-500/15"
+        "message-bubble w-fit max-w-full whitespace-pre-wrap break-words rounded-[20px] border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-[13px] leading-5 text-blue-100 transition-[border-color,background] duration-200 hover:border-blue-400/40 hover:bg-blue-500/15"
     } else {
-        "message-bubble flex items-end gap-2 whitespace-pre-wrap break-words rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.72)] px-3 py-2 text-[13px] leading-5 text-zinc-300 transition-[border-color,background] duration-200 hover:border-white/15 hover:bg-[rgba(39,39,42,.84)]"
+        "message-bubble w-fit max-w-full whitespace-pre-wrap break-words rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.72)] px-3 py-2 text-[13px] leading-5 text-zinc-300 transition-[border-color,background] duration-200 hover:border-white/15 hover:bg-[rgba(39,39,42,.84)]"
     };
     let time_class = if is_own {
         "mb-[1px] shrink-0 text-[10px] leading-none text-blue-300/70"
@@ -42,7 +50,7 @@ pub(crate) fn ChatMessageItem(
 
     rsx! {
         div {
-            class: outer_class,
+            class: row_class,
             oncontextmenu: move |event| {
                 if !can_delete {
                     return;
@@ -52,29 +60,24 @@ pub(crate) fn ChatMessageItem(
                 let p = event.client_coordinates();
                 menu_pos.set(Some((p.x, p.y)));
             },
-            div { class: "min-w-0 flex-1",
+            div { class: content_stack_class,
                 if !message.body.is_empty() {
                     div { class: bubble_class,
-                        span { class: "min-w-0 flex-1", "{message.body}" }
-                        span { class: "group/message-time relative inline-flex shrink-0",
-                            span { class: time_class, "{sent_time}" }
-                            span {
-                                role: "tooltip",
-                                class: "pointer-events-none absolute bottom-[calc(100%+8px)] right-0 z-30 w-max max-w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-zinc-800 bg-zinc-950/95 px-2.5 py-1.5 text-[11px] font-medium leading-4 text-zinc-200 opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-[opacity,transform] duration-150 group-hover/message-time:opacity-100 group-focus-within/message-time:opacity-100",
-                                "Отправлено {sent_datetime}"
-                            }
-                        }
-                        if is_own {
-                            if let Some(status) = message.delivery_status {
-                                {delivery_status_marks(status)}
-                            }
-                        }
+                        span { class: "[overflow-wrap:anywhere]", "{message.body}" }
                     }
                 }
-                for attachment in message.attachments.iter().cloned() {
-                    ChatImageAttachment {
-                        key: "{attachment.id}",
-                        attachment,
+                {children}
+                div { class: "group/message-time relative flex items-center gap-1.5",
+                    span { class: time_class, "{sent_time}" }
+                    if is_own {
+                        if let Some(status) = message.delivery_status {
+                            {delivery_status_marks(status)}
+                        }
+                    }
+                    span {
+                        role: "tooltip",
+                        class: "pointer-events-none absolute bottom-[calc(100%+8px)] right-0 z-30 w-max max-w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-zinc-800 bg-zinc-950/95 px-2.5 py-1.5 text-[11px] font-medium leading-4 text-zinc-200 opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-[opacity,transform] duration-150 group-hover/message-time:opacity-100 group-focus-within/message-time:opacity-100",
+                        "Отправлено {sent_datetime}"
                     }
                 }
             }

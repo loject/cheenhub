@@ -10,7 +10,7 @@ use super::room_header::RoomHeader;
 use super::workspace_split::{
     EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO, clamp_embedded_chat_height, finish_embedded_chat_resize,
 };
-use crate::features::text_chat::{RoomChatSurface, RoomChatSurfaceMode};
+use crate::features::text_chat::{RoomChatSurface, RoomChatSurfaceMode, use_room_compose_state};
 use crate::features::voice_chat::{VoiceConnectionHandle, VoiceRoomSurface};
 
 /// Рендерит одну рабочую область комнаты с локальным UI-состоянием, ограниченным этой комнатой.
@@ -27,6 +27,8 @@ pub(crate) fn RoomInstance(
     let mut embedded_chat_height_px = use_signal(|| None::<f64>);
     let mut embedded_chat_resize_origin = use_signal(|| None::<(f64, f64, f64)>);
     let mut content_split_element = use_signal(|| None::<Rc<MountedData>>);
+    let room_compose_state = use_room_compose_state();
+    use_context_provider(|| room_compose_state);
     let wrapper_class = if active {
         "room-workspace-shell contents"
     } else {

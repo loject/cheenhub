@@ -27,14 +27,17 @@ pub(crate) fn RoomChatSurface(
     embedded_resizing: bool,
     on_embedded_resize_start: EventHandler<(f64, Option<f64>)>,
 ) -> Element {
+    let mut embedded_element = use_signal(|| None::<Rc<MountedData>>);
+
     match mode {
         RoomChatSurfaceMode::Full => rsx! {
             div { id: "text-room-view", class: "text-room-view hidden min-h-0 flex-1 flex-col",
-                ChatRoomPanel { server_id, room, compact: false, active }
+                if active {
+                    ChatRoomPanel { server_id, room, compact: false }
+                }
             }
         },
         RoomChatSurfaceMode::Embedded => {
-            let mut embedded_element = use_signal(|| None::<Rc<MountedData>>);
             let resizing_attr = if embedded_resizing { "true" } else { "false" };
 
             rsx! {
@@ -68,7 +71,9 @@ pub(crate) fn RoomChatSurface(
                             });
                         },
                     }
-                    ChatRoomPanel { server_id, room, compact: true, active }
+                    if active {
+                        ChatRoomPanel { server_id, room, compact: true }
+                    }
                 }
             }
             }

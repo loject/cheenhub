@@ -10,6 +10,7 @@ use cheenhub_contracts::realtime::{
 };
 use futures_channel::mpsc;
 use futures_util::StreamExt;
+use uuid::Uuid;
 
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
 
@@ -47,6 +48,7 @@ pub(crate) async fn send_text_message(
     server_id: String,
     room_id: String,
     body: String,
+    attachment_id: Option<String>,
 ) -> Result<SendMessageAccepted, RealtimeError> {
     realtime
         .request(
@@ -56,28 +58,7 @@ pub(crate) async fn send_text_message(
                 server_id,
                 room_id,
                 body,
-                attachment_ids: Vec::new(),
-            },
-        )
-        .await
-}
-
-/// Sends one text chat message with a previously uploaded image attachment.
-pub(crate) async fn send_image_message(
-    realtime: &RealtimeHandle,
-    server_id: String,
-    room_id: String,
-    attachment_id: String,
-) -> Result<SendMessageAccepted, RealtimeError> {
-    realtime
-        .request(
-            RealtimeModule::TextChat,
-            RealtimeKind::TextChat(TextChatKind::SendMessage),
-            SendMessage {
-                server_id,
-                room_id,
-                body: String::new(),
-                attachment_ids: vec![attachment_id],
+                attachment_ids: attachment_id.into_iter().collect(),
             },
         )
         .await
@@ -108,13 +89,15 @@ pub(crate) async fn upload_chat_image(
 /// Loads one chat image attachment over realtime.
 pub(crate) async fn load_chat_image(
     realtime: &RealtimeHandle,
-    attachment_id: String,
+    attachment_id: Uuid,
 ) -> Result<ChatImageLoadedResponse, RealtimeError> {
     realtime
-        .request(
+        .request_one_shot(
             RealtimeModule::TextChat,
             RealtimeKind::TextChat(TextChatKind::LoadImage),
-            LoadChatImage { attachment_id },
+            LoadChatImage {
+                attachment_id: attachment_id.to_string(),
+            },
         )
         .await
 }

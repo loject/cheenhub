@@ -2,10 +2,12 @@
 
 pub(crate) mod api;
 mod clipboard;
+mod direct_message_attachment_preview;
 mod direct_message_chat_platform;
 mod direct_message_composer;
 mod direct_message_group;
 mod direct_message_image;
+mod direct_message_pending_image;
 mod direct_message_state;
 mod direct_message_voice_button;
 mod direct_message_voice_surface;
