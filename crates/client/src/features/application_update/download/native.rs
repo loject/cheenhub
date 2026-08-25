@@ -126,6 +126,9 @@ pub(crate) async fn download_update_asset(
         )
     })?;
 
+    #[cfg(target_os = "linux")]
+    cleanup_update_cache(&download_dir);
+
     let destination = unique_destination(&download_dir, &file_name);
     info!(
         asset_name = %asset.name,
@@ -327,7 +330,34 @@ fn cleanup_failed_updater_copy(updater_exe: &Path, current_exe: &Path) {
 ))]
 fn cleanup_failed_updater_copy(_updater_exe: &Path, _current_exe: &Path) {}
 
-#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
+#[cfg(all(
+    not(target_family = "wasm"),
+    not(target_os = "android"),
+    target_os = "linux"
+))]
+fn default_download_dir() -> Result<PathBuf, String> {
+    if let Some(cache_home) = std::env::var_os("XDG_CACHE_HOME") {
+        let cache_home = PathBuf::from(cache_home);
+        if cache_home.is_absolute() {
+            return Ok(cache_home.join("cheenhub").join("updates"));
+        }
+    }
+
+    if let Some(home) = std::env::var_os("HOME") {
+        return Ok(PathBuf::from(home)
+            .join(".cache")
+            .join("cheenhub")
+            .join("updates"));
+    }
+
+    Ok(std::env::temp_dir().join("cheenhub").join("updates"))
+}
+
+#[cfg(all(
+    not(target_family = "wasm"),
+    not(target_os = "android"),
+    not(target_os = "linux")
+))]
 fn default_download_dir() -> Result<PathBuf, String> {
     if let Some(profile) = std::env::var_os("USERPROFILE") {
         return Ok(PathBuf::from(profile).join("Downloads"));
@@ -338,6 +368,29 @@ fn default_download_dir() -> Result<PathBuf, String> {
 
     std::env::current_dir()
         .map_err(|error| format!("Не удалось определить папку для загрузки обновления: {error}"))
+}
+
+#[cfg(target_os = "linux")]
+fn cleanup_update_cache(directory: &Path) {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+
+        if !path.is_file() {
+            continue;
+        }
+
+        if let Err(error) = std::fs::remove_file(&path) {
+            warn!(
+                path = %path.display(),
+                %error,
+                "failed to remove stale application update"
+            );
+        }
+    }
 }
 
 #[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
