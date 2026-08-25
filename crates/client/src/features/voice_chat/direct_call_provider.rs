@@ -10,7 +10,9 @@ use crate::features::runtime::sleep_ms;
 
 use super::active_voice_notification_controls::ActiveVoiceNotificationControls;
 use super::direct_call_notification_platform::{
-    clear_incoming_call_notification, show_incoming_call_notification,
+    IncomingCallNotificationAction, clear_incoming_call_notification,
+    show_incoming_call_notification, subscribe_incoming_call_notification_action_wakeups,
+    take_pending_incoming_call_notification_action,
 };
 use super::direct_call_prompt::DirectCallPrompt;
 use super::direct_call_realtime;
@@ -55,6 +57,28 @@ pub(super) fn DirectCallProvider(children: Element) -> Element {
                 }
             }
         })
+    });
+
+    let notification_action_call = direct_call.clone();
+    use_hook(move || {
+        spawn(async move {
+            let mut wakeups = subscribe_incoming_call_notification_action_wakeups();
+            while wakeups.next().await.is_some() {
+                apply_pending_incoming_call_notification_action(notification_action_call.clone())
+                    .await;
+            }
+        })
+    });
+
+    let cold_start_action_call = direct_call.clone();
+    use_effect(move || {
+        if cold_start_action_call.incoming_call().is_none() {
+            return;
+        }
+        let cold_start_action_call = cold_start_action_call.clone();
+        spawn(async move {
+            apply_pending_incoming_call_notification_action(cold_start_action_call).await;
+        });
     });
 
     let incoming_sound_playback = playback.clone();
@@ -116,5 +140,22 @@ pub(super) fn DirectCallProvider(children: Element) -> Element {
                 exiting: prompt_exiting(),
             }
         }
+    }
+}
+
+async fn apply_pending_incoming_call_notification_action(direct_call: DirectCallHandle) {
+    let Some(incoming_call) = direct_call.incoming_call() else {
+        return;
+    };
+    let Some(action) = take_pending_incoming_call_notification_action().await else {
+        return;
+    };
+    if action.call_id() != incoming_call.call_id {
+        return;
+    }
+
+    match action {
+        IncomingCallNotificationAction::Accept(_) => direct_call.accept(),
+        IncomingCallNotificationAction::Decline(_) => direct_call.decline(),
     }
 }

@@ -247,6 +247,13 @@ class MainActivity : WryActivity() {
     fun consumeCheenHubPendingFriendRequests(): Boolean =
         CheenHubPushStore.consumePendingFriendRequests(this)
 
+    fun consumeCheenHubPendingDirectCallAction(): String? =
+        CheenHubPushStore.consumePendingDirectCallAction(this)
+
+    fun clearCheenHubPendingDirectCallAction(callId: String) {
+        CheenHubPushStore.clearPendingDirectCallAction(this, callId)
+    }
+
     fun setCheenHubActiveDirectMessageConversationId(conversationId: String?) {
         CheenHubPushStore.setActiveConversationId(this, conversationId)
     }
@@ -270,6 +277,47 @@ class MainActivity : WryActivity() {
 
     private fun acceptNotificationIntent(intent: Intent?) {
         when (intent?.action) {
+            CHEENHUB_ANSWER_DIRECT_CALL_ACTION,
+            CHEENHUB_DECLINE_DIRECT_CALL_ACTION -> {
+                val callId = intent.getStringExtra(CHEENHUB_CALL_ID_EXTRA)
+                    ?.let { value -> runCatching { UUID.fromString(value).toString() }.getOrNull() }
+                if (callId == null) {
+                    Log.w(CHEENHUB_PUSH_LOG_TAG, "Incoming-call notification action rejected")
+                    return
+                }
+
+                val accept = intent.action == CHEENHUB_ANSWER_DIRECT_CALL_ACTION
+                val storedAction = if (accept) "accept" else "decline"
+                val nativeAction = if (accept) {
+                    DIRECT_CALL_NOTIFICATION_ACTION_ACCEPT
+                } else {
+                    DIRECT_CALL_NOTIFICATION_ACTION_DECLINE
+                }
+
+                // Сначала сохраняем действие. Если Activity поднялась раньше Rust provider,
+                // оно будет подобрано после восстановления realtime-состояния.
+                CheenHubPushStore.setPendingDirectCallAction(
+                    this,
+                    callId,
+                    storedAction,
+                )
+                CheenHubCallNotifications.clear(this, callId)
+
+                runCatching {
+                    nativeOnCheenHubIncomingCallNotificationAction(callId, nativeAction)
+                }.onFailure {
+                    Log.d(
+                        CHEENHUB_PUSH_LOG_TAG,
+                        "Rust incoming-call action bridge is not ready; pending action was stored",
+                    )
+                }
+
+                Log.i(
+                    CHEENHUB_PUSH_LOG_TAG,
+                    "Incoming-call notification action accepted; action=$storedAction",
+                )
+            }
+
             CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION -> {
                 val conversationId = intent.getStringExtra(CHEENHUB_CONVERSATION_ID_EXTRA)
                     ?.let { value -> runCatching { UUID.fromString(value).toString() }.getOrNull() }
@@ -704,6 +752,11 @@ class MainActivity : WryActivity() {
 
     private external fun nativeOnCheenHubFriendRequestNotificationOpened()
 
+    private external fun nativeOnCheenHubIncomingCallNotificationAction(
+        callId: String,
+        action: Int,
+    )
+
     private external fun nativeOnCheenHubVoiceAudioFocusChanged(focusChange: Int)
 
     override fun onDestroy() {
@@ -764,7 +817,14 @@ private const val CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION =
     "ru.cheenhub.action.OPEN_DIRECT_MESSAGE"
 private const val CHEENHUB_OPEN_FRIEND_REQUESTS_ACTION =
     "ru.cheenhub.action.OPEN_FRIEND_REQUESTS"
+private const val CHEENHUB_ANSWER_DIRECT_CALL_ACTION =
+    "ru.cheenhub.action.ANSWER_DIRECT_CALL"
+private const val CHEENHUB_DECLINE_DIRECT_CALL_ACTION =
+    "ru.cheenhub.action.DECLINE_DIRECT_CALL"
 private const val CHEENHUB_CONVERSATION_ID_EXTRA = "cheenhub_conversation_id"
+private const val CHEENHUB_CALL_ID_EXTRA = "cheenhub_call_id"
+private const val DIRECT_CALL_NOTIFICATION_ACTION_ACCEPT = 1
+private const val DIRECT_CALL_NOTIFICATION_ACTION_DECLINE = 2
 
 class CheenHubApplication : Application() {
     override fun onCreate() {
@@ -850,33 +910,46 @@ class CheenHubFirebaseMessagingService : FirebaseMessagingService() {
         val incomingCall = CheenHubIncomingCallPayload.parse(remoteMessage.data)
         if (incomingCall != null) {
             if (incomingCall.expiresAtMillis <= System.currentTimeMillis()) {
+                CheenHubCallNotifications.clear(this, incomingCall.callId)
                 Log.i(
                     CHEENHUB_PUSH_LOG_TAG,
                     "Ignored expired incoming-call push; call_id=${incomingCall.callId}",
                 )
-            } else {
-                Log.i(
-                    CHEENHUB_PUSH_LOG_TAG,
-                    "Incoming-call push received; call_id=${incomingCall.callId}",
-                )
+                return
             }
+
+            if (CheenHubPushStore.isAppForeground(this)) {
+                Log.d(
+                    CHEENHUB_PUSH_LOG_TAG,
+                    "Suppressed system incoming-call notification while app is foreground",
+                )
+                return
+            }
+
+            CheenHubCallNotifications.show(
+                this,
+                incomingCall.callId,
+                incomingCall.conversationId,
+                incomingCall.callerNickname,
+                incomingCall.expiresAtMillis,
+            )
+            Log.i(
+                CHEENHUB_PUSH_LOG_TAG,
+                "Incoming-call CallStyle notification shown; call_id=${incomingCall.callId}",
+            )
             return
         }
+
         val callEnded = CheenHubCallEndedPayload.parse(remoteMessage.data)
         if (callEnded != null) {
-            if (callEnded.expiresAtMillis <= System.currentTimeMillis()) {
-                Log.i(
-                    CHEENHUB_PUSH_LOG_TAG,
-                    "Ignored expired call-ended push; call_id=${callEnded.callId}",
-                )
-            } else {
-                Log.i(
-                    CHEENHUB_PUSH_LOG_TAG,
-                    "Call-ended push received; call_id=${callEnded.callId}; reason=${callEnded.endReason}",
-                )
-            }
+            CheenHubCallNotifications.clear(this, callEnded.callId)
+            Log.i(
+                CHEENHUB_PUSH_LOG_TAG,
+                "Call-ended push applied; call_id=${callEnded.callId}; reason=${callEnded.endReason}",
+            )
             return
         }
+
         Log.w(CHEENHUB_PUSH_LOG_TAG, "Rejected malformed or unsupported FCM data payload")
     }
 
@@ -1163,6 +1236,7 @@ private object CheenHubPushStore {
     private const val FCM_TOKEN = "fcm_token"
     private const val PENDING_CONVERSATION = "pending_conversation_id"
     private const val PENDING_FRIEND_REQUESTS = "pending_friend_requests"
+    private const val PENDING_DIRECT_CALL_ACTION = "pending_direct_call_action"
     private const val ACTIVE_CONVERSATION = "active_conversation_id"
     private const val APP_FOREGROUND = "app_foreground"
     private const val HISTORY = "direct_message_history"
@@ -1203,6 +1277,37 @@ private object CheenHubPushStore {
         val pending = preferences.getBoolean(PENDING_FRIEND_REQUESTS, false)
         if (pending) preferences.edit().remove(PENDING_FRIEND_REQUESTS).apply()
         pending
+    }
+
+    fun setPendingDirectCallAction(
+        context: Context,
+        callId: String,
+        action: String,
+    ) {
+        val normalized = callId.validUuidOrNull() ?: return
+        if (action != "accept" && action != "decline") return
+        preferences(context)
+            .edit()
+            .putString(PENDING_DIRECT_CALL_ACTION, "$action:$normalized")
+            .apply()
+    }
+
+    fun consumePendingDirectCallAction(context: Context): String? = synchronized(this) {
+        val preferences = preferences(context)
+        val pending = preferences.getString(PENDING_DIRECT_CALL_ACTION, null)
+        if (pending != null) {
+            preferences.edit().remove(PENDING_DIRECT_CALL_ACTION).apply()
+        }
+        pending
+    }
+
+    fun clearPendingDirectCallAction(context: Context, callId: String) = synchronized(this) {
+        val normalized = callId.validUuidOrNull() ?: return
+        val preferences = preferences(context)
+        val pending = preferences.getString(PENDING_DIRECT_CALL_ACTION, null)
+        if (pending?.substringAfter(':') == normalized) {
+            preferences.edit().remove(PENDING_DIRECT_CALL_ACTION).apply()
+        }
     }
 
     fun setActiveConversationId(context: Context, conversationId: String?) {
@@ -1465,41 +1570,121 @@ private object CheenHubCallNotifications {
         callId: String,
         conversationId: String,
         callerNickname: String,
+        expiresAtMillis: Long = System.currentTimeMillis() + RING_TIMEOUT_MILLIS,
     ) {
         val normalizedCallId = validUuid(callId) ?: return
         val normalizedConversationId = validUuid(conversationId) ?: return
         val nickname = callerNickname.trim().takeIf { it.isNotEmpty() } ?: return
+
+        val now = System.currentTimeMillis()
+        if (expiresAtMillis <= now) {
+            clear(context, normalizedCallId)
+            return
+        }
+
+        val remainingMillis =
+            (expiresAtMillis - now).coerceIn(1L, RING_TIMEOUT_MILLIS)
+
         ensureChannel(context)
-        val intent = Intent(context, MainActivity::class.java)
-            .setAction(CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION)
-            .putExtra(CHEENHUB_CONVERSATION_ID_EXTRA, normalizedConversationId)
-            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        val pendingIntent = PendingIntent.getActivity(
+
+        val contentIntent = PendingIntent.getActivity(
             context,
             normalizedCallId.hashCode(),
-            intent,
+            Intent(context, MainActivity::class.java)
+                .setAction(CHEENHUB_OPEN_DIRECT_MESSAGE_ACTION)
+                .putExtra(CHEENHUB_CONVERSATION_ID_EXTRA, normalizedConversationId)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+
+        val answerIntent = callActionPendingIntent(
+            context,
+            normalizedCallId,
+            CHEENHUB_ANSWER_DIRECT_CALL_ACTION,
+        )
+        val declineIntent = callActionPendingIntent(
+            context,
+            normalizedCallId,
+            CHEENHUB_DECLINE_DIRECT_CALL_ACTION,
+        )
+
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             android.app.Notification.Builder(context, CHANNEL_ID)
         } else {
             @Suppress("DEPRECATION")
             android.app.Notification.Builder(context)
         }
-        val notification = builder
+
+        builder
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Входящий звонок")
             .setContentText(nickname)
             .setCategory(android.app.Notification.CATEGORY_CALL)
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
+            .setContentIntent(contentIntent)
+            .setAutoCancel(false)
+            .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(true)
-            .setTimeoutAfter(RING_TIMEOUT_MILLIS)
-            .build()
+            .setWhen(now)
+            .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val caller = android.app.Person.Builder()
+                .setKey("cheenhub:$normalizedCallId")
+                .setName(nickname)
+                .setImportant(true)
+                .build()
+
+            builder.setStyle(
+                android.app.Notification.CallStyle.forIncomingCall(
+                    caller,
+                    declineIntent,
+                    answerIntent,
+                ),
+            )
+        } else {
+            builder.addAction(
+                android.app.Notification.Action.Builder(
+                    Icon.createWithResource(
+                        context,
+                        android.R.drawable.ic_menu_close_clear_cancel,
+                    ),
+                    "Отклонить",
+                    declineIntent,
+                ).build(),
+            )
+            builder.addAction(
+                android.app.Notification.Action.Builder(
+                    Icon.createWithResource(
+                        context,
+                        android.R.drawable.ic_menu_call,
+                    ),
+                    "Ответить",
+                    answerIntent,
+                ).build(),
+            )
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder.setTimeoutAfter(remainingMillis)
+        } else {
+            @Suppress("DEPRECATION")
+            builder
+                .setPriority(android.app.Notification.PRIORITY_MAX)
+                .setDefaults(android.app.Notification.DEFAULT_ALL)
+        }
+
         context.getSystemService(NotificationManager::class.java)
-            .notify(notificationTag(normalizedCallId), NOTIFICATION_ID, notification)
-        Log.i(CHEENHUB_PUSH_LOG_TAG, "Incoming-call notification shown")
+            .notify(
+                notificationTag(normalizedCallId),
+                NOTIFICATION_ID,
+                builder.build(),
+            )
+
+        Log.i(
+            CHEENHUB_PUSH_LOG_TAG,
+            "Incoming-call system notification shown; call_id=$normalizedCallId",
+        )
     }
 
     fun clear(context: Context, callId: String) {
@@ -1508,16 +1693,50 @@ private object CheenHubCallNotifications {
             .cancel(notificationTag(normalizedCallId), NOTIFICATION_ID)
     }
 
+    private fun callActionPendingIntent(
+        context: Context,
+        callId: String,
+        action: String,
+    ): PendingIntent {
+        val requestCode = "$callId:$action".hashCode()
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(action)
+            .putExtra(CHEENHUB_CALL_ID_EXTRA, callId)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Личные звонки",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "Уведомления о входящих личных звонках CheenHub"
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+
+            val attributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+
+            setSound(
+                android.provider.Settings.System.DEFAULT_RINGTONE_URI,
+                attributes,
+            )
+            enableVibration(true)
         }
-        context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+
+        context.getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
     }
 
     private fun validUuid(value: String): String? =
