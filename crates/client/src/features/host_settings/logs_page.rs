@@ -128,7 +128,7 @@ pub(crate) fn HostLogsPage() -> Element {
 
     let (status_class, status_label) = if paused() {
         (
-            "bg-amber-400/10 text-amber-100 shadow-[0_0_0_1px_rgba(251,191,36,0.2)]",
+            "border border-amber-400/20 bg-amber-400/10 text-amber-100",
             if pending_count > 0 {
                 format!("Пауза · {pending_count} новых")
             } else {
@@ -138,28 +138,28 @@ pub(crate) fn HostLogsPage() -> Element {
     } else {
         match stream_state() {
             LogStreamState::Connecting => (
-                "bg-amber-400/10 text-amber-100 shadow-[0_0_0_1px_rgba(251,191,36,0.2)]",
+                "border border-amber-400/20 bg-amber-400/10 text-amber-100",
                 "Подключаемся".to_owned(),
             ),
             LogStreamState::Live => (
-                "bg-emerald-400/10 text-emerald-200 shadow-[0_0_0_1px_rgba(52,211,153,0.2)]",
+                "border border-emerald-400/20 bg-emerald-400/10 text-emerald-200",
                 "Realtime".to_owned(),
             ),
             LogStreamState::Error(message) => (
-                "bg-red-400/10 text-red-100 shadow-[0_0_0_1px_rgba(248,113,113,0.2)]",
+                "border border-red-400/20 bg-red-400/10 text-red-100",
                 message,
             ),
         }
     };
 
     rsx! {
-        section { class: "host-logs-page min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10",
-            div { class: "mx-auto w-full max-w-7xl pb-12",
+        section { class: "host-logs-page min-w-0 flex-1 overflow-y-auto bg-zinc-950/35 px-4 py-6 sm:px-6",
+            div { class: "mx-auto w-full max-w-[1180px] pb-10",
                 div { class: "flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between",
                     div {
-                        p { class: "text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-300", "Настройки хоста" }
-                        h1 { class: "mt-2 text-balance text-3xl font-semibold tracking-[-0.04em] text-white", "Логи бэкенда" }
-                        p { class: "mt-2 max-w-2xl text-pretty text-sm leading-6 text-zinc-400",
+                        p { class: "text-[11px] font-medium uppercase tracking-[0.20em] text-zinc-600", "Настройки хоста" }
+                        h1 { class: "mt-1 text-balance text-[22px] font-semibold tracking-[-0.04em] text-zinc-50", "Логи бэкенда" }
+                        p { class: "mt-1.5 max-w-2xl text-pretty text-[13px] leading-5 text-zinc-500",
                             "Последние события текущего процесса CheenHub появляются здесь в реальном времени."
                         }
                     }
@@ -191,7 +191,7 @@ pub(crate) fn HostLogsPage() -> Element {
                     {log_metric_card("TRACE", trace_count, "text-violet-300")}
                 }
 
-                div { class: "host-log-toolbar mt-4 flex flex-col gap-3 rounded-3xl bg-zinc-900/75 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_16px_48px_rgba(0,0,0,0.22)] sm:flex-row sm:items-center sm:p-5",
+                div { class: "host-log-toolbar mt-4 flex flex-col gap-3 rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-4 shadow-[0_18px_60px_rgba(0,0,0,.18)] sm:flex-row sm:items-center sm:p-5",
                     label { class: "min-w-0 flex-1",
                         span { class: "sr-only", "Поиск по логам" }
                         input {
@@ -199,7 +199,7 @@ pub(crate) fn HostLogsPage() -> Element {
                             placeholder: "Поиск по сообщению, target или полям",
                             value: search(),
                             oninput: move |event| search.set(event.value()),
-                            class: "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-blue-400/70 focus:ring-4 focus:ring-blue-400/10"
+                            class: "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-accent/70 focus:ring-4 focus:ring-accent/10"
                         }
                     }
                     label { class: "sm:w-40",
@@ -207,7 +207,7 @@ pub(crate) fn HostLogsPage() -> Element {
                         select {
                             value: level_filter(),
                             onchange: move |event| level_filter.set(event.value()),
-                            class: "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] text-zinc-200 outline-none focus:border-blue-400/70 focus:ring-4 focus:ring-blue-400/10",
+                            class: "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] text-zinc-200 outline-none focus:border-accent/70 focus:ring-4 focus:ring-accent/10",
                             option { value: "ALL", "Все уровни" }
                             option { value: "ERROR", "ERROR" }
                             option { value: "WARN", "WARN" }
@@ -286,7 +286,7 @@ pub(crate) fn HostLogsPage() -> Element {
                 }
 
                 section {
-                    class: "host-log-console mt-3 min-h-80 overflow-hidden rounded-3xl bg-zinc-950/90 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_20px_60px_rgba(0,0,0,0.28)]",
+                    class: "host-log-console mt-3 min-h-80 overflow-hidden rounded-[20px] border border-zinc-800 bg-zinc-950/70 shadow-[0_18px_60px_rgba(0,0,0,.18)]",
                     "aria-label": "Журнал бэкенда",
 
                     if visible_entries.is_empty() {
@@ -370,7 +370,7 @@ fn count_level(entries: &[HostLogEntry], level: &str) -> usize {
 
 fn log_metric_card(label: &'static str, value: usize, value_class: &'static str) -> Element {
     rsx! {
-        div { class: "host-log-metric-card rounded-2xl bg-zinc-900/75 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.07)] transition-[transform,background-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-zinc-900",
+        div { class: "host-log-metric-card rounded-[18px] border border-zinc-800 bg-zinc-950/70 p-4 transition-[transform,background-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-zinc-900",
             p { class: "text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500",
                 "{label}"
             }

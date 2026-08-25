@@ -14,7 +14,7 @@ pub(super) enum HostSettingsTab {
 pub(super) fn host_settings_tabs(active: HostSettingsTab) -> Element {
     rsx! {
         nav {
-            class: "mt-6 grid max-w-2xl grid-cols-3 rounded-2xl bg-zinc-900/75 p-1.5 shadow-[0_0_0_1px_rgba(255,255,255,0.07)]",
+            class: "mt-5 grid max-w-[560px] grid-cols-3 gap-1 rounded-xl border border-zinc-800 bg-zinc-950/70 p-1",
             "aria-label": "Разделы настроек хоста",
             Link {
                 to: Route::AppHostSettings {},
@@ -37,8 +37,8 @@ pub(super) fn host_settings_tabs(active: HostSettingsTab) -> Element {
 
 fn tab_class(active: bool) -> &'static str {
     if active {
-        "flex min-h-11 items-center justify-center rounded-xl bg-blue-500 px-4 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(59,130,246,0.18)] transition-[background-color,color,scale] duration-150 active:scale-[0.96]"
+        "flex min-h-10 items-center justify-center rounded-lg border border-accent/25 bg-accent/10 px-4 text-[12px] font-medium text-blue-100 transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.97]"
     } else {
-        "flex min-h-11 items-center justify-center rounded-xl px-4 text-[13px] font-semibold text-zinc-400 transition-[background-color,color,scale] duration-150 hover:bg-zinc-800 hover:text-white active:scale-[0.96]"
+        "flex min-h-10 items-center justify-center rounded-lg border border-transparent px-4 text-[12px] font-medium text-zinc-400 transition-[background-color,border-color,color,transform] duration-150 hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-100 active:scale-[0.97]"
     }
 }

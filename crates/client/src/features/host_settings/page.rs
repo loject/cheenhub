@@ -9,8 +9,8 @@ use crate::features::clipboard::copy_text;
 use super::api::{self, HostSettingsApiError};
 use super::tabs::{HostSettingsTab, host_settings_tabs};
 
-const INPUT_CLASS: &str = "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] text-zinc-100 outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-zinc-700 focus:border-blue-400/70 focus:ring-4 focus:ring-blue-400/10 disabled:cursor-not-allowed disabled:opacity-60";
-const BUTTON_CLASS: &str = "inline-flex min-h-11 items-center justify-center rounded-xl px-4 text-[13px] font-semibold transition-[background-color,border-color,color,opacity,scale] duration-150 ease-out active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100";
+const INPUT_CLASS: &str = "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] text-zinc-100 outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-zinc-700 focus:border-accent/70 focus:ring-4 focus:ring-accent/10 disabled:cursor-not-allowed disabled:opacity-60";
+const BUTTON_CLASS: &str = "inline-flex min-h-11 items-center justify-center rounded-xl px-4 text-[13px] font-semibold transition-[background-color,border-color,color,opacity,scale] duration-150 ease-out active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 enum SaveStatus {
@@ -100,7 +100,7 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
         let forbidden = matches!(error, HostSettingsApiError::Forbidden(_));
         return rsx! {
             section { class: "grid min-w-0 flex-1 place-items-center overflow-y-auto px-5 py-10",
-                div { class: "w-full max-w-lg rounded-3xl bg-zinc-900/80 p-7 text-center shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_20px_60px_rgba(0,0,0,0.35)]",
+                div { class: "w-full max-w-lg rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-6 text-center shadow-[0_18px_60px_rgba(0,0,0,.22)]",
                     div { class: "mx-auto flex size-12 items-center justify-center rounded-2xl bg-amber-400/10 text-amber-200",
                         svg { class: "size-6", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" }
@@ -114,7 +114,7 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
                         if !forbidden {
                             button {
                                 r#type: "button",
-                                class: "{BUTTON_CLASS} bg-blue-500 text-white hover:bg-blue-400",
+                                class: "{BUTTON_CLASS} bg-accent text-white hover:bg-blue-400",
                                 onclick: move |_| {
                                     initialized.set(false);
                                     settings_resource.restart();
@@ -141,29 +141,29 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
     let gmail_choice_class = transport_choice_class(gmail_active);
 
     rsx! {
-        section { class: "min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10",
-            div { class: "mx-auto w-full max-w-5xl pb-12",
+        section { class: "min-w-0 flex-1 overflow-y-auto bg-zinc-950/35 px-4 py-6 sm:px-6",
+            div { class: "mx-auto w-full max-w-[920px] pb-10",
                 div { class: "flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between",
                     div {
-                        p { class: "text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-300", "Настройки хоста" }
-                        h1 { class: "mt-2 text-balance text-3xl font-semibold tracking-[-0.04em] text-white", "Исходящая почта" }
-                        p { class: "mt-2 max-w-2xl text-pretty text-sm leading-6 text-zinc-400", "Выбери способ отправки системных писем и настрой доступ для восстановления пароля." }
+                        p { class: "text-[11px] font-medium uppercase tracking-[0.20em] text-zinc-600", "Настройки хоста" }
+                        h1 { class: "mt-1 text-balance text-[22px] font-semibold tracking-[-0.04em] text-zinc-50", "Исходящая почта" }
+                        p { class: "mt-1.5 max-w-2xl text-pretty text-[13px] leading-5 text-zinc-500", "Выбери способ отправки системных писем и настрой доступ для восстановления пароля." }
                     }
-                    span { class: "inline-flex min-h-8 w-fit items-center rounded-full bg-blue-400/10 px-3 text-[11px] font-semibold text-blue-200 shadow-[0_0_0_1px_rgba(96,165,250,0.2)]",
+                    span { class: "inline-flex min-h-8 w-fit items-center rounded-xl border border-accent/25 bg-accent/10 px-3 text-[11px] font-medium text-blue-100",
                         if smtp_active { "Выбран SMTP" } else { "Выбран Gmail API" }
                     }
                 }
                 {host_settings_tabs(HostSettingsTab::Email)}
 
                 if let Some(result) = gmail_result {
-                    div { class: if result == "connected" { "mt-6 rounded-2xl bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100 shadow-[0_0_0_1px_rgba(52,211,153,0.2)]" } else { "mt-6 rounded-2xl bg-red-400/10 px-4 py-3 text-sm text-red-100 shadow-[0_0_0_1px_rgba(248,113,113,0.2)]" },
+                    div { class: if result == "connected" { "mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-[12px] text-emerald-100" } else { "mt-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-[12px] text-red-100" },
                         if result == "connected" {
                             if let Some(email) = callback_email { "Gmail {email} успешно подключён." } else { "Gmail успешно подключён." }
                         } else { "Google не удалось подключить. Проверь OAuth-настройки и повтори." }
                     }
                 }
 
-                div { class: "mt-6 rounded-3xl bg-amber-400/10 p-5 shadow-[0_0_0_1px_rgba(251,191,36,0.2)]",
+                div { class: "mt-6 rounded-[20px] border border-amber-400/20 bg-amber-400/10 p-4",
                     p { class: "text-sm font-semibold text-amber-100", "Безопасность учётных данных" }
                     p { class: "mt-1 text-pretty text-[13px] leading-5 text-amber-100/70",
                         "Ограничь доступ к базе данных и резервным копиям: в них хранятся учётные данные почтового сервиса."
@@ -229,10 +229,10 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
                             }
                         });
                     },
-                    section { class: "rounded-3xl bg-zinc-900/75 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_16px_48px_rgba(0,0,0,0.22)] sm:p-6",
+                    section { class: "rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
                         h2 { class: "text-balance text-lg font-semibold tracking-[-0.025em] text-white", "Транспорт" }
                         p { class: "mt-1 text-pretty text-[13px] leading-5 text-zinc-500", "Изменения применяются сразу после сохранения." }
-                        div { class: "mt-4 grid rounded-2xl bg-zinc-950/80 p-1.5 shadow-[0_0_0_1px_rgba(255,255,255,0.07)] sm:grid-cols-2",
+                        div { class: "mt-4 grid rounded-xl border border-zinc-800 bg-zinc-950 p-1 sm:grid-cols-2",
                             button { r#type: "button", class: "{smtp_choice_class}", onclick: move |_| transport.set(EmailTransport::Smtp), "SMTP" }
                             button { r#type: "button", class: "{gmail_choice_class}", onclick: move |_| transport.set(EmailTransport::GmailApi), "Gmail API по HTTPS" }
                         }
@@ -243,7 +243,7 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
                     }
 
                     if smtp_active {
-                    section { class: "rounded-3xl bg-zinc-900/75 p-5 shadow-[0_0_0_1px_rgba(96,165,250,0.18),0_16px_48px_rgba(0,0,0,0.22)] sm:p-6",
+                    section { class: "rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
                         div { class: "flex flex-wrap items-center justify-between gap-3",
                             h2 { class: "text-balance text-lg font-semibold tracking-[-0.025em] text-white", "SMTP" }
                             span { class: if smtp_password_configured() { "rounded-full bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold text-emerald-200" } else { "rounded-full bg-zinc-800 px-3 py-1 text-[11px] font-semibold text-zinc-400" }, if smtp_password_configured() { "Пароль сохранён" } else { "Пароль не задан" } }
@@ -270,7 +270,7 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
                     }
 
                     if gmail_active {
-                    section { class: "rounded-3xl bg-zinc-900/75 p-5 shadow-[0_0_0_1px_rgba(96,165,250,0.18),0_16px_48px_rgba(0,0,0,0.22)] sm:p-6",
+                    section { class: "rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
                         div { class: "flex flex-wrap items-center justify-between gap-3",
                             div { h2 { class: "text-balance text-lg font-semibold tracking-[-0.025em] text-white", "Gmail API" } p { class: "mt-1 text-pretty text-[13px] leading-5 text-zinc-500", "Письма идут через HTTPS/443 и OAuth Google." } }
                             span { class: if gmail_connected() { "rounded-full bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold text-emerald-200" } else { "rounded-full bg-zinc-800 px-3 py-1 text-[11px] font-semibold text-zinc-400" }, if gmail_connected() { "Gmail подключён" } else { "Gmail не подключён" } }
@@ -292,7 +292,7 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
                                 "Удалить сохранённый Client Secret"
                             }
                         }
-                        div { class: "mt-4 rounded-2xl bg-zinc-950/75 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.06)]",
+                        div { class: "mt-4 rounded-xl border border-zinc-800 bg-zinc-950 p-4",
                             p { class: "text-[12px] font-medium text-zinc-300", "Authorized redirect URI для Google Cloud" }
                             div { class: "mt-2 flex flex-col gap-2 sm:flex-row sm:items-center",
                                 code { class: "min-w-0 flex-1 overflow-x-auto rounded-xl bg-black/25 px-3 py-3 text-[12px] text-blue-200", "{redirect_uri}" }
@@ -303,7 +303,7 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
                         div { class: "mt-4 flex flex-col gap-2 sm:flex-row",
                             button {
                                 r#type: "button",
-                                class: "{BUTTON_CLASS} bg-blue-500 text-white hover:bg-blue-400",
+                                class: "{BUTTON_CLASS} bg-accent text-white hover:bg-blue-400",
                                 disabled: gmail_busy(),
                                 onclick: move |_| {
                                     gmail_busy.set(true);
@@ -365,7 +365,7 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
                     }
                     }
 
-                    div { class: "sticky bottom-0 flex flex-col gap-3 rounded-3xl bg-zinc-950/90 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_-12px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between",
+                    div { class: "sticky bottom-0 flex flex-col gap-3 rounded-[18px] border border-zinc-800 bg-zinc-950/95 p-4 shadow-[0_-12px_40px_rgba(0,0,0,0.28)] backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between",
                         div { class: "min-h-5 text-pretty text-[12px]",
                             match save_status() {
                                 SaveStatus::Idle => rsx! { span { class: "text-zinc-500", "Изменения применятся к новым письмам." } },
@@ -374,7 +374,7 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
                                 SaveStatus::Failed(error) => rsx! { span { class: "text-red-200", "{error}" } },
                             }
                         }
-                        button { r#type: "submit", class: "{BUTTON_CLASS} bg-blue-500 px-6 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.3),0_10px_30px_rgba(59,130,246,0.2)] hover:bg-blue-400", disabled: saving, if saving { "Сохраняем..." } else { "Сохранить настройки" } }
+                        button { r#type: "submit", class: "{BUTTON_CLASS} bg-accent px-6 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)] hover:bg-blue-400", disabled: saving, if saving { "Сохраняем..." } else { "Сохранить настройки" } }
                     }
                 }
             }
@@ -384,8 +384,8 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
 
 fn transport_choice_class(active: bool) -> &'static str {
     if active {
-        "min-h-11 rounded-xl bg-blue-500 px-4 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(59,130,246,0.18)] transition-[background-color,color,scale] duration-150 ease-out active:scale-[0.96]"
+        "min-h-10 rounded-lg border border-accent/25 bg-accent/10 px-4 text-[12px] font-medium text-blue-100 transition-[background-color,border-color,color,transform] duration-150 ease-out active:scale-[0.97]"
     } else {
-        "min-h-11 rounded-xl px-4 text-[13px] font-semibold text-zinc-400 transition-[background-color,color,scale] duration-150 ease-out hover:bg-zinc-900 hover:text-zinc-100 active:scale-[0.96]"
+        "min-h-10 rounded-lg border border-transparent px-4 text-[12px] font-medium text-zinc-400 transition-[background-color,border-color,color,transform] duration-150 ease-out hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-100 active:scale-[0.97]"
     }
 }

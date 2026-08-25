@@ -32,17 +32,17 @@ pub(crate) fn HostDashboardPage() -> Element {
     });
 
     rsx! {
-        section { class: "min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10",
-            div { class: "mx-auto w-full max-w-7xl pb-12",
+        section { class: "min-w-0 flex-1 overflow-y-auto bg-zinc-950/35 px-4 py-6 sm:px-6",
+            div { class: "mx-auto w-full max-w-[1180px] pb-10",
                 div { class: "flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between",
                     div {
-                        p { class: "text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-300", "Настройки хоста" }
-                        h1 { class: "mt-2 text-balance text-3xl font-semibold tracking-[-0.04em] text-white", "Нагрузка на систему" }
-                        p { class: "mt-2 max-w-2xl text-pretty text-sm leading-6 text-zinc-400", "Следи за ресурсами CheenHub, базы данных и остальной системы в реальном времени." }
+                        p { class: "text-[11px] font-medium uppercase tracking-[0.20em] text-zinc-600", "Настройки хоста" }
+                        h1 { class: "mt-1 text-balance text-[22px] font-semibold tracking-[-0.04em] text-zinc-50", "Нагрузка на систему" }
+                        p { class: "mt-1.5 max-w-2xl text-pretty text-[13px] leading-5 text-zinc-500", "Следи за ресурсами CheenHub, базы данных и остальной системы в реальном времени." }
                     }
                     if let Some(Ok(metrics)) = &metrics_result {
                         span {
-                            class: if metrics.available { "inline-flex min-h-8 w-fit items-center gap-2 rounded-full bg-emerald-400/10 px-3 text-[11px] font-semibold text-emerald-200 shadow-[0_0_0_1px_rgba(52,211,153,0.2)]" } else { "inline-flex min-h-8 w-fit items-center gap-2 rounded-full bg-amber-400/10 px-3 text-[11px] font-semibold text-amber-100 shadow-[0_0_0_1px_rgba(251,191,36,0.2)]" },
+                            class: if metrics.available { "inline-flex min-h-8 w-fit items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 text-[11px] font-medium text-emerald-200" } else { "inline-flex min-h-8 w-fit items-center gap-2 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 text-[11px] font-medium text-amber-100" },
                             span { class: if metrics.available { "size-1.5 rounded-full bg-emerald-300" } else { "size-1.5 rounded-full bg-amber-300" } }
                             if metrics.available { "Обновляется" } else { "Нет свежих данных" }
                         }
@@ -53,7 +53,7 @@ pub(crate) fn HostDashboardPage() -> Element {
                 match metrics_result {
                     None => dashboard_loader(),
                     Some(Err(error)) => rsx! {
-                        div { class: "mt-6 rounded-3xl bg-red-400/10 p-6 shadow-[0_0_0_1px_rgba(248,113,113,0.2)]",
+                        div { class: "mt-6 rounded-[20px] border border-red-500/20 bg-red-500/10 p-5",
                             h2 { class: "text-lg font-semibold text-red-100", "Не удалось загрузить показатели" }
                             p { class: "mt-2 text-pretty text-sm leading-6 text-red-100/75", "{error.message()}" }
                             button {
@@ -75,10 +75,10 @@ pub(crate) fn HostDashboardPage() -> Element {
 fn dashboard_loader() -> Element {
     rsx! {
         div { class: "mt-6 grid gap-5",
-            div { class: "h-72 animate-pulse rounded-3xl bg-zinc-900/75 shadow-[0_0_0_1px_rgba(255,255,255,0.06)]" }
+            div { class: "h-72 animate-pulse rounded-[20px] border border-zinc-800 bg-zinc-950/70" }
             div { class: "grid gap-5 lg:grid-cols-2",
-                div { class: "h-64 animate-pulse rounded-3xl bg-zinc-900/65 shadow-[0_0_0_1px_rgba(255,255,255,0.06)]" }
-                div { class: "h-64 animate-pulse rounded-3xl bg-zinc-900/65 shadow-[0_0_0_1px_rgba(255,255,255,0.06)]" }
+                div { class: "h-64 animate-pulse rounded-[20px] border border-zinc-800 bg-zinc-950/60" }
+                div { class: "h-64 animate-pulse rounded-[20px] border border-zinc-800 bg-zinc-950/60" }
             }
         }
     }
@@ -86,7 +86,7 @@ fn dashboard_loader() -> Element {
 
 fn unavailable_state() -> Element {
     rsx! {
-        div { class: "mt-6 rounded-3xl bg-zinc-900/75 p-7 text-center shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_16px_48px_rgba(0,0,0,0.22)]",
+        div { class: "mt-6 rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-6 text-center shadow-[0_18px_60px_rgba(0,0,0,.22)]",
             div { class: "mx-auto flex size-12 items-center justify-center rounded-2xl bg-amber-400/10 text-amber-200",
                 svg { class: "size-6", fill: "none", stroke: "currentColor", stroke_width: "1.8", view_box: "0 0 24 24", "aria-hidden": "true",
                     path { stroke_linecap: "round", stroke_linejoin: "round", d: "M4 13h4l2-7 4 12 2-5h4M5 21h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2Z" }
@@ -148,7 +148,7 @@ fn dashboard_content(metrics: HostMetricsResponse, mut cpu_view: Signal<CpuView>
             )}
         }
 
-        section { class: "mt-4 rounded-3xl bg-zinc-900/75 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_16px_48px_rgba(0,0,0,0.22)] sm:p-6",
+        section { class: "mt-4 rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
             div { class: "flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between",
                 div {
                     p { class: "text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500", "Процессор" }
@@ -171,7 +171,7 @@ fn dashboard_content(metrics: HostMetricsResponse, mut cpu_view: Signal<CpuView>
         }
 
         div { class: "mt-5 grid gap-5 lg:grid-cols-2",
-            section { class: "rounded-3xl bg-zinc-900/75 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_16px_48px_rgba(0,0,0,0.22)] sm:p-6",
+            section { class: "rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
                 p { class: "text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500", "Оперативная память" }
                 div { class: "mt-1 flex items-baseline gap-2",
                     strong { class: "tabular-nums text-2xl font-semibold tracking-[-0.04em] text-white", "{format_bytes(latest.memory.used_bytes)}" }
@@ -180,7 +180,7 @@ fn dashboard_content(metrics: HostMetricsResponse, mut cpu_view: Signal<CpuView>
                 {memory_chart(&samples)}
                 {memory_breakdown(latest)}
             }
-            section { class: "rounded-3xl bg-zinc-900/75 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_16px_48px_rgba(0,0,0,0.22)] sm:p-6",
+            section { class: "rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
                 p { class: "text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500", "Сеть CheenHub" }
                 div { class: "mt-2 grid grid-cols-2 gap-3",
                     {metric_value("Получение", latest.network.received_bytes_per_second, "text-blue-300")}
@@ -203,7 +203,7 @@ fn cpu_total_chart(samples: &[HostMetricsSample]) -> Element {
         f64::from(sample.cpu.database_percent)
     });
     rsx! {
-        div { class: "mt-4 h-36 rounded-2xl bg-zinc-950/70 p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.05)]",
+        div { class: "mt-4 h-36 rounded-xl border border-zinc-800/80 bg-zinc-950 p-3",
             svg { class: "h-full w-full", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История нагрузки процессора",
                 line { x1: "0", y1: "20", x2: "100", y2: "20", stroke: "rgba(255,255,255,0.06)", stroke_width: "0.35" }
                 polyline { points: "{system}", fill: "none", stroke: "#e4e4e7", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
@@ -239,7 +239,7 @@ fn logical_cpu_grid(samples: &[HostMetricsSample]) -> Element {
     rsx! {
         div { class: "mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4",
             for core_index in 0..core_count {
-                div { class: "rounded-2xl bg-zinc-950/70 p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.05)]",
+                div { class: "rounded-xl border border-zinc-800/80 bg-zinc-950 p-3",
                     div { class: "flex items-center justify-between gap-3",
                         span { class: "text-[11px] font-medium text-zinc-500", "CPU {core_index}" }
                         strong { class: "tabular-nums text-[12px] font-semibold text-zinc-200", "{format_percent(samples.last().and_then(|sample| sample.cpu.logical_processors_percent.get(core_index)).copied().unwrap_or(0.0))}" }
@@ -261,7 +261,7 @@ fn memory_chart(samples: &[HostMetricsSample]) -> Element {
         .max(1.0);
     let used = points(samples, max, |sample| sample.memory.used_bytes as f64);
     rsx! {
-        svg { class: "mt-5 h-32 w-full rounded-2xl bg-zinc-950/70 p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.05)]", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История использования оперативной памяти",
+        svg { class: "mt-5 h-32 w-full rounded-xl border border-zinc-800/80 bg-zinc-950 p-3", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История использования оперативной памяти",
             polyline { points: "{used}", fill: "none", stroke: "#34d399", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
         }
     }
@@ -298,7 +298,7 @@ fn network_chart(samples: &[HostMetricsSample]) -> Element {
     });
     let sent = points(samples, max, |sample| sample.network.sent_bytes_per_second);
     rsx! {
-        svg { class: "mt-5 h-32 w-full rounded-2xl bg-zinc-950/70 p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.05)]", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История сетевого трафика CheenHub",
+        svg { class: "mt-5 h-32 w-full rounded-xl border border-zinc-800/80 bg-zinc-950 p-3", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История сетевого трафика CheenHub",
             polyline { points: "{received}", fill: "none", stroke: "#60a5fa", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
             polyline { points: "{sent}", fill: "none", stroke: "#a78bfa", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
         }
@@ -314,7 +314,7 @@ fn summary_card(
     let hint = hint.into();
 
     rsx! {
-        div { class: "rounded-2xl bg-zinc-900/75 px-4 py-4 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_12px_32px_rgba(0,0,0,0.16)]",
+        div { class: "rounded-[18px] border border-zinc-800 bg-zinc-950/70 px-4 py-4",
             p { class: "text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500",
                 "{label}"
             }
@@ -330,7 +330,7 @@ fn summary_card(
 
 fn metric_value(label: &'static str, bytes_per_second: f64, color: &'static str) -> Element {
     rsx! {
-        div { class: "rounded-2xl bg-zinc-950/65 p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.05)]",
+        div { class: "rounded-xl border border-zinc-800/80 bg-zinc-950 p-3",
             p { class: "text-[11px] text-zinc-500", "{label}" }
             p { class: "mt-1 tabular-nums text-base font-semibold {color}", "{format_rate(bytes_per_second)}" }
         }
