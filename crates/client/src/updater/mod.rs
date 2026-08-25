@@ -243,9 +243,10 @@ async fn run_installation(config: UpdaterConfig, mut state: Signal<UpdaterState>
     );
 
     let installer_path = config.installer_path.clone();
+    let expected_version = config.version.clone();
     let installer_log_config = config.clone();
     match tokio::task::spawn_blocking(move || {
-        platform::run_installer(&installer_path, |message| {
+        platform::run_installer(&installer_path, expected_version.as_deref(), |message| {
             write_log(&installer_log_config, message);
         })
     })

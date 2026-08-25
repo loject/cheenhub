@@ -49,8 +49,25 @@ pub(super) fn stop_process_and_wait(pid: u32) -> Result<(), String> {
 
 pub(super) fn run_installer(
     installer_path: &Path,
+    expected_version: Option<&str>,
     mut on_log: impl FnMut(&str),
 ) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    if installer_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("deb"))
+    {
+        let metadata = validate_deb_package(installer_path, expected_version)?;
+        on_log(&format!(
+            "validated deb package: package={}, version={}, architecture={}",
+            metadata.package, metadata.version, metadata.architecture
+        ));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    let _ = expected_version;
+
     let mut command = installer_command(installer_path)?;
     on_log(&format!("running update installer command: {command:?}"));
     let status = command
@@ -213,6 +230,100 @@ fn installer_command(installer_path: &Path) -> Result<Command, String> {
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn installer_command(_installer_path: &Path) -> Result<Command, String> {
     Err("Установка обновления недоступна на этой платформе.".to_owned())
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+struct DebPackageMetadata {
+    package: String,
+    version: String,
+    architecture: String,
+}
+
+#[cfg(target_os = "linux")]
+fn validate_deb_package(
+    installer_path: &Path,
+    expected_version: Option<&str>,
+) -> Result<DebPackageMetadata, String> {
+    if !command_exists("dpkg-deb") {
+        return Err("Не удалось проверить DEB-пакет: в системе не найден dpkg-deb.".to_owned());
+    }
+
+    let metadata = DebPackageMetadata {
+        package: read_deb_field(installer_path, "Package")?,
+        version: read_deb_field(installer_path, "Version")?,
+        architecture: read_deb_field(installer_path, "Architecture")?,
+    };
+
+    let normalized_package: String = metadata
+        .package
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
+
+    if !matches!(normalized_package.as_str(), "cheenhub" | "cheenhubclient") {
+        return Err(format!(
+            "Скачанный DEB содержит неожиданный пакет `{}`. Установка отменена.",
+            metadata.package
+        ));
+    }
+
+    if let Some(expected_version) = expected_version
+        && !deb_version_matches(&metadata.version, expected_version)
+    {
+        return Err(format!(
+            "Версия DEB не совпадает с GitHub Release: ожидалась {expected_version}, получена {}.",
+            metadata.version
+        ));
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    if metadata.architecture != "amd64" {
+        return Err(format!(
+            "DEB имеет неподходящую архитектуру: ожидалась amd64, получена {}.",
+            metadata.architecture
+        ));
+    }
+
+    Ok(metadata)
+}
+
+#[cfg(target_os = "linux")]
+fn read_deb_field(installer_path: &Path, field: &str) -> Result<String, String> {
+    let output = Command::new("dpkg-deb")
+        .arg("--field")
+        .arg(installer_path)
+        .arg(field)
+        .output()
+        .map_err(|error| format!("Не удалось прочитать поле {field} из DEB: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Не удалось прочитать поле {field} из DEB: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if value.is_empty() {
+        return Err(format!("В DEB отсутствует поле {field}."));
+    }
+
+    Ok(value)
+}
+
+#[cfg(target_os = "linux")]
+fn deb_version_matches(actual: &str, expected: &str) -> bool {
+    let actual = actual
+        .split_once(':')
+        .map(|(_, version)| version)
+        .unwrap_or(actual);
+
+    actual == expected
+        || actual
+            .strip_prefix(expected)
+            .is_some_and(|suffix| suffix.starts_with('-') || suffix.starts_with('+'))
 }
 
 #[cfg(target_os = "windows")]
