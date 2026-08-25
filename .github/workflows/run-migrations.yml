@@ -196,12 +196,12 @@ jobs:
             docker compose \
             --env-file "${ENV_FILE}" \
             -f deploy/compose.yml \
-            pull backend web certbot
+            pull backend metrics-proxy web certbot
 
           CHEENHUB_BACKEND_IMAGE_REF="${BACKEND_IMAGE_REF}" \
             CHEENHUB_WEB_IMAGE_REF="${WEB_IMAGE_REF}" \
             docker compose \
             --env-file "${ENV_FILE}" \
             -f deploy/compose.yml \
-            up -d --no-deps backend web certbot
+            up -d --no-deps metrics-proxy backend web certbot
           REMOTE
