@@ -151,7 +151,6 @@ fn dashboard_content(metrics: HostMetricsResponse, mut cpu_view: Signal<CpuView>
                     {metric_value("Отправка", latest.network.sent_bytes_per_second, "text-violet-300")}
                 }
                 {network_chart(&samples)}
-                p { class: "mt-3 text-pretty text-[11px] leading-5 text-zinc-600", "Учитывается только трафик сервисов CheenHub. Обмен данными базы данных не включён." }
             }
         }
     }
