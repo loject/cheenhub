@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod error;
+pub mod host_settings;
 pub mod push_notifications;
 pub mod servers;
 pub mod social;
@@ -16,6 +17,10 @@ pub use auth::{
     UnlinkProviderRequest, UpdateCurrentUserRequest,
 };
 pub use error::ApiError;
+pub use host_settings::{
+    EmailTransport, GmailConnectionStartResponse, HostAccessResponse, HostEmailSettingsResponse,
+    UpdateHostEmailSettingsRequest,
+};
 pub use push_notifications::{PushPlatform, UpsertPushInstallationRequest};
 pub use servers::{
     AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,

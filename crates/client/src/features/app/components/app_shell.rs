@@ -7,6 +7,7 @@ use crate::Route;
 use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::api;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
+use crate::features::host_settings::{HostEmailSettingsPage, api as host_settings_api};
 use crate::features::social::SocialPage;
 
 use super::add_server_modal::AddServerModal;
@@ -42,6 +43,7 @@ pub(crate) enum AppModal {
 pub(crate) fn AppShell() -> Element {
     let navigator = use_navigator();
     let route = use_route::<Route>();
+    let host_settings_active = matches!(route, Route::AppHostEmailSettings { .. });
     let workspace = AppWorkspaceRoute::from_route(&route).unwrap_or(AppWorkspaceRoute::Friends);
     let route_active_server_id = workspace.server_id().map(ToOwned::to_owned);
     let selected_conversation_id = workspace.conversation_id().map(ToOwned::to_owned);
@@ -62,7 +64,18 @@ pub(crate) fn AppShell() -> Element {
         && !is_loading_servers()
         && servers().is_empty()
         && server_status().is_empty();
-    let social_workspace_active = workspace.is_social();
+    let social_workspace_active = !host_settings_active && workspace.is_social();
+    let mut host_access_resource = use_resource(host_settings_api::load_access);
+    let host_access_result = host_access_resource.read().clone();
+    let host_access_loading = host_access_result.is_none();
+    let host_access_error = match &host_access_result {
+        Some(Err(error)) => Some(error.clone()),
+        _ => None,
+    };
+    let is_host_owner = matches!(
+        host_access_result,
+        Some(Ok(access)) if access.is_host_owner
+    );
     let active_room = use_context::<ActiveRoomContext>();
 
     // Синхронизируем активную комнату и активный DM-диалог с маршрутом.
@@ -189,6 +202,10 @@ pub(crate) fn AppShell() -> Element {
                 servers: servers(),
                 active_server_id: active_server_id(),
                 social_active: social_workspace_active,
+                host_settings_active,
+                host_access_loading,
+                host_access_error,
+                is_host_owner,
                 is_loading: is_loading_servers(),
                 status: server_status(),
                 on_select_server: move |server_id: String| {
@@ -206,22 +223,35 @@ pub(crate) fn AppShell() -> Element {
                     info!("switching app shell to social workspace");
                     navigator.push(Route::AppFriends {});
                 },
+                on_open_host_settings: move |_| {
+                    info!("switching app shell to host email settings workspace");
+                    navigator.push(Route::AppHostEmailSettings {
+                        gmail: None,
+                        email: None,
+                    });
+                },
+                on_retry_host_access: move |_| {
+                    info!("retrying host settings access load");
+                    host_access_resource.restart();
+                },
                 on_add_server: move |_| is_add_server_open.set(true),
             }
-            if social_workspace_active {
+            if host_settings_active {
+                HostEmailSettingsPage {}
+            } else if social_workspace_active {
                 SocialPage {
                     selected_conversation_id,
                 }
             }
-            if !social_workspace_active && show_empty_servers {
+            if !host_settings_active && !social_workspace_active && show_empty_servers {
                 EmptyServersPanel {
                     on_create_server: move |_| is_add_server_open.set(true),
                 }
-            } else if !social_workspace_active && !show_empty_servers {
+            } else if !host_settings_active && !social_workspace_active && !show_empty_servers {
                 for server in servers() {
                     ServerInstance {
                         key: "{server.id}",
-                        active: !social_workspace_active
+                        active: !host_settings_active && !social_workspace_active
                             && active_server_id().as_deref() == Some(server.id.as_str()),
                         requested_room_id: if active_server_id().as_deref() == Some(server.id.as_str()) {
                             workspace.room_id().map(ToOwned::to_owned)

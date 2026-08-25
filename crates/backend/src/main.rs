@@ -16,6 +16,7 @@ use tracing::info;
 
 type Stores = (
     Arc<dyn features::auth::infrastructure::AuthStore>,
+    Arc<dyn features::host_settings::infrastructure::HostSettingsStore>,
     Arc<dyn features::servers::infrastructure::ServerStore>,
     Arc<dyn features::social::infrastructure::SocialStore>,
     Arc<dyn features::text_chat::infrastructure::TextChatStore>,
@@ -73,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let (
         auth_store,
+        host_settings_store,
         server_store,
         social_store,
         text_chat_store,
@@ -113,6 +115,11 @@ async fn main() -> anyhow::Result<()> {
             );
             (
                 auth_store,
+                Arc::new(
+                    features::host_settings::infrastructure::PostgresHostSettingsStore::new(
+                        database.clone(),
+                    ),
+                ),
                 Arc::new(features::servers::infrastructure::PostgresServerStore::new(
                     database.clone(),
                 )),
@@ -126,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
                 ),
                 chat_attachment_object_store.clone(),
                 Arc::new(features::images::infrastructure::PostgresImageStore::new(
-                    database,
+                    database.clone(),
                 )),
                 push_notifications,
             )
@@ -141,6 +148,9 @@ async fn main() -> anyhow::Result<()> {
             );
             (
                 auth_store,
+                Arc::new(
+                    features::host_settings::infrastructure::InMemoryHostSettingsStore::default(),
+                ),
                 Arc::new(features::servers::infrastructure::InMemoryServerStore::default()),
                 Arc::new(features::social::infrastructure::InMemorySocialStore::default()),
                 Arc::new(features::text_chat::infrastructure::InMemoryTextChatStore::default()),
@@ -155,15 +165,23 @@ async fn main() -> anyhow::Result<()> {
         config.webtransport_tls_key_path.as_deref(),
     )?;
 
+    let auth_mailer: Arc<dyn features::auth::email::AuthMailer> = Arc::new(
+        features::host_settings::email_delivery::DynamicAuthMailer::new(
+            host_settings_store.clone(),
+            config.google_oauth_client_id.clone(),
+            config.google_oauth_client_secret.clone(),
+        ),
+    );
+    tracing::info!(
+        gmail_oauth_client_id_fallback_configured = config.google_oauth_client_id.is_some(),
+        gmail_oauth_client_secret_fallback_configured = config.google_oauth_client_secret.is_some(),
+        "auth email transport will be selected dynamically from host settings"
+    );
+
     let state = state::AppState {
         auth_store,
-        auth_mailer: Arc::new(features::auth::email::SmtpAuthMailer::new(
-            config.smtp_host.clone(),
-            config.smtp_port,
-            config.smtp_username.clone(),
-            config.smtp_password.clone(),
-            config.smtp_from_email.clone(),
-        )?),
+        auth_mailer,
+        host_settings_store,
         server_store,
         social_store,
         text_chat_store,

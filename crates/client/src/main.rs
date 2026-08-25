@@ -9,9 +9,9 @@ mod routes;
 mod update_mode;
 
 use routes::{
-    AppDirectMessage, AppFriends, AppHome, AppServer, AppServerRoom, ForgotPassword, Invite,
-    Landing, Login, NotFound, OAuthCallback, PersonalDataConsent, PrivacyPolicy, Register,
-    ResetPassword, Terms,
+    AppDirectMessage, AppFriends, AppHome, AppHostEmailSettings, AppServer, AppServerRoom,
+    ForgotPassword, Invite, Landing, Login, NotFound, OAuthCallback, PersonalDataConsent,
+    PrivacyPolicy, Register, ResetPassword, Terms,
 };
 
 use crate::features::application_focus::ApplicationFocusProvider;
@@ -91,6 +91,11 @@ enum Route {
     AppFriends {},
     #[route("/friends/dm/:conversation_id")]
     AppDirectMessage { conversation_id: String },
+    #[route("/host-settings/email?:gmail&:email")]
+    AppHostEmailSettings {
+        gmail: Option<String>,
+        email: Option<String>,
+    },
     #[route("/servers/:server_id")]
     AppServer { server_id: String },
     #[route("/servers/:server_id/rooms/:room_id")]

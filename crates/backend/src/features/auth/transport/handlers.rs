@@ -269,8 +269,8 @@ impl IntoResponse for AuthError {
             } => {
                 tracing::warn!(
                     feature,
-                    missing_env = ?missing,
-                    "authentication feature is not configured; set the listed environment variables in .env and restart the backend"
+                    missing_fields = ?missing,
+                    "authentication feature is not configured; update the listed host settings"
                 );
                 (StatusCode::SERVICE_UNAVAILABLE, "misconfigured", message)
             }

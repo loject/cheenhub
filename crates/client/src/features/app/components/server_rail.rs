@@ -14,10 +14,16 @@ pub(crate) fn ServerRail(
     servers: Vec<ServerSummary>,
     active_server_id: Option<String>,
     social_active: bool,
+    host_settings_active: bool,
+    host_access_loading: bool,
+    host_access_error: Option<String>,
+    is_host_owner: bool,
     is_loading: bool,
     status: String,
     on_select_server: EventHandler<String>,
     on_open_social: EventHandler<()>,
+    on_open_host_settings: EventHandler<()>,
+    on_retry_host_access: EventHandler<()>,
     on_add_server: EventHandler<()>,
 ) -> Element {
     let mut show_empty_server_hint = use_signal(|| true);
@@ -99,6 +105,40 @@ pub(crate) fn ServerRail(
                     onclick: move |_| on_add_server.call(()),
                     svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 5v14m-7-7h14" }
+                    }
+                }
+                if host_access_loading {
+                    div {
+                        class: "mt-2 flex h-12 w-12 animate-pulse items-center justify-center rounded-2xl bg-zinc-900/70 shadow-[0_0_0_1px_rgba(255,255,255,0.06)]",
+                        "aria-label": "Проверяем доступ к настройкам хоста"
+                    }
+                } else if let Some(error) = host_access_error {
+                    button {
+                        r#type: "button",
+                        class: "mt-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-sm font-bold text-red-200 shadow-[0_0_0_1px_rgba(248,113,113,0.2)] transition-[background-color,color,scale,box-shadow] duration-150 ease-out hover:bg-red-500/15 hover:shadow-[0_0_0_1px_rgba(248,113,113,0.32)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/70",
+                        "aria-label": "Не удалось проверить доступ к настройкам хоста. Нажми, чтобы повторить",
+                        title: "{error}",
+                        onclick: move |_| on_retry_host_access.call(()),
+                        "!"
+                    }
+                } else if is_host_owner {
+                    button {
+                        r#type: "button",
+                        class: if host_settings_active {
+                            "relative mt-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.35),0_10px_28px_rgba(59,130,246,0.2)] transition-[background-color,color,scale,box-shadow] duration-150 ease-out active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300/80"
+                        } else {
+                            "mt-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-zinc-900/80 text-zinc-400 shadow-[0_0_0_1px_rgba(255,255,255,0.08)] transition-[background-color,color,scale,box-shadow] duration-150 ease-out hover:bg-blue-500/10 hover:text-blue-100 hover:shadow-[0_0_0_1px_rgba(96,165,250,0.25)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70"
+                        },
+                        "aria-label": "Настройки хоста",
+                        title: "Настройки хоста",
+                        onclick: move |_| on_open_host_settings.call(()),
+                        if host_settings_active {
+                            span { class: "absolute -left-3 h-7 w-1 rounded-r-full bg-blue-400" }
+                        }
+                        svg { class: "size-5", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" }
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21h-4v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3v-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3h4v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1v4h-.1a1.7 1.7 0 0 0-1.5 1Z" }
+                        }
                     }
                 }
                 NativeClientDownload {}

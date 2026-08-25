@@ -42,6 +42,9 @@ fn state_with_store(server_store: Arc<InMemoryServerStore>) -> AppState {
     AppState {
         auth_store: Arc::new(InMemoryAuthStore::default()),
         auth_mailer: Arc::new(crate::features::auth::email::tests::TestAuthMailer::default()),
+        host_settings_store: Arc::new(
+            crate::features::host_settings::infrastructure::InMemoryHostSettingsStore::default(),
+        ),
         server_store,
         social_store: Arc::new(InMemorySocialStore::default()),
         text_chat_store: Arc::new(InMemoryTextChatStore::default()),

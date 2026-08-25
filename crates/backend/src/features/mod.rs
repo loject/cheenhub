@@ -1,6 +1,7 @@
 //! Модули функций бэкенда.
 
 pub(crate) mod auth;
+pub(crate) mod host_settings;
 pub(crate) mod images;
 pub(crate) mod push_notifications;
 pub(crate) mod servers;

@@ -24,7 +24,7 @@ pub(crate) enum AuthError {
     Misconfigured {
         /// Название функции или интеграции.
         feature: &'static str,
-        /// Имена отсутствующих переменных окружения.
+        /// Имена отсутствующих полей настройки.
         missing: Vec<&'static str>,
         /// Сообщение для пользователя.
         message: String,

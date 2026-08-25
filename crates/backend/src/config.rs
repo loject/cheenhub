@@ -40,16 +40,6 @@ pub(crate) struct AppConfig {
     pub(crate) oauth_handoff_lifetime_minutes: i64,
     /// Время жизни намерения регистрации OAuth в минутах.
     pub(crate) oauth_registration_lifetime_minutes: i64,
-    /// Хост SMTP для писем сброса пароля.
-    pub(crate) smtp_host: Option<String>,
-    /// Порт SMTP для писем сброса пароля.
-    pub(crate) smtp_port: u16,
-    /// Имя пользователя SMTP для писем сброса пароля.
-    pub(crate) smtp_username: Option<String>,
-    /// Пароль SMTP для писем сброса пароля.
-    pub(crate) smtp_password: Option<String>,
-    /// Адрес электронной почты отправителя для писем сброса пароля.
-    pub(crate) smtp_from_email: Option<String>,
     /// Время жизни токена сброса пароля в минутах.
     pub(crate) password_reset_token_lifetime_minutes: i64,
     /// Бэкенд хранения аутентификации.
@@ -106,9 +96,9 @@ impl AppConfig {
             jwt_key_id: required("JWT_KEY_ID")?,
             access_token_lifetime_minutes: positive_i64("ACCESS_TOKEN_LIFETIME_MINUTES")?,
             refresh_token_lifetime_days: positive_i64("REFRESH_TOKEN_LIFETIME_DAYS")?,
-            google_oauth_client_id: env::var("GOOGLE_OAUTH_CLIENT_ID").ok(),
-            google_oauth_client_secret: env::var("GOOGLE_OAUTH_CLIENT_SECRET").ok(),
-            google_oauth_redirect_uri: env::var("GOOGLE_OAUTH_REDIRECT_URI").ok(),
+            google_oauth_client_id: optional_non_empty("GOOGLE_OAUTH_CLIENT_ID"),
+            google_oauth_client_secret: optional_non_empty("GOOGLE_OAUTH_CLIENT_SECRET"),
+            google_oauth_redirect_uri: optional_non_empty("GOOGLE_OAUTH_REDIRECT_URI"),
             cheenhub_client_base_url: optional("CHEENHUB_CLIENT_BASE_URL", "http://127.0.0.1:8081"),
             cheenhub_api_base_url: api_base_url(&optional(
                 "CHEENHUB_BASE_URL",
@@ -126,13 +116,6 @@ impl AppConfig {
                 "OAUTH_REGISTRATION_LIFETIME_MINUTES",
                 15,
             )?,
-            smtp_host: env::var("SMTP_HOST").ok(),
-            smtp_port: optional("SMTP_PORT", "587")
-                .parse()
-                .context("SMTP_PORT must be a valid u16 port")?,
-            smtp_username: env::var("SMTP_USERNAME").ok(),
-            smtp_password: env::var("SMTP_PASSWORD").ok(),
-            smtp_from_email: env::var("SMTP_FROM_EMAIL").ok(),
             password_reset_token_lifetime_minutes: optional_positive_i64(
                 "PASSWORD_RESET_TOKEN_LIFETIME_MINUTES",
                 30,
@@ -191,6 +174,13 @@ fn required(key: &str) -> anyhow::Result<String> {
 
 fn optional(key: &str, default: &str) -> String {
     env::var(key).unwrap_or_else(|_| default.to_owned())
+}
+
+fn optional_non_empty(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 fn positive_i64(key: &str) -> anyhow::Result<i64> {

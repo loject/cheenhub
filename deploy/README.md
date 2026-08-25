@@ -31,6 +31,27 @@ install -m 600 /path/to/firebase-service-account.json deploy/secrets/firebase-se
 
 Compose монтирует этот файл только для чтения в backend-контейнер как `/run/secrets/fcm-service-account.json`.
 
+## Отправка писем
+
+Backend поддерживает SMTP и Gmail API по HTTPS. Транспорт, таймаут и учетные данные
+хранятся в БД и меняются владельцем хоста в интерфейсе без перезапуска backend.
+Если OAuth Client ID или Client Secret Gmail не записаны в БД, backend использует
+`GOOGLE_OAUTH_CLIENT_ID` и `GOOGLE_OAUTH_CLIENT_SECRET` из окружения. Значения из БД
+имеют приоритет и служат override.
+
+Первый пользователь существующей установки автоматически становится владельцем хоста при
+миграции. Если пользователей ещё нет, владельцем станет первый зарегистрировавшийся пользователь.
+Для Gmail создай OAuth client типа `Web application`, включи Gmail API и укажи в
+Google Cloud callback URI, показанный на странице настроек. После сохранения client ID и client
+secret нажми «Подключить Gmail» и пройди обычную авторизацию Google.
+
+Временно SMTP-пароль, OAuth client secret и Gmail refresh token хранятся в БД открытым текстом
+по явно принятому решению. Ограничь доступ к БД и резервным копиям; API никогда не возвращает
+эти значения. Для постоянной отправки OAuth consent screen должен быть переведён из Testing в
+Production с учётом действующих ограничений Google.
+
+Владение хостом не связано с владением сервером внутри CheenHub.
+
 SSL выпускается через HTTP-01 challenge:
 
 ```bash
