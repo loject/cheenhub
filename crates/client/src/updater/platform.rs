@@ -152,7 +152,7 @@ fn installer_command(installer_path: &Path) -> Result<Command, String> {
     if file_name.ends_with(".deb") {
         let mut command = if command_exists("pkexec") {
             let mut command = Command::new("pkexec");
-            command.arg("dpkg").arg("-i");
+            command.arg("apt").arg("install").arg("-y");
             command
         } else {
             Command::new("xdg-open")

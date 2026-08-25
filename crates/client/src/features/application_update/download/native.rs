@@ -49,7 +49,7 @@ const PREFERRED_SUFFIXES: &[&str] = &["windows-x64-setup.exe", "windows-x64.msi"
     target_os = "linux",
     target_arch = "x86_64"
 ))]
-const PREFERRED_SUFFIXES: &[&str] = &["linux-x64.AppImage", "linux-x64.deb"];
+const PREFERRED_SUFFIXES: &[&str] = &["linux-x64.deb", "linux-x64.AppImage"];
 #[cfg(all(
     not(target_family = "wasm"),
     not(all(target_os = "windows", target_arch = "x86_64")),
