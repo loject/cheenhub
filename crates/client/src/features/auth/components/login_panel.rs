@@ -16,6 +16,7 @@ pub(crate) fn LoginPanel(password_reset_succeeded: bool) -> Element {
     let mut password = use_signal(String::new);
     let mut status = use_signal(String::new);
     let mut is_busy = use_signal(|| false);
+    let mut show_password = use_signal(|| false);
 
     rsx! {
         div { class: "rounded-[24px] border border-zinc-800 bg-zinc-900/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-6",
@@ -72,14 +73,45 @@ pub(crate) fn LoginPanel(password_reset_succeeded: bool) -> Element {
                     value: email(),
                     oninput: move |value| email.set(value)
                 }
-                TextInput {
-                    input_type: "password",
-                    label: "Password",
-                    name: "password",
-                    placeholder: "••••••••",
-                    autocomplete: "current-password",
-                    value: password(),
-                    oninput: move |value| password.set(value)
+                label { class: "block",
+                    span { class: "mb-1.5 block text-[12px] font-medium text-zinc-300", "Password" }
+                    div { class: "relative",
+                        input {
+                            r#type: if show_password() { "text" } else { "password" },
+                            name: "password",
+                            placeholder: "••••••••",
+                            autocomplete: "current-password",
+                            value: password(),
+                            oninput: move |event| password.set(event.value()),
+                            class: "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 pr-10 text-[14px] text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-accent/70 focus:ring-4 focus:ring-accent/10"
+                        }
+                        button {
+                            r#type: "button",
+                            class: "absolute right-0 top-0 flex h-11 w-10 items-center justify-center text-zinc-500 transition hover:text-white",
+                            "aria-label": if show_password() { "Скрыть пароль" } else { "Показать пароль" },
+                            title: if show_password() { "Скрыть пароль" } else { "Показать пароль" },
+                            onclick: move |_| show_password.set(!show_password()),
+                            svg {
+                                class: "h-5 w-5",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "1.8",
+                                view_box: "0 0 24 24",
+                                path {
+                                    stroke_linecap: "round",
+                                    stroke_linejoin: "round",
+                                    d: "M2.25 12s3.75-6.75 9.75-6.75S21.75 12 21.75 12 18 18.75 12 18.75 2.25 12 2.25 12Z"
+                                }
+                                circle { cx: "12", cy: "12", r: "2.75" }
+                                if show_password() {
+                                    path {
+                                        stroke_linecap: "round",
+                                        d: "M4 4l16 16"
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 if !status().is_empty() {
                     p { class: "rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] leading-5 text-red-200",
