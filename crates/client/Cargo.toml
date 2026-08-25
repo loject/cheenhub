@@ -38,6 +38,7 @@ app = [
     "dep:reqwest",
     "dep:serde",
     "dep:serde_json",
+    "dep:sha2",
     "dep:url",
     "dep:uuid",
     "dep:wasm-bindgen-futures",
@@ -112,6 +113,7 @@ reqwest = { workspace = true, optional = true }
 rustls = { workspace = true, features = ["aws-lc-rs"], optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tokio-tungstenite = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }

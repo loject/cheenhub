@@ -34,6 +34,7 @@ struct GithubReleaseAsset {
     name: String,
     browser_download_url: String,
     size: u64,
+    digest: Option<String>,
 }
 
 /// Проверяет последний стабильный релиз CheenHub на GitHub.
@@ -81,6 +82,7 @@ pub(crate) async fn check_latest_release() -> Result<UpdateCheckOutcome, String>
                     name: asset.name,
                     download_url: asset.browser_download_url,
                     size_bytes: asset.size,
+                    digest: asset.digest,
                 })
                 .collect::<Vec<_>>(),
         ),

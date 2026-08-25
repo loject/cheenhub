@@ -11,6 +11,9 @@ use std::process::Command;
 use dioxus::prelude::*;
 
 #[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
+use sha2::{Digest, Sha256};
+
+#[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 use super::USER_AGENT;
 #[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
 use super::{PrimaryUpdateActionPresentation, unavailable_action_presentation};
@@ -156,6 +159,7 @@ pub(crate) async fn download_update_asset(
         .content_length()
         .or_else(|| (asset.size_bytes > 0).then_some(asset.size_bytes));
     let mut downloaded_bytes = 0_u64;
+    let mut hasher = Sha256::new();
     let mut file = std::fs::File::create(&destination).map_err(|error| {
         format!(
             "Не удалось сохранить обновление в {}: {error}",
@@ -180,6 +184,7 @@ pub(crate) async fn download_update_asset(
                 destination.display()
             )
         })?;
+        hasher.update(&chunk);
         downloaded_bytes = downloaded_bytes.saturating_add(chunk.len() as u64);
         on_progress(UpdateDownloadProgress {
             downloaded_bytes,
@@ -194,6 +199,32 @@ pub(crate) async fn download_update_asset(
             destination.display()
         )
     })?;
+
+    let actual_digest = format!("{:x}", hasher.finalize());
+    if let Some(expected_digest) = asset.digest.as_deref() {
+        let expected_digest = expected_digest.strip_prefix("sha256:").ok_or_else(|| {
+            format!("GitHub вернул неподдерживаемый формат контрольной суммы: {expected_digest}.")
+        })?;
+
+        if !actual_digest.eq_ignore_ascii_case(expected_digest) {
+            drop(file);
+            let _ = std::fs::remove_file(&destination);
+            return Err(
+                "SHA-256 скачанного обновления не совпадает с GitHub Release. Файл удалён, установка отменена."
+                    .to_owned(),
+            );
+        }
+
+        info!(
+            path = %destination.display(),
+            "application update SHA-256 verified"
+        );
+    } else {
+        warn!(
+            asset_name = %asset.name,
+            "GitHub release asset does not contain SHA-256 digest"
+        );
+    }
 
     info!(
         asset_name = %asset.name,

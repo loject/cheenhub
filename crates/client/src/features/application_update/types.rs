@@ -9,6 +9,8 @@ pub(crate) struct UpdateDownloadAsset {
     pub(crate) download_url: String,
     /// Размер файла в байтах.
     pub(crate) size_bytes: u64,
+    /// Контрольная сумма GitHub Release, например `sha256:...`.
+    pub(crate) digest: Option<String>,
 }
 
 /// Скачанный файл обновления.
