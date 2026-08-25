@@ -150,14 +150,19 @@ fn installer_command(installer_path: &Path) -> Result<Command, String> {
     }
 
     if file_name.ends_with(".deb") {
-        let mut command = if command_exists("pkexec") {
-            let mut command = Command::new("pkexec");
-            command.arg("apt").arg("install").arg("-y");
-            command
-        } else {
-            Command::new("xdg-open")
-        };
-        command.arg(installer_path);
+        if !command_exists("pkexec") {
+            return Err(
+                "Автоматическая установка обновления недоступна: в системе не найден pkexec."
+                    .to_owned(),
+            );
+        }
+
+        let mut command = Command::new("pkexec");
+        command
+            .arg("apt")
+            .arg("install")
+            .arg("-y")
+            .arg(installer_path);
         return Ok(command);
     }
 
