@@ -12,8 +12,9 @@ COPY crates ./crates
 RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cheenhub-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=cheenhub-backend-target,target=/app/target,sharing=locked \
-    cargo build --release --locked -p cheenhub_backend -p cheenhub_migrations \
+    cargo build --release --locked -p cheenhub_backend -p cheenhub_metrics_proxy -p cheenhub_migrations \
     && cp /app/target/release/cheenhub_backend /usr/local/bin/cheenhub_backend \
+    && cp /app/target/release/cheenhub_metrics_proxy /usr/local/bin/cheenhub_metrics_proxy \
     && cp /app/target/release/cheenhub_migrations /usr/local/bin/cheenhub_migrations
 
 FROM source AS web-tools
@@ -58,6 +59,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=backend-builder /usr/local/bin/cheenhub_backend /usr/local/bin/cheenhub_backend
+COPY --from=backend-builder /usr/local/bin/cheenhub_metrics_proxy /usr/local/bin/cheenhub_metrics_proxy
 COPY --from=backend-builder /usr/local/bin/cheenhub_migrations /usr/local/bin/cheenhub_migrations
 EXPOSE 3000/tcp 3000/udp
 CMD ["cheenhub_backend"]

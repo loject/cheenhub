@@ -41,6 +41,7 @@ services:
       WEBTRANSPORT_TLS_CERT_PATH: /etc/letsencrypt/live/cheenhub.ru/fullchain.pem
       WEBTRANSPORT_TLS_KEY_PATH: /etc/letsencrypt/live/cheenhub.ru/privkey.pem
       WEBTRANSPORT_TLS_RELOAD_INTERVAL_SECONDS: ${WEBTRANSPORT_TLS_RELOAD_INTERVAL_SECONDS:-5}
+      CHEENHUB_METRICS_PROXY_URL: http://metrics-proxy:9100
     volumes:
       - letsencrypt:/etc/letsencrypt:ro
       - ./secrets/firebase-service-account.json:/run/secrets/fcm-service-account.json:ro
@@ -52,6 +53,30 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      metrics-proxy:
+        condition: service_started
+    networks:
+      - default
+      - host-metrics
+
+  metrics-proxy:
+    image: ${CHEENHUB_BACKEND_IMAGE_REF:?CHEENHUB_BACKEND_IMAGE_REF is required}
+    restart: unless-stopped
+    command: ["cheenhub_metrics_proxy"]
+    environment:
+      CHEENHUB_METRICS_APP_SERVICES: backend,web
+      CHEENHUB_METRICS_DATABASE_SERVICE: db
+      CHEENHUB_METRICS_PROXY_ADDRESS: 0.0.0.0:9100
+      RUST_LOG: cheenhub_metrics_proxy=info
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - host-metrics
 
   web:
     image: ${CHEENHUB_WEB_IMAGE_REF:?CHEENHUB_WEB_IMAGE_REF is required}
@@ -80,3 +105,7 @@ volumes:
     external: true
     name: cheenhub_letsencrypt
   certbot-webroot:
+
+networks:
+  host-metrics:
+    internal: true

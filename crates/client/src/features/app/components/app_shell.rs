@@ -7,7 +7,9 @@ use crate::Route;
 use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::api;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
-use crate::features::host_settings::{HostEmailSettingsPage, api as host_settings_api};
+use crate::features::host_settings::{
+    HostDashboardPage, HostEmailSettingsPage, api as host_settings_api,
+};
 use crate::features::social::SocialPage;
 
 use super::add_server_modal::AddServerModal;
@@ -43,7 +45,9 @@ pub(crate) enum AppModal {
 pub(crate) fn AppShell() -> Element {
     let navigator = use_navigator();
     let route = use_route::<Route>();
-    let host_settings_active = matches!(route, Route::AppHostEmailSettings { .. });
+    let host_dashboard_active = matches!(route, Route::AppHostSettings {});
+    let host_email_settings_active = matches!(route, Route::AppHostEmailSettings { .. });
+    let host_settings_active = host_dashboard_active || host_email_settings_active;
     let workspace = AppWorkspaceRoute::from_route(&route).unwrap_or(AppWorkspaceRoute::Friends);
     let route_active_server_id = workspace.server_id().map(ToOwned::to_owned);
     let selected_conversation_id = workspace.conversation_id().map(ToOwned::to_owned);
@@ -224,11 +228,8 @@ pub(crate) fn AppShell() -> Element {
                     navigator.push(Route::AppFriends {});
                 },
                 on_open_host_settings: move |_| {
-                    info!("switching app shell to host email settings workspace");
-                    navigator.push(Route::AppHostEmailSettings {
-                        gmail: None,
-                        email: None,
-                    });
+                    info!("switching app shell to host dashboard workspace");
+                    navigator.push(Route::AppHostSettings {});
                 },
                 on_retry_host_access: move |_| {
                     info!("retrying host settings access load");
@@ -236,7 +237,9 @@ pub(crate) fn AppShell() -> Element {
                 },
                 on_add_server: move |_| is_add_server_open.set(true),
             }
-            if host_settings_active {
+            if host_dashboard_active {
+                HostDashboardPage {}
+            } else if host_email_settings_active {
                 HostEmailSettingsPage {}
             } else if social_workspace_active {
                 SocialPage {

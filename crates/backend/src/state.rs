@@ -8,6 +8,7 @@ use crate::features::auth::email::AuthMailer;
 use crate::features::auth::infrastructure::AuthStore;
 use crate::features::auth::security::keys::AuthKeys;
 use crate::features::host_settings::infrastructure::HostSettingsStore;
+use crate::features::host_settings::metrics_monitor::HostMetricsMonitor;
 use crate::features::images::infrastructure::ImageStore;
 use crate::features::push_notifications::application::PushNotifications;
 use crate::features::servers::infrastructure::ServerStore;
@@ -27,6 +28,8 @@ pub(crate) struct AppState {
     pub(crate) auth_mailer: Arc<dyn AuthMailer>,
     /// Хранилище глобальных владельцев и настроек хоста.
     pub(crate) host_settings_store: Arc<dyn HostSettingsStore>,
+    /// Оперативная история системной нагрузки хоста.
+    pub(crate) host_metrics: Arc<HostMetricsMonitor>,
     /// Бэкенд хранения серверов.
     pub(crate) server_store: Arc<dyn ServerStore>,
     /// Бэкенд хранения друзей и личных сообщений.

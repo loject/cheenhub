@@ -3,6 +3,7 @@ members = [
     "crates/backend",
     "crates/client",
     "crates/contracts",
+    "crates/metrics-proxy",
     "crates/migrations",
     "xtask",
 ]

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use cheenhub_contracts::rest::{
     EmailTransport as ContractEmailTransport, GmailConnectionStartResponse, HostAccessResponse,
-    HostEmailSettingsResponse, UpdateHostEmailSettingsRequest,
+    HostEmailSettingsResponse, HostMetricsResponse, UpdateHostEmailSettingsRequest,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use serde::Deserialize;
@@ -88,6 +88,22 @@ pub(crate) async fn email_settings(
         state,
         state.host_settings_store.load_email_settings().await?,
     ))
+}
+
+/// Возвращает последние измерения нагрузки только владельцу хоста.
+pub(crate) async fn metrics(
+    state: &AppState,
+    access_token: &str,
+) -> Result<HostMetricsResponse, HostSettingsError> {
+    let user_id = require_host_owner(state, access_token).await?;
+    let response = state.host_metrics.snapshot().await;
+    tracing::debug!(
+        %user_id,
+        sample_count = response.samples.len(),
+        metrics_available = response.available,
+        "returned host metrics dashboard snapshot"
+    );
+    Ok(response)
 }
 
 /// Обновляет настройки почты без раскрытия или случайной очистки секретов.

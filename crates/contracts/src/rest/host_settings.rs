@@ -19,6 +19,71 @@ pub struct HostAccessResponse {
     pub is_host_owner: bool,
 }
 
+/// История нагрузки хоста, доступная владельцу установки.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct HostMetricsResponse {
+    /// Доступен ли источник актуальных системных метрик.
+    pub available: bool,
+    /// Последние измерения в хронологическом порядке.
+    pub samples: Vec<HostMetricsSample>,
+}
+
+/// Одно измерение нагрузки хоста.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct HostMetricsSample {
+    /// Время измерения в миллисекундах Unix.
+    pub sampled_at_unix_ms: i64,
+    /// Использование процессора.
+    pub cpu: HostCpuMetrics,
+    /// Использование оперативной памяти.
+    pub memory: HostMemoryMetrics,
+    /// Сетевой трафик CheenHub.
+    pub network: HostNetworkMetrics,
+}
+
+/// Использование процессора хостом и сервисами CheenHub.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct HostCpuMetrics {
+    /// Общая занятость процессора хоста в процентах от полной мощности.
+    pub system_percent: f32,
+    /// Доля полной мощности процессора, занятая CheenHub.
+    pub cheenhub_percent: f32,
+    /// Доля полной мощности процессора, занятая базой данных CheenHub.
+    pub database_percent: f32,
+    /// Доля полной мощности процессора, занятая остальной системой.
+    pub other_percent: f32,
+    /// Занятость каждого логического процессора от 0 до 100 процентов.
+    pub logical_processors_percent: Vec<f32>,
+}
+
+/// Использование оперативной памяти хостом и сервисами CheenHub.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostMemoryMetrics {
+    /// Общий объём оперативной памяти хоста.
+    pub total_bytes: u64,
+    /// Используемый объём оперативной памяти хоста.
+    pub used_bytes: u64,
+    /// Память контейнеров CheenHub без базы данных.
+    pub cheenhub_bytes: u64,
+    /// Память контейнера базы данных CheenHub.
+    pub database_bytes: u64,
+    /// Память, занятая остальной системой.
+    pub other_bytes: u64,
+}
+
+/// Сетевой трафик только контейнеров CheenHub без базы данных.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct HostNetworkMetrics {
+    /// Скорость исходящего трафика в байтах в секунду.
+    pub sent_bytes_per_second: f64,
+    /// Скорость входящего трафика в байтах в секунду.
+    pub received_bytes_per_second: f64,
+    /// Суммарный исходящий трафик с момента запуска контейнеров.
+    pub sent_bytes_total: u64,
+    /// Суммарный входящий трафик с момента запуска контейнеров.
+    pub received_bytes_total: u64,
+}
+
 /// Настройки отправки почты без сохранённых секретов.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct HostEmailSettingsResponse {

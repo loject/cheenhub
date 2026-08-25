@@ -20,10 +20,20 @@ use super::application::{self, HostSettingsError};
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/access", get(access))
+        .route("/metrics", get(metrics))
         .route("/email", get(email_settings).patch(update_email_settings))
         .route("/email/gmail/connect", post(start_gmail_connection))
         .route("/email/gmail/callback", get(gmail_callback))
         .route("/email/gmail/disconnect", post(disconnect_gmail))
+}
+
+async fn metrics(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<cheenhub_contracts::rest::HostMetricsResponse>, HostSettingsError> {
+    application::metrics(&state, bearer_token(&headers)?)
+        .await
+        .map(Json)
 }
 
 async fn access(

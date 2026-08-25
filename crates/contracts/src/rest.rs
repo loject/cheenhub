@@ -18,8 +18,9 @@ pub use auth::{
 };
 pub use error::ApiError;
 pub use host_settings::{
-    EmailTransport, GmailConnectionStartResponse, HostAccessResponse, HostEmailSettingsResponse,
-    UpdateHostEmailSettingsRequest,
+    EmailTransport, GmailConnectionStartResponse, HostAccessResponse, HostCpuMetrics,
+    HostEmailSettingsResponse, HostMemoryMetrics, HostMetricsResponse, HostMetricsSample,
+    HostNetworkMetrics, UpdateHostEmailSettingsRequest,
 };
 pub use push_notifications::{PushPlatform, UpsertPushInstallationRequest};
 pub use servers::{

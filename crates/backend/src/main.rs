@@ -177,11 +177,17 @@ async fn main() -> anyhow::Result<()> {
         gmail_oauth_client_secret_fallback_configured = config.google_oauth_client_secret.is_some(),
         "auth email transport will be selected dynamically from host settings"
     );
+    let host_metrics = Arc::new(
+        features::host_settings::metrics_monitor::HostMetricsMonitor::new(
+            config.metrics_proxy_url.clone(),
+        ),
+    );
 
     let state = state::AppState {
         auth_store,
         auth_mailer,
         host_settings_store,
+        host_metrics: host_metrics.clone(),
         server_store,
         social_store,
         text_chat_store,
@@ -213,6 +219,7 @@ async fn main() -> anyhow::Result<()> {
     if push_notifications.worker_enabled() {
         tokio::spawn(push_notifications.run_delivery_worker());
     }
+    tokio::spawn(host_metrics.run());
     let realtime_address = address;
     let realtime_server = realtime::bind(
         realtime_address,

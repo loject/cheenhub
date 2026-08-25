@@ -45,6 +45,9 @@ fn state_with_store(server_store: Arc<InMemoryServerStore>) -> AppState {
         host_settings_store: Arc::new(
             crate::features::host_settings::infrastructure::InMemoryHostSettingsStore::default(),
         ),
+        host_metrics: Arc::new(
+            crate::features::host_settings::metrics_monitor::HostMetricsMonitor::disabled(),
+        ),
         server_store,
         social_store: Arc::new(InMemorySocialStore::default()),
         text_chat_store: Arc::new(InMemoryTextChatStore::default()),

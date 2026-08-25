@@ -9,6 +9,11 @@ services:
       context: ..
       target: backend-runtime
 
+  metrics-proxy:
+    build:
+      context: ..
+      target: backend-runtime
+
   web:
     build:
       context: ..

@@ -7,6 +7,7 @@ use crate::Route;
 use crate::features::clipboard::copy_text;
 
 use super::api::{self, HostSettingsApiError};
+use super::tabs::{HostSettingsTab, host_settings_tabs};
 
 const INPUT_CLASS: &str = "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] text-zinc-100 outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-zinc-700 focus:border-blue-400/70 focus:ring-4 focus:ring-blue-400/10 disabled:cursor-not-allowed disabled:opacity-60";
 const BUTTON_CLASS: &str = "inline-flex min-h-11 items-center justify-center rounded-xl px-4 text-[13px] font-semibold transition-[background-color,border-color,color,opacity,scale] duration-150 ease-out active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100";
@@ -152,6 +153,7 @@ pub(crate) fn HostEmailSettingsPage() -> Element {
                         if smtp_active { "Выбран SMTP" } else { "Выбран Gmail API" }
                     }
                 }
+                {host_settings_tabs(HostSettingsTab::Email)}
 
                 if let Some(result) = gmail_result {
                     div { class: if result == "connected" { "mt-6 rounded-2xl bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100 shadow-[0_0_0_1px_rgba(52,211,153,0.2)]" } else { "mt-6 rounded-2xl bg-red-400/10 px-4 py-3 text-sm text-red-100 shadow-[0_0_0_1px_rgba(248,113,113,0.2)]" },

@@ -5,6 +5,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY deploy/bin/cheenhub_backend /usr/local/bin/cheenhub_backend
+COPY deploy/bin/cheenhub_metrics_proxy /usr/local/bin/cheenhub_metrics_proxy
 COPY deploy/bin/cheenhub_migrations /usr/local/bin/cheenhub_migrations
 
 EXPOSE 3000/tcp 3000/udp

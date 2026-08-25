@@ -2,7 +2,7 @@
 
 use cheenhub_contracts::rest::{
     GmailConnectionStartResponse, HostAccessResponse, HostEmailSettingsResponse,
-    UpdateHostEmailSettingsRequest,
+    HostMetricsResponse, UpdateHostEmailSettingsRequest,
 };
 use dioxus::prelude::{debug, info, warn};
 use reqwest::{Response, StatusCode};
@@ -62,6 +62,19 @@ pub(crate) async fn load_email_settings() -> Result<HostEmailSettingsResponse, H
         .await
         .map_err(HostSettingsApiError::Other)?;
     decode_settings(response).await
+}
+
+/// Загружает историю системной нагрузки хоста.
+pub(crate) async fn load_metrics() -> Result<HostMetricsResponse, HostSettingsApiError> {
+    let response = authorized_get("/host-settings/metrics")
+        .await
+        .map_err(HostSettingsApiError::Other)?;
+    if response.status().is_success() {
+        return response.json().await.map_err(|_| {
+            HostSettingsApiError::Other("Не удалось прочитать показатели нагрузки.".to_owned())
+        });
+    }
+    Err(classify_error(response).await)
 }
 
 /// Сохраняет настройки исходящей почты.

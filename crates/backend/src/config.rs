@@ -54,6 +54,8 @@ pub(crate) struct AppConfig {
     pub(crate) chat_images_s3: Option<S3Config>,
     /// Путь к внешнему JSON service account для FCM HTTP v1.
     pub(crate) fcm_service_account_path: Option<String>,
+    /// Внутренний URL изолированного proxy системных метрик.
+    pub(crate) metrics_proxy_url: Option<String>,
 }
 
 /// Конфигурация S3-совместимого объектного хранилища.
@@ -131,6 +133,7 @@ impl AppConfig {
             fcm_service_account_path: env::var("FCM_SERVICE_ACCOUNT_PATH")
                 .ok()
                 .filter(|value| !value.trim().is_empty()),
+            metrics_proxy_url: optional_non_empty("CHEENHUB_METRICS_PROXY_URL"),
         })
     }
 

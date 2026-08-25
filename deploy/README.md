@@ -31,6 +31,17 @@ install -m 600 /path/to/firebase-service-account.json deploy/secrets/firebase-se
 
 Compose монтирует этот файл только для чтения в backend-контейнер как `/run/secrets/fcm-service-account.json`.
 
+## Метрики хоста
+
+Compose запускает отдельный `metrics-proxy` из backend-образа. Только этот контейнер получает
+Docker socket; backend обращается к нему по изолированной внутренней сети и получает уже
+агрегированные CPU, RAM и network-счётчики сервисов `backend`, `web` и `db`.
+
+Proxy не предоставляет Docker Engine API, не принимает идентификаторы контейнеров от клиента и
+имеет только два HTTP-маршрута: проверку готовности и чтение очищенного снимка метрик. Внешние
+порты у сервиса отсутствуют. Не публикуй порт `9100` и не подключай к сети `host-metrics` другие
+контейнеры.
+
 ## Отправка писем
 
 Backend поддерживает SMTP и Gmail API по HTTPS. Транспорт, таймаут и учетные данные
