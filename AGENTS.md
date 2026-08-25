@@ -38,6 +38,8 @@
 ## Client Styling
 
 - User-facing UI must feel welcoming and complete; do not show development-only technical details, TODO text, placeholder copy, or messages that explicitly frame a page as unfinished.
+- Treat every user-facing screen, including host and administrator settings, as a finished production interface. Never expose environment-variable names, internal configuration keys, database field names, value sources, implementation notes, debug explanations, or developer-facing security reassurances in UI copy.
+- When an operator must take action, describe the action and its consequence in product language. Name an external provider field or protocol only when the operator must match or configure that exact external concept.
 - Every UI area that waits for async data or an async action must include a loader/loading state.
 - Every list that can be empty because of data, filters, sync errors, or first-run state must include a user-friendly empty state with a clear next action.
 - Use Dioxus CLI Tailwind autodetection for the client.
