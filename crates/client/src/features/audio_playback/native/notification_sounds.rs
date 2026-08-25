@@ -80,13 +80,7 @@ impl AudioPlaybackHandle {
         let sender_id = notification_sender_id(sound);
         let sample_count = samples.len();
         let output_volume_percent = self.output_volume_percent();
-        queue_sender_samples(
-            &mixer,
-            &sender_id,
-            samples,
-            sound.volume_multiplier(),
-            0,
-        );
+        queue_sender_samples(&mixer, &sender_id, samples, sound.volume_multiplier(), 0);
         debug!(
             sound = sound.event_name(),
             sample_count, output_volume_percent, "queued native notification sound"

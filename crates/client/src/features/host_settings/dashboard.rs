@@ -33,7 +33,7 @@ pub(crate) fn HostDashboardPage() -> Element {
 
     rsx! {
         section { class: "min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10",
-            div { class: "mx-auto w-full max-w-5xl pb-12",
+            div { class: "mx-auto w-full max-w-7xl pb-12",
                 div { class: "flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between",
                     div {
                         p { class: "text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-300", "Настройки хоста" }
@@ -105,6 +105,11 @@ fn dashboard_content(metrics: HostMetricsResponse, mut cpu_view: Signal<CpuView>
         .expect("non-empty metrics history was checked");
     let total_button = cpu_toggle_class(cpu_view() == CpuView::Total);
     let logical_button = cpu_toggle_class(cpu_view() == CpuView::Logical);
+    let memory_percent = if latest.memory.total_bytes == 0 {
+        0.0
+    } else {
+        (latest.memory.used_bytes as f64 / latest.memory.total_bytes as f64 * 100.0) as f32
+    };
 
     rsx! {
         if !metrics.available {
@@ -112,7 +117,38 @@ fn dashboard_content(metrics: HostMetricsResponse, mut cpu_view: Signal<CpuView>
                 "Показываем последние доступные данные. Новые измерения временно не поступают."
             }
         }
-        section { class: "mt-6 rounded-3xl bg-zinc-900/75 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_16px_48px_rgba(0,0,0,0.22)] sm:p-6",
+        div { class: "mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4",
+            {summary_card(
+                "Процессор",
+                format_percent(latest.cpu.system_percent),
+                "общая нагрузка",
+                "text-white",
+            )}
+            {summary_card(
+                "Оперативная память",
+                format_percent(memory_percent),
+                format!(
+                    "{} из {}",
+                    format_bytes(latest.memory.used_bytes),
+                    format_bytes(latest.memory.total_bytes),
+                ),
+                "text-emerald-300",
+            )}
+            {summary_card(
+                "Получение",
+                format_rate(latest.network.received_bytes_per_second),
+                "сеть CheenHub",
+                "text-blue-300",
+            )}
+            {summary_card(
+                "Отправка",
+                format_rate(latest.network.sent_bytes_per_second),
+                "сеть CheenHub",
+                "text-violet-300",
+            )}
+        }
+
+        section { class: "mt-4 rounded-3xl bg-zinc-900/75 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_16px_48px_rgba(0,0,0,0.22)] sm:p-6",
             div { class: "flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between",
                 div {
                     p { class: "text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500", "Процессор" }
@@ -167,7 +203,7 @@ fn cpu_total_chart(samples: &[HostMetricsSample]) -> Element {
         f64::from(sample.cpu.database_percent)
     });
     rsx! {
-        div { class: "mt-5 h-48 rounded-2xl bg-zinc-950/70 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.05)]",
+        div { class: "mt-4 h-36 rounded-2xl bg-zinc-950/70 p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.05)]",
             svg { class: "h-full w-full", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История нагрузки процессора",
                 line { x1: "0", y1: "20", x2: "100", y2: "20", stroke: "rgba(255,255,255,0.06)", stroke_width: "0.35" }
                 polyline { points: "{system}", fill: "none", stroke: "#e4e4e7", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
@@ -265,6 +301,29 @@ fn network_chart(samples: &[HostMetricsSample]) -> Element {
         svg { class: "mt-5 h-32 w-full rounded-2xl bg-zinc-950/70 p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.05)]", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История сетевого трафика CheenHub",
             polyline { points: "{received}", fill: "none", stroke: "#60a5fa", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
             polyline { points: "{sent}", fill: "none", stroke: "#a78bfa", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
+        }
+    }
+}
+
+fn summary_card(
+    label: &'static str,
+    value: String,
+    hint: impl Into<String>,
+    color: &'static str,
+) -> Element {
+    let hint = hint.into();
+
+    rsx! {
+        div { class: "rounded-2xl bg-zinc-900/75 px-4 py-4 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_12px_32px_rgba(0,0,0,0.16)]",
+            p { class: "text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500",
+                "{label}"
+            }
+            p { class: "mt-1 tabular-nums text-xl font-semibold tracking-[-0.03em] {color}",
+                "{value}"
+            }
+            p { class: "mt-1 text-[11px] text-zinc-600",
+                "{hint}"
+            }
         }
     }
 }
