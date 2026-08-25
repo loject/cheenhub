@@ -1463,3 +1463,171 @@
     transition-duration: 0.01ms;
   }
 }
+
+/* Host backend realtime log animations */
+
+@keyframes host-logs-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes host-log-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes host-log-metric-value-pop {
+  0% {
+    opacity: 0.45;
+    transform: translateY(3px) scale(0.92);
+  }
+  55% {
+    transform: translateY(-1px) scale(1.045);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes host-log-entry-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-5px);
+    background-color: rgba(59, 130, 246, 0.12);
+  }
+  45% {
+    opacity: 1;
+    background-color: rgba(59, 130, 246, 0.07);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    background-color: transparent;
+  }
+}
+
+@keyframes host-log-pending-badge-pop {
+  0% {
+    opacity: 0.35;
+    transform: scale(0.72);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes host-log-live-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(110, 231, 183, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(110, 231, 183, 0.11);
+  }
+}
+
+@keyframes host-log-paused-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.host-logs-page {
+  animation: host-logs-page-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.host-log-metrics {
+  animation: host-log-panel-in 260ms 40ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.host-log-toolbar {
+  animation: host-log-panel-in 280ms 80ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.host-log-console {
+  animation: host-log-panel-in 300ms 120ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.host-log-metric-card:nth-child(2) {
+  transition-delay: 15ms;
+}
+
+.host-log-metric-card:nth-child(3) {
+  transition-delay: 30ms;
+}
+
+.host-log-metric-card:nth-child(4) {
+  transition-delay: 45ms;
+}
+
+.host-log-metric-card:nth-child(5) {
+  transition-delay: 60ms;
+}
+
+.host-log-metric-card:nth-child(6) {
+  transition-delay: 75ms;
+}
+
+.host-log-metric-value {
+  transform-origin: left center;
+  animation: host-log-metric-value-pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.host-log-entry-new {
+  animation: host-log-entry-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.host-log-pending-badge {
+  animation: host-log-pending-badge-pop 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.host-log-status-dot-live {
+  animation: host-log-live-pulse 2s ease-in-out infinite;
+}
+
+.host-log-status-dot-paused {
+  animation: host-log-paused-pulse 1.4s ease-in-out infinite;
+}
+
+.host-log-empty-state {
+  animation: host-log-panel-in 220ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .host-logs-page,
+  .host-log-metrics,
+  .host-log-toolbar,
+  .host-log-console,
+  .host-log-metric-value,
+  .host-log-entry-new,
+  .host-log-pending-badge,
+  .host-log-status-dot-live,
+  .host-log-status-dot-paused,
+  .host-log-empty-state {
+    animation: none !important;
+  }
+
+  .host-log-metric-card {
+    transition: none !important;
+  }
+}
+

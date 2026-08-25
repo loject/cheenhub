@@ -9,8 +9,8 @@ mod routes;
 mod update_mode;
 
 use routes::{
-    AppDirectMessage, AppFriends, AppHome, AppHostEmailSettings, AppHostSettings, AppServer,
-    AppServerRoom, ForgotPassword, Invite, Landing, Login, NotFound, OAuthCallback,
+    AppDirectMessage, AppFriends, AppHome, AppHostEmailSettings, AppHostLogs, AppHostSettings,
+    AppServer, AppServerRoom, ForgotPassword, Invite, Landing, Login, NotFound, OAuthCallback,
     PersonalDataConsent, PrivacyPolicy, Register, ResetPassword, Terms,
 };
 
@@ -98,6 +98,8 @@ enum Route {
         gmail: Option<String>,
         email: Option<String>,
     },
+    #[route("/host-settings/logs")]
+    AppHostLogs {},
     #[route("/servers/:server_id")]
     AppServer { server_id: String },
     #[route("/servers/:server_id/rooms/:room_id")]

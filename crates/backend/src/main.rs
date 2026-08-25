@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
     let config = config::AppConfig::from_env()?;
-    telemetry::init(&config.log_filter)?;
+    let host_logs = telemetry::init(&config.log_filter)?;
 
     let address = config.socket_addr()?;
     let listener = TcpListener::bind(address)
@@ -188,6 +188,7 @@ async fn main() -> anyhow::Result<()> {
         auth_mailer,
         host_settings_store,
         host_metrics: host_metrics.clone(),
+        host_logs,
         server_store,
         social_store,
         text_chat_store,

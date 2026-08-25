@@ -151,6 +151,46 @@ pub struct GmailConnectionStartResponse {
     pub authorization_url: String,
 }
 
+/// Одна запись оперативного журнала бэкенда.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostLogEntry {
+    /// Монотонный идентификатор записи в рамках текущего процесса.
+    pub id: u64,
+    /// Время события в RFC 3339.
+    pub timestamp: String,
+    /// Уровень `tracing`.
+    pub level: String,
+    /// Target события `tracing`.
+    pub target: String,
+    /// Основное сообщение события.
+    pub message: String,
+    /// Дополнительные структурированные поля в безопасном текстовом виде.
+    pub fields: Vec<String>,
+}
+
+/// Сообщение realtime-потока журнала бэкенда.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum HostLogStreamMessage {
+    /// Снимок последних записей при подключении или восстановлении после отставания.
+    Snapshot {
+        /// Записи в хронологическом порядке.
+        entries: Vec<HostLogEntry>,
+    },
+    /// Новая запись журнала.
+    Entry {
+        /// Новая запись.
+        entry: HostLogEntry,
+    },
+    /// Ошибка доступа или работы потока.
+    Error {
+        /// Безопасное сообщение для интерфейса.
+        message: String,
+        /// Можно ли автоматически переподключиться.
+        retryable: bool,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::{EmailTransport, HostEmailSettingsResponse};

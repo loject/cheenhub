@@ -9,6 +9,11 @@ pub(crate) fn api_url(path: &str) -> Result<Url, String> {
     api_url_from_base(configured_base_url(), path)
 }
 
+/// Возвращает URL realtime-потока логов владельца хоста.
+pub(crate) fn host_logs_websocket_url() -> Result<Url, String> {
+    host_logs_websocket_url_from_base(configured_base_url())
+}
+
 /// Возвращает URL WebSocket fallback для realtime-соединения.
 pub(crate) fn realtime_websocket_url() -> Result<Url, String> {
     realtime_websocket_url_from_base(configured_base_url())
@@ -36,6 +41,18 @@ fn api_url_from_base(base_url: &str, path: &str) -> Result<Url, String> {
     if !query.is_empty() {
         url.set_query(Some(query));
     }
+    Ok(url)
+}
+
+fn host_logs_websocket_url_from_base(base_url: &str) -> Result<Url, String> {
+    let mut url = api_url_from_base(base_url, "/host-settings/logs/ws")?;
+    let scheme = match url.scheme() {
+        "http" => "ws",
+        "https" => "wss",
+        _ => unreachable!("схема проверена при разборе базового URL"),
+    };
+    url.set_scheme(scheme)
+        .map_err(|_| "Не удалось установить WebSocket-схему".to_owned())?;
     Ok(url)
 }
 
@@ -85,7 +102,8 @@ fn parse_base_url(value: &str) -> Result<Url, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        api_url_from_base, realtime_websocket_url_from_base, realtime_webtransport_url_from_base,
+        api_url_from_base, host_logs_websocket_url_from_base, realtime_websocket_url_from_base,
+        realtime_webtransport_url_from_base,
     };
 
     #[test]
@@ -105,6 +123,12 @@ mod tests {
             "http://192.168.2.2:3000/api/friends/search?q=alice%20smith"
         );
         assert_eq!(
+            host_logs_websocket_url_from_base(base_url)
+                .expect("URL логов должен собираться")
+                .as_str(),
+            "ws://192.168.2.2:3000/api/host-settings/logs/ws"
+        );
+        assert_eq!(
             realtime_websocket_url_from_base(base_url)
                 .expect("WebSocket URL должен собираться")
                 .as_str(),
@@ -122,6 +146,12 @@ mod tests {
     fn derives_secure_endpoints_from_https_base_url() {
         let base_url = "https://cheenhub.test:8443/";
 
+        assert_eq!(
+            host_logs_websocket_url_from_base(base_url)
+                .expect("URL логов должен собираться")
+                .as_str(),
+            "wss://cheenhub.test:8443/api/host-settings/logs/ws"
+        );
         assert_eq!(
             realtime_websocket_url_from_base(base_url)
                 .expect("WebSocket URL должен собираться")

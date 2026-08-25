@@ -62,7 +62,7 @@ pub(crate) async fn access(
     })
 }
 
-async fn require_host_owner(
+pub(super) async fn require_host_owner(
     state: &AppState,
     access_token: &str,
 ) -> Result<Uuid, HostSettingsError> {

@@ -8,7 +8,7 @@ use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::api;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
 use crate::features::host_settings::{
-    HostDashboardPage, HostEmailSettingsPage, api as host_settings_api,
+    HostDashboardPage, HostEmailSettingsPage, HostLogsPage, api as host_settings_api,
 };
 use crate::features::social::SocialPage;
 
@@ -47,7 +47,9 @@ pub(crate) fn AppShell() -> Element {
     let route = use_route::<Route>();
     let host_dashboard_active = matches!(route, Route::AppHostSettings {});
     let host_email_settings_active = matches!(route, Route::AppHostEmailSettings { .. });
-    let host_settings_active = host_dashboard_active || host_email_settings_active;
+    let host_logs_active = matches!(route, Route::AppHostLogs {});
+    let host_settings_active =
+        host_dashboard_active || host_email_settings_active || host_logs_active;
     let workspace = AppWorkspaceRoute::from_route(&route).unwrap_or(AppWorkspaceRoute::Friends);
     let route_active_server_id = workspace.server_id().map(ToOwned::to_owned);
     let selected_conversation_id = workspace.conversation_id().map(ToOwned::to_owned);
@@ -241,6 +243,8 @@ pub(crate) fn AppShell() -> Element {
                 HostDashboardPage {}
             } else if host_email_settings_active {
                 HostEmailSettingsPage {}
+            } else if host_logs_active {
+                HostLogsPage {}
             } else if social_workspace_active {
                 SocialPage {
                     selected_conversation_id,

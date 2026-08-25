@@ -18,6 +18,7 @@ use crate::features::voice_chat::infrastructure::{
     InMemoryDirectCallStore, InMemoryVoicePresenceStore,
 };
 use crate::realtime::hub::RealtimeHub;
+use crate::telemetry::HostLogHub;
 
 /// Общее состояние приложения бэкенда.
 #[derive(Clone)]
@@ -30,6 +31,8 @@ pub(crate) struct AppState {
     pub(crate) host_settings_store: Arc<dyn HostSettingsStore>,
     /// Оперативная история системной нагрузки хоста.
     pub(crate) host_metrics: Arc<HostMetricsMonitor>,
+    /// Оперативный журнал событий текущего процесса.
+    pub(crate) host_logs: Arc<HostLogHub>,
     /// Бэкенд хранения серверов.
     pub(crate) server_store: Arc<dyn ServerStore>,
     /// Бэкенд хранения друзей и личных сообщений.

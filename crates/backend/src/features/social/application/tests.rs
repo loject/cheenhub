@@ -439,6 +439,7 @@ fn state() -> AppState {
         host_metrics: Arc::new(
             crate::features::host_settings::metrics_monitor::HostMetricsMonitor::disabled(),
         ),
+        host_logs: Arc::new(crate::telemetry::HostLogHub::default()),
         server_store: Arc::new(InMemoryServerStore::default()),
         social_store: Arc::new(InMemorySocialStore::default()),
         text_chat_store: Arc::new(InMemoryTextChatStore::default()),
