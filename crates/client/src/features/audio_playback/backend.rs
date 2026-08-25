@@ -55,6 +55,14 @@ pub(crate) enum NotificationSound {
 }
 
 impl NotificationSound {
+    /// Возвращает индивидуальный множитель громкости уведомления.
+    pub(crate) fn volume_multiplier(self) -> f32 {
+        match self {
+            Self::ConnectionLost | Self::ConnectionRestored => 0.6,
+            _ => 1.0,
+        }
+    }
+
     /// Возвращает путь к ассету внутри публичной директории клиента.
     pub(crate) fn asset_path(self) -> &'static str {
         match self {

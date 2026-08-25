@@ -105,7 +105,9 @@ impl AudioPlaybackHandle {
         let gain = context.create_gain()?;
         let output_gain = self.inner.borrow().output_gain;
 
-        gain.gain().set_value(output_gain as f32);
+        gain
+            .gain()
+            .set_value(output_gain as f32 * sound.volume_multiplier());
         source.set_buffer(Some(&buffer));
         source.connect_with_audio_node(&gain)?;
         gain.connect_with_audio_node(&context.destination())?;
