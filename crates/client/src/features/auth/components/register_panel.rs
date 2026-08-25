@@ -181,7 +181,7 @@ pub(crate) fn RegisterPanel() -> Element {
             div { class: "mt-4 text-center text-[13px] text-zinc-500",
                 "Уже есть аккаунт? "
                 Link {
-                    to: Route::Login {},
+                    to: Route::Login { password_reset: None },
                     class: "font-medium text-zinc-200 transition hover:text-white",
                     "Войти"
                 }

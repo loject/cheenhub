@@ -53,7 +53,9 @@ pub(crate) fn InvitePage(code: String) -> Element {
                                         r#type: "button",
                                         class: "flex h-12 w-full items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 px-4 text-[14px] font-medium text-zinc-300 transition-[background,border-color,color,transform] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 hover:text-white sm:w-auto",
                                         onclick: move |_| {
-                                            navigator.push(Route::Login {});
+                                            navigator.push(Route::Login {
+                                                password_reset: None,
+                                            });
                                         },
                                         "Войти"
                                     }

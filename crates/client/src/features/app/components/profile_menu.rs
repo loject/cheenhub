@@ -79,7 +79,9 @@ pub(crate) fn ProfileMenu(on_close: EventHandler<()>) -> Element {
                         }
                         current_user_context.clear_user();
                         on_close.call(());
-                        let _ = navigator.replace(Route::Login {});
+                        let _ = navigator.replace(Route::Login {
+                            password_reset: None,
+                        });
                     });
                 },
                 svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",

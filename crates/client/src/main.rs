@@ -63,8 +63,8 @@ fn main() {
 enum Route {
     #[route("/")]
     Landing {},
-    #[route("/login")]
-    Login {},
+    #[route("/login?:password_reset")]
+    Login { password_reset: Option<String> },
     #[route("/register")]
     Register {},
     #[route("/legal/terms?:return_to")]

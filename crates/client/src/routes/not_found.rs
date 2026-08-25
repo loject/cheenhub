@@ -36,7 +36,7 @@ pub(crate) fn NotFound(route: Vec<String>) -> Element {
                             span { class: "text-sm font-semibold text-zinc-50", "CheenHub" }
                         }
                         Link {
-                            to: Route::Login {},
+                            to: Route::Login { password_reset: None },
                             class: "btn-p flex items-center rounded-xl bg-accent px-3 py-1.5 text-[12px] font-semibold text-white",
                             "Войти"
                         }

@@ -9,6 +9,7 @@ use crate::features::auth::components::text_input::TextInput;
 
 #[component]
 pub(crate) fn ResetPasswordPanel(token: Option<String>) -> Element {
+    let navigator = use_navigator();
     let mut password = use_signal(String::new);
     let mut repeated_password = use_signal(String::new);
     let mut status = use_signal(PasswordResetConfirmStatus::default);
@@ -60,7 +61,9 @@ pub(crate) fn ResetPasswordPanel(token: Option<String>) -> Element {
                     }
                     if is_success {
                         Link {
-                            to: Route::Login {},
+                            to: Route::Login {
+                                password_reset: Some("success".to_owned()),
+                            },
                             class: "flex h-11 w-full items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white",
                             "Войти"
                         }
@@ -91,6 +94,10 @@ pub(crate) fn ResetPasswordPanel(token: Option<String>) -> Element {
                                             status.set(PasswordResetConfirmStatus::Succeeded);
                                             password.set(String::new());
                                             repeated_password.set(String::new());
+                                            info!("redirecting to login after password reset");
+                                            let _ = navigator.replace(Route::Login {
+                                                password_reset: Some("success".to_owned()),
+                                            });
                                         }
                                         Err(error) => {
                                             warn!(%error, "password reset confirmation failed");

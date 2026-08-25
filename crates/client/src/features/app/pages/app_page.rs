@@ -44,7 +44,9 @@ pub(crate) fn AppPage() -> Element {
     use_effect(move || {
         if !api::has_tokens() {
             info!("redirecting unauthenticated app route to login");
-            navigator.replace(Route::Login {});
+            navigator.replace(Route::Login {
+                password_reset: None,
+            });
             return;
         }
         if user().is_some() || loading_profile() {
@@ -83,7 +85,9 @@ pub(crate) fn AppPage() -> Element {
                 Err(error) => {
                     warn!("current user load failed; redirecting to login: {error}");
                     toast.session_error(error);
-                    let _ = navigator.replace(Route::Login {});
+                    let _ = navigator.replace(Route::Login {
+                        password_reset: None,
+                    });
                 }
             }
         });
@@ -160,7 +164,9 @@ pub(crate) fn AppPage() -> Element {
             on_session_expired: move |session_end: SessionEnd| {
                 warn!(reason = ?session_end.reason, "showing auth session end reason");
                 toast.session_error(session_end.message);
-                let _ = navigator.replace(Route::Login {});
+                let _ = navigator.replace(Route::Login {
+                    password_reset: None,
+                });
             },
         }
         RealtimeProvider {

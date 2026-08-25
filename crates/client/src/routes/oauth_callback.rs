@@ -178,7 +178,9 @@ pub(crate) fn OAuthCallback(
                                     r#type: "button",
                                     class: "flex h-10 flex-1 items-center justify-center rounded-xl bg-accent px-3 text-[12px] font-semibold text-white",
                                     onclick: move |_| {
-                                        let _ = navigator.replace(Route::Login {});
+                                        let _ = navigator.replace(Route::Login {
+                                            password_reset: None,
+                                        });
                                     },
                                     "Вернуться ко входу"
                                 }

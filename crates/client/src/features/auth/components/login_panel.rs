@@ -10,7 +10,7 @@ use crate::features::auth::components::text_input::TextInput;
 use crate::features::auth::domain::AuthProvider;
 
 #[component]
-pub(crate) fn LoginPanel() -> Element {
+pub(crate) fn LoginPanel(password_reset_succeeded: bool) -> Element {
     let navigator = use_navigator();
     let mut email = use_signal(String::new);
     let mut password = use_signal(String::new);
@@ -54,6 +54,15 @@ pub(crate) fn LoginPanel() -> Element {
                         };
                     });
                 },
+                if password_reset_succeeded {
+                    div {
+                        class: "rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2.5 text-[12px] leading-5 text-emerald-100",
+                        role: "status",
+                        aria_live: "polite",
+                        p { class: "font-medium", "Пароль обновлён" }
+                        p { class: "text-emerald-200/75", "Всё готово — войди с новым паролем." }
+                    }
+                }
                 TextInput {
                     input_type: "email",
                     label: "Email",

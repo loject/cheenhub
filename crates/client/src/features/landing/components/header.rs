@@ -41,7 +41,7 @@ pub(crate) fn Header() -> Element {
                     TodoButton { class_name: "btn-g hidden items-center rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-zinc-300 md:flex", label: "RuTube" }
                     TodoButton { class_name: "btn-g hidden items-center rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-zinc-300 md:flex", label: "Telegram" }
                     Link {
-                        to: Route::Login {},
+                        to: Route::Login { password_reset: None },
                         class: "btn-p flex items-center rounded-xl bg-accent px-3 py-1.5 text-[12px] font-semibold text-white",
                         "Войти"
                     }

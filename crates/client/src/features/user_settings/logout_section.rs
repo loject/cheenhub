@@ -53,7 +53,9 @@ pub(crate) fn LogoutSettingsSection() -> Element {
                                     );
                                 }
                             }
-                            let _ = navigator.replace(Route::Login {});
+                            let _ = navigator.replace(Route::Login {
+                                password_reset: None,
+                            });
                         });
                     },
                     if is_logging_out() { "Выходим..." } else { "Выйти" }

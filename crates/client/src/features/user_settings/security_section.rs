@@ -76,7 +76,9 @@ pub(crate) fn SecuritySettingsSection() -> Element {
                                     Ok(()) => {
                                         info!("all auth sessions revoked from security settings");
                                         toast.success("Выход выполнен на всех устройствах.");
-                                        let _ = navigator.replace(Route::Login {});
+                                        let _ = navigator.replace(Route::Login {
+                                            password_reset: None,
+                                        });
                                     }
                                     Err(error) => {
                                         warn!(

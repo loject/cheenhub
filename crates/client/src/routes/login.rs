@@ -10,7 +10,7 @@ use crate::features::auth::guest_guard::{
 };
 
 #[component]
-pub(crate) fn Login() -> Element {
+pub(crate) fn Login(password_reset: Option<String>) -> Element {
     let navigator = use_navigator();
     let decision = decide_guest_auth_guard(GuestAuthPage::Login, api::has_tokens());
 
@@ -34,6 +34,8 @@ pub(crate) fn Login() -> Element {
     }
 
     rsx! {
-        LoginPage {}
+        LoginPage {
+            password_reset_succeeded: password_reset.as_deref() == Some("success")
+        }
     }
 }

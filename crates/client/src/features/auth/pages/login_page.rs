@@ -8,7 +8,7 @@ use crate::features::auth::components::login_panel::LoginPanel;
 
 /// Рендерит страницу входа CheenHub.
 #[component]
-pub(crate) fn LoginPage() -> Element {
+pub(crate) fn LoginPage(password_reset_succeeded: bool) -> Element {
     rsx! {
         div { class: "min-h-screen bg-zinc-950 text-zinc-100 selection:bg-zinc-700/40",
             div { class: "grid-bg flex min-h-screen flex-col",
@@ -16,7 +16,7 @@ pub(crate) fn LoginPage() -> Element {
                 main { class: "flex flex-1 items-center px-5 py-10 lg:px-8",
                     section { class: "mx-auto grid w-full max-w-6xl gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center",
                         AuthHero {}
-                        LoginPanel {}
+                        LoginPanel { password_reset_succeeded }
                     }
                 }
             }

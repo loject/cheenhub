@@ -14,7 +14,9 @@ pub(crate) fn LandingRoute() -> Element {
             target = "/login",
             "redirecting native landing route to login"
         );
-        let _ = navigator.replace(Route::Login {});
+        let _ = navigator.replace(Route::Login {
+            password_reset: None,
+        });
     });
 
     rsx! {
@@ -26,7 +28,9 @@ pub(crate) fn LandingRoute() -> Element {
 
 /// Возвращает домашний маршрут native-клиента.
 pub(crate) fn public_home_route() -> Route {
-    Route::Login {}
+    Route::Login {
+        password_reset: None,
+    }
 }
 
 /// Возвращает подпись домашнего действия native-клиента.
