@@ -153,7 +153,7 @@ pub(crate) fn HostLogsPage() -> Element {
     };
 
     rsx! {
-        section { class: "host-logs-page min-w-0 flex-1 overflow-y-auto bg-zinc-950/35 px-4 py-6 sm:px-6",
+        section { class: "host-logs-page host-settings-scroll min-w-0 flex-1 overflow-y-auto bg-zinc-950/35 px-4 py-6 sm:px-6",
             div { class: "mx-auto w-full max-w-[1180px] pb-10",
                 div { class: "flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between",
                     div {

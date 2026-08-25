@@ -1631,3 +1631,8 @@
   }
 }
 
+
+/* Сохраняет ширину Host Settings при появлении вертикальной прокрутки. */
+.host-settings-scroll {
+  scrollbar-gutter: stable;
+}
