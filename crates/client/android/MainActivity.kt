@@ -78,6 +78,11 @@ class MainActivity : WryActivity() {
         CheenHubPushStore.setAppForeground(this, true)
     }
 
+    override fun onResume() {
+        super.onResume()
+        maybeRequestCheenHubFullScreenIntentAccess()
+    }
+
     override fun onStop() {
         CheenHubPushStore.setAppForeground(this, false)
         super.onStop()
@@ -87,6 +92,44 @@ class MainActivity : WryActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         acceptNotificationIntent(intent)
+    }
+
+    private fun maybeRequestCheenHubFullScreenIntentAccess() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+
+        if (
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        if (notificationManager.canUseFullScreenIntent()) {
+            return
+        }
+
+        if (!CheenHubPushStore.markFullScreenIntentSettingsRequested(this)) {
+            return
+        }
+
+        val settingsIntent = Intent(
+            android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+            Uri.parse("package:$packageName"),
+        )
+
+        runCatching {
+            startActivity(settingsIntent)
+            Log.i(
+                CHEENHUB_PUSH_LOG_TAG,
+                "Opened Android full-screen intent access settings",
+            )
+        }.onFailure { error ->
+            Log.w(
+                CHEENHUB_PUSH_LOG_TAG,
+                "Could not open full-screen intent access settings: ${error.javaClass.simpleName}",
+            )
+        }
     }
 
     fun requestCheenHubNotificationPermission(requestCode: Int) {
@@ -823,6 +866,8 @@ private const val CHEENHUB_DECLINE_DIRECT_CALL_ACTION =
     "ru.cheenhub.action.DECLINE_DIRECT_CALL"
 private const val CHEENHUB_CONVERSATION_ID_EXTRA = "cheenhub_conversation_id"
 private const val CHEENHUB_CALL_ID_EXTRA = "cheenhub_call_id"
+private const val CHEENHUB_CALLER_NICKNAME_EXTRA = "cheenhub_caller_nickname"
+private const val CHEENHUB_CALL_EXPIRES_AT_EXTRA = "cheenhub_call_expires_at"
 private const val DIRECT_CALL_NOTIFICATION_ACTION_ACCEPT = 1
 private const val DIRECT_CALL_NOTIFICATION_ACTION_DECLINE = 2
 
@@ -1239,6 +1284,8 @@ private object CheenHubPushStore {
     private const val PENDING_DIRECT_CALL_ACTION = "pending_direct_call_action"
     private const val ACTIVE_CONVERSATION = "active_conversation_id"
     private const val APP_FOREGROUND = "app_foreground"
+    private const val FULL_SCREEN_INTENT_SETTINGS_REQUESTED =
+        "full_screen_intent_settings_requested"
     private const val HISTORY = "direct_message_history"
     private const val MAX_CONVERSATIONS = 20
     private const val MAX_MESSAGES_PER_CONVERSATION = 10
@@ -1324,6 +1371,19 @@ private object CheenHubPushStore {
 
     fun isAppForeground(context: Context): Boolean =
         preferences(context).getBoolean(APP_FOREGROUND, false)
+
+    fun markFullScreenIntentSettingsRequested(context: Context): Boolean =
+        synchronized(this) {
+            val preferences = preferences(context)
+            if (preferences.getBoolean(FULL_SCREEN_INTENT_SETTINGS_REQUESTED, false)) {
+                return@synchronized false
+            }
+
+            preferences.edit()
+                .putBoolean(FULL_SCREEN_INTENT_SETTINGS_REQUESTED, true)
+                .apply()
+            true
+        }
 
     fun shouldSuppress(context: Context, conversationId: String): Boolean {
         val preferences = preferences(context)
@@ -1608,6 +1668,25 @@ private object CheenHubCallNotifications {
             CHEENHUB_DECLINE_DIRECT_CALL_ACTION,
         )
 
+        val fullScreenIntent = PendingIntent.getActivity(
+            context,
+            "$normalizedCallId:fullscreen".hashCode(),
+            Intent(context, IncomingCallActivity::class.java)
+                .putExtra(CHEENHUB_CALL_ID_EXTRA, normalizedCallId)
+                .putExtra(
+                    CHEENHUB_CONVERSATION_ID_EXTRA,
+                    normalizedConversationId,
+                )
+                .putExtra(CHEENHUB_CALLER_NICKNAME_EXTRA, nickname)
+                .putExtra(CHEENHUB_CALL_EXPIRES_AT_EXTRA, expiresAtMillis)
+                .addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_NO_USER_ACTION,
+                ),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             android.app.Notification.Builder(context, CHANNEL_ID)
         } else {
@@ -1627,6 +1706,22 @@ private object CheenHubCallNotifications {
             .setShowWhen(true)
             .setWhen(now)
             .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
+
+        // На разблокированном Android 13+ система всё равно предпочитает heads-up.
+        // Когда устройство заблокировано и разрешение доступно, этот PendingIntent
+        // становится полноценным экраном входящего звонка.
+        builder.setFullScreenIntent(fullScreenIntent, true)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val notificationManager =
+                context.getSystemService(NotificationManager::class.java)
+            if (!notificationManager.canUseFullScreenIntent()) {
+                Log.w(
+                    CHEENHUB_PUSH_LOG_TAG,
+                    "Full-screen call access is not granted; Android will use lock-screen heads-up fallback",
+                )
+            }
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val caller = android.app.Person.Builder()
@@ -1691,6 +1786,7 @@ private object CheenHubCallNotifications {
         val normalizedCallId = validUuid(callId) ?: return
         context.getSystemService(NotificationManager::class.java)
             .cancel(notificationTag(normalizedCallId), NOTIFICATION_ID)
+        IncomingCallActivity.dismiss(normalizedCallId)
     }
 
     private fun callActionPendingIntent(
@@ -1744,6 +1840,296 @@ private object CheenHubCallNotifications {
 
     private fun notificationTag(callId: String) = "cheenhub_call:$callId"
 }
+
+
+class IncomingCallActivity : Activity() {
+    private var callId: String? = null
+    private val timeoutHandler = Handler(android.os.Looper.getMainLooper())
+    private var timeoutRunnable: Runnable? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+            )
+        }
+
+        window.addFlags(
+            android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+        )
+
+        val normalizedCallId = intent
+            ?.getStringExtra(CHEENHUB_CALL_ID_EXTRA)
+            ?.let { value ->
+                runCatching { UUID.fromString(value).toString() }.getOrNull()
+            }
+
+        val callerNickname = intent
+            ?.getStringExtra(CHEENHUB_CALLER_NICKNAME_EXTRA)
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+
+        val expiresAtMillis =
+            intent?.getLongExtra(CHEENHUB_CALL_EXPIRES_AT_EXTRA, 0L) ?: 0L
+
+        if (
+            normalizedCallId == null ||
+            callerNickname == null ||
+            expiresAtMillis <= System.currentTimeMillis()
+        ) {
+            finish()
+            return
+        }
+
+        callId = normalizedCallId
+        visibleActivity = java.lang.ref.WeakReference(this)
+
+        buildIncomingCallUi(callerNickname)
+
+        val remaining =
+            (expiresAtMillis - System.currentTimeMillis()).coerceAtLeast(1L)
+
+        timeoutRunnable = Runnable {
+            CheenHubCallNotifications.clear(this, normalizedCallId)
+            finish()
+        }.also { runnable ->
+            timeoutHandler.postDelayed(runnable, remaining)
+        }
+
+        Log.i(
+            CHEENHUB_PUSH_LOG_TAG,
+            "Full-screen incoming-call activity shown; call_id=$normalizedCallId",
+        )
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+
+        val nextCallId = intent
+            .getStringExtra(CHEENHUB_CALL_ID_EXTRA)
+            ?.let { value ->
+                runCatching { UUID.fromString(value).toString() }.getOrNull()
+            }
+
+        if (nextCallId != callId) {
+            recreate()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        // Входящий звонок должен закрываться только lifecycle-событием
+        // либо явным действием пользователя.
+    }
+
+    override fun onDestroy() {
+        timeoutRunnable?.let(timeoutHandler::removeCallbacks)
+        timeoutRunnable = null
+
+        if (visibleActivity?.get() === this) {
+            visibleActivity = null
+        }
+
+        super.onDestroy()
+    }
+
+    private fun buildIncomingCallUi(callerNickname: String) {
+        window.statusBarColor = android.graphics.Color.rgb(9, 9, 11)
+        window.navigationBarColor = android.graphics.Color.rgb(9, 9, 11)
+
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(dp(28), dp(48), dp(28), dp(48))
+            setBackgroundColor(android.graphics.Color.rgb(9, 9, 11))
+        }
+
+        val status = android.widget.TextView(this).apply {
+            text = "Входящий звонок"
+            textSize = 15f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(android.graphics.Color.rgb(147, 197, 253))
+        }
+
+        val avatar = android.widget.TextView(this).apply {
+            text = callerNickname
+                .trim()
+                .firstOrNull()
+                ?.uppercase()
+                ?: "?"
+            textSize = 38f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(android.graphics.Color.WHITE)
+
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(android.graphics.Color.rgb(39, 39, 42))
+                setStroke(dp(1), android.graphics.Color.rgb(82, 82, 91))
+            }
+
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                dp(112),
+                dp(112),
+            ).apply {
+                topMargin = dp(34)
+            }
+        }
+
+        val name = android.widget.TextView(this).apply {
+            text = callerNickname
+            textSize = 27f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(android.graphics.Color.WHITE)
+
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                topMargin = dp(24)
+            }
+        }
+
+        val subtitle = android.widget.TextView(this).apply {
+            text = "Голосовой звонок • CheenHub"
+            textSize = 14f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(android.graphics.Color.rgb(161, 161, 170))
+
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                topMargin = dp(8)
+            }
+        }
+
+        val spacer = android.view.View(this).apply {
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                1,
+                0,
+                1f,
+            )
+        }
+
+        val actions = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER
+        }
+
+        val decline = callButton(
+            text = "Отклонить",
+            background = android.graphics.Color.rgb(220, 38, 38),
+        ) {
+            dispatchCallAction(CHEENHUB_DECLINE_DIRECT_CALL_ACTION)
+        }
+
+        val answer = callButton(
+            text = "Ответить",
+            background = android.graphics.Color.rgb(22, 163, 74),
+        ) {
+            dispatchCallAction(CHEENHUB_ANSWER_DIRECT_CALL_ACTION)
+        }
+
+        actions.addView(
+            decline,
+            android.widget.LinearLayout.LayoutParams(
+                0,
+                dp(58),
+                1f,
+            ).apply {
+                marginEnd = dp(8)
+            },
+        )
+
+        actions.addView(
+            answer,
+            android.widget.LinearLayout.LayoutParams(
+                0,
+                dp(58),
+                1f,
+            ).apply {
+                marginStart = dp(8)
+            },
+        )
+
+        root.addView(status)
+        root.addView(avatar)
+        root.addView(name)
+        root.addView(subtitle)
+        root.addView(spacer)
+        root.addView(
+            actions,
+            android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
+        setContentView(root)
+    }
+
+    private fun callButton(
+        text: String,
+        background: Int,
+        onClick: () -> Unit,
+    ): android.widget.Button =
+        android.widget.Button(this).apply {
+            this.text = text
+            textSize = 15f
+            isAllCaps = false
+            setTextColor(android.graphics.Color.WHITE)
+            backgroundTintList =
+                android.content.res.ColorStateList.valueOf(background)
+            setOnClickListener { onClick() }
+        }
+
+    private fun dispatchCallAction(action: String) {
+        val activeCallId = callId ?: return
+
+        val mainIntent = Intent(this, MainActivity::class.java)
+            .setAction(action)
+            .putExtra(CHEENHUB_CALL_ID_EXTRA, activeCallId)
+            .addFlags(
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            )
+
+        startActivity(mainIntent)
+        CheenHubCallNotifications.clear(this, activeCallId)
+        finish()
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    companion object {
+        @Volatile
+        private var visibleActivity:
+            java.lang.ref.WeakReference<IncomingCallActivity>? = null
+
+        fun dismiss(callId: String) {
+            val activity = visibleActivity?.get() ?: return
+            if (activity.callId != callId) return
+
+            activity.runOnUiThread {
+                if (!activity.isFinishing) {
+                    activity.finish()
+                }
+            }
+        }
+    }
+}
+
 
 class DioxusForegroundService : Service() {
     private val activeKindCounts = linkedMapOf<String, Int>()

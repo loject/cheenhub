@@ -66,3 +66,4 @@ proguard_rules = ["android/rustls-platform-verifier.pro"]
 "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" = { description = "Keep an explicitly approved screen sharing session running" }
 "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" = { description = "Keep voice playback running during an active voice session" }
 "android.permission.POST_NOTIFICATIONS" = { description = "Show direct-message and active media notifications" }
+"android.permission.USE_FULL_SCREEN_INTENT" = { description = "Show incoming CheenHub calls over the lock screen" }
