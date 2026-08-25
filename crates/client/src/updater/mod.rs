@@ -209,6 +209,7 @@ async fn run_installation(config: UpdaterConfig, mut state: Signal<UpdaterState>
         return;
     }
 
+    #[cfg(not(target_os = "linux"))]
     if let Some(pid) = config.app_pid {
         set_stage(
             &mut state,
@@ -275,6 +276,35 @@ async fn run_installation(config: UpdaterConfig, mut state: Signal<UpdaterState>
             return;
         }
         write_log(&config, "installed application replacement verified");
+
+        #[cfg(target_os = "linux")]
+        if let Some(pid) = config.app_pid {
+            set_stage(
+                &mut state,
+                UpdaterStage::WaitingForApp,
+                "Обновление установлено. Завершаем текущую версию CheenHub.",
+            );
+            write_log(&config, &format!("stopping old application pid {pid}"));
+
+            let stop_result =
+                tokio::task::spawn_blocking(move || platform::stop_process_and_wait(pid)).await;
+
+            match stop_result {
+                Ok(Ok(())) => {}
+                Ok(Err(message)) => {
+                    fail(&config, &mut state, message);
+                    return;
+                }
+                Err(error) => {
+                    fail(
+                        &config,
+                        &mut state,
+                        format!("Не удалось завершить старую версию CheenHub: {error}"),
+                    );
+                    return;
+                }
+            }
+        }
 
         set_stage(
             &mut state,

@@ -6,6 +6,7 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
+#[cfg(not(target_os = "linux"))]
 pub(super) fn wait_for_process_exit(pid: u32) {
     for _ in 0..120 {
         if !is_process_running(pid) {
@@ -13,6 +14,37 @@ pub(super) fn wait_for_process_exit(pid: u32) {
         }
         thread::sleep(Duration::from_millis(500));
     }
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn stop_process_and_wait(pid: u32) -> Result<(), String> {
+    if !is_process_running(pid) {
+        return Ok(());
+    }
+
+    let status = Command::new("kill")
+        .arg("-TERM")
+        .arg(pid.to_string())
+        .status()
+        .map_err(|error| format!("Не удалось завершить текущий CheenHub: {error}"))?;
+
+    if !status.success() && is_process_running(pid) {
+        return Err(format!(
+            "Не удалось отправить сигнал завершения CheenHub (PID {pid})."
+        ));
+    }
+
+    for _ in 0..120 {
+        if !is_process_running(pid) {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+
+    Err(
+        "Обновление установлено, но текущий CheenHub не завершился вовремя. Перезапуск отменён, чтобы не запускать две копии приложения."
+            .to_owned(),
+    )
 }
 
 pub(super) fn run_installer(
