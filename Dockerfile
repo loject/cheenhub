@@ -31,6 +31,7 @@ FROM web-tools AS web-builder
 COPY .cargo ./.cargo
 COPY Cargo.toml Cargo.lock Dioxus.toml Makefile.toml ./
 COPY build_support ./build_support
+COPY scripts ./scripts
 COPY xtask ./xtask
 COPY crates ./crates
 ARG CHEENHUB_BASE_URL
