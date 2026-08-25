@@ -15,6 +15,7 @@ use crate::features::voice_chat::infrastructure::VoicePresence;
 use crate::state::AppState;
 
 mod avatar;
+mod direct_call_push;
 mod direct_calls;
 mod fanout;
 mod presence;

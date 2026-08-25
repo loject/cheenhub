@@ -12,7 +12,7 @@ use crate::features::auth::application::require_current_user;
 use crate::features::auth::error::AuthError;
 use crate::features::auth::infrastructure::AuthStore;
 use crate::features::push_notifications::domain::{
-    DirectMessagePush, FriendRequestPush, PushPayload,
+    CallEndedPush, DirectMessagePush, FriendRequestPush, IncomingCallPush, PushPayload,
 };
 use crate::features::push_notifications::error::PushError;
 use crate::features::push_notifications::fcm::{FcmClient, FcmSendError};
@@ -78,6 +78,26 @@ impl PushNotifications {
             .await
     }
 
+    /// Ставит короткоживущее событие входящего звонка в очередь устройств адресата.
+    pub(crate) async fn enqueue_incoming_call(
+        &self,
+        recipient_user_id: Uuid,
+        payload: IncomingCallPush,
+    ) -> anyhow::Result<usize> {
+        self.enqueue(recipient_user_id, PushPayload::IncomingCall(payload))
+            .await
+    }
+
+    /// Ставит короткоживущее событие завершения звонка в очередь устройств адресата.
+    pub(crate) async fn enqueue_call_ended(
+        &self,
+        recipient_user_id: Uuid,
+        payload: CallEndedPush,
+    ) -> anyhow::Result<usize> {
+        self.enqueue(recipient_user_id, PushPayload::CallEnded(payload))
+            .await
+    }
+
     async fn enqueue(
         &self,
         recipient_user_id: Uuid,
@@ -132,6 +152,24 @@ impl PushNotifications {
             match store.due_deliveries(Utc::now()).await {
                 Ok(deliveries) => {
                     for delivery in deliveries {
+                        if delivery.payload.is_expired(Utc::now()) {
+                            if let Err(error) = store.complete(delivery.id).await {
+                                tracing::error!(
+                                    %error,
+                                    delivery_id = %delivery.id,
+                                    push_kind = delivery.payload.kind(),
+                                    "failed to remove expired short-lived push job"
+                                );
+                            } else {
+                                tracing::debug!(
+                                    delivery_id = %delivery.id,
+                                    push_kind = delivery.payload.kind(),
+                                    "dropped expired short-lived push notification"
+                                );
+                            }
+                            continue;
+                        }
+
                         let active = self
                             .auth_store
                             .session_is_active(&delivery.session_id, Utc::now())

@@ -11,7 +11,9 @@ use axum::{Router, routing::delete};
 
 use crate::state::AppState;
 
-pub(crate) use domain::{DirectMessagePush, FriendRequestPush, direct_message_preview};
+pub(crate) use domain::{
+    CallEndedPush, DirectMessagePush, FriendRequestPush, IncomingCallPush, direct_message_preview,
+};
 pub(crate) use fcm::FcmClient;
 
 /// Собирает REST-маршруты регистрации push-установок.

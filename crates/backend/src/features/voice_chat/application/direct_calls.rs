@@ -18,6 +18,8 @@ use crate::features::voice_chat::infrastructure::{
 };
 use crate::state::AppState;
 
+use super::direct_call_push::{enqueue_call_ended_push, enqueue_incoming_call_push};
+
 use super::{
     VoiceChatApplicationError, ensure_direct_message_voice_available, parse_id, social_error,
 };
@@ -107,6 +109,7 @@ async fn start_direct_call_at(
         "started direct call"
     );
     fanout_call_event(state, &call, None, None).await;
+    enqueue_incoming_call_push(state, &call).await;
     if spawn_expiry {
         spawn_call_expiry(state.clone(), call.id, call.expires_at);
     }
@@ -354,6 +357,10 @@ async fn fanout_call_event(
     end_reason: Option<DirectCallEndReason>,
     ended_at: Option<DateTime<Utc>>,
 ) {
+    if let (Some(reason), Some(ended_at)) = (end_reason, ended_at) {
+        enqueue_call_ended_push(state, call, reason, ended_at).await;
+    }
+
     let mut user_ids = vec![call.caller_user_id];
     if call.callee_notified {
         user_ids.push(call.callee_user_id);

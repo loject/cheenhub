@@ -77,7 +77,10 @@ impl FcmClient {
                 message: FcmMessage {
                     token,
                     data: payload,
-                    android: AndroidConfig { priority: "high" },
+                    android: AndroidConfig {
+                        priority: "high",
+                        ttl: payload.fcm_ttl(),
+                    },
                 },
             })
             .send()
@@ -223,6 +226,8 @@ struct FcmMessage<'a> {
 #[derive(Debug, Serialize)]
 struct AndroidConfig<'a> {
     priority: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ttl: Option<&'a str>,
 }
 
 #[derive(Debug, Deserialize)]

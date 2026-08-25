@@ -847,6 +847,36 @@ class CheenHubFirebaseMessagingService : FirebaseMessagingService() {
             Log.i(CHEENHUB_PUSH_LOG_TAG, "Friend-request notification shown")
             return
         }
+        val incomingCall = CheenHubIncomingCallPayload.parse(remoteMessage.data)
+        if (incomingCall != null) {
+            if (incomingCall.expiresAtMillis <= System.currentTimeMillis()) {
+                Log.i(
+                    CHEENHUB_PUSH_LOG_TAG,
+                    "Ignored expired incoming-call push; call_id=${incomingCall.callId}",
+                )
+            } else {
+                Log.i(
+                    CHEENHUB_PUSH_LOG_TAG,
+                    "Incoming-call push received; call_id=${incomingCall.callId}",
+                )
+            }
+            return
+        }
+        val callEnded = CheenHubCallEndedPayload.parse(remoteMessage.data)
+        if (callEnded != null) {
+            if (callEnded.expiresAtMillis <= System.currentTimeMillis()) {
+                Log.i(
+                    CHEENHUB_PUSH_LOG_TAG,
+                    "Ignored expired call-ended push; call_id=${callEnded.callId}",
+                )
+            } else {
+                Log.i(
+                    CHEENHUB_PUSH_LOG_TAG,
+                    "Call-ended push received; call_id=${callEnded.callId}; reason=${callEnded.endReason}",
+                )
+            }
+            return
+        }
         Log.w(CHEENHUB_PUSH_LOG_TAG, "Rejected malformed or unsupported FCM data payload")
     }
 
@@ -992,6 +1022,120 @@ private data class CheenHubFriendRequestPayload(
                     }.parse(value)?.time
                 } catch (_: ParseException) {
                     // Следующий формат проверяется без вывода содержимого payload в лог.
+                }
+            }
+            return null
+        }
+    }
+}
+
+private data class CheenHubIncomingCallPayload(
+    val eventId: String,
+    val callId: String,
+    val conversationId: String,
+    val callerUserId: String,
+    val callerNickname: String,
+    val expiresAtMillis: Long,
+) {
+    companion object {
+        private const val SCHEMA_VERSION = "1"
+        private const val KIND = "incoming_call"
+        private const val MAX_NICKNAME_LENGTH = 100
+
+        fun parse(data: Map<String, String>): CheenHubIncomingCallPayload? {
+            if (data["schema_version"] != SCHEMA_VERSION || data["kind"] != KIND) return null
+            val eventId = data["event_id"].validUuid() ?: return null
+            val callId = data["call_id"].validUuid() ?: return null
+            val conversationId = data["conversation_id"].validUuid() ?: return null
+            val callerUserId = data["caller_user_id"].validUuid() ?: return null
+            val callerNickname =
+                data["caller_nickname"].boundedText(MAX_NICKNAME_LENGTH) ?: return null
+            val expiresAt = parseTimestamp(data["expires_at"] ?: return null) ?: return null
+            return CheenHubIncomingCallPayload(
+                eventId,
+                callId,
+                conversationId,
+                callerUserId,
+                callerNickname,
+                expiresAt,
+            )
+        }
+
+        private fun String?.validUuid(): String? = this?.let { value ->
+            runCatching { UUID.fromString(value).toString() }.getOrNull()
+        }
+
+        private fun String?.boundedText(maxLength: Int): String? = this
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() && it.codePointCount(0, it.length) <= maxLength }
+
+        private fun parseTimestamp(value: String): Long? {
+            val patterns = listOf(
+                "yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSSXXX",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+                "yyyy-MM-dd'T'HH:mm:ssXXX",
+            )
+            for (pattern in patterns) {
+                try {
+                    return SimpleDateFormat(pattern, Locale.US).apply {
+                        isLenient = false
+                        timeZone = TimeZone.getTimeZone("UTC")
+                    }.parse(value)?.time
+                } catch (_: ParseException) {
+                    // Следующий формат.
+                }
+            }
+            return null
+        }
+    }
+}
+
+private data class CheenHubCallEndedPayload(
+    val eventId: String,
+    val callId: String,
+    val endReason: String,
+    val endedAtMillis: Long,
+    val expiresAtMillis: Long,
+) {
+    companion object {
+        private const val SCHEMA_VERSION = "1"
+        private const val KIND = "call_ended"
+        private val END_REASONS = setOf("cancelled", "declined", "timed_out", "ended")
+
+        fun parse(data: Map<String, String>): CheenHubCallEndedPayload? {
+            if (data["schema_version"] != SCHEMA_VERSION || data["kind"] != KIND) return null
+            val eventId = data["event_id"].validUuid() ?: return null
+            val callId = data["call_id"].validUuid() ?: return null
+            val endReason = data["end_reason"]?.takeIf(END_REASONS::contains) ?: return null
+            val endedAt = parseTimestamp(data["ended_at"] ?: return null) ?: return null
+            val expiresAt = parseTimestamp(data["expires_at"] ?: return null) ?: return null
+            return CheenHubCallEndedPayload(
+                eventId,
+                callId,
+                endReason,
+                endedAt,
+                expiresAt,
+            )
+        }
+
+        private fun String?.validUuid(): String? = this?.let { value ->
+            runCatching { UUID.fromString(value).toString() }.getOrNull()
+        }
+
+        private fun parseTimestamp(value: String): Long? {
+            val patterns = listOf(
+                "yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSSXXX",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+                "yyyy-MM-dd'T'HH:mm:ssXXX",
+            )
+            for (pattern in patterns) {
+                try {
+                    return SimpleDateFormat(pattern, Locale.US).apply {
+                        isLenient = false
+                        timeZone = TimeZone.getTimeZone("UTC")
+                    }.parse(value)?.time
+                } catch (_: ParseException) {
+                    // Следующий формат.
                 }
             }
             return null

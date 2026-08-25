@@ -1,6 +1,6 @@
 //! Модель данных системных push-уведомлений.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -63,6 +63,93 @@ impl DirectMessagePush {
     }
 }
 
+/// Короткоживущее push-событие о входящем личном звонке.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct IncomingCallPush {
+    /// Версия схемы data payload.
+    pub(crate) schema_version: String,
+    /// Машиночитаемый вид события.
+    pub(crate) kind: String,
+    /// Идентификатор события для дедупликации очереди.
+    pub(crate) event_id: String,
+    /// Стабильный идентификатор звонка.
+    pub(crate) call_id: String,
+    /// Идентификатор личного диалога.
+    pub(crate) conversation_id: String,
+    /// Идентификатор инициатора звонка.
+    pub(crate) caller_user_id: String,
+    /// Снимок отображаемого имени инициатора.
+    pub(crate) caller_nickname: String,
+    /// Снимок URL аватара инициатора либо пустая строка.
+    pub(crate) caller_avatar_url: String,
+    /// RFC 3339 время начала звонка.
+    pub(crate) started_at: String,
+    /// RFC 3339 момент, после которого входящий звонок нельзя показывать.
+    pub(crate) expires_at: String,
+}
+
+impl IncomingCallPush {
+    pub(crate) fn new(
+        call_id: Uuid,
+        conversation_id: Uuid,
+        caller_user_id: Uuid,
+        caller_nickname: &str,
+        caller_avatar_url: Option<&str>,
+        started_at: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            schema_version: "1".to_owned(),
+            kind: "incoming_call".to_owned(),
+            event_id: call_id.to_string(),
+            call_id: call_id.to_string(),
+            conversation_id: conversation_id.to_string(),
+            caller_user_id: caller_user_id.to_string(),
+            caller_nickname: caller_nickname.chars().take(100).collect(),
+            caller_avatar_url: caller_avatar_url
+                .unwrap_or_default()
+                .chars()
+                .take(2048)
+                .collect(),
+            started_at: started_at.to_rfc3339(),
+            expires_at: expires_at.to_rfc3339(),
+        }
+    }
+}
+
+/// Короткоживущее push-событие о завершении личного звонка.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CallEndedPush {
+    /// Версия схемы data payload.
+    pub(crate) schema_version: String,
+    /// Машиночитаемый вид события.
+    pub(crate) kind: String,
+    /// Отдельный UUID события, чтобы оно не конфликтовало с incoming_call в очереди.
+    pub(crate) event_id: String,
+    /// Стабильный идентификатор звонка.
+    pub(crate) call_id: String,
+    /// Причина завершения звонка в snake_case.
+    pub(crate) end_reason: String,
+    /// RFC 3339 время завершения звонка.
+    pub(crate) ended_at: String,
+    /// RFC 3339 срок актуальности события.
+    pub(crate) expires_at: String,
+}
+
+impl CallEndedPush {
+    pub(crate) fn new(call_id: Uuid, end_reason: &str, ended_at: DateTime<Utc>) -> Self {
+        Self {
+            schema_version: "1".to_owned(),
+            kind: "call_ended".to_owned(),
+            event_id: Uuid::new_v4().to_string(),
+            call_id: call_id.to_string(),
+            end_reason: end_reason.to_owned(),
+            ended_at: ended_at.to_rfc3339(),
+            expires_at: (ended_at + Duration::seconds(60)).to_rfc3339(),
+        }
+    }
+}
+
 /// Содержимое push-уведомления о новой заявке в друзья.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct FriendRequestPush {
@@ -107,6 +194,10 @@ pub(crate) enum PushPayload {
     DirectMessage(DirectMessagePush),
     /// Новая заявка в друзья.
     FriendRequest(FriendRequestPush),
+    /// Входящий личный звонок.
+    IncomingCall(IncomingCallPush),
+    /// Завершение личного звонка.
+    CallEnded(CallEndedPush),
 }
 
 impl PushPayload {
@@ -115,6 +206,8 @@ impl PushPayload {
         match self {
             Self::DirectMessage(payload) => &payload.message_id,
             Self::FriendRequest(payload) => &payload.request_id,
+            Self::IncomingCall(payload) => &payload.event_id,
+            Self::CallEnded(payload) => &payload.event_id,
         }
     }
 
@@ -123,7 +216,32 @@ impl PushPayload {
         match self {
             Self::DirectMessage(payload) => &payload.kind,
             Self::FriendRequest(payload) => &payload.kind,
+            Self::IncomingCall(payload) => &payload.kind,
+            Self::CallEnded(payload) => &payload.kind,
         }
+    }
+
+    /// Короткий TTL FCM нужен только звонковым событиям.
+    pub(crate) fn fcm_ttl(&self) -> Option<&'static str> {
+        match self {
+            Self::IncomingCall(_) | Self::CallEnded(_) => Some("60s"),
+            Self::DirectMessage(_) | Self::FriendRequest(_) => None,
+        }
+    }
+
+    /// Не позволяет очереди доставить уже бессмысленное звонковое событие.
+    pub(crate) fn is_expired(&self, now: DateTime<Utc>) -> bool {
+        let expires_at = match self {
+            Self::IncomingCall(payload) => Some(payload.expires_at.as_str()),
+            Self::CallEnded(payload) => Some(payload.expires_at.as_str()),
+            Self::DirectMessage(_) | Self::FriendRequest(_) => None,
+        };
+        let Some(expires_at) = expires_at else {
+            return false;
+        };
+        DateTime::parse_from_rfc3339(expires_at)
+            .map(|expires_at| expires_at.with_timezone(&Utc) <= now)
+            .unwrap_or(true)
     }
 }
 
