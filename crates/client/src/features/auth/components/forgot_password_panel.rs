@@ -22,7 +22,34 @@ pub(crate) fn ForgotPasswordPanel() -> Element {
                 p { class: "mt-1.5 text-[13px] leading-5 text-zinc-500", "Укажи email аккаунта, и мы отправим ссылку для смены пароля." }
             }
 
-            form { class: "space-y-4",
+            form {
+                class: "space-y-4",
+                onsubmit: move |event| {
+                    event.prevent_default();
+
+                    if is_busy || email().trim().is_empty() {
+                        return;
+                    }
+
+                    let request = PasswordResetRequest {
+                        email: email().trim().to_owned(),
+                    };
+                    status.set(PasswordResetRequestStatus::Loading);
+                    info!("requesting password reset email");
+
+                    spawn(async move {
+                        match api::request_password_reset(request).await {
+                            Ok(()) => {
+                                info!("password reset email request accepted");
+                                status.set(PasswordResetRequestStatus::Succeeded);
+                            }
+                            Err(error) => {
+                                warn!(%error, "password reset email request failed");
+                                status.set(PasswordResetRequestStatus::Failed(error));
+                            }
+                        }
+                    });
+                },
                 TextInput {
                     input_type: "email",
                     label: "Email",
@@ -51,31 +78,9 @@ pub(crate) fn ForgotPasswordPanel() -> Element {
                     },
                 }
                 button {
-                    r#type: "button",
+                    r#type: "submit",
                     disabled: is_busy || email().trim().is_empty(),
                     class: "btn-p flex h-11 w-full items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)] disabled:cursor-not-allowed disabled:opacity-60",
-                    onclick: move |_| {
-                        if is_busy {
-                            return;
-                        }
-                        let request = PasswordResetRequest {
-                            email: email().trim().to_owned(),
-                        };
-                        status.set(PasswordResetRequestStatus::Loading);
-                        info!("requesting password reset email");
-                        spawn(async move {
-                            match api::request_password_reset(request).await {
-                                Ok(()) => {
-                                    info!("password reset email request accepted");
-                                    status.set(PasswordResetRequestStatus::Succeeded);
-                                }
-                                Err(error) => {
-                                    warn!(%error, "password reset email request failed");
-                                    status.set(PasswordResetRequestStatus::Failed(error));
-                                }
-                            }
-                        });
-                    },
                     if is_busy { "Отправляем..." } else { "Отправить ссылку" }
                 }
             }
