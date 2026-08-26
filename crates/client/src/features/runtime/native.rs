@@ -61,6 +61,7 @@ pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element, started_hidde
     dioxus::LaunchBuilder::desktop()
         .with_cfg(
             Config::new()
+                .with_disable_dma_buf_on_wayland(false)
                 .with_window(window)
                 .with_icon(icon)
                 .with_close_behaviour(close_behaviour)
