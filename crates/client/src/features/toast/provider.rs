@@ -309,16 +309,16 @@ fn render_update_available_toast(
             role: toast.kind.role(),
             "aria-live": toast.kind.live_region(),
             class: update_toast_class(toast.exiting),
-            div { class: "flex items-start gap-3 px-3 py-3",
-                div { class: "mt-1 flex h-5 w-5 shrink-0 items-center justify-center",
-                    span { class: "h-2.5 w-2.5 rounded-full {toast.kind.accent_class()} shadow-[0_0_18px_rgba(96,165,250,0.55)]" }
+            div { class: "flex items-start gap-2.5 px-4 pb-3 pt-3.5",
+                div { class: "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center",
+                    span { class: "h-2 w-2 rounded-full {toast.kind.accent_class()} shadow-[0_0_12px_rgba(96,165,250,0.45)]" }
                 }
-                div { class: "min-w-0 flex-1 space-y-1",
+                div { class: "min-w-0 flex-1 space-y-0.5",
                     p { class: "text-[12px] font-semibold leading-4 text-zinc-100", "{toast.kind.label()}" }
-                    p { class: "break-words text-[13px] leading-5 text-zinc-300",
+                    p { class: "break-words text-[13px] font-medium leading-5 text-zinc-300",
                         "CheenHub {update.current_version} → {update.update_version}"
                     }
-                    p { class: "text-[12px] leading-5 text-zinc-500",
+                    p { class: "text-[11px] leading-4 text-zinc-500",
                         if let Some(title) = update.title.as_ref() {
                             "{title}"
                         } else {
@@ -337,7 +337,7 @@ fn render_update_available_toast(
                     "×"
                 }
             }
-            div { class: "grid gap-2 border-t border-white/10 bg-white/[0.025] px-3 py-3",
+            div { class: "grid gap-2 border-t border-white/[0.06] bg-black/10 px-3 py-2.5",
                 button {
                     r#type: "button",
                     disabled: update.primary_disabled,
@@ -346,21 +346,28 @@ fn render_update_available_toast(
                     "{update.primary_label}"
                 }
                 div { class: "grid grid-cols-[1fr_auto] gap-2",
-                    select {
-                        value: "{update.selected_deferral_value}",
-                        class: "h-9 min-w-0 rounded-md border border-zinc-800 bg-zinc-950 px-2.5 text-[12px] font-medium text-zinc-200 outline-none transition focus:border-blue-400/60 focus:ring-4 focus:ring-blue-400/10",
-                        onchange: move |event| set_update_deferral_value(&mut toasts, toast.id, event.value()),
-                        for option in update.deferral_options.iter() {
-                            option {
-                                value: "{option.value}",
-                                selected: option.value == update.selected_deferral_value,
-                                "{option.label}"
+                    div { class: "relative min-w-0",
+                        select {
+                            value: "{update.selected_deferral_value}",
+                            class: "h-9 w-full appearance-none rounded-lg border border-white/10 bg-zinc-900/80 px-3 pr-8 text-[12px] font-medium text-zinc-200 outline-none transition hover:border-white/15 focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10",
+                            style: "color-scheme: dark;",
+                            onchange: move |event| set_update_deferral_value(&mut toasts, toast.id, event.value()),
+                            for option in update.deferral_options.iter() {
+                                option {
+                                    value: "{option.value}",
+                                    selected: option.value == update.selected_deferral_value,
+                                    "{option.label}"
+                                }
                             }
+                        }
+                        span {
+                            class: "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-zinc-500",
+                            "▼"
                         }
                     }
                     button {
                         r#type: "button",
-                        class: "flex h-9 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900/80 px-3 text-[12px] font-semibold text-zinc-200 transition hover:border-zinc-700 hover:bg-zinc-900",
+                        class: "flex h-9 items-center justify-center rounded-lg border border-white/10 bg-zinc-900/70 px-3 text-[12px] font-semibold text-zinc-300 transition hover:border-white/15 hover:bg-zinc-800/80 hover:text-zinc-100",
                         onclick: move |_| {
                             (on_defer.as_ref())(selected_deferral_value.clone());
                             super::timer::begin_dismiss_toast(&mut toasts, toast.id);
@@ -369,7 +376,7 @@ fn render_update_available_toast(
                     }
                 }
             }
-            span { class: "block h-px w-full bg-blue-400" }
+
         }
     }
 }
@@ -384,17 +391,17 @@ fn toast_class(exiting: bool) -> &'static str {
 
 fn update_toast_class(exiting: bool) -> &'static str {
     if exiting {
-        "toast-item toast-item-exiting pointer-events-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-lg border border-white/10 bg-zinc-950/95 text-zinc-100 shadow-[0_18px_50px_rgba(0,0,0,0.38)] backdrop-blur sm:max-w-none"
+        "toast-item toast-item-exiting pointer-events-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-zinc-950/95 text-zinc-100 shadow-[0_16px_40px_rgba(0,0,0,0.45)] ring-1 ring-black/20 backdrop-blur sm:max-w-none"
     } else {
-        "toast-item pointer-events-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-lg border border-white/10 bg-zinc-950/95 text-zinc-100 shadow-[0_18px_50px_rgba(0,0,0,0.38)] backdrop-blur sm:max-w-none"
+        "toast-item pointer-events-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-zinc-950/95 text-zinc-100 shadow-[0_16px_40px_rgba(0,0,0,0.45)] ring-1 ring-black/20 backdrop-blur sm:max-w-none"
     }
 }
 
 fn update_primary_button_class(disabled: bool) -> &'static str {
     if disabled {
-        "flex h-9 cursor-not-allowed items-center justify-center rounded-md border border-zinc-800 bg-zinc-900/70 px-3 text-[12px] font-semibold text-zinc-500"
+        "flex h-9 cursor-not-allowed items-center justify-center rounded-lg border border-white/[0.06] bg-zinc-900/60 px-3 text-[12px] font-semibold text-zinc-600"
     } else {
-        "flex h-9 items-center justify-center rounded-md border border-blue-400/25 bg-blue-500/10 px-3 text-[12px] font-semibold text-blue-100 transition hover:border-blue-400/40 hover:bg-blue-500/15"
+        "flex h-9 items-center justify-center rounded-lg bg-blue-500 px-3 text-[12px] font-semibold text-white shadow-[0_6px_18px_rgba(59,130,246,0.16)] transition hover:bg-blue-400 active:translate-y-px"
     }
 }
 
