@@ -9,6 +9,28 @@ use futures_channel::{mpsc, oneshot};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket};
 
+/// Снимает JS callbacks до уничтожения wasm-bindgen `Closure`.
+///
+/// При cancellation future во время размонтирования Dioxus-компонента
+/// браузер не должен сохранить ссылку на уже уничтоженную Rust closure.
+struct WebSocketHandlerCleanup {
+    websocket: WebSocket,
+    close_on_drop: bool,
+}
+
+impl Drop for WebSocketHandlerCleanup {
+    fn drop(&mut self) {
+        self.websocket.set_onopen(None);
+        self.websocket.set_onmessage(None);
+        self.websocket.set_onclose(None);
+        self.websocket.set_onerror(None);
+
+        if self.close_on_drop {
+            let _ = self.websocket.close();
+        }
+    }
+}
+
 pub(in crate::features::host_settings::log_stream) async fn run(
     access_token: String,
     output: mpsc::UnboundedSender<HostLogStreamMessage>,
@@ -73,14 +95,14 @@ pub(in crate::features::host_settings::log_stream) async fn run(
     websocket.set_onclose(Some(close_closure.as_ref().unchecked_ref()));
     websocket.set_onerror(Some(error_closure.as_ref().unchecked_ref()));
 
-    let _ = close_receiver.await;
+    // Guard объявлен после Closure, поэтому при cancellation уничтожится первым:
+    // сначала снимет callbacks, затем безопасно уничтожатся Rust Closure.
+    let _cleanup = WebSocketHandlerCleanup {
+        websocket: websocket.clone(),
+        close_on_drop: true,
+    };
 
-    websocket.set_onmessage(None);
-    websocket.set_onclose(None);
-    websocket.set_onerror(None);
-    drop(message_closure);
-    drop(close_closure);
-    drop(error_closure);
+    let _ = close_receiver.await;
 
     Err("Соединение с realtime-журналом закрыто.".to_owned())
 }
@@ -116,16 +138,16 @@ async fn wait_until_open(websocket: &WebSocket) -> Result<(), String> {
     websocket.set_onerror(Some(error_closure.as_ref().unchecked_ref()));
     websocket.set_onclose(Some(close_closure.as_ref().unchecked_ref()));
 
+    // Здесь сам WebSocket закрывать нельзя: после успешного open он используется run().
+    // Guard гарантирует снятие временных callbacks и при обычном выходе, и при cancellation.
+    let _cleanup = WebSocketHandlerCleanup {
+        websocket: websocket.clone(),
+        close_on_drop: false,
+    };
+
     let result = receiver
         .await
         .map_err(|_| "Callback подключения realtime-журнала был потерян.".to_owned())?;
-
-    websocket.set_onopen(None);
-    websocket.set_onerror(None);
-    websocket.set_onclose(None);
-    drop(open_closure);
-    drop(error_closure);
-    drop(close_closure);
 
     result
 }
