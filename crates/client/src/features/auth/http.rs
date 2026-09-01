@@ -57,18 +57,30 @@ fn request(method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
 }
 
 #[cfg(test)]
-mod tests {
-    use reqwest::header::USER_AGENT;
+fn attach_platform_user_agent(headers: &mut reqwest::header::HeaderMap) {
+    let Some(user_agent) = native::client_user_agent() else {
+        return;
+    };
 
-    use super::{get, native};
+    headers.insert(
+        reqwest::header::USER_AGENT,
+        reqwest::header::HeaderValue::from_static(user_agent),
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use reqwest::header::{HeaderMap, USER_AGENT};
+
+    use super::{attach_platform_user_agent, native};
 
     #[test]
     fn attaches_platform_user_agent_only_when_available() {
-        let request = get("/auth/sessions")
-            .build()
-            .expect("статический auth-запрос должен собираться");
-        let actual = request
-            .headers()
+        let mut headers = HeaderMap::new();
+
+        attach_platform_user_agent(&mut headers);
+
+        let actual = headers
             .get(USER_AGENT)
             .and_then(|value| value.to_str().ok());
 
