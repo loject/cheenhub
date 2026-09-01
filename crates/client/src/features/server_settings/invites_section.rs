@@ -25,6 +25,7 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
     let realtime_handle = use_context::<RealtimeHandle>();
     let toast = use_context::<ToastHandle>();
     let mut invites = use_signal(|| None::<Vec<InviteLink>>);
+    let mut invite_load_processed = use_signal(|| false);
     let mut only_active = use_signal(|| true);
     let mut load_error = use_signal(String::new);
     let mut pending_action = use_signal(|| None::<String>);
@@ -40,17 +41,20 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
         async move { realtime::list_server_invites(&realtime_handle, request_server_id).await }
     });
     let invite_load_result = invite_load.read().clone();
+    let effect_server_id = server_id.clone();
     use_effect(move || {
-        if invites().is_some() {
+        if invites().is_some() || invite_load_processed() {
             return;
         }
 
         let Some(result) = invite_load.read().clone() else {
             return;
         };
+        invite_load_processed.set(true);
 
         match result {
             Ok(response) => {
+                let response_server_id = response.server_id.clone();
                 invites.set(Some(
                     response
                         .invites
@@ -61,19 +65,25 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                 if refresh_requested() {
                     toast.success("Список приглашений обновлен.");
                     info!(
-                        server_id = %response.server_id,
+                        server_id = %response_server_id,
                         "refreshed server invite links in settings ui"
                     );
+                    refresh_requested.set(false);
                 }
-                refresh_requested.set(false);
-                load_error.set(String::new());
+                if !load_error.peek().is_empty() {
+                    load_error.set(String::new());
+                }
             }
             Err(error) => {
+                warn!(%error, server_id = %effect_server_id, "failed to load server invite links in settings ui");
                 if refresh_requested() {
                     toast.error(error.to_string());
+                    refresh_requested.set(false);
                 }
-                load_error.set(error.to_string());
-                refresh_requested.set(false);
+                let error_message = error.to_string();
+                if load_error.peek().as_str() != error_message.as_str() {
+                    load_error.set(error_message);
+                }
             }
         }
     });
@@ -135,6 +145,7 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                                 load_error.set(String::new());
                                 refresh_requested.set(true);
                                 invites.set(None);
+                                invite_load_processed.set(false);
                                 open_member_menu.set(None);
                                 invite_load.clear();
                                 invite_load.restart();
