@@ -22,6 +22,7 @@ pub(crate) mod server_instance;
 pub(crate) mod server_rail;
 pub(crate) mod server_rail_button;
 pub(crate) mod server_realtime_status;
+mod server_room_workspace_sync;
 mod server_rooms_action_error;
 mod server_rooms_load_error;
 mod server_rooms_loading;

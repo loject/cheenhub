@@ -35,10 +35,22 @@ pub(super) fn clear_workspace_selection_if_needed(
     mut active_workspace: Signal<Option<ServerWorkspace>>,
     mut reported_room_id: Signal<Option<String>>,
 ) {
-    if active_workspace().is_some() || reported_room_id().is_some() {
+    let current_workspace = active_workspace();
+    if matches!(current_workspace, Some(ServerWorkspace::Settings)) {
+        if reported_room_id().is_some() {
+            reported_room_id.set(None);
+        }
+        return;
+    }
+    if current_workspace.is_some() || reported_room_id().is_some() {
         active_workspace.set(None);
         reported_room_id.set(None);
     }
+}
+
+/// Возвращает, может ли синхронизация маршрута активировать workspace комнаты.
+pub(super) fn should_activate_room_workspace(active_workspace: Option<&ServerWorkspace>) -> bool {
+    !matches!(active_workspace, Some(ServerWorkspace::Settings))
 }
 
 pub(super) fn mount_workspace_if_missing(
@@ -58,6 +70,37 @@ pub(super) fn set_active_workspace_if_needed(
     if active_workspace() != Some(workspace.clone()) {
         active_workspace.set(Some(workspace));
     }
+}
+
+/// Открывает параметры сервера и сохраняет workspace смонтированным.
+pub(super) fn open_server_settings_workspace(
+    mut mounted_workspaces: Signal<Vec<ServerWorkspace>>,
+    mut active_workspace: Signal<Option<ServerWorkspace>>,
+    mut mobile_workspace_open: Signal<bool>,
+) {
+    let workspace = ServerWorkspace::Settings;
+    let mut next_mounted_workspaces = mounted_workspaces();
+    ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
+    mounted_workspaces.set(next_mounted_workspaces);
+    active_workspace.set(Some(workspace));
+    mobile_workspace_open.set(true);
+}
+
+/// Закрывает параметры сервера и восстанавливает выбранную комнату, если она есть.
+pub(super) fn close_server_settings_workspace(
+    active_room_id: Option<String>,
+    mut mounted_workspaces: Signal<Vec<ServerWorkspace>>,
+    mut active_workspace: Signal<Option<ServerWorkspace>>,
+) {
+    let Some(room_id) = active_room_id else {
+        active_workspace.set(None);
+        return;
+    };
+    let workspace = ServerWorkspace::Room(room_id);
+    let mut next_mounted_workspaces = mounted_workspaces();
+    ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
+    mounted_workspaces.set(next_mounted_workspaces);
+    active_workspace.set(Some(workspace));
 }
 
 pub(super) fn active_room(
@@ -130,5 +173,25 @@ pub(super) fn room_icon_class(kind: ServerRoomKind) -> &'static str {
         ServerRoomKind::TextAndVoice => {
             "w-3.5 shrink-0 text-center text-[13px] font-semibold leading-none text-accent"
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ServerWorkspace, should_activate_room_workspace};
+
+    #[test]
+    fn room_sync_preserves_open_server_settings() {
+        assert!(!should_activate_room_workspace(Some(
+            &ServerWorkspace::Settings
+        )));
+    }
+
+    #[test]
+    fn room_sync_selects_room_without_another_workspace() {
+        assert!(should_activate_room_workspace(None));
+        assert!(should_activate_room_workspace(Some(
+            &ServerWorkspace::Room("room-id".to_owned())
+        )));
     }
 }

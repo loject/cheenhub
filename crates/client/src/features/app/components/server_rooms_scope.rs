@@ -19,14 +19,15 @@ use super::room_editor_modal::RoomEditorModal;
 use super::room_instance::RoomInstance;
 use super::room_list_item::RoomListItem;
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
+use super::server_room_workspace_sync::synchronize_room_workspace;
 use super::server_rooms_action_error::ServerRoomsActionError;
 use super::server_rooms_load_error::ServerRoomsLoadError;
 use super::server_rooms_loading::ServerRoomsLoading;
 use super::server_rooms_sidebar_styles as sidebar_styles;
 use super::server_rooms_state::{
     RoomModal, ServerWorkspace, active_room, chat_open_for_room,
-    clear_workspace_selection_if_needed, ensure_workspace_mounted, mount_workspace_if_missing,
-    resolve_active_room_id, room_by_id, set_active_workspace_if_needed, upsert_room,
+    clear_workspace_selection_if_needed, close_server_settings_workspace, ensure_workspace_mounted,
+    open_server_settings_workspace, resolve_active_room_id, room_by_id, upsert_room,
 };
 
 /// Owns room state for one server and renders the room sidebar and active room.
@@ -135,21 +136,15 @@ pub(crate) fn ServerRoomsScope(
             return;
         };
 
-        let workspace = ServerWorkspace::Room(room_id.clone());
-        mount_workspace_if_missing(mounted_workspaces, workspace.clone());
-        set_active_workspace_if_needed(active_workspace, workspace);
-
-        if active && requested_room_id_for_sync.as_deref() != Some(room_id.as_str()) {
-            info!(
-                server_id = %server_id,
-                room_id = %room_id,
-                "replacing server workspace route with resolved room"
-            );
-            navigator.replace(Route::AppServerRoom {
-                server_id: server_id.clone(),
-                room_id: room_id.clone(),
-            });
-        }
+        synchronize_room_workspace(
+            active,
+            requested_room_id_for_sync.as_deref(),
+            &server_id,
+            &room_id,
+            &navigator,
+            mounted_workspaces,
+            active_workspace,
+        );
 
         if active
             && reported_room_id().as_deref() != Some(room_id.as_str())
@@ -206,12 +201,11 @@ pub(crate) fn ServerRoomsScope(
                                         server_id = %open_settings_log_server_id,
                                         "opened server settings workspace"
                                     );
-                                    let workspace = ServerWorkspace::Settings;
-                                    let mut next_mounted_workspaces = mounted_workspaces();
-                                    ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
-                                    mounted_workspaces.set(next_mounted_workspaces);
-                                    active_workspace.set(Some(workspace));
-                                    mobile_workspace_open.set(true);
+                                    open_server_settings_workspace(
+                                        mounted_workspaces,
+                                        active_workspace,
+                                        mobile_workspace_open,
+                                    );
                                 }
                                 ServerMenuAction::CreateInvite => {
                                     info!(
@@ -427,15 +421,11 @@ pub(crate) fn ServerRoomsScope(
                         server_id = %close_settings_log_server_id,
                         "closed server settings workspace"
                     );
-                    if let Some(room_id) = active_room_id() {
-                        let workspace = ServerWorkspace::Room(room_id);
-                        let mut next_mounted_workspaces = mounted_workspaces();
-                        ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
-                        mounted_workspaces.set(next_mounted_workspaces);
-                        active_workspace.set(Some(workspace));
-                    } else {
-                        active_workspace.set(None);
-                    }
+                    close_server_settings_workspace(
+                        active_room_id(),
+                        mounted_workspaces,
+                        active_workspace,
+                    );
                 },
             }
         }
