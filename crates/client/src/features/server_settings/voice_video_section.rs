@@ -40,7 +40,7 @@ const SCREEN_SHARE_PROFILE: VideoProfile = VideoProfile {
     bitrate_kbps: VideoPresetId::Screen720p30.spec().bitrate_bps / 1_000,
     bitrate_max_kbps: 2_000,
     resolution: "До 1920×1080 (Full HD)",
-    fps: "30 fps или 15 fps",
+    fps: "До 30 fps",
 };
 
 fn clamp_bitrate_kbps(value: u32) -> u32 {
