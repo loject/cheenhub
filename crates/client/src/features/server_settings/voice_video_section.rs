@@ -29,7 +29,7 @@ const CAMERA_PROFILE: VideoProfile = VideoProfile {
     bitrate_label: "700 кбит/с",
     bitrate_kbps: VideoPresetId::Camera720p24.spec().bitrate_bps / 1_000,
     bitrate_max_kbps: 2_000,
-    resolution: "1280x720",
+    resolution: "1280×720 (HD)",
     fps: "24 fps",
 };
 
@@ -39,7 +39,7 @@ const SCREEN_SHARE_PROFILE: VideoProfile = VideoProfile {
     bitrate_label: "1.5 Мбит/с",
     bitrate_kbps: VideoPresetId::Screen720p30.spec().bitrate_bps / 1_000,
     bitrate_max_kbps: 2_000,
-    resolution: "1280x720 или 1920x1080",
+    resolution: "До 1920×1080 (Full HD)",
     fps: "30 fps или 15 fps",
 };
 
