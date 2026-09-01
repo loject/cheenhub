@@ -73,6 +73,14 @@ pub(crate) trait ServerStore: Send + Sync {
         avatar_image_id: Uuid,
     ) -> anyhow::Result<Option<Server>>;
 
+    /// Обновляет целевой битрейт Opus-аудио сервера, принадлежащего пользователю.
+    async fn update_server_audio_bitrate(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        audio_bitrate_bps: u32,
+    ) -> anyhow::Result<Option<Server>>;
+
     /// Вставляет новое приглашение сервера.
     async fn insert_server_invite(
         &self,

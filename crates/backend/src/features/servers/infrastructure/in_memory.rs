@@ -40,6 +40,7 @@ impl ServerStore for InMemoryServerStore {
             owner_user_id: *owner_user_id,
             name,
             avatar_image_id: None,
+            audio_bitrate_bps: cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS,
             created_at: now,
             updated_at: now,
         };
@@ -131,6 +132,26 @@ impl ServerStore for InMemoryServerStore {
         };
 
         server.avatar_image_id = Some(avatar_image_id);
+        server.updated_at = Utc::now();
+        Ok(Some(server.clone()))
+    }
+
+    async fn update_server_audio_bitrate(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        audio_bitrate_bps: u32,
+    ) -> anyhow::Result<Option<Server>> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+        let Some(server) = state
+            .servers
+            .iter_mut()
+            .find(|server| server.id == *server_id && server.owner_user_id == *owner_user_id)
+        else {
+            return Ok(None);
+        };
+
+        server.audio_bitrate_bps = audio_bitrate_bps;
         server.updated_at = Utc::now();
         Ok(Some(server.clone()))
     }

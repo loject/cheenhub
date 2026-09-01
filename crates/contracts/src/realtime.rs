@@ -37,7 +37,7 @@ pub use voice_chat::{
     DirectMessageVoiceRoomsSnapshot, EndDirectCall, IssueMicrophoneUplinkGrant,
     JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom,
     LeaveVoiceRoom, ListDirectCalls, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
-    MicrophoneUplinkBound, MicrophoneUplinkGrantIssued, RespondDirectCall,
+    MicrophoneUplinkBound, MicrophoneUplinkGrantIssued, RespondDirectCall, ServerAudioBitrate,
     ServerVoiceRoomsSnapshot, StartDirectCall, StopVoiceVideoStream, VoiceChatKind,
     VoiceRoomParticipant, VoiceRoomSnapshot, VoiceVideoStreamEnded, VoiceVideoStreamSource,
 };
@@ -251,6 +251,85 @@ mod tests {
         assert_eq!(payload.conversation_id, conversation_id);
         assert_eq!(payload.sender_user_id, sender_user_id);
         assert_eq!(payload.message_seq, 42);
+    }
+
+    #[test]
+    fn server_audio_bitrate_envelope_round_trips() {
+        let envelope = RealtimeEnvelope::new(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::ServerAudioBitrateUpdated),
+            None,
+            ServerAudioBitrate {
+                server_id: Uuid::new_v4().to_string(),
+                audio_bitrate_bps: 48_000,
+            },
+        )
+        .expect("payload serializes");
+
+        let json = serde_json::to_string(&envelope).expect("envelope serializes");
+        assert!(json.contains("\"kind\":\"server_audio_bitrate_updated\""));
+        assert!(json.contains("\"audio_bitrate_bps\":48000"));
+        let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+
+        assert_eq!(
+            decoded.kind,
+            RealtimeKind::VoiceChat(VoiceChatKind::ServerAudioBitrateUpdated)
+        );
+        let payload: ServerAudioBitrate =
+            serde_json::from_value(decoded.payload).expect("payload decodes");
+        assert_eq!(payload.audio_bitrate_bps, 48_000);
+    }
+
+    #[test]
+    fn voice_room_snapshot_with_audio_bitrate_round_trips() {
+        #[derive(serde::Deserialize)]
+        struct LegacyVoiceRoomSnapshot {
+            server_id: String,
+            room_id: String,
+            participants: Vec<VoiceRoomParticipant>,
+        }
+
+        let snapshot = VoiceRoomSnapshot {
+            server_id: Uuid::new_v4().to_string(),
+            room_id: Uuid::new_v4().to_string(),
+            participants: vec![VoiceRoomParticipant {
+                user_id: Uuid::new_v4().to_string(),
+                nickname: "voice_user".to_owned(),
+                avatar_url: None,
+                joined_at: "2026-09-01T00:00:00Z".to_owned(),
+            }],
+            audio_bitrate_bps: Some(48_000),
+        };
+
+        let json = serde_json::to_string(&snapshot).expect("snapshot serializes");
+        let decoded: VoiceRoomSnapshot =
+            serde_json::from_str(&json).expect("snapshot deserializes");
+        let legacy: LegacyVoiceRoomSnapshot =
+            serde_json::from_str(&json).expect("legacy client ignores additive field");
+
+        assert_eq!(decoded, snapshot);
+        assert_eq!(decoded.audio_bitrate_bps, Some(48_000));
+        assert_eq!(legacy.server_id, snapshot.server_id);
+        assert_eq!(legacy.room_id, snapshot.room_id);
+        assert_eq!(legacy.participants, snapshot.participants);
+    }
+
+    #[test]
+    fn voice_room_snapshot_accepts_legacy_payload_without_audio_bitrate() {
+        let server_id = Uuid::new_v4().to_string();
+        let room_id = Uuid::new_v4().to_string();
+        let json = serde_json::json!({
+            "server_id": server_id,
+            "room_id": room_id,
+            "participants": [],
+        });
+
+        let decoded: VoiceRoomSnapshot =
+            serde_json::from_value(json).expect("legacy snapshot decodes");
+
+        assert_eq!(decoded.server_id, server_id);
+        assert_eq!(decoded.room_id, room_id);
+        assert_eq!(decoded.audio_bitrate_bps, None);
     }
 
     #[test]

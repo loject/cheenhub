@@ -1,5 +1,6 @@
 //! Realtime-действия, привязанные к цели голосового подключения.
 
+use cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS;
 use cheenhub_contracts::realtime::{VoiceRoomParticipant, VoiceRoomSnapshot};
 use cheenhub_contracts::rest::AuthUser;
 
@@ -8,16 +9,38 @@ use crate::features::realtime::{RealtimeError, RealtimeHandle};
 use super::target::{VoiceRoomTarget, VoiceRoomTargetKind};
 use crate::features::voice_chat::realtime;
 
+/// Результат входа, который применяется только после проверки актуальности операции.
+pub(super) struct JoinedVoiceRoom {
+    /// Снимок участников комнаты.
+    pub(super) snapshot: VoiceRoomSnapshot,
+    /// Целевой битрейт микрофона для выбранной комнаты.
+    pub(super) audio_bitrate_bps: u32,
+}
+
 pub(super) async fn join_target(
     realtime: &RealtimeHandle,
     target: &VoiceRoomTarget,
-) -> Result<VoiceRoomSnapshot, RealtimeError> {
+) -> Result<JoinedVoiceRoom, RealtimeError> {
     match target.kind {
         VoiceRoomTargetKind::Server => {
-            realtime::join_room(realtime, target.server_id.clone(), target.room_id.clone()).await
+            let snapshot =
+                realtime::join_room(realtime, target.server_id.clone(), target.room_id.clone())
+                    .await?;
+            let audio_bitrate_bps = snapshot
+                .audio_bitrate_bps
+                .unwrap_or(VOICE_AUDIO_BITRATE_BPS);
+            Ok(JoinedVoiceRoom {
+                snapshot,
+                audio_bitrate_bps,
+            })
         }
         VoiceRoomTargetKind::DirectMessage => {
-            realtime::join_direct_message_room(realtime, target.room_id.clone()).await
+            let snapshot =
+                realtime::join_direct_message_room(realtime, target.room_id.clone()).await?;
+            Ok(JoinedVoiceRoom {
+                snapshot,
+                audio_bitrate_bps: VOICE_AUDIO_BITRATE_BPS,
+            })
         }
     }
 }

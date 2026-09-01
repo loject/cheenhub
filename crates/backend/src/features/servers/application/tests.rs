@@ -11,9 +11,9 @@ use uuid::Uuid;
 
 use super::{
     accept_invite, assign_server_member_role, create, create_invite, create_room, delete_room,
-    invite_info, kick_server_invite_member, kick_server_member, leave, list, list_rooms,
-    list_server_invites, list_server_members, list_server_roles, revoke_server_invite,
-    save_server_roles, update, update_avatar, update_room,
+    get_voice_settings, invite_info, kick_server_invite_member, kick_server_member, leave, list,
+    list_rooms, list_server_invites, list_server_members, list_server_roles, revoke_server_invite,
+    save_server_roles, update, update_avatar, update_room, update_voice_settings,
 };
 use crate::features::auth::application as auth_application;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
@@ -33,6 +33,7 @@ mod invites;
 mod members_settings;
 mod rooms_and_list;
 mod server_profile;
+mod voice_settings;
 
 fn state() -> AppState {
     state_with_store(Arc::new(InMemoryServerStore::default()))

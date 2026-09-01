@@ -26,6 +26,7 @@ mod members_settings;
 mod profile;
 mod role_settings;
 mod support;
+mod voice_settings;
 
 pub(crate) use accept_invite::accept_invite;
 pub(crate) use invite_settings::{
@@ -36,6 +37,7 @@ pub(crate) use members_settings::{
 };
 pub(crate) use profile::{update, update_avatar};
 pub(crate) use role_settings::{list_server_roles, save_server_roles};
+pub(crate) use voice_settings::{get_voice_settings, update_voice_settings};
 
 /// Создает сервер, принадлежащий текущему пользователю.
 pub(crate) async fn create(

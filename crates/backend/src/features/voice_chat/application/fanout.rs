@@ -47,6 +47,7 @@ pub(super) async fn room_snapshot(
         server_id: target.route_id().to_string(),
         room_id: target.room_id.to_string(),
         participants,
+        audio_bitrate_bps: None,
     }
 }
 

@@ -48,4 +48,9 @@ pub(crate) fn routes() -> Router<AppState> {
             "/invites/{code}/accept",
             post(transport::handlers::accept_invite),
         )
+        .route(
+            "/{server_id}/voice-settings",
+            get(transport::handlers::get_voice_settings)
+                .put(transport::handlers::update_voice_settings),
+        )
 }

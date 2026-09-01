@@ -79,7 +79,7 @@ impl Default for MicrophoneConfig {
             codec: MicrophoneCodec::Opus,
             sample_rate_hz: 48_000,
             channels: 1,
-            bitrate_bps: 32_000,
+            bitrate_bps: cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS,
             activation_mode: MicrophoneActivationMode::VoiceActivated,
             vad_threshold: 0.02,
             vad_activation_delay_us: 60_000,

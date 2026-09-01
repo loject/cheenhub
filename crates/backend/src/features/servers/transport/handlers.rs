@@ -10,7 +10,7 @@ use axum::{
 use cheenhub_contracts::rest::{
     AcceptServerInviteResponse, ApiError, CreateServerInviteRequest, CreateServerInviteResponse,
     CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
-    ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse,
+    ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse, ServerVoiceSettings,
     UpdateServerAvatarResponse, UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest,
     UpdateServerRoomResponse,
 };
@@ -159,6 +159,31 @@ pub(crate) async fn delete_room(
     let token = bearer_token(&headers)?;
     application::delete_room(&state, token, server_id, room_id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Возвращает настройки качества голоса сервера для текущего пользователя.
+pub(crate) async fn get_voice_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+) -> Result<Json<ServerVoiceSettings>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::get_voice_settings(&state, token, server_id)
+        .await
+        .map(Json)
+}
+
+/// Обновляет настройки качества голоса сервера, принадлежащего текущему пользователю.
+pub(crate) async fn update_voice_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+    Json(request): Json<ServerVoiceSettings>,
+) -> Result<Json<ServerVoiceSettings>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::update_voice_settings(&state, token, server_id, request)
+        .await
+        .map(Json)
 }
 
 impl IntoResponse for ServerError {

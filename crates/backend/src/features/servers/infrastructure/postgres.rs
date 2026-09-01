@@ -42,6 +42,7 @@ impl ServerStore for PostgresServerStore {
             owner_user_id: Set(*owner_user_id),
             name: Set(name),
             avatar_image_id: Set(None),
+            audio_bitrate_bps: Set(cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS as i32),
             created_at: Set(now),
             updated_at: Set(now),
         }
@@ -143,6 +144,27 @@ impl ServerStore for PostgresServerStore {
         };
         let mut server = server.into_active_model();
         server.avatar_image_id = Set(Some(avatar_image_id));
+        server.updated_at = Set(Utc::now());
+
+        Ok(Some(server.update(&self.database).await?.into()))
+    }
+
+    async fn update_server_audio_bitrate(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        audio_bitrate_bps: u32,
+    ) -> anyhow::Result<Option<Server>> {
+        let Some(server) = servers::Entity::find()
+            .filter(servers::Column::Id.eq(*server_id))
+            .filter(servers::Column::OwnerUserId.eq(*owner_user_id))
+            .one(&self.database)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let mut server = server.into_active_model();
+        server.audio_bitrate_bps = Set(audio_bitrate_bps as i32);
         server.updated_at = Set(Utc::now());
 
         Ok(Some(server.update(&self.database).await?.into()))

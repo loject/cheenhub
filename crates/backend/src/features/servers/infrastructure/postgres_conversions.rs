@@ -123,6 +123,7 @@ impl From<servers::Model> for Server {
             owner_user_id: row.owner_user_id,
             name: row.name,
             avatar_image_id: row.avatar_image_id,
+            audio_bitrate_bps: row.audio_bitrate_bps.max(0) as u32,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }

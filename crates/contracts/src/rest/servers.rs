@@ -176,3 +176,10 @@ pub struct ListServersResponse {
     /// Серверы, доступные текущему пользователю.
     pub servers: Vec<ServerSummary>,
 }
+
+/// Настройки качества голоса сервера.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerVoiceSettings {
+    /// Целевой битрейт Opus-аудио голосовых комнат в битах в секунду.
+    pub audio_bitrate_bps: u32,
+}

@@ -31,6 +31,7 @@ mod m20260713_000027_create_push_notifications;
 mod m20260718_000028_add_dm_message_images;
 mod m20260811_000029_create_legal_acceptances;
 mod m20260825_000030_create_host_settings;
+mod m20260829_000031_add_server_audio_bitrate;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -71,6 +72,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260718_000028_add_dm_message_images::Migration),
             Box::new(m20260811_000029_create_legal_acceptances::Migration),
             Box::new(m20260825_000030_create_host_settings::Migration),
+            Box::new(m20260829_000031_add_server_audio_bitrate::Migration),
         ]
     }
 }

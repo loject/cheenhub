@@ -237,6 +237,28 @@ pub(crate) fn subscribe_video_stream_ended(
     receiver
 }
 
+/// Подписывает текущую вкладку на события изменения целевого битрейта аудио сервера.
+pub(crate) fn subscribe_server_audio_bitrate(
+    realtime: &RealtimeHandle,
+) -> mpsc::UnboundedReceiver<cheenhub_contracts::realtime::ServerAudioBitrate> {
+    let events = realtime.subscribe_events();
+    let (sender, receiver) = mpsc::unbounded();
+
+    dioxus::prelude::spawn(async move {
+        let mut events = events;
+        while let Some(envelope) = events.next().await {
+            let Some(event) = realtime_decode::server_audio_bitrate(envelope) else {
+                continue;
+            };
+            if sender.unbounded_send(event).is_err() {
+                break;
+            }
+        }
+    });
+
+    receiver
+}
+
 /// Subscribes to inbound relayed voice frames for this tab.
 pub(crate) fn subscribe_voice_frames(
     realtime: &RealtimeHandle,

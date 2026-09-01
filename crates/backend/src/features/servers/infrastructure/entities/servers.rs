@@ -15,6 +15,8 @@ pub struct Model {
     pub name: String,
     /// Идентификатор сохраненного изображения аватара сервера.
     pub avatar_image_id: Option<Uuid>,
+    /// Целевой битрейт Opus-аудио голосовых комнат в битах в секунду.
+    pub audio_bitrate_bps: i32,
     /// Временная метка создания сервера.
     pub created_at: DateTimeUtc,
     /// Временная метка последнего обновления сервера.

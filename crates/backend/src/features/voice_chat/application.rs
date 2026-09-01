@@ -3,7 +3,7 @@
 use cheenhub_contracts::realtime::{
     DirectMessageVoiceRoomsSnapshot, JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember,
     LeaveDirectMessageVoiceRoom, LeaveVoiceRoom, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
-    RealtimeKind, RealtimeModule, ServerRoleKind, ServerRolePermission, ServerVoiceRoomsSnapshot,
+    RealtimeKind, RealtimeModule, ServerAudioBitrate, ServerVoiceRoomsSnapshot,
     StopVoiceVideoStream, VoiceChatKind, VoiceRoomSnapshot, VoiceVideoStreamEnded,
 };
 use cheenhub_contracts::rest::{AuthUser, ServerRoomKind};
@@ -18,6 +18,7 @@ mod avatar;
 mod direct_call_push;
 mod direct_calls;
 mod fanout;
+mod permissions;
 mod presence;
 mod uplink;
 
@@ -45,6 +46,12 @@ pub(crate) async fn join_room(
     let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
     let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
     ensure_room_voice_available(state, user_id, &server_id, &room_id).await?;
+    let server = state
+        .server_store
+        .find_server(&server_id)
+        .await
+        .map_err(VoiceChatApplicationError::Internal)?
+        .ok_or_else(|| VoiceChatApplicationError::NotFound("Сервер не найден.".to_owned()))?;
     let target = server_voice_target(server_id, room_id);
     let removed = state
         .voice_presence_store
@@ -62,8 +69,9 @@ pub(crate) async fn join_room(
         .await;
 
     fanout_removed_rooms(state, removed, Some(target)).await;
-    let snapshot = room_snapshot(state, target).await;
+    let mut snapshot = room_snapshot(state, target).await;
     fanout_snapshot(state, target, snapshot.clone()).await;
+    snapshot.audio_bitrate_bps = Some(server.audio_bitrate_bps);
 
     Ok(snapshot)
 }
@@ -186,7 +194,7 @@ pub(crate) async fn kick_member(
         ));
     }
 
-    if !user_can_kick_voice(state, kicker_user_id, &server_id)
+    if !permissions::user_can_kick_voice(state, kicker_user_id, &server_id)
         .await
         .map_err(VoiceChatApplicationError::Internal)?
     {
@@ -220,7 +228,7 @@ pub(crate) async fn list_server_voice_rooms(
     request: ListServerVoiceRooms,
 ) -> Result<ServerVoiceRoomsSnapshot, VoiceChatApplicationError> {
     let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
-    if !user_has_server_access(state, user_id, &server_id)
+    if !permissions::user_has_server_access(state, user_id, &server_id)
         .await
         .map_err(VoiceChatApplicationError::Internal)?
     {
@@ -238,6 +246,7 @@ pub(crate) async fn list_server_voice_rooms(
             server_id: server_id.to_string(),
             room_id: room_id.to_string(),
             participants: participants.iter().map(participant_summary).collect(),
+            audio_bitrate_bps: None,
         })
         .collect::<Vec<_>>();
 
@@ -400,7 +409,7 @@ async fn ensure_room_voice_available(
             "В этой комнате нет голосового чата.".to_owned(),
         ));
     }
-    if user_has_server_access(state, user_id, server_id)
+    if permissions::user_has_server_access(state, user_id, server_id)
         .await
         .map_err(VoiceChatApplicationError::Internal)?
     {
@@ -410,64 +419,6 @@ async fn ensure_room_voice_available(
             "Нет доступа к этой комнате.".to_owned(),
         ))
     }
-}
-
-async fn user_can_kick_voice(
-    state: &AppState,
-    user_id: &Uuid,
-    server_id: &Uuid,
-) -> anyhow::Result<bool> {
-    let Some(server) = state.server_store.find_server(server_id).await? else {
-        return Ok(false);
-    };
-    if server.owner_user_id == *user_id {
-        return Ok(true);
-    }
-    if state
-        .server_store
-        .find_active_server_member(server_id, user_id)
-        .await?
-        .is_none()
-    {
-        return Ok(false);
-    }
-
-    let roles = state.server_store.list_server_roles(server_id).await?;
-    let member_roles = state
-        .server_store
-        .list_server_member_roles(server_id)
-        .await?;
-    let user_role_ids: Vec<_> = member_roles
-        .iter()
-        .filter(|(uid, _)| uid == user_id)
-        .map(|(_, rid)| *rid)
-        .collect();
-
-    Ok(roles.iter().any(|role| {
-        (role.kind == ServerRoleKind::Member || user_role_ids.contains(&role.id))
-            && role
-                .permissions
-                .contains(&ServerRolePermission::KickVoiceMembers)
-    }))
-}
-
-async fn user_has_server_access(
-    state: &AppState,
-    user_id: &Uuid,
-    server_id: &Uuid,
-) -> anyhow::Result<bool> {
-    let Some(server) = state.server_store.find_server(server_id).await? else {
-        return Ok(false);
-    };
-    if server.owner_user_id == *user_id {
-        return Ok(true);
-    }
-
-    Ok(state
-        .server_store
-        .find_active_server_member(server_id, user_id)
-        .await?
-        .is_some())
 }
 
 async fn ensure_direct_message_voice_available(
@@ -493,6 +444,42 @@ fn social_error(error: SocialError) -> VoiceChatApplicationError {
 
 fn parse_id(value: &str, message: &str) -> Result<Uuid, VoiceChatApplicationError> {
     Uuid::parse_str(value).map_err(|_| VoiceChatApplicationError::BadRequest(message.to_owned()))
+}
+
+/// Рассылает актуальный целевой битрейт Opus-аудио всем активным голосовым сессиям сервера.
+pub(crate) async fn broadcast_server_audio_bitrate(
+    state: &AppState,
+    server_id: &Uuid,
+    audio_bitrate_bps: u32,
+) {
+    let stream_ids = state
+        .realtime_hub
+        .recipients(state, RealtimeModule::VoiceChat, server_id)
+        .await
+        .iter()
+        .map(|recipient| recipient.stream_id)
+        .collect::<Vec<_>>();
+
+    tracing::info!(
+        server_id = %server_id,
+        audio_bitrate_bps,
+        recipients = stream_ids.len(),
+        "broadcasting server voice audio bitrate update"
+    );
+
+    state
+        .realtime_hub
+        .fanout_to_streams(
+            RealtimeModule::VoiceChat,
+            server_id,
+            RealtimeKind::VoiceChat(VoiceChatKind::ServerAudioBitrateUpdated),
+            &stream_ids,
+            ServerAudioBitrate {
+                server_id: server_id.to_string(),
+                audio_bitrate_bps,
+            },
+        )
+        .await;
 }
 
 #[cfg(test)]

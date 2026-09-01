@@ -4,11 +4,21 @@ use cheenhub_contracts::media::{
     MEDIA_DATAGRAM_FLAG_KEY_FRAME, MediaCodec, MediaDatagram, MediaDatagramKind,
 };
 use cheenhub_contracts::realtime::{
-    RealtimeEnvelope, RealtimeKind, RealtimeModule, VoiceChatKind, VoiceRoomSnapshot,
-    VoiceVideoStreamEnded,
+    RealtimeEnvelope, RealtimeKind, RealtimeModule, ServerAudioBitrate, VoiceChatKind,
+    VoiceRoomSnapshot, VoiceVideoStreamEnded,
 };
 
 use super::{InboundVideoFrame, InboundVideoStreamEnded, InboundVoiceFrame};
+
+pub(super) fn server_audio_bitrate(envelope: RealtimeEnvelope) -> Option<ServerAudioBitrate> {
+    if envelope.module != RealtimeModule::VoiceChat
+        || envelope.kind != RealtimeKind::VoiceChat(VoiceChatKind::ServerAudioBitrateUpdated)
+    {
+        return None;
+    }
+
+    serde_json::from_value::<ServerAudioBitrate>(envelope.payload).ok()
+}
 
 pub(super) fn participants_changed(envelope: RealtimeEnvelope) -> Option<VoiceRoomSnapshot> {
     if envelope.module != RealtimeModule::VoiceChat

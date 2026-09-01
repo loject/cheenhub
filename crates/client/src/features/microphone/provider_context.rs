@@ -5,7 +5,8 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 
 use super::backend::{
-    MicrophoneFrameCallback, MicrophoneSession, MicrophoneStatus, MicrophoneUplinkConfig,
+    MicrophoneConfig, MicrophoneFrameCallback, MicrophoneSession, MicrophoneStatus,
+    MicrophoneUplinkConfig,
 };
 use super::native::default_backend;
 use super::provider::{ActiveCapture, MicrophoneHandle};
@@ -37,6 +38,7 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let active_capture = use_signal(|| ActiveCapture::None);
     let active_on_frame = use_signal(|| None::<MicrophoneFrameCallback>);
     let active_uplink = use_signal(|| None::<MicrophoneUplinkConfig>);
+    let target_bitrate_bps = use_signal(|| MicrophoneConfig::default().bitrate_bps);
     let backend = default_backend();
     let handle = MicrophoneHandle {
         status,
@@ -53,6 +55,7 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         active_capture,
         active_on_frame,
         active_uplink,
+        target_bitrate_bps,
     };
     use_context_provider(move || handle.clone());
 

@@ -25,6 +25,7 @@ use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
 
 mod direct_messages;
+mod join;
 mod nickname;
 
 pub(super) fn state() -> AppState {

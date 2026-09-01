@@ -16,6 +16,8 @@ pub(crate) struct Server {
     pub(crate) name: String,
     /// Stored server avatar image identifier.
     pub(crate) avatar_image_id: Option<Uuid>,
+    /// Target Opus voice audio bitrate in bits per second.
+    pub(crate) audio_bitrate_bps: u32,
     /// Server creation timestamp.
     #[allow(dead_code)]
     pub(crate) created_at: DateTime<Utc>,

@@ -40,6 +40,8 @@ pub(crate) struct MicrophoneHandle {
     pub(super) active_on_frame: Signal<Option<MicrophoneFrameCallback>>,
     /// Последняя uplink-конфигурация для restart активной сессии.
     pub(super) active_uplink: Signal<Option<MicrophoneUplinkConfig>>,
+    /// Целевой битрейт кодировщика; применяется при старте и live-сессии.
+    pub(super) target_bitrate_bps: Signal<u32>,
 }
 
 impl MicrophoneHandle {
@@ -145,6 +147,7 @@ impl MicrophoneHandle {
         let input_gain = gain_from_percent(*self.input_volume_percent.peek());
         let activation_mode = *self.activation_mode.peek();
         let vad_threshold = threshold_from_percent(*self.vad_threshold_percent.peek());
+        let target_bitrate_bps = *self.target_bitrate_bps.peek();
         let start_generation = next_generation(&mut generation);
         status.set(MicrophoneStatus::Starting);
         active_capture.set(capture);
@@ -166,6 +169,7 @@ impl MicrophoneHandle {
                 input_gain,
                 activation_mode,
                 vad_threshold,
+                bitrate_bps: target_bitrate_bps,
                 ..MicrophoneConfig::default()
             };
             match backend.start(config, callbacks).await {
@@ -234,6 +238,7 @@ impl MicrophoneHandle {
         let input_gain = gain_from_percent(*self.input_volume_percent.peek());
         let activation_mode = *self.activation_mode.peek();
         let vad_threshold = threshold_from_percent(*self.vad_threshold_percent.peek());
+        let target_bitrate_bps = *self.target_bitrate_bps.peek();
         let restart_generation = next_generation(&mut generation);
         status.set(MicrophoneStatus::Starting);
         active_capture.set(capture);
@@ -264,6 +269,7 @@ impl MicrophoneHandle {
                 input_gain,
                 activation_mode,
                 vad_threshold,
+                bitrate_bps: target_bitrate_bps,
                 ..MicrophoneConfig::default()
             };
             match backend.start(config, callbacks).await {
@@ -388,9 +394,14 @@ impl MicrophoneHandle {
         (self.level_active)()
     }
 
-    /// Updates the active encoder bitrate.
-    #[allow(dead_code)]
+    /// Updates the target encoder bitrate for current and future sessions.
     pub(crate) fn set_bitrate_bps(&self, bitrate_bps: u32) {
+        let mut target_bitrate = self.target_bitrate_bps;
+        if *target_bitrate.peek() == bitrate_bps {
+            return;
+        }
+        target_bitrate.set(bitrate_bps);
+
         let Some(active_session) = (self.session)() else {
             return;
         };

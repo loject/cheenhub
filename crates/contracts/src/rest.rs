@@ -27,8 +27,9 @@ pub use servers::{
     AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,
     CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
     ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse, ServerInviteSummary,
-    ServerRoomKind, ServerRoomSummary, ServerSummary, UpdateServerAvatarResponse,
-    UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest, UpdateServerRoomResponse,
+    ServerRoomKind, ServerRoomSummary, ServerSummary, ServerVoiceSettings,
+    UpdateServerAvatarResponse, UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest,
+    UpdateServerRoomResponse,
 };
 pub use social::{
     DmConversationSummary, DmImageAttachmentSummary, DmMessageDeliveryStatus, DmMessageSummary,

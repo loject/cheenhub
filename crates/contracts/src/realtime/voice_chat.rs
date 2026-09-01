@@ -54,6 +54,8 @@ pub enum VoiceChatKind {
     ParticipantsChanged,
     /// Событие остановки видеопотока участника голосовой комнаты.
     VideoStreamEnded,
+    /// Актуальный целевой битрейт Opus-аудио голосовых комнат сервера.
+    ServerAudioBitrateUpdated,
 }
 
 /// Полезная нагрузка запроса на присоединение к комнате с поддержкой голоса.
@@ -246,6 +248,18 @@ pub struct VoiceRoomSnapshot {
     pub room_id: String,
     /// Участники, присутствующие в комнате.
     pub participants: Vec<VoiceRoomParticipant>,
+    /// Целевой битрейт Opus-аудио сервера, когда снимок является ответом на вход.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_bitrate_bps: Option<u32>,
+}
+
+/// Актуальный целевой битрейт Opus-аудио голосовых комнат сервера.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerAudioBitrate {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Целевой битрейт Opus-аудио в битах в секунду.
+    pub audio_bitrate_bps: u32,
 }
 
 /// Полезная нагрузка запроса на исключение участника из голосовой комнаты.

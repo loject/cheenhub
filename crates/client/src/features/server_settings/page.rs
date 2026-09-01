@@ -150,6 +150,7 @@ pub(crate) fn ServerSettingsPage(
                         ServerSettingsSection::Voice => rsx! {
                             ServerVoiceVideoSettingsSection {
                                 server_id: server.id.clone(),
+                                is_owner: server.is_owner,
                             }
                         },
                         _ => rsx! {

@@ -27,7 +27,9 @@ use super::notification_sounds::{
     ConnectionNotificationSoundState, ToggleNotificationSoundState, VoiceNotificationSoundState,
 };
 use super::realtime;
-use super::state::{VoiceConnectionHandle, VoiceConnectionState};
+use super::state::{
+    VoiceConnectionHandle, VoiceConnectionParts, VoiceConnectionState, VoiceRoomTargetKind,
+};
 use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
 use super::voice_call_platform::{self, VoiceAudioFocusEvent};
 
@@ -72,15 +74,16 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         use_hook(|| Rc::new(RefCell::new(ToggleNotificationSoundState::default())));
     let connection_notification_sounds =
         use_hook(|| Rc::new(RefCell::new(ConnectionNotificationSoundState::default())));
-    let handle = VoiceConnectionHandle::new(
+    let handle = VoiceConnectionHandle::new(VoiceConnectionParts {
         state,
         kicked_from_room,
         speaking_users,
         room_snapshots,
         speaking_generations,
-        realtime.clone(),
-        current_user.clone(),
-    );
+        realtime: realtime.clone(),
+        microphone: microphone.clone(),
+        current_user: current_user.clone(),
+    });
     let context_handle = handle.clone();
     use_context_provider(move || context_handle.clone());
 
@@ -91,6 +94,30 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             let mut snapshots = realtime::subscribe_voice_chat(&snapshot_realtime);
             while let Some(snapshot) = snapshots.next().await {
                 snapshot_handle.apply_snapshot(snapshot);
+            }
+        })
+    });
+    let bitrate_realtime = realtime.clone();
+    let bitrate_microphone = microphone.clone();
+    let bitrate_state = state;
+    use_hook(move || {
+        spawn(async move {
+            let mut events = realtime::subscribe_server_audio_bitrate(&bitrate_realtime);
+            while let Some(event) = events.next().await {
+                let Some(target) = bitrate_state().active_target() else {
+                    continue;
+                };
+                if !matches!(target.kind, VoiceRoomTargetKind::Server)
+                    || target.server_id != event.server_id
+                {
+                    continue;
+                }
+                debug!(
+                    server_id = %event.server_id,
+                    audio_bitrate_bps = event.audio_bitrate_bps,
+                    "applying server audio bitrate to microphone"
+                );
+                bitrate_microphone.set_bitrate_bps(event.audio_bitrate_bps);
             }
         })
     });
@@ -267,6 +294,9 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             target,
             participants,
         } => {
+            if matches!(target.kind, VoiceRoomTargetKind::DirectMessage) {
+                microphone.set_bitrate_bps(cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS);
+            }
             if !platform_call_active() {
                 match voice_call_platform::set_voice_call_participating(true) {
                     Ok(()) => {

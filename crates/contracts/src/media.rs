@@ -12,6 +12,15 @@ pub const MEDIA_DATAGRAM_FLAG_KEY_FRAME: u8 = 0b0000_0001;
 /// Флаг медиадатаграммы, когда полезная нагрузка несет один фрагмент более крупного медиакадра.
 pub const MEDIA_DATAGRAM_FLAG_FRAGMENTED: u8 = 0b0000_0010;
 
+/// Целевой битрейт Opus-кодировщика голосовых сообщений в битах в секунду.
+pub const VOICE_AUDIO_BITRATE_BPS: u32 = 32_000;
+
+/// Минимальный допустимый целевой битрейт Opus-аудио сервера в битах в секунду.
+pub const VOICE_AUDIO_BITRATE_MIN_BPS: u32 = 16_000;
+
+/// Максимальный допустимый целевой битрейт Opus-аудио сервера в битах в секунду.
+pub const VOICE_AUDIO_BITRATE_MAX_BPS: u32 = 96_000;
+
 /// Вид медиадатаграммы.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MediaDatagramKind {
