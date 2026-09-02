@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 
-use super::logout_section::LogoutSettingsSection;
+use super::account_section::AccountSettingsSection;
 use super::profile_section::ProfileSettingsSection;
 use super::security_section::SecuritySettingsSection;
 use super::sound_section::SoundSettingsSection;
@@ -19,8 +19,8 @@ pub(crate) enum UserSettingsSection {
     Security,
     /// Client system behavior.
     System,
-    /// Sign-out action section.
-    Logout,
+    /// Сеанс и управление жизненным циклом аккаунта.
+    Account,
 }
 
 #[derive(Clone, Copy)]
@@ -52,9 +52,9 @@ const SETTINGS_SECTIONS: &[UserSettingsSectionMeta] = &[
         description: "Окно, трей и запуск",
     },
     UserSettingsSectionMeta {
-        kind: UserSettingsSection::Logout,
-        label: "Выйти",
-        description: "Завершение сеанса",
+        kind: UserSettingsSection::Account,
+        label: "Аккаунт",
+        description: "Сеанс и управление аккаунтом",
     },
 ];
 
@@ -90,7 +90,7 @@ pub(crate) fn UserSettingsPage(
                             button {
                                 key: "{section.label}",
                                 r#type: "button",
-                                class: settings_item_class(active_section == section.kind, section.kind),
+                                class: settings_item_class(active_section == section.kind),
                                 "aria-current": if active_section == section.kind { "page" } else { "false" },
                                 onclick: move |_| on_select_section.call(section.kind),
                                 span { class: "block whitespace-nowrap text-[12px] font-medium md:whitespace-normal", "{section.label}" }
@@ -130,8 +130,8 @@ pub(crate) fn UserSettingsPage(
                             UserSettingsSection::System => rsx! {
                                 SystemSettingsSection {}
                             },
-                            UserSettingsSection::Logout => rsx! {
-                                LogoutSettingsSection {}
+                            UserSettingsSection::Account => rsx! {
+                                AccountSettingsSection {}
                             },
                         }
                     }
@@ -141,13 +141,9 @@ pub(crate) fn UserSettingsPage(
     }
 }
 
-fn settings_item_class(active: bool, section: UserSettingsSection) -> &'static str {
-    if active && section == UserSettingsSection::Logout {
-        "flex min-h-[44px] min-w-[112px] shrink-0 flex-col items-center justify-center rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2.5 text-center text-red-100 md:min-h-0 md:w-full md:min-w-0 md:shrink md:items-stretch md:justify-start md:py-2 md:text-left"
-    } else if active {
+fn settings_item_class(active: bool) -> &'static str {
+    if active {
         "flex min-h-[44px] min-w-[112px] shrink-0 flex-col items-center justify-center rounded-xl border border-accent/25 bg-accent/10 px-3 py-2.5 text-center text-blue-100 md:min-h-0 md:w-full md:min-w-0 md:shrink md:items-stretch md:justify-start md:py-2 md:text-left"
-    } else if section == UserSettingsSection::Logout {
-        "flex min-h-[44px] min-w-[112px] shrink-0 flex-col items-center justify-center rounded-xl border border-transparent px-3 py-2.5 text-center text-red-300 transition hover:border-red-500/20 hover:bg-red-500/10 hover:text-red-200 md:min-h-0 md:w-full md:min-w-0 md:shrink md:items-stretch md:justify-start md:py-2 md:text-left"
     } else {
         "flex min-h-[44px] min-w-[112px] shrink-0 flex-col items-center justify-center rounded-xl border border-transparent px-3 py-2.5 text-center text-zinc-300 transition hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-100 md:min-h-0 md:w-full md:min-w-0 md:shrink md:items-stretch md:justify-start md:py-2 md:text-left"
     }
@@ -159,6 +155,6 @@ fn section_label(section: UserSettingsSection) -> &'static str {
         UserSettingsSection::Sound => "Звук",
         UserSettingsSection::Security => "Безопасность",
         UserSettingsSection::System => "Система",
-        UserSettingsSection::Logout => "Выйти",
+        UserSettingsSection::Account => "Аккаунт",
     }
 }

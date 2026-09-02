@@ -1,6 +1,7 @@
 //! User settings feature.
 
-mod logout_section;
+mod account_section;
+mod delete_account_modal;
 mod page;
 mod password_section;
 mod profile_section;
