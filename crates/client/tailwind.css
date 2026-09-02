@@ -42,6 +42,7 @@
   body {
     min-height: 100dvh;
     background: #09090b;
+    color-scheme: dark;
   }
 
   * {
