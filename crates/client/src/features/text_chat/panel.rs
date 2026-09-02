@@ -20,7 +20,7 @@ use super::history::{
     HistoryState, HistoryTarget, load_initial_history, load_initial_history_when_connected,
     load_older_history,
 };
-use super::messages::{append_message, group_consecutive_messages, remove_message};
+use super::messages::{append_message, remove_message};
 use super::pending_attachment::{
     PendingImageAttachment, can_send_message, pending_image_attachment,
 };
@@ -28,8 +28,8 @@ use super::realtime::{self, TextChatEvent};
 use super::scroll::{ScrollCommand, apply_scroll_command, update_scroll_state};
 use super::{
     CHAT_COMPOSER_CLASS, CHAT_COMPOSER_GROUP_CLASS, CHAT_CONTENT_CLASS, ChatAttachmentPreview,
-    ChatMessageDateDivider, ChatMessageGroup, RoomComposeState, friendly_message_date,
-    message_day_key,
+    ChatMessageDateDivider, ChatMessageGroup, RoomComposeState, VirtualChatLayout, VirtualChatRow,
+    prepare_text_chat_groups,
 };
 
 const MAX_CHAT_IMAGE_BYTES: usize = 10 * 1024 * 1024;
@@ -64,6 +64,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         move || component_current.set(false)
     });
     let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
+    let virtual_layout = use_signal(VirtualChatLayout::default);
     let event_room_id = room.id.clone();
     let history_server_id = server_id.clone();
     let history_room_id = room.id.clone();
@@ -133,18 +134,12 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let removing_message_ids_list = removing_message_ids();
     let rendered_messages = messages();
     let has_messages = !rendered_messages.is_empty();
-    let mut previous_day_key = None;
-    let message_groups = group_consecutive_messages(&rendered_messages)
-        .into_iter()
-        .filter_map(|group| {
-            let first_message = group.first()?;
-            let day_key = message_day_key(&first_message.created_at);
-            let date_label = (previous_day_key.as_ref() != Some(&day_key))
-                .then(|| friendly_message_date(&first_message.created_at));
-            previous_day_key = Some(day_key);
-            Some((first_message.id.clone(), date_label, group))
-        })
+    let message_groups = prepare_text_chat_groups(&rendered_messages);
+    let message_group_ids = message_groups
+        .iter()
+        .map(|(group_key, _, _, _)| group_key.clone())
         .collect::<Vec<_>>();
+    let rendered_group_range = virtual_layout.read().rendered_range(&message_group_ids);
 
     use_hook(move || {
         load_initial_history_when_connected(history_target, history_state);
@@ -331,19 +326,25 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             }
                         }
                     } else {
-                        for (group_key, date_label, group) in message_groups.iter().cloned() {
+                        for (group_index, (group_key, date_label, estimated_height, group)) in message_groups.iter().cloned().enumerate() {
                             div { key: "{group_key}", class: "contents",
                                 if let Some(label) = date_label {
                                     ChatMessageDateDivider { label }
                                 }
-                                ChatMessageGroup {
-                                    messages: group,
-                                    appearing_message_ids: appearing_message_ids_list.clone(),
-                                    removing_message_ids: removing_message_ids_list.clone(),
-                                    can_delete_messages: permissions.can_delete_messages,
-                                    on_delete: move |id| on_delete_message.call(id),
-                                    server_id: server_id.clone(),
-                                    room_id: room.id.clone(),
+                                VirtualChatRow {
+                                    row_id: group_key.clone(),
+                                    active: rendered_group_range.contains(&group_index),
+                                    estimated_height,
+                                    layout: virtual_layout,
+                                    ChatMessageGroup {
+                                        messages: group,
+                                        appearing_message_ids: appearing_message_ids_list.clone(),
+                                        removing_message_ids: removing_message_ids_list.clone(),
+                                        can_delete_messages: permissions.can_delete_messages,
+                                        on_delete: move |id| on_delete_message.call(id),
+                                        server_id: server_id.clone(),
+                                        room_id: room.id.clone(),
+                                    }
                                 }
                             }
                         }

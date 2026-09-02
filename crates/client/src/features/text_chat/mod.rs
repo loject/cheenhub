@@ -17,6 +17,7 @@ pub(crate) mod realtime;
 mod room_compose_state;
 mod scroll;
 mod surface;
+mod virtual_list;
 
 /// Общая ширина визуальной группы формы и ожидающего вложения.
 pub(crate) const CHAT_COMPOSER_GROUP_CLASS: &str = "mx-auto min-w-0 w-full max-w-5xl space-y-2";
@@ -39,3 +40,7 @@ pub(crate) use scroll::{
     ScrollCommand, apply_scroll_command, capture_scroll_position, update_near_bottom_state,
 };
 pub(crate) use surface::{RoomChatSurface, RoomChatSurfaceMode};
+pub(crate) use virtual_list::{
+    VirtualChatLayout, VirtualChatRow, estimated_group_height, estimated_image_preview_height,
+    prepare_text_chat_groups,
+};

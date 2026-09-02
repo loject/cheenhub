@@ -5,10 +5,62 @@ use dioxus::prelude::*;
 
 use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
-use crate::features::text_chat::{ChatMessageItem, is_appearing_message};
+use crate::features::text_chat::{
+    ChatMessageItem, estimated_group_height, estimated_image_preview_height, friendly_message_date,
+    is_appearing_message, message_day_key,
+};
 
 use super::direct_message_image::DirectMessageImage;
 use super::presentation::dm_as_text_message;
+
+pub(super) type VirtualDirectMessageGroup = (String, Option<String>, f64, Vec<DmMessageSummary>);
+
+/// Группирует соседние DM и рассчитывает метаданные виртуальной строки за один проход.
+pub(super) fn prepare_direct_message_groups(
+    messages: &[DmMessageSummary],
+) -> Vec<VirtualDirectMessageGroup> {
+    let mut groups = Vec::<Vec<DmMessageSummary>>::new();
+    for message in messages {
+        match groups.last_mut() {
+            Some(group)
+                if group.last().is_some_and(|last| {
+                    last.sender_user_id == message.sender_user_id
+                        && message_day_key(&last.created_at) == message_day_key(&message.created_at)
+                }) =>
+            {
+                group.push(message.clone());
+            }
+            _ => groups.push(vec![message.clone()]),
+        }
+    }
+
+    let mut previous_day_key = None;
+    groups
+        .into_iter()
+        .filter_map(|group| {
+            let first_message = group.first()?;
+            let day_key = message_day_key(&first_message.created_at);
+            let date_label = (previous_day_key.as_ref() != Some(&day_key))
+                .then(|| friendly_message_date(&first_message.created_at));
+            previous_day_key = Some(day_key);
+            let estimated_height = estimated_group_height(
+                group.iter().map(|message| message.body.chars().count()),
+                group.iter().filter_map(|message| {
+                    message
+                        .image
+                        .as_ref()
+                        .map(|image| estimated_image_preview_height(image.width, image.height))
+                }),
+            );
+            Some((
+                first_message.id.clone(),
+                date_label,
+                estimated_height,
+                group,
+            ))
+        })
+        .collect()
+}
 
 /// Рендерит сообщения и изображения в исходном порядке внутри авторской группы.
 #[component]
@@ -76,5 +128,70 @@ pub(super) fn DirectMessageGroup(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cheenhub_contracts::rest::{DmImageAttachmentSummary, DmMessageSummary};
+
+    use super::prepare_direct_message_groups;
+
+    fn message(id: &str, sender: &str, created_at: &str) -> DmMessageSummary {
+        DmMessageSummary {
+            id: id.to_owned(),
+            conversation_id: "conversation".to_owned(),
+            seq: id.parse().unwrap_or_default(),
+            sender_user_id: sender.to_owned(),
+            sender_nickname: sender.to_owned(),
+            sender_avatar_url: None,
+            body: "текст".to_owned(),
+            image: None,
+            delivery_status: None,
+            created_at: created_at.to_owned(),
+        }
+    }
+
+    #[test]
+    fn virtual_dm_groups_preserve_order_and_split_on_author_or_day() {
+        let messages = [
+            message("1", "alice", "2025-07-12T08:00:00Z"),
+            message("2", "alice", "2025-07-12T09:00:00Z"),
+            message("3", "bob", "2025-07-12T10:00:00Z"),
+            message("4", "bob", "2025-07-13T10:00:00Z"),
+        ];
+
+        let groups = prepare_direct_message_groups(&messages);
+
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].0, "1");
+        assert_eq!(
+            groups[0]
+                .3
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            ["1", "2"]
+        );
+        assert_eq!(groups[1].0, "3");
+        assert_eq!(groups[2].0, "4");
+        assert!(groups[0].1.is_some());
+        assert!(groups[1].1.is_none());
+        assert!(groups[2].1.is_some());
+    }
+
+    #[test]
+    fn virtual_dm_group_estimate_accounts_for_an_image() {
+        let plain = prepare_direct_message_groups(&[message("1", "alice", "2025-07-12T08:00:00Z")]);
+        let mut rich_message = message("2", "alice", "2025-07-12T08:00:00Z");
+        rich_message.image = Some(DmImageAttachmentSummary {
+            id: "image".to_owned(),
+            content_type: "image/png".to_owned(),
+            width: 1_600,
+            height: 900,
+        });
+        let rich = prepare_direct_message_groups(&[rich_message]);
+
+        assert!(rich[0].2 > plain[0].2 + 290.0);
     }
 }

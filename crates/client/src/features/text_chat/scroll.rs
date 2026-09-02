@@ -30,11 +30,7 @@ pub(super) async fn update_scroll_state(
     let Ok(offset) = element.get_scroll_offset().await else {
         return;
     };
-    if offset.y <= OLDER_PAGE_SCROLL_THRESHOLD
-        && has_more()
-        && !older_loading()
-        && !initial_loading()
-    {
+    if should_load_older(offset.y, has_more(), older_loading(), initial_loading()) {
         load_older.call(());
     }
 }
@@ -60,9 +56,11 @@ pub(crate) async fn update_near_bottom_state(
     let Ok(rect) = element.get_client_rect().await else {
         return;
     };
-    let bottom_gap = scroll_size.height - rect.size.height - offset.y;
-
-    is_near_bottom.set(bottom_gap <= BOTTOM_SCROLL_THRESHOLD);
+    is_near_bottom.set(is_offset_near_bottom(
+        offset.y,
+        scroll_size.height,
+        rect.size.height,
+    ));
 }
 
 /// Применяет отложенную команду прокрутки к списку сообщений.
@@ -94,13 +92,71 @@ pub(crate) async fn apply_scroll_command(element: Rc<MountedData>, command: Scro
             let Ok(scroll_size) = element.get_scroll_size().await else {
                 return;
             };
-            let next_offset = offset_y + (scroll_size.height - height);
+            let next_offset = preserved_scroll_offset(offset_y, height, scroll_size.height);
             let _ = element
                 .scroll(
-                    PixelsVector2D::new(0.0, next_offset.max(0.0)),
+                    PixelsVector2D::new(0.0, next_offset),
                     ScrollBehavior::Instant,
                 )
                 .await;
         }
+    }
+}
+
+fn should_load_older(
+    offset_y: f64,
+    has_more: bool,
+    older_loading: bool,
+    initial_loading: bool,
+) -> bool {
+    offset_y <= OLDER_PAGE_SCROLL_THRESHOLD && has_more && !older_loading && !initial_loading
+}
+
+fn is_offset_near_bottom(offset_y: f64, scroll_height: f64, viewport_height: f64) -> bool {
+    scroll_height - viewport_height - offset_y <= BOTTOM_SCROLL_THRESHOLD
+}
+
+fn preserved_scroll_offset(offset_y: f64, previous_height: f64, next_height: f64) -> f64 {
+    (offset_y + next_height - previous_height).max(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn older_history_loads_only_at_the_top_in_an_idle_ready_list() {
+        assert!(should_load_older(
+            OLDER_PAGE_SCROLL_THRESHOLD,
+            true,
+            false,
+            false
+        ));
+        assert!(!should_load_older(
+            OLDER_PAGE_SCROLL_THRESHOLD + 0.1,
+            true,
+            false,
+            false
+        ));
+        assert!(!should_load_older(0.0, false, false, false));
+        assert!(!should_load_older(0.0, true, true, false));
+        assert!(!should_load_older(0.0, true, false, true));
+    }
+
+    #[test]
+    fn bottom_detection_includes_the_existing_threshold() {
+        assert!(is_offset_near_bottom(476.0, 1_000.0, 500.0));
+        assert!(!is_offset_near_bottom(475.9, 1_000.0, 500.0));
+        assert!(is_offset_near_bottom(0.0, 300.0, 500.0));
+    }
+
+    #[test]
+    fn preserving_scroll_adds_content_growth_above_the_viewport() {
+        assert_eq!(preserved_scroll_offset(20.0, 1_000.0, 1_450.0), 470.0);
+    }
+
+    #[test]
+    fn preserving_scroll_never_returns_a_negative_offset() {
+        assert_eq!(preserved_scroll_offset(20.0, 1_000.0, 500.0), 0.0);
     }
 }

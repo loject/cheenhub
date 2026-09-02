@@ -16,19 +16,18 @@ use crate::features::application_focus::ApplicationFocusContext;
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 use crate::features::runtime::sleep_ms;
 use crate::features::text_chat::{
-    CHAT_CONTENT_CLASS, ChatMessageDateDivider, ScrollCommand, apply_scroll_command,
-    friendly_message_date, group_consecutive_messages, message_day_key, update_near_bottom_state,
+    CHAT_CONTENT_CLASS, ChatMessageDateDivider, ScrollCommand, VirtualChatLayout, VirtualChatRow,
+    apply_scroll_command, update_near_bottom_state,
 };
 use crate::features::voice_chat::{DirectCallHandle, VoiceConnectionHandle, VoiceConnectionState};
 
 use super::direct_message_chat_platform;
 use super::direct_message_composer::{DirectMessageComposer, DirectMessageComposerOutcome};
-use super::direct_message_group::DirectMessageGroup;
+use super::direct_message_group::{DirectMessageGroup, prepare_direct_message_groups};
 use super::direct_message_state::DirectMessageState;
 use super::direct_message_voice_surface::DirectMessageVoiceSurface;
 use super::presentation::{
-    dm_as_text_message, load_messages, load_older_messages, push_message_with_motion,
-    refresh_messages,
+    load_messages, load_older_messages, push_message_with_motion, refresh_messages,
 };
 use super::realtime::subscribe_social_events;
 use super::voice_target::direct_message_voice_target;
@@ -54,6 +53,7 @@ pub(crate) fn DirectMessageWorkspace(
     let is_near_bottom = use_signal(|| true);
     let mut list_element = use_signal(|| None::<Rc<MountedData>>);
     let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
+    let virtual_layout = use_signal(VirtualChatLayout::default);
     let status = use_signal(String::new);
     let mut focus_initialized = use_signal(|| false);
     let state = DirectMessageState {
@@ -112,28 +112,12 @@ pub(crate) fn DirectMessageWorkspace(
     let removing_message_ids_list = removing_message_ids();
     let rendered_messages = messages();
     let has_messages = !rendered_messages.is_empty();
-    let rendered_text_messages = rendered_messages
+    let message_groups = prepare_direct_message_groups(&rendered_messages);
+    let message_group_ids = message_groups
         .iter()
-        .cloned()
-        .map(dm_as_text_message)
+        .map(|(group_key, _, _, _)| group_key.clone())
         .collect::<Vec<_>>();
-    let mut previous_day_key = None;
-    let message_groups = group_consecutive_messages(&rendered_text_messages)
-        .into_iter()
-        .filter_map(|group| {
-            let first_message = group.first()?;
-            let day_key = message_day_key(&first_message.created_at);
-            let date_label = (previous_day_key.as_ref() != Some(&day_key))
-                .then(|| friendly_message_date(&first_message.created_at));
-            previous_day_key = Some(day_key);
-            let direct_messages = rendered_messages
-                .iter()
-                .filter(|message| group.iter().any(|item| item.id == message.id))
-                .cloned()
-                .collect::<Vec<_>>();
-            Some((first_message.id.clone(), date_label, direct_messages))
-        })
-        .collect::<Vec<_>>();
+    let rendered_group_range = virtual_layout.read().rendered_range(&message_group_ids);
     let conversation_id = conversation.id.clone();
     let on_overview_changed = Callback::new(move |_| {
         on_overview_changed.call(());
@@ -424,15 +408,21 @@ pub(crate) fn DirectMessageWorkspace(
                                         p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Напишите первое личное сообщение." }
                                     }
                                 } else {
-                                    for (group_key, date_label, group) in message_groups.iter().cloned() {
+                                    for (group_index, (group_key, date_label, estimated_height, group)) in message_groups.iter().cloned().enumerate() {
                                         div { key: "{group_key}", class: "contents",
                                             if let Some(label) = date_label {
                                                 ChatMessageDateDivider { label }
                                             }
-                                            DirectMessageGroup {
-                                                messages: group,
-                                                appearing_message_ids: appearing_message_ids_list.clone(),
-                                                removing_message_ids: removing_message_ids_list.clone(),
+                                            VirtualChatRow {
+                                                row_id: group_key.clone(),
+                                                active: rendered_group_range.contains(&group_index),
+                                                estimated_height,
+                                                layout: virtual_layout,
+                                                DirectMessageGroup {
+                                                    messages: group,
+                                                    appearing_message_ids: appearing_message_ids_list.clone(),
+                                                    removing_message_ids: removing_message_ids_list.clone(),
+                                                }
                                             }
                                         }
                                     }
