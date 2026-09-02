@@ -25,6 +25,9 @@ use crate::features::application_update::{
     UpdateDownloadStatus,
 };
 
+#[cfg(all(not(target_family = "wasm"), target_os = "linux"))]
+mod linux_deb;
+
 #[cfg(all(not(target_family = "wasm"), target_os = "android"))]
 #[path = "android.rs"]
 mod android;
@@ -246,6 +249,17 @@ pub(crate) fn install_downloaded_update(
     version: &str,
     file: &DownloadedUpdate,
 ) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    if linux_deb::is_deb_update(file) {
+        info!(
+            update_version = %version,
+            update_path = %file.path,
+            "installing DEB update directly from the running application"
+        );
+
+        return linux_deb::install_deb_update(version, file);
+    }
+
     info!(
         update_version = %version,
         update_path = %file.path,
