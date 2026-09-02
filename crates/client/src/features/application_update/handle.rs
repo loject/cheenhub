@@ -10,6 +10,8 @@ use super::download;
 use super::storage;
 use super::types::{AvailableUpdate, UpdateDownloadStatus};
 
+mod release_history;
+
 const QUICK_DISMISS_SECONDS: u32 = 5 * 60;
 
 /// Техническое состояние последней проверки обновлений.
@@ -93,11 +95,6 @@ impl ApplicationUpdateHandle {
     /// Создает контекст обновлений.
     pub(super) fn new(state: Signal<ApplicationUpdateState>) -> Self {
         Self { state }
-    }
-
-    /// Возвращает текущую версию клиентского приложения.
-    pub(crate) fn current_version(&self) -> &'static str {
-        env!("CARGO_PKG_VERSION")
     }
 
     /// Возвращает пользовательское состояние обновлений.
@@ -238,6 +235,11 @@ impl ApplicationUpdateHandle {
             return;
         };
 
+        self.download_release(update);
+    }
+
+    /// Скачивает выбранный GitHub Release, включая предыдущую версию.
+    pub(crate) fn download_release(&self, update: AvailableUpdate) {
         let version = update.version.clone();
         if matches!(
             (self.state)().download_status,
@@ -490,7 +492,6 @@ impl UpdateDeferralDelay {
     }
 }
 
-/// Возвращает текущее время в секундах UNIX epoch.
 pub(crate) fn now_epoch_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

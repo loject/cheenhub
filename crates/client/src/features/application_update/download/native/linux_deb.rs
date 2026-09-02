@@ -79,6 +79,7 @@ pub(super) fn install_deb_update(
         .arg("apt")
         .arg("install")
         .arg("-y")
+        .arg("--allow-downgrades")
         .arg(installer_path)
         .status()
         .map_err(|error| format!("Не удалось запустить установку DEB-обновления: {error}"))?;

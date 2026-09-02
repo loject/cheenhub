@@ -9,6 +9,8 @@ use super::types::{AvailableUpdate, UpdateDownloadAsset};
 
 const GITHUB_LATEST_RELEASE_URL: &str =
     "https://api.github.com/repos/loject/cheenhub/releases/latest";
+const GITHUB_RELEASES_URL: &str =
+    "https://api.github.com/repos/loject/cheenhub/releases?per_page=50";
 
 /// Результат проверки последнего GitHub Release.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -87,6 +89,77 @@ pub(crate) async fn check_latest_release() -> Result<UpdateCheckOutcome, String>
                 .collect::<Vec<_>>(),
         ),
     }))
+}
+
+/// Возвращает стабильные GitHub Releases старше текущей версии,
+/// для которых опубликован установщик текущей платформы.
+pub(crate) async fn list_previous_releases(
+    current_version: &str,
+) -> Result<Vec<AvailableUpdate>, String> {
+    let response = reqwest::Client::new()
+        .get(GITHUB_RELEASES_URL)
+        .header(reqwest::header::USER_AGENT, download::USER_AGENT)
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|error| format!("Не удалось получить список релизов GitHub: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "GitHub вернул ответ {} при загрузке истории релизов.",
+            response.status()
+        ));
+    }
+
+    let releases = response
+        .json::<Vec<GithubRelease>>()
+        .await
+        .map_err(|error| format!("Не удалось прочитать историю релизов GitHub: {error}"))?;
+
+    let mut previous = Vec::new();
+
+    for release in releases {
+        if release.draft || release.prerelease {
+            continue;
+        }
+
+        let version = normalize_release_version(&release.tag_name);
+        if compare_versions(&version, current_version) != Ordering::Less {
+            continue;
+        }
+
+        let download_asset = download::select_update_asset(
+            &release
+                .assets
+                .into_iter()
+                .map(|asset| UpdateDownloadAsset {
+                    name: asset.name,
+                    download_url: asset.browser_download_url,
+                    size_bytes: asset.size,
+                    digest: asset.digest,
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        // В rollback-списке показываем только версии, которые реально
+        // можно установить на текущей платформе.
+        if download_asset.is_none() {
+            continue;
+        }
+
+        previous.push(AvailableUpdate {
+            version,
+            tag: release.tag_name,
+            title: release.name.filter(|name| !name.trim().is_empty()),
+            release_url: release.html_url,
+            download_asset,
+        });
+    }
+
+    previous.sort_by(|left, right| compare_versions(&right.version, &left.version));
+    previous.dedup_by(|left, right| left.version == right.version);
+
+    Ok(previous)
 }
 
 fn normalize_release_version(tag: &str) -> String {

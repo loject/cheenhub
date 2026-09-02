@@ -9,6 +9,10 @@ use crate::features::application_update::{
 };
 use crate::features::toast::ToastHandle;
 
+mod release_history;
+
+use release_history::previous_releases_panel;
+
 /// Рендерит настройки проверки обновлений CheenHub.
 #[component]
 pub(crate) fn UpdateSettingsSection() -> Element {
@@ -19,6 +23,17 @@ pub(crate) fn UpdateSettingsSection() -> Element {
     let download_status = update.download_status();
     let is_checking = matches!(status, UpdateUiStatus::Checking);
     let panel_class = status_panel_class(&status);
+
+    let previous_releases = use_signal(|| None::<Result<Vec<AvailableUpdate>, String>>);
+    let selected_previous_version = use_signal(String::new);
+
+    use_effect(move || {
+        release_history::load_previous_releases(
+            update,
+            previous_releases,
+            selected_previous_version,
+        );
+    });
 
     rsx! {
         div { class: "rounded-2xl border border-zinc-800 bg-zinc-900/45 p-4",
@@ -60,10 +75,10 @@ pub(crate) fn UpdateSettingsSection() -> Element {
                         }
                     },
                     UpdateUiStatus::Available { update: available_update } => rsx! {
-                        {available_update_panel(available_update, update, download_status, toast, update_shutdown.clone())}
+                        {available_update_panel(available_update, update, download_status.clone(), toast, update_shutdown.clone())}
                     },
                     UpdateUiStatus::Deferred { update: available_update, until_epoch_seconds } => rsx! {
-                        {deferred_update_panel(available_update, until_epoch_seconds, update, download_status, toast, update_shutdown.clone())}
+                        {deferred_update_panel(available_update, until_epoch_seconds, update, download_status.clone(), toast, update_shutdown.clone())}
                     },
                     UpdateUiStatus::Failed { ref message } => rsx! {
                         p { class: "text-[13px] font-medium text-red-100", "Не удалось проверить обновления" }
@@ -71,6 +86,16 @@ pub(crate) fn UpdateSettingsSection() -> Element {
                     },
                 }
             }
+
+            {previous_releases_panel(
+                previous_releases(),
+                previous_releases,
+                selected_previous_version,
+                update,
+                download_status,
+                toast,
+                update_shutdown.clone(),
+            )}
         }
     }
 }
@@ -104,7 +129,7 @@ fn available_update_panel(
                 }
                 {download_update_button(&update, handle, &download_status, toast, update_shutdown)}
             }
-            {download_status_panel(&download_status)}
+            {download_status_panel_for_version(&download_status, &version)}
         }
     }
 }
@@ -136,7 +161,7 @@ fn deferred_update_panel(
                 }
                 {download_update_button(&update, handle, &download_status, toast, update_shutdown)}
             }
-            {download_status_panel(&download_status)}
+            {download_status_panel_for_version(&download_status, &version)}
         }
     }
 }
@@ -149,6 +174,7 @@ fn download_update_button(
     update_shutdown: ApplicationUpdateShutdown,
 ) -> Element {
     let version = update.version.clone();
+    let requested_update = update.clone();
     let primary_action = primary_action_presentation(update, download_status);
 
     rsx! {
@@ -168,12 +194,32 @@ fn download_update_button(
                         update_shutdown.close_after_update_started();
                     }
                 } else {
-                    handle.download_update();
+                    handle.download_release(requested_update.clone());
                     toast.info(primary_action.requested_message);
                 }
             },
             {primary_action.label}
         }
+    }
+}
+
+fn download_status_panel_for_version(
+    status: &UpdateDownloadStatus,
+    expected_version: &str,
+) -> Element {
+    let matches_version = match status {
+        UpdateDownloadStatus::Idle => false,
+        UpdateDownloadStatus::Downloading { version, .. }
+        | UpdateDownloadStatus::OpeningExternal { version }
+        | UpdateDownloadStatus::OpenedExternally { version }
+        | UpdateDownloadStatus::Downloaded { version, .. }
+        | UpdateDownloadStatus::Failed { version, .. } => version == expected_version,
+    };
+
+    if matches_version {
+        download_status_panel(status)
+    } else {
+        rsx! {}
     }
 }
 
