@@ -769,12 +769,12 @@ args = ["cargo-watch", "cargo-watch", "8.5.3"]
 [tasks.install-dioxus-cli]
 private = true
 command = "scripts/ensure-cargo-cli.sh"
-args = ["dioxus-cli", "dx", "0.7.5"]
+args = ["dioxus-cli", "dx", "0.8.0-alpha.1"]
 
 [tasks.install-wasm-bindgen-cli]
 private = true
 command = "scripts/ensure-cargo-cli.sh"
-args = ["wasm-bindgen-cli", "wasm-bindgen", "0.2.120"]
+args = ["wasm-bindgen-cli", "wasm-bindgen", "0.2.128"]
 
 [tasks.check-release-version]
 description = "Check that every package uses the workspace release version."

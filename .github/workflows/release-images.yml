@@ -2,6 +2,8 @@ name: Release artifacts
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -17,7 +19,8 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   RUST_TOOLCHAIN: "1.97.1"
-  DIOXUS_CLI_VERSION: "0.7.5"
+  DIOXUS_CLI_VERSION: "0.8.0-alpha.1"
+  DIOXUS_WINDOWS_SHA256: "d9bc14313d3f89b2357624810d41010c256ec70f08b24b9a0c0350595b5894d8"
   ANDROID_BUILD_TOOLS_VERSION: "35.0.0"
   ANDROID_NDK_VERSION: "27.2.12479018"
   CHEENHUB_DOMAIN: ${{ vars.CHEENHUB_DOMAIN || 'cheenhub.ru' }}
@@ -73,6 +76,7 @@ jobs:
           fi
 
   build-backend:
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/')
     name: Build and push backend image
     runs-on: ubuntu-24.04
     needs: prepare
@@ -132,6 +136,7 @@ jobs:
         run: cargo run --quiet -p xtask -- release-artifacts publish "${GITHUB_REF_NAME}" dist/backend
 
   build-web:
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/')
     name: Build and push web image
     runs-on: ubuntu-24.04
     needs: prepare
@@ -200,7 +205,7 @@ jobs:
     name: Build Windows client installers
     runs-on: windows-2025
     needs: prepare
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
     env:
       CHEENHUB_APP_VERSION: ${{ needs.prepare.outputs.app-version }}
 
@@ -217,7 +222,8 @@ jobs:
       - name: Cache Rust and Dioxus build outputs
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: windows-client-release
+          shared-key: windows-client-release-dx-0.8
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
           cache-workspace-crates: true
           workspaces: |
@@ -225,24 +231,31 @@ jobs:
           cache-directories: |
             target/dx
 
-      - name: Cache Dioxus CLI
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/bin/dx
-            ~/.cargo/bin/dx.exe
-          key: ${{ runner.os }}-dioxus-cli-${{ env.DIOXUS_CLI_VERSION }}
-
-      - name: Install Dioxus CLI
+      - name: Install Dioxus CLI from official release
         shell: pwsh
         run: |
-          $dx = Get-Command dx -ErrorAction SilentlyContinue
-          $expected = [regex]::Escape("dioxus $env:DIOXUS_CLI_VERSION")
-          if ($dx -and ((dx --version) -match $expected)) {
-            dx --version
-          } else {
-            cargo install dioxus-cli --version $env:DIOXUS_CLI_VERSION --locked
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'dx-windows.zip'
+          $destination = Join-Path $env:RUNNER_TEMP 'dioxus-cli'
+          $url = "https://github.com/DioxusLabs/dioxus/releases/download/v$env:DIOXUS_CLI_VERSION/dx-x86_64-pc-windows-msvc.zip"
+          Write-Host "Downloading Dioxus CLI $env:DIOXUS_CLI_VERSION for Windows x64"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $actual = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:DIOXUS_WINDOWS_SHA256) {
+            throw "Dioxus CLI archive SHA256 mismatch: expected $env:DIOXUS_WINDOWS_SHA256, received $actual."
           }
+          Expand-Archive -Path $archive -DestinationPath $destination -Force
+          $binary = @(Get-ChildItem -Path $destination -Recurse -Filter dx.exe)
+          if ($binary.Count -ne 1) {
+            throw "Expected exactly one dx.exe in the official Dioxus archive."
+          }
+          $version = & $binary[0].FullName --version
+          $expectedVersion = '^dioxus ' + [regex]::Escape($env:DIOXUS_CLI_VERSION) + '(?: \([^)]*\))?$'
+          if ($LASTEXITCODE -ne 0 -or $version.Trim() -notmatch $expectedVersion) {
+            throw "Unexpected Dioxus CLI version: $version"
+          }
+          Write-Host $version
+          $binary[0].DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Validate release version
         shell: pwsh
@@ -251,23 +264,29 @@ jobs:
       - name: Build Windows installers
         shell: pwsh
         run: |
-          dx bundle --windows --package cheenhub_client --bin cheen_hub --release --no-default-features --features desktop,windows --package-types nsis --out-dir dist/windows/raw
+          $ErrorActionPreference = 'Stop'
+          dx bundle --windows --target x86_64-pc-windows-msvc --package cheenhub_client --bin cheen_hub --release --no-default-features --features desktop,windows --package-types nsis --out-dir dist/windows/raw
+          if ($LASTEXITCODE -ne 0) { throw "Windows Dioxus bundle failed." }
           $payload = Get-ChildItem -Path dist/windows/raw -Recurse -Filter *.exe | Sort-Object FullName | Select-Object -First 1
           if (-not $payload) {
             throw "Dioxus Windows NSIS installer was not found in dist/windows/raw."
           }
           $env:CHEENHUB_INSTALLER_PAYLOAD = $payload.FullName
           $env:CHEENHUB_INSTALLER_PAYLOAD_NAME = $payload.Name
-          cargo build -p cheenhub_client --bin cheenhub_installer --release --no-default-features --features desktop,windows
+          # Совпадение target и профиля с dx позволяет повторно использовать внешние зависимости.
+          cargo build -p cheenhub_client --bin cheenhub_installer --target x86_64-pc-windows-msvc --profile desktop-release --config 'profile.desktop-release.inherits="release"' --config 'profile.desktop-release.strip=false' --no-default-features --features desktop,windows
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer wrapper build failed." }
           New-Item -ItemType Directory -Force dist/windows/installer | Out-Null
-          Copy-Item target/release/cheenhub_installer.exe dist/windows/installer/cheenhub-installer.exe
+          Copy-Item target/x86_64-pc-windows-msvc/desktop-release/cheenhub_installer.exe dist/windows/installer/cheenhub-installer.exe
 
       - name: Normalize Windows release assets
+        if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: |
           cargo run --quiet -p xtask -- release-artifacts collect windows dist/windows/installer dist/client $env:GITHUB_REF_NAME
 
       - name: Publish Windows release assets
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -275,6 +294,7 @@ jobs:
         run: cargo run --quiet -p xtask -- release-artifacts publish $env:GITHUB_REF_NAME dist/client
 
       - name: Upload Windows release assets
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v6
         with:
           name: client-release-windows

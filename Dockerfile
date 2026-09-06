@@ -9,6 +9,7 @@ COPY Cargo.toml Cargo.lock Dioxus.toml ./
 COPY build_support ./build_support
 COPY xtask ./xtask
 COPY crates ./crates
+COPY vendor ./vendor
 RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cheenhub-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=cheenhub-backend-target,target=/app/target,sharing=locked \
@@ -25,8 +26,8 @@ RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/regist
     --mount=type=cache,id=cheenhub-dioxus-cli-target,target=/tmp/dioxus-cli-target,sharing=locked \
     rustup target add wasm32-unknown-unknown \
     && CARGO_TARGET_DIR=/tmp/cargo-make-target cargo install cargo-make --version 0.37.24 --locked \
-    && CARGO_TARGET_DIR=/tmp/wasm-bindgen-cli-target cargo install wasm-bindgen-cli --version 0.2.120 --locked \
-    && CARGO_TARGET_DIR=/tmp/dioxus-cli-target cargo install dioxus-cli --version 0.7.5 --locked
+    && CARGO_TARGET_DIR=/tmp/wasm-bindgen-cli-target cargo install wasm-bindgen-cli --version 0.2.128 --locked \
+    && CARGO_TARGET_DIR=/tmp/dioxus-cli-target cargo install dioxus-cli --version 0.8.0-alpha.1 --locked
 
 FROM web-tools AS web-builder
 COPY .cargo ./.cargo
@@ -35,6 +36,7 @@ COPY build_support ./build_support
 COPY scripts ./scripts
 COPY xtask ./xtask
 COPY crates ./crates
+COPY vendor ./vendor
 ARG CHEENHUB_BASE_URL
 ARG CHEENHUB_APP_VERSION
 ARG CHEENHUB_JWT_KEY_ID

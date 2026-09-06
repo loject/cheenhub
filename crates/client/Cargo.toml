@@ -172,7 +172,7 @@ web-sys = { workspace = true, optional = true, features = [
     "WorkerType",
     "console",
 ] }
-wry = { version = "0.53.5", optional = true }
+wry = { version = "0.55.1", optional = true }
 windows-sys = { workspace = true, optional = true, features = [
     "Win32_Foundation",
     "Win32_Security",
@@ -181,7 +181,7 @@ windows-sys = { workspace = true, optional = true, features = [
 ] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-manganis = "0.7.7"
+manganis = "=0.8.0-alpha.1"
 oboe = "0.6.1"
 rustls-platform-verifier = "0.6.2"
 
