@@ -1,6 +1,7 @@
 //! Настройка HTTP-роутера.
 
 mod api;
+mod trace;
 
 use axum::Router;
 use axum::http::{HeaderValue, Method, Uri, header, request::Parts};
@@ -20,7 +21,7 @@ pub(crate) fn router(state: AppState) -> Router {
         .fallback(api::not_found)
         .with_state(state)
         .layer(cors)
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http().make_span_with(trace::request_span))
 }
 
 /// Строит CORS-слой.

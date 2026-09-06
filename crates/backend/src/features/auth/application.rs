@@ -19,11 +19,14 @@ use crate::state::AppState;
 use uuid::Uuid;
 
 mod avatar;
+mod desktop_oauth;
 mod google;
 mod google_native;
 mod legal;
 mod linked_accounts;
 mod oauth;
+mod oauth_cleanup;
+mod oauth_flow;
 mod refresh;
 mod sessions;
 
@@ -32,12 +35,12 @@ const NICKNAME_CHANGE_COOLDOWN_DAYS: i64 = 7;
 mod tests;
 
 pub(crate) use avatar::update_current_user_avatar;
+pub(crate) use desktop_oauth::{cancel_desktop_oauth, poll_desktop_oauth, start_desktop_oauth};
 pub(crate) use google_native::{complete_google_native_auth, start_google_native_auth};
 pub(crate) use linked_accounts::{linked_accounts, unlink_google};
-pub(crate) use oauth::{
-    complete_google_oauth, google_oauth_callback_url, register_with_google_oauth,
-    start_google_oauth,
-};
+pub(crate) use oauth::{complete_google_oauth, register_with_google_oauth};
+pub(crate) use oauth_cleanup::run_desktop_oauth_cleanup;
+pub(crate) use oauth_flow::{GoogleCallbackOutcome, google_oauth_callback, start_google_oauth};
 pub(crate) use sessions::{
     active_sessions_with_user_agent, auth_session_is_active, revoke_current_user_session,
     revoke_current_user_sessions,

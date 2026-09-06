@@ -19,9 +19,11 @@ pub(super) fn insert_oauth_state(
     flow_kind: String,
     user_id: Option<Uuid>,
     expires_at: DateTime<Utc>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Uuid> {
     let mut state = state.lock().map_err(|_| super::in_memory::poisoned())?;
+    let id = Uuid::new_v4();
     state.oauth_states.push(InMemoryOAuthState {
+        id,
         state_hash,
         nonce,
         flow_kind,
@@ -30,7 +32,7 @@ pub(super) fn insert_oauth_state(
         consumed_at: None,
     });
 
-    Ok(())
+    Ok(id)
 }
 
 pub(super) fn consume_oauth_state(
@@ -49,6 +51,7 @@ pub(super) fn consume_oauth_state(
     oauth_state.consumed_at = Some(now);
 
     Ok(Some(OAuthState {
+        id: oauth_state.id,
         nonce: oauth_state.nonce.clone(),
         flow_kind: oauth_state.flow_kind.clone(),
         user_id: oauth_state.user_id,
@@ -197,12 +200,28 @@ pub(super) fn consume_oauth_handoff(
     now: DateTime<Utc>,
 ) -> anyhow::Result<bool> {
     let mut state = state.lock().map_err(|_| super::in_memory::poisoned())?;
+    if let Some(attempt) = state
+        .desktop_oauth_attempts
+        .iter()
+        .find(|s| s.handoff_id == Some(*handoff_id))
+        && (attempt.status != crate::features::auth::domain::DesktopOAuthStatus::Ready
+            || attempt.attempt.expires_at <= now)
+    {
+        return Ok(false);
+    }
     let Some(handoff) = state.oauth_handoffs.iter_mut().find(|handoff| {
         handoff.id == *handoff_id && handoff.consumed_at.is_none() && handoff.expires_at > now
     }) else {
         return Ok(false);
     };
     handoff.consumed_at = Some(now);
+    if let Some(attempt) = state
+        .desktop_oauth_attempts
+        .iter_mut()
+        .find(|s| s.handoff_id == Some(*handoff_id))
+    {
+        attempt.status = crate::features::auth::domain::DesktopOAuthStatus::Claimed;
+    }
 
     Ok(true)
 }

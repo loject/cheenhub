@@ -3,11 +3,17 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::features::auth::domain::{OAuthAccount, OAuthRegistrationIntent, UserAccount};
+use crate::features::auth::domain::{
+    DesktopOAuthAttempt, DesktopOAuthIdentity, DesktopOAuthStatus, OAuthAccount,
+    OAuthRegistrationIntent, UserAccount,
+};
 
 /// In-memory auth store state.
 #[derive(Default)]
 pub(in crate::features::auth::infrastructure) struct InMemoryState {
+    /// Попытки входа в desktop-приложение.
+    pub(in crate::features::auth::infrastructure) desktop_oauth_attempts:
+        Vec<InMemoryDesktopOAuthAttempt>,
     /// User accounts.
     pub(in crate::features::auth::infrastructure) users: Vec<InMemoryUser>,
     /// Подтверждения юридических документов при регистрации.
@@ -101,6 +107,8 @@ pub(in crate::features::auth::infrastructure) struct InMemorySessionUserAgent {
 /// In-memory OAuth state row.
 #[derive(Debug, Clone)]
 pub(in crate::features::auth::infrastructure) struct InMemoryOAuthState {
+    /// Идентификатор для связи с desktop-попыткой.
+    pub(in crate::features::auth::infrastructure) id: Uuid,
     /// State hash.
     pub(in crate::features::auth::infrastructure) state_hash: String,
     /// OAuth nonce.
@@ -113,6 +121,19 @@ pub(in crate::features::auth::infrastructure) struct InMemoryOAuthState {
     pub(in crate::features::auth::infrastructure) expires_at: DateTime<Utc>,
     /// Consumption timestamp.
     pub(in crate::features::auth::infrastructure) consumed_at: Option<DateTime<Utc>>,
+}
+
+/// Строка desktop-попытки с результатом внешнего входа.
+#[derive(Debug, Clone)]
+pub(in crate::features::auth::infrastructure) struct InMemoryDesktopOAuthAttempt {
+    /// Исходная попытка.
+    pub(in crate::features::auth::infrastructure) attempt: DesktopOAuthAttempt,
+    /// Текущее состояние попытки.
+    pub(in crate::features::auth::infrastructure) status: DesktopOAuthStatus,
+    /// Связанный одноразовый handoff.
+    pub(in crate::features::auth::infrastructure) handoff_id: Option<Uuid>,
+    /// Проверенная личность до выдачи сессии или привязки.
+    pub(in crate::features::auth::infrastructure) identity: Option<DesktopOAuthIdentity>,
 }
 
 /// In-memory OAuth handoff row.

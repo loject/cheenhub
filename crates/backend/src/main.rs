@@ -84,9 +84,12 @@ async fn main() -> anyhow::Result<()> {
     ): Stores = match config.auth_store {
         config::AuthStoreConfig::Postgres => {
             let database = db::connect(&config.database_url).await?;
-            let auth_store: Arc<dyn features::auth::infrastructure::AuthStore> = Arc::new(
-                features::auth::infrastructure::PostgresAuthStore::new(database.clone()),
-            );
+            let auth_store = Arc::new(features::auth::infrastructure::PostgresAuthStore::new(
+                database.clone(),
+            ));
+            tokio::spawn(features::auth::application::run_desktop_oauth_cleanup(
+                auth_store.clone(),
+            ));
             let fcm = match config.fcm_service_account_path.as_deref() {
                 Some(path) => {
                     tracing::info!(credential_path = %path, "configured FCM HTTP v1 delivery");

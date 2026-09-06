@@ -1,5 +1,6 @@
 //! Сущности SeaORM для инфраструктуры аутентификации.
 
+pub(crate) mod desktop_oauth_attempts;
 pub(crate) mod legal_acceptances;
 pub(crate) mod oauth_accounts;
 pub(crate) mod oauth_handoffs;

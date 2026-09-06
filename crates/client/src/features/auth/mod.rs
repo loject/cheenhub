@@ -2,6 +2,7 @@
 
 pub(crate) mod api;
 mod components;
+pub(crate) mod desktop_oauth;
 mod domain;
 pub(crate) mod google_sign_in;
 pub(crate) mod guest_guard;
@@ -15,9 +16,11 @@ mod refresh_lock;
 pub(crate) mod sessions_api;
 mod storage;
 
+pub(crate) use components::desktop_google_button::DesktopGoogleButton;
 pub(crate) use components::legal_acceptance_fields::{
     LegalAcceptanceAction, LegalAcceptanceFields,
 };
+pub(crate) use components::oauth_registration_form::OAuthRegistrationForm;
 pub(crate) use components::token_refresher::TokenRefresher;
 pub(crate) use pages::forgot_password_page::ForgotPasswordPage;
 pub(crate) use pages::login_page::LoginPage;

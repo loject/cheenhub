@@ -24,6 +24,7 @@ use crate::state::AppState;
 
 mod atomicity;
 mod avatar;
+mod desktop_oauth;
 mod legal;
 mod nickname;
 mod oauth;

@@ -1,45 +1,84 @@
 //! Postgres-backed authentication storage.
 
+use super::postgres_store::PostgresAuthStore;
+use super::{postgres_desktop_oauth as desktop, postgres_user as user};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, QuerySelect, Set,
-};
 use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::features::auth::domain::*;
-use crate::features::auth::infrastructure::entities::*;
 use crate::features::auth::infrastructure::{AuthStore, InsertUserError, UpdateUserNicknameError};
-
-/// Postgres-backed authentication storage.
-pub(crate) struct PostgresAuthStore {
-    database: DatabaseConnection,
-}
-
-impl PostgresAuthStore {
-    /// Builds a Postgres-backed authentication storage.
-    pub(crate) fn new(database: DatabaseConnection) -> Self {
-        Self { database }
-    }
-}
-
-fn escape_like_pattern(value: &str) -> String {
-    value.chars().fold(String::new(), |mut escaped, ch| {
-        match ch {
-            '%' | '_' | '\\' => {
-                escaped.push('\\');
-                escaped.push(ch);
-            }
-            _ => escaped.push(ch),
-        }
-        escaped
-    })
-}
 
 #[async_trait]
 impl AuthStore for PostgresAuthStore {
+    async fn insert_desktop_oauth_attempt(
+        &self,
+        attempt: DesktopOAuthAttempt,
+    ) -> anyhow::Result<()> {
+        desktop::insert(&self.database, attempt).await
+    }
+
+    async fn desktop_oauth_attempt_by_state_hash(
+        &self,
+        state_hash: &str,
+    ) -> anyhow::Result<Option<Uuid>> {
+        desktop::find_by_state(&self.database, state_hash).await
+    }
+
+    async fn desktop_oauth_status(
+        &self,
+        id: &Uuid,
+        secret_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<DesktopOAuthStatus>> {
+        desktop::status(&self.database, id, secret_hash, now).await
+    }
+
+    async fn desktop_oauth_attempt_is_pending(
+        &self,
+        id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        desktop::is_pending(&self.database, id, now).await
+    }
+
+    async fn finish_desktop_oauth_attempt(
+        &self,
+        id: &Uuid,
+        kind: String,
+        user_id: Option<Uuid>,
+        identity: DesktopOAuthIdentity,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        desktop::finish(&self.database, id, kind, user_id, identity, now).await
+    }
+
+    async fn desktop_oauth_identity_for_handoff(
+        &self,
+        handoff_id: &Uuid,
+    ) -> anyhow::Result<Option<DesktopOAuthIdentity>> {
+        desktop::identity_for_handoff(&self.database, handoff_id).await
+    }
+
+    async fn fail_desktop_oauth_attempt(
+        &self,
+        id: &Uuid,
+        message: String,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        desktop::fail(&self.database, id, message, now).await
+    }
+
+    async fn cancel_desktop_oauth_attempt(
+        &self,
+        id: &Uuid,
+        secret_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        desktop::cancel(&self.database, id, secret_hash, now).await
+    }
+
     async fn insert_user(
         &self,
         nickname: String,
@@ -49,7 +88,7 @@ impl AuthStore for PostgresAuthStore {
         legal_acceptance: RegistrationLegalAcceptance,
         now: DateTime<Utc>,
     ) -> Result<UserAccount, InsertUserError> {
-        super::postgres_user::insert_user(
+        user::insert_user(
             &self.database,
             nickname,
             email,
@@ -65,18 +104,11 @@ impl AuthStore for PostgresAuthStore {
         &self,
         email_normalized: &str,
     ) -> anyhow::Result<Option<UserAccount>> {
-        Ok(users::Entity::find()
-            .filter(users::Column::EmailNormalized.eq(email_normalized))
-            .one(&self.database)
-            .await?
-            .map(Into::into))
+        user::find_user_by_email(&self.database, email_normalized).await
     }
 
     async fn find_user_by_id(&self, user_id: &Uuid) -> anyhow::Result<Option<UserAccount>> {
-        Ok(users::Entity::find_by_id(*user_id)
-            .one(&self.database)
-            .await?
-            .map(Into::into))
+        user::find_user_by_id(&self.database, user_id).await
     }
 
     async fn search_users_by_nickname(
@@ -84,16 +116,7 @@ impl AuthStore for PostgresAuthStore {
         query: &str,
         limit: u64,
     ) -> anyhow::Result<Vec<UserAccount>> {
-        let pattern = format!("%{}%", escape_like_pattern(query));
-        Ok(users::Entity::find()
-            .filter(users::Column::Nickname.like(pattern))
-            .order_by_asc(users::Column::Nickname)
-            .limit(limit)
-            .all(&self.database)
-            .await?
-            .into_iter()
-            .map(Into::into)
-            .collect())
+        user::search_users_by_nickname(&self.database, query, limit).await
     }
 
     async fn update_user_nickname(
@@ -121,33 +144,14 @@ impl AuthStore for PostgresAuthStore {
         image_id: Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<UserAccount>> {
-        let Some(user) = users::Entity::find_by_id(*user_id)
-            .one(&self.database)
-            .await?
-        else {
-            return Ok(None);
-        };
-        let mut user = user.into_active_model();
-        user.avatar_image_id = Set(Some(image_id));
-        user.updated_at = Set(now);
-        Ok(Some(user.update(&self.database).await?.into()))
+        user::update_user_avatar_image_id(&self.database, user_id, image_id, now).await
     }
 
     async fn avatar_image_ids_by_user_ids(
         &self,
         user_ids: &[Uuid],
     ) -> anyhow::Result<HashMap<Uuid, Uuid>> {
-        if user_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-
-        Ok(users::Entity::find()
-            .filter(users::Column::Id.is_in(user_ids.iter().copied()))
-            .all(&self.database)
-            .await?
-            .into_iter()
-            .filter_map(|user| user.avatar_image_id.map(|image_id| (user.id, image_id)))
-            .collect())
+        user::avatar_image_ids_by_user_ids(&self.database, user_ids).await
     }
 
     async fn change_user_password(
@@ -335,7 +339,7 @@ impl AuthStore for PostgresAuthStore {
         user_id: Option<Uuid>,
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Uuid> {
         super::postgres_oauth::insert_oauth_state(
             &self.database,
             state_hash,

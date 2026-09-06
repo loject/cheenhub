@@ -22,9 +22,10 @@ pub(super) async fn insert_oauth_state(
     user_id: Option<Uuid>,
     now: DateTime<Utc>,
     expires_at: DateTime<Utc>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Uuid> {
+    let id = Uuid::new_v4();
     oauth_states::ActiveModel {
-        id: Set(Uuid::new_v4()),
+        id: Set(id),
         state_hash: Set(state_hash),
         nonce: Set(nonce),
         flow_kind: Set(flow_kind),
@@ -36,7 +37,7 @@ pub(super) async fn insert_oauth_state(
     .insert(database)
     .await?;
 
-    Ok(())
+    Ok(id)
 }
 
 pub(super) async fn consume_oauth_state(
@@ -58,6 +59,7 @@ pub(super) async fn consume_oauth_state(
     };
 
     Ok(Some(OAuthState {
+        id: state.id,
         nonce: state.nonce,
         flow_kind: state.flow_kind,
         user_id: state.user_id,
@@ -184,15 +186,7 @@ pub(super) async fn consume_oauth_handoff(
     handoff_id: &Uuid,
     now: DateTime<Utc>,
 ) -> anyhow::Result<bool> {
-    let result = oauth_handoffs::Entity::update_many()
-        .col_expr(oauth_handoffs::Column::ConsumedAt, Expr::value(now))
-        .filter(oauth_handoffs::Column::Id.eq(*handoff_id))
-        .filter(oauth_handoffs::Column::ConsumedAt.is_null())
-        .filter(oauth_handoffs::Column::ExpiresAt.gt(now))
-        .exec(database)
-        .await?;
-
-    Ok(result.rows_affected == 1)
+    super::postgres_desktop_oauth::consume_handoff(database, handoff_id, now).await
 }
 
 pub(super) async fn insert_oauth_registration_intent(

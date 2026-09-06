@@ -1,3 +1,4 @@
+use super::in_memory_desktop_oauth as desktop;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
@@ -18,6 +19,73 @@ pub(crate) struct InMemoryAuthStore {
 
 #[async_trait]
 impl AuthStore for InMemoryAuthStore {
+    async fn insert_desktop_oauth_attempt(
+        &self,
+        attempt: DesktopOAuthAttempt,
+    ) -> anyhow::Result<()> {
+        desktop::insert(&self.state, attempt)
+    }
+
+    async fn desktop_oauth_attempt_by_state_hash(
+        &self,
+        state_hash: &str,
+    ) -> anyhow::Result<Option<Uuid>> {
+        desktop::find_by_state(&self.state, state_hash)
+    }
+
+    async fn desktop_oauth_status(
+        &self,
+        id: &Uuid,
+        secret_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<DesktopOAuthStatus>> {
+        desktop::status(&self.state, id, secret_hash, now)
+    }
+
+    async fn desktop_oauth_attempt_is_pending(
+        &self,
+        id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        desktop::is_pending(&self.state, id, now)
+    }
+
+    async fn finish_desktop_oauth_attempt(
+        &self,
+        id: &Uuid,
+        kind: String,
+        user_id: Option<Uuid>,
+        identity: DesktopOAuthIdentity,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        desktop::finish(&self.state, id, kind, user_id, identity, now)
+    }
+
+    async fn desktop_oauth_identity_for_handoff(
+        &self,
+        handoff_id: &Uuid,
+    ) -> anyhow::Result<Option<DesktopOAuthIdentity>> {
+        desktop::identity_for_handoff(&self.state, handoff_id)
+    }
+
+    async fn fail_desktop_oauth_attempt(
+        &self,
+        id: &Uuid,
+        message: String,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        desktop::fail(&self.state, id, message, now)
+    }
+
+    async fn cancel_desktop_oauth_attempt(
+        &self,
+        id: &Uuid,
+        secret_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        desktop::cancel(&self.state, id, secret_hash, now)
+    }
+
     async fn insert_user(
         &self,
         nickname: String,
@@ -27,84 +95,26 @@ impl AuthStore for InMemoryAuthStore {
         legal_acceptance: RegistrationLegalAcceptance,
         now: DateTime<Utc>,
     ) -> Result<UserAccount, InsertUserError> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| InsertUserError::Storage(poisoned()))?;
-        if state
-            .users
-            .iter()
-            .any(|user| user.account.nickname == nickname)
-        {
-            return Err(InsertUserError::Conflict(UserConflict::Nickname));
-        }
-        if state
-            .users
-            .iter()
-            .any(|user| user.email_normalized == email_normalized)
-        {
-            return Err(InsertUserError::Conflict(UserConflict::Email));
-        }
-
-        let account = UserAccount {
-            id: Uuid::new_v4(),
+        super::in_memory_user::insert_user(
+            &self.state,
             nickname,
             email,
-            password_hash,
-            avatar_image_id: None,
-            registered_at: now,
-            nickname_updated_at: now,
-        };
-        state.users.push(InMemoryUser {
-            account: account.clone(),
             email_normalized,
-        });
-        state.legal_acceptances.extend([
-            (
-                account.id,
-                "terms".to_owned(),
-                legal_acceptance.terms_version,
-                legal_acceptance.acceptance_source.clone(),
-                now,
-            ),
-            (
-                account.id,
-                "privacy_policy".to_owned(),
-                legal_acceptance.privacy_policy_version,
-                legal_acceptance.acceptance_source.clone(),
-                now,
-            ),
-            (
-                account.id,
-                "personal_data_consent".to_owned(),
-                legal_acceptance.personal_data_consent_version,
-                legal_acceptance.acceptance_source,
-                now,
-            ),
-        ]);
-
-        Ok(account)
+            password_hash,
+            legal_acceptance,
+            now,
+        )
     }
 
     async fn find_user_by_email(
         &self,
         email_normalized: &str,
     ) -> anyhow::Result<Option<UserAccount>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        Ok(state
-            .users
-            .iter()
-            .find(|user| user.email_normalized == email_normalized)
-            .map(|user| user.account.clone()))
+        super::in_memory_user::find_user_by_email(&self.state, email_normalized)
     }
 
     async fn find_user_by_id(&self, user_id: &Uuid) -> anyhow::Result<Option<UserAccount>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        Ok(state
-            .users
-            .iter()
-            .find(|user| user.account.id == *user_id)
-            .map(|user| user.account.clone()))
+        super::in_memory_user::find_user_by_id(&self.state, user_id)
     }
 
     async fn search_users_by_nickname(
@@ -112,18 +122,7 @@ impl AuthStore for InMemoryAuthStore {
         query: &str,
         limit: u64,
     ) -> anyhow::Result<Vec<UserAccount>> {
-        let needle = query.to_lowercase();
-        let limit = usize::try_from(limit).unwrap_or(20);
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        let mut users = state
-            .users
-            .iter()
-            .filter(|user| user.account.nickname.to_lowercase().contains(&needle))
-            .map(|user| user.account.clone())
-            .collect::<Vec<_>>();
-        users.sort_by(|left, right| left.nickname.cmp(&right.nickname));
-        users.truncate(limit);
-        Ok(users)
+        super::in_memory_user::search_users_by_nickname(&self.state, query, limit)
     }
 
     async fn update_user_nickname(
@@ -157,17 +156,7 @@ impl AuthStore for InMemoryAuthStore {
         &self,
         user_ids: &[Uuid],
     ) -> anyhow::Result<HashMap<Uuid, Uuid>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        Ok(state
-            .users
-            .iter()
-            .filter(|user| user_ids.contains(&user.account.id))
-            .filter_map(|user| {
-                user.account
-                    .avatar_image_id
-                    .map(|image_id| (user.account.id, image_id))
-            })
-            .collect())
+        super::in_memory_user::avatar_image_ids_by_user_ids(&self.state, user_ids)
     }
 
     async fn change_user_password(
@@ -344,7 +333,7 @@ impl AuthStore for InMemoryAuthStore {
         user_id: Option<Uuid>,
         _now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Uuid> {
         super::in_memory_oauth::insert_oauth_state(
             &self.state,
             state_hash,

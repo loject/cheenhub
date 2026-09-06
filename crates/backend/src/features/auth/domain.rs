@@ -81,6 +81,8 @@ pub(crate) struct OAuthAccount {
 /// Одноразовое состояние OAuth, созданное перед перенаправлением к провайдеру.
 #[derive(Debug, Clone)]
 pub(crate) struct OAuthState {
+    /// Идентификатор состояния, связывающий его с desktop-попыткой.
+    pub(crate) id: Uuid,
     /// OAuth нонс, отправляемый провайдеру.
     pub(crate) nonce: String,
     /// Вид потока.
@@ -113,6 +115,47 @@ pub(crate) struct OAuthHandoff {
     pub(crate) user_id: Option<Uuid>,
     /// ID намерения регистрации для регистрационных handoffs.
     pub(crate) registration_intent_id: Option<Uuid>,
+}
+
+/// Попытка входа из desktop-приложения через внешний браузер.
+#[derive(Debug, Clone)]
+pub(crate) struct DesktopOAuthAttempt {
+    /// Идентификатор попытки.
+    pub(crate) id: Uuid,
+    /// Связанное состояние OAuth.
+    pub(crate) oauth_state_id: Uuid,
+    /// Хеш секрета получения результата исходным приложением.
+    pub(crate) secret_hash: String,
+    /// Срок действия попытки.
+    pub(crate) expires_at: DateTime<Utc>,
+}
+
+/// Проверенная Google-личность до создания сессии или привязки аккаунта.
+#[derive(Debug, Clone)]
+pub(crate) struct DesktopOAuthIdentity {
+    /// Стабильный идентификатор Google.
+    pub(crate) subject: String,
+    /// Проверенный email провайдера.
+    pub(crate) email: String,
+    /// Отображаемое имя провайдера.
+    pub(crate) display_name: Option<String>,
+}
+
+/// Состояние desktop-входа, доступное только владельцу секрета попытки.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DesktopOAuthStatus {
+    /// Ожидается ответ провайдера.
+    Pending,
+    /// Приложение может завершить вход.
+    Ready,
+    /// Пользователь отменил попытку.
+    Cancelled,
+    /// Истёк срок действия попытки.
+    Expired,
+    /// Результат уже получен приложением.
+    Claimed,
+    /// Вход завершился безопасным сообщением об ошибке.
+    Failed(String),
 }
 
 /// Данные одноразового токена сброса пароля.

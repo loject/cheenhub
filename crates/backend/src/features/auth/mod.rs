@@ -58,6 +58,22 @@ pub(crate) fn routes() -> Router<AppState> {
             post(transport::handlers::start_google_oauth),
         )
         .route(
+            "/oauth/google/desktop/start",
+            post(transport::desktop_oauth::start),
+        )
+        .route(
+            "/oauth/google/desktop/poll",
+            post(transport::desktop_oauth::poll),
+        )
+        .route(
+            "/oauth/google/desktop/cancel",
+            post(transport::desktop_oauth::cancel),
+        )
+        .route(
+            "/oauth/google/desktop/result",
+            get(transport::desktop_result::show),
+        )
+        .route(
             "/oauth/google/native/start",
             post(transport::handlers::start_google_native_auth),
         )

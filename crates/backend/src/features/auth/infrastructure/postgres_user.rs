@@ -1,7 +1,11 @@
 //! Вспомогательные функции хранения пользователей для Postgres.
 
 use chrono::{DateTime, Utc};
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
+    QueryOrder, QuerySelect, Set, TransactionTrait,
+};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::features::auth::domain::{RegistrationLegalAcceptance, UserAccount};
@@ -84,4 +88,92 @@ pub(super) fn map_insert_user_error(error: sea_orm::DbErr) -> InsertUserError {
     }
 
     InsertUserError::Database(error)
+}
+
+fn escape_like_pattern(value: &str) -> String {
+    value.chars().fold(String::new(), |mut escaped, ch| {
+        match ch {
+            '%' | '_' | '\\' => {
+                escaped.push('\\');
+                escaped.push(ch);
+            }
+            _ => escaped.push(ch),
+        }
+        escaped
+    })
+}
+
+/// Находит пользователя по нормализованному email.
+pub(super) async fn find_user_by_email(
+    database: &DatabaseConnection,
+    email_normalized: &str,
+) -> anyhow::Result<Option<UserAccount>> {
+    Ok(users::Entity::find()
+        .filter(users::Column::EmailNormalized.eq(email_normalized))
+        .one(database)
+        .await?
+        .map(Into::into))
+}
+
+/// Находит пользователя по идентификатору.
+pub(super) async fn find_user_by_id(
+    database: &DatabaseConnection,
+    user_id: &Uuid,
+) -> anyhow::Result<Option<UserAccount>> {
+    Ok(users::Entity::find_by_id(*user_id)
+        .one(database)
+        .await?
+        .map(Into::into))
+}
+
+/// Ищет пользователей по никнейму.
+pub(super) async fn search_users_by_nickname(
+    database: &DatabaseConnection,
+    query: &str,
+    limit: u64,
+) -> anyhow::Result<Vec<UserAccount>> {
+    let pattern = format!("%{}%", escape_like_pattern(query));
+    Ok(users::Entity::find()
+        .filter(users::Column::Nickname.like(pattern))
+        .order_by_asc(users::Column::Nickname)
+        .limit(limit)
+        .all(database)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect())
+}
+
+/// Обновляет изображение аватара пользователя.
+pub(super) async fn update_user_avatar_image_id(
+    database: &DatabaseConnection,
+    user_id: &Uuid,
+    image_id: Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Option<UserAccount>> {
+    let Some(user) = users::Entity::find_by_id(*user_id).one(database).await? else {
+        return Ok(None);
+    };
+    let mut user = user.into_active_model();
+    user.avatar_image_id = Set(Some(image_id));
+    user.updated_at = Set(now);
+    Ok(Some(user.update(database).await?.into()))
+}
+
+/// Читает изображения аватаров выбранных пользователей.
+pub(super) async fn avatar_image_ids_by_user_ids(
+    database: &DatabaseConnection,
+    user_ids: &[Uuid],
+) -> anyhow::Result<HashMap<Uuid, Uuid>> {
+    if user_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    Ok(users::Entity::find()
+        .filter(users::Column::Id.is_in(user_ids.iter().copied()))
+        .all(database)
+        .await?
+        .into_iter()
+        .filter_map(|user| user.avatar_image_id.map(|image_id| (user.id, image_id)))
+        .collect())
 }

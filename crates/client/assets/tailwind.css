@@ -3795,6 +3795,10 @@ html,
   border-color: rgb(255 255 255 / 0.1);
 }
 
+.border-white\/30 {
+  border-color: rgb(255 255 255 / 0.3);
+}
+
 .border-white\/\[0\.06\] {
   border-color: rgb(255 255 255 / 0.06);
 }

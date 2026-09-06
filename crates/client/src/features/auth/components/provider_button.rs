@@ -8,13 +8,41 @@ use crate::features::auth::api;
 use crate::features::auth::components::arrow_right_icon::ArrowRightIcon;
 use crate::features::auth::domain::AuthProvider;
 use crate::features::auth::google_sign_in;
+use crate::features::auth::{DesktopGoogleButton, OAuthRegistrationForm, desktop_oauth};
+use cheenhub_contracts::rest::OAuthFlow;
 
 #[component]
 pub(crate) fn ProviderButton(provider: AuthProvider) -> Element {
     let navigator = use_navigator();
     let mut status = use_signal(String::new);
     let mut is_busy = use_signal(|| false);
+    let mut registration = use_signal(|| None::<api::OAuthRegistrationRequired>);
     let disabled = !provider.is_available() || is_busy();
+
+    if let Some(details) = registration() {
+        return rsx! {
+            OAuthRegistrationForm {
+                registration: details,
+                on_complete: move |_| { let _ = navigator.replace(Route::AppHome {}); },
+                on_restart: move |_| {
+                    registration.set(None);
+                    status.set(String::new());
+                    is_busy.set(false);
+                },
+            }
+        };
+    }
+    if provider == AuthProvider::Google && desktop_oauth::is_supported() {
+        return rsx! {
+            DesktopGoogleButton {
+                flow: OAuthFlow::Login,
+                on_complete: move |completion| match completion {
+                    api::OAuthCompletion::RegistrationRequired(details) => registration.set(Some(details)),
+                    _ => { let _ = navigator.replace(Route::AppHome {}); }
+                },
+            }
+        };
+    }
 
     rsx! {
         div { class: "group relative space-y-2",

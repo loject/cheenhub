@@ -6,6 +6,8 @@ use dioxus::prelude::*;
 use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::auth::api::{self, LinkedAccount};
+use crate::features::auth::{DesktopGoogleButton, desktop_oauth};
+use cheenhub_contracts::rest::OAuthFlow;
 
 use super::styles::{input_class, primary_button_class};
 
@@ -266,6 +268,10 @@ pub(crate) fn ProfileSettingsSection() -> Element {
                                         }
                                     });
                                 }),
+                                EventHandler::new(move |_| {
+                                    linked_accounts_resource.clear();
+                                    linked_accounts_resource.restart();
+                                }),
                             )}
                         },
                     }
@@ -307,6 +313,7 @@ fn linked_accounts_list(
     unlinking_provider: Option<String>,
     on_link_google: EventHandler<()>,
     on_unlink: EventHandler<String>,
+    on_linked: EventHandler<api::OAuthCompletion>,
 ) -> Element {
     let google = accounts.iter().find(|account| account.provider == "google");
     let google_unlinking = unlinking_provider.as_deref() == Some("google");
@@ -334,6 +341,8 @@ fn linked_accounts_list(
                     onclick: move |_| on_unlink.call("google".to_owned()),
                     if google_unlinking { "Отключаем..." } else { "Отключить" }
                 }
+            } else if desktop_oauth::is_supported() {
+                DesktopGoogleButton { flow: OAuthFlow::Link, on_complete: on_linked }
             } else {
                 button {
                     r#type: "button",

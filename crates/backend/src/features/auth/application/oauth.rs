@@ -2,13 +2,12 @@
 use anyhow::anyhow;
 use cheenhub_contracts::rest::*;
 use chrono::{Duration, Utc};
-use tracing::{error, info, warn};
-use url::Url;
+use tracing::{info, warn};
 use uuid::Uuid;
 
-use super::google::{GoogleIdentity, exchange_google_code, frontend_oauth_url, google_config};
+use super::google::GoogleIdentity;
 use super::linked_accounts::linked_account;
-use super::{create_auth_response, expired_session, legal, map_insert_user_error, me};
+use super::{create_auth_response, expired_session, legal, map_insert_user_error};
 use crate::features::auth::domain::*;
 use crate::features::auth::error::AuthError;
 use crate::features::auth::security::refresh_token;
@@ -21,94 +20,6 @@ const OAUTH_FLOW_LINK: &str = "link";
 const HANDOFF_AUTHENTICATED: &str = "authenticated";
 const HANDOFF_LINKED: &str = "linked";
 const HANDOFF_REGISTRATION_REQUIRED: &str = "registration_required";
-
-/// Запускает поток входа или привязки аккаунта через Google OAuth.
-pub(crate) async fn start_google_oauth(
-    state: &AppState,
-    access_token: Option<&str>,
-    request: OAuthStartRequest,
-) -> Result<OAuthStartResponse, AuthError> {
-    let config = google_config(state)?;
-    let now = Utc::now();
-    let (flow_kind, user_id) = match request.flow {
-        OAuthFlow::Login => (OAUTH_FLOW_LOGIN.to_owned(), None),
-        OAuthFlow::Link => {
-            let token = access_token
-                .ok_or_else(|| AuthError::Unauthorized("Войди, чтобы продолжить.".to_owned()))?;
-            let user = me(state, token).await?;
-            let user_id = Uuid::parse_str(&user.id).map_err(|_| expired_session())?;
-            (OAUTH_FLOW_LINK.to_owned(), Some(user_id))
-        }
-    };
-
-    let state_value = refresh_token::generate();
-    let nonce = refresh_token::generate();
-    let expires_at = now + Duration::minutes(state.oauth_state_lifetime_minutes);
-    state
-        .auth_store
-        .insert_oauth_state(
-            refresh_token::hash(&state_value),
-            nonce.clone(),
-            flow_kind.clone(),
-            user_id,
-            now,
-            expires_at,
-        )
-        .await
-        .map_err(|error| {
-            error!(
-                provider = GOOGLE_PROVIDER,
-                flow_kind,
-                ?user_id,
-                %expires_at,
-                %error,
-                "failed to persist google oauth state; ensure database migrations are applied and oauth_states table exists"
-            );
-            AuthError::Internal(error)
-        })?;
-
-    info!(
-        provider = GOOGLE_PROVIDER,
-        flow_kind,
-        ?user_id,
-        %expires_at,
-        "started google oauth flow"
-    );
-
-    let mut url =
-        Url::parse("https://accounts.google.com/o/oauth2/v2/auth").map_err(anyhow::Error::from)?;
-    url.query_pairs_mut()
-        .append_pair("client_id", &config.client_id)
-        .append_pair("redirect_uri", &config.redirect_uri)
-        .append_pair("response_type", "code")
-        .append_pair("scope", "openid email profile")
-        .append_pair("state", &state_value)
-        .append_pair("nonce", &nonce)
-        .append_pair("prompt", "select_account");
-
-    Ok(OAuthStartResponse {
-        authorization_url: url.to_string(),
-    })
-}
-
-/// Обрабатывает callback Google OAuth и возвращает URL перенаправления на фронтенд.
-pub(crate) async fn google_oauth_callback_url(
-    state: &AppState,
-    code: Option<String>,
-    state_value: Option<String>,
-    error: Option<String>,
-) -> String {
-    match google_oauth_callback(state, code, state_value, error).await {
-        Ok(code) => frontend_oauth_url(state, &[("code", code.as_str())]),
-        Err(error) => {
-            let message = error
-                .user_message()
-                .unwrap_or("Не удалось войти через Google. Попробуй еще раз.");
-            warn!(?error, error_message = %message, "google oauth callback failed");
-            frontend_oauth_url(state, &[("error", message)])
-        }
-    }
-}
 
 /// Завершает OAuth-handoff для фронтенда.
 pub(crate) async fn complete_google_oauth(
@@ -128,6 +39,11 @@ pub(crate) async fn complete_google_oauth(
             "Вход через Google истек. Попробуй еще раз.".to_owned(),
         ));
     };
+
+    if handoff.kind.starts_with("desktop_") {
+        let request = super::desktop_oauth::claim_handoff(state, handoff).await?;
+        return Box::pin(complete_google_oauth(state, request, user_agent)).await;
+    }
 
     match handoff.kind.as_str() {
         HANDOFF_AUTHENTICATED => {
@@ -298,44 +214,6 @@ async fn consume_handoff_once(
     }
     info!(%handoff_id, "atomically consumed oauth handoff");
     Ok(())
-}
-
-async fn google_oauth_callback(
-    state: &AppState,
-    code: Option<String>,
-    state_value: Option<String>,
-    error: Option<String>,
-) -> Result<String, AuthError> {
-    if let Some(error) = error {
-        return Err(AuthError::BadRequest(format!(
-            "Google OAuth вернул ошибку: {error}"
-        )));
-    }
-    let code = code.ok_or_else(|| AuthError::BadRequest("Google не вернул код.".to_owned()))?;
-    let state_value =
-        state_value.ok_or_else(|| AuthError::BadRequest("Google не вернул state.".to_owned()))?;
-    let now = Utc::now();
-    let Some(oauth_state) = state
-        .auth_store
-        .consume_oauth_state(&refresh_token::hash(&state_value), now)
-        .await
-        .map_err(AuthError::Internal)?
-    else {
-        return Err(AuthError::Unauthorized(
-            "Вход через Google истек. Попробуй еще раз.".to_owned(),
-        ));
-    };
-    let config = google_config(state)?;
-    let identity = exchange_google_code(&config, &code, &oauth_state.nonce).await?;
-
-    create_google_handoff(
-        state,
-        &oauth_state.flow_kind,
-        oauth_state.user_id,
-        &identity,
-        now,
-    )
-    .await
 }
 
 pub(super) async fn create_google_handoff(

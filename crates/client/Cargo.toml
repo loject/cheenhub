@@ -49,6 +49,7 @@ app = [
 web = ["app", "dioxus/web"]
 desktop = [
     "app",
+    "dep:webbrowser",
     "dep:arboard",
     "dep:image",
     "system-tray",
@@ -86,6 +87,7 @@ microphone_worker = [
 ]
 
 [dependencies]
+webbrowser = { version = "1.2.1", optional = true }
 arboard = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }

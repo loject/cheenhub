@@ -192,10 +192,26 @@ pub(crate) async fn complete_google_native_auth(
 pub(crate) async fn google_oauth_callback(
     State(state): State<AppState>,
     Query(query): Query<GoogleOAuthCallbackQuery>,
-) -> Redirect {
-    let url =
-        application::google_oauth_callback_url(&state, query.code, query.state, query.error).await;
-    Redirect::to(&url)
+) -> Response {
+    let outcome =
+        application::google_oauth_callback(&state, query.code, query.state, query.error).await;
+    let url = match outcome {
+        application::GoogleCallbackOutcome::WebRedirect(url) => url,
+        application::GoogleCallbackOutcome::Desktop { success } => {
+            format!(
+                "desktop/result?status={}",
+                if success { "success" } else { "error" }
+            )
+        }
+    };
+    (
+        [
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+            (axum::http::header::REFERRER_POLICY, "no-referrer"),
+        ],
+        Redirect::to(&url),
+    )
+        .into_response()
 }
 
 /// Завершает процесс Google OAuth frontend handoff.

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>{{title}} — CheenHub</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    body { margin: 0; min-height: 100svh; display: grid; place-items: center; background: #f4f5f7; color: #202329; }
+    main { box-sizing: border-box; width: min(30rem, calc(100% - 2rem)); padding: clamp(1.5rem, 5vw, 3rem); border-radius: 1.5rem; background: #fff; box-shadow: 0 2px 8px #00000006, 0 16px 48px #0000000a; }
+    .brand { margin: 0 0 2rem; color: #6d5acd; font-weight: 700; letter-spacing: -.02em; }
+    h1 { margin: 0 0 1rem; font-size: clamp(1.6rem, 5vw, 2rem); letter-spacing: -.025em; line-height: 1.2; text-wrap: balance; }
+    .message { margin: 0; color: #606672; font-size: 1rem; line-height: 1.65; text-wrap: pretty; }
+    @media (prefers-color-scheme: dark) { body { background: #15161a; color: #f2f3f5; } main { background: #222429; } .message { color: #bbc0ca; } .brand { color: #b5a7ff; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="brand">CheenHub</p>
+    <h1>{{title}}</h1>
+    <p class="message">{{message}}</p>
+  </main>
+</body>
+</html>

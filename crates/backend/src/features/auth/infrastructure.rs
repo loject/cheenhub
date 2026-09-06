@@ -1,18 +1,28 @@
 //! Слой инфраструктуры аутентификации.
 
 mod conversions;
+#[cfg(test)]
+mod desktop_oauth_postgres_tests;
 mod entities;
 mod in_memory;
+mod in_memory_desktop_oauth;
 mod in_memory_oauth;
 mod in_memory_password_reset;
 mod in_memory_profile;
 mod in_memory_refresh;
+mod in_memory_user;
 mod postgres;
+mod postgres_desktop_oauth;
+mod postgres_desktop_oauth_cleanup;
 mod postgres_oauth;
 mod postgres_password_reset;
 mod postgres_profile;
 mod postgres_refresh;
+mod postgres_store;
 mod postgres_user;
+
+#[cfg(test)]
+mod desktop_oauth_tests;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
@@ -20,12 +30,13 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::features::auth::domain::{
-    OAuthAccount, OAuthHandoff, OAuthRegistrationIntent, OAuthState, PasswordResetToken,
-    RefreshSession, RegistrationLegalAcceptance, UserAccount, UserSession,
+    DesktopOAuthAttempt, DesktopOAuthIdentity, DesktopOAuthStatus, OAuthAccount, OAuthHandoff,
+    OAuthRegistrationIntent, OAuthState, PasswordResetToken, RefreshSession,
+    RegistrationLegalAcceptance, UserAccount, UserSession,
 };
 
 pub(crate) use in_memory::InMemoryAuthStore;
-pub(crate) use postgres::PostgresAuthStore;
+pub(crate) use postgres_store::PostgresAuthStore;
 
 /// Конфликт уникального поля пользователя.
 #[derive(Debug)]
@@ -91,6 +102,65 @@ pub(crate) enum RefreshReuseOutcome {
 /// Граница хранилища аутентификации.
 #[async_trait]
 pub(crate) trait AuthStore: Send + Sync {
+    /// Создаёт desktop-попытку со ссылкой на OAuth state и хешем секрета.
+    async fn insert_desktop_oauth_attempt(
+        &self,
+        attempt: DesktopOAuthAttempt,
+    ) -> anyhow::Result<()>;
+
+    /// Находит desktop-попытку через связанную строку OAuth state, включая завершённые попытки.
+    async fn desktop_oauth_attempt_by_state_hash(
+        &self,
+        state_hash: &str,
+    ) -> anyhow::Result<Option<Uuid>>;
+
+    /// Читает состояние по секрету без потребления готового результата.
+    async fn desktop_oauth_status(
+        &self,
+        id: &Uuid,
+        secret_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<DesktopOAuthStatus>>;
+
+    /// Проверяет, ожидает ли действующая попытка ответ провайдера.
+    async fn desktop_oauth_attempt_is_pending(
+        &self,
+        id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool>;
+
+    /// Атомарно сохраняет проверенную личность и создаёт связанный одноразовый handoff.
+    async fn finish_desktop_oauth_attempt(
+        &self,
+        id: &Uuid,
+        kind: String,
+        user_id: Option<Uuid>,
+        identity: DesktopOAuthIdentity,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool>;
+
+    /// Читает личность готового desktop-handoff; сам по себе вызов не разрешает вход.
+    async fn desktop_oauth_identity_for_handoff(
+        &self,
+        handoff_id: &Uuid,
+    ) -> anyhow::Result<Option<DesktopOAuthIdentity>>;
+
+    /// Завершает ожидающую попытку ошибкой без создания сессии.
+    async fn fail_desktop_oauth_attempt(
+        &self,
+        id: &Uuid,
+        message: String,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool>;
+
+    /// Атомарно отменяет ожидающую или готовую попытку и отзывает её handoff.
+    async fn cancel_desktop_oauth_attempt(
+        &self,
+        id: &Uuid,
+        secret_hash: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool>;
+
     /// Вставляет новую учетную запись пользователя.
     async fn insert_user(
         &self,
@@ -269,7 +339,7 @@ pub(crate) trait AuthStore: Send + Sync {
         user_id: Option<Uuid>,
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<()>;
+    ) -> anyhow::Result<Uuid>;
 
     /// Потребляет активный OAuth state.
     async fn consume_oauth_state(
