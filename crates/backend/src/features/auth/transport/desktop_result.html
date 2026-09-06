@@ -6,18 +6,39 @@
   <meta name="referrer" content="no-referrer">
   <title>{{title}} — CheenHub</title>
   <style>
-    :root { color-scheme: light dark; font-family: system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-    body { margin: 0; min-height: 100svh; display: grid; place-items: center; background: #f4f5f7; color: #202329; }
-    main { box-sizing: border-box; width: min(30rem, calc(100% - 2rem)); padding: clamp(1.5rem, 5vw, 3rem); border-radius: 1.5rem; background: #fff; box-shadow: 0 2px 8px #00000006, 0 16px 48px #0000000a; }
-    .brand { margin: 0 0 2rem; color: #6d5acd; font-weight: 700; letter-spacing: -.02em; }
-    h1 { margin: 0 0 1rem; font-size: clamp(1.6rem, 5vw, 2rem); letter-spacing: -.025em; line-height: 1.2; text-wrap: balance; }
-    .message { margin: 0; color: #606672; font-size: 1rem; line-height: 1.65; text-wrap: pretty; }
-    @media (prefers-color-scheme: dark) { body { background: #15161a; color: #f2f3f5; } main { background: #222429; } .message { color: #bbc0ca; } .brand { color: #b5a7ff; } }
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+    body {
+      display: grid;
+      min-height: 100svh;
+      margin: 0;
+      place-items: center;
+      background-color: #09090b;
+      background-image:
+        radial-gradient(ellipse 45% 38% at 50% 38%, rgba(59, 130, 246, 0.09), transparent 100%),
+        linear-gradient(to right, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+      background-size: auto, 28px 28px, 28px 28px;
+      color: #f4f4f5;
+    }
+    main {
+      box-sizing: border-box;
+      width: min(30rem, calc(100% - 2.5rem));
+      padding: clamp(1.75rem, 6vw, 2.5rem);
+      border: 1px solid rgba(63, 63, 70, 0.8);
+      border-radius: 1rem;
+      background: rgba(24, 24, 27, 0.88);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12), 0 24px 60px rgba(0, 0, 0, 0.32);
+    }
+    .brand { display: flex; align-items: center; gap: 0.625rem; margin: 0 0 2rem; color: #d4d4d8; font-size: 0.8125rem; font-weight: 600; }
+    .brand-mark { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: 0.75rem; background: #3b82f6; color: #fff; font-size: 0.6875rem; font-weight: 700; letter-spacing: -0.04em; box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3), 0 8px 24px rgba(59, 130, 246, 0.2); }
+    h1 { margin: 0 0 0.75rem; font-size: clamp(1.75rem, 5vw, 2.25rem); font-weight: 600; letter-spacing: -0.045em; line-height: 1.1; text-wrap: balance; }
+    .message { margin: 0; color: #a1a1aa; font-size: 0.9375rem; line-height: 1.65; text-wrap: pretty; }
+    @media (max-width: 360px) { main { width: min(100% - 2rem, 30rem); padding: 1.5rem; } }
   </style>
 </head>
 <body>
   <main>
-    <p class="brand">CheenHub</p>
+    <p class="brand"><span class="brand-mark" aria-hidden="true">CH</span>CheenHub</p>
     <h1>{{title}}</h1>
     <p class="message">{{message}}</p>
   </main>
