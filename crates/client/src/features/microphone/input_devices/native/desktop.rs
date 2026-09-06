@@ -1,12 +1,42 @@
 //! Перечисление устройств ввода аудио на desktop-платформах.
 
+use std::time::Instant;
+
 use cpal::traits::{DeviceTrait, HostTrait};
 use dioxus::prelude::{debug, warn};
 
 use super::super::contract::{AudioInputDevice, AudioInputDevicesResult};
 
 /// Возвращает список устройств ввода через `cpal`.
+///
+/// CPAL перечисляет native-устройства синхронно. На Linux эта операция может
+/// обходить большое количество ALSA PCM endpoints и заметно блокироваться,
+/// поэтому выполняем её в Tokio blocking pool, не занимая Dioxus UI thread.
 pub(crate) async fn enumerate_audio_input_devices() -> AudioInputDevicesResult {
+    let started = Instant::now();
+
+    let result = match tokio::task::spawn_blocking(enumerate_audio_input_devices_blocking).await {
+        Ok(result) => result,
+        Err(error) => {
+            warn!(
+                error = %error,
+                "native microphone input device enumeration worker failed"
+            );
+            unavailable_input_devices()
+        }
+    };
+
+    debug!(
+        elapsed_ms = %started.elapsed().as_millis(),
+        device_count = result.devices.as_ref().map_or(0, Vec::len),
+        available = result.devices.is_some(),
+        "finished native microphone input device enumeration"
+    );
+
+    result
+}
+
+fn enumerate_audio_input_devices_blocking() -> AudioInputDevicesResult {
     let host = cpal::default_host();
     let devices = match host.input_devices() {
         Ok(devices) => devices,

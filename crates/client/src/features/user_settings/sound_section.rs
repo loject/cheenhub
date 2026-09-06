@@ -29,8 +29,8 @@ pub(crate) fn SoundSettingsSection() -> Element {
     let selected_input_device_id = mic.input_device_id();
     let selected_output_device_id = playback.output_device_id();
 
-    let mut input_devices_state = use_signal(|| Option::<AudioInputDevicesResult>::None);
-    let mut output_devices_state = use_signal(|| Option::<AudioOutputDevicesResult>::None);
+    let input_devices_state = use_signal(|| Option::<AudioInputDevicesResult>::None);
+    let output_devices_state = use_signal(|| Option::<AudioOutputDevicesResult>::None);
     let requesting_permission = use_signal(|| false);
 
     let input_volume = mic.input_volume_percent();
@@ -43,25 +43,16 @@ pub(crate) fn SoundSettingsSection() -> Element {
     let live_level = level_percent(mic_level.rms);
 
     // Enumerate real devices once on mount. Empty preference means system default device.
+    // Input and output are deliberately independent so a slow backend cannot delay the
+    // other selector.
     let mic_effect = mic.clone();
     use_effect(move || {
-        let mic = mic_effect.clone();
-        spawn(async move {
-            let result = enumerate_audio_input_devices().await;
-            reconcile_input_devices_result(&mic, &result);
-            input_devices_state.set(Some(result));
-            mic.start_level_preview();
-        });
+        refresh_input_devices(mic_effect.clone(), input_devices_state);
     });
 
     let playback_effect = playback.clone();
     use_effect(move || {
-        let playback = playback_effect.clone();
-        spawn(async move {
-            let result = enumerate_audio_output_devices().await;
-            reconcile_output_devices_result(&playback, &result);
-            output_devices_state.set(Some(result));
-        });
+        refresh_output_devices(playback_effect.clone(), output_devices_state);
     });
 
     let mic_change = mic.clone();
@@ -99,25 +90,13 @@ pub(crate) fn SoundSettingsSection() -> Element {
     };
 
     let retry_input_mic = mic.clone();
-    let retry_input_playback = playback.clone();
     let on_input_retry = move |_: Event<MouseData>| {
-        refresh_devices(
-            retry_input_mic.clone(),
-            retry_input_playback.clone(),
-            input_devices_state,
-            output_devices_state,
-        );
+        refresh_input_devices(retry_input_mic.clone(), input_devices_state);
     };
 
-    let retry_output_mic = mic.clone();
     let retry_output_playback = playback.clone();
     let on_output_retry = move |_: Event<MouseData>| {
-        refresh_devices(
-            retry_output_mic.clone(),
-            retry_output_playback.clone(),
-            input_devices_state,
-            output_devices_state,
-        );
+        refresh_output_devices(retry_output_playback.clone(), output_devices_state);
     };
 
     let mic_volume_change = mic.clone();
@@ -151,7 +130,7 @@ pub(crate) fn SoundSettingsSection() -> Element {
                     {microphone_capture_notice(&microphone_status)}
                 }
 
-                // Output device column (mock for now).
+                // Output device column.
                 div { class: "space-y-4",
                     div { class: "block",
                         span { class: "mb-2 block text-[13px] font-medium text-zinc-300", "Устройство вывода" }
@@ -261,63 +240,53 @@ pub(crate) fn SoundSettingsSection() -> Element {
 fn refresh_devices_after_permission(
     mic: MicrophoneHandle,
     playback: AudioPlaybackHandle,
-    input_devices_state: Signal<Option<AudioInputDevicesResult>>,
-    output_devices_state: Signal<Option<AudioOutputDevicesResult>>,
+    mut input_devices_state: Signal<Option<AudioInputDevicesResult>>,
+    mut output_devices_state: Signal<Option<AudioOutputDevicesResult>>,
     mut requesting_permission: Signal<bool>,
 ) {
     requesting_permission.set(true);
+    input_devices_state.set(None);
+    output_devices_state.set(None);
+
     spawn(async move {
-        refresh_devices_inner(
-            mic,
-            playback,
-            input_devices_state,
-            output_devices_state,
-            true,
-        )
-        .await;
+        let input_result = request_microphone_permission().await;
+        reconcile_input_devices_result(&mic, &input_result);
+        input_devices_state.set(Some(input_result));
+        mic.start_level_preview();
+
+        let output_result = enumerate_audio_output_devices().await;
+        reconcile_output_devices_result(&playback, &output_result);
+        output_devices_state.set(Some(output_result));
+
         requesting_permission.set(false);
     });
 }
 
-fn refresh_devices(
+fn refresh_input_devices(
     mic: MicrophoneHandle,
-    playback: AudioPlaybackHandle,
     mut input_devices_state: Signal<Option<AudioInputDevicesResult>>,
-    mut output_devices_state: Signal<Option<AudioOutputDevicesResult>>,
 ) {
     input_devices_state.set(None);
-    output_devices_state.set(None);
+
     spawn(async move {
-        refresh_devices_inner(
-            mic,
-            playback,
-            input_devices_state,
-            output_devices_state,
-            false,
-        )
-        .await;
+        let result = enumerate_audio_input_devices().await;
+        reconcile_input_devices_result(&mic, &result);
+        input_devices_state.set(Some(result));
+        mic.start_level_preview();
     });
 }
 
-async fn refresh_devices_inner(
-    mic: MicrophoneHandle,
+fn refresh_output_devices(
     playback: AudioPlaybackHandle,
-    mut input_devices_state: Signal<Option<AudioInputDevicesResult>>,
     mut output_devices_state: Signal<Option<AudioOutputDevicesResult>>,
-    request_permission: bool,
 ) {
-    let input_result = if request_permission {
-        request_microphone_permission().await
-    } else {
-        enumerate_audio_input_devices().await
-    };
-    reconcile_input_devices_result(&mic, &input_result);
-    input_devices_state.set(Some(input_result));
-    mic.start_level_preview();
+    output_devices_state.set(None);
 
-    let output_result = enumerate_audio_output_devices().await;
-    reconcile_output_devices_result(&playback, &output_result);
-    output_devices_state.set(Some(output_result));
+    spawn(async move {
+        let result = enumerate_audio_output_devices().await;
+        reconcile_output_devices_result(&playback, &result);
+        output_devices_state.set(Some(result));
+    });
 }
 
 fn reconcile_input_devices_result(mic: &MicrophoneHandle, result: &AudioInputDevicesResult) {

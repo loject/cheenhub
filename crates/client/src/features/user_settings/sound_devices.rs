@@ -39,6 +39,11 @@ pub(super) fn input_device_widget(
             }
         },
 
+        Some(state) if state.devices.is_none() => no_devices(
+            "Не удалось загрузить список устройств ввода. Повторите попытку.",
+            on_retry,
+        ),
+
         Some(state) if state.devices.as_ref().is_some_and(Vec::is_empty) => no_devices(
             "Устройства ввода не обнаружены. Подключите микрофон и повторите.",
             on_retry,
@@ -118,6 +123,11 @@ pub(super) fn output_device_widget(
             on_request_permission,
         ),
 
+        Some(state) if state.devices.is_none() => no_devices(
+            "Не удалось загрузить список устройств вывода. Повторите попытку.",
+            on_retry,
+        ),
+
         Some(state) if state.devices.as_ref().is_some_and(Vec::is_empty) => no_devices(
             "Устройства вывода не обнаружены. Подключите устройство и повторите.",
             on_retry,
@@ -176,7 +186,7 @@ pub(super) fn output_device_widget(
 
 fn loading_devices() -> Element {
     rsx! {
-        div { class: "flex h-10 items-center gap-2 text-[13px] text-zinc-500",
+        div { class: "flex h-10 w-full items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[13px] text-zinc-500",
             span { class: "inline-block h-3 w-3 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400" }
             "Загрузка устройств…"
         }
