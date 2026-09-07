@@ -45,23 +45,6 @@ pub(crate) async fn enumerate_audio_output_devices() -> AudioOutputDevicesResult
         audio_outputs.push(AudioOutputDevice { device_id, label });
     }
 
-    if audio_outputs.is_empty() {
-        return AudioOutputDevicesResult {
-            devices: Some(audio_outputs),
-            system_managed: false,
-            permission_required: false,
-        };
-    }
-
-    let has_labels = audio_outputs.iter().any(|device| !device.label.is_empty());
-    if !has_labels {
-        return AudioOutputDevicesResult {
-            devices: Some(audio_outputs),
-            system_managed: false,
-            permission_required: true,
-        };
-    }
-
     AudioOutputDevicesResult {
         devices: Some(audio_outputs),
         system_managed: false,

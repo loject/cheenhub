@@ -47,15 +47,6 @@ pub(crate) async fn enumerate_audio_input_devices() -> AudioInputDevicesResult {
         audio_inputs.push(AudioInputDevice { device_id, label });
     }
 
-    if audio_inputs.is_empty() {
-        return available_input_devices(audio_inputs, false);
-    }
-
-    let has_labels = audio_inputs.iter().any(|d| !d.label.is_empty());
-    if !has_labels {
-        return available_input_devices(audio_inputs, true);
-    }
-
     available_input_devices(audio_inputs, false)
 }
 

@@ -14,7 +14,8 @@ use crate::features::microphone::{
 };
 
 use super::sound_device_refresh::{
-    refresh_devices_after_permission, refresh_input_devices, refresh_output_devices,
+    refresh_devices_after_permission, refresh_devices_after_preview_started, refresh_input_devices,
+    refresh_output_devices,
 };
 use super::sound_devices::{input_device_widget, output_device_widget};
 use super::styles::{parse_percent, parse_percent_range};
@@ -54,6 +55,19 @@ pub(crate) fn SoundSettingsSection() -> Element {
             input_devices_state,
             output_devices_state,
         )
+    });
+
+    let refresh_after_preview_mic = mic.clone();
+    let refresh_after_preview_playback = playback.clone();
+    use_effect(move || {
+        if refresh_after_preview_mic.status() == MicrophoneStatus::Live {
+            refresh_devices_after_preview_started(
+                refresh_after_preview_mic.clone(),
+                refresh_after_preview_playback.clone(),
+                input_devices_state,
+                output_devices_state,
+            );
+        }
     });
 
     let mic_change = mic.clone();

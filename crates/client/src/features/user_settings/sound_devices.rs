@@ -129,7 +129,7 @@ pub(super) fn output_device_widget(
         ),
 
         Some(state) if state.devices.as_ref().is_some_and(Vec::is_empty) => no_devices(
-            "Устройства вывода не обнаружены. Подключите устройство и повторите.",
+            "Список устройств вывода пока недоступен. Подключите устройство или обновите список.",
             on_retry,
         ),
 

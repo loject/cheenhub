@@ -87,6 +87,28 @@ pub(super) fn refresh_devices_after_permission(
     });
 }
 
+/// Обновляет оба списка после успешного запуска preview без повторного захвата микрофона.
+pub(super) fn refresh_devices_after_preview_started(
+    mic: MicrophoneHandle,
+    playback: AudioPlaybackHandle,
+    mut input_devices_state: Signal<Option<AudioInputDevicesResult>>,
+    mut output_devices_state: Signal<Option<AudioOutputDevicesResult>>,
+) {
+    spawn(async move {
+        debug!("refreshing sound device lists after microphone preview started");
+        let (input_result, output_result) = futures_util::future::join(
+            enumerate_audio_input_devices(),
+            enumerate_audio_output_devices(),
+        )
+        .await;
+
+        reconcile_input_devices_result(&mic, &input_result);
+        input_devices_state.set(Some(input_result));
+        reconcile_output_devices_result(&playback, &output_result);
+        output_devices_state.set(Some(output_result));
+    });
+}
+
 /// Повторяет загрузку устройств ввода с индикатором ожидания.
 pub(super) fn refresh_input_devices(
     mic: MicrophoneHandle,
