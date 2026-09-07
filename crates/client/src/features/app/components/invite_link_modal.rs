@@ -264,7 +264,7 @@ pub(crate) fn InviteLinkModal(
                                 )
                                 .await
                                 {
-                                    Ok(code) => match current_invite_url(code).await {
+                                    Ok(code) => match current_invite_url(&code).await {
                                         Ok(link) => {
                                             generated_link.set(Some(link));
                                             toast.success("Ссылка приглашения создана.");
@@ -302,15 +302,8 @@ fn optional_number(enabled: bool, value: String, label: &str) -> Result<Option<u
         .map_err(|_| format!("Проверь {label}."))
 }
 
-async fn current_invite_url(code: String) -> Result<String, String> {
-    let origin = document::eval("return window.location.origin;")
-        .join::<String>()
-        .await
-        .map_err(|_| "Не удалось определить адрес приложения.".to_owned())?;
+async fn current_invite_url(code: &str) -> Result<String, String> {
     let compact_code = code.replace('-', "");
 
-    Ok(format!(
-        "{}/invite/{compact_code}",
-        origin.trim_end_matches('/')
-    ))
+    crate::config::public_url(&format!("/invite/{compact_code}")).map(|url| url.to_string())
 }

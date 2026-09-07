@@ -432,13 +432,7 @@ fn refresh_button_class(disabled: bool) -> &'static str {
 }
 
 async fn current_invite_url(code: &str) -> Result<String, String> {
-    let origin = document::eval("return window.location.origin;")
-        .join::<String>()
-        .await
-        .map_err(|_| "Не удалось определить адрес приложения.".to_owned())?;
     let compact_code = code.replace('-', "");
-    Ok(format!(
-        "{}/invite/{compact_code}",
-        origin.trim_end_matches('/')
-    ))
+
+    crate::config::public_url(&format!("/invite/{compact_code}")).map(|url| url.to_string())
 }

@@ -99,6 +99,12 @@ fn parse_base_url(value: &str) -> Result<Url, String> {
     Ok(url)
 }
 
+pub(crate) fn public_url(path: &str) -> Result<Url, String> {
+    let mut url = parse_base_url(configured_base_url())?;
+    url.set_path(&format!("/{}", path.trim_start_matches('/')));
+    Ok(url)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
