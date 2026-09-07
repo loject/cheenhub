@@ -4,7 +4,6 @@ use dioxus::prelude::*;
 
 use crate::Route;
 use crate::features::landing::components::logo_icon::LogoIcon;
-use crate::features::landing::components::todo_button::TodoButton;
 
 #[component]
 pub(crate) fn Header() -> Element {
@@ -32,14 +31,26 @@ pub(crate) fn Header() -> Element {
                         "GitHub"
                     }
                     a {
-                        href: "https://youtube.com/@cheenhub",
+                        href: "https://www.youtube.com/@cheengeez",
                         target: "_blank",
                         rel: "noopener",
                         class: "btn-g hidden items-center rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-zinc-300 sm:flex",
                         "YouTube"
                     }
-                    TodoButton { class_name: "btn-g hidden items-center rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-zinc-300 md:flex", label: "RuTube" }
-                    TodoButton { class_name: "btn-g hidden items-center rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-zinc-300 md:flex", label: "Telegram" }
+                    a {
+                        href: "https://rutube.ru/channel/79753199",
+                        target: "_blank",
+                        rel: "noopener",
+                        class: "btn-g hidden items-center rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-zinc-300 md:flex",
+                        "RuTube"
+                    }
+                    a {
+                        href: "https://t.me/cheenhub_official",
+                        target: "_blank",
+                        rel: "noopener",
+                        class: "btn-g hidden items-center rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-zinc-300 md:flex",
+                        "Telegram"
+                    }
                     Link {
                         to: Route::Login { password_reset: None },
                         class: "btn-p flex items-center rounded-xl bg-accent px-3 py-1.5 text-[12px] font-semibold text-white",

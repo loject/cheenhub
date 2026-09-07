@@ -23,5 +23,4 @@ pub(crate) mod section_intro;
 pub(crate) mod social_links;
 pub(crate) mod tech_card;
 pub(crate) mod tech_section;
-pub(crate) mod todo_button;
 pub(crate) mod web_button;
