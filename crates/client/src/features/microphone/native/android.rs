@@ -88,22 +88,29 @@ struct AndroidMicrophoneSession {
 }
 
 impl MicrophoneSession for AndroidMicrophoneSession {
-    fn stop(&self) -> futures_util::future::LocalBoxFuture<'static, Result<(), MicrophoneError>> {
+    fn stop_immediately(&self) {
         if self.stopped.replace(true) {
-            return async { Ok(()) }.boxed_local();
+            return;
         }
+        self.inner.stop_immediately();
+        match android_bridge().map_err(android_error).and_then(|bridge| {
+            bridge
+                .stop_foreground_service(ForegroundServiceKind::Microphone)
+                .map_err(android_error)
+        }) {
+            Ok(()) => info!("Android microphone foreground ownership released immediately"),
+            Err(error) => {
+                warn!(%error, "failed to release Android microphone foreground ownership")
+            }
+        }
+    }
+
+    fn stop(&self) -> futures_util::future::LocalBoxFuture<'static, Result<(), MicrophoneError>> {
+        self.stop_immediately();
         let inner = self.inner.clone();
         async move {
             let capture_result = inner.stop().await;
-            let service_result = android_bridge().map_err(android_error).and_then(|bridge| {
-                bridge
-                    .stop_foreground_service(ForegroundServiceKind::Microphone)
-                    .map_err(android_error)
-            });
-
             capture_result?;
-            service_result?;
-            info!("Android microphone foreground ownership released");
             Ok(())
         }
         .boxed_local()
@@ -114,6 +121,12 @@ impl MicrophoneSession for AndroidMicrophoneSession {
         bitrate_bps: u32,
     ) -> futures_util::future::LocalBoxFuture<'static, Result<(), MicrophoneError>> {
         self.inner.set_bitrate_bps(bitrate_bps)
+    }
+}
+
+impl Drop for AndroidMicrophoneSession {
+    fn drop(&mut self) {
+        self.stop_immediately();
     }
 }
 

@@ -57,7 +57,8 @@ struct BrowserMicrophoneSession {
     silent_gain: Option<GainNode>,
     port: Option<MessagePort>,
     uplink: Option<Rc<BrowserWorkerUplink>>,
-    closed: Rc<Cell<bool>>,
+    capture_released: Rc<Cell<bool>>,
+    cleanup_started: Cell<bool>,
     _message_closure: Option<Closure<dyn FnMut(MessageEvent)>>,
     _processor_error_closure: Closure<dyn FnMut(JsValue)>,
     _output_closure: Option<Closure<dyn FnMut(EncodedAudioChunk)>>,
@@ -66,35 +67,37 @@ struct BrowserMicrophoneSession {
 }
 
 impl MicrophoneSession for BrowserMicrophoneSession {
+    fn stop_immediately(&self) {
+        if self.capture_released.replace(true) {
+            return;
+        }
+
+        if let Some(port) = &self.port {
+            port.set_onmessage(None);
+            port.close();
+        }
+        if let Some(uplink) = &self.uplink {
+            uplink.stop();
+        }
+        self.worklet.set_onprocessorerror(None);
+        disconnect_audio_node(self.source.as_ref());
+        disconnect_audio_node(self.worklet.as_ref());
+        if let Some(silent_gain) = &self.silent_gain {
+            disconnect_audio_node(silent_gain.as_ref());
+        }
+        self.track.stop();
+        info!("browser microphone capture stopped immediately");
+    }
+
     fn stop(&self) -> LocalBoxFuture<'static, Result<(), MicrophoneError>> {
+        self.stop_immediately();
+        if self.cleanup_started.replace(true) {
+            return async { Ok(()) }.boxed_local();
+        }
+
         let encoder = self.encoder.clone();
         let context = self.context.clone();
-        let track = self.track.clone();
-        let source = self.source.clone();
-        let worklet = self.worklet.clone();
-        let silent_gain = self.silent_gain.clone();
-        let port = self.port.clone();
-        let uplink = self.uplink.clone();
-        let closed = self.closed.clone();
         async move {
-            if closed.replace(true) {
-                return Ok(());
-            }
-
-            if let Some(port) = port {
-                port.set_onmessage(None);
-                port.close();
-            }
-            if let Some(uplink) = uplink {
-                uplink.stop();
-            }
-            worklet.set_onprocessorerror(None);
-            disconnect_audio_node(source.as_ref());
-            disconnect_audio_node(worklet.as_ref());
-            if let Some(silent_gain) = silent_gain {
-                disconnect_audio_node(silent_gain.as_ref());
-            }
-            track.stop();
             if let Some(encoder) = encoder {
                 encoder.close().map_err(microphone_error)?;
             }
@@ -115,6 +118,12 @@ impl MicrophoneSession for BrowserMicrophoneSession {
             uplink.set_bitrate_bps(bitrate_bps);
         }
         async move { Ok(()) }.boxed_local()
+    }
+}
+
+impl Drop for BrowserMicrophoneSession {
+    fn drop(&mut self) {
+        self.stop_immediately();
     }
 }
 
@@ -170,7 +179,7 @@ async fn start_browser_session(
             return Err(error);
         }
     };
-    let closed = Rc::new(Cell::new(false));
+    let capture_released = Rc::new(Cell::new(false));
     let port = match worklet.port() {
         Ok(port) => port,
         Err(error) => {
@@ -217,7 +226,7 @@ async fn start_browser_session(
                 callbacks,
                 config.clone(),
                 sample_rate_hz,
-                closed.clone(),
+                capture_released.clone(),
                 browser_encoder.diagnostics.clone(),
             );
             port.set_onmessage(Some(message_closure.as_ref().unchecked_ref()));
@@ -278,7 +287,8 @@ async fn start_browser_session(
         silent_gain,
         port: retained_port,
         uplink,
-        closed,
+        capture_released,
+        cleanup_started: Cell::new(false),
         _message_closure: message_closure,
         _processor_error_closure: processor_error_closure,
         _output_closure: output_closure,

@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use dioxus::dioxus_core::spawn_forever;
 use dioxus::prelude::*;
 
 use super::backend::{
@@ -114,7 +115,7 @@ impl MicrophoneHandle {
     /// Stops microphone capture only when it is owned by the settings level preview.
     pub(crate) fn stop_level_preview(&self) {
         let active_capture = *self.active_capture.peek();
-        if active_capture != ActiveCapture::Preview {
+        if !should_stop_level_preview(active_capture) {
             return;
         }
 
@@ -156,7 +157,7 @@ impl MicrophoneHandle {
         let mut level_active = self.level_active;
         reset_level(&mut level, &mut level_active);
 
-        spawn(async move {
+        spawn_forever(async move {
             let callbacks = microphone_callbacks(
                 on_frame.clone(),
                 level,
@@ -175,6 +176,7 @@ impl MicrophoneHandle {
             match backend.start(config, callbacks).await {
                 Ok(next_session) => {
                     if generation() != start_generation {
+                        next_session.stop_immediately();
                         if let Err(error) = next_session.stop().await {
                             warn!(%error, "failed to stop stale microphone capture after start");
                         }
@@ -240,6 +242,9 @@ impl MicrophoneHandle {
         let vad_threshold = threshold_from_percent(*self.vad_threshold_percent.peek());
         let target_bitrate_bps = *self.target_bitrate_bps.peek();
         let restart_generation = next_generation(&mut generation);
+        if let Some(previous_session) = &previous_session {
+            previous_session.stop_immediately();
+        }
         status.set(MicrophoneStatus::Starting);
         active_capture.set(capture);
         active_on_frame.set(Some(on_frame.clone()));
@@ -247,7 +252,7 @@ impl MicrophoneHandle {
         let mut level_active = self.level_active;
         reset_level(&mut level, &mut level_active);
 
-        spawn(async move {
+        spawn_forever(async move {
             if let Some(previous_session) = previous_session
                 && let Err(error) = previous_session.stop().await
             {
@@ -275,6 +280,7 @@ impl MicrophoneHandle {
             match backend.start(config, callbacks).await {
                 Ok(next_session) => {
                     if generation() != restart_generation {
+                        next_session.stop_immediately();
                         if let Err(error) = next_session.stop().await {
                             warn!(%error, "failed to stop stale microphone capture after restart");
                         }
@@ -306,22 +312,8 @@ impl MicrophoneHandle {
     /// Stops the active microphone session.
     pub(crate) fn stop(&self) {
         let mut generation = self.generation;
-        let stop_generation = next_generation(&mut generation);
-        let Some(active_session) = self.session.peek().clone() else {
-            let mut status = self.status;
-            let mut level = self.level;
-            let mut level_active = self.level_active;
-            let mut active_capture = self.active_capture;
-            let mut active_on_frame = self.active_on_frame;
-            let mut active_uplink = self.active_uplink;
-            reset_level(&mut level, &mut level_active);
-            status.set(MicrophoneStatus::Idle);
-            active_capture.set(ActiveCapture::None);
-            active_on_frame.set(None);
-            active_uplink.set(None);
-            return;
-        };
-
+        next_generation(&mut generation);
+        let active_session = self.session.peek().clone();
         let mut session = self.session;
         let mut status = self.status;
         let mut level = self.level;
@@ -329,19 +321,22 @@ impl MicrophoneHandle {
         let mut active_capture = self.active_capture;
         let mut active_on_frame = self.active_on_frame;
         let mut active_uplink = self.active_uplink;
-        spawn(async move {
+
+        stop_session_immediately(active_session.as_ref());
+        session.set(None);
+        reset_level(&mut level, &mut level_active);
+        status.set(MicrophoneStatus::Idle);
+        active_capture.set(ActiveCapture::None);
+        active_on_frame.set(None);
+        active_uplink.set(None);
+
+        let Some(active_session) = active_session else {
+            return;
+        };
+        spawn_forever(async move {
             if let Err(error) = active_session.stop().await {
                 warn!(%error, "failed to stop microphone capture cleanly");
             }
-            if generation() != stop_generation {
-                return;
-            }
-            session.set(None);
-            reset_level(&mut level, &mut level_active);
-            status.set(MicrophoneStatus::Idle);
-            active_capture.set(ActiveCapture::None);
-            active_on_frame.set(None);
-            active_uplink.set(None);
         });
     }
 
@@ -424,46 +419,16 @@ fn should_start_level_preview(status: &MicrophoneStatus, active_capture: ActiveC
         )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{ActiveCapture, should_start_level_preview};
-    use crate::features::microphone::MicrophoneStatus;
+fn should_stop_level_preview(active_capture: ActiveCapture) -> bool {
+    active_capture == ActiveCapture::Preview
+}
 
-    #[test]
-    fn level_preview_starts_from_idle_and_terminal_errors_without_active_capture() {
-        assert!(should_start_level_preview(
-            &MicrophoneStatus::Idle,
-            ActiveCapture::None
-        ));
-        assert!(should_start_level_preview(
-            &MicrophoneStatus::PermissionDenied,
-            ActiveCapture::None
-        ));
-        assert!(should_start_level_preview(
-            &MicrophoneStatus::Error("ошибка захвата".to_owned()),
-            ActiveCapture::None
-        ));
-    }
-
-    #[test]
-    fn level_preview_does_not_duplicate_starting_or_live_capture() {
-        assert!(!should_start_level_preview(
-            &MicrophoneStatus::Starting,
-            ActiveCapture::None
-        ));
-        assert!(!should_start_level_preview(
-            &MicrophoneStatus::Live,
-            ActiveCapture::None
-        ));
-    }
-
-    #[test]
-    fn level_preview_does_not_replace_an_active_capture() {
-        for active_capture in [ActiveCapture::Preview, ActiveCapture::Voice] {
-            assert!(!should_start_level_preview(
-                &MicrophoneStatus::PermissionDenied,
-                active_capture
-            ));
-        }
+fn stop_session_immediately(session: Option<&Rc<dyn MicrophoneSession>>) {
+    if let Some(session) = session {
+        session.stop_immediately();
     }
 }
+
+#[cfg(test)]
+#[path = "provider_tests.rs"]
+mod tests;

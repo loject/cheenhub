@@ -38,8 +38,12 @@ struct PulseMicrophoneSession {
 }
 
 impl MicrophoneSession for PulseMicrophoneSession {
-    fn stop(&self) -> futures_util::future::LocalBoxFuture<'static, Result<(), MicrophoneError>> {
+    fn stop_immediately(&self) {
         self.cancellation.0.store(true, Ordering::Relaxed);
+    }
+
+    fn stop(&self) -> futures_util::future::LocalBoxFuture<'static, Result<(), MicrophoneError>> {
+        self.stop_immediately();
         let finished = self.finished.borrow_mut().take();
         async move {
             if let Some(finished) = finished {

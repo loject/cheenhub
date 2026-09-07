@@ -153,6 +153,9 @@ pub(crate) enum MicrophoneStatus {
 
 /// Active microphone session.
 pub(crate) trait MicrophoneSession {
+    /// Немедленно прекращает захват, не ожидая асинхронного освобождения ресурсов.
+    fn stop_immediately(&self);
+
     /// Stops capture and releases backend resources.
     fn stop(&self) -> LocalBoxFuture<'static, Result<(), MicrophoneError>>;
 

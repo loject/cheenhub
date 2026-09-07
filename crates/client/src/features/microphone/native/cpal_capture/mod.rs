@@ -47,11 +47,14 @@ struct CpalMicrophoneSession {
 }
 
 impl MicrophoneSession for CpalMicrophoneSession {
-    fn stop(&self) -> futures_util::future::LocalBoxFuture<'static, Result<(), MicrophoneError>> {
+    fn stop_immediately(&self) {
         self.closed.store(true, Ordering::Relaxed);
-        let stream = self.stream.borrow_mut().take();
+        self.stream.borrow_mut().take();
+    }
+
+    fn stop(&self) -> futures_util::future::LocalBoxFuture<'static, Result<(), MicrophoneError>> {
+        self.stop_immediately();
         async move {
-            drop(stream);
             info!("native microphone capture stopped");
             Ok(())
         }
