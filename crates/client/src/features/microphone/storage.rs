@@ -5,8 +5,9 @@ use dioxus_sdk_storage::{LocalStorage, StorageBacking};
 
 use super::backend::MicrophoneActivationMode;
 
-const INPUT_DEVICE_ID_KEY: &str = "cheenhub.microphone.input_device_id";
-const INPUT_DEVICE_LABEL_KEY: &str = "cheenhub.microphone.input_device_label";
+use super::device_preferences::{
+    DEVICE_ID_KEY as INPUT_DEVICE_ID_KEY, DEVICE_LABEL_KEY as INPUT_DEVICE_LABEL_KEY,
+};
 const INPUT_VOLUME_PERCENT_KEY: &str = "cheenhub.microphone.input_volume_percent";
 const ACTIVATION_MODE_KEY: &str = "cheenhub.microphone.activation_mode";
 const VAD_THRESHOLD_PERCENT_KEY: &str = "cheenhub.microphone.vad_threshold_percent";

@@ -1,6 +1,7 @@
 //! Browser audio playback feature.
 
 mod backend;
+mod device_preferences;
 mod native;
 mod output_devices;
 mod storage;

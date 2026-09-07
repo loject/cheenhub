@@ -9,11 +9,11 @@ use futures_channel::mpsc as local_mpsc;
 use futures_util::StreamExt;
 use opus::{Application, Bitrate, Channels, Encoder, Signal};
 
-use super::super::super::backend::{
+use super::super::backend::{
     EncodedMicrophoneFrame, MicrophoneCallbacks, MicrophoneCodec, MicrophoneConfig,
     MicrophoneError, MicrophoneLevel,
 };
-use super::super::super::vad::{VoiceActivityDetector, rms_level};
+use super::super::vad::{VoiceActivityDetector, rms_level};
 
 const OPUS_FRAME_DURATION_US: u32 = 20_000;
 const MAX_OPUS_PACKET_BYTES: usize = 4_000;
@@ -26,18 +26,22 @@ pub(super) fn spawn_encoder_worker(
     bitrate_bps: Arc<AtomicU32>,
     frame_samples: usize,
 ) {
+    let worker_closed = closed.clone();
+    let worker_events = event_sender.clone();
     thread::Builder::new()
         .name("cheenhub-microphone-encoder".to_owned())
         .spawn(move || {
             if let Err(error) = run_encoder_worker(
                 config,
                 pcm_receiver,
-                event_sender,
-                closed,
+                worker_events.clone(),
+                worker_closed.clone(),
                 bitrate_bps,
                 frame_samples,
             ) {
                 warn!(%error, "native microphone encoder worker stopped with error");
+                worker_closed.store(true, Ordering::Relaxed);
+                let _ = worker_events.unbounded_send(NativeMicrophoneEvent::Error(error));
             }
         })
         .map(|_| ())
@@ -46,6 +50,11 @@ pub(super) fn spawn_encoder_worker(
                 error = %error,
                 "failed to spawn native microphone encoder worker"
             );
+            closed.store(true, Ordering::Relaxed);
+            let _ =
+                event_sender.unbounded_send(NativeMicrophoneEvent::Error(MicrophoneError::new(
+                    "Не удалось включить обработку микрофона. Попробуйте ещё раз.",
+                )));
         });
 }
 
@@ -58,6 +67,7 @@ pub(super) fn spawn_event_relay(
             match event {
                 NativeMicrophoneEvent::Frame(frame) => (callbacks.on_frame)(frame),
                 NativeMicrophoneEvent::Level(level) => (callbacks.on_level)(level),
+                NativeMicrophoneEvent::Error(error) => (callbacks.on_error)(error),
             }
         }
         debug!("native microphone event relay stopped");
@@ -195,6 +205,7 @@ fn send_event(
 
 pub(super) enum NativeMicrophoneEvent {
     Frame(EncodedMicrophoneFrame),
+    Error(MicrophoneError),
     Level(MicrophoneLevel),
 }
 

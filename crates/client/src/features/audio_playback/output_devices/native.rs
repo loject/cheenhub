@@ -3,9 +3,13 @@
 #[cfg(target_os = "android")]
 #[path = "native/android.rs"]
 mod implementation;
+#[cfg(all(target_os = "linux", feature = "linux"))]
+#[path = "native/linux.rs"]
+mod implementation;
 #[cfg(all(
     not(target_arch = "wasm32"),
     not(target_os = "android"),
+    not(all(target_os = "linux", feature = "linux")),
     any(feature = "windows", feature = "linux", feature = "macos")
 ))]
 #[path = "native/desktop.rs"]

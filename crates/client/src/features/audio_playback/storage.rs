@@ -3,8 +3,9 @@
 use dioxus::prelude::{info, warn};
 use dioxus_sdk_storage::{LocalStorage, StorageBacking};
 
-const OUTPUT_DEVICE_ID_KEY: &str = "cheenhub.audio_playback.output_device_id";
-const OUTPUT_DEVICE_LABEL_KEY: &str = "cheenhub.audio_playback.output_device_label";
+use super::device_preferences::{
+    DEVICE_ID_KEY as OUTPUT_DEVICE_ID_KEY, DEVICE_LABEL_KEY as OUTPUT_DEVICE_LABEL_KEY,
+};
 const OUTPUT_VOLUME_PERCENT_KEY: &str = "cheenhub.audio_playback.output_volume_percent";
 const JITTER_BUFFER_MS_KEY: &str = "cheenhub.audio_playback.jitter_buffer_ms";
 const DEFAULT_OUTPUT_VOLUME_PERCENT: u32 = 100;

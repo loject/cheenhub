@@ -161,6 +161,10 @@ impl AudioPlaybackHandle {
             return;
         }
 
+        if !crate::features::audio_playback::device_preferences::RECOVER_BY_LABEL {
+            return;
+        }
+
         let Some(selected_label) = self.selected_output_device_label.peek().clone() else {
             return;
         };
@@ -267,11 +271,9 @@ impl AudioPlaybackHandle {
     fn ensure_engine(&self) -> Result<(), String> {
         let selected_device_id = self.selected_output_device_id.peek().clone();
         let mut inner = self.inner.borrow_mut();
-        if inner
-            .engine
-            .as_ref()
-            .is_some_and(|engine| engine.device_id().as_deref() == selected_device_id.as_deref())
-        {
+        if inner.engine.as_ref().is_some_and(|engine| {
+            engine.is_running() && engine.device_id().as_deref() == selected_device_id.as_deref()
+        }) {
             return Ok(());
         }
 

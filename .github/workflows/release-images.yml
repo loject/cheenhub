@@ -321,7 +321,7 @@ jobs:
             build-essential \
             curl \
             file \
-            libasound2-dev \
+            libpulse-dev \
             libayatana-appindicator3-dev \
             libfuse2t64 \
             libglib2.0-dev \

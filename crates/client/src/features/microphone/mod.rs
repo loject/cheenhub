@@ -10,6 +10,7 @@ mod browser_errors;
 mod browser_worker;
 mod browser_worklet;
 mod core;
+mod device_preferences;
 mod input_devices;
 mod native;
 mod provider;

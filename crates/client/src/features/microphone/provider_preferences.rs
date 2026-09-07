@@ -25,6 +25,10 @@ impl MicrophoneHandle {
             return;
         }
 
+        if !super::device_preferences::RECOVER_BY_LABEL {
+            return;
+        }
+
         let Some(selected_label) = self.selected_input_device_label.peek().clone() else {
             return;
         };

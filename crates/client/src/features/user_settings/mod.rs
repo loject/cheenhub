@@ -7,6 +7,7 @@ mod password_section;
 mod profile_section;
 mod scope;
 mod security_section;
+mod sound_device_refresh;
 mod sound_devices;
 mod sound_section;
 mod styles;

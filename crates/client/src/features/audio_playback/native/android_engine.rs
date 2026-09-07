@@ -42,6 +42,11 @@ pub(super) struct NativePlaybackEngine {
 }
 
 impl NativePlaybackEngine {
+    /// Возвращает, удерживает ли engine активный платформенный поток.
+    pub(super) fn is_running(&self) -> bool {
+        true
+    }
+
     /// Возвращает идентификатор выбранного устройства вывода.
     pub(super) fn device_id(&self) -> Option<String> {
         self.device_id.clone()

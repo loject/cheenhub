@@ -1,6 +1,5 @@
 //! Native-захват микрофона через `cpal`.
 
-mod encoding;
 mod samples;
 
 use std::cell::RefCell;
@@ -17,7 +16,7 @@ use super::super::backend::{
     MicrophoneBackend, MicrophoneCallbacks, MicrophoneCodec, MicrophoneConfig, MicrophoneError,
     MicrophoneSession,
 };
-use encoding::{frame_samples, spawn_encoder_worker, spawn_event_relay};
+use super::encoding::{frame_samples, spawn_encoder_worker, spawn_event_relay};
 use samples::capture_callback;
 
 use super::device_key::parse_input_device_id;

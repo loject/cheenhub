@@ -75,8 +75,8 @@ system-tray = []
 browser-media-diagnostics = []
 # Windows-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
 windows = ["dep:cpal", "dep:opus", "dep:windows-sys"]
-# Linux-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
-linux = ["dep:cpal", "dep:opus"]
+# Linux-реализация desktop-клиента: PulseAudio API для ввода/вывода и Opus для голоса.
+linux = ["dep:libpulse-binding", "dep:opus"]
 # macOS-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
 macos = ["dep:cpal", "dep:opus"]
 microphone_worker = [
@@ -179,6 +179,9 @@ windows-sys = { workspace = true, optional = true, features = [
     "Win32_System_Registry",
     "Win32_System_Threading",
 ] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libpulse-binding = { version = "2.30", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 manganis = "=0.8.0-alpha.1"

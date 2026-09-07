@@ -6,20 +6,19 @@ use super::backend::MicrophoneBackend;
 
 #[cfg(target_os = "android")]
 mod android;
-#[cfg(any(
-    target_os = "android",
-    feature = "windows",
-    feature = "linux",
-    feature = "macos"
-))]
+#[cfg(any(target_os = "android", feature = "windows", feature = "macos"))]
 mod cpal_capture;
+#[cfg(any(target_os = "android", feature = "windows", feature = "macos"))]
+pub(super) mod device_key;
 #[cfg(any(
     target_os = "android",
     feature = "windows",
     feature = "linux",
     feature = "macos"
 ))]
-pub(super) mod device_key;
+mod encoding;
+#[cfg(feature = "linux")]
+mod linux;
 
 /// Возвращает backend микрофона для текущей платформы.
 pub(super) fn default_backend() -> Rc<dyn MicrophoneBackend> {
@@ -33,7 +32,12 @@ pub(super) fn default_backend() -> Rc<dyn MicrophoneBackend> {
         Rc::new(android::AndroidMicrophoneBackend)
     }
 
-    #[cfg(any(feature = "windows", feature = "linux", feature = "macos"))]
+    #[cfg(feature = "linux")]
+    {
+        Rc::new(linux::PulseMicrophoneBackend)
+    }
+
+    #[cfg(any(feature = "windows", feature = "macos"))]
     {
         Rc::new(cpal_capture::CpalMicrophoneBackend)
     }

@@ -1,4 +1,4 @@
-//! Output stream на базе `cpal` для Windows, Linux и macOS.
+//! Поток вывода на базе `cpal` для Windows и macOS.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig, SupportedStreamConfig};
@@ -67,6 +67,11 @@ pub(super) struct NativePlaybackEngine {
 }
 
 impl NativePlaybackEngine {
+    /// Возвращает, удерживает ли engine активный платформенный поток.
+    pub(super) fn is_running(&self) -> bool {
+        true
+    }
+
     /// Возвращает идентификатор выбранного устройства вывода.
     pub(super) fn device_id(&self) -> Option<String> {
         self.device_id.clone()
@@ -315,7 +320,7 @@ where
 }
 
 fn cpal_error(error: impl std::fmt::Display) -> String {
-    format!("cpal backend для Windows/Linux/macOS вернул ошибку: {error}")
+    format!("cpal backend для Windows/macOS вернул ошибку: {error}")
 }
 
 #[cfg(test)]

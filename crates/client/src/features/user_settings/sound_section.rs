@@ -6,13 +6,16 @@ use dioxus::prelude::*;
 
 use crate::features::audio_playback::{
     AudioOutputDevice, AudioOutputDevicesResult, AudioPlaybackHandle, MAX_JITTER_BUFFER_US,
-    MIN_JITTER_BUFFER_US, enumerate_audio_output_devices,
+    MIN_JITTER_BUFFER_US,
 };
 use crate::features::microphone::{
     AudioInputDevice, AudioInputDevicesResult, MicrophoneActivationMode, MicrophoneHandle,
-    MicrophoneStatus, enumerate_audio_input_devices, request_microphone_permission,
+    MicrophoneStatus,
 };
 
+use super::sound_device_refresh::{
+    refresh_devices_after_permission, refresh_input_devices, refresh_output_devices,
+};
 use super::sound_devices::{input_device_widget, output_device_widget};
 use super::styles::{parse_percent, parse_percent_range};
 
@@ -42,17 +45,15 @@ pub(crate) fn SoundSettingsSection() -> Element {
     let mic_level = mic.level();
     let live_level = level_percent(mic_level.rms);
 
-    // Enumerate real devices once on mount. Empty preference means system default device.
-    // Input and output are deliberately independent so a slow backend cannot delay the
-    // other selector.
-    let mic_effect = mic.clone();
-    use_effect(move || {
-        refresh_input_devices(mic_effect.clone(), input_devices_state);
-    });
-
-    let playback_effect = playback.clone();
-    use_effect(move || {
-        refresh_output_devices(playback_effect.clone(), output_devices_state);
+    let refresh_mic = mic.clone();
+    let refresh_playback = playback.clone();
+    use_future(move || {
+        super::sound_device_refresh::refresh_while_mounted(
+            refresh_mic.clone(),
+            refresh_playback.clone(),
+            input_devices_state,
+            output_devices_state,
+        )
     });
 
     let mic_change = mic.clone();
@@ -234,101 +235,6 @@ pub(crate) fn SoundSettingsSection() -> Element {
                 }
             }
         }
-    }
-}
-
-fn refresh_devices_after_permission(
-    mic: MicrophoneHandle,
-    playback: AudioPlaybackHandle,
-    mut input_devices_state: Signal<Option<AudioInputDevicesResult>>,
-    mut output_devices_state: Signal<Option<AudioOutputDevicesResult>>,
-    mut requesting_permission: Signal<bool>,
-) {
-    requesting_permission.set(true);
-    input_devices_state.set(None);
-    output_devices_state.set(None);
-
-    spawn(async move {
-        let input_result = request_microphone_permission().await;
-        reconcile_input_devices_result(&mic, &input_result);
-        input_devices_state.set(Some(input_result));
-        mic.start_level_preview();
-
-        let output_result = enumerate_audio_output_devices().await;
-        reconcile_output_devices_result(&playback, &output_result);
-        output_devices_state.set(Some(output_result));
-
-        requesting_permission.set(false);
-    });
-}
-
-fn refresh_input_devices(
-    mic: MicrophoneHandle,
-    mut input_devices_state: Signal<Option<AudioInputDevicesResult>>,
-) {
-    input_devices_state.set(None);
-
-    spawn(async move {
-        let result = enumerate_audio_input_devices().await;
-        reconcile_input_devices_result(&mic, &result);
-        input_devices_state.set(Some(result));
-        mic.start_level_preview();
-    });
-}
-
-fn refresh_output_devices(
-    playback: AudioPlaybackHandle,
-    mut output_devices_state: Signal<Option<AudioOutputDevicesResult>>,
-) {
-    output_devices_state.set(None);
-
-    spawn(async move {
-        let result = enumerate_audio_output_devices().await;
-        reconcile_output_devices_result(&playback, &result);
-        output_devices_state.set(Some(result));
-    });
-}
-
-fn reconcile_input_devices_result(mic: &MicrophoneHandle, result: &AudioInputDevicesResult) {
-    if result.system_managed && mic.input_device_id().is_some() {
-        info!(
-            platform = "android",
-            management = "system_audio_policy",
-            "clearing stored microphone input device preference"
-        );
-        mic.set_input_device(&AudioInputDevice {
-            device_id: String::new(),
-            label: String::new(),
-        });
-    } else if let Some(devices) = result
-        .devices
-        .as_ref()
-        .filter(|devices| !devices.is_empty())
-    {
-        mic.reconcile_input_devices(devices);
-    }
-}
-
-fn reconcile_output_devices_result(
-    playback: &AudioPlaybackHandle,
-    result: &AudioOutputDevicesResult,
-) {
-    if result.system_managed && playback.output_device_id().is_some() {
-        info!(
-            platform = "android",
-            management = "audio_manager",
-            "clearing stored audio output device preference"
-        );
-        playback.set_output_device(&AudioOutputDevice {
-            device_id: String::new(),
-            label: String::new(),
-        });
-    } else if let Some(devices) = result
-        .devices
-        .as_ref()
-        .filter(|devices| !devices.is_empty())
-    {
-        playback.reconcile_output_devices(devices);
     }
 }
 
