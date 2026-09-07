@@ -5156,6 +5156,10 @@ html,
   color: rgb(9 9 11 / var(--tw-text-opacity, 1));
 }
 
+.text-blue-300\/50 {
+  color: rgb(147 197 253 / 0.5);
+}
+
 .underline {
   text-decoration-line: underline;
 }

@@ -31,9 +31,9 @@ pub(crate) fn ChatMessageItem(
         (false, false, false) => "flex w-full justify-start",
     };
     let content_stack_class = if is_own {
-        "flex min-w-0 max-w-[min(100%,42rem)] flex-col items-end gap-2"
+        "flex min-w-0 flex-col items-end gap-2"
     } else {
-        "flex min-w-0 max-w-[min(100%,42rem)] flex-col items-start gap-2"
+        "flex min-w-0 flex-col items-start gap-2"
     };
     let bubble_class = if is_own {
         "message-bubble w-fit max-w-full whitespace-pre-wrap break-words rounded-[20px] border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-[13px] leading-5 text-blue-100 transition-[border-color,background] duration-200 hover:border-blue-400/40 hover:bg-blue-500/15"
@@ -60,24 +60,43 @@ pub(crate) fn ChatMessageItem(
                 let p = event.client_coordinates();
                 menu_pos.set(Some((p.x, p.y)));
             },
-            div { class: content_stack_class,
-                if !message.body.is_empty() {
-                    div { class: bubble_class,
-                        span { class: "[overflow-wrap:anywhere]", "{message.body}" }
-                    }
-                }
-                {children}
-                div { class: "group/message-time relative flex items-center gap-1.5",
-                    span { class: time_class, "{sent_time}" }
-                    if is_own {
-                        if let Some(status) = message.delivery_status {
-                            {delivery_status_marks(status)}
+            div { class: "flex min-w-0 max-w-[min(100%,42rem)] items-center gap-1.5",
+                if is_own {
+                    div { class: "group/message-time relative flex shrink-0 items-center gap-1",
+                        span { class: time_class, "{sent_time}" }
+
+                        span {
+                            role: "tooltip",
+                            class: "pointer-events-none absolute bottom-[calc(100%+8px)] left-0 z-30 w-max max-w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-zinc-800 bg-zinc-950/95 px-2.5 py-1.5 text-[11px] font-medium leading-4 text-zinc-200 opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-[opacity,transform] duration-150 group-hover/message-time:opacity-100 group-focus-within/message-time:opacity-100",
+                            "Отправлено {sent_datetime}"
                         }
                     }
-                    span {
-                        role: "tooltip",
-                        class: "pointer-events-none absolute bottom-[calc(100%+8px)] right-0 z-30 w-max max-w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-zinc-800 bg-zinc-950/95 px-2.5 py-1.5 text-[11px] font-medium leading-4 text-zinc-200 opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-[opacity,transform] duration-150 group-hover/message-time:opacity-100 group-focus-within/message-time:opacity-100",
-                        "Отправлено {sent_datetime}"
+                }
+
+                div { class: content_stack_class,
+                    if !message.body.is_empty() {
+                        div { class: bubble_class,
+                            span { class: "[overflow-wrap:anywhere]", "{message.body}" }
+                        }
+                    }
+                    {children}
+                }
+
+                if is_own {
+                    if let Some(status) = message.delivery_status {
+                        {delivery_status_marks(status)}
+                    }
+                }
+
+                if !is_own {
+                    div { class: "group/message-time relative flex shrink-0 items-center",
+                        span { class: time_class, "{sent_time}" }
+
+                        span {
+                            role: "tooltip",
+                            class: "pointer-events-none absolute bottom-[calc(100%+8px)] right-0 z-30 w-max max-w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-zinc-800 bg-zinc-950/95 px-2.5 py-1.5 text-[11px] font-medium leading-4 text-zinc-200 opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-[opacity,transform] duration-150 group-hover/message-time:opacity-100 group-focus-within/message-time:opacity-100",
+                            "Отправлено {sent_datetime}"
+                        }
                     }
                 }
             }
@@ -142,7 +161,7 @@ fn delivery_status_title(status: DmMessageDeliveryStatus) -> &'static str {
 fn delivery_status_marks(status: DmMessageDeliveryStatus) -> Element {
     rsx! {
         span {
-            class: "mb-[1px] inline-flex shrink-0 items-center text-[10px] font-semibold leading-none text-blue-300",
+            class: "mb-[1px] inline-flex shrink-0 items-center text-[10px] font-semibold leading-none text-blue-300/50",
             title: "{delivery_status_title(status)}",
             match status {
                 DmMessageDeliveryStatus::Accepted => rsx! {
