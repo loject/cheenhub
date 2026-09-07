@@ -40,6 +40,7 @@ pub(crate) fn ServerRoomsScope(
     on_open_modal: EventHandler<AppModal>,
     on_left_server: EventHandler<String>,
     on_server_updated: EventHandler<ServerSummary>,
+    on_open_user_settings: EventHandler<()>,
 ) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
     let navigator = use_navigator();
@@ -380,6 +381,7 @@ pub(crate) fn ServerRoomsScope(
                 realtime_label: server_name.clone(),
                 settings_workspace_active,
                 show_voice_controls: true,
+                on_open_user_settings,
             }
         }
         for workspace in mounted_workspaces() {

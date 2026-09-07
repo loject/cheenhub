@@ -27,7 +27,10 @@ use super::voice_target::direct_message_voice_target;
 
 /// Рендерит рабочую область друзей и личных сообщений.
 #[component]
-pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
+pub(crate) fn SocialPage(
+    selected_conversation_id: Option<String>,
+    on_open_user_settings: EventHandler<()>,
+) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
     let navigator = use_navigator();
     let realtime = use_context::<RealtimeHandle>();
@@ -257,6 +260,7 @@ pub(crate) fn SocialPage(selected_conversation_id: Option<String>) -> Element {
                     realtime_label: "Друзья".to_owned(),
                     settings_workspace_active: false,
                     show_voice_controls: true,
+                    on_open_user_settings,
                 }
             }
 

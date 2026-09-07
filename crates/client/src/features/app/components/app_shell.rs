@@ -11,6 +11,7 @@ use crate::features::host_settings::{
     HostDashboardPage, HostEmailSettingsPage, HostLogsPage, api as host_settings_api,
 };
 use crate::features::social::SocialPage;
+use crate::features::user_settings::UserSettingsScope;
 
 use super::add_server_modal::AddServerModal;
 use super::create_server_modal::CreateServerModal;
@@ -63,6 +64,7 @@ pub(crate) fn AppShell() -> Element {
     let mut server_status = use_signal(String::new);
     let mut is_add_server_open = use_signal(|| false);
     let mut is_create_server_open = use_signal(|| false);
+    let mut is_user_settings_open = use_signal(|| false);
     let mut shell_state = use_signal(default_server_shell_state);
     let mut shell_state_by_server = use_signal(Vec::<(String, ServerShellState)>::new);
     let mut app_modal = use_signal(|| None::<AppModal>);
@@ -248,6 +250,10 @@ pub(crate) fn AppShell() -> Element {
             } else if social_workspace_active {
                 SocialPage {
                     selected_conversation_id,
+                    on_open_user_settings: move |_| {
+                        info!("opening user settings from social workspace");
+                        is_user_settings_open.set(true);
+                    },
                 }
             }
             if !host_settings_active && !social_workspace_active && show_empty_servers {
@@ -308,6 +314,10 @@ pub(crate) fn AppShell() -> Element {
                             servers.set(next_servers);
                             server_status.set(String::new());
                         },
+                        on_open_user_settings: move |_| {
+                            info!("opening user settings from server workspace");
+                            is_user_settings_open.set(true);
+                        },
                     }
                 }
             }
@@ -351,6 +361,14 @@ pub(crate) fn AppShell() -> Element {
                     server_id,
                     server_name,
                     on_close: move |_| app_modal.set(None),
+                }
+            }
+            if is_user_settings_open() {
+                UserSettingsScope {
+                    on_close: move |_| {
+                        info!("closing user settings");
+                        is_user_settings_open.set(false);
+                    },
                 }
             }
         }

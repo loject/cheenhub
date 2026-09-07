@@ -16,6 +16,7 @@ pub(crate) fn ServerInstance(
     on_open_modal: EventHandler<AppModal>,
     on_left_server: EventHandler<String>,
     on_server_updated: EventHandler<ServerSummary>,
+    on_open_user_settings: EventHandler<()>,
 ) -> Element {
     let wrapper_class = if active { "contents" } else { "hidden" };
 
@@ -29,6 +30,7 @@ pub(crate) fn ServerInstance(
                 on_open_modal,
                 on_left_server,
                 on_server_updated,
+                on_open_user_settings,
             }
         }
     }
