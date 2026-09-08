@@ -3856,10 +3856,6 @@ html,
   border-color: rgb(9 9 11 / var(--tw-border-opacity, 1));
 }
 
-.border-blue-400\/15 {
-  border-color: rgb(96 165 250 / 0.15);
-}
-
 .border-t-accent {
   --tw-border-opacity: 1;
   border-top-color: rgb(59 130 246 / var(--tw-border-opacity, 1));
@@ -4296,10 +4292,6 @@ html,
 
 .bg-zinc-950\/95 {
   background-color: rgb(9 9 11 / 0.95);
-}
-
-.bg-blue-500\/\[0\.08\] {
-  background-color: rgb(59 130 246 / 0.08);
 }
 
 .bg-\[radial-gradient\(circle_at_center\2c rgba\(255\2c 255\2c 255\2c \.055\)\2c transparent_38\%\)\] {
@@ -4859,10 +4851,6 @@ html,
 
 .leading-tight {
   line-height: 1.25;
-}
-
-.leading-\[18px\] {
-  line-height: 18px;
 }
 
 .tracking-\[-0\.025em\] {
@@ -7057,10 +7045,6 @@ html,
 
   .hover\:bg-zinc-950\/80:hover {
     background-color: rgb(9 9 11 / 0.8);
-  }
-
-  .hover\:bg-blue-500\/\[0\.11\]:hover {
-    background-color: rgb(59 130 246 / 0.11);
   }
 
   .hover\:text-blue-100:hover {
