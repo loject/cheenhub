@@ -311,7 +311,7 @@ impl IntoResponse for AuthError {
     }
 }
 
-fn bearer_token(headers: &HeaderMap) -> Result<&str, AuthError> {
+pub(super) fn bearer_token(headers: &HeaderMap) -> Result<&str, AuthError> {
     let value = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())

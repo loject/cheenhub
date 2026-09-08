@@ -158,8 +158,9 @@ pub(crate) fn AccountSettingsSection() -> Element {
                 DeleteAccountModal {
                     on_close: move |_| delete_modal_open.set(false),
                     on_confirm: move |_| {
-                        // На следующем этапе здесь будет вызван серверный запрос удаления аккаунта.
                         delete_modal_open.set(false);
+                        toast.success("Аккаунт отключён. Ссылка для восстановления отправлена на почту.");
+                        let _ = navigator.replace(Route::Login { password_reset: None });
                     },
                 }
             }

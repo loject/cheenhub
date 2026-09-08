@@ -21,6 +21,13 @@ pub(super) fn insert_oauth_state(
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<Uuid> {
     let mut state = state.lock().map_err(|_| super::in_memory::poisoned())?;
+    anyhow::ensure!(
+        !user_id.is_some_and(|id| state
+            .users
+            .iter()
+            .any(|user| user.account.id == id && user.deletion.is_some())),
+        "account is deleted"
+    );
     let id = Uuid::new_v4();
     state.oauth_states.push(InMemoryOAuthState {
         id,
@@ -109,6 +116,13 @@ pub(super) fn insert_oauth_account(
     now: DateTime<Utc>,
 ) -> anyhow::Result<OAuthAccount> {
     let mut state = state.lock().map_err(|_| super::in_memory::poisoned())?;
+    anyhow::ensure!(
+        !state
+            .users
+            .iter()
+            .any(|user| user.account.id == *user_id && user.deletion.is_some()),
+        "account is deleted"
+    );
     if state
         .oauth_accounts
         .iter()
@@ -159,6 +173,13 @@ pub(super) fn insert_oauth_handoff(
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     let mut state = state.lock().map_err(|_| super::in_memory::poisoned())?;
+    anyhow::ensure!(
+        !user_id.is_some_and(|id| state
+            .users
+            .iter()
+            .any(|user| user.account.id == id && user.deletion.is_some())),
+        "account is deleted"
+    );
     state.oauth_handoffs.push(InMemoryOAuthHandoff {
         id: Uuid::new_v4(),
         code_hash,

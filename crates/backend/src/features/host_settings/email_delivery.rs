@@ -5,8 +5,8 @@ use std::{sync::Arc, time::Duration};
 use async_trait::async_trait;
 
 use crate::features::auth::email::{
-    AuthMailer, EmailError, GmailApiAuthMailer, PasswordChangedEmail, PasswordResetEmail,
-    SmtpAuthMailer,
+    AccountDeletionEmail, AuthMailer, EmailError, GmailApiAuthMailer, PasswordChangedEmail,
+    PasswordResetEmail, SmtpAuthMailer,
 };
 
 use super::{domain::EmailTransport, infrastructure::HostSettingsStore};
@@ -71,6 +71,10 @@ impl DynamicAuthMailer {
 
 #[async_trait]
 impl AuthMailer for DynamicAuthMailer {
+    async fn send_account_deletion(&self, email: AccountDeletionEmail) -> Result<(), EmailError> {
+        self.current().await?.send_account_deletion(email).await
+    }
+
     async fn send_password_reset(&self, email: PasswordResetEmail) -> Result<(), EmailError> {
         self.current().await?.send_password_reset(email).await
     }

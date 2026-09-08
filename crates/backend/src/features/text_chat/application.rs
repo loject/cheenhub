@@ -18,6 +18,7 @@ use crate::features::text_chat::validation;
 use crate::state::AppState;
 
 mod attachments;
+mod history_authors;
 
 pub(crate) use attachments::{chat_image, upload_chat_image};
 
@@ -55,6 +56,8 @@ pub(crate) async fn load_room_history(
     .await
     .map_err(TextChatApplicationError::Internal)?;
 
+    let deleted_authors = history_authors::deleted_authors(state, &page.messages).await?;
+
     Ok(RoomHistory {
         server_id: server_id.to_string(),
         room_id: room_id.to_string(),
@@ -62,7 +65,13 @@ pub(crate) async fn load_room_history(
             .messages
             .iter()
             .map(|message| {
-                message_summary(message, avatar_urls.get(&message.author_user_id).cloned())
+                let mut summary =
+                    message_summary(message, avatar_urls.get(&message.author_user_id).cloned());
+                if deleted_authors[&message.author_user_id] {
+                    summary.author_nickname = "Удалённый пользователь".to_owned();
+                    summary.author_avatar_url = None;
+                }
+                summary
             })
             .collect(),
         has_more: page.has_more,

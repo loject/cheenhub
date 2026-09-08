@@ -51,6 +51,13 @@ pub(in crate::features::auth::infrastructure) struct InMemoryState {
 pub(in crate::features::auth::infrastructure) struct InMemoryUser {
     /// User account.
     pub(in crate::features::auth::infrastructure) account: UserAccount,
+    /// Сроки удаления пользователя; отсутствие означает активный аккаунт.
+    pub(in crate::features::auth::infrastructure) deletion:
+        Option<crate::features::auth::domain::AccountDeletion>,
+    /// Хеш одноразовой ссылки восстановления.
+    pub(in crate::features::auth::infrastructure) deletion_token_hash: Option<String>,
+    /// Время окончательного обезличивания аккаунта.
+    pub(in crate::features::auth::infrastructure) deletion_finalized_at: Option<DateTime<Utc>>,
     /// Normalized email for lookup.
     pub(in crate::features::auth::infrastructure) email_normalized: String,
 }

@@ -2,8 +2,8 @@
 
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
-    TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
+    Set, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -26,6 +26,12 @@ pub(super) async fn update_user_nickname(
         .begin()
         .await
         .map_err(UpdateUserNicknameError::Database)?;
+    if !super::postgres_deletion::lock_active_user(&transaction, user_id)
+        .await
+        .map_err(UpdateUserNicknameError::Storage)?
+    {
+        return Ok(None);
+    }
     let Some(user) = users::Entity::find_by_id(*user_id)
         .one(&transaction)
         .await
@@ -98,6 +104,10 @@ pub(super) async fn change_user_password(
     now: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     let transaction = database.begin().await?;
+    anyhow::ensure!(
+        super::postgres_deletion::lock_active_user(&transaction, user_id).await?,
+        "account is deleted or missing"
+    );
     users::Entity::update_many()
         .col_expr(
             users::Column::PasswordHash,
@@ -131,4 +141,29 @@ fn map_update_user_nickname_error(error: sea_orm::DbErr) -> UpdateUserNicknameEr
     }
 
     UpdateUserNicknameError::Database(error)
+}
+
+/// Обновляет аватар только активного пользователя под блокировкой строки.
+pub(super) async fn update_user_avatar_image_id(
+    database: &DatabaseConnection,
+    user_id: &Uuid,
+    image_id: Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Option<UserAccount>> {
+    let transaction = database.begin().await?;
+    if !super::postgres_deletion::lock_active_user(&transaction, user_id).await? {
+        return Ok(None);
+    }
+    let Some(user) = users::Entity::find_by_id(*user_id)
+        .one(&transaction)
+        .await?
+    else {
+        return Ok(None);
+    };
+    let mut user = user.into_active_model();
+    user.avatar_image_id = Set(Some(image_id));
+    user.updated_at = Set(now);
+    let user = user.update(&transaction).await?;
+    transaction.commit().await?;
+    Ok(Some(user.into()))
 }

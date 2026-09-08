@@ -18,6 +18,7 @@ use crate::features::auth::validation;
 use crate::state::AppState;
 use uuid::Uuid;
 
+mod account_deletion;
 mod avatar;
 mod desktop_oauth;
 mod google;
@@ -34,6 +35,9 @@ const NICKNAME_CHANGE_COOLDOWN_DAYS: i64 = 7;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use account_deletion::{
+    delete_current_user, restore_account, run_account_deletion_worker,
+};
 pub(crate) use avatar::update_current_user_avatar;
 pub(crate) use desktop_oauth::{cancel_desktop_oauth, poll_desktop_oauth, start_desktop_oauth};
 pub(crate) use google_native::{complete_google_native_auth, start_google_native_auth};
@@ -148,6 +152,16 @@ pub(crate) async fn request_password_reset(
         return Ok(());
     };
 
+    if state
+        .auth_store
+        .account_deletion(&user.id)
+        .await
+        .map_err(AuthError::Internal)?
+        .is_some()
+    {
+        tracing::info!(user_id = %user.id, "ignored password reset for deleted account");
+        return Ok(());
+    }
     let reset_token = refresh_token::generate();
     let reset_token_hash = refresh_token::hash(&reset_token);
     let expires_at = now + Duration::minutes(state.password_reset_token_lifetime_minutes);
@@ -358,6 +372,7 @@ pub(super) async fn create_auth_response(
     user: &UserAccount,
     user_agent: Option<&str>,
 ) -> Result<AuthResponse, AuthError> {
+    account_deletion::require_active_account(state, &user.id).await?;
     let now = Utc::now();
     let refresh = refresh_token::generate();
     let refresh_hash = refresh_token::hash(&refresh);
@@ -411,6 +426,7 @@ pub(crate) async fn require_current_user(
         return Err(expired_session());
     };
 
+    account_deletion::require_active_account(state, &user.id).await?;
     Ok((user, session_id))
 }
 

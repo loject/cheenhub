@@ -19,8 +19,8 @@ use crate::features::social::realtime::{
     notify_conversation_read_checkpoint, notify_direct_message_created, notify_social_changed,
 };
 use crate::features::social::support::{
-    conversation_summaries, conversation_summary, load_user_conversation, map_auth_error,
-    message_body, message_summaries, message_summary, other_user_id, parse_id,
+    conversation_summaries, conversation_summary, ensure_user_active, load_user_conversation,
+    map_auth_error, message_body, message_summaries, message_summary, other_user_id, parse_id,
 };
 use crate::state::AppState;
 
@@ -52,6 +52,7 @@ pub(crate) async fn open_dm_conversation(
         .await
         .map_err(map_auth_error)?;
     let friend_user_id = parse_id(&request.friend_user_id, "Пользователь не найден.")?;
+    ensure_user_active(state, &friend_user_id).await?;
     ensure_friendship(state, &current_user.id, &friend_user_id).await?;
     let conversation = state
         .social_store
@@ -216,6 +217,7 @@ pub(crate) async fn send_dm_message(
     let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
     let conversation = load_user_conversation(state, &conversation_id, &current_user.id).await?;
     let friend_user_id = other_user_id(&conversation, &current_user.id);
+    ensure_user_active(state, &friend_user_id).await?;
     ensure_friendship(state, &current_user.id, &friend_user_id).await?;
     let image_id = request
         .image_id

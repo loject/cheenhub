@@ -220,6 +220,9 @@ async fn main() -> anyhow::Result<()> {
         password_reset_token_lifetime_minutes: config.password_reset_token_lifetime_minutes,
     };
     let app = http::router(state.clone());
+    tokio::spawn(features::auth::application::run_account_deletion_worker(
+        state.clone(),
+    ));
     if push_notifications.worker_enabled() {
         tokio::spawn(push_notifications.run_delivery_worker());
     }

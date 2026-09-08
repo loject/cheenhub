@@ -23,6 +23,11 @@ pub(super) async fn create_session(
     now: DateTime<Utc>,
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<Uuid> {
+    let transaction = database.begin().await?;
+    anyhow::ensure!(
+        super::postgres_deletion::lock_active_user(&transaction, user_id).await?,
+        "account is deleted or missing"
+    );
     let session_id = Uuid::new_v4();
     let refresh_id = Uuid::new_v4();
 
@@ -34,7 +39,7 @@ pub(super) async fn create_session(
         expires_at: Set(expires_at),
         revoked_at: Set(None),
     }
-    .insert(database)
+    .insert(&transaction)
     .await?;
 
     refresh_tokens::ActiveModel {
@@ -46,13 +51,14 @@ pub(super) async fn create_session(
         expires_at: Set(expires_at),
         revoked_at: Set(None),
     }
-    .insert(database)
+    .insert(&transaction)
     .await?;
 
     if let Some(user_agent) = user_agent {
-        record_session_user_agent(database, &session_id, user_agent, now).await?;
+        record_session_user_agent(&transaction, &session_id, user_agent, now).await?;
     }
 
+    transaction.commit().await?;
     Ok(session_id)
 }
 
@@ -160,6 +166,15 @@ pub(super) async fn rotate_refresh(
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<RotateRefreshOutcome> {
     let transaction = database.begin().await?;
+    let Some(session) = sessions::Entity::find_by_id(*session_id)
+        .one(&transaction)
+        .await?
+    else {
+        return Ok(RotateRefreshOutcome::AlreadyConsumed);
+    };
+    if !super::postgres_deletion::lock_active_user(&transaction, &session.user_id).await? {
+        return Ok(RotateRefreshOutcome::AlreadyConsumed);
+    }
     let consumed = refresh_tokens::Entity::update_many()
         .col_expr(
             refresh_tokens::Column::RotatedAt,

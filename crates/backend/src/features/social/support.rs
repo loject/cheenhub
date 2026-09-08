@@ -184,6 +184,24 @@ pub(super) async fn load_user_conversation(
     }
 }
 
+/// Запрещает новые взаимодействия с аккаунтом, помеченным для удаления.
+pub(super) async fn ensure_user_active(
+    state: &AppState,
+    user_id: &Uuid,
+) -> Result<(), SocialError> {
+    if state
+        .auth_store
+        .account_deletion(user_id)
+        .await
+        .map_err(SocialError::Internal)?
+        .is_some()
+    {
+        tracing::warn!(%user_id, "rejected social action targeting deleted account");
+        return Err(SocialError::BadRequest("Этот аккаунт удалён.".to_owned()));
+    }
+    Ok(())
+}
+
 pub(super) async fn ensure_user_exists(
     state: &AppState,
     user_id: &Uuid,

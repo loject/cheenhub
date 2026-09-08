@@ -41,6 +41,12 @@ pub(super) async fn insert_password_reset_token(
         .one(&transaction)
         .await?
         .ok_or_else(|| anyhow::anyhow!("password reset user is missing"))?;
+    anyhow::ensure!(
+        super::postgres_deletion::account_deletion(&transaction, user_id)
+            .await?
+            .is_none(),
+        "account is deleted"
+    );
     password_reset_tokens::Entity::update_many()
         .col_expr(
             password_reset_tokens::Column::ConsumedAt,
@@ -102,6 +108,12 @@ pub(super) async fn complete_password_reset(
         .one(&transaction)
         .await?
         .ok_or_else(|| anyhow::anyhow!("password reset user is missing"))?;
+    if super::postgres_deletion::account_deletion(&transaction, &user_id)
+        .await?
+        .is_some()
+    {
+        return Ok(None);
+    }
     let consumed = password_reset_tokens::Entity::update_many()
         .col_expr(
             password_reset_tokens::Column::ConsumedAt,

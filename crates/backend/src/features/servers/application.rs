@@ -50,6 +50,14 @@ pub(crate) async fn create(
         .map_err(map_auth_error)?;
     let owner_user_id = Uuid::parse_str(&user.id)
         .map_err(|_| ServerError::Unauthorized("Сессия истекла. Войди снова.".to_owned()))?;
+    let _lifecycle = state
+        .auth_store
+        .lock_account_lifecycle(&owner_user_id)
+        .await
+        .map_err(ServerError::Internal)?;
+    auth_application::me(state, access_token)
+        .await
+        .map_err(map_auth_error)?;
     let valid = validation::create_server(request.name)
         .map_err(|message| ServerError::BadRequest(message.to_owned()))?;
     let server = state
@@ -390,3 +398,13 @@ pub(crate) async fn delete_room(
 
 #[cfg(test)]
 mod tests;
+
+/// Проверяет владение серверами перед удалением аккаунта.
+pub(crate) async fn user_owns_servers(state: &AppState, user_id: &Uuid) -> anyhow::Result<bool> {
+    Ok(state
+        .server_store
+        .list_servers(user_id)
+        .await?
+        .iter()
+        .any(|access| access.server.owner_user_id == *user_id))
+}

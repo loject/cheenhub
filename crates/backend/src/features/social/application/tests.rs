@@ -1,3 +1,5 @@
+mod deletion;
+
 use std::sync::Arc;
 
 use axum::body::Bytes;

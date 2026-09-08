@@ -15,10 +15,48 @@ use model::*;
 #[derive(Default)]
 pub(crate) struct InMemoryAuthStore {
     state: Mutex<InMemoryState>,
+    lifecycle: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 #[async_trait]
 impl AuthStore for InMemoryAuthStore {
+    async fn lock_account_lifecycle(
+        &self,
+        _user_id: &Uuid,
+    ) -> anyhow::Result<AccountLifecycleGuard> {
+        Ok(AccountLifecycleGuard::InMemory {
+            _guard: self.lifecycle.clone().lock_owned().await,
+        })
+    }
+
+    async fn account_deletion(&self, user_id: &Uuid) -> anyhow::Result<Option<AccountDeletion>> {
+        super::in_memory_deletion::account_deletion(&self.state, user_id)
+    }
+
+    async fn begin_account_deletion(
+        &self,
+        user_id: &Uuid,
+        token_hash: String,
+        now: DateTime<Utc>,
+        restore_until: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        super::in_memory_deletion::begin_account_deletion(
+            &self.state,
+            user_id,
+            token_hash,
+            now,
+            restore_until,
+        )
+    }
+
+    async fn restore_account(&self, token_hash: &str, now: DateTime<Utc>) -> anyhow::Result<bool> {
+        super::in_memory_deletion::restore_account(&self.state, token_hash, now)
+    }
+
+    async fn finalize_expired_account_deletions(&self, now: DateTime<Utc>) -> anyhow::Result<u64> {
+        super::in_memory_deletion::finalize_expired_account_deletions(&self.state, now)
+    }
+
     async fn insert_desktop_oauth_attempt(
         &self,
         attempt: DesktopOAuthAttempt,

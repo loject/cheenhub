@@ -8,10 +8,49 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::features::auth::domain::*;
-use crate::features::auth::infrastructure::{AuthStore, InsertUserError, UpdateUserNicknameError};
+use crate::features::auth::infrastructure::{
+    AccountLifecycleGuard, AuthStore, InsertUserError, UpdateUserNicknameError,
+};
 
 #[async_trait]
 impl AuthStore for PostgresAuthStore {
+    async fn lock_account_lifecycle(
+        &self,
+        user_id: &Uuid,
+    ) -> anyhow::Result<AccountLifecycleGuard> {
+        super::account_lifecycle::lock_postgres(&self.database, user_id).await
+    }
+
+    async fn account_deletion(&self, user_id: &Uuid) -> anyhow::Result<Option<AccountDeletion>> {
+        super::postgres_deletion::account_deletion(&self.database, user_id).await
+    }
+
+    async fn begin_account_deletion(
+        &self,
+        user_id: &Uuid,
+        token_hash: String,
+        now: DateTime<Utc>,
+        restore_until: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        super::postgres_deletion::begin_account_deletion(
+            &self.database,
+            user_id,
+            token_hash,
+            now,
+            restore_until,
+        )
+        .await
+    }
+
+    async fn restore_account(&self, token_hash: &str, now: DateTime<Utc>) -> anyhow::Result<bool> {
+        super::postgres_deletion::restore_account(&self.database, token_hash, now).await
+    }
+
+    async fn finalize_expired_account_deletions(&self, now: DateTime<Utc>) -> anyhow::Result<u64> {
+        super::postgres_deletion_finalize::finalize_expired_account_deletions(&self.database, now)
+            .await
+    }
+
     async fn insert_desktop_oauth_attempt(
         &self,
         attempt: DesktopOAuthAttempt,
@@ -144,7 +183,8 @@ impl AuthStore for PostgresAuthStore {
         image_id: Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<UserAccount>> {
-        user::update_user_avatar_image_id(&self.database, user_id, image_id, now).await
+        super::postgres_profile::update_user_avatar_image_id(&self.database, user_id, image_id, now)
+            .await
     }
 
     async fn avatar_image_ids_by_user_ids(

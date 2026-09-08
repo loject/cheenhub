@@ -26,6 +26,13 @@ pub(super) fn update_user_nickname(
     if state
         .users
         .iter()
+        .any(|user| user.account.id == *user_id && user.deletion.is_some())
+    {
+        return Ok(None);
+    }
+    if state
+        .users
+        .iter()
         .any(|user| user.account.id != *user_id && user.account.nickname == nickname)
     {
         return Err(UpdateUserNicknameError::Conflict(UserConflict::Nickname));
@@ -70,6 +77,13 @@ pub(super) fn update_user_avatar_image_id(
     image_id: Uuid,
 ) -> anyhow::Result<Option<UserAccount>> {
     let mut state = state.lock().map_err(|_| poisoned())?;
+    if state
+        .users
+        .iter()
+        .any(|user| user.account.id == *user_id && user.deletion.is_some())
+    {
+        return Ok(None);
+    }
     let Some(user) = state
         .users
         .iter_mut()
@@ -90,6 +104,13 @@ pub(super) fn change_user_password(
     now: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     let mut state = state.lock().map_err(|_| poisoned())?;
+    anyhow::ensure!(
+        !state
+            .users
+            .iter()
+            .any(|user| user.account.id == *user_id && user.deletion.is_some()),
+        "account is deleted"
+    );
     if let Some(user) = state
         .users
         .iter_mut()

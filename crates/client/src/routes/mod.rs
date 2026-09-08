@@ -39,3 +39,6 @@ pub(crate) use privacy_policy::PrivacyPolicy;
 pub(crate) use register::Register;
 pub(crate) use reset_password::ResetPassword;
 pub(crate) use terms::Terms;
+
+mod restore_account;
+pub(crate) use restore_account::RestoreAccount;

@@ -8,6 +8,8 @@ pub(crate) mod realtime;
 mod transport;
 mod validation;
 
+pub(crate) use application::user_owns_servers;
+
 use axum::{
     Router,
     routing::{delete, get, post, put},

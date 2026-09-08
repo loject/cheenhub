@@ -18,6 +18,7 @@ mod attachments;
 mod deletion;
 mod history;
 mod messages;
+mod tombstone;
 
 pub(super) fn state() -> AppState {
     AppState {

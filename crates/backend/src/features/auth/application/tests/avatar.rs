@@ -174,3 +174,34 @@ fn image_id_from_url(url: &str) -> Uuid {
     Uuid::parse_str(url.rsplit('/').next().expect("url should include image id"))
         .expect("image id should be uuid")
 }
+
+#[tokio::test]
+async fn tombstone_hides_existing_avatar_url_until_restoration() {
+    let state = state();
+    let auth = registered_user(&state).await;
+    let updated = update_current_user_avatar(&state, &auth.access_token, Bytes::from(png(64, 64)))
+        .await
+        .unwrap();
+    let image_id = image_id_from_url(updated.avatar_url.as_deref().unwrap());
+    let user_id = Uuid::parse_str(&auth.user.id).unwrap();
+    let now = chrono::Utc::now();
+    state
+        .auth_store
+        .begin_account_deletion(
+            &user_id,
+            "avatar-restore".to_owned(),
+            now,
+            now + chrono::Duration::days(30),
+        )
+        .await
+        .unwrap();
+    assert!(public_image(&state, &image_id).await.is_err());
+    assert!(
+        state
+            .auth_store
+            .restore_account("avatar-restore", now)
+            .await
+            .unwrap()
+    );
+    assert!(public_image(&state, &image_id).await.is_ok());
+}

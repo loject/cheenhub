@@ -44,6 +44,13 @@ pub(super) fn insert_password_reset_token(
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<()> {
     let mut state = state.lock().map_err(|_| poisoned())?;
+    anyhow::ensure!(
+        !state
+            .users
+            .iter()
+            .any(|user| user.account.id == *user_id && user.deletion.is_some()),
+        "account is deleted"
+    );
     for token in &mut state.password_reset_tokens {
         if token.user_id == *user_id && token.consumed_at.is_none() {
             token.consumed_at = Some(now);

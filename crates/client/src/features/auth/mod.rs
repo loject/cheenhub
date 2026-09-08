@@ -1,5 +1,6 @@
 //! UI-функция аутентификации для веб-клиента CheenHub.
 
+pub(crate) mod account_deletion_api;
 pub(crate) mod api;
 mod components;
 pub(crate) mod desktop_oauth;
@@ -27,3 +28,5 @@ pub(crate) use pages::login_page::LoginPage;
 pub(crate) use pages::register_page::RegisterPage;
 pub(crate) use pages::reset_password_page::ResetPasswordPage;
 pub(crate) use refresh::SessionEnd;
+
+pub(crate) use pages::restore_account_page::RestoreAccountPage;

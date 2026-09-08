@@ -11,7 +11,7 @@ mod update_mode;
 use routes::{
     AppDirectMessage, AppFriends, AppHome, AppHostEmailSettings, AppHostLogs, AppHostSettings,
     AppServer, AppServerRoom, ForgotPassword, Invite, Landing, Login, NotFound, OAuthCallback,
-    PersonalDataConsent, PrivacyPolicy, Register, ResetPassword, Terms,
+    PersonalDataConsent, PrivacyPolicy, Register, ResetPassword, RestoreAccount, Terms,
 };
 
 use crate::features::application_focus::ApplicationFocusProvider;
@@ -75,6 +75,8 @@ enum Route {
     PersonalDataConsent { return_to: Option<String> },
     #[route("/forgot-password")]
     ForgotPassword {},
+    #[route("/restore-account?:token")]
+    RestoreAccount { token: Option<String> },
     #[route("/reset-password?:token")]
     ResetPassword { token: Option<String> },
     #[route("/auth/oauth/google?:code&:handoff_code&:error")]

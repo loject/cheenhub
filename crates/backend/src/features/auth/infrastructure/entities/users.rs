@@ -26,6 +26,14 @@ pub struct Model {
     /// Время исходного подтверждения правил из базовой схемы.
     /// Версии документов фиксируются отдельно в `legal_acceptances`.
     pub accepted_terms_at: DateTimeUtc,
+    /// Время запроса удаления аккаунта.
+    pub deletion_requested_at: Option<DateTimeUtc>,
+    /// Исключительная граница срока восстановления аккаунта.
+    pub deletion_restore_until: Option<DateTimeUtc>,
+    /// Хеш одноразового секрета восстановления.
+    pub deletion_token_hash: Option<String>,
+    /// Время окончательного обезличивания аккаунта.
+    pub deletion_finalized_at: Option<DateTimeUtc>,
     /// Last account update timestamp.
     pub updated_at: DateTimeUtc,
 }

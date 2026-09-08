@@ -278,3 +278,17 @@ pub struct AuthUser {
     /// Публичный URL аватара, если пользователь его настроил.
     pub avatar_url: Option<String>,
 }
+
+/// Результат начала удаления аккаунта с возможностью восстановления.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountDeletionResponse {
+    /// Срок восстановления в формате RFC 3339; после него восстановление невозможно.
+    pub restore_until: String,
+}
+
+/// Подтверждение восстановления аккаунта по одноразовой ссылке из письма.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountRestoreRequest {
+    /// Непрозрачный одноразовый токен восстановления.
+    pub token: String,
+}

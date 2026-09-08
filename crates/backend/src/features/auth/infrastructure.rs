@@ -1,10 +1,14 @@
 //! Слой инфраструктуры аутентификации.
 
+mod account_lifecycle;
 mod conversions;
+#[cfg(test)]
+mod deletion_tests;
 #[cfg(test)]
 mod desktop_oauth_postgres_tests;
 mod entities;
 mod in_memory;
+mod in_memory_deletion;
 mod in_memory_desktop_oauth;
 mod in_memory_oauth;
 mod in_memory_password_reset;
@@ -12,6 +16,8 @@ mod in_memory_profile;
 mod in_memory_refresh;
 mod in_memory_user;
 mod postgres;
+mod postgres_deletion;
+mod postgres_deletion_finalize;
 mod postgres_desktop_oauth;
 mod postgres_desktop_oauth_cleanup;
 mod postgres_oauth;
@@ -30,11 +36,12 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::features::auth::domain::{
-    DesktopOAuthAttempt, DesktopOAuthIdentity, DesktopOAuthStatus, OAuthAccount, OAuthHandoff,
-    OAuthRegistrationIntent, OAuthState, PasswordResetToken, RefreshSession,
+    AccountDeletion, DesktopOAuthAttempt, DesktopOAuthIdentity, DesktopOAuthStatus, OAuthAccount,
+    OAuthHandoff, OAuthRegistrationIntent, OAuthState, PasswordResetToken, RefreshSession,
     RegistrationLegalAcceptance, UserAccount, UserSession,
 };
 
+pub(crate) use account_lifecycle::AccountLifecycleGuard;
 pub(crate) use in_memory::InMemoryAuthStore;
 pub(crate) use postgres_store::PostgresAuthStore;
 
@@ -102,6 +109,28 @@ pub(crate) enum RefreshReuseOutcome {
 /// Граница хранилища аутентификации.
 #[async_trait]
 pub(crate) trait AuthStore: Send + Sync {
+    /// Сериализует прикладные операции удаления аккаунта и создания серверов.
+    async fn lock_account_lifecycle(&self, user_id: &Uuid)
+    -> anyhow::Result<AccountLifecycleGuard>;
+
+    /// Возвращает tombstone удалённого аккаунта.
+    async fn account_deletion(&self, user_id: &Uuid) -> anyhow::Result<Option<AccountDeletion>>;
+
+    /// Атомарно создаёт tombstone и отзывает доступ пользователя.
+    async fn begin_account_deletion(
+        &self,
+        user_id: &Uuid,
+        token_hash: String,
+        now: DateTime<Utc>,
+        restore_until: DateTime<Utc>,
+    ) -> anyhow::Result<bool>;
+
+    /// Однократно восстанавливает аккаунт до окончания срока.
+    async fn restore_account(&self, token_hash: &str, now: DateTime<Utc>) -> anyhow::Result<bool>;
+
+    /// Обезличивает просроченные аккаунты, сохраняя UUID и tombstone.
+    async fn finalize_expired_account_deletions(&self, now: DateTime<Utc>) -> anyhow::Result<u64>;
+
     /// Создаёт desktop-попытку со ссылкой на OAuth state и хешем секрета.
     async fn insert_desktop_oauth_attempt(
         &self,

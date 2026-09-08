@@ -22,6 +22,7 @@ use crate::features::text_chat::infrastructure::InMemoryTextChatStore;
 use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
 
+mod account_deletion;
 mod atomicity;
 mod avatar;
 mod desktop_oauth;

@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
-    Set, sea_query::Expr,
+    Set, TransactionTrait, sea_query::Expr,
 };
 use uuid::Uuid;
 
@@ -23,6 +23,13 @@ pub(super) async fn insert_oauth_state(
     now: DateTime<Utc>,
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<Uuid> {
+    let transaction = database.begin().await?;
+    if let Some(user_id) = user_id {
+        anyhow::ensure!(
+            super::postgres_deletion::lock_active_user(&transaction, &user_id).await?,
+            "account is deleted or missing"
+        );
+    }
     let id = Uuid::new_v4();
     oauth_states::ActiveModel {
         id: Set(id),
@@ -34,9 +41,10 @@ pub(super) async fn insert_oauth_state(
         expires_at: Set(expires_at),
         consumed_at: Set(None),
     }
-    .insert(database)
+    .insert(&transaction)
     .await?;
 
+    transaction.commit().await?;
     Ok(id)
 }
 
@@ -114,7 +122,12 @@ pub(super) async fn insert_oauth_account(
     display_name: Option<String>,
     now: DateTime<Utc>,
 ) -> anyhow::Result<OAuthAccount> {
-    Ok(oauth_accounts::ActiveModel {
+    let transaction = database.begin().await?;
+    anyhow::ensure!(
+        super::postgres_deletion::lock_active_user(&transaction, user_id).await?,
+        "account is deleted or missing"
+    );
+    let account = oauth_accounts::ActiveModel {
         id: Set(Uuid::new_v4()),
         user_id: Set(*user_id),
         provider: Set(provider),
@@ -123,9 +136,10 @@ pub(super) async fn insert_oauth_account(
         display_name: Set(display_name),
         linked_at: Set(now),
     }
-    .insert(database)
-    .await?
-    .into())
+    .insert(&transaction)
+    .await?;
+    transaction.commit().await?;
+    Ok(account.into())
 }
 
 pub(super) async fn delete_oauth_account(
@@ -151,6 +165,13 @@ pub(super) async fn insert_oauth_handoff(
     now: DateTime<Utc>,
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<()> {
+    let transaction = database.begin().await?;
+    if let Some(user_id) = user_id {
+        anyhow::ensure!(
+            super::postgres_deletion::lock_active_user(&transaction, &user_id).await?,
+            "account is deleted or missing"
+        );
+    }
     oauth_handoffs::ActiveModel {
         id: Set(Uuid::new_v4()),
         code_hash: Set(code_hash),
@@ -161,9 +182,10 @@ pub(super) async fn insert_oauth_handoff(
         expires_at: Set(expires_at),
         consumed_at: Set(None),
     }
-    .insert(database)
+    .insert(&transaction)
     .await?;
 
+    transaction.commit().await?;
     Ok(())
 }
 

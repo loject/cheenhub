@@ -22,6 +22,13 @@ pub(super) fn create_session(
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<Uuid> {
     let mut state = state.lock().map_err(|_| poisoned())?;
+    anyhow::ensure!(
+        !state
+            .users
+            .iter()
+            .any(|user| user.account.id == *user_id && user.deletion.is_some()),
+        "account is deleted"
+    );
     let session_id = Uuid::new_v4();
 
     state.sessions.push(InMemorySession {

@@ -2,8 +2,8 @@
 
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, QuerySelect, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set, TransactionTrait,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -34,6 +34,10 @@ pub(super) async fn insert_user(
         registered_at: Set(now),
         nickname_updated_at: Set(now),
         accepted_terms_at: Set(now),
+        deletion_requested_at: Set(None),
+        deletion_restore_until: Set(None),
+        deletion_token_hash: Set(None),
+        deletion_finalized_at: Set(None),
         updated_at: Set(now),
     }
     .insert(&transaction)
@@ -123,7 +127,13 @@ pub(super) async fn find_user_by_id(
     Ok(users::Entity::find_by_id(*user_id)
         .one(database)
         .await?
-        .map(Into::into))
+        .map(|mut user| {
+            if user.deletion_requested_at.is_some() {
+                user.nickname = "Удалённый пользователь".to_owned();
+                user.avatar_image_id = None;
+            }
+            user.into()
+        }))
 }
 
 /// Ищет пользователей по никнейму.
@@ -135,6 +145,7 @@ pub(super) async fn search_users_by_nickname(
     let pattern = format!("%{}%", escape_like_pattern(query));
     Ok(users::Entity::find()
         .filter(users::Column::Nickname.like(pattern))
+        .filter(super::postgres_deletion::active_users_filter())
         .order_by_asc(users::Column::Nickname)
         .limit(limit)
         .all(database)
@@ -142,22 +153,6 @@ pub(super) async fn search_users_by_nickname(
         .into_iter()
         .map(Into::into)
         .collect())
-}
-
-/// Обновляет изображение аватара пользователя.
-pub(super) async fn update_user_avatar_image_id(
-    database: &DatabaseConnection,
-    user_id: &Uuid,
-    image_id: Uuid,
-    now: DateTime<Utc>,
-) -> anyhow::Result<Option<UserAccount>> {
-    let Some(user) = users::Entity::find_by_id(*user_id).one(database).await? else {
-        return Ok(None);
-    };
-    let mut user = user.into_active_model();
-    user.avatar_image_id = Set(Some(image_id));
-    user.updated_at = Set(now);
-    Ok(Some(user.update(database).await?.into()))
 }
 
 /// Читает изображения аватаров выбранных пользователей.
@@ -171,6 +166,7 @@ pub(super) async fn avatar_image_ids_by_user_ids(
 
     Ok(users::Entity::find()
         .filter(users::Column::Id.is_in(user_ids.iter().copied()))
+        .filter(super::postgres_deletion::active_users_filter())
         .all(database)
         .await?
         .into_iter()

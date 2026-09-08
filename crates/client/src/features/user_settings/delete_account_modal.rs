@@ -9,6 +9,8 @@ pub(crate) fn DeleteAccountModal(
     on_confirm: EventHandler<()>,
 ) -> Element {
     let mut confirmed = use_signal(|| false);
+    let mut loading = use_signal(|| false);
+    let mut error = use_signal(|| None::<String>);
 
     rsx! {
         div {
@@ -18,7 +20,8 @@ pub(crate) fn DeleteAccountModal(
                 r#type: "button",
                 class: "absolute inset-0 cursor-default",
                 "aria-label": "Закрыть окно удаления аккаунта",
-                onclick: move |_| on_close.call(()),
+                disabled: loading(),
+                onclick: move |_| { if !loading() { on_close.call(()); } },
             }
 
             section {
@@ -64,7 +67,8 @@ pub(crate) fn DeleteAccountModal(
                         r#type: "button",
                         class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-400 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50",
                         "aria-label": "Закрыть окно",
-                        onclick: move |_| on_close.call(()),
+                        disabled: loading(),
+                        onclick: move |_| { if !loading() { on_close.call(()); } },
 
                         svg {
                             class: "h-4 w-4",
@@ -109,10 +113,14 @@ pub(crate) fn DeleteAccountModal(
                             }
                             p {
                                 class: "mt-1 text-[11px] leading-5 text-red-100/65",
-                                "До окончания этого срока аккаунт можно будет восстановить. После 30 дней восстановление станет невозможно."
+                                "Мы отправим на почту ссылку для восстановления и дату окончания срока. После 30 дней восстановление станет невозможно. Если ты владеешь серверами, сначала передай владение или удали их."
                             }
                         }
                     }
+                }
+
+                if let Some(message) = error() {
+                    p { role: "alert", class: "mt-4 text-sm text-red-200", "{message}" }
                 }
 
                 label {
@@ -121,6 +129,7 @@ pub(crate) fn DeleteAccountModal(
                     input {
                         r#type: "checkbox",
                         checked: confirmed(),
+                        disabled: loading(),
                         onchange: move |event| confirmed.set(event.checked()),
                         class: "mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-zinc-700 bg-zinc-950 accent-red-500 focus-visible:ring-2 focus-visible:ring-red-500/50",
                     }
@@ -137,20 +146,35 @@ pub(crate) fn DeleteAccountModal(
                     button {
                         r#type: "button",
                         class: "flex h-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 text-[12px] font-semibold text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 sm:h-9",
-                        onclick: move |_| on_close.call(()),
+                        disabled: loading(),
+                        onclick: move |_| { if !loading() { on_close.call(()); } },
                         "Отмена"
                     }
 
                     button {
                         r#type: "button",
-                        disabled: !confirmed(),
-                        class: confirm_button_class(confirmed()),
+                        disabled: !confirmed() || loading(),
+                        class: confirm_button_class(confirmed() && !loading()),
                         onclick: move |_| {
-                            if confirmed() {
-                                on_confirm.call(());
-                            }
+                            if !confirmed() || loading() { return; }
+                            loading.set(true);
+                            error.set(None);
+                            info!("requesting account deletion");
+                            spawn(async move {
+                                match crate::features::auth::account_deletion_api::delete_account().await {
+                                    Ok(_) => {
+                                        info!("account deletion confirmed");
+                                        on_confirm.call(());
+                                    }
+                                    Err(message) => {
+                                        warn!("account deletion request failed");
+                                        error.set(Some(message));
+                                        loading.set(false);
+                                    }
+                                }
+                            });
                         },
-                        "Удалить аккаунт"
+                        if loading() { "Удаляем…" } else { "Удалить аккаунт" }
                     }
                 }
             }

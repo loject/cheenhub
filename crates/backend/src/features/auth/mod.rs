@@ -30,6 +30,10 @@ pub(crate) fn routes() -> Router<AppState> {
             "/password-reset/confirm",
             post(transport::handlers::confirm_password_reset),
         )
+        .route(
+            "/account/restore",
+            post(transport::account_deletion::restore_account),
+        )
         .route("/refresh", post(transport::handlers::refresh))
         .route("/logout", post(transport::handlers::logout))
         .route(
@@ -42,7 +46,9 @@ pub(crate) fn routes() -> Router<AppState> {
         )
         .route(
             "/me",
-            get(transport::handlers::me).patch(transport::handlers::update_current_user),
+            get(transport::handlers::me)
+                .patch(transport::handlers::update_current_user)
+                .delete(transport::account_deletion::delete_current_user),
         )
         .route(
             "/me/password",

@@ -16,8 +16,8 @@ use crate::features::social::domain::FriendshipStatus;
 use crate::features::social::error::SocialError;
 use crate::features::social::realtime::notify_social_changed;
 use crate::features::social::support::{
-    ensure_user_exists, friend_summaries, map_auth_error, parse_id, request_response,
-    request_summary,
+    ensure_user_active, ensure_user_exists, friend_summaries, map_auth_error, parse_id,
+    request_response, request_summary,
 };
 use crate::state::AppState;
 
@@ -62,6 +62,7 @@ pub(crate) async fn direct_message_voice_access(
     } else {
         conversation.user_low_id
     };
+    ensure_user_active(state, &friend_user_id).await?;
     ensure_accepted_friendship(state, user_id, &friend_user_id).await?;
     Ok(DirectMessageVoiceAccess {
         conversation_id: conversation.id,
@@ -217,6 +218,7 @@ pub(crate) async fn send_friend_request(
         ));
     }
     ensure_user_exists(state, &recipient_user_id).await?;
+    ensure_user_active(state, &recipient_user_id).await?;
 
     if let Some(existing) = state
         .social_store
@@ -409,6 +411,10 @@ async fn change_request_status(
     };
     if !allowed {
         return Err(SocialError::NotFound("Заявка не найдена.".to_owned()));
+    }
+
+    if next_status == FriendshipStatus::Accepted {
+        ensure_user_active(state, &friendship.requester_user_id).await?;
     }
 
     let updated = state

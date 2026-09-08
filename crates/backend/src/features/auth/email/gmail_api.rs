@@ -6,8 +6,10 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 
-use super::message::{password_changed_message, password_reset_message};
-use super::{AuthMailer, EmailError, PasswordChangedEmail, PasswordResetEmail};
+use super::message::{account_deletion_message, password_changed_message, password_reset_message};
+use super::{
+    AccountDeletionEmail, AuthMailer, EmailError, PasswordChangedEmail, PasswordResetEmail,
+};
 
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const SEND_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
@@ -184,6 +186,17 @@ fn missing_gmail_api_config(
 
 #[async_trait]
 impl AuthMailer for GmailApiAuthMailer {
+    async fn send_account_deletion(&self, email: AccountDeletionEmail) -> Result<(), EmailError> {
+        let config = self.configured()?;
+        let message = account_deletion_message(
+            &config.from,
+            &email.to,
+            &email.restore_url,
+            &email.restore_until,
+        )?;
+        self.send(message, "account_deletion").await
+    }
+
     async fn send_password_reset(&self, email: PasswordResetEmail) -> Result<(), EmailError> {
         let config = self.configured()?;
         let message = password_reset_message(&config.from, &email.to, &email.reset_url)?;

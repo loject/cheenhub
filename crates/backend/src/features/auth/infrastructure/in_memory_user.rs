@@ -49,6 +49,9 @@ pub(super) fn insert_user(
     };
     state.users.push(InMemoryUser {
         account: account.clone(),
+        deletion: None,
+        deletion_token_hash: None,
+        deletion_finalized_at: None,
         email_normalized,
     });
     state.legal_acceptances.extend([
@@ -101,7 +104,14 @@ pub(super) fn find_user_by_id(
         .users
         .iter()
         .find(|user| user.account.id == *user_id)
-        .map(|user| user.account.clone()))
+        .map(|user| {
+            let mut account = user.account.clone();
+            if user.deletion.is_some() {
+                account.nickname = "Удалённый пользователь".to_owned();
+                account.avatar_image_id = None;
+            }
+            account
+        }))
 }
 
 /// Ищет пользователей по никнейму.
@@ -117,6 +127,7 @@ pub(super) fn search_users_by_nickname(
         .users
         .iter()
         .filter(|user| user.account.nickname.to_lowercase().contains(&needle))
+        .filter(|user| user.deletion.is_none())
         .map(|user| user.account.clone())
         .collect::<Vec<_>>();
     users.sort_by(|left, right| left.nickname.cmp(&right.nickname));
@@ -134,6 +145,7 @@ pub(super) fn avatar_image_ids_by_user_ids(
         .users
         .iter()
         .filter(|user| user_ids.contains(&user.account.id))
+        .filter(|user| user.deletion.is_none())
         .filter_map(|user| {
             user.account
                 .avatar_image_id

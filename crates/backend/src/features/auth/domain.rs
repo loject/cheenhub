@@ -166,3 +166,12 @@ pub(crate) struct PasswordResetToken {
     /// Пользователь, владеющий токеном сброса.
     pub(crate) user_id: Uuid,
 }
+
+/// Tombstone удалённого аккаунта и срок возможного восстановления.
+#[derive(Debug, Clone)]
+pub(crate) struct AccountDeletion {
+    /// Время запроса удаления.
+    pub(crate) requested_at: DateTime<Utc>,
+    /// Исключительная верхняя граница срока восстановления.
+    pub(crate) restore_until: DateTime<Utc>,
+}

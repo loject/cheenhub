@@ -6,8 +6,10 @@ use async_trait::async_trait;
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
 
-use super::message::{password_changed_message, password_reset_message};
-use super::{AuthMailer, EmailError, PasswordChangedEmail, PasswordResetEmail};
+use super::message::{account_deletion_message, password_changed_message, password_reset_message};
+use super::{
+    AccountDeletionEmail, AuthMailer, EmailError, PasswordChangedEmail, PasswordResetEmail,
+};
 
 /// Отправитель аутентификационных писем на базе SMTP.
 pub(crate) struct SmtpAuthMailer {
@@ -108,6 +110,16 @@ fn smtp_transport_builder(
 
 #[async_trait]
 impl AuthMailer for SmtpAuthMailer {
+    async fn send_account_deletion(&self, email: AccountDeletionEmail) -> Result<(), EmailError> {
+        let message = account_deletion_message(
+            self.from()?,
+            &email.to,
+            &email.restore_url,
+            &email.restore_until,
+        )?;
+        self.send(message, "account_deletion").await
+    }
+
     async fn send_password_reset(&self, email: PasswordResetEmail) -> Result<(), EmailError> {
         let message = password_reset_message(self.from()?, &email.to, &email.reset_url)?;
         self.send(message, "password_reset").await

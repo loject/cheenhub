@@ -163,6 +163,16 @@ pub(crate) async fn public_image(
         return Err(AuthError::BadRequest("Изображение не найдено.".to_owned()));
     }
 
+    if image.kind == USER_AVATAR_KIND
+        && state
+            .auth_store
+            .account_deletion(&image.owner_user_id)
+            .await?
+            .is_some()
+    {
+        tracing::debug!(owner_user_id = %image.owner_user_id, "hidden avatar of deleted account");
+        return Err(AuthError::BadRequest("Изображение не найдено.".to_owned()));
+    }
     Ok(image)
 }
 

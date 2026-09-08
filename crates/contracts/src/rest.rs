@@ -9,8 +9,8 @@ pub mod servers;
 pub mod social;
 
 pub use auth::{
-    ActiveSession, ActiveSessionsResponse, AuthResponse, AuthUser,
-    ChangeCurrentUserPasswordRequest, GoogleNativeAuthCompleteRequest,
+    AccountDeletionResponse, AccountRestoreRequest, ActiveSession, ActiveSessionsResponse,
+    AuthResponse, AuthUser, ChangeCurrentUserPasswordRequest, GoogleNativeAuthCompleteRequest,
     GoogleNativeAuthStartResponse, LinkedAccount, LinkedAccountsResponse, LoginRequest,
     LogoutRequest, OAuthCompleteRequest, OAuthCompleteResponse, OAuthFlow, OAuthProvider,
     OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse, PasswordResetConfirmRequest,
