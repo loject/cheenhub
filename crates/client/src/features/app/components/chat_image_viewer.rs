@@ -3,6 +3,7 @@
 use std::rc::Rc;
 
 use dioxus::html::geometry::WheelDelta;
+use dioxus::html::input_data::MouseButton;
 use dioxus::logger::tracing::info;
 use dioxus::prelude::*;
 
@@ -303,7 +304,7 @@ pub(crate) fn ChatImageViewerProvider(children: Element) -> Element {
                         onpointerleave: move |_| drag_origin.set(None),
                         button { r#type: "button", class: "chat-image-viewer-close flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-zinc-950/75 text-zinc-200 shadow-lg backdrop-blur-xl transition hover:border-white/20 hover:bg-zinc-900/90", "aria-label": "Закрыть просмотр изображения", title: "Закрыть", onclick: move |_| viewer.close(close_button_attachment_id.clone()), svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6 6l12 12M18 6 6 18" } } }
                         div { class: "chat-image-viewer-controls flex items-center justify-end gap-2",
-                            div { class: "hidden min-w-0 text-right text-[12px] font-medium text-zinc-300 sm:block", "{viewer_image.width}×{viewer_image.height} · {zoom_percent}%" }
+                            div { class: "hidden min-w-0 text-right text-[12px] font-medium text-zinc-300 sm:block", "{viewer_image.width}×{viewer_image.height} · {zoom_percent}% · ПКМ — копировать" }
                             div { class: "flex items-center gap-2",
                                 button { r#type: "button", class: "flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-200 transition hover:border-white/20 hover:bg-white/10", "aria-label": "Уменьшить", onclick: move |event| { event.stop_propagation(); zoom.set((zoom() * 0.8).clamp(0.35, 5.0)); }, svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", path { stroke_linecap: "round", d: "M5 12h14" } } }
                                 button { r#type: "button", class: "flex h-9 min-w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-1.5 text-[11px] font-bold tabular-nums text-zinc-200 transition hover:border-white/20 hover:bg-white/10", "aria-label": "Сбросить масштаб", title: "Сбросить масштаб", onclick: move |event| { event.stop_propagation(); zoom.set(1.0); pan_x.set(0.0); pan_y.set(0.0); drag_origin.set(None); }, "1:1" }
@@ -320,7 +321,7 @@ pub(crate) fn ChatImageViewerProvider(children: Element) -> Element {
                                         state.with_mut(|state| start_viewer_enter(state, generation, target));
                                     });
                                 },
-                                    img { class: "{viewer_image_class} touch-none", style: "transform: translate({pan_x()}px, {pan_y()}px) scale({zoom()}); transform-origin: center center;", src: "data:{viewer_image.content_type};base64,{viewer_image.data_base64}", alt: "Изображение из сообщения", onpointerdown: move |event| { event.prevent_default(); event.stop_propagation(); let point = event.client_coordinates(); drag_origin.set(Some((point.x, point.y, pan_x(), pan_y()))); }, onclick: move |event| event.stop_propagation() }
+                                    img { class: "{viewer_image_class} touch-none", style: "transform: translate({pan_x()}px, {pan_y()}px) scale({zoom()}); transform-origin: center center;", src: "data:{viewer_image.content_type};base64,{viewer_image.data_base64}", alt: "Изображение из сообщения", title: "ПКМ — копировать изображение", onpointerdown: move |event| { event.stop_propagation(); if event.trigger_button() != Some(MouseButton::Primary) { return; } event.prevent_default(); let point = event.client_coordinates(); drag_origin.set(Some((point.x, point.y, pan_x(), pan_y()))); }, onclick: move |event| event.stop_propagation() }
                                 }
                             }
                         }
