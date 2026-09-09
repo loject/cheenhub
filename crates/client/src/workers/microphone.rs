@@ -14,7 +14,7 @@ use crate::microphone_core::{
     duration_us, rms_level,
 };
 
-const MICROPHONE_WORKER_ABI_VERSION: u32 = 3;
+const MICROPHONE_WORKER_ABI_VERSION: u32 = 4;
 
 /// Возвращает версию ABI worker микрофона.
 #[wasm_bindgen]
@@ -145,6 +145,11 @@ impl MicrophoneWorkerProcessor {
             set_property(&output, "samples", JsValue::NULL)?;
         }
         Ok(output.into())
+    }
+
+    /// Обновляет linear input gain для следующих PCM chunks.
+    pub fn set_input_gain(&mut self, input_gain: f32) {
+        self.input_gain = input_gain.clamp(0.0, 2.0);
     }
 
     /// Кодирует voice datagram для WebTransport или WebSocket fallback.

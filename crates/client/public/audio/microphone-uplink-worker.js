@@ -14,6 +14,8 @@ self.onmessage = (event) => {
     void start(message).catch((error) => post("error", { message: errorMessage(error) }));
   } else if (message.kind === "set-bitrate") {
     setBitrate(message.bitrateBps);
+  } else if (message.kind === "set-input-gain") {
+    setInputGain(message.inputGain);
   } else if (message.kind === "stop") {
     void stopActive();
   }
@@ -27,7 +29,7 @@ async function start(config) {
   try {
     const wasm = await import(config.wasmBindgenUrl);
     await wasm.default({ module_or_path: config.wasmUrl });
-    if (wasm.microphone_worker_abi_version() < 3) {
+    if (wasm.microphone_worker_abi_version() < 4) {
       throw new Error("microphone worker wasm ABI is too old");
     }
 
@@ -100,6 +102,15 @@ function setBitrate(value) {
   }
   current.bitrateBps = bitrateBps;
   current.encoder.configure(encoderConfig(current.sampleRateHz, 1, bitrateBps));
+}
+
+function setInputGain(value) {
+  const current = active;
+  const inputGain = Math.min(2, Math.max(0, Number(value) || 0));
+  if (!current) {
+    return;
+  }
+  current.processor.set_input_gain(inputGain);
 }
 
 function createEncoder(config, processor, transport) {

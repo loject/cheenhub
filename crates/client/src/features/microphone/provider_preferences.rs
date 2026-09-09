@@ -101,16 +101,7 @@ impl MicrophoneHandle {
         storage::save_input_volume_percent(volume_percent);
         let mut input_volume = self.input_volume_percent;
         input_volume.set(volume_percent);
-
-        if let Some(on_frame) = self.restart_callback(status.clone()) {
-            let active_capture = *self.active_capture.peek();
-            info!(
-                ?status,
-                "restarting microphone capture after input volume change"
-            );
-            let uplink = self.active_uplink.peek().clone();
-            self.restart_capture(on_frame, active_capture, uplink);
-        }
+        self.set_input_gain(super::provider_runtime::gain_from_percent(volume_percent));
     }
 
     /// Возвращает режим активации микрофона.

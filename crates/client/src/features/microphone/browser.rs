@@ -64,6 +64,7 @@ struct BrowserMicrophoneSession {
     _output_closure: Option<Closure<dyn FnMut(EncodedAudioChunk)>>,
     _error_closure: Option<Closure<dyn FnMut(JsValue)>>,
     bitrate_bps: Rc<Cell<u32>>,
+    input_gain: Rc<Cell<f32>>,
 }
 
 impl MicrophoneSession for BrowserMicrophoneSession {
@@ -118,6 +119,14 @@ impl MicrophoneSession for BrowserMicrophoneSession {
             uplink.set_bitrate_bps(bitrate_bps);
         }
         async move { Ok(()) }.boxed_local()
+    }
+
+    fn set_input_gain(&self, input_gain: f32) -> Result<(), MicrophoneError> {
+        self.input_gain.set(input_gain);
+        if let Some(uplink) = &self.uplink {
+            uplink.set_input_gain(input_gain);
+        }
+        Ok(())
     }
 }
 
@@ -189,6 +198,7 @@ async fn start_browser_session(
         }
     };
     let worker_config = callbacks.uplink.clone();
+    let input_gain = Rc::new(Cell::new(config.input_gain));
     let (encoder, uplink, retained_port, message_closure, output_closure, encoder_error_closure) =
         if let Some(worker_config) = worker_config {
             let worker = match start_worker_uplink(
@@ -228,6 +238,7 @@ async fn start_browser_session(
                 sample_rate_hz,
                 capture_released.clone(),
                 browser_encoder.diagnostics.clone(),
+                input_gain.clone(),
             );
             port.set_onmessage(Some(message_closure.as_ref().unchecked_ref()));
             port.start();
@@ -294,6 +305,7 @@ async fn start_browser_session(
         _output_closure: output_closure,
         _error_closure: encoder_error_closure,
         bitrate_bps: Rc::new(Cell::new(config.bitrate_bps)),
+        input_gain,
     }))
 }
 

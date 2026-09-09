@@ -165,6 +165,9 @@ pub(crate) trait MicrophoneSession {
         &self,
         bitrate_bps: u32,
     ) -> LocalBoxFuture<'static, Result<(), MicrophoneError>>;
+
+    /// Обновляет linear input gain без перезапуска активного захвата.
+    fn set_input_gain(&self, input_gain: f32) -> Result<(), MicrophoneError>;
 }
 
 /// Microphone capture backend.

@@ -44,6 +44,7 @@ struct CpalMicrophoneSession {
     stream: RefCell<Option<Stream>>,
     closed: Arc<AtomicBool>,
     bitrate_bps: Arc<AtomicU32>,
+    input_gain_bits: Arc<AtomicU32>,
 }
 
 impl MicrophoneSession for CpalMicrophoneSession {
@@ -72,6 +73,13 @@ impl MicrophoneSession for CpalMicrophoneSession {
         }
         .boxed_local()
     }
+
+    fn set_input_gain(&self, input_gain: f32) -> Result<(), MicrophoneError> {
+        self.input_gain_bits
+            .store(input_gain.clamp(0.0, 2.0).to_bits(), Ordering::Relaxed);
+        debug!(input_gain, "native microphone input gain updated");
+        Ok(())
+    }
 }
 
 async fn start_cpal_session(
@@ -93,6 +101,7 @@ async fn start_cpal_session(
     let (event_sender, event_receiver) = futures_channel::mpsc::unbounded();
     let closed = Arc::new(AtomicBool::new(false));
     let bitrate_bps = Arc::new(AtomicU32::new(config.bitrate_bps));
+    let input_gain_bits = Arc::new(AtomicU32::new(config.input_gain.to_bits()));
 
     spawn_event_relay(event_receiver, callbacks);
     spawn_encoder_worker(
@@ -101,6 +110,7 @@ async fn start_cpal_session(
         event_sender,
         closed.clone(),
         bitrate_bps.clone(),
+        input_gain_bits.clone(),
         frame_samples,
     );
 
@@ -125,6 +135,7 @@ async fn start_cpal_session(
         stream: RefCell::new(Some(stream)),
         closed,
         bitrate_bps,
+        input_gain_bits,
     }))
 }
 

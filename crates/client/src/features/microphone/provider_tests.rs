@@ -12,6 +12,7 @@ use crate::features::microphone::{MicrophoneError, MicrophoneSession, Microphone
 struct TestSession {
     stopped_immediately: Rc<Cell<bool>>,
     async_stop_polled: Rc<Cell<bool>>,
+    input_gain: Rc<Cell<f32>>,
 }
 
 impl MicrophoneSession for TestSession {
@@ -33,6 +34,11 @@ impl MicrophoneSession for TestSession {
         _bitrate_bps: u32,
     ) -> futures_util::future::LocalBoxFuture<'static, Result<(), MicrophoneError>> {
         async { Ok(()) }.boxed_local()
+    }
+
+    fn set_input_gain(&self, input_gain: f32) -> Result<(), MicrophoneError> {
+        self.input_gain.set(input_gain);
+        Ok(())
     }
 }
 
@@ -88,10 +94,27 @@ fn session_capture_is_released_without_polling_async_cleanup() {
     let session: Rc<dyn MicrophoneSession> = Rc::new(TestSession {
         stopped_immediately: stopped_immediately.clone(),
         async_stop_polled: async_stop_polled.clone(),
+        input_gain: Rc::new(Cell::new(1.0)),
     });
 
     stop_session_immediately(Some(&session));
 
     assert!(stopped_immediately.get());
     assert!(!async_stop_polled.get());
+}
+
+#[test]
+fn session_input_gain_update_keeps_capture_running() {
+    let stopped_immediately = Rc::new(Cell::new(false));
+    let input_gain = Rc::new(Cell::new(1.0));
+    let session: Rc<dyn MicrophoneSession> = Rc::new(TestSession {
+        stopped_immediately: stopped_immediately.clone(),
+        async_stop_polled: Rc::new(Cell::new(false)),
+        input_gain: input_gain.clone(),
+    });
+
+    session.set_input_gain(1.75).unwrap();
+
+    assert_eq!(input_gain.get(), 1.75);
+    assert!(!stopped_immediately.get());
 }

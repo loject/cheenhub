@@ -84,6 +84,9 @@ pub(super) async fn run_microphone_runtime(
             MicrophoneCommand::SetBitrate { bitrate_bps } => {
                 update_bitrate(runtime.clone(), bitrate_bps);
             }
+            MicrophoneCommand::SetInputGain { input_gain } => {
+                update_input_gain(runtime.clone(), input_gain);
+            }
         }
     }
     debug!("microphone provider runtime command channel closed");
@@ -121,6 +124,17 @@ fn start_capture(
                     if let Err(error) = next_session.stop().await {
                         warn!(%error, "failed to stop stale microphone capture after start");
                     }
+                    return;
+                }
+                let input_gain = gain_from_percent(*runtime.input_volume_percent.peek());
+                if let Err(error) = next_session.set_input_gain(input_gain) {
+                    next_session.stop_immediately();
+                    if let Err(stop_error) = next_session.stop().await {
+                        warn!(%stop_error, "failed to stop microphone after input gain update failure");
+                    }
+                    let next_status = status_from_error(error.clone());
+                    warn!(%error, input_gain, "failed to apply current microphone input gain after start");
+                    clear_failed_capture(&runtime, next_status);
                     return;
                 }
                 let mut session = runtime.session;
@@ -184,6 +198,17 @@ fn restart_capture(
                     }
                     return;
                 }
+                let input_gain = gain_from_percent(*runtime.input_volume_percent.peek());
+                if let Err(error) = next_session.set_input_gain(input_gain) {
+                    next_session.stop_immediately();
+                    if let Err(stop_error) = next_session.stop().await {
+                        warn!(%stop_error, "failed to stop microphone after input gain update failure");
+                    }
+                    let next_status = status_from_error(error.clone());
+                    warn!(%error, input_gain, "failed to apply current microphone input gain after restart");
+                    clear_failed_capture(&runtime, next_status);
+                    return;
+                }
                 let mut session = runtime.session;
                 let mut status = runtime.status;
                 let mut active_capture = runtime.active_capture;
@@ -243,6 +268,15 @@ fn update_bitrate(runtime: MicrophoneRuntime, bitrate_bps: u32) {
             warn!(%error, bitrate_bps, "failed to update microphone bitrate");
         }
     });
+}
+
+fn update_input_gain(runtime: MicrophoneRuntime, input_gain: f32) {
+    let Some(active_session) = runtime.session.peek().clone() else {
+        return;
+    };
+    if let Err(error) = active_session.set_input_gain(input_gain) {
+        warn!(%error, input_gain, "failed to update microphone input gain");
+    }
 }
 
 fn prepare_capture_state(

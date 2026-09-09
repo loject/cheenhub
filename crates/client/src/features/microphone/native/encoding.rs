@@ -24,6 +24,7 @@ pub(super) fn spawn_encoder_worker(
     event_sender: local_mpsc::UnboundedSender<NativeMicrophoneEvent>,
     closed: Arc<AtomicBool>,
     bitrate_bps: Arc<AtomicU32>,
+    input_gain_bits: Arc<AtomicU32>,
     frame_samples: usize,
 ) {
     let worker_closed = closed.clone();
@@ -37,6 +38,7 @@ pub(super) fn spawn_encoder_worker(
                 worker_events.clone(),
                 worker_closed.clone(),
                 bitrate_bps,
+                input_gain_bits,
                 frame_samples,
             ) {
                 warn!(%error, "native microphone encoder worker stopped with error");
@@ -80,6 +82,7 @@ fn run_encoder_worker(
     mut event_sender: local_mpsc::UnboundedSender<NativeMicrophoneEvent>,
     closed: Arc<AtomicBool>,
     bitrate_bps: Arc<AtomicU32>,
+    input_gain_bits: Arc<AtomicU32>,
     frame_samples: usize,
 ) -> Result<(), MicrophoneError> {
     let mut encoder = create_encoder(&config)?;
@@ -116,6 +119,7 @@ fn run_encoder_worker(
                 &mut detector,
                 &mut event_sender,
                 &config,
+                f32::from_bits(input_gain_bits.load(Ordering::Relaxed)),
                 frame,
                 sequence,
                 timestamp_us,
@@ -145,11 +149,12 @@ fn handle_pcm_frame(
     detector: &mut VoiceActivityDetector,
     event_sender: &mut local_mpsc::UnboundedSender<NativeMicrophoneEvent>,
     config: &MicrophoneConfig,
+    input_gain: f32,
     mut frame: Vec<f32>,
     sequence: u64,
     timestamp_us: u64,
 ) -> Result<(), MicrophoneError> {
-    apply_input_gain(&mut frame, config.input_gain);
+    apply_input_gain(&mut frame, input_gain);
     let rms = rms_level(&frame);
     let previous_active = detector.is_active();
     let active = detector.update(rms, OPUS_FRAME_DURATION_US);

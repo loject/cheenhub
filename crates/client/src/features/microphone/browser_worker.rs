@@ -18,9 +18,9 @@ use super::backend::{
 };
 use super::browser_errors::js_error_message;
 
-const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=6";
-const MICROPHONE_WORKER_WASM_BINDGEN_URL: &str = "/workers/microphone/microphone_worker.js?v=3";
-const MICROPHONE_WORKER_WASM_URL: &str = "/workers/microphone/microphone_worker_bg.wasm?v=3";
+const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=7";
+const MICROPHONE_WORKER_WASM_BINDGEN_URL: &str = "/workers/microphone/microphone_worker.js?v=4";
+const MICROPHONE_WORKER_WASM_URL: &str = "/workers/microphone/microphone_worker_bg.wasm?v=4";
 const WORKER_START_TIMEOUT_MS: u32 = 10_000;
 
 type WorkerReadySender = Rc<RefCell<Option<oneshot::Sender<Result<(), String>>>>>;
@@ -47,6 +47,20 @@ impl BrowserWorkerUplink {
                 &message,
                 "bitrateBps",
                 JsValue::from_f64(f64::from(bitrate_bps)),
+            )
+            .is_ok()
+        {
+            let _ = self.worker.post_message(message.as_ref());
+        }
+    }
+
+    pub(super) fn set_input_gain(&self, input_gain: f32) {
+        let message = Object::new();
+        if set_property(&message, "kind", JsValue::from_str("set-input-gain")).is_ok()
+            && set_property(
+                &message,
+                "inputGain",
+                JsValue::from_f64(f64::from(input_gain)),
             )
             .is_ok()
         {

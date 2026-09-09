@@ -37,6 +37,9 @@ pub(super) enum MicrophoneCommand {
     SetBitrate {
         bitrate_bps: u32,
     },
+    SetInputGain {
+        input_gain: f32,
+    },
 }
 
 /// Context handle used by features that need microphone input.
@@ -269,6 +272,11 @@ impl MicrophoneHandle {
         }
         target_bitrate.set(bitrate_bps);
         self.send_command(MicrophoneCommand::SetBitrate { bitrate_bps });
+    }
+
+    /// Применяет gain к текущей сессии без повторного запуска capture/uplink.
+    pub(super) fn set_input_gain(&self, input_gain: f32) {
+        self.send_command(MicrophoneCommand::SetInputGain { input_gain });
     }
 
     fn send_command(&self, command: MicrophoneCommand) {

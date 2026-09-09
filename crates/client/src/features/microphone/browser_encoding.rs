@@ -115,6 +115,7 @@ pub(super) fn microphone_message_closure(
     sample_rate_hz: u32,
     closed: Rc<Cell<bool>>,
     encoder_diagnostics: Rc<MicrophoneEncoderOutputDiagnostics>,
+    input_gain: Rc<Cell<f32>>,
 ) -> Closure<dyn FnMut(MessageEvent)> {
     let detector = Rc::new(RefCell::new(VoiceActivityDetector::new(config.clone())));
     let diagnostics = Rc::new(MicrophoneWorkletDiagnostics::new());
@@ -129,7 +130,7 @@ pub(super) fn microphone_message_closure(
                 detector: &detector,
                 callbacks: &callbacks,
                 sample_rate_hz,
-                input_gain: config.input_gain,
+                input_gain: input_gain.get(),
                 diagnostics: diagnostics.as_ref(),
                 encoder_diagnostics: encoder_diagnostics.as_ref(),
             },

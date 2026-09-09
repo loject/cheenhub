@@ -122,6 +122,10 @@ impl MicrophoneSession for AndroidMicrophoneSession {
     ) -> futures_util::future::LocalBoxFuture<'static, Result<(), MicrophoneError>> {
         self.inner.set_bitrate_bps(bitrate_bps)
     }
+
+    fn set_input_gain(&self, input_gain: f32) -> Result<(), MicrophoneError> {
+        self.inner.set_input_gain(input_gain)
+    }
 }
 
 impl Drop for AndroidMicrophoneSession {

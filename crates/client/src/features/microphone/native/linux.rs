@@ -34,6 +34,7 @@ impl Drop for Cancellation {
 struct PulseMicrophoneSession {
     cancellation: Cancellation,
     bitrate_bps: Arc<AtomicU32>,
+    input_gain_bits: Arc<AtomicU32>,
     finished: RefCell<Option<oneshot::Receiver<()>>>,
 }
 
@@ -63,6 +64,13 @@ impl MicrophoneSession for PulseMicrophoneSession {
         debug!(bitrate_bps, "linux microphone bitrate update queued");
         async { Ok(()) }.boxed_local()
     }
+
+    fn set_input_gain(&self, input_gain: f32) -> Result<(), MicrophoneError> {
+        self.input_gain_bits
+            .store(input_gain.clamp(0.0, 2.0).to_bits(), Ordering::Relaxed);
+        debug!(input_gain, "linux microphone input gain updated");
+        Ok(())
+    }
 }
 
 impl MicrophoneBackend for PulseMicrophoneBackend {
@@ -87,6 +95,7 @@ impl MicrophoneBackend for PulseMicrophoneBackend {
             // Отмена future запуска освобождает worker даже до получения сессии.
             let cancellation = Cancellation(closed.clone());
             let bitrate_bps = Arc::new(AtomicU32::new(config.bitrate_bps));
+            let input_gain_bits = Arc::new(AtomicU32::new(config.input_gain.to_bits()));
             let (pcm_sender, pcm_receiver) = std::sync::mpsc::sync_channel(48);
             let (event_sender, event_receiver) = futures_channel::mpsc::unbounded();
             let (started_sender, started_receiver) = oneshot::channel();
@@ -125,12 +134,14 @@ impl MicrophoneBackend for PulseMicrophoneBackend {
                 event_sender,
                 closed,
                 bitrate_bps.clone(),
+                input_gain_bits.clone(),
                 samples,
             );
             info!("linux microphone PulseAudio capture started");
             Ok(Rc::new(PulseMicrophoneSession {
                 cancellation,
                 bitrate_bps,
+                input_gain_bits,
                 finished: RefCell::new(Some(finished_receiver)),
             }) as Rc<dyn MicrophoneSession>)
         }
