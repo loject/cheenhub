@@ -31,7 +31,7 @@ pub(crate) fn RoomChatSurface(
 
     match mode {
         RoomChatSurfaceMode::Full => rsx! {
-            div { id: "text-room-view", class: "text-room-view hidden min-h-0 flex-1 flex-col",
+            div { id: "text-room-view", class: "text-room-view hidden min-h-0 min-w-0 flex-1 flex-col",
                 if active {
                     ChatRoomPanel { server_id, room, compact: false }
                 }

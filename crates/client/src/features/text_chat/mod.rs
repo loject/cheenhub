@@ -28,7 +28,7 @@ pub(crate) const CHAT_COMPOSER_CLASS: &str = concat!(
     "shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
 );
 /// Общая ширина списка сообщений.
-pub(crate) const CHAT_CONTENT_CLASS: &str = "mx-auto flex w-full max-w-5xl flex-col gap-4";
+pub(crate) const CHAT_CONTENT_CLASS: &str = "mx-auto flex min-w-0 w-full max-w-5xl flex-col gap-4";
 pub(crate) use attachment_preview::ChatAttachmentPreview;
 pub(crate) use message_date::{friendly_message_date, message_day_key};
 pub(crate) use message_date_divider::ChatMessageDateDivider;

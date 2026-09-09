@@ -111,12 +111,12 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     };
     let placeholder_prefix = if compact { "&" } else { "#" };
     let list_class = if compact {
-        "min-h-0 flex-1 overflow-y-auto p-4 pt-2"
+        "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 pt-2"
     } else {
-        "min-h-0 flex-1 overflow-y-auto p-5 lg:p-6"
+        "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-5 lg:p-6"
     };
     let inner_class = if compact {
-        "space-y-4"
+        "min-w-0 w-full space-y-4"
     } else {
         CHAT_CONTENT_CLASS
     };
@@ -259,7 +259,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     });
 
     rsx! {
-        div { class: "flex h-full min-h-0 flex-col",
+        div { class: "flex h-full min-h-0 min-w-0 w-full flex-col",
             div {
                 class: list_class,
                 onmounted: move |event| list_element.set(Some(event.data.clone())),
