@@ -4,6 +4,7 @@ mod account_section;
 mod delete_account_modal;
 mod page;
 mod password_section;
+mod platform;
 mod profile_section;
 mod scope;
 mod security_section;

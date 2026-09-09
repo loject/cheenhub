@@ -3,6 +3,7 @@
 use dioxus::prelude::*;
 
 use super::account_section::AccountSettingsSection;
+use super::platform;
 use super::profile_section::ProfileSettingsSection;
 use super::security_section::SecuritySettingsSection;
 use super::sound_section::SoundSettingsSection;
@@ -65,6 +66,7 @@ pub(crate) fn UserSettingsPage(
     on_select_section: EventHandler<UserSettingsSection>,
     on_close: EventHandler<()>,
 ) -> Element {
+    let active_section = platform::resolve_section(active_section);
     let section_label = section_label(active_section);
 
     rsx! {
@@ -86,7 +88,10 @@ pub(crate) fn UserSettingsPage(
                         h1 { class: "mt-1.5 text-[16px] font-semibold tracking-[-0.03em] text-zinc-50", "Пользователь" }
                     }
                     div { class: "flex gap-2 overflow-x-auto pb-1 md:block md:space-y-1 md:overflow-visible md:pb-0",
-                        for section in SETTINGS_SECTIONS {
+                        for section in SETTINGS_SECTIONS
+                            .iter()
+                            .filter(|section| platform::is_section_available(section.kind))
+                        {
                             button {
                                 key: "{section.label}",
                                 r#type: "button",
