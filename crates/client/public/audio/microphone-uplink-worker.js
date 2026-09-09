@@ -26,7 +26,7 @@ async function start(config) {
   let transport = null;
   try {
     const wasm = await import(config.wasmBindgenUrl);
-    await wasm.default(config.wasmUrl);
+    await wasm.default({ module_or_path: config.wasmUrl });
     if (wasm.microphone_worker_abi_version() < 3) {
       throw new Error("microphone worker wasm ABI is too old");
     }
