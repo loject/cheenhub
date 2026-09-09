@@ -56,7 +56,7 @@ impl MicrophoneHandle {
             }
             ActiveCapture::Voice
                 if matches!(
-                    self.status(),
+                    self.status_untracked(),
                     MicrophoneStatus::Starting | MicrophoneStatus::Live
                 ) => {}
             ActiveCapture::Voice => {
@@ -81,7 +81,7 @@ impl MicrophoneHandle {
             }
             ActiveCapture::Voice
                 if matches!(
-                    self.status(),
+                    self.status_untracked(),
                     MicrophoneStatus::Starting | MicrophoneStatus::Live
                 ) => {}
             ActiveCapture::Voice => {
@@ -129,12 +129,27 @@ impl MicrophoneHandle {
         capture: ActiveCapture,
         uplink: Option<MicrophoneUplinkConfig>,
     ) {
+        // Lifecycle-команды могут продолжаться после `await` вне реактивного scope Dioxus.
+        // Здесь нужна только моментальная проверка, а не подписка текущей задачи на Signal.
+        let previous_status = self.status_untracked();
         if matches!(
-            self.status(),
+            previous_status,
             MicrophoneStatus::Starting | MicrophoneStatus::Live
         ) {
+            debug!(
+                ?previous_status,
+                ?capture,
+                "skipping duplicate microphone capture start"
+            );
             return;
         }
+
+        info!(
+            ?previous_status,
+            ?capture,
+            has_uplink = uplink.is_some(),
+            "starting microphone capture"
+        );
 
         let backend = self.backend.clone();
         let mut session = self.session;
