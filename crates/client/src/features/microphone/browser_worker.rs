@@ -18,7 +18,7 @@ use super::backend::{
 };
 use super::browser_errors::js_error_message;
 
-const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=4";
+const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=5";
 const MICROPHONE_WORKER_WASM_BINDGEN_URL: &str = "/workers/microphone/microphone_worker.js?v=3";
 const MICROPHONE_WORKER_WASM_URL: &str = "/workers/microphone/microphone_worker_bg.wasm?v=3";
 const WORKER_START_TIMEOUT_MS: u32 = 10_000;
@@ -253,6 +253,8 @@ fn handle_worker_message(
             detail = ?string_property(&data, "detail"),
             dropped_pcm = ?number_property(&data, "droppedPcm"),
             dropped_encoded = ?number_property(&data, "droppedEncoded"),
+            pcm_age_ms = ?number_property(&data, "pcmAgeMs"),
+            encoder_queue_size = ?number_property(&data, "encoderQueueSize"),
             "microphone uplink worker warning"
         ),
         "error" => {
