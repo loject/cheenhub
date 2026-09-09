@@ -6,10 +6,12 @@ use dioxus::prelude::*;
 #[component]
 pub(crate) fn ChatMessageDateDivider(label: String) -> Element {
     rsx! {
-        div { class: "sticky top-0 z-10 -my-2 flex justify-center py-0.5",
-            span { class: "rounded-full border border-zinc-800 bg-zinc-900/90 px-3 py-1 text-[11px] font-medium text-zinc-400 shadow-[0_4px_14px_rgba(0,0,0,0.2)]",
+        div { class: "sticky top-0 z-10 -my-1 flex items-center gap-4 bg-[#08090b]/92 py-2 backdrop-blur-md",
+            span { class: "h-px min-w-6 flex-1 bg-zinc-800/80" }
+            time { class: "shrink-0 text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-600",
                 "{label}"
             }
+            span { class: "h-px min-w-6 flex-1 bg-zinc-800/80" }
         }
     }
 }

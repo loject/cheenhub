@@ -265,11 +265,11 @@ pub(crate) fn SocialPage(
             }
 
             section { class: "social-conversation flex min-h-0 min-w-0 flex-1 flex-col",
-                div { class: "social-conversation-header flex min-h-16 shrink-0 items-center gap-3 border-b border-zinc-800/80 px-5",
+                div { class: "social-conversation-header flex min-h-16 shrink-0 items-center gap-3 bg-[#090a0d]/95 px-5 shadow-[0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl",
                     if selected_conversation().is_some() {
                         button {
                             r#type: "button",
-                            class: "social-mobile-back-button h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-400 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100",
+                            class: "social-mobile-back-button h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900/80 text-zinc-400 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] transition-[background-color,color,transform] duration-150 hover:bg-zinc-800 hover:text-zinc-100 active:scale-[0.96]",
                             "aria-label": "Назад к друзьям",
                             onclick: move |_| {
                                 info!("closing direct message mobile workspace");
@@ -286,11 +286,11 @@ pub(crate) fn SocialPage(
                         UserAvatar {
                             nickname: conversation.friend_nickname.clone(),
                             avatar_url: conversation.friend_avatar_url.clone(),
-                            class: "h-9 w-9 shrink-0 rounded-xl border border-zinc-800 bg-zinc-900 text-[12px] font-bold text-zinc-100".to_owned(),
+                            class: "h-9 w-9 shrink-0 rounded-full bg-zinc-900 text-[12px] font-bold text-zinc-100 outline outline-1 outline-white/10".to_owned(),
                             avatar_seed: Some(conversation.friend_user_id.clone()),
                         }
                         div { class: "min-w-0 flex-1",
-                            h2 { class: "truncate text-[15px] font-semibold text-zinc-50", "{conversation.friend_nickname}" }
+                            h2 { class: "truncate text-[15px] font-semibold tracking-[-0.025em] text-zinc-50", "{conversation.friend_nickname}" }
                             DirectCallHeader {
                                 conversation_id: conversation.id.clone(),
                                 peer_user_id: conversation.friend_user_id.clone(),

@@ -17,8 +17,8 @@ const MAX_DM_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 const DIRECT_MESSAGE_COMPOSER_GROUP_CLASS: &str = "mx-auto min-w-0 w-full max-w-5xl space-y-2";
 const DIRECT_MESSAGE_COMPOSER_CLASS: &str = concat!(
     "direct-message-input-wrap flex min-w-0 w-full items-end gap-2 rounded-[20px] ",
-    "border border-zinc-800 bg-[rgba(39,39,42,.8)] p-2 ",
-    "shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
+    "bg-[#181a20]/95 p-2 shadow-[0_0_0_1px_rgba(255,255,255,0.07),",
+    "0_18px_50px_rgba(0,0,0,0.32)]"
 );
 
 /// Результат локальной команды формы личного сообщения.
@@ -159,7 +159,7 @@ pub(super) fn DirectMessageComposer(
     let remove_conversation_id = conversation_id.clone();
 
     rsx! {
-        div { class: "direct-message-composer-shell min-w-0 shrink-0 border-t border-zinc-800/80 bg-zinc-950/55 p-4 backdrop-blur-xl",
+        div { class: "direct-message-composer-shell min-w-0 shrink-0 bg-[#08090b] px-5 pb-5 pt-2 lg:px-8",
             div { class: DIRECT_MESSAGE_COMPOSER_GROUP_CLASS,
                 if is_reading_clipboard() {
                     div { class: "flex items-center gap-2 px-2 text-[11px] text-zinc-400", role: "status", "aria-live": "polite",
@@ -193,7 +193,7 @@ pub(super) fn DirectMessageComposer(
                     value: "{draft()}",
                     readonly: is_sending(),
                     placeholder: "Сообщение для {friend_nickname}",
-                    class: "max-h-28 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600",
+                    class: "max-h-28 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[13px] leading-5 text-zinc-100 outline-none placeholder:text-zinc-600",
                     onmounted: move |event| composer_input_element.set(Some(event.data.clone())),
                     oninput: move |event| draft.set(event.value()),
                     onblur: move |_| refocus_requested.set(false),
@@ -236,7 +236,7 @@ pub(super) fn DirectMessageComposer(
                 button {
                     r#type: "button",
                     disabled: !can_send,
-                    class: "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500 text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-45",
+                    class: "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.28),0_6px_18px_rgba(37,99,235,0.2)] transition-[background-color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-blue-400 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 disabled:active:scale-100",
                     "aria-label": "Отправить сообщение",
                     onpointerdown: move |event| {
                         event.prevent_default();

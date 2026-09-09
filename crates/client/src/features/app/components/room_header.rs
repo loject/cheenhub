@@ -25,15 +25,10 @@ pub(crate) fn RoomHeader(
         &state,
         VoiceConnectionState::Connecting { .. } | VoiceConnectionState::Disconnecting { .. }
     );
-    let (badge, dot_class, subtitle) = match room.kind {
-        ServerRoomKind::Text => (
-            "текст",
-            "h-1.5 w-1.5 rounded-full bg-zinc-600",
-            "текстовая комната",
-        ),
+    let (room_symbol, subtitle) = match room.kind {
+        ServerRoomKind::Text => ("#", "Текстовая комната"),
         ServerRoomKind::TextAndVoice => (
-            "текст + голос",
-            "h-1.5 w-1.5 rounded-full bg-accent",
+            "#",
             if is_active_voice_room {
                 "текстовая + голосовая комната · в голосе"
             } else {
@@ -41,8 +36,7 @@ pub(crate) fn RoomHeader(
             },
         ),
         ServerRoomKind::Voice => (
-            "голос",
-            "h-1.5 w-1.5 rounded-full bg-accent",
+            "&",
             if is_active_voice_room {
                 "голосовая комната · в голосе"
             } else {
@@ -57,32 +51,29 @@ pub(crate) fn RoomHeader(
     };
 
     rsx! {
-        div { class: "room-header flex h-[72px] shrink-0 items-center justify-between gap-4 border-b border-zinc-800/80 bg-zinc-950/85 px-6 backdrop-blur-xl",
+        div { class: "room-header flex h-[72px] shrink-0 items-center justify-between gap-4 bg-[#090a0d]/95 px-6 shadow-[0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl",
             button {
                 r#type: "button",
-                class: "mobile-room-back-button h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-400 transition hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100",
+                class: "mobile-room-back-button h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900/80 text-zinc-400 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] transition-[background-color,color,transform] duration-150 hover:bg-zinc-800 hover:text-zinc-100 active:scale-[0.96]",
                 "aria-label": "Вернуться к списку комнат",
                 onclick: move |_| on_mobile_back.call(()),
                 svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
                     path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 18 9 12l6-6" }
                 }
             }
-            div { class: "min-w-0 flex-1",
-                div { class: "flex items-center gap-3",
-                    h1 { class: "truncate text-[15px] font-semibold tracking-[-0.04em] text-zinc-50", "{room.name}" }
-                    span { class: "inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 px-2.5 py-1 text-[11px] text-zinc-400",
-                        span { class: dot_class }
-                        "{badge}"
-                    }
+            div { class: "flex min-w-0 flex-1 items-center gap-3.5",
+                div { class: "flex h-10 w-10 shrink-0 items-center justify-center text-[28px] font-light leading-none text-zinc-500", "{room_symbol}" }
+                div { class: "min-w-0",
+                    h1 { class: "truncate text-[15px] font-semibold tracking-[-0.025em] text-zinc-50", "{room.name}" }
+                    p { class: "mt-0.5 truncate text-[11px] leading-4 text-zinc-600", "{subtitle}" }
                 }
-                p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "{subtitle}" }
             }
             if is_voice_capable && !is_connected_to_voice {
                 button {
                     id: "join-voice-button",
                     r#type: "button",
                     disabled: is_busy || is_active_voice_room,
-                    class: "join-voice-button group relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent/30 bg-accent/10 text-blue-100 transition hover:border-accent/45 hover:bg-accent/15 hover:text-white disabled:cursor-default disabled:opacity-70",
+                    class: "join-voice-button group relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-blue-100 shadow-[0_0_0_1px_rgba(96,165,250,0.3)] transition-[background-color,color,transform,opacity] duration-150 hover:bg-accent/15 hover:text-white active:scale-[0.96] disabled:cursor-default disabled:opacity-70 disabled:active:scale-100",
                     "aria-label": join_label,
                     onclick: {
                         let target = VoiceRoomTarget::server(

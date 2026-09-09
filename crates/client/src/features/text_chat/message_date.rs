@@ -60,7 +60,7 @@ pub(crate) fn friendly_message_date(created_at: &str) -> String {
 }
 
 /// Возвращает полную дату и время для подсказки сообщения.
-pub(super) fn full_message_datetime(created_at: &str) -> String {
+pub(crate) fn full_message_datetime(created_at: &str) -> String {
     parse_timestamp(created_at)
         .map(|timestamp| {
             let date = timestamp.date_naive();

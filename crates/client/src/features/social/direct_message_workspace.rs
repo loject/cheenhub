@@ -16,8 +16,8 @@ use crate::features::application_focus::ApplicationFocusContext;
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 use crate::features::runtime::sleep_ms;
 use crate::features::text_chat::{
-    CHAT_CONTENT_CLASS, ChatMessageDateDivider, ScrollCommand, VirtualChatLayout, VirtualChatRow,
-    apply_scroll_command, update_near_bottom_state,
+    CHAT_CONTENT_CLASS, ChatHistoryLoadingState, ChatMessageDateDivider, ScrollCommand,
+    VirtualChatLayout, VirtualChatRow, apply_scroll_command, update_near_bottom_state,
 };
 use crate::features::voice_chat::{DirectCallHandle, VoiceConnectionHandle, VoiceConnectionState};
 
@@ -257,7 +257,7 @@ pub(crate) fn DirectMessageWorkspace(
 
     rsx! {
         section {
-            class: "room-workspace voice-shell relative flex min-h-0 flex-1 flex-col bg-zinc-950/35",
+            class: "room-workspace voice-shell relative flex min-h-0 flex-1 flex-col bg-[#08090b]",
             style: "{workspace_style}",
             "data-room-kind": "direct",
             "data-voice-room-active": if voice_layout_active { "true" } else { "false" },
@@ -372,7 +372,7 @@ pub(crate) fn DirectMessageWorkspace(
                             }
                         }
                         div {
-                            class: "direct-message-list min-h-0 flex-1 overflow-y-auto p-5 lg:p-6",
+                            class: "direct-message-list min-h-0 flex-1 overflow-y-auto bg-[#08090b] px-5 py-7 lg:px-8 lg:py-8",
                             onmounted: move |event| list_element.set(Some(event.data.clone())),
                             onscroll: move |_| {
                                 if let Some(element) = list_element.cloned() {
@@ -398,14 +398,26 @@ pub(crate) fn DirectMessageWorkspace(
                             },
                             div { class: CHAT_CONTENT_CLASS,
                                 if is_loading_messages() {
-                                    div { class: "space-y-3",
-                                        div { class: "h-14 animate-pulse rounded-2xl bg-zinc-900/80" }
-                                        div { class: "h-14 animate-pulse rounded-2xl bg-zinc-900/50" }
+                                    ChatHistoryLoadingState {}
+                                } else if !has_messages && !status().is_empty() {
+                                    div { class: "mx-auto max-w-md rounded-[18px] bg-red-500/[0.08] px-6 py-5 text-center text-[12px] leading-5 text-red-200 shadow-[0_0_0_1px_rgba(248,113,113,0.16)]",
+                                        p { class: "font-semibold text-red-100", "Не удалось загрузить сообщения" }
+                                        p { "{status()}" }
+                                        button {
+                                            r#type: "button",
+                                            class: "mt-3 min-h-10 rounded-xl bg-red-400/10 px-4 text-[12px] font-medium text-red-100 transition-[background-color,color,transform] duration-150 hover:bg-red-400/15 hover:text-white active:scale-[0.96]",
+                                            onclick: {
+                                                let conversation_id = conversation.id.clone();
+                                                move |_| load_messages(conversation_id.clone(), state, on_overview_changed)
+                                            },
+                                            "Повторить"
+                                        }
                                     }
                                 } else if !has_messages {
-                                    div { class: "rounded-[20px] border border-zinc-800 bg-zinc-900/60 p-6 text-center",
-                                        p { class: "text-[13px] font-medium text-zinc-100", "Сообщений пока нет" }
-                                        p { class: "mt-1 text-[12px] leading-5 text-zinc-500", "Напишите первое личное сообщение." }
+                                    div { class: "mx-auto flex max-w-md flex-col items-center px-6 py-12 text-center",
+                                        div { class: "mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-blue-500/10 text-[18px] text-blue-400 shadow-[0_0_0_1px_rgba(96,165,250,0.16)]", "✦" }
+                                        p { class: "text-[15px] font-semibold tracking-[-0.02em] text-zinc-100", "Начните разговор" }
+                                        p { class: "mt-1.5 text-[12px] leading-5 text-zinc-500", "Напишите первое личное сообщение." }
                                     }
                                 } else {
                                     for (group_index, (group_key, date_label, estimated_height, group)) in message_groups.iter().cloned().enumerate() {
@@ -434,7 +446,7 @@ pub(crate) fn DirectMessageWorkspace(
                                 div { class: "pointer-events-none absolute bottom-3 right-4 z-20",
                                     button {
                                         r#type: "button",
-                                        class: "group pointer-events-auto relative flex h-10 w-10 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950/85 text-blue-200 shadow-[0_8px_22px_rgba(0,0,0,0.35)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-white/15 hover:bg-zinc-900/90 hover:text-blue-100",
+                                        class: "group pointer-events-auto relative flex h-10 w-10 items-center justify-center rounded-full bg-zinc-900/95 text-blue-200 shadow-[0_8px_22px_rgba(0,0,0,0.35),0_0_0_1px_rgba(255,255,255,0.08)] transition-[background-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-zinc-800 hover:text-blue-100 active:scale-[0.96]",
                                         "aria-label": "Перейти к последнему сообщению",
                                         onclick: move |_| pending_scroll.set(Some(ScrollCommand::SmoothBottom)),
                                         span { class: "pointer-events-none absolute bottom-[calc(100%+8px)] right-0 whitespace-nowrap rounded-lg border border-zinc-800 bg-zinc-950/95 px-2 py-1 text-[11px] font-medium text-zinc-300 opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] transition-[opacity,transform] duration-150 group-hover:opacity-100",

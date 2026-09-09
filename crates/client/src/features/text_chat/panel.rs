@@ -28,8 +28,8 @@ use super::realtime::{self, TextChatEvent};
 use super::scroll::{ScrollCommand, apply_scroll_command, update_scroll_state};
 use super::{
     CHAT_COMPOSER_CLASS, CHAT_COMPOSER_GROUP_CLASS, CHAT_CONTENT_CLASS, ChatAttachmentPreview,
-    ChatMessageDateDivider, ChatMessageGroup, RoomComposeState, VirtualChatLayout, VirtualChatRow,
-    prepare_text_chat_groups,
+    ChatHistoryLoadingState, ChatMessageDateDivider, ChatMessageGroup, RoomComposeState,
+    VirtualChatLayout, VirtualChatRow, prepare_text_chat_groups,
 };
 
 const MAX_CHAT_IMAGE_BYTES: usize = 10 * 1024 * 1024;
@@ -111,9 +111,9 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     };
     let placeholder_prefix = if compact { "&" } else { "#" };
     let list_class = if compact {
-        "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 pt-2"
+        "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#08090b] p-4 pt-3"
     } else {
-        "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-5 lg:p-6"
+        "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#08090b] px-5 py-7 lg:px-8 lg:py-8"
     };
     let inner_class = if compact {
         "min-w-0 w-full space-y-4"
@@ -121,12 +121,12 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         CHAT_CONTENT_CLASS
     };
     let input_outer_class = if compact {
-        "shrink-0 border-t border-zinc-800/80 bg-zinc-950/35 p-3"
+        "shrink-0 bg-[#08090b] px-3 pb-3 pt-2"
     } else {
-        "shrink-0 border-t border-zinc-800/80 bg-zinc-950/55 p-4 backdrop-blur-xl"
+        "shrink-0 bg-[#08090b] px-5 pb-5 pt-2 lg:px-8"
     };
     let input_wrap_class = if compact {
-        "chat-input-wrap flex min-w-0 w-full items-end gap-2 rounded-[20px] border border-zinc-800 bg-[rgba(39,39,42,.8)] p-2 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]"
+        "chat-input-wrap flex min-w-0 w-full items-end gap-2 rounded-[20px] bg-[#181a20]/95 p-2 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_18px_50px_rgba(0,0,0,0.32)]"
     } else {
         CHAT_COMPOSER_CLASS
     };
@@ -259,7 +259,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     });
 
     rsx! {
-        div { class: "flex h-full min-h-0 min-w-0 w-full flex-col",
+        div { class: "flex h-full min-h-0 min-w-0 w-full flex-col bg-[#08090b]",
             div {
                 class: list_class,
                 onmounted: move |event| list_element.set(Some(event.data.clone())),
@@ -279,32 +279,30 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 },
                 div { class: inner_class,
                     if older_loading() {
-                        div { class: "flex justify-center py-2",
-                            div { class: "h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-blue-400" }
+                        div { class: "flex items-center justify-center gap-2 py-2 text-[11px] text-zinc-500", role: "status", "aria-live": "polite",
+                            div { class: "h-4 w-4 animate-spin rounded-full border-2 border-zinc-800 border-t-blue-400", "aria-hidden": "true" }
+                            "Загружаем ранние сообщения…"
                         }
                     } else if let Some(error) = older_error() {
-                        div { class: "rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-center text-[12px] leading-5 text-red-200",
+                        div { class: "rounded-[16px] bg-red-500/[0.08] px-4 py-3 text-center text-[12px] leading-5 text-red-200 shadow-[0_0_0_1px_rgba(248,113,113,0.16)]",
                             p { "{error}" }
                             button {
                                 r#type: "button",
-                                class: "mt-2 rounded-lg border border-red-300/20 px-3 py-1 text-[12px] font-medium text-red-100 transition-colors hover:border-red-200/40 hover:bg-red-400/10",
+                                class: "mt-2 min-h-10 rounded-xl bg-red-400/10 px-4 text-[12px] font-medium text-red-100 transition-[background-color,color,transform] duration-150 hover:bg-red-400/15 hover:text-white active:scale-[0.96]",
                                 onclick: move |_| load_older.call(()),
                                 "Повторить"
                             }
                         }
                     }
                     if initial_loading() && !has_messages {
-                        div { class: "space-y-3",
-                            div { class: "h-14 animate-pulse rounded-2xl bg-zinc-900/80" }
-                            div { class: "h-14 animate-pulse rounded-2xl bg-zinc-900/60" }
-                            div { class: "h-14 animate-pulse rounded-2xl bg-zinc-900/40" }
-                        }
+                        ChatHistoryLoadingState {}
                     } else if let Some(error) = history_error() {
-                        div { class: "rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-3 text-center text-[12px] leading-5 text-red-200",
+                        div { class: "mx-auto max-w-md rounded-[18px] bg-red-500/[0.08] px-6 py-5 text-center text-[12px] leading-5 text-red-200 shadow-[0_0_0_1px_rgba(248,113,113,0.16)]",
+                            p { class: "font-semibold text-red-100", "Не удалось загрузить сообщения" }
                             p { "{error}" }
                             button {
                                 r#type: "button",
-                                class: "mt-2 rounded-lg border border-red-300/20 px-3 py-1 text-[12px] font-medium text-red-100 transition-colors hover:border-red-200/40 hover:bg-red-400/10",
+                                class: "mt-3 min-h-10 rounded-xl bg-red-400/10 px-4 text-[12px] font-medium text-red-100 transition-[background-color,color,transform] duration-150 hover:bg-red-400/15 hover:text-white active:scale-[0.96]",
                                 onclick: move |_| {
                                     load_initial_history(
                                         HistoryTarget {
@@ -319,9 +317,10 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             }
                         }
                     } else if !has_messages {
-                        div { class: "rounded-[20px] border border-zinc-800 bg-zinc-900/60 p-6 text-center",
-                            p { class: "text-[13px] font-medium text-zinc-100", "Сообщений пока нет" }
-                            p { class: "mt-1 text-[12px] leading-5 text-zinc-500",
+                        div { class: "mx-auto flex max-w-md flex-col items-center px-6 py-12 text-center",
+                            div { class: "mb-4 flex h-12 w-12 items-center justify-center rounded-[16px] bg-blue-500/10 text-[24px] font-light text-blue-400 shadow-[0_0_0_1px_rgba(96,165,250,0.16)]", "#" }
+                            p { class: "text-[15px] font-semibold tracking-[-0.02em] text-zinc-100", "Здесь начнётся разговор" }
+                            p { class: "mt-1.5 text-[12px] leading-5 text-zinc-500",
                                 "Напиши первое сообщение в этой комнате."
                             }
                         }
@@ -356,7 +355,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                     div { class: "pointer-events-none absolute bottom-3 right-4 z-20",
                     button {
                         r#type: "button",
-                        class: "group pointer-events-auto relative flex h-10 w-10 items-center justify-center rounded-full border border-zinc-800 bg-zinc-950/85 text-blue-200 shadow-[0_8px_22px_rgba(0,0,0,0.35)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-white/15 hover:bg-zinc-900/90 hover:text-blue-100",
+                        class: "group pointer-events-auto relative flex h-10 w-10 items-center justify-center rounded-full bg-zinc-900/95 text-blue-200 shadow-[0_8px_22px_rgba(0,0,0,0.35),0_0_0_1px_rgba(255,255,255,0.08)] transition-[background-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-zinc-800 hover:text-blue-100 active:scale-[0.96]",
                         "aria-label": "Перейти к последнему сообщению",
                         onclick: move |_| pending_scroll.set(Some(ScrollCommand::SmoothBottom)),
                         span { class: "pointer-events-none absolute bottom-[calc(100%+8px)] right-0 whitespace-nowrap rounded-lg border border-zinc-800 bg-zinc-950/95 px-2 py-1 text-[11px] font-medium text-zinc-300 opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] transition-[opacity,transform] duration-150 group-hover:opacity-100",
@@ -403,7 +402,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                         value: "{draft()}",
                         readonly: is_sending(),
                         placeholder: "Сообщение в {placeholder_prefix} {room.name}",
-                        class: "max-h-28 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600",
+                        class: "max-h-28 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[13px] leading-5 text-zinc-100 outline-none placeholder:text-zinc-600",
                         onmounted: move |event| {
                             compose_input_element.set(Some(event.data.clone()));
                         },
@@ -429,7 +428,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                     button {
                         r#type: "button",
                         disabled: !can_send,
-                        class: "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_4px_18px_rgba(59,130,246,0.16)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 disabled:hover:bg-accent",
+                        class: "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-white shadow-[0_0_0_1px_rgba(96,165,250,0.28),0_6px_18px_rgba(37,99,235,0.2)] transition-[background-color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-blue-400 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 disabled:hover:bg-accent disabled:active:scale-100",
                         "aria-label": "Отправить сообщение",
                         onpointerdown: move |event| {
                             event.prevent_default();

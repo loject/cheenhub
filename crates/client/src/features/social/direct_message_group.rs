@@ -7,7 +7,7 @@ use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::text_chat::{
     ChatMessageItem, estimated_group_height, estimated_image_preview_height, friendly_message_date,
-    is_appearing_message, message_day_key,
+    full_message_datetime, is_appearing_message, message_day_key, message_time,
 };
 
 use super::direct_message_image::DirectMessageImage;
@@ -82,22 +82,24 @@ pub(super) fn DirectMessageGroup(
         "grid-column: 1; grid-row: 1;"
     };
     let header_class = if is_own_group {
-        "mb-1 flex items-center justify-end gap-2"
+        "mb-1.5 flex items-center justify-end gap-2 px-0.5"
     } else {
-        "mb-1 flex items-center gap-2"
+        "mb-1.5 flex items-center gap-2 px-0.5"
     };
+    let sent_time = message_time(&first_message.created_at);
+    let sent_datetime = full_message_datetime(&first_message.created_at);
 
     rsx! {
         div {
-            class: "chat-message-group relative grid gap-3",
+            class: "chat-message-group relative grid gap-3.5",
             style: "grid-template-columns: 2.25rem minmax(0, 1fr) 2.25rem;",
             div {
-                class: "chat-message-avatar-column sticky top-0 z-20 shrink-0 self-start pt-1",
+                class: "chat-message-avatar-column sticky top-3 z-20 shrink-0 self-start pt-0.5",
                 style: avatar_column_style,
                 UserAvatar {
                     nickname: first_message.sender_nickname.clone(),
                     avatar_url: first_message.sender_avatar_url.clone(),
-                    class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-800 text-[12px] font-bold text-zinc-100".to_owned(),
+                    class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[12px] font-bold text-zinc-100 outline outline-1 outline-white/10".to_owned(),
                     avatar_seed: Some(first_message.sender_user_id.clone()),
                 }
             }
@@ -105,9 +107,15 @@ pub(super) fn DirectMessageGroup(
                 class: "chat-message-content min-w-0",
                 style: "grid-column: 2; grid-row: 1;",
                 div { class: header_class,
-                    span { class: "truncate text-[12px] font-semibold text-zinc-100", "{first_message.sender_nickname}" }
+                    span { class: "truncate text-[12px] font-semibold tracking-[-0.01em] text-zinc-100", "{first_message.sender_nickname}" }
+                    time {
+                        class: "shrink-0 text-[10px] tabular-nums text-zinc-600",
+                        datetime: "{first_message.created_at}",
+                        title: "{sent_datetime}",
+                        "{sent_time}"
+                    }
                 }
-                div { class: "flex flex-col gap-2",
+                div { class: "flex flex-col gap-1.5",
                     for message in messages.iter().cloned() {
                         ChatMessageItem {
                             key: "{message.id}",
