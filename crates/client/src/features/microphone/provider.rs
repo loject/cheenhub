@@ -2,17 +2,14 @@
 
 use std::rc::Rc;
 
-use dioxus::dioxus_core::spawn_forever;
 use dioxus::prelude::*;
+use futures_channel::mpsc;
 
 use super::backend::{
-    MicrophoneActivationMode, MicrophoneBackend, MicrophoneConfig, MicrophoneFrameCallback,
-    MicrophoneLevel, MicrophoneSession, MicrophoneStatus, MicrophoneUplinkConfig,
+    MicrophoneActivationMode, MicrophoneFrameCallback, MicrophoneLevel, MicrophoneStatus,
+    MicrophoneUplinkConfig,
 };
-use super::provider_runtime::{
-    gain_from_percent, microphone_callbacks, next_generation, reset_level, status_from_error,
-    threshold_from_percent,
-};
+use super::provider_runtime::next_generation;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ActiveCapture {
@@ -21,15 +18,35 @@ pub(super) enum ActiveCapture {
     Voice,
 }
 
+pub(super) enum MicrophoneCommand {
+    Start {
+        operation_generation: u64,
+        on_frame: MicrophoneFrameCallback,
+        capture: ActiveCapture,
+        uplink: Option<MicrophoneUplinkConfig>,
+    },
+    Restart {
+        operation_generation: u64,
+        on_frame: MicrophoneFrameCallback,
+        capture: ActiveCapture,
+        uplink: Option<MicrophoneUplinkConfig>,
+    },
+    Stop {
+        operation_generation: u64,
+    },
+    SetBitrate {
+        bitrate_bps: u32,
+    },
+}
+
 /// Context handle used by features that need microphone input.
 #[derive(Clone)]
 pub(crate) struct MicrophoneHandle {
     pub(super) status: Signal<MicrophoneStatus>,
     pub(super) level: Signal<MicrophoneLevel>,
     pub(super) level_active: Signal<bool>,
-    pub(super) session: Signal<Option<Rc<dyn MicrophoneSession>>>,
     pub(super) generation: Signal<u64>,
-    pub(super) backend: Rc<dyn MicrophoneBackend>,
+    pub(super) commands: mpsc::UnboundedSender<MicrophoneCommand>,
     pub(super) selected_input_device_id: Signal<Option<String>>,
     pub(super) selected_input_device_label: Signal<Option<String>>,
     pub(super) input_volume_percent: Signal<u32>,
@@ -144,79 +161,13 @@ impl MicrophoneHandle {
             return;
         }
 
-        info!(
-            ?previous_status,
-            ?capture,
-            has_uplink = uplink.is_some(),
-            "starting microphone capture"
-        );
-
-        let backend = self.backend.clone();
-        let mut session = self.session;
-        let mut status = self.status;
-        let mut level = self.level;
         let mut generation = self.generation;
-        let mut active_capture = self.active_capture;
-        let mut active_on_frame = self.active_on_frame;
-        let mut active_uplink = self.active_uplink;
-        let device_id = self.selected_input_device_id.peek().clone();
-        let input_gain = gain_from_percent(*self.input_volume_percent.peek());
-        let activation_mode = *self.activation_mode.peek();
-        let vad_threshold = threshold_from_percent(*self.vad_threshold_percent.peek());
-        let target_bitrate_bps = *self.target_bitrate_bps.peek();
-        let start_generation = next_generation(&mut generation);
-        status.set(MicrophoneStatus::Starting);
-        active_capture.set(capture);
-        active_on_frame.set(Some(on_frame.clone()));
-        active_uplink.set(uplink.clone());
-        let mut level_active = self.level_active;
-        reset_level(&mut level, &mut level_active);
-
-        spawn_forever(async move {
-            let callbacks = microphone_callbacks(
-                on_frame.clone(),
-                level,
-                level_active,
-                status,
-                uplink.clone(),
-            );
-            let config = MicrophoneConfig {
-                device_id,
-                input_gain,
-                activation_mode,
-                vad_threshold,
-                bitrate_bps: target_bitrate_bps,
-                ..MicrophoneConfig::default()
-            };
-            match backend.start(config, callbacks).await {
-                Ok(next_session) => {
-                    if generation() != start_generation {
-                        next_session.stop_immediately();
-                        if let Err(error) = next_session.stop().await {
-                            warn!(%error, "failed to stop stale microphone capture after start");
-                        }
-                        return;
-                    }
-                    session.set(Some(next_session));
-                    status.set(MicrophoneStatus::Live);
-                    active_capture.set(capture);
-                    active_on_frame.set(Some(on_frame));
-                    active_uplink.set(uplink);
-                }
-                Err(error) => {
-                    if generation() != start_generation {
-                        return;
-                    }
-                    let next_status = status_from_error(error.clone());
-                    warn!(%error, status = ?next_status, "failed to start microphone capture");
-                    session.set(None);
-                    reset_level(&mut level, &mut level_active);
-                    status.set(next_status);
-                    active_capture.set(ActiveCapture::None);
-                    active_on_frame.set(None);
-                    active_uplink.set(None);
-                }
-            }
+        let operation_generation = next_generation(&mut generation);
+        self.send_command(MicrophoneCommand::Start {
+            operation_generation,
+            on_frame,
+            capture,
+            uplink,
         });
     }
 
@@ -242,116 +193,22 @@ impl MicrophoneHandle {
         capture: ActiveCapture,
         uplink: Option<MicrophoneUplinkConfig>,
     ) {
-        let previous_session = self.session.peek().clone();
-        let backend = self.backend.clone();
-        let mut session = self.session;
-        let mut status = self.status;
-        let mut level = self.level;
         let mut generation = self.generation;
-        let mut active_capture = self.active_capture;
-        let mut active_on_frame = self.active_on_frame;
-        let mut active_uplink = self.active_uplink;
-        let device_id = self.selected_input_device_id.peek().clone();
-        let input_gain = gain_from_percent(*self.input_volume_percent.peek());
-        let activation_mode = *self.activation_mode.peek();
-        let vad_threshold = threshold_from_percent(*self.vad_threshold_percent.peek());
-        let target_bitrate_bps = *self.target_bitrate_bps.peek();
-        let restart_generation = next_generation(&mut generation);
-        if let Some(previous_session) = &previous_session {
-            previous_session.stop_immediately();
-        }
-        status.set(MicrophoneStatus::Starting);
-        active_capture.set(capture);
-        active_on_frame.set(Some(on_frame.clone()));
-        active_uplink.set(uplink.clone());
-        let mut level_active = self.level_active;
-        reset_level(&mut level, &mut level_active);
-
-        spawn_forever(async move {
-            if let Some(previous_session) = previous_session
-                && let Err(error) = previous_session.stop().await
-            {
-                warn!(%error, "failed to stop previous microphone capture before restart");
-            }
-            if generation() != restart_generation {
-                return;
-            }
-
-            let callbacks = microphone_callbacks(
-                on_frame.clone(),
-                level,
-                level_active,
-                status,
-                uplink.clone(),
-            );
-            let config = MicrophoneConfig {
-                device_id,
-                input_gain,
-                activation_mode,
-                vad_threshold,
-                bitrate_bps: target_bitrate_bps,
-                ..MicrophoneConfig::default()
-            };
-            match backend.start(config, callbacks).await {
-                Ok(next_session) => {
-                    if generation() != restart_generation {
-                        next_session.stop_immediately();
-                        if let Err(error) = next_session.stop().await {
-                            warn!(%error, "failed to stop stale microphone capture after restart");
-                        }
-                        return;
-                    }
-                    session.set(Some(next_session));
-                    status.set(MicrophoneStatus::Live);
-                    active_capture.set(capture);
-                    active_on_frame.set(Some(on_frame));
-                    active_uplink.set(uplink);
-                }
-                Err(error) => {
-                    if generation() != restart_generation {
-                        return;
-                    }
-                    let next_status = status_from_error(error.clone());
-                    warn!(%error, status = ?next_status, "failed to restart microphone capture");
-                    session.set(None);
-                    reset_level(&mut level, &mut level_active);
-                    status.set(next_status);
-                    active_capture.set(ActiveCapture::None);
-                    active_on_frame.set(None);
-                    active_uplink.set(None);
-                }
-            }
+        let operation_generation = next_generation(&mut generation);
+        self.send_command(MicrophoneCommand::Restart {
+            operation_generation,
+            on_frame,
+            capture,
+            uplink,
         });
     }
 
     /// Stops the active microphone session.
     pub(crate) fn stop(&self) {
         let mut generation = self.generation;
-        next_generation(&mut generation);
-        let active_session = self.session.peek().clone();
-        let mut session = self.session;
-        let mut status = self.status;
-        let mut level = self.level;
-        let mut level_active = self.level_active;
-        let mut active_capture = self.active_capture;
-        let mut active_on_frame = self.active_on_frame;
-        let mut active_uplink = self.active_uplink;
-
-        stop_session_immediately(active_session.as_ref());
-        session.set(None);
-        reset_level(&mut level, &mut level_active);
-        status.set(MicrophoneStatus::Idle);
-        active_capture.set(ActiveCapture::None);
-        active_on_frame.set(None);
-        active_uplink.set(None);
-
-        let Some(active_session) = active_session else {
-            return;
-        };
-        spawn_forever(async move {
-            if let Err(error) = active_session.stop().await {
-                warn!(%error, "failed to stop microphone capture cleanly");
-            }
+        let operation_generation = next_generation(&mut generation);
+        self.send_command(MicrophoneCommand::Stop {
+            operation_generation,
         });
     }
 
@@ -365,7 +222,7 @@ impl MicrophoneHandle {
             }
             ActiveCapture::Voice
                 if matches!(
-                    self.status(),
+                    self.status_untracked(),
                     MicrophoneStatus::Live | MicrophoneStatus::Starting
                 ) =>
             {
@@ -411,16 +268,13 @@ impl MicrophoneHandle {
             return;
         }
         target_bitrate.set(bitrate_bps);
+        self.send_command(MicrophoneCommand::SetBitrate { bitrate_bps });
+    }
 
-        let Some(active_session) = (self.session)() else {
-            return;
-        };
-
-        spawn(async move {
-            if let Err(error) = active_session.set_bitrate_bps(bitrate_bps).await {
-                warn!(%error, bitrate_bps, "failed to update microphone bitrate");
-            }
-        });
+    fn send_command(&self, command: MicrophoneCommand) {
+        if self.commands.unbounded_send(command).is_err() {
+            warn!("microphone runtime command receiver is unavailable");
+        }
     }
 }
 
@@ -436,12 +290,6 @@ fn should_start_level_preview(status: &MicrophoneStatus, active_capture: ActiveC
 
 fn should_stop_level_preview(active_capture: ActiveCapture) -> bool {
     active_capture == ActiveCapture::Preview
-}
-
-fn stop_session_immediately(session: Option<&Rc<dyn MicrophoneSession>>) {
-    if let Some(session) = session {
-        session.stop_immediately();
-    }
 }
 
 #[cfg(test)]

@@ -5,9 +5,8 @@ use std::rc::Rc;
 
 use futures_util::FutureExt;
 
-use super::{
-    ActiveCapture, should_start_level_preview, should_stop_level_preview, stop_session_immediately,
-};
+use super::{ActiveCapture, should_start_level_preview, should_stop_level_preview};
+use crate::features::microphone::provider_runtime::stop_session_immediately;
 use crate::features::microphone::{MicrophoneError, MicrophoneSession, MicrophoneStatus};
 
 struct TestSession {

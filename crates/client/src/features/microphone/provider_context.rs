@@ -10,7 +10,7 @@ use super::backend::{
 };
 use super::native::default_backend;
 use super::provider::{ActiveCapture, MicrophoneHandle};
-use super::provider_runtime::default_level;
+use super::provider_runtime::{MicrophoneRuntime, default_level, run_microphone_runtime};
 use super::storage;
 
 /// Provides microphone capture state to authenticated app components.
@@ -40,13 +40,29 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let active_uplink = use_signal(|| None::<MicrophoneUplinkConfig>);
     let target_bitrate_bps = use_signal(|| MicrophoneConfig::default().bitrate_bps);
     let backend = default_backend();
-    let handle = MicrophoneHandle {
+    let runtime = MicrophoneRuntime {
+        backend,
         status,
         level,
         level_active,
         session,
         generation,
-        backend,
+        selected_input_device_id,
+        input_volume_percent,
+        activation_mode,
+        vad_threshold_percent,
+        active_capture,
+        active_on_frame,
+        active_uplink,
+        target_bitrate_bps,
+    };
+    let commands = use_coroutine(move |receiver| run_microphone_runtime(receiver, runtime.clone()));
+    let handle = MicrophoneHandle {
+        status,
+        level,
+        level_active,
+        generation,
+        commands: commands.tx(),
         selected_input_device_id,
         selected_input_device_label,
         input_volume_percent,
