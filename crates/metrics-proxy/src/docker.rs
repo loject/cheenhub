@@ -42,7 +42,6 @@ impl DockerClient {
             "GET {path} HTTP/1.1\r\nHost: docker\r\nAccept: application/json\r\nConnection: close\r\n\r\n"
         );
         stream.write_all(request.as_bytes()).await?;
-        stream.shutdown().await?;
 
         let mut response = Vec::new();
         stream.read_to_end(&mut response).await?;
