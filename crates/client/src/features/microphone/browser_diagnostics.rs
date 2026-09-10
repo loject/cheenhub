@@ -114,7 +114,21 @@ impl MicrophoneWorkletDiagnostics {
         }
 
         let count = timing.process_count.max(1);
+        let effective_rate_hz = if timing.wall_delta_ms == 0 {
+            0.0
+        } else {
+            timing.frames as f64 * 1_000.0 / timing.wall_delta_ms as f64
+        };
+
         warn!(
+            processed_frames = timing.processed_frames,
+            process_calls = timing.process_calls,
+            frames_since_report = timing.frames,
+            wall_delta_ms = timing.wall_delta_ms,
+            effective_rate_hz,
+            sample_rate_hz = timing.sample_rate_hz,
+            max_process_gap_ms = timing.max_process_gap_ms,
+            quantum_size = timing.quantum_size,
             process_count = timing.process_count,
             chunk_count = timing.chunk_count,
             input_empty_count = timing.input_empty_count,
@@ -306,6 +320,12 @@ pub(super) struct WorkletProcessingTiming {
 }
 
 pub(super) struct WorkletProcessorProfileTiming {
+    pub(super) processed_frames: u64,
+    pub(super) process_calls: u64,
+    pub(super) wall_delta_ms: u64,
+    pub(super) max_process_gap_ms: u64,
+    pub(super) sample_rate_hz: u32,
+    pub(super) quantum_size: u32,
     pub(super) process_count: u64,
     pub(super) chunk_count: u64,
     pub(super) input_empty_count: u64,
