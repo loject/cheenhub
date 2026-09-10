@@ -18,7 +18,7 @@ use super::backend::{
 };
 use super::browser_errors::js_error_message;
 
-const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=8";
+const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=9";
 const MICROPHONE_WORKER_WASM_BINDGEN_URL: &str = "/workers/microphone/microphone_worker.js?v=4";
 const MICROPHONE_WORKER_WASM_URL: &str = "/workers/microphone/microphone_worker_bg.wasm?v=4";
 const WORKER_START_TIMEOUT_MS: u32 = 10_000;
@@ -300,6 +300,26 @@ fn handle_worker_message(
             effective_rate_hz = ?number_property(&data, "effectiveRateHz"),
             sample_rate_hz = ?number_property(&data, "sampleRateHz"),
             "microphone uplink worker PCM input profile"
+        ),
+        "send-profile" => warn!(
+            transport = ?string_property(&data, "transport"),
+            window_ms = ?number_property(&data, "windowMs"),
+            send_count = ?number_property(&data, "sendCount"),
+            send_completed_count = ?number_property(&data, "sendCompletedCount"),
+            send_blocked_count = ?number_property(&data, "sendBlockedCount"),
+            send_pending_blocked_count = ?number_property(&data, "sendPendingBlockedCount"),
+            send_backpressure_blocked_count = ?number_property(&data, "sendBackpressureBlockedCount"),
+            sends_since_report = ?number_property(&data, "sendsSinceReport"),
+            completed_since_report = ?number_property(&data, "completedSinceReport"),
+            blocked_since_report = ?number_property(&data, "blockedSinceReport"),
+            pending_blocked_since_report = ?number_property(&data, "pendingBlockedSinceReport"),
+            backpressure_blocked_since_report = ?number_property(&data, "backpressureBlockedSinceReport"),
+            send_wait_total_ms = ?number_property(&data, "sendWaitTotalMs"),
+            send_wait_avg_ms = ?number_property(&data, "sendWaitAvgMs"),
+            send_wait_max_ms = ?number_property(&data, "sendWaitMaxMs"),
+            pending_send_ms = ?number_property(&data, "pendingSendMs"),
+            encoder_queue_size = ?number_property(&data, "encoderQueueSize"),
+            "microphone uplink worker transport send profile"
         ),
         "warning" => warn!(
             message = %string_property(&data, "message").unwrap_or_else(|| "worker warning".to_owned()),
