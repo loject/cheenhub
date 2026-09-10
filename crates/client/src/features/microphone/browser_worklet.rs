@@ -14,7 +14,7 @@ use web_sys::{
 use super::backend::MicrophoneError;
 use super::browser_errors::js_error_message;
 
-const MICROPHONE_WORKLET_URL: &str = "/audio/microphone-worklet.js?v=3";
+const MICROPHONE_WORKLET_URL: &str = "/audio/microphone-worklet.js?v=4";
 const WORKLET_PROCESSOR_NAME: &str = "cheenhub-microphone-capture";
 const WORKLET_CHUNK_MS: u32 = 10;
 

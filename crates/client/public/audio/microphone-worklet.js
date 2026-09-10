@@ -20,6 +20,12 @@ class CheenHubMicrophoneCapture extends AudioWorkletProcessor {
     this.profileAllocateElapsedUs = 0;
     this.profileMaxProcessUs = 0;
     this.profileMaxChannels = 0;
+    this.totalProcessCount = 0;
+    this.totalProcessedFrames = 0;
+    this.profileWindowStartWallUs = 0;
+    this.lastProcessWallUs = 0;
+    this.profileMaxProcessGapUs = 0;
+    this.profileLastQuantumSize = 0;
   }
 
   process(inputs, outputs) {
@@ -113,18 +119,54 @@ class CheenHubMicrophoneCapture extends AudioWorkletProcessor {
 
   recordProcessProfile(startedAtUs, frames, channels) {
     const elapsedUs = this.elapsedUs(startedAtUs);
+
+    if (this.profileWindowStartWallUs === 0) {
+      this.profileWindowStartWallUs = startedAtUs;
+    }
+    if (this.lastProcessWallUs !== 0) {
+      this.profileMaxProcessGapUs = Math.max(
+        this.profileMaxProcessGapUs,
+        startedAtUs - this.lastProcessWallUs,
+      );
+    }
+    this.lastProcessWallUs = startedAtUs;
+
+    this.totalProcessCount += 1;
+    this.totalProcessedFrames += frames;
     this.profileProcessCount += 1;
     this.profileFrames += frames;
     this.profileTotalElapsedUs += elapsedUs;
     this.profileMaxProcessUs = Math.max(this.profileMaxProcessUs, elapsedUs);
     this.profileMaxChannels = Math.max(this.profileMaxChannels, channels);
+    if (frames > 0) {
+      this.profileLastQuantumSize = frames;
+    }
+
     const windowFrames = this.absoluteFrame - this.profileWindowStartFrame;
-    if (windowFrames < sampleRate * 5) {
+    if (windowFrames < sampleRate) {
       return;
     }
 
+    const reportAtUs = this.nowUs();
+    const wallDeltaMs = Math.max(
+      0,
+      Math.round((reportAtUs - this.profileWindowStartWallUs) / 1000),
+    );
+
     this.port.postMessage({
       kind: "profile",
+      processedFrames: this.totalProcessedFrames,
+      processCalls: this.totalProcessCount,
+      framesSinceReport: this.profileFrames,
+      wallDeltaMs,
+      maxProcessGapMs: Math.max(
+        0,
+        Math.round(this.profileMaxProcessGapUs / 1000),
+      ),
+      sampleRate,
+      quantumSize: this.profileLastQuantumSize,
+      currentFrame,
+      currentTime,
       processCount: this.profileProcessCount,
       chunkCount: this.profileChunkCount,
       inputEmptyCount: this.profileInputEmptyCount,
@@ -138,11 +180,12 @@ class CheenHubMicrophoneCapture extends AudioWorkletProcessor {
       maxProcessUs: Math.round(this.profileMaxProcessUs),
       maxChannels: this.profileMaxChannels,
     });
-    this.resetProcessProfile();
+    this.resetProcessProfile(reportAtUs);
   }
 
-  resetProcessProfile() {
+  resetProcessProfile(reportAtUs) {
     this.profileWindowStartFrame = this.absoluteFrame;
+    this.profileWindowStartWallUs = reportAtUs;
     this.profileProcessCount = 0;
     this.profileChunkCount = 0;
     this.profileInputEmptyCount = 0;
@@ -154,6 +197,8 @@ class CheenHubMicrophoneCapture extends AudioWorkletProcessor {
     this.profileAllocateElapsedUs = 0;
     this.profileMaxProcessUs = 0;
     this.profileMaxChannels = 0;
+    this.profileMaxProcessGapUs = 0;
+    this.profileLastQuantumSize = 0;
   }
 
   nowUs() {
