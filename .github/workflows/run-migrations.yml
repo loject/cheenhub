@@ -176,6 +176,13 @@ jobs:
           git fetch --prune origin "${DEPLOY_GIT_REF}"
           git checkout --detach "${DEPLOY_GIT_SHA}"
 
+          echo "Cleaning unused Docker resources before pull..."
+
+          docker container prune -f \
+            --filter "label=com.docker.compose.project=cheenhub"
+
+          docker image prune -a -f
+
           CHEENHUB_BACKEND_IMAGE_REF="${BACKEND_IMAGE_REF}" docker compose \
             --env-file "${ENV_FILE}" \
             -f deploy/compose.migrate.yml \
@@ -204,4 +211,15 @@ jobs:
             --env-file "${ENV_FILE}" \
             -f deploy/compose.yml \
             up -d --no-deps metrics-proxy backend web certbot
+
+          echo "Cleaning previous deployment images..."
+
+          docker container prune -f \
+            --filter "label=com.docker.compose.project=cheenhub"
+
+          docker image prune -a -f
+
+          echo "Docker disk usage after deployment:"
+          df -h /
+          docker system df
           REMOTE
