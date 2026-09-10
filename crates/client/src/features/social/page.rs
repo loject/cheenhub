@@ -53,6 +53,7 @@ pub(crate) fn SocialPage(
     let mut requests_collapsed = use_signal(|| true);
     let mut friend_menu = use_signal(|| None::<FriendMenuRequest>);
     let mut loaded_route_conversation_id = use_signal(|| None::<String>);
+    let mut retried_route_conversation_id = use_signal(|| None::<String>);
 
     let reload = use_callback(move |_| {
         load_social_overview(
@@ -105,6 +106,9 @@ pub(crate) fn SocialPage(
                 selected_conversation.set(None);
                 loaded_route_conversation_id.set(None);
             }
+            if retried_route_conversation_id().is_some() {
+                retried_route_conversation_id.set(None);
+            }
             return;
         };
 
@@ -122,6 +126,17 @@ pub(crate) fn SocialPage(
             .find(|conversation| conversation.id == conversation_id)
         else {
             if loaded() && !is_loading() {
+                if retried_route_conversation_id().as_deref()
+                    != Some(conversation_id.as_str())
+                {
+                    info!(
+                        %conversation_id,
+                        "direct message route is missing from loaded overview; refreshing social state"
+                    );
+                    retried_route_conversation_id.set(Some(conversation_id.clone()));
+                    reload.call(());
+                    return;
+                }
                 warn!(
                     %conversation_id,
                     "saved direct message route is unavailable; opening friends"
@@ -131,6 +146,9 @@ pub(crate) fn SocialPage(
             return;
         };
 
+        if retried_route_conversation_id().is_some() {
+            retried_route_conversation_id.set(None);
+        }
         debug!(
             %conversation_id,
             "selecting direct message from route"
