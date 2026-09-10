@@ -163,6 +163,51 @@ fn release_target_from_args(args: &[String]) -> XtaskResult<ReleaseTarget> {
 }
 
 fn prompt_release_target() -> XtaskResult<ReleaseTarget> {
+    let workspace = Workspace::read(Path::new(ROOT_MANIFEST))?;
+    let (major, minor, patch) = parse_release_version(&workspace.version)?;
+    let minor_version = format!("{major}.{}.0", minor + 1);
+    let patch_version = format!("{major}.{minor}.{}", patch + 1);
+    let major_version = format!("{}.0.0", major + 1);
+
+    println!(
+        "Current release tag: {}",
+        release_tag_from_version(&workspace.version)
+    );
+    println!(
+        "  1) Minor  -> {}",
+        release_tag_from_version(&minor_version)
+    );
+    println!(
+        "  2) Patch  -> {}",
+        release_tag_from_version(&patch_version)
+    );
+    println!(
+        "  3) Major  -> {}",
+        release_tag_from_version(&major_version)
+    );
+    println!("  4) Custom");
+    print!("Release type [1-4]: ");
+    io::stdout()
+        .flush()
+        .map_err(|error| format!("failed to flush release type prompt: {error}"))?;
+
+    let mut choice = String::new();
+    io::stdin()
+        .read_line(&mut choice)
+        .map_err(|error| format!("failed to read release type: {error}"))?;
+
+    match choice.trim().to_ascii_lowercase().as_str() {
+        "1" | "minor" => release_target_from_tag(&minor_version),
+        "2" | "patch" => release_target_from_tag(&patch_version),
+        "3" | "major" => release_target_from_tag(&major_version),
+        "4" | "custom" => prompt_custom_release_target(),
+        value => Err(format!(
+            "unknown release type {value:?}; expected 1/minor, 2/patch, 3/major, or 4/custom."
+        )),
+    }
+}
+
+fn prompt_custom_release_target() -> XtaskResult<ReleaseTarget> {
     print!("New release tag (for example v0.13.0): ");
     io::stdout()
         .flush()
@@ -174,6 +219,37 @@ fn prompt_release_target() -> XtaskResult<ReleaseTarget> {
         .map_err(|error| format!("failed to read release tag: {error}"))?;
 
     release_target_from_tag(&tag)
+}
+
+fn parse_release_version(version: &str) -> XtaskResult<(u64, u64, u64)> {
+    let mut components = version.split('.');
+    let major = parse_release_component("major", components.next(), version)?;
+    let minor = parse_release_component("minor", components.next(), version)?;
+    let patch = parse_release_component("patch", components.next(), version)?;
+
+    if components.next().is_some() {
+        return Err(format!(
+            "workspace release version must use major.minor.patch format, got {version:?}."
+        ));
+    }
+
+    Ok((major, minor, patch))
+}
+
+fn parse_release_component(
+    name: &str,
+    component: Option<&str>,
+    version: &str,
+) -> XtaskResult<u64> {
+    let component = component.ok_or_else(|| {
+        format!(
+            "workspace release version must use major.minor.patch format, got {version:?}."
+        )
+    })?;
+
+    component.parse::<u64>().map_err(|error| {
+        format!("invalid {name} component in release version {version:?}: {error}")
+    })
 }
 
 fn release_target_from_tag(input: &str) -> XtaskResult<ReleaseTarget> {
