@@ -2,10 +2,11 @@
 
 mod attachments;
 mod direct_messages;
+mod friend_list;
 
 use cheenhub_contracts::realtime::SocialChangeReason;
 use cheenhub_contracts::rest::{
-    ListFriendRequestsResponse, ListFriendsResponse, SearchUsersResponse, SendFriendRequestRequest,
+    ListFriendRequestsResponse, SearchUsersResponse, SendFriendRequestRequest,
     SendFriendRequestResponse, UserRelationStatus, UserSearchResult,
 };
 use uuid::Uuid;
@@ -16,8 +17,8 @@ use crate::features::social::domain::FriendshipStatus;
 use crate::features::social::error::SocialError;
 use crate::features::social::realtime::notify_social_changed;
 use crate::features::social::support::{
-    ensure_user_active, ensure_user_exists, friend_summaries, map_auth_error, parse_id,
-    request_response, request_summary,
+    ensure_user_active, ensure_user_exists, map_auth_error, parse_id, request_response,
+    request_summary,
 };
 use crate::state::AppState;
 
@@ -26,6 +27,7 @@ pub(crate) use direct_messages::{
     list_dm_conversations, list_dm_messages, mark_dm_conversation_read, open_dm_conversation,
     send_dm_message,
 };
+pub(crate) use friend_list::list_friends;
 
 const USER_SEARCH_LIMIT: u64 = 20;
 
@@ -150,24 +152,6 @@ pub(crate) async fn search_users(
     }
 
     Ok(SearchUsersResponse { users: results })
-}
-
-/// Возвращает друзей текущего пользователя.
-pub(crate) async fn list_friends(
-    state: &AppState,
-    access_token: &str,
-) -> Result<ListFriendsResponse, SocialError> {
-    let (current_user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
-    let friendships = state
-        .social_store
-        .friendships_for_user(&current_user.id, FriendshipStatus::Accepted)
-        .await
-        .map_err(SocialError::Internal)?;
-    Ok(ListFriendsResponse {
-        friends: friend_summaries(state, &current_user.id, friendships).await?,
-    })
 }
 
 /// Возвращает входящие заявки.

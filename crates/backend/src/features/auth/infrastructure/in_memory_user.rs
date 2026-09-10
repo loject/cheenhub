@@ -114,6 +114,27 @@ pub(super) fn find_user_by_id(
         }))
 }
 
+/// Находит пользователей по набору идентификаторов.
+pub(super) fn find_users_by_ids(
+    state: &Mutex<InMemoryState>,
+    user_ids: &[Uuid],
+) -> anyhow::Result<Vec<UserAccount>> {
+    let state = state.lock().map_err(|_| poisoned())?;
+    Ok(state
+        .users
+        .iter()
+        .filter(|user| user_ids.contains(&user.account.id))
+        .map(|user| {
+            let mut account = user.account.clone();
+            if user.deletion.is_some() {
+                account.nickname = "Удалённый пользователь".to_owned();
+                account.avatar_image_id = None;
+            }
+            account
+        })
+        .collect())
+}
+
 /// Ищет пользователей по никнейму.
 pub(super) fn search_users_by_nickname(
     state: &Mutex<InMemoryState>,

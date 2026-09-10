@@ -20,7 +20,7 @@ use super::direct_message_workspace::DirectMessageWorkspace;
 use super::friend_context_menu::FriendContextMenu;
 use super::friend_search_modal::FriendSearchModal;
 use super::friends_section::{FriendMenuRequest, FriendsSection};
-use super::presentation::load_social_overview;
+use super::presentation::{FriendsPageState, load_more_friends, load_social_overview};
 use super::realtime::{subscribe_social_events, subscribe_social_ready_events};
 use super::requests_section::FriendRequestsSection;
 use super::voice_target::direct_message_voice_target;
@@ -35,7 +35,13 @@ pub(crate) fn SocialPage(
     let navigator = use_navigator();
     let realtime = use_context::<RealtimeHandle>();
     let voice = use_context::<VoiceConnectionHandle>();
-    let friends = use_signal(Vec::<FriendSummary>::new);
+    let friends_page = FriendsPageState {
+        friends: use_signal(Vec::<FriendSummary>::new),
+        next_cursor: use_signal(|| None::<String>),
+        has_more: use_signal(|| false),
+        is_loading_more: use_signal(|| false),
+        generation: use_signal(|| 0),
+    };
     let incoming = use_signal(Vec::<FriendRequestSummary>::new);
     let outgoing = use_signal(Vec::<FriendRequestSummary>::new);
     let mut conversations = use_signal(Vec::<DmConversationSummary>::new);
@@ -50,13 +56,17 @@ pub(crate) fn SocialPage(
 
     let reload = use_callback(move |_| {
         load_social_overview(
-            friends,
+            friends_page,
             incoming,
             outgoing,
             conversations,
             status,
             is_loading,
         );
+    });
+
+    let load_more = use_callback(move |_| {
+        load_more_friends(friends_page, status);
     });
 
     let voice_loader = voice.clone();
@@ -245,15 +255,18 @@ pub(crate) fn SocialPage(
                     }
 
                     FriendsSection {
-                        friends: friends(),
-                        conversations: conversations(),
+                        friends: (friends_page.friends)(),
+                        current_user_id: current_user.id.clone(),
                         is_loading: is_loading(),
+                        has_more: (friends_page.has_more)(),
+                        is_loading_more: is_loading() || (friends_page.is_loading_more)(),
                         on_search: move |_| is_search_open.set(true),
                         on_open_friend: move |friend_user_id| {
                             friend_menu.set(None);
                             open_friend.call(friend_user_id);
                         },
                         on_open_menu: move |menu| friend_menu.set(Some(menu)),
+                        on_load_more: move |_| load_more.call(()),
                     }
                 }
                 AppSidebarFooter {

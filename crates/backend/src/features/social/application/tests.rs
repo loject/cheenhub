@@ -1,4 +1,5 @@
 mod deletion;
+mod friend_list;
 
 use std::sync::Arc;
 
@@ -56,7 +57,7 @@ async fn incoming_direct_message_increments_unread_count() {
         .expect("conversations should load");
     assert_eq!(bob_conversations.conversations[0].unread_count, 0);
 
-    let alice_friends = list_friends(&setup.state, &setup.alice_access_token)
+    let alice_friends = list_friends(&setup.state, &setup.alice_access_token, Default::default())
         .await
         .expect("friends should load");
     assert_eq!(alice_friends.friends[0].unread_count, 1);

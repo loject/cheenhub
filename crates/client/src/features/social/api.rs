@@ -16,10 +16,15 @@ use crate::features::auth::api as auth_api;
 const NETWORK_ERROR_MESSAGE: &str = "Не удалось связаться с сервером.";
 
 /// Загружает друзей текущего пользователя.
-pub(crate) async fn list_friends() -> Result<Vec<cheenhub_contracts::rest::FriendSummary>, String> {
-    authorized_json::<ListFriendsResponse>("GET", "/friends", None::<&()>)
-        .await
-        .map(|response| response.friends)
+pub(crate) async fn list_friends(cursor: Option<&str>) -> Result<ListFriendsResponse, String> {
+    const PAGE_SIZE: u32 = 50;
+
+    let mut path = format!("/friends?limit={PAGE_SIZE}");
+    if let Some(cursor) = cursor {
+        path.push_str("&cursor=");
+        path.push_str(&encode_query(cursor));
+    }
+    authorized_json::<ListFriendsResponse>("GET", &path, None::<&()>).await
 }
 
 /// Загружает входящие заявки.

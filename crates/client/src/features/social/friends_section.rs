@@ -1,6 +1,6 @@
 //! Секция друзей на social-экране.
 
-use cheenhub_contracts::rest::{DmConversationSummary, FriendSummary};
+use cheenhub_contracts::rest::FriendSummary;
 use dioxus::prelude::*;
 
 use crate::features::app::components::avatar::UserAvatar;
@@ -22,11 +22,14 @@ pub(super) struct FriendMenuRequest {
 #[component]
 pub(super) fn FriendsSection(
     friends: Vec<FriendSummary>,
-    conversations: Vec<DmConversationSummary>,
+    current_user_id: String,
     is_loading: bool,
+    has_more: bool,
+    is_loading_more: bool,
     on_search: EventHandler<()>,
     on_open_friend: EventHandler<String>,
     on_open_menu: EventHandler<FriendMenuRequest>,
+    on_load_more: EventHandler<()>,
 ) -> Element {
     rsx! {
         section { class: "mt-5",
@@ -50,12 +53,12 @@ pub(super) fn FriendsSection(
                 }
             } else {
                 div { class: "mt-2 space-y-1",
-                    for (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname, unread_count) in friends.into_iter().map(|friend| {
+                    for (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname, preview) in friends.into_iter().map(|friend| {
                         let open_friend_user_id = friend.user_id.clone();
                         let menu_friend_user_id = friend.user_id.clone();
                         let menu_friend_nickname = friend.nickname.clone();
-                        let unread_count = friend_unread_count(&friend, &conversations);
-                        (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname, unread_count)
+                        let preview = friend_message_preview(&friend, &current_user_id);
+                        (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname, preview)
                     }) {
                         button {
                             key: "{friend.user_id}",
@@ -92,16 +95,25 @@ pub(super) fn FriendsSection(
                             }
                             span { class: "min-w-0 flex-1",
                                 span { class: "block truncate text-[13px] font-medium text-zinc-100", "{friend.nickname}" }
-                                span { class: "block text-[11px] text-zinc-500", "Открыть диалог" }
+                                span { class: "block truncate text-[11px] text-zinc-500", "{preview}" }
                             }
-                            if unread_count > 0 {
+                            if friend.unread_count > 0 {
                                 span {
-                                    key: "unread-badge-{friend.user_id}-{unread_count}",
+                                    key: "unread-badge-{friend.user_id}-{friend.unread_count}",
                                     class: "dm-unread-badge shrink-0 rounded-full bg-blue-500 px-2 py-0.5 text-[10px] font-bold text-white",
-                                    title: "{unread_count} непрочитанных",
-                                    span { class: "dm-unread-badge-value", "{unread_badge_label(unread_count)}" }
+                                    title: "{friend.unread_count} непрочитанных",
+                                    span { class: "dm-unread-badge-value", "{unread_badge_label(friend.unread_count)}" }
                                 }
                             }
+                        }
+                    }
+                    if has_more {
+                        button {
+                            r#type: "button",
+                            class: "mt-2 flex h-9 w-full items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 text-[12px] font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-900 disabled:cursor-wait disabled:opacity-60",
+                            disabled: is_loading_more,
+                            onclick: move |_| on_load_more.call(()),
+                            if is_loading_more { "Загрузка…" } else { "Показать ещё" }
                         }
                     }
                 }
@@ -110,12 +122,20 @@ pub(super) fn FriendsSection(
     }
 }
 
-fn friend_unread_count(friend: &FriendSummary, conversations: &[DmConversationSummary]) -> i64 {
-    conversations
-        .iter()
-        .find(|conversation| conversation.friend_user_id == friend.user_id)
-        .map(|conversation| conversation.unread_count)
-        .unwrap_or(friend.unread_count)
+fn friend_message_preview(friend: &FriendSummary, current_user_id: &str) -> String {
+    let Some(message) = &friend.last_message else {
+        return "Начните общение".to_owned();
+    };
+    let content = if message.body.trim().is_empty() && message.has_image {
+        "Изображение".to_owned()
+    } else {
+        message.body.trim().to_owned()
+    };
+    if message.sender_user_id == current_user_id {
+        format!("Вы: {content}")
+    } else {
+        content
+    }
 }
 
 fn unread_badge_label(unread_count: i64) -> String {
@@ -128,9 +148,9 @@ fn unread_badge_label(unread_count: i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use cheenhub_contracts::rest::{DmConversationSummary, FriendSummary};
+    use cheenhub_contracts::rest::{DmLastMessageSummary, FriendSummary};
 
-    use super::{friend_unread_count, unread_badge_label};
+    use super::{friend_message_preview, unread_badge_label};
 
     #[test]
     fn unread_badge_caps_only_display_value() {
@@ -140,26 +160,33 @@ mod tests {
     }
 
     #[test]
-    fn unread_badge_prefers_conversation_counter() {
-        let friend = FriendSummary {
+    fn message_preview_marks_own_message_and_image_only_message() {
+        let mut friend = FriendSummary {
             user_id: "friend-1".to_owned(),
             nickname: "Friend".to_owned(),
             avatar_url: None,
-            unread_count: 7,
+            unread_count: 0,
+            last_message: Some(DmLastMessageSummary {
+                id: "message-1".to_owned(),
+                sender_user_id: "current-user".to_owned(),
+                body: " Ответ ".to_owned(),
+                has_image: false,
+                created_at: "2026-09-10T00:00:00Z".to_owned(),
+            }),
             friends_since: "2026-06-30T00:00:00Z".to_owned(),
         };
-        let conversations = vec![DmConversationSummary {
-            id: "conversation-1".to_owned(),
-            friend_user_id: "friend-1".to_owned(),
-            friend_nickname: "Friend".to_owned(),
-            friend_avatar_url: None,
-            unread_count: 2,
-            last_read_message_id: None,
-            last_read_seq: 0,
-            last_read_at: None,
-            updated_at: "2026-06-30T00:00:00Z".to_owned(),
-        }];
+        assert_eq!(friend_message_preview(&friend, "current-user"), "Вы: Ответ");
 
-        assert_eq!(friend_unread_count(&friend, &conversations), 2);
+        let message = friend
+            .last_message
+            .as_mut()
+            .expect("last message should exist");
+        message.sender_user_id = "friend-1".to_owned();
+        message.body.clear();
+        message.has_image = true;
+        assert_eq!(
+            friend_message_preview(&friend, "current-user"),
+            "Изображение"
+        );
     }
 }

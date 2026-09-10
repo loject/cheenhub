@@ -1,8 +1,10 @@
 //! Вспомогательная сборка REST-ответов для social-сценариев.
 
+use std::collections::HashMap;
+
 use cheenhub_contracts::rest::{
-    DmConversationSummary, DmMessageDeliveryStatus, DmMessageSummary, FriendRequestStatus,
-    FriendRequestSummary, FriendSummary, ListFriendRequestsResponse,
+    DmConversationSummary, DmLastMessageSummary, DmMessageDeliveryStatus, DmMessageSummary,
+    FriendRequestStatus, FriendRequestSummary, FriendSummary, ListFriendRequestsResponse,
 };
 use chrono::Utc;
 use uuid::Uuid;
@@ -11,7 +13,8 @@ use crate::features::auth::application::auth_user;
 use crate::features::auth::domain::UserAccount;
 use crate::features::auth::error::AuthError;
 use crate::features::social::domain::{
-    ConversationMemberState, DmConversation, DmMessage, Friendship, FriendshipStatus,
+    ConversationMemberState, DmConversation, DmMessage, FriendListEntry, Friendship,
+    FriendshipStatus,
 };
 use crate::features::social::error::SocialError;
 use crate::features::social::infrastructure::normalize_unread_count;
@@ -32,26 +35,40 @@ pub(super) async fn request_response(
 
 pub(super) async fn friend_summaries(
     state: &AppState,
-    current_user_id: &Uuid,
-    friendships: Vec<Friendship>,
+    entries: Vec<FriendListEntry>,
 ) -> Result<Vec<FriendSummary>, SocialError> {
-    let mut summaries = Vec::new();
-    let conversations = state
-        .social_store
-        .conversations_for_user(current_user_id)
+    let user_ids = entries
+        .iter()
+        .map(|entry| entry.friend_user_id)
+        .collect::<Vec<_>>();
+    let users = state
+        .auth_store
+        .find_users_by_ids(&user_ids)
         .await
         .map_err(SocialError::Internal)?;
-    for friendship in friendships {
-        let friend_user_id = other_friend_id(&friendship, current_user_id);
-        let friend = auth_user(state, &ensure_user_exists(state, &friend_user_id).await?);
-        let unread_count =
-            friend_unread_count(state, current_user_id, &friend_user_id, &conversations).await?;
+    let users = users
+        .into_iter()
+        .map(|user| (user.id, user))
+        .collect::<HashMap<_, _>>();
+    let mut summaries = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let friend = users.get(&entry.friend_user_id).ok_or_else(|| {
+            SocialError::NotFound("Пользователь больше не существует.".to_owned())
+        })?;
+        let friend = auth_user(state, friend);
         summaries.push(FriendSummary {
             user_id: friend.id,
             nickname: friend.nickname,
             avatar_url: friend.avatar_url,
-            unread_count: normalize_unread_count(unread_count),
-            friends_since: friendship.updated_at.to_rfc3339(),
+            unread_count: normalize_unread_count(entry.unread_count),
+            last_message: entry.last_message.map(|message| DmLastMessageSummary {
+                id: message.id.to_string(),
+                sender_user_id: message.sender_user_id.to_string(),
+                body: message.body,
+                has_image: message.image_id.is_some(),
+                created_at: message.created_at.to_rfc3339(),
+            }),
+            friends_since: entry.friendship.updated_at.to_rfc3339(),
         });
     }
     Ok(summaries)
@@ -256,14 +273,6 @@ pub(super) fn map_auth_error(error: AuthError) -> SocialError {
     }
 }
 
-fn other_friend_id(friendship: &Friendship, current_user_id: &Uuid) -> Uuid {
-    if friendship.requester_user_id == *current_user_id {
-        friendship.recipient_user_id
-    } else {
-        friendship.requester_user_id
-    }
-}
-
 fn request_status(status: FriendshipStatus) -> FriendRequestStatus {
     match status {
         FriendshipStatus::Pending => FriendRequestStatus::Pending,
@@ -271,27 +280,6 @@ fn request_status(status: FriendshipStatus) -> FriendRequestStatus {
         FriendshipStatus::Declined => FriendRequestStatus::Declined,
         FriendshipStatus::Cancelled => FriendRequestStatus::Cancelled,
     }
-}
-
-async fn friend_unread_count(
-    state: &AppState,
-    current_user_id: &Uuid,
-    friend_user_id: &Uuid,
-    conversations: &[DmConversation],
-) -> Result<i64, SocialError> {
-    let Some(conversation) = conversations
-        .iter()
-        .find(|conversation| other_user_id(conversation, current_user_id) == *friend_user_id)
-    else {
-        return Ok(0);
-    };
-    Ok(state
-        .social_store
-        .conversation_member_state(&conversation.id, current_user_id)
-        .await
-        .map_err(SocialError::Internal)?
-        .map(|state| normalize_unread_count(state.unread_count))
-        .unwrap_or(0))
 }
 
 fn default_member_state(

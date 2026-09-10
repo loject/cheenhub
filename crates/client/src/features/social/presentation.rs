@@ -16,24 +16,42 @@ use crate::features::text_chat::{ScrollCommand, capture_scroll_position};
 use super::api;
 use super::direct_message_state::DirectMessageState;
 
+/// Состояние постраничной загрузки списка друзей.
+#[derive(Clone, Copy)]
+pub(super) struct FriendsPageState {
+    /// Уже загруженные друзья.
+    pub(super) friends: Signal<Vec<FriendSummary>>,
+    /// Курсор следующей страницы.
+    pub(super) next_cursor: Signal<Option<String>>,
+    /// Есть ли следующая страница.
+    pub(super) has_more: Signal<bool>,
+    /// Выполняется ли запрос следующей страницы.
+    pub(super) is_loading_more: Signal<bool>,
+    /// Версия состояния, для которой разрешено применять ответы запросов.
+    pub(super) generation: Signal<u64>,
+}
+
 pub(super) fn load_social_overview(
-    mut friends: Signal<Vec<FriendSummary>>,
+    mut friends_page: FriendsPageState,
     mut incoming: Signal<Vec<FriendRequestSummary>>,
     mut outgoing: Signal<Vec<FriendRequestSummary>>,
     mut conversations: Signal<Vec<DmConversationSummary>>,
     mut status: Signal<String>,
     mut is_loading: Signal<bool>,
 ) {
+    let request_generation = (friends_page.generation)().wrapping_add(1);
+    friends_page.generation.set(request_generation);
+    friends_page.is_loading_more.set(false);
     is_loading.set(true);
     status.set(String::new());
     spawn(async move {
         let result = async {
-            let next_friends = api::list_friends().await?;
+            let loaded_friends_page = api::list_friends(None).await?;
             let next_incoming = api::list_incoming_requests().await?;
             let next_outgoing = api::list_outgoing_requests().await?;
             let next_conversations = api::list_dm_conversations().await?;
             Ok::<_, String>((
-                next_friends,
+                loaded_friends_page,
                 next_incoming,
                 next_outgoing,
                 next_conversations,
@@ -41,9 +59,18 @@ pub(super) fn load_social_overview(
         }
         .await;
 
+        if (friends_page.generation)() != request_generation {
+            debug!(request_generation, "ignored stale social overview response");
+            return;
+        }
+
         match result {
-            Ok((next_friends, next_incoming, next_outgoing, next_conversations)) => {
-                friends.set(next_friends);
+            Ok((loaded_friends_page, next_incoming, next_outgoing, next_conversations)) => {
+                friends_page.friends.set(loaded_friends_page.friends);
+                friends_page
+                    .next_cursor
+                    .set(loaded_friends_page.next_cursor);
+                friends_page.has_more.set(loaded_friends_page.has_more);
                 incoming.set(next_incoming);
                 outgoing.set(next_outgoing);
                 conversations.set(next_conversations);
@@ -55,6 +82,47 @@ pub(super) fn load_social_overview(
             }
         }
         is_loading.set(false);
+    });
+}
+
+pub(super) fn load_more_friends(mut friends_page: FriendsPageState, mut status: Signal<String>) {
+    if (friends_page.is_loading_more)() || !(friends_page.has_more)() {
+        return;
+    }
+    let Some(cursor) = (friends_page.next_cursor)() else {
+        friends_page.has_more.set(false);
+        return;
+    };
+
+    let request_generation = (friends_page.generation)();
+    friends_page.is_loading_more.set(true);
+    spawn(async move {
+        let result = api::list_friends(Some(&cursor)).await;
+        if (friends_page.generation)() != request_generation {
+            debug!(request_generation, "ignored stale friends page response");
+            return;
+        }
+        match result {
+            Ok(page) => {
+                let mut loaded = (friends_page.friends)();
+                for friend in page.friends {
+                    if !loaded.iter().any(|saved| saved.user_id == friend.user_id) {
+                        loaded.push(friend);
+                    }
+                }
+                let loaded_count = loaded.len();
+                friends_page.friends.set(loaded);
+                friends_page.next_cursor.set(page.next_cursor);
+                friends_page.has_more.set(page.has_more);
+                status.set(String::new());
+                debug!(loaded_count, "loaded next friends page");
+            }
+            Err(error) => {
+                warn!(%error, "failed to load next friends page");
+                status.set(error);
+            }
+        }
+        friends_page.is_loading_more.set(false);
     });
 }
 

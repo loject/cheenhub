@@ -150,6 +150,10 @@ impl AuthStore for PostgresAuthStore {
         user::find_user_by_id(&self.database, user_id).await
     }
 
+    async fn find_users_by_ids(&self, user_ids: &[Uuid]) -> anyhow::Result<Vec<UserAccount>> {
+        user::find_users_by_ids(&self.database, user_ids).await
+    }
+
     async fn search_users_by_nickname(
         &self,
         query: &str,

@@ -155,6 +155,10 @@ impl AuthStore for InMemoryAuthStore {
         super::in_memory_user::find_user_by_id(&self.state, user_id)
     }
 
+    async fn find_users_by_ids(&self, user_ids: &[Uuid]) -> anyhow::Result<Vec<UserAccount>> {
+        super::in_memory_user::find_users_by_ids(&self.state, user_ids)
+    }
+
     async fn search_users_by_nickname(
         &self,
         query: &str,

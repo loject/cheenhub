@@ -2,8 +2,10 @@
 
 mod entities;
 mod in_memory;
+mod in_memory_friend_list;
 mod postgres;
 mod postgres_conversions;
+mod postgres_friend_list;
 mod postgres_read_state;
 
 use async_trait::async_trait;
@@ -11,8 +13,8 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::features::social::domain::{
-    ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage, Friendship,
-    FriendshipStatus,
+    ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage, FriendListCursor,
+    FriendListEntry, Friendship, FriendshipStatus,
 };
 
 pub(crate) use in_memory::InMemorySocialStore;
@@ -35,6 +37,14 @@ pub(crate) struct DmMessagePage {
     /// Сообщения в порядке от старых к новым.
     pub(crate) messages: Vec<DmMessage>,
     /// Есть ли более старые сообщения.
+    pub(crate) has_more: bool,
+}
+
+/// Страница друзей в порядке активности личных сообщений.
+pub(crate) struct FriendListPage {
+    /// Элементы текущей страницы.
+    pub(crate) entries: Vec<FriendListEntry>,
+    /// Есть ли элементы после текущей страницы.
     pub(crate) has_more: bool,
 }
 
@@ -67,12 +77,13 @@ pub(crate) trait SocialStore: Send + Sync {
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<Friendship>>;
 
-    /// Возвращает дружбы пользователя с указанным статусом.
-    async fn friendships_for_user(
+    /// Возвращает принятые дружбы вместе с данными для списка без N+1-запросов.
+    async fn friend_list_page(
         &self,
         user_id: &Uuid,
-        status: FriendshipStatus,
-    ) -> anyhow::Result<Vec<Friendship>>;
+        cursor: Option<&FriendListCursor>,
+        limit: usize,
+    ) -> anyhow::Result<FriendListPage>;
 
     /// Возвращает входящие заявки пользователя.
     async fn incoming_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>>;

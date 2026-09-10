@@ -136,6 +136,29 @@ pub(super) async fn find_user_by_id(
         }))
 }
 
+/// Находит пользователей по набору идентификаторов.
+pub(super) async fn find_users_by_ids(
+    database: &DatabaseConnection,
+    user_ids: &[Uuid],
+) -> anyhow::Result<Vec<UserAccount>> {
+    if user_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(users::Entity::find()
+        .filter(users::Column::Id.is_in(user_ids.iter().copied()))
+        .all(database)
+        .await?
+        .into_iter()
+        .map(|mut user| {
+            if user.deletion_requested_at.is_some() {
+                user.nickname = "Удалённый пользователь".to_owned();
+                user.avatar_image_id = None;
+            }
+            user.into()
+        })
+        .collect())
+}
+
 /// Ищет пользователей по никнейму.
 pub(super) async fn search_users_by_nickname(
     database: &DatabaseConnection,

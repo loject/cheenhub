@@ -9,19 +9,20 @@ use uuid::Uuid;
 
 use crate::features::social::domain::{
     ConversationMemberState, ConversationReadCheckpoint, ConversationReadUpdate, DmConversation,
-    DmMessage, Friendship, FriendshipStatus, ordered_pair,
+    DmMessage, FriendListCursor, Friendship, FriendshipStatus, ordered_pair,
 };
 use crate::features::social::infrastructure::{
-    DM_HISTORY_LIMIT, DmMessagePage, SocialStore, normalize_unread_count, unread_count_after_read,
+    DM_HISTORY_LIMIT, DmMessagePage, FriendListPage, SocialStore, normalize_unread_count,
+    unread_count_after_read,
 };
 
 /// In-memory-хранилище социальных данных для локального режима и тестов.
 #[derive(Default)]
 pub(crate) struct InMemorySocialStore {
-    friendships: Mutex<Vec<Friendship>>,
-    conversations: Mutex<Vec<DmConversation>>,
-    messages: Mutex<Vec<DmMessage>>,
-    member_states: Mutex<Vec<ConversationMemberState>>,
+    pub(super) friendships: Mutex<Vec<Friendship>>,
+    pub(super) conversations: Mutex<Vec<DmConversation>>,
+    pub(super) messages: Mutex<Vec<DmMessage>>,
+    pub(super) member_states: Mutex<Vec<ConversationMemberState>>,
     read_checkpoints: Mutex<Vec<ConversationReadCheckpoint>>,
 }
 
@@ -100,22 +101,13 @@ impl SocialStore for InMemorySocialStore {
         Ok(Some(row.clone()))
     }
 
-    async fn friendships_for_user(
+    async fn friend_list_page(
         &self,
         user_id: &Uuid,
-        status: FriendshipStatus,
-    ) -> anyhow::Result<Vec<Friendship>> {
-        Ok(self
-            .friendships
-            .lock()
-            .map_err(|_| poisoned())?
-            .iter()
-            .filter(|row| {
-                row.status == status
-                    && (row.requester_user_id == *user_id || row.recipient_user_id == *user_id)
-            })
-            .cloned()
-            .collect())
+        cursor: Option<&FriendListCursor>,
+        limit: usize,
+    ) -> anyhow::Result<FriendListPage> {
+        super::in_memory_friend_list::friend_list_page(self, user_id, cursor, limit)
     }
 
     async fn incoming_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>> {

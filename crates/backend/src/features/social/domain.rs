@@ -60,6 +60,28 @@ pub(crate) struct Friendship {
     pub(crate) updated_at: DateTime<Utc>,
 }
 
+/// Данные друга, необходимые для сортировки и preview списка.
+#[derive(Debug, Clone)]
+pub(crate) struct FriendListEntry {
+    /// Принятая связь дружбы.
+    pub(crate) friendship: Friendship,
+    /// Идентификатор пользователя-друга.
+    pub(crate) friend_user_id: Uuid,
+    /// Количество непрочитанных сообщений от друга.
+    pub(crate) unread_count: i64,
+    /// Последнее неудалённое сообщение диалога.
+    pub(crate) last_message: Option<DmMessage>,
+}
+
+/// Позиция keyset-пагинации в отсортированном списке друзей.
+#[derive(Debug, Clone)]
+pub(crate) struct FriendListCursor {
+    /// Время последнего сообщения или `None` для части списка без сообщений.
+    pub(crate) last_message_created_at: Option<DateTime<Utc>>,
+    /// Идентификатор друга для стабильного разрешения совпавшего времени.
+    pub(crate) friend_user_id: Uuid,
+}
+
 /// Диалог личных сообщений.
 #[derive(Debug, Clone)]
 pub(crate) struct DmConversation {

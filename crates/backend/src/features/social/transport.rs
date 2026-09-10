@@ -9,9 +9,9 @@ use axum::{
 };
 use cheenhub_contracts::rest::{
     ApiError, ListDmConversationsResponse, ListDmMessagesResponse, ListFriendRequestsResponse,
-    ListFriendsResponse, MarkDmConversationReadRequest, MarkDmConversationReadResponse,
-    OpenDmConversationRequest, OpenDmConversationResponse, SearchUsersResponse,
-    SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
+    ListFriendsQuery, ListFriendsResponse, MarkDmConversationReadRequest,
+    MarkDmConversationReadResponse, OpenDmConversationRequest, OpenDmConversationResponse,
+    SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
     SendFriendRequestResponse, UploadDmImageResponse,
 };
 use serde::Deserialize;
@@ -50,9 +50,12 @@ pub(crate) async fn search_users(
 pub(crate) async fn list_friends(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<ListFriendsQuery>,
 ) -> Result<Json<ListFriendsResponse>, SocialError> {
     let token = bearer_token(&headers)?;
-    application::list_friends(&state, token).await.map(Json)
+    application::list_friends(&state, token, query)
+        .await
+        .map(Json)
 }
 
 /// Возвращает входящие заявки.

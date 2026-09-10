@@ -210,6 +210,9 @@ pub(crate) trait AuthStore: Send + Sync {
     /// Находит пользователя по идентификатору.
     async fn find_user_by_id(&self, user_id: &Uuid) -> anyhow::Result<Option<UserAccount>>;
 
+    /// Находит пользователей по набору идентификаторов одним обращением к хранилищу.
+    async fn find_users_by_ids(&self, user_ids: &[Uuid]) -> anyhow::Result<Vec<UserAccount>>;
+
     /// Ищет пользователей по части никнейма.
     async fn search_users_by_nickname(
         &self,

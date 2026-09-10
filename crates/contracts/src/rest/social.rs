@@ -59,8 +59,25 @@ pub struct FriendSummary {
     pub avatar_url: Option<String>,
     /// Количество непрочитанных личных сообщений от этого друга.
     pub unread_count: i64,
+    /// Последнее неудалённое сообщение диалога, если оно существует.
+    pub last_message: Option<DmLastMessageSummary>,
     /// Временная метка начала дружбы в формате RFC3339.
     pub friends_since: String,
+}
+
+/// Компактный preview последнего личного сообщения.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DmLastMessageSummary {
+    /// Стабильный идентификатор сообщения.
+    pub id: String,
+    /// Идентификатор отправителя.
+    pub sender_user_id: String,
+    /// Текст сообщения.
+    pub body: String,
+    /// Есть ли у сообщения прикреплённое изображение.
+    pub has_image: bool,
+    /// Временная метка создания в формате RFC3339.
+    pub created_at: String,
 }
 
 /// Краткие данные заявки в друзья.
@@ -93,6 +110,20 @@ pub struct FriendRequestSummary {
 pub struct ListFriendsResponse {
     /// Друзья текущего пользователя.
     pub friends: Vec<FriendSummary>,
+    /// Курсор следующей страницы или `None`, если список закончился.
+    pub next_cursor: Option<String>,
+    /// Есть ли следующая страница.
+    #[serde(default)]
+    pub has_more: bool,
+}
+
+/// Query-параметры страницы друзей.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ListFriendsQuery {
+    /// Максимальное количество друзей на странице.
+    pub limit: Option<u32>,
+    /// Непрозрачный курсор, полученный в предыдущем ответе.
+    pub cursor: Option<String>,
 }
 
 /// Ответ со списком заявок в друзья.
@@ -264,4 +295,28 @@ pub struct UploadDmImageResponse {
 pub struct SendDmMessageResponse {
     /// Созданное сообщение.
     pub message: DmMessageSummary,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ListFriendsQuery, ListFriendsResponse};
+
+    #[test]
+    fn friends_response_defaults_pagination_from_older_backend() {
+        let response: ListFriendsResponse = serde_json::from_str(r#"{"friends":[]}"#)
+            .expect("ответ старого backend должен десериализоваться");
+
+        assert!(response.next_cursor.is_none());
+        assert!(!response.has_more);
+    }
+
+    #[test]
+    fn friends_query_deserializes_cursor_and_limit() {
+        let query: ListFriendsQuery =
+            serde_json::from_str(r#"{"limit":25,"cursor":"opaque-page-position"}"#)
+                .expect("query должен десериализоваться");
+
+        assert_eq!(query.limit, Some(25));
+        assert_eq!(query.cursor.as_deref(), Some("opaque-page-position"));
+    }
 }
