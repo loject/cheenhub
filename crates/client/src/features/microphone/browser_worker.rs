@@ -18,7 +18,7 @@ use super::backend::{
 };
 use super::browser_errors::js_error_message;
 
-const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=7";
+const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=8";
 const MICROPHONE_WORKER_WASM_BINDGEN_URL: &str = "/workers/microphone/microphone_worker.js?v=4";
 const MICROPHONE_WORKER_WASM_URL: &str = "/workers/microphone/microphone_worker_bg.wasm?v=4";
 const WORKER_START_TIMEOUT_MS: u32 = 10_000;
@@ -202,6 +202,11 @@ fn start_message(
     )?;
     set_property(
         &message,
+        "diagnosticsEnabled",
+        JsValue::from_bool(cfg!(feature = "browser-media-diagnostics")),
+    )?;
+    set_property(
+        &message,
         "channels",
         JsValue::from_f64(f64::from(config.channels)),
     )?;
@@ -262,6 +267,40 @@ fn handle_worker_message(
                 .unwrap_or_default()
                 .max(0.0) as u64,
         }),
+        "worklet-profile" => {
+            let frames = number_property(&data, "framesSinceReport")
+                .unwrap_or_default()
+                .max(0.0);
+            let wall_delta_ms = number_property(&data, "wallDeltaMs")
+                .unwrap_or_default()
+                .max(0.0);
+            let effective_rate_hz = if wall_delta_ms > 0.0 {
+                frames * 1_000.0 / wall_delta_ms
+            } else {
+                0.0
+            };
+            warn!(
+                processed_frames = ?number_property(&data, "processedFrames"),
+                process_calls = ?number_property(&data, "processCalls"),
+                frames_since_report = frames,
+                wall_delta_ms,
+                effective_rate_hz,
+                sample_rate_hz = ?number_property(&data, "sampleRate"),
+                max_process_gap_ms = ?number_property(&data, "maxProcessGapMs"),
+                quantum_size = ?number_property(&data, "quantumSize"),
+                "microphone audio worklet realtime profile"
+            );
+        }
+        "pcm-profile" => warn!(
+            received_pcm_chunks = ?number_property(&data, "receivedPcmChunks"),
+            received_pcm_frames = ?number_property(&data, "receivedPcmFrames"),
+            pcm_chunks_since_report = ?number_property(&data, "pcmChunksSinceReport"),
+            pcm_frames_since_report = ?number_property(&data, "pcmFramesSinceReport"),
+            wall_delta_ms = ?number_property(&data, "wallDeltaMs"),
+            effective_rate_hz = ?number_property(&data, "effectiveRateHz"),
+            sample_rate_hz = ?number_property(&data, "sampleRateHz"),
+            "microphone uplink worker PCM input profile"
+        ),
         "warning" => warn!(
             message = %string_property(&data, "message").unwrap_or_else(|| "worker warning".to_owned()),
             detail = ?string_property(&data, "detail"),

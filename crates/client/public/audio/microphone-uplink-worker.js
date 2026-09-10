@@ -62,6 +62,12 @@ async function start(config) {
       droppedPcm: 0,
       droppedEncoded: 0,
       lastWarningMs: 0,
+      diagnosticsEnabled: Boolean(config.diagnosticsEnabled),
+      receivedPcmChunks: 0,
+      receivedPcmFrames: 0,
+      pcmProfileChunks: 0,
+      pcmProfileFrames: 0,
+      pcmProfileWindowStartMs: 0,
       closed: false,
     };
     active.port.onmessage = (event) => handleWorkletMessage(event.data, active);
@@ -138,9 +144,17 @@ function encoderConfig(sampleRateHz, channels, bitrateBps) {
 }
 
 function handleWorkletMessage(data, current) {
-  if (current.closed || data?.kind === "profile") {
+  if (current.closed) {
     return;
   }
+
+  if (data?.kind === "profile") {
+    if (current.diagnosticsEnabled) {
+      self.postMessage({ ...data, kind: "worklet-profile" });
+    }
+    return;
+  }
+
   try {
     const samples = data?.samples;
     if (!(samples instanceof Float32Array) || samples.length === 0) {
@@ -148,6 +162,9 @@ function handleWorkletMessage(data, current) {
     }
     const timestampUs = Math.max(0, Math.floor(Number(data.timestampUs) || 0));
     const nowMs = Date.now();
+
+    recordPcmInputProfile(current, samples.length, nowMs);
+
     if (shouldRebaseAfterCapturePause(current, timestampUs, nowMs)) {
       current.startedWallMs = nowMs - timestampUs / 1000;
     }
@@ -178,6 +195,45 @@ function handleWorkletMessage(data, current) {
   } catch (error) {
     post("warning", { message: "failed to process microphone worker chunk", detail: errorMessage(error) });
   }
+}
+
+function recordPcmInputProfile(current, frameCount, nowMs) {
+  if (!current.diagnosticsEnabled) {
+    return;
+  }
+
+  if (current.pcmProfileWindowStartMs === 0) {
+    current.pcmProfileWindowStartMs = nowMs;
+  }
+
+  current.receivedPcmChunks += 1;
+  current.receivedPcmFrames += frameCount;
+  current.pcmProfileChunks += 1;
+  current.pcmProfileFrames += frameCount;
+
+  // Report after roughly one second of received AUDIO, not from a timer.
+  if (current.pcmProfileFrames < current.sampleRateHz) {
+    return;
+  }
+
+  const wallDeltaMs = Math.max(0, nowMs - current.pcmProfileWindowStartMs);
+  const effectiveRateHz = wallDeltaMs > 0
+    ? current.pcmProfileFrames * 1000 / wallDeltaMs
+    : 0;
+
+  post("pcm-profile", {
+    receivedPcmChunks: current.receivedPcmChunks,
+    receivedPcmFrames: current.receivedPcmFrames,
+    pcmChunksSinceReport: current.pcmProfileChunks,
+    pcmFramesSinceReport: current.pcmProfileFrames,
+    wallDeltaMs: Math.round(wallDeltaMs),
+    effectiveRateHz,
+    sampleRateHz: current.sampleRateHz,
+  });
+
+  current.pcmProfileWindowStartMs = nowMs;
+  current.pcmProfileChunks = 0;
+  current.pcmProfileFrames = 0;
 }
 
 function shouldRebaseAfterCapturePause(current, timestampUs, nowMs) {
