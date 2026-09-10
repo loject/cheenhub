@@ -5,6 +5,7 @@ const MAX_ENCODER_QUEUE_FRAMES = 32;
 const MAX_WEBSOCKET_BUFFERED_BYTES = 64 * 1024;
 const WARNING_INTERVAL_MS = 5_000;
 const LEVEL_INTERVAL_MS = 50;
+const SEND_PROFILE_INTERVAL_MS = 5_000;
 
 let active = null;
 
@@ -59,6 +60,20 @@ async function start(config) {
       lastLevelMs: 0,
       lastLevelActive: false,
       sendPending: false,
+      sendStartedAtMs: 0,
+      sendCount: 0,
+      sendCompletedCount: 0,
+      sendBlockedCount: 0,
+      sendPendingBlockedCount: 0,
+      sendBackpressureBlockedCount: 0,
+      sendProfileWindowStartMs: performance.now(),
+      sendProfileSendCount: 0,
+      sendProfileCompletedCount: 0,
+      sendProfileBlockedCount: 0,
+      sendProfilePendingBlockedCount: 0,
+      sendProfileBackpressureBlockedCount: 0,
+      sendProfileWaitTotalMs: 0,
+      sendProfileWaitMaxMs: 0,
       droppedPcm: 0,
       droppedEncoded: 0,
       lastWarningMs: 0,
@@ -267,7 +282,21 @@ function handleEncodedChunk(chunk, processor, transport) {
   if (!current || current.closed) {
     return;
   }
-  if (current.sendPending || !transport.canSend()) {
+  const nowMs = performance.now();
+  const sendPending = current.sendPending;
+  const canSend = transport.canSend();
+  if (sendPending || !canSend) {
+    current.sendBlockedCount += 1;
+    current.sendProfileBlockedCount += 1;
+    if (sendPending) {
+      current.sendPendingBlockedCount += 1;
+      current.sendProfilePendingBlockedCount += 1;
+    }
+    if (!canSend) {
+      current.sendBackpressureBlockedCount += 1;
+      current.sendProfileBackpressureBlockedCount += 1;
+    }
+    emitSendProfile(current, nowMs);
     current.droppedEncoded += 1;
     warnAboutDrops(current, 0);
     return;
@@ -280,17 +309,77 @@ function handleEncodedChunk(chunk, processor, transport) {
       Math.max(0, Number(chunk.timestamp) || 0),
       Math.max(0, Number(chunk.duration) || 0),
     );
+    const sendStartedAtMs = performance.now();
     current.sendPending = true;
-    void transport.send(datagram).catch((error) => {
-      failActive("microphone worker media send failed", errorMessage(error));
-    }).finally(() => {
-      if (active === current) {
-        current.sendPending = false;
-      }
-    });
+    current.sendStartedAtMs = sendStartedAtMs;
+    current.sendCount += 1;
+    current.sendProfileSendCount += 1;
+    void transport.send(datagram)
+      .then(() => {
+        const completedAtMs = performance.now();
+        const waitMs = Math.max(0, completedAtMs - sendStartedAtMs);
+        current.sendCompletedCount += 1;
+        current.sendProfileCompletedCount += 1;
+        current.sendProfileWaitTotalMs += waitMs;
+        current.sendProfileWaitMaxMs = Math.max(current.sendProfileWaitMaxMs, waitMs);
+      })
+      .catch((error) => {
+        failActive("microphone worker media send failed", errorMessage(error));
+      })
+      .finally(() => {
+        if (active === current) {
+          current.sendPending = false;
+          current.sendStartedAtMs = 0;
+          emitSendProfile(current, performance.now());
+        }
+      });
   } catch (error) {
     post("warning", { message: "failed to encode microphone media datagram", detail: errorMessage(error) });
   }
+}
+
+function emitSendProfile(current, nowMs) {
+  if (!current.diagnosticsEnabled) {
+    return;
+  }
+  const windowMs = nowMs - current.sendProfileWindowStartMs;
+  if (windowMs < SEND_PROFILE_INTERVAL_MS) {
+    return;
+  }
+  const completed = current.sendProfileCompletedCount;
+  const sendWaitAvgMs = completed > 0
+    ? current.sendProfileWaitTotalMs / completed
+    : 0;
+  const pendingSendMs = current.sendPending && current.sendStartedAtMs > 0
+    ? Math.max(0, nowMs - current.sendStartedAtMs)
+    : 0;
+  post("send-profile", {
+    transport: current.transport.kind,
+    windowMs: Math.round(windowMs),
+    sendCount: current.sendCount,
+    sendCompletedCount: current.sendCompletedCount,
+    sendBlockedCount: current.sendBlockedCount,
+    sendPendingBlockedCount: current.sendPendingBlockedCount,
+    sendBackpressureBlockedCount: current.sendBackpressureBlockedCount,
+    sendsSinceReport: current.sendProfileSendCount,
+    completedSinceReport: current.sendProfileCompletedCount,
+    blockedSinceReport: current.sendProfileBlockedCount,
+    pendingBlockedSinceReport: current.sendProfilePendingBlockedCount,
+    backpressureBlockedSinceReport: current.sendProfileBackpressureBlockedCount,
+    sendWaitTotalMs: Math.round(current.sendProfileWaitTotalMs),
+    sendWaitAvgMs,
+    sendWaitMaxMs: current.sendProfileWaitMaxMs,
+    pendingSendMs,
+    encoderQueueSize: current.encoder.encodeQueueSize,
+  });
+  current.sendProfileWindowStartMs = nowMs;
+  current.sendProfileSendCount = 0;
+  current.sendProfileCompletedCount = 0;
+  current.sendProfileBlockedCount = 0;
+  current.sendProfilePendingBlockedCount = 0;
+  current.sendProfileBackpressureBlockedCount = 0;
+  current.sendProfileWaitTotalMs = 0;
+  current.sendProfileWaitMaxMs = 0;
 }
 
 function warnAboutDrops(current, pcmAgeMs) {
