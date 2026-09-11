@@ -19,6 +19,9 @@ pub(crate) use config::{realtime_cert_sha256_hex, realtime_url, realtime_websock
 pub(crate) use error::RealtimeError;
 #[allow(unused_imports)]
 pub(crate) use handle::RealtimeHandle;
+
+#[cfg(test)]
+pub(crate) use handle::create_handle;
 pub(crate) use provider::RealtimeProvider;
 pub(crate) use status::{
     RealtimeConnectionStatus, RealtimeFallbackInfo, RealtimeTransportKind,

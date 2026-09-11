@@ -1,6 +1,6 @@
 //! Провайдер контекста голосового соединения.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -50,6 +50,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let speaking_users = use_signal(Vec::new);
     let room_snapshots = use_signal(Vec::new);
     let speaking_generations = use_hook(|| Rc::new(RefCell::new(HashMap::<String, u64>::new())));
+    let join_generation = use_hook(|| Rc::new(Cell::<u64>::new(0)));
     let participant_video_streams = use_signal(Vec::new);
     let participant_video_subscribers = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
     let participant_video_generations = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
@@ -80,6 +81,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         speaking_users,
         room_snapshots,
         speaking_generations,
+        join_generation,
         realtime: realtime.clone(),
         microphone: microphone.clone(),
         current_user: current_user.clone(),

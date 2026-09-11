@@ -301,5 +301,36 @@ fn should_stop_level_preview(active_capture: ActiveCapture) -> bool {
 }
 
 #[cfg(test)]
+impl MicrophoneHandle {
+    /// Возвращает текущий целевой битрейт для unit-тестов других фич.
+    pub(crate) fn target_bitrate_bps_for_test(&self) -> u32 {
+        *self.target_bitrate_bps.peek()
+    }
+
+    /// Создаёт handle с нейтральным состоянием для unit-тестов других фич.
+    pub(crate) fn for_test() -> Self {
+        let (commands, _commands_rx) = mpsc::unbounded();
+        Self {
+            status: Signal::new(MicrophoneStatus::Idle),
+            level: Signal::new(super::provider_runtime::default_level()),
+            level_active: Signal::new(false),
+            generation: Signal::new(0),
+            commands,
+            selected_input_device_id: Signal::new(None),
+            selected_input_device_label: Signal::new(None),
+            input_volume_percent: Signal::new(100),
+            activation_mode: Signal::new(MicrophoneActivationMode::VoiceActivated),
+            vad_threshold_percent: Signal::new(20),
+            active_capture: Signal::new(ActiveCapture::None),
+            active_on_frame: Signal::new(None),
+            active_uplink: Signal::new(None),
+            target_bitrate_bps: Signal::new(
+                super::backend::MicrophoneConfig::default().bitrate_bps,
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
 #[path = "provider_tests.rs"]
 mod tests;

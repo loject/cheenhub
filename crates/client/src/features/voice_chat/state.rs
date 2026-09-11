@@ -1,6 +1,6 @@
 //! Shared voice connection state.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -18,11 +18,12 @@ use super::room_presence::VoiceRoomParticipants;
 use super::speaking::{self, SpeakingUserActivity};
 
 mod actions;
+mod join;
 mod rooms;
 mod status;
 mod target;
 
-use actions::{ensure_current_user_present, join_target, leave_target};
+use actions::{join_target, leave_target};
 pub(crate) use target::{VoiceRoomTarget, VoiceRoomTargetKind};
 
 const JOIN_RESPONSE_TIMEOUT_MS: u32 = 12_000;
@@ -70,6 +71,8 @@ pub(crate) struct VoiceConnectionHandle {
     speaking_users: Signal<Vec<SpeakingUserActivity>>,
     room_snapshots: Signal<Vec<VoiceRoomParticipants>>,
     speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
+    /// Поколение текущей операции join; ответы старых операций игнорируются.
+    join_generation: Rc<Cell<u64>>,
     realtime: RealtimeHandle,
     microphone: MicrophoneHandle,
     current_user: AuthUser,
@@ -87,6 +90,8 @@ pub(super) struct VoiceConnectionParts {
     pub(super) room_snapshots: Signal<Vec<VoiceRoomParticipants>>,
     /// Поколения таймеров активности речи.
     pub(super) speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
+    /// Счётчик поколений join-операций для отброса устаревших ответов.
+    pub(super) join_generation: Rc<Cell<u64>>,
     /// Realtime-контекст клиента.
     pub(super) realtime: RealtimeHandle,
     /// Контекст захвата микрофона.
@@ -104,6 +109,7 @@ impl VoiceConnectionHandle {
             speaking_users: parts.speaking_users,
             room_snapshots: parts.room_snapshots,
             speaking_generations: parts.speaking_generations,
+            join_generation: parts.join_generation,
             realtime: parts.realtime,
             microphone: parts.microphone,
             current_user: parts.current_user,
@@ -164,10 +170,9 @@ impl VoiceConnectionHandle {
             current.active_target()
         };
         let realtime = self.realtime.clone();
-        let microphone = self.microphone.clone();
         let handle = self.clone();
+        let join_generation = self.next_join_generation();
         let mut state = self.state;
-        let user = self.current_user.clone();
         state.set(VoiceConnectionState::Connecting {
             target: target.clone(),
         });
@@ -175,6 +180,7 @@ impl VoiceConnectionHandle {
             target_kind = ?target.kind,
             server_id = %target.server_id,
             room_id = %target.room_id,
+            join_generation,
             "joining voice room"
         );
 
@@ -220,76 +226,13 @@ impl VoiceConnectionHandle {
             .await
             {
                 Either::Left((Ok(joined), _)) => {
-                    if !state().is_connecting_to(&target) {
-                        info!(
-                            target_kind = ?target.kind,
-                            server_id = %target.server_id,
-                            room_id = %target.room_id,
-                            "ignored stale voice room join response"
-                        );
-                        return;
-                    }
-                    microphone.set_bitrate_bps(joined.audio_bitrate_bps);
-                    let mut snapshot = joined.snapshot;
-                    ensure_current_user_present(&mut snapshot.participants, &user);
-                    handle.apply_room_snapshot(snapshot.clone());
-                    info!(
-                        target_kind = ?target.kind,
-                        server_id = %target.server_id,
-                        room_id = %target.room_id,
-                        participants = snapshot.participants.len(),
-                        "joined voice room"
-                    );
-                    state.set(VoiceConnectionState::Connected {
-                        target: target.clone(),
-                        participants: snapshot.participants,
-                    });
+                    handle.complete_join(&target, join_generation, joined);
                 }
                 Either::Left((Err(error), _)) => {
-                    if !state().is_connecting_to(&target) {
-                        info!(
-                            target_kind = ?target.kind,
-                            server_id = %target.server_id,
-                            room_id = %target.room_id,
-                            "ignored stale voice room join failure"
-                        );
-                        return;
-                    }
-                    warn!(
-                        %error,
-                        target_kind = ?target.kind,
-                        server_id = %target.server_id,
-                        room_id = %target.room_id,
-                        "failed to join voice room"
-                    );
-                    state.set(VoiceConnectionState::Error {
-                        target: Some(target.clone()),
-                        message: "Не удалось подключиться к голосовой комнате. Проверь соединение и попробуй ещё раз."
-                            .to_owned(),
-                    });
+                    handle.apply_join_failure(&target, join_generation, error);
                 }
                 Either::Right((_, _)) => {
-                    if !state().is_connecting_to(&target) {
-                        info!(
-                            target_kind = ?target.kind,
-                            server_id = %target.server_id,
-                            room_id = %target.room_id,
-                            "ignored stale voice room join timeout"
-                        );
-                        return;
-                    }
-                    warn!(
-                        timeout_ms = JOIN_RESPONSE_TIMEOUT_MS,
-                        target_kind = ?target.kind,
-                        server_id = %target.server_id,
-                        room_id = %target.room_id,
-                        "voice room join request timed out"
-                    );
-                    state.set(VoiceConnectionState::Error {
-                        target: Some(target.clone()),
-                        message: "Сервер долго не отвечает. Проверь соединение и попробуй ещё раз."
-                            .to_owned(),
-                    });
+                    handle.apply_join_timeout(&target, join_generation);
                 }
             }
         });
@@ -309,6 +252,9 @@ impl VoiceConnectionHandle {
 
     /// Leaves the active voice room.
     pub(crate) fn leave(&self) {
+        // Инвалидируем текущую join-операцию, чтобы ответ отменённого входа
+        // не мог примениться после leave.
+        self.next_join_generation();
         let current = self.state();
         let Some(target) = current.active_target() else {
             let mut state = self.state;
@@ -375,7 +321,32 @@ impl VoiceConnectionHandle {
         let mut state = self.state;
         state.set(match current {
             VoiceConnectionState::Connecting { target } => {
-                VoiceConnectionState::Connecting { target }
+                // Свежий snapshot с текущим пользователем — серверное подтверждение join,
+                // даже если ответ на сам запрос входа ещё не вернулся.
+                // Остаточный edge case: VoiceRoomSnapshot не содержит generation/revision
+                // операции, поэтому запоздалый ParticipantsChanged от предыдущего presence
+                // в той же комнате (после leave и быстрого rejoin) неотличим от свежего
+                // и может ошибочно подтвердить join. Корректно закрыть это можно только
+                // идентификатором операции на уровне протокола/backend.
+                if snapshot
+                    .participants
+                    .iter()
+                    .any(|participant| participant.user_id == *current_user_id)
+                {
+                    info!(
+                        target_kind = ?target.kind,
+                        server_id = %target.server_id,
+                        room_id = %target.room_id,
+                        participants = snapshot.participants.len(),
+                        "participants changed event confirmed voice room join"
+                    );
+                    VoiceConnectionState::Connected {
+                        target,
+                        participants: snapshot.participants,
+                    }
+                } else {
+                    VoiceConnectionState::Connecting { target }
+                }
             }
             VoiceConnectionState::Connected { target, .. } => {
                 if snapshot
@@ -406,3 +377,7 @@ impl VoiceConnectionHandle {
         });
     }
 }
+
+#[cfg(test)]
+#[path = "state_tests.rs"]
+mod tests;
