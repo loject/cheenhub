@@ -1174,7 +1174,7 @@ dependencies = [
 
 [[package]]
 name = "cheenhub_backend"
-version = "0.27.3"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1219,7 +1219,7 @@ dependencies = [
 
 [[package]]
 name = "cheenhub_client"
-version = "0.27.3"
+version = "0.28.0"
 dependencies = [
  "arboard",
  "base64",
@@ -1268,7 +1268,7 @@ dependencies = [
 
 [[package]]
 name = "cheenhub_contracts"
-version = "0.27.3"
+version = "0.28.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1277,7 +1277,7 @@ dependencies = [
 
 [[package]]
 name = "cheenhub_metrics_proxy"
-version = "0.27.3"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1292,7 +1292,7 @@ dependencies = [
 
 [[package]]
 name = "cheenhub_migrations"
-version = "0.27.3"
+version = "0.28.0"
 dependencies = [
  "async-trait",
  "sea-orm-migration",
@@ -9389,7 +9389,7 @@ checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 
 [[package]]
 name = "xtask"
-version = "0.27.3"
+version = "0.28.0"
 
 [[package]]
 name = "xxhash-rust"
