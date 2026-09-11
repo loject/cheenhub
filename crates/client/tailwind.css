@@ -183,10 +183,29 @@
       direct-call-avatar-in 360ms 80ms cubic-bezier(0.2, 0, 0, 1) both;
   }
 
-  .direct-call-avatar-ringing {
-    animation:
-      direct-call-avatar-in 360ms 80ms cubic-bezier(0.2, 0, 0, 1) both,
-      direct-call-avatar-ring 2.4s 520ms ease-in-out infinite;
+  /* Волны звонка: обёртка вокруг аватара, псевдоэлементы расходятся наружу. */
+  .direct-call-ringing-halo {
+    position: relative;
+  }
+
+  .direct-call-ringing-halo::before,
+  .direct-call-ringing-halo::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: 9999px;
+    border: 1.5px solid rgba(96, 165, 250, 0.38);
+    opacity: 0;
+    pointer-events: none;
+    animation: direct-call-ring-wave 2.4s cubic-bezier(0.2, 0, 0, 1) infinite;
+  }
+
+  .direct-call-ringing-halo::after {
+    animation-delay: 1.2s;
+  }
+
+  .direct-call-accept-pulse {
+    animation: direct-call-accept-glow 2.4s ease-in-out infinite;
   }
 
   .direct-call-enter-segment {
@@ -364,18 +383,31 @@
     }
   }
 
-  @keyframes direct-call-avatar-ring {
+  @keyframes direct-call-ring-wave {
+    0% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+
+    60%,
+    100% {
+      opacity: 0;
+      transform: scale(1.55);
+    }
+  }
+
+  @keyframes direct-call-accept-glow {
     0%,
     100% {
       box-shadow:
         0 0 0 0 rgba(96, 165, 250, 0),
-        0 18px 50px rgba(0, 0, 0, 0.3);
+        0 12px 32px rgba(37, 99, 235, 0.22);
     }
 
     50% {
       box-shadow:
-        0 0 0 8px rgba(96, 165, 250, 0.08),
-        0 18px 50px rgba(0, 0, 0, 0.3);
+        0 0 0 6px rgba(96, 165, 250, 0.14),
+        0 12px 32px rgba(37, 99, 235, 0.3);
     }
   }
 
@@ -1445,7 +1477,7 @@
   .direct-call-surface-exit,
   .direct-call-stage,
   .direct-call-avatar,
-  .direct-call-avatar-ringing,
+  .direct-call-accept-pulse,
   .direct-call-enter-segment,
   .direct-call-status-enter,
   .voice-controls-panel,
@@ -1456,11 +1488,21 @@
     animation: none;
   }
 
+  .direct-call-ringing-halo::before,
+  .direct-call-ringing-halo::after {
+    animation: none;
+    opacity: 0;
+  }
+
   .direct-call-header .animate-pulse {
     animation: none;
   }
 
   .voice-control-button span {
+    transition-duration: 0.01ms;
+  }
+
+  .direct-call-speaking-indicator {
     transition-duration: 0.01ms;
   }
 }

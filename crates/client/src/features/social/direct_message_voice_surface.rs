@@ -154,15 +154,13 @@ pub(crate) fn DirectMessageVoiceSurface(
             if waiting || signaling_error.is_some() && !selected_voice_active {
                 div { class: "direct-call-stage voice-stage flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-5 pb-[112px]",
                     div { class: "direct-call-waiting-content w-full max-w-sm text-center",
-                        UserAvatar {
-                            nickname: conversation.friend_nickname.clone(),
-                            avatar_url: conversation.friend_avatar_url.clone(),
-                            class: if starting || outgoing_ringing || incoming_ringing {
-                                "direct-call-avatar direct-call-avatar-ringing mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-zinc-900 text-[28px] font-bold text-zinc-50 shadow-[0_0_0_1px_rgba(255,255,255,.10),0_18px_50px_rgba(0,0,0,.30)]".to_owned()
-                            } else {
-                                "direct-call-avatar mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-zinc-900 text-[28px] font-bold text-zinc-50 shadow-[0_0_0_1px_rgba(255,255,255,.10),0_18px_50px_rgba(0,0,0,.30)]".to_owned()
-                            },
-                            avatar_seed: Some(conversation.friend_user_id.clone()),
+                        div { class: if starting || outgoing_ringing || incoming_ringing { "direct-call-ringing-halo relative mx-auto h-24 w-24" } else { "relative mx-auto h-24 w-24" },
+                            UserAvatar {
+                                nickname: conversation.friend_nickname.clone(),
+                                avatar_url: conversation.friend_avatar_url.clone(),
+                                class: "direct-call-avatar flex h-full w-full items-center justify-center rounded-full bg-zinc-900 text-[28px] font-bold text-zinc-50 shadow-[0_0_0_1px_rgba(255,255,255,.10),0_18px_50px_rgba(0,0,0,.30)]".to_owned(),
+                                avatar_seed: Some(conversation.friend_user_id.clone()),
+                            }
                         }
                         div { class: "direct-call-enter-segment direct-call-enter-segment-copy",
                             h2 { class: "mt-5 text-balance text-[20px] font-semibold text-zinc-50", "{waiting_title}" }

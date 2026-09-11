@@ -28,6 +28,7 @@ pub(super) fn DirectCallPrompt(call: DirectCallSnapshot, exiting: bool) -> Eleme
             role: "dialog",
             "aria-modal": "true",
             "aria-labelledby": "incoming-direct-call-title",
+            div { class: "pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500/[0.13] blur-[110px]" }
             div {
                 class: if exiting {
                     "direct-call-prompt-card direct-call-prompt-card-exit w-full max-w-sm rounded-[32px] bg-zinc-950/95 p-3 shadow-[0_0_0_1px_rgba(255,255,255,.10),0_28px_90px_rgba(0,0,0,.58)]"
@@ -40,11 +41,13 @@ pub(super) fn DirectCallPrompt(call: DirectCallSnapshot, exiting: bool) -> Eleme
                         class: "direct-call-enter-segment text-[12px] font-medium uppercase tracking-[0.16em] text-blue-300",
                         "Входящий звонок"
                     }
-                    UserAvatar {
-                        nickname: caller_nickname.clone(),
-                        avatar_url: caller_avatar_url,
-                        class: "direct-call-avatar direct-call-avatar-ringing mx-auto mt-5 flex h-24 w-24 items-center justify-center rounded-full bg-zinc-800 text-[30px] font-bold text-zinc-50 shadow-[0_0_0_1px_rgba(255,255,255,.10),0_18px_45px_rgba(0,0,0,.34)]".to_owned(),
-                        avatar_seed: Some(call.caller_user_id.clone()),
+                    div { class: "direct-call-ringing-halo relative mx-auto mt-5 h-24 w-24",
+                        UserAvatar {
+                            nickname: caller_nickname.clone(),
+                            avatar_url: caller_avatar_url,
+                            class: "direct-call-avatar flex h-full w-full items-center justify-center rounded-full bg-zinc-800 text-[30px] font-bold text-zinc-50 shadow-[0_0_0_1px_rgba(255,255,255,.10),0_18px_45px_rgba(0,0,0,.34)]".to_owned(),
+                            avatar_seed: Some(call.caller_user_id.clone()),
+                        }
                     }
                     div { class: "direct-call-enter-segment direct-call-enter-segment-copy",
                         h2 {
@@ -78,7 +81,7 @@ pub(super) fn DirectCallPrompt(call: DirectCallSnapshot, exiting: bool) -> Eleme
                         button {
                             r#type: "button",
                             disabled: busy,
-                            class: "flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_12px_32px_rgba(37,99,235,.22)] transition-[scale,background-color,opacity] duration-150 ease-out active:scale-[0.96] disabled:cursor-wait disabled:opacity-60",
+                            class: "direct-call-accept-pulse flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_12px_32px_rgba(37,99,235,.22)] transition-[scale,background-color,opacity] duration-150 ease-out active:scale-[0.96] disabled:cursor-wait disabled:opacity-60",
                             onclick: move |_| accept_call.accept(),
                             svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.362-.271.527-.734.417-1.173L6.963 3.102A1.125 1.125 0 0 0 5.872 2.25H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z" }

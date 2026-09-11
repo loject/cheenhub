@@ -75,6 +75,9 @@ pub(crate) fn DirectCallStage(
     let peer_speaking = speaking_user_ids
         .iter()
         .any(|user_id| user_id == &peer_user_id);
+    let self_speaking = speaking_user_ids
+        .iter()
+        .any(|user_id| user_id == &current_user_id);
     let stage_state = stage_state_content(&status, &peer_nickname);
 
     rsx! {
@@ -83,13 +86,17 @@ pub(crate) fn DirectCallStage(
             onclick: move |_| menu_position.set(None),
             if let Some((title, body, retry)) = stage_state {
                 div { class: "voice-empty-state max-w-sm text-center",
-                    div { class: "mx-auto grid h-16 w-16 place-items-center rounded-[20px] bg-zinc-900/80 text-zinc-400 shadow-[0_0_0_1px_rgba(255,255,255,.08),0_14px_40px_rgba(0,0,0,.24)]",
-                        if retry {
-                            svg { class: "h-7 w-7", fill: "none", stroke: "currentColor", stroke_width: "1.8", view_box: "0 0 24 24", "aria-hidden": "true",
-                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M20 11a8.1 8.1 0 1 0-2.4 5.8M20 4v7h-7" }
+                    div { class: if retry { "relative mx-auto h-20 w-20 rounded-full shadow-[0_0_0_2px_rgba(248,113,113,.40),0_0_0_6px_rgba(248,113,113,.08)]" } else { "relative mx-auto h-20 w-20" },
+                        UserAvatar {
+                            nickname: peer_nickname.clone(),
+                            avatar_url: peer_avatar_url.clone(),
+                            class: "flex h-full w-full items-center justify-center rounded-full bg-zinc-900 text-[26px] font-bold text-zinc-50 shadow-[0_0_0_1px_rgba(255,255,255,.10)]".to_owned(),
+                            avatar_seed: Some(peer_user_id.clone()),
+                        }
+                        if !retry {
+                            span { class: "absolute -bottom-0.5 -right-0.5 grid h-7 w-7 place-items-center rounded-full bg-zinc-950/95 shadow-[0_0_0_1px_rgba(255,255,255,.10),0_4px_12px_rgba(0,0,0,.30)] backdrop-blur-lg",
+                                div { class: "h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-700 border-t-blue-400", "aria-hidden": "true" }
                             }
-                        } else {
-                            div { class: "h-7 w-7 animate-spin rounded-full border-2 border-zinc-700 border-t-accent", "aria-hidden": "true" }
                         }
                     }
                     h2 { class: "mt-4 text-balance text-[17px] font-semibold text-zinc-100", "{title}" }
@@ -132,10 +139,13 @@ pub(crate) fn DirectCallStage(
                             h2 { class: "mt-5 max-w-full truncate text-[18px] font-semibold text-zinc-100", "{peer_nickname}" }
                             div {
                                 class: if peer_speaking {
-                                    "mt-2 flex items-center gap-1.5 text-[12px] font-medium text-blue-200"
+                                    "direct-call-speaking-indicator mt-2 flex items-center gap-1.5 text-[12px] font-medium text-blue-200 opacity-100 scale-100 blur-0 transition-[opacity,transform,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
                                 } else {
-                                    "invisible mt-2 flex items-center gap-1.5 text-[12px] font-medium text-blue-200"
+                                    "direct-call-speaking-indicator mt-2 flex items-center gap-1.5 text-[12px] font-medium text-blue-200 opacity-0 scale-[0.25] blur-[4px] transition-[opacity,transform,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
                                 },
+                                // Скрыт для screen reader, пока собеседник молчит:
+                                // opacity-0 сам по себе элемент в accessibility tree не убирает.
+                                "aria-hidden": if peer_speaking { "false" } else { "true" },
                                 svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                                     path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 11a7 7 0 0 1-14 0m7 8v3m-4 0h8m-4-18a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V7a3 3 0 0 0-3-3Z" }
                                 }
@@ -172,7 +182,7 @@ pub(crate) fn DirectCallStage(
                     }
                 }
                 if local_camera_live {
-                    div { class: "direct-call-self-preview absolute right-6 top-[92px] z-20 h-[112px] w-[84px] overflow-hidden rounded-[18px] bg-zinc-950 shadow-[0_0_0_1px_rgba(255,255,255,.12),0_14px_36px_rgba(0,0,0,.38)] sm:h-[156px] sm:w-[116px]",
+                    div { class: if self_speaking { "direct-call-self-preview absolute right-6 top-[92px] z-20 h-[112px] w-[84px] overflow-hidden rounded-[18px] bg-zinc-950 shadow-[0_0_0_1.5px_rgba(96,165,250,.55),0_0_0_6px_rgba(96,165,250,.10),0_14px_36px_rgba(0,0,0,.38)] transition-[box-shadow] duration-200 sm:h-[156px] sm:w-[116px]" } else { "direct-call-self-preview absolute right-6 top-[92px] z-20 h-[112px] w-[84px] overflow-hidden rounded-[18px] bg-zinc-950 shadow-[0_0_0_1px_rgba(255,255,255,.12),0_14px_36px_rgba(0,0,0,.38)] transition-[box-shadow] duration-200 sm:h-[156px] sm:w-[116px]" },
                         ParticipantVideoCanvas {
                             user_id: current_user_id,
                             source: ParticipantVideoSource::Camera,
