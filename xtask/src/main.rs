@@ -236,15 +236,9 @@ fn parse_release_version(version: &str) -> XtaskResult<(u64, u64, u64)> {
     Ok((major, minor, patch))
 }
 
-fn parse_release_component(
-    name: &str,
-    component: Option<&str>,
-    version: &str,
-) -> XtaskResult<u64> {
+fn parse_release_component(name: &str, component: Option<&str>, version: &str) -> XtaskResult<u64> {
     let component = component.ok_or_else(|| {
-        format!(
-            "workspace release version must use major.minor.patch format, got {version:?}."
-        )
+        format!("workspace release version must use major.minor.patch format, got {version:?}.")
     })?;
 
     component.parse::<u64>().map_err(|error| {

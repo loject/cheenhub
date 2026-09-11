@@ -361,10 +361,8 @@ impl WorkletMessage {
                 process_calls: profile_u64(&data, "processCalls")?,
                 wall_delta_ms: profile_u64(&data, "wallDeltaMs")?,
                 max_process_gap_ms: profile_u64(&data, "maxProcessGapMs")?,
-                sample_rate_hz: profile_u64(&data, "sampleRate")?
-                    .min(u64::from(u32::MAX)) as u32,
-                quantum_size: profile_u64(&data, "quantumSize")?
-                    .min(u64::from(u32::MAX)) as u32,
+                sample_rate_hz: profile_u64(&data, "sampleRate")?.min(u64::from(u32::MAX)) as u32,
+                quantum_size: profile_u64(&data, "quantumSize")?.min(u64::from(u32::MAX)) as u32,
                 process_count: profile_u64(&data, "processCount")?,
                 chunk_count: profile_u64(&data, "chunkCount")?,
                 input_empty_count: profile_u64(&data, "inputEmptyCount")?,

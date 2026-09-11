@@ -126,9 +126,7 @@ pub(crate) fn SocialPage(
             .find(|conversation| conversation.id == conversation_id)
         else {
             if loaded() && !is_loading() {
-                if retried_route_conversation_id().as_deref()
-                    != Some(conversation_id.as_str())
-                {
+                if retried_route_conversation_id().as_deref() != Some(conversation_id.as_str()) {
                     info!(
                         %conversation_id,
                         "direct message route is missing from loaded overview; refreshing social state"
