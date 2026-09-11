@@ -10,6 +10,7 @@ rust-version.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 cheenhub_contracts = { path = "../contracts" }
+libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["fs"] }

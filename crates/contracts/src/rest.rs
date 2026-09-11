@@ -23,8 +23,9 @@ pub use desktop_oauth::{
 pub use error::ApiError;
 pub use host_settings::{
     EmailTransport, GmailConnectionStartResponse, HostAccessResponse, HostCpuMetrics,
-    HostEmailSettingsResponse, HostLogEntry, HostLogStreamMessage, HostMemoryMetrics,
-    HostMetricsResponse, HostMetricsSample, HostNetworkMetrics, UpdateHostEmailSettingsRequest,
+    HostDiskMetrics, HostEmailSettingsResponse, HostLogEntry, HostLogStreamMessage,
+    HostMemoryMetrics, HostMetricsResponse, HostMetricsSample, HostNetworkMetrics,
+    UpdateHostEmailSettingsRequest,
 };
 pub use push_notifications::{PushPlatform, UpsertPushInstallationRequest};
 pub use servers::{

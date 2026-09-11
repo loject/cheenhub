@@ -66,10 +66,16 @@ services:
     environment:
       CHEENHUB_METRICS_APP_SERVICES: backend,web
       CHEENHUB_METRICS_DATABASE_SERVICE: db
+      # Измеряем накопитель хоста через смонтированную директорию, а не
+      # filesystem самого контейнера.
+      CHEENHUB_METRICS_DISK_PATH: /host-fs
       CHEENHUB_METRICS_PROXY_ADDRESS: 0.0.0.0:9100
       RUST_LOG: cheenhub_metrics_proxy=info
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Пустая read-only точка монтирования: statvfs читает статистику файловой
+      # системы хоста, на которой лежит /var/lib/cheenhub-hostfs.
+      - /var/lib/cheenhub-hostfs:/host-fs:ro
     read_only: true
     cap_drop:
       - ALL

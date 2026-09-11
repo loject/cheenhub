@@ -1282,6 +1282,7 @@ dependencies = [
  "anyhow",
  "axum",
  "cheenhub_contracts",
+ "libc",
  "serde",
  "serde_json",
  "tokio",

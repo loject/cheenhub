@@ -80,6 +80,7 @@ fn dashboard_loader() -> Element {
                 div { class: "h-64 animate-pulse rounded-[20px] border border-zinc-800 bg-zinc-950/60" }
                 div { class: "h-64 animate-pulse rounded-[20px] border border-zinc-800 bg-zinc-950/60" }
             }
+            div { class: "mt-5 h-40 animate-pulse rounded-[20px] border border-zinc-800 bg-zinc-950/60" }
         }
     }
 }
@@ -110,6 +111,18 @@ fn dashboard_content(metrics: HostMetricsResponse, mut cpu_view: Signal<CpuView>
     } else {
         (latest.memory.used_bytes as f64 / latest.memory.total_bytes as f64 * 100.0) as f32
     };
+    let disk_percent = latest.disk.as_ref().map_or(0.0, |disk| {
+        if disk.total_bytes == 0 {
+            0.0
+        } else {
+            (disk.used_bytes as f64 / disk.total_bytes as f64 * 100.0) as f32
+        }
+    });
+    let disk_samples: Vec<HostMetricsSample> = samples
+        .iter()
+        .filter(|sample| sample.disk.is_some())
+        .cloned()
+        .collect();
 
     rsx! {
         if !metrics.available {
@@ -117,7 +130,7 @@ fn dashboard_content(metrics: HostMetricsResponse, mut cpu_view: Signal<CpuView>
                 "Показываем последние доступные данные. Новые измерения временно не поступают."
             }
         }
-        div { class: "mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4",
+        div { class: "mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5",
             {summary_card(
                 "Процессор",
                 format_percent(latest.cpu.system_percent),
@@ -133,6 +146,22 @@ fn dashboard_content(metrics: HostMetricsResponse, mut cpu_view: Signal<CpuView>
                     format_bytes(latest.memory.total_bytes),
                 ),
                 "text-emerald-300",
+            )}
+            {summary_card(
+                "Накопитель",
+                match latest.disk.as_ref() {
+                    Some(_) => format_percent(disk_percent),
+                    None => "—".to_owned(),
+                },
+                match latest.disk.as_ref() {
+                    Some(disk) => format!(
+                        "{} из {}",
+                        format_bytes(disk.used_bytes),
+                        format_bytes(disk.total_bytes),
+                    ),
+                    None => "нет данных".to_owned(),
+                },
+                "text-amber-300",
             )}
             {summary_card(
                 "Получение",
@@ -181,13 +210,29 @@ fn dashboard_content(metrics: HostMetricsResponse, mut cpu_view: Signal<CpuView>
                 {memory_breakdown(latest)}
             }
             section { class: "rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
-                p { class: "text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500", "Сеть CheenHub" }
-                div { class: "mt-2 grid grid-cols-2 gap-3",
-                    {metric_value("Получение", latest.network.received_bytes_per_second, "text-blue-300")}
-                    {metric_value("Отправка", latest.network.sent_bytes_per_second, "text-violet-300")}
+                p { class: "text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500", "Накопитель" }
+                if let Some(disk) = latest.disk.as_ref() {
+                    div { class: "mt-1 flex items-baseline gap-2",
+                        strong { class: "tabular-nums text-2xl font-semibold tracking-[-0.04em] text-white", "{format_bytes(disk.used_bytes)}" }
+                        span { class: "text-sm text-zinc-500", "из {format_bytes(disk.total_bytes)}" }
+                    }
+                    div { class: "mt-4 flex h-2 overflow-hidden rounded-full bg-zinc-800",
+                        div { class: "bg-amber-400", style: "width: {percentage_width(disk_percent)}" }
+                    }
+                    {disk_chart(&disk_samples)}
+                } else {
+                    p { class: "mt-3 text-[13px] leading-5 text-zinc-500", "Данные о накопителе временно недоступны." }
                 }
-                {network_chart(&samples)}
             }
+        }
+
+        section { class: "mt-5 rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
+            p { class: "text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500", "Сеть CheenHub" }
+            div { class: "mt-2 grid grid-cols-2 gap-3",
+                {metric_value("Получение", latest.network.received_bytes_per_second, "text-blue-300")}
+                {metric_value("Отправка", latest.network.sent_bytes_per_second, "text-violet-300")}
+            }
+            {network_chart(&samples)}
         }
     }
 }
@@ -279,6 +324,27 @@ fn memory_breakdown(sample: &HostMetricsSample) -> Element {
                 div { class: "bg-violet-400", style: "width: {percentage_width((sample.memory.database_bytes as f64 / total * 100.0) as f32)}" }
                 div { class: "bg-zinc-500", style: "width: {percentage_width((sample.memory.other_bytes as f64 / total * 100.0) as f32)}" }
             }
+        }
+    }
+}
+
+fn disk_chart(samples: &[HostMetricsSample]) -> Element {
+    let max = samples
+        .last()
+        .and_then(|sample| sample.disk.as_ref())
+        .map(|disk| disk.total_bytes as f64)
+        .unwrap_or(1.0)
+        .max(1.0);
+    let used = points(samples, max, |sample| {
+        sample
+            .disk
+            .as_ref()
+            .expect("filtered samples contain disk metrics")
+            .used_bytes as f64
+    });
+    rsx! {
+        svg { class: "mt-5 h-32 w-full rounded-xl border border-zinc-800/80 bg-zinc-950 p-3", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История занятого места на накопителе",
+            polyline { points: "{used}", fill: "none", stroke: "#fbbf24", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
         }
     }
 }
@@ -401,9 +467,12 @@ fn format_percent(value: f32) -> String {
 }
 
 fn format_bytes(bytes: u64) -> String {
+    const TIB: f64 = 1024.0 * 1024.0 * 1024.0 * 1024.0;
     const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
     const MIB: f64 = 1024.0 * 1024.0;
-    if bytes as f64 >= GIB {
+    if bytes as f64 >= TIB {
+        format!("{:.1} ТБ", bytes as f64 / TIB)
+    } else if bytes as f64 >= GIB {
         format!("{:.1} ГБ", bytes as f64 / GIB)
     } else {
         format!("{:.0} МБ", bytes as f64 / MIB)

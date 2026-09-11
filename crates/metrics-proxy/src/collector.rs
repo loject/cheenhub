@@ -4,7 +4,7 @@ use std::{collections::HashSet, time::Instant};
 
 use anyhow::Context;
 use cheenhub_contracts::rest::{
-    HostCpuMetrics, HostMemoryMetrics, HostMetricsSample, HostNetworkMetrics,
+    HostCpuMetrics, HostDiskMetrics, HostMemoryMetrics, HostMetricsSample, HostNetworkMetrics,
 };
 
 use super::docker::{ContainerStats, DockerClient};
@@ -15,6 +15,7 @@ pub(super) struct MetricsCollector {
     docker: DockerClient,
     app_services: HashSet<String>,
     database_service: String,
+    disk_path: String,
     previous_cpu: Option<CpuSnapshot>,
     previous_network: Option<NetworkSnapshot>,
 }
@@ -24,11 +25,13 @@ impl MetricsCollector {
         socket_path: String,
         app_services: Vec<String>,
         database_service: String,
+        disk_path: String,
     ) -> Self {
         Self {
             docker: DockerClient::new(socket_path),
             app_services: app_services.into_iter().collect(),
             database_service,
+            disk_path,
             previous_cpu: None,
             previous_network: None,
         }
@@ -37,6 +40,8 @@ impl MetricsCollector {
     pub(super) async fn collect(&mut self) -> anyhow::Result<Option<HostMetricsSample>> {
         let cpu = read_cpu_snapshot().await?;
         let memory = read_memory_snapshot().await?;
+        // Ошибка диска не должна ломать сбор CPU/RAM/network: отдаём sample без disk.
+        let disk = read_disk_snapshot(&self.disk_path);
         let containers = self.docker.running_containers().await?;
         let mut app_stats = Vec::new();
         let mut database_stats = Vec::new();
@@ -101,6 +106,10 @@ impl MetricsCollector {
                 database_bytes: database_memory,
                 other_bytes: other_memory,
             },
+            disk: disk.map(|disk| HostDiskMetrics {
+                total_bytes: disk.total_bytes,
+                used_bytes: disk.used_bytes,
+            }),
             network: HostNetworkMetrics {
                 sent_bytes_per_second: network_totals.0.saturating_sub(previous_network.sent_bytes)
                     as f64
@@ -236,6 +245,38 @@ fn meminfo_value(contents: &str, key: &str) -> anyhow::Result<u64> {
         .with_context(|| format!("host memory counter {key} is missing"))
 }
 
+struct DiskSnapshot {
+    total_bytes: u64,
+    used_bytes: u64,
+}
+
+/// Читает статистику накопителя; `None`, если путь недоступен или statvfs не удался.
+fn read_disk_snapshot(path: &str) -> Option<DiskSnapshot> {
+    let c_path = std::ffi::CString::new(path).ok()?;
+    let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c_path.as_ptr(), &mut stats) } != 0 {
+        tracing::warn!(
+            disk_path = %path,
+            error = %std::io::Error::last_os_error(),
+            "host disk metrics are unavailable"
+        );
+        return None;
+    }
+    Some(disk_snapshot_from_statvfs(&stats))
+}
+
+/// Считает занятое место как total - free. `f_bfree` учитывает все свободные блоки,
+/// тогда как `f_bavail` дополнительно исключает зарезервированные для root.
+fn disk_snapshot_from_statvfs(stats: &libc::statvfs) -> DiskSnapshot {
+    let block_bytes = stats.f_frsize;
+    let total_bytes = stats.f_blocks.saturating_mul(block_bytes);
+    let free_bytes = stats.f_bfree.saturating_mul(block_bytes);
+    DiskSnapshot {
+        total_bytes,
+        used_bytes: total_bytes.saturating_sub(free_bytes),
+    }
+}
+
 struct NetworkSnapshot {
     sampled_at: Instant,
     sent_bytes: u64,
@@ -252,7 +293,9 @@ fn unix_timestamp_millis() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{CpuCounters, meminfo_value, parse_cpu_line};
+    use super::{
+        CpuCounters, disk_snapshot_from_statvfs, meminfo_value, parse_cpu_line, read_disk_snapshot,
+    };
 
     #[test]
     fn calculates_cpu_usage_from_counter_delta() {
@@ -280,5 +323,39 @@ mod tests {
             meminfo_value("MemTotal:       16384 kB\n", "MemTotal").expect("value exists"),
             16_384
         );
+    }
+
+    #[test]
+    fn calculates_disk_usage_from_free_blocks_not_available() {
+        let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
+        stats.f_frsize = 4096;
+        stats.f_blocks = 1000;
+        stats.f_bfree = 400;
+        stats.f_bavail = 350;
+
+        let snapshot = disk_snapshot_from_statvfs(&stats);
+
+        assert_eq!(snapshot.total_bytes, 1000 * 4096);
+        // Занятое место считается от f_bfree, а не от f_bavail:
+        // зарезервированные блоки для root не являются занятыми.
+        assert_eq!(snapshot.used_bytes, (1000 - 400) * 4096);
+    }
+
+    #[test]
+    fn reads_disk_snapshot_from_temporary_directory() {
+        let directory =
+            std::env::temp_dir().join(format!("cheenhub-disk-test-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("temporary directory is created");
+        let snapshot = read_disk_snapshot(directory.to_str().expect("path is valid UTF-8"))
+            .expect("disk snapshot reads");
+        assert!(snapshot.total_bytes > 0);
+        assert!(snapshot.used_bytes <= snapshot.total_bytes);
+    }
+
+    #[test]
+    fn returns_none_when_disk_path_is_missing() {
+        let missing =
+            std::env::temp_dir().join(format!("cheenhub-disk-missing-{}", std::process::id()));
+        assert!(read_disk_snapshot(missing.to_str().expect("path is valid UTF-8")).is_none());
     }
 }

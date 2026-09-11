@@ -37,6 +37,9 @@ pub struct HostMetricsSample {
     pub cpu: HostCpuMetrics,
     /// Использование оперативной памяти.
     pub memory: HostMemoryMetrics,
+    /// Использование накопителя хоста; отсутствует у старых metrics-proxy или при недоступности диска.
+    #[serde(default)]
+    pub disk: Option<HostDiskMetrics>,
     /// Сетевой трафик CheenHub.
     pub network: HostNetworkMetrics,
 }
@@ -69,6 +72,15 @@ pub struct HostMemoryMetrics {
     pub database_bytes: u64,
     /// Память, занятая остальной системой.
     pub other_bytes: u64,
+}
+
+/// Использование дискового пространства накопителя хоста.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostDiskMetrics {
+    /// Общий объём накопителя хоста в байтах.
+    pub total_bytes: u64,
+    /// Занятый объём накопителя хоста в байтах.
+    pub used_bytes: u64,
 }
 
 /// Сетевой трафик только контейнеров CheenHub без базы данных.
@@ -193,7 +205,22 @@ pub enum HostLogStreamMessage {
 
 #[cfg(test)]
 mod tests {
-    use super::{EmailTransport, HostEmailSettingsResponse};
+    use super::{EmailTransport, HostEmailSettingsResponse, HostMetricsSample};
+
+    #[test]
+    fn deserializes_metrics_sample_without_disk_field_from_old_proxy() {
+        let json = r#"{
+            "sampled_at_unix_ms": 1,
+            "cpu": {"system_percent": 1.0, "cheenhub_percent": 2.0, "database_percent": 3.0, "other_percent": 4.0, "logical_processors_percent": []},
+            "memory": {"total_bytes": 1, "used_bytes": 2, "cheenhub_bytes": 3, "database_bytes": 4, "other_bytes": 5},
+            "network": {"sent_bytes_per_second": 1.0, "received_bytes_per_second": 2.0, "sent_bytes_total": 3, "received_bytes_total": 4}
+        }"#;
+
+        let sample: HostMetricsSample =
+            serde_json::from_str(json).expect("old metrics sample deserializes");
+
+        assert!(sample.disk.is_none());
+    }
 
     #[test]
     fn email_settings_response_contains_only_secret_presence_flags() {

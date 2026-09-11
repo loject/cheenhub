@@ -30,6 +30,7 @@ async fn main() -> anyhow::Result<()> {
     let app_services = comma_separated("CHEENHUB_METRICS_APP_SERVICES", "backend,web");
     let database_service =
         std::env::var("CHEENHUB_METRICS_DATABASE_SERVICE").unwrap_or_else(|_| "db".to_owned());
+    let disk_path = std::env::var("CHEENHUB_METRICS_DISK_PATH").unwrap_or_else(|_| "/".to_owned());
     let address = std::env::var("CHEENHUB_METRICS_PROXY_ADDRESS")
         .unwrap_or_else(|_| "0.0.0.0:9100".to_owned());
     let listener = TcpListener::bind(&address).await?;
@@ -38,6 +39,7 @@ async fn main() -> anyhow::Result<()> {
             socket_path,
             app_services,
             database_service,
+            disk_path,
         ))),
     };
     let app = Router::new()
