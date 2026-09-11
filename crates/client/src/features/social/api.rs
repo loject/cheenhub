@@ -206,6 +206,10 @@ pub(crate) async fn upload_dm_image(
             .await
             .map(|value| value.image)
             .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned())
+    } else if response.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        // 413 приходит без тела ответа от nginx или axum, поэтому переводим его
+        // в понятное сообщение о превышении лимита размера изображения.
+        Err("Изображение слишком большое. Максимум — 8 МБ.".to_owned())
     } else {
         Err(auth_api::read_error(response).await)
     }
