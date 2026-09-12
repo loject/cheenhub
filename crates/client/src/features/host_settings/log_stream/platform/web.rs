@@ -145,11 +145,9 @@ async fn wait_until_open(websocket: &WebSocket) -> Result<(), String> {
         close_on_drop: false,
     };
 
-    let result = receiver
+    receiver
         .await
-        .map_err(|_| "Callback подключения realtime-журнала был потерян.".to_owned())?;
-
-    result
+        .map_err(|_| "Callback подключения realtime-журнала был потерян.".to_owned())?
 }
 
 fn js_error(error: JsValue) -> String {
