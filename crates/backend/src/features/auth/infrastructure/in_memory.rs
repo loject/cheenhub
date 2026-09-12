@@ -451,7 +451,7 @@ impl AuthStore for InMemoryAuthStore {
         _now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        super::in_memory_oauth::insert_oauth_handoff(
+        super::in_memory_oauth_handoff::insert(
             &self.state,
             code_hash,
             kind,
@@ -466,7 +466,7 @@ impl AuthStore for InMemoryAuthStore {
         code_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<OAuthHandoff>> {
-        super::in_memory_oauth::find_active_oauth_handoff(&self.state, code_hash, now)
+        super::in_memory_oauth_handoff::find_active(&self.state, code_hash, now)
     }
 
     async fn consume_oauth_handoff(
@@ -474,7 +474,7 @@ impl AuthStore for InMemoryAuthStore {
         handoff_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<bool> {
-        super::in_memory_oauth::consume_oauth_handoff(&self.state, handoff_id, now)
+        super::in_memory_oauth_handoff::consume(&self.state, handoff_id, now)
     }
 
     async fn insert_oauth_registration_intent(
@@ -486,7 +486,7 @@ impl AuthStore for InMemoryAuthStore {
         _now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<OAuthRegistrationIntent> {
-        super::in_memory_oauth::insert_oauth_registration_intent(
+        super::in_memory_oauth_handoff::insert_registration_intent(
             &self.state,
             provider,
             provider_subject,
@@ -501,7 +501,7 @@ impl AuthStore for InMemoryAuthStore {
         intent_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<OAuthRegistrationIntent>> {
-        super::in_memory_oauth::find_active_oauth_registration_intent(&self.state, intent_id, now)
+        super::in_memory_oauth_handoff::find_active_registration_intent(&self.state, intent_id, now)
     }
 
     async fn consume_oauth_registration_intent(
@@ -509,7 +509,7 @@ impl AuthStore for InMemoryAuthStore {
         intent_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        super::in_memory_oauth::consume_oauth_registration_intent(&self.state, intent_id, now)
+        super::in_memory_oauth_handoff::consume_registration_intent(&self.state, intent_id, now)
     }
 }
 

@@ -463,7 +463,7 @@ impl AuthStore for PostgresAuthStore {
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        super::postgres_oauth::insert_oauth_handoff(
+        super::postgres_oauth_handoff::insert(
             &self.database,
             code_hash,
             kind,
@@ -480,7 +480,7 @@ impl AuthStore for PostgresAuthStore {
         code_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<OAuthHandoff>> {
-        super::postgres_oauth::find_active_oauth_handoff(&self.database, code_hash, now).await
+        super::postgres_oauth_handoff::find_active(&self.database, code_hash, now).await
     }
 
     async fn consume_oauth_handoff(
@@ -488,7 +488,7 @@ impl AuthStore for PostgresAuthStore {
         handoff_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<bool> {
-        super::postgres_oauth::consume_oauth_handoff(&self.database, handoff_id, now).await
+        super::postgres_oauth_handoff::consume(&self.database, handoff_id, now).await
     }
 
     async fn insert_oauth_registration_intent(
@@ -500,7 +500,7 @@ impl AuthStore for PostgresAuthStore {
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<OAuthRegistrationIntent> {
-        super::postgres_oauth::insert_oauth_registration_intent(
+        super::postgres_oauth_handoff::insert_registration_intent(
             &self.database,
             provider,
             provider_subject,
@@ -517,8 +517,12 @@ impl AuthStore for PostgresAuthStore {
         intent_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<OAuthRegistrationIntent>> {
-        super::postgres_oauth::find_active_oauth_registration_intent(&self.database, intent_id, now)
-            .await
+        super::postgres_oauth_handoff::find_active_registration_intent(
+            &self.database,
+            intent_id,
+            now,
+        )
+        .await
     }
 
     async fn consume_oauth_registration_intent(
@@ -526,7 +530,7 @@ impl AuthStore for PostgresAuthStore {
         intent_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        super::postgres_oauth::consume_oauth_registration_intent(&self.database, intent_id, now)
+        super::postgres_oauth_handoff::consume_registration_intent(&self.database, intent_id, now)
             .await
     }
 }
