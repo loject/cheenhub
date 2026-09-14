@@ -10,6 +10,7 @@ use jni::objects::{JObject, JString, JValue};
 use jni::sys::jint;
 
 use super::IncomingCallNotificationAction;
+use crate::features::runtime::android::guard_jni_result;
 
 const MAX_PENDING_ACTIONS: usize = 8;
 
@@ -39,6 +40,7 @@ pub(crate) fn show_incoming_call_notification(
             )?;
             Ok::<_, jni::errors::Error>(())
         })();
+        let result = guard_jni_result(env, "showCheenHubIncomingCallNotification", result);
         if let Err(error) = result {
             warn!(%error, "failed to show Android incoming-call notification");
         }
@@ -56,6 +58,7 @@ pub(crate) fn clear_incoming_call_notification(call_id: String) {
                 &[JValue::Object(&call_id)],
             )
         });
+        let result = guard_jni_result(env, "clearCheenHubIncomingCallNotification", result);
         if let Err(error) = result {
             warn!(%error, "failed to clear Android incoming-call notification");
         }
@@ -101,6 +104,7 @@ pub(crate) async fn take_pending_incoming_call_notification_action()
             let value: String = env.get_string(&value)?.into();
             Ok(parse_persisted_action(&value))
         })();
+        let result = guard_jni_result(env, "consumeCheenHubPendingDirectCallAction", result);
 
         let _ = sender.send(result);
     });
@@ -120,15 +124,23 @@ pub(crate) async fn take_pending_incoming_call_notification_action()
 
 fn clear_persisted_action(call_id: String) {
     wry::prelude::dispatch(move |env, activity, _| {
-        let Ok(call_id) = env.new_string(call_id) else {
+        let encoded_call_id = env.new_string(call_id);
+        let Ok(call_id) = guard_jni_result(
+            env,
+            "clearCheenHubPendingDirectCallAction.new_string",
+            encoded_call_id,
+        ) else {
             return;
         };
-        if let Err(error) = env.call_method(
+
+        let result = env.call_method(
             activity,
             "clearCheenHubPendingDirectCallAction",
             "(Ljava/lang/String;)V",
             &[JValue::Object(&call_id)],
-        ) {
+        );
+
+        if let Err(error) = guard_jni_result(env, "clearCheenHubPendingDirectCallAction", result) {
             warn!(%error, "failed to clear persisted Android direct-call action");
         }
     });

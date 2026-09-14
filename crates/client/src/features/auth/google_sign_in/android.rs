@@ -11,6 +11,7 @@ use jni::objects::{JObject, JString, JValue};
 use jni::sys::{jboolean, jint, jstring};
 
 use crate::features::auth::google_sign_in::GoogleSignInError;
+use crate::features::runtime::android::guard_jni_result;
 
 type GoogleSignInCallback =
     Box<dyn FnOnce(Result<Option<String>, GoogleSignInError>) + Send + 'static>;
@@ -64,6 +65,7 @@ pub(in crate::features::auth::google_sign_in) async fn request_google_id_token(
                 )
                 .map(|_| ())
             });
+        let result = guard_jni_result(env, "requestCheenHubGoogleIdToken", result);
         if let Err(error) = result {
             warn!(request_id, %error, "failed to dispatch Android Google sign-in");
             finish(

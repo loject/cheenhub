@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 #[cfg(target_os = "android")]
 use super::{
     AndroidBridge, AndroidBridgeError, AndroidPermission, AndroidPushInstallation,
-    ForegroundServiceKind, MediaProjectionGrant, PermissionResult,
+    ForegroundServiceKind, MediaProjectionGrant, PermissionResult, guard_jni_result,
 };
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
@@ -61,12 +61,22 @@ impl AndroidBridge for JniAndroidBridge {
             .insert(request_id, callback);
         if permission == AndroidPermission::PostNotifications {
             wry::prelude::dispatch(move |env, activity, _| {
-                let _ = env.call_method(
+                let result = env.call_method(
                     activity,
                     "requestCheenHubNotificationPermission",
                     "(I)V",
                     &[JValue::Int(request_id)],
                 );
+                if let Err(error) =
+                    guard_jni_result(env, "requestCheenHubNotificationPermission", result)
+                {
+                    finish_permission_request(
+                        request_id,
+                        Err(AndroidBridgeError::new(format!(
+                            "Не удалось запросить Android-разрешение уведомлений: {error}"
+                        ))),
+                    );
+                }
             });
             return Ok(());
         }
@@ -77,13 +87,33 @@ impl AndroidBridge for JniAndroidBridge {
         }
         .to_owned();
         wry::prelude::dispatch(move |env, activity, _| {
-            if let Ok(permission) = env.new_string(permission) {
-                let _ = env.call_method(
+            let result = (|| -> Result<(), AndroidBridgeError> {
+                let encoded_permission = env.new_string(permission);
+                let permission = guard_jni_result(
+                    env,
+                    "requestCheenHubPermission.new_string",
+                    encoded_permission,
+                )
+                .map_err(|error| {
+                    AndroidBridgeError::new(format!(
+                        "Не удалось подготовить Android-разрешение: {error}"
+                    ))
+                })?;
+                let call = env.call_method(
                     activity,
                     "requestCheenHubPermission",
                     "(Ljava/lang/String;I)V",
                     &[JValue::Object(&permission), JValue::Int(request_id)],
                 );
+                guard_jni_result(env, "requestCheenHubPermission", call).map_err(|error| {
+                    AndroidBridgeError::new(format!(
+                        "Не удалось запросить Android-разрешение: {error}"
+                    ))
+                })?;
+                Ok(())
+            })();
+            if let Err(error) = result {
+                finish_permission_request(request_id, Err(error));
             }
         });
         Ok(())
@@ -99,12 +129,20 @@ impl AndroidBridge for JniAndroidBridge {
             .map_err(lock_error)?
             .insert(request_id, callback);
         wry::prelude::dispatch(move |env, activity, _| {
-            let _ = env.call_method(
+            let call = env.call_method(
                 activity,
                 "requestCheenHubMediaProjection",
                 "(I)V",
                 &[JValue::Int(request_id)],
             );
+            if let Err(error) = guard_jni_result(env, "requestCheenHubMediaProjection", call) {
+                finish_projection_request(
+                    request_id,
+                    Err(AndroidBridgeError::new(format!(
+                        "Не удалось открыть Android MediaProjection: {error}"
+                    ))),
+                );
+            }
         });
         Ok(())
     }
@@ -135,12 +173,20 @@ impl AndroidBridge for JniAndroidBridge {
             .map_err(lock_error)?
             .insert(request_id, callback);
         wry::prelude::dispatch(move |env, activity, _| {
-            let _ = env.call_method(
+            let call = env.call_method(
                 activity,
                 "requestCheenHubPushInstallation",
                 "(I)V",
                 &[JValue::Int(request_id)],
             );
+            if let Err(error) = guard_jni_result(env, "requestCheenHubPushInstallation", call) {
+                finish_push_installation_request(
+                    request_id,
+                    Err(AndroidBridgeError::new(format!(
+                        "Не удалось получить Android push installation: {error}"
+                    ))),
+                );
+            }
         });
         Ok(())
     }
@@ -150,33 +196,37 @@ impl AndroidBridge for JniAndroidBridge {
         callback: Box<dyn FnOnce(Result<Option<String>, AndroidBridgeError>) + Send>,
     ) -> Result<(), AndroidBridgeError> {
         wry::prelude::dispatch(move |env, activity, _| {
-            let result = env
-                .call_method(
-                    activity,
-                    "consumeCheenHubPendingDirectMessageConversationId",
-                    "()Ljava/lang/String;",
-                    &[],
-                )
-                .and_then(|value| value.l())
-                .map_err(|error| {
-                    AndroidBridgeError::new(format!(
-                        "Не удалось получить переход из Android-уведомления: {error}"
-                    ))
-                })
-                .and_then(|value| {
-                    if value.is_null() {
-                        Ok(None)
-                    } else {
-                        let value = JString::from(value);
-                        env.get_string(&value)
-                            .map(|value| Some(value.into()))
-                            .map_err(|error| {
-                                AndroidBridgeError::new(format!(
-                                    "Не удалось прочитать идентификатор диалога: {error}"
-                                ))
-                            })
-                    }
-                });
+            let call = env.call_method(
+                activity,
+                "consumeCheenHubPendingDirectMessageConversationId",
+                "()Ljava/lang/String;",
+                &[],
+            );
+            let result = guard_jni_result(
+                env,
+                "consumeCheenHubPendingDirectMessageConversationId",
+                call,
+            )
+            .and_then(|value| value.l())
+            .map_err(|error| {
+                AndroidBridgeError::new(format!(
+                    "Не удалось получить переход из Android-уведомления: {error}"
+                ))
+            })
+            .and_then(|value| {
+                if value.is_null() {
+                    Ok(None)
+                } else {
+                    let value = JString::from(value);
+                    env.get_string(&value)
+                        .map(|value| Some(value.into()))
+                        .map_err(|error| {
+                            AndroidBridgeError::new(format!(
+                                "Не удалось прочитать идентификатор диалога: {error}"
+                            ))
+                        })
+                }
+            });
             callback(result);
         });
         Ok(())
@@ -187,8 +237,9 @@ impl AndroidBridge for JniAndroidBridge {
         callback: Box<dyn FnOnce(Result<bool, AndroidBridgeError>) + Send>,
     ) -> Result<(), AndroidBridgeError> {
         wry::prelude::dispatch(move |env, activity, _| {
-            let result = env
-                .call_method(activity, "consumeCheenHubPendingFriendRequests", "()Z", &[])
+            let call =
+                env.call_method(activity, "consumeCheenHubPendingFriendRequests", "()Z", &[]);
+            let result = guard_jni_result(env, "consumeCheenHubPendingFriendRequests", call)
                 .and_then(|value| value.z())
                 .map_err(|error| {
                     AndroidBridgeError::new(format!(
@@ -206,23 +257,35 @@ impl AndroidBridge for JniAndroidBridge {
     ) -> Result<(), AndroidBridgeError> {
         wry::prelude::dispatch(move |env, activity, _| match conversation_id {
             Some(conversation_id) => {
-                if let Ok(conversation_id) = env.new_string(conversation_id) {
-                    let _ = env.call_method(
+                let encoded = env.new_string(conversation_id);
+                if let Ok(conversation_id) = guard_jni_result(
+                    env,
+                    "setCheenHubActiveDirectMessageConversationId.new_string",
+                    encoded,
+                ) {
+                    let result = env.call_method(
                         activity,
                         "setCheenHubActiveDirectMessageConversationId",
                         "(Ljava/lang/String;)V",
                         &[JValue::Object(&conversation_id)],
                     );
+                    let _ = guard_jni_result(
+                        env,
+                        "setCheenHubActiveDirectMessageConversationId",
+                        result,
+                    );
                 }
             }
             None => {
                 let null = JObject::null();
-                let _ = env.call_method(
+                let result = env.call_method(
                     activity,
                     "setCheenHubActiveDirectMessageConversationId",
                     "(Ljava/lang/String;)V",
                     &[JValue::Object(&null)],
                 );
+                let _ =
+                    guard_jni_result(env, "setCheenHubActiveDirectMessageConversationId", result);
             }
         });
         Ok(())
@@ -233,13 +296,19 @@ impl AndroidBridge for JniAndroidBridge {
         conversation_id: String,
     ) -> Result<(), AndroidBridgeError> {
         wry::prelude::dispatch(move |env, activity, _| {
-            if let Ok(conversation_id) = env.new_string(conversation_id) {
-                let _ = env.call_method(
+            let encoded = env.new_string(conversation_id);
+            if let Ok(conversation_id) = guard_jni_result(
+                env,
+                "clearCheenHubDirectMessageNotification.new_string",
+                encoded,
+            ) {
+                let result = env.call_method(
                     activity,
                     "clearCheenHubDirectMessageNotification",
                     "(Ljava/lang/String;)V",
                     &[JValue::Object(&conversation_id)],
                 );
+                let _ = guard_jni_result(env, "clearCheenHubDirectMessageNotification", result);
             }
         });
         Ok(())
@@ -275,13 +344,15 @@ fn dispatch_service(method: &'static str, kind: ForegroundServiceKind) {
     }
     .to_owned();
     wry::prelude::dispatch(move |env, activity, _| {
-        if let Ok(kind) = env.new_string(kind) {
-            let _ = env.call_method(
+        let encoded = env.new_string(kind);
+        if let Ok(kind) = guard_jni_result(env, "foregroundService.new_string", encoded) {
+            let result = env.call_method(
                 activity,
                 method,
                 "(Ljava/lang/String;)V",
                 &[JValue::Object(&kind)],
             );
+            let _ = guard_jni_result(env, method, result);
         }
     });
 }
@@ -304,6 +375,48 @@ fn projection_callbacks() -> &'static Mutex<HashMap<i32, ProjectionCallback>> {
 #[cfg(target_os = "android")]
 fn push_installation_callbacks() -> &'static Mutex<HashMap<i32, PushInstallationCallback>> {
     PUSH_INSTALLATION_CALLBACKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[cfg(target_os = "android")]
+fn finish_permission_request(
+    request_id: i32,
+    result: Result<PermissionResult, AndroidBridgeError>,
+) {
+    let callback = permission_callbacks()
+        .lock()
+        .ok()
+        .and_then(|mut callbacks| callbacks.remove(&request_id));
+    if let Some(callback) = callback {
+        callback(result);
+    }
+}
+
+#[cfg(target_os = "android")]
+fn finish_projection_request(
+    request_id: i32,
+    result: Result<Option<MediaProjectionGrant>, AndroidBridgeError>,
+) {
+    let callback = projection_callbacks()
+        .lock()
+        .ok()
+        .and_then(|mut callbacks| callbacks.remove(&request_id));
+    if let Some(callback) = callback {
+        callback(result);
+    }
+}
+
+#[cfg(target_os = "android")]
+fn finish_push_installation_request(
+    request_id: i32,
+    result: Result<AndroidPushInstallation, AndroidBridgeError>,
+) {
+    let callback = push_installation_callbacks()
+        .lock()
+        .ok()
+        .and_then(|mut callbacks| callbacks.remove(&request_id));
+    if let Some(callback) = callback {
+        callback(result);
+    }
 }
 
 #[cfg(target_os = "android")]

@@ -8,6 +8,8 @@ use jni::objects::{GlobalRef, JByteBuffer, JObject, JValue};
 use jni::{JNIEnv, JavaVM};
 use ndk_context::android_context;
 
+use crate::features::runtime::android::guard_jni_result;
+
 use super::super::backend::{
     EncodedVideoFrame, EncodedVideoFrameCallback, VideoCodec, VideoEncoderConfig,
     VideoEncoderDescriptor, VideoEncodingAcceleratorKind, VideoEncodingError, VideoEncodingManager,
@@ -59,72 +61,117 @@ impl AndroidSurfaceVideoEncoder {
             .attach_current_thread()
             .map_err(|error| media_error("Не удалось подключить поток к Android JavaVM", error))?;
 
-        let mime = env
-            .new_string(MIME_VP9)
-            .map_err(|error| media_error("Не удалось создать MIME VP9", error))?;
-        let codec = env
-            .call_static_method(
-                "android/media/MediaCodec",
-                "createEncoderByType",
-                "(Ljava/lang/String;)Landroid/media/MediaCodec;",
-                &[JValue::Object(&mime)],
-            )
-            .and_then(|value| value.l())
-            .map_err(|error| {
-                media_error("Устройство не предоставляет VP9 MediaCodec encoder", error)
-            })?;
+        let mime = guard_media_jni(
+            &mut env,
+            "MediaCodec.mime.new_string",
+            "Не удалось создать MIME VP9",
+            |env| env.new_string(MIME_VP9),
+        )?;
+        let codec = guard_media_jni(
+            &mut env,
+            "MediaCodec.createEncoderByType",
+            "Устройство не предоставляет VP9 MediaCodec encoder",
+            |env| {
+                env.call_static_method(
+                    "android/media/MediaCodec",
+                    "createEncoderByType",
+                    "(Ljava/lang/String;)Landroid/media/MediaCodec;",
+                    &[JValue::Object(&mime)],
+                )
+            },
+        )?
+        .l()
+        .map_err(|error| {
+            media_error("Устройство не предоставляет VP9 MediaCodec encoder", error)
+        })?;
 
-        let format = env
-            .call_static_method(
-                "android/media/MediaFormat",
-                "createVideoFormat",
-                "(Ljava/lang/String;II)Landroid/media/MediaFormat;",
-                &[
-                    JValue::Object(&mime),
-                    JValue::Int(config.width as i32),
-                    JValue::Int(config.height as i32),
-                ],
-            )
-            .and_then(|value| value.l())
-            .map_err(|error| media_error("Не удалось создать MediaFormat для VP9", error))?;
+        let format = guard_media_jni(
+            &mut env,
+            "MediaFormat.createVideoFormat",
+            "Не удалось создать MediaFormat для VP9",
+            |env| {
+                env.call_static_method(
+                    "android/media/MediaFormat",
+                    "createVideoFormat",
+                    "(Ljava/lang/String;II)Landroid/media/MediaFormat;",
+                    &[
+                        JValue::Object(&mime),
+                        JValue::Int(config.width as i32),
+                        JValue::Int(config.height as i32),
+                    ],
+                )
+            },
+        )?
+        .l()
+        .map_err(|error| media_error("Не удалось создать MediaFormat для VP9", error))?;
         set_integer(&mut env, &format, "bitrate", config.bitrate_bps as i32)?;
         set_integer(&mut env, &format, "frame-rate", config.frame_rate as i32)?;
         set_integer(&mut env, &format, "i-frame-interval", 2)?;
         set_integer(&mut env, &format, "color-format", 0x7F00_0789)?; // COLOR_FormatSurface
 
-        env.call_method(
-            &codec,
-            "configure",
-            "(Landroid/media/MediaFormat;Landroid/view/Surface;Landroid/media/MediaCrypto;I)V",
-            &[
-                JValue::Object(&format),
-                JValue::Object(&JObject::null()),
-                JValue::Object(&JObject::null()),
-                JValue::Int(CONFIGURE_FLAG_ENCODE),
-            ],
-        )
-        .map_err(|error| media_error("VP9 MediaCodec отклонил конфигурацию", error))?;
-        let surface = env
-            .call_method(
-                &codec,
-                "createInputSurface",
-                "()Landroid/view/Surface;",
-                &[],
-            )
-            .and_then(|value| value.l())
-            .and_then(|surface| env.new_global_ref(surface))
-            .map_err(|error| {
-                media_error("Не удалось создать входной Surface VP9 encoder", error)
-            })?;
-        env.call_method(&codec, "start", "()V", &[])
-            .map_err(|error| media_error("Не удалось запустить VP9 MediaCodec", error))?;
-        let buffer_info = env
-            .new_object("android/media/MediaCodec$BufferInfo", "()V", &[])
-            .and_then(|info| env.new_global_ref(info))
-            .map_err(|error| media_error("Не удалось создать MediaCodec.BufferInfo", error))?;
-        let codec = env
-            .new_global_ref(codec)
-            .map_err(|error| media_error("Не удалось сохранить VP9 MediaCodec", error))?;
+        guard_media_jni(
+            &mut env,
+            "MediaCodec.configure",
+            "VP9 MediaCodec отклонил конфигурацию",
+            |env| {
+                env.call_method(
+                    &codec,
+                    "configure",
+                    "(Landroid/media/MediaFormat;Landroid/view/Surface;Landroid/media/MediaCrypto;I)V",
+                    &[
+                        JValue::Object(&format),
+                        JValue::Object(&JObject::null()),
+                        JValue::Object(&JObject::null()),
+                        JValue::Int(CONFIGURE_FLAG_ENCODE),
+                    ],
+                )
+            },
+        )?;
+        let surface = guard_media_jni(
+            &mut env,
+            "MediaCodec.createInputSurface",
+            "Не удалось создать входной Surface VP9 encoder",
+            |env| {
+                env.call_method(
+                    &codec,
+                    "createInputSurface",
+                    "()Landroid/view/Surface;",
+                    &[],
+                )
+            },
+        )?
+        .l()
+        .map_err(|error| media_error("Не удалось создать входной Surface VP9 encoder", error))?;
+        let surface = guard_media_jni(
+            &mut env,
+            "MediaCodec.createInputSurface.new_global_ref",
+            "Не удалось сохранить входной Surface VP9 encoder",
+            |env| env.new_global_ref(&surface),
+        )?;
+        guard_media_jni(
+            &mut env,
+            "MediaCodec.start",
+            "Не удалось запустить VP9 MediaCodec",
+            |env| env.call_method(&codec, "start", "()V", &[]),
+        )?;
+        let buffer_info = guard_media_jni(
+            &mut env,
+            "MediaCodec.BufferInfo.new_object",
+            "Не удалось создать MediaCodec.BufferInfo",
+            |env| env.new_object("android/media/MediaCodec$BufferInfo", "()V", &[]),
+        )?;
+        let buffer_info = guard_media_jni(
+            &mut env,
+            "MediaCodec.BufferInfo.new_global_ref",
+            "Не удалось сохранить MediaCodec.BufferInfo",
+            |env| env.new_global_ref(&buffer_info),
+        )?;
+        let codec = guard_media_jni(
+            &mut env,
+            "MediaCodec.new_global_ref",
+            "Не удалось сохранить VP9 MediaCodec",
+            |env| env.new_global_ref(&codec),
+        )?;
         drop(env);
 
         Ok(Self {
@@ -155,61 +202,85 @@ impl AndroidSurfaceVideoEncoder {
             .map_err(|error| media_error("Не удалось подключить поток VP9 drain", error))?;
         loop {
             let info = self.buffer_info.borrow();
-            let index = env
-                .call_method(
-                    self.codec.as_obj(),
-                    "dequeueOutputBuffer",
-                    "(Landroid/media/MediaCodec$BufferInfo;J)I",
-                    &[JValue::Object(info.as_obj()), JValue::Long(0)],
-                )
-                .and_then(|value| value.i())
-                .map_err(|error| media_error("Ошибка чтения VP9 MediaCodec output", error))?;
+            let index = guard_media_jni(
+                &mut env,
+                "MediaCodec.dequeueOutputBuffer",
+                "Ошибка чтения VP9 MediaCodec output",
+                |env| {
+                    env.call_method(
+                        self.codec.as_obj(),
+                        "dequeueOutputBuffer",
+                        "(Landroid/media/MediaCodec$BufferInfo;J)I",
+                        &[JValue::Object(info.as_obj()), JValue::Long(0)],
+                    )
+                },
+            )?
+            .i()
+            .map_err(|error| media_error("Ошибка чтения VP9 MediaCodec output", error))?;
             if index < 0 {
                 break;
             }
-            let flags = env
-                .get_field(info.as_obj(), "flags", "I")
-                .and_then(|v| v.i())
-                .map_err(|error| media_error("Не удалось прочитать flags encoded buffer", error))?;
-            let size = env
-                .get_field(info.as_obj(), "size", "I")
-                .and_then(|v| v.i())
-                .map_err(|error| {
-                    media_error("Не удалось прочитать размер encoded buffer", error)
-                })?;
-            let offset = env
-                .get_field(info.as_obj(), "offset", "I")
-                .and_then(|value| value.i())
-                .map_err(|error| {
-                    media_error("Не удалось прочитать смещение encoded buffer", error)
-                })?;
-            let timestamp_us = env
-                .get_field(info.as_obj(), "presentationTimeUs", "J")
-                .and_then(|v| v.j())
-                .map_err(|error| {
-                    media_error("Не удалось прочитать timestamp encoded buffer", error)
-                })?;
+            let flags = guard_media_jni(
+                &mut env,
+                "MediaCodec.BufferInfo.flags",
+                "Не удалось прочитать flags encoded buffer",
+                |env| env.get_field(info.as_obj(), "flags", "I"),
+            )?
+            .i()
+            .map_err(|error| media_error("Не удалось прочитать flags encoded buffer", error))?;
+            let size = guard_media_jni(
+                &mut env,
+                "MediaCodec.BufferInfo.size",
+                "Не удалось прочитать размер encoded buffer",
+                |env| env.get_field(info.as_obj(), "size", "I"),
+            )?
+            .i()
+            .map_err(|error| media_error("Не удалось прочитать размер encoded buffer", error))?;
+            let offset = guard_media_jni(
+                &mut env,
+                "MediaCodec.BufferInfo.offset",
+                "Не удалось прочитать смещение encoded buffer",
+                |env| env.get_field(info.as_obj(), "offset", "I"),
+            )?
+            .i()
+            .map_err(|error| media_error("Не удалось прочитать смещение encoded buffer", error))?;
+            let timestamp_us = guard_media_jni(
+                &mut env,
+                "MediaCodec.BufferInfo.presentationTimeUs",
+                "Не удалось прочитать timestamp encoded buffer",
+                |env| env.get_field(info.as_obj(), "presentationTimeUs", "J"),
+            )?
+            .j()
+            .map_err(|error| media_error("Не удалось прочитать timestamp encoded buffer", error))?;
             if size > 0 && flags & BUFFER_FLAG_CODEC_CONFIG == 0 {
-                let buffer = env
-                    .call_method(
-                        self.codec.as_obj(),
-                        "getOutputBuffer",
-                        "(I)Ljava/nio/ByteBuffer;",
-                        &[JValue::Int(index)],
-                    )
-                    .and_then(|value| value.l())
-                    .map_err(|error| media_error("Не удалось получить VP9 output buffer", error))?;
+                let buffer = guard_media_jni(
+                    &mut env,
+                    "MediaCodec.getOutputBuffer",
+                    "Не удалось получить VP9 output buffer",
+                    |env| {
+                        env.call_method(
+                            self.codec.as_obj(),
+                            "getOutputBuffer",
+                            "(I)Ljava/nio/ByteBuffer;",
+                            &[JValue::Int(index)],
+                        )
+                    },
+                )?
+                .l()
+                .map_err(|error| media_error("Не удалось получить VP9 output buffer", error))?;
                 let byte_buffer = JByteBuffer::from(buffer);
-                let address = env
-                    .get_direct_buffer_address(&byte_buffer)
-                    .map_err(|error| {
-                        media_error("VP9 output buffer не является direct ByteBuffer", error)
-                    })?;
-                let capacity = env
-                    .get_direct_buffer_capacity(&byte_buffer)
-                    .map_err(|error| {
-                        media_error("Не удалось получить размер VP9 output buffer", error)
-                    })?;
+                let address = guard_media_jni(
+                    &mut env,
+                    "ByteBuffer.get_direct_buffer_address",
+                    "VP9 output buffer не является direct ByteBuffer",
+                    |env| env.get_direct_buffer_address(&byte_buffer),
+                )?;
+                let capacity = guard_media_jni(
+                    &mut env,
+                    "ByteBuffer.get_direct_buffer_capacity",
+                    "Не удалось получить размер VP9 output buffer",
+                    |env| env.get_direct_buffer_capacity(&byte_buffer),
+                )?;
                 let start = offset.max(0) as usize;
                 let end = start.saturating_add(size as usize);
                 if end > capacity {
@@ -235,13 +306,19 @@ impl AndroidSurfaceVideoEncoder {
                     bytes,
                 });
             }
-            env.call_method(
-                self.codec.as_obj(),
-                "releaseOutputBuffer",
-                "(IZ)V",
-                &[JValue::Int(index), JValue::Bool(0)],
-            )
-            .map_err(|error| media_error("Не удалось освободить VP9 output buffer", error))?;
+            guard_media_jni(
+                &mut env,
+                "MediaCodec.releaseOutputBuffer",
+                "Не удалось освободить VP9 output buffer",
+                |env| {
+                    env.call_method(
+                        self.codec.as_obj(),
+                        "releaseOutputBuffer",
+                        "(IZ)V",
+                        &[JValue::Int(index), JValue::Bool(0)],
+                    )
+                },
+            )?;
         }
         Ok(())
     }
@@ -261,11 +338,26 @@ impl VideoFrameEncoder for AndroidSurfaceVideoEncoder {
         let mut env = self.vm.attach_current_thread().map_err(|error| {
             media_error("Не удалось подключить поток остановки VP9 encoder", error)
         })?;
-        let _ = env.call_method(self.codec.as_obj(), "signalEndOfInputStream", "()V", &[]);
-        env.call_method(self.codec.as_obj(), "stop", "()V", &[])
-            .map_err(|error| media_error("Не удалось остановить VP9 MediaCodec", error))?;
-        env.call_method(self.codec.as_obj(), "release", "()V", &[])
-            .map_err(|error| media_error("Не удалось освободить VP9 MediaCodec", error))?;
+        let _ = guard_media_jni(
+            &mut env,
+            "MediaCodec.signalEndOfInputStream",
+            "Не удалось завершить входной поток VP9 MediaCodec",
+            |env| env.call_method(self.codec.as_obj(), "signalEndOfInputStream", "()V", &[]),
+        );
+
+        guard_media_jni(
+            &mut env,
+            "MediaCodec.stop",
+            "Не удалось остановить VP9 MediaCodec",
+            |env| env.call_method(self.codec.as_obj(), "stop", "()V", &[]),
+        )?;
+
+        guard_media_jni(
+            &mut env,
+            "MediaCodec.release",
+            "Не удалось освободить VP9 MediaCodec",
+            |env| env.call_method(self.codec.as_obj(), "release", "()V", &[]),
+        )?;
         Ok(())
     }
 }
@@ -338,17 +430,38 @@ fn set_integer(
     key: &str,
     value: i32,
 ) -> Result<(), VideoEncodingError> {
-    let key = env
-        .new_string(key)
-        .map_err(|error| media_error("Не удалось создать ключ MediaFormat", error))?;
-    env.call_method(
-        format,
-        "setInteger",
-        "(Ljava/lang/String;I)V",
-        &[JValue::Object(&key), JValue::Int(value)],
-    )
-    .map_err(|error| media_error("Не удалось настроить MediaFormat", error))?;
+    let key = guard_media_jni(
+        env,
+        "MediaFormat.setInteger.new_string",
+        "Не удалось создать ключ MediaFormat",
+        |env| env.new_string(key),
+    )?;
+
+    guard_media_jni(
+        env,
+        "MediaFormat.setInteger",
+        "Не удалось настроить MediaFormat",
+        |env| {
+            env.call_method(
+                format,
+                "setInteger",
+                "(Ljava/lang/String;I)V",
+                &[JValue::Object(&key), JValue::Int(value)],
+            )
+        },
+    )?;
+
     Ok(())
+}
+
+fn guard_media_jni<'local, T>(
+    env: &mut JNIEnv<'local>,
+    operation: &str,
+    context: &str,
+    call: impl FnOnce(&mut JNIEnv<'local>) -> jni::errors::Result<T>,
+) -> Result<T, VideoEncodingError> {
+    let result = call(env);
+    guard_jni_result(env, operation, result).map_err(|error| media_error(context, error))
 }
 
 fn media_error(context: &str, error: impl std::fmt::Display) -> VideoEncodingError {

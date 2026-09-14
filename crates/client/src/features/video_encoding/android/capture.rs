@@ -12,7 +12,7 @@ use jni::JNIEnv;
 use jni::objects::{GlobalRef, JObject, JValue};
 
 use crate::features::runtime::android::{
-    AndroidPermission, ForegroundServiceKind, PermissionResult, android_bridge,
+    AndroidPermission, ForegroundServiceKind, PermissionResult, android_bridge, guard_jni_result,
     take_media_projection_grant,
 };
 
@@ -74,7 +74,9 @@ impl AndroidVideoCaptureSession for JniAndroidVideoCaptureSession {
         CAPTURE_ENDED_CALLBACKS.with(|callbacks| callbacks.borrow_mut().remove(&self.id));
         let id = self.id;
         wry::prelude::dispatch(move |env, activity, _| {
-            let _ = env.call_method(activity, "stopCheenHubCapture", "(I)V", &[JValue::Int(id)]);
+            let result =
+                env.call_method(activity, "stopCheenHubCapture", "(I)V", &[JValue::Int(id)]);
+            let _ = guard_jni_result(env, "stopCheenHubCapture", result);
         });
         android_bridge()
             .map_err(|e| e.to_string())?
@@ -201,19 +203,19 @@ async fn dispatch_camera_start(
 ) -> Result<(), String> {
     let (sender, receiver) = futures_channel::oneshot::channel();
     wry::prelude::dispatch(move |env, activity, _| {
-        let result = env
-            .call_method(
-                activity,
-                "startCheenHubCamera",
-                "(ILandroid/view/Surface;III)V",
-                &[
-                    JValue::Int(id),
-                    JValue::Object(surface.as_obj()),
-                    JValue::Int(width as i32),
-                    JValue::Int(height as i32),
-                    JValue::Int(fps as i32),
-                ],
-            )
+        let call = env.call_method(
+            activity,
+            "startCheenHubCamera",
+            "(ILandroid/view/Surface;III)V",
+            &[
+                JValue::Int(id),
+                JValue::Object(surface.as_obj()),
+                JValue::Int(width as i32),
+                JValue::Int(height as i32),
+                JValue::Int(fps as i32),
+            ],
+        );
+        let result = guard_jni_result(env, "startCheenHubCamera", call)
             .map(|_| ())
             .map_err(|e| e.to_string());
         let _ = sender.send(result);
@@ -232,19 +234,19 @@ async fn dispatch_screen_start(
 ) -> Result<(), String> {
     let (sender, receiver) = futures_channel::oneshot::channel();
     wry::prelude::dispatch(move |env, activity, _| {
-        let result = env
-            .call_method(
-                activity,
-                "startCheenHubScreenShare",
-                "(ILandroid/content/Intent;Landroid/view/Surface;II)V",
-                &[
-                    JValue::Int(id),
-                    JValue::Object(intent.as_obj()),
-                    JValue::Object(surface.as_obj()),
-                    JValue::Int(width as i32),
-                    JValue::Int(height as i32),
-                ],
-            )
+        let call = env.call_method(
+            activity,
+            "startCheenHubScreenShare",
+            "(ILandroid/content/Intent;Landroid/view/Surface;II)V",
+            &[
+                JValue::Int(id),
+                JValue::Object(intent.as_obj()),
+                JValue::Object(surface.as_obj()),
+                JValue::Int(width as i32),
+                JValue::Int(height as i32),
+            ],
+        );
+        let result = guard_jni_result(env, "startCheenHubScreenShare", call)
             .map(|_| ())
             .map_err(|e| e.to_string());
         let _ = sender.send(result);

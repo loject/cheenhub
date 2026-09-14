@@ -5,8 +5,10 @@
 use std::fmt;
 
 mod bridge;
+mod jni_guard;
 
 pub(crate) use bridge::{android_bridge, take_media_projection_grant};
+pub(crate) use jni_guard::guard_jni_result;
 
 /// Runtime-разрешение, запрашиваемое у Android Activity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -10,6 +10,7 @@ use crate::features::application_update::{
     AvailableUpdate, DownloadedUpdate, UpdateDownloadAsset, UpdateDownloadProgress,
     UpdateDownloadStatus,
 };
+use crate::features::runtime::android::guard_jni_result;
 
 const PREFERRED_SUFFIXES: &[&str] = &["android.apk"];
 
@@ -98,7 +99,7 @@ pub(crate) fn install_downloaded_update(
 async fn open_external_browser(download_url: String) -> Result<(), String> {
     let (sender, receiver) = oneshot::channel();
     wry::prelude::dispatch(move |env, activity, _| {
-        let result = env
+        let call = env
             .new_string(download_url)
             .and_then(|download_url| {
                 env.call_method(
@@ -108,7 +109,9 @@ async fn open_external_browser(download_url: String) -> Result<(), String> {
                     &[JValue::Object(&download_url)],
                 )
             })
-            .and_then(|result| result.z())
+            .and_then(|result| result.z());
+
+        let result = guard_jni_result(env, "openCheenHubUpdateDownload", call)
             .map_err(|error| format!("Не удалось передать ссылку Android: {error}"))
             .and_then(|opened| {
                 opened

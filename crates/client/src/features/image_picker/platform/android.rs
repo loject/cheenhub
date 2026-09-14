@@ -11,6 +11,7 @@ use jni::objects::{JByteArray, JClass, JObject, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jstring};
 
 use super::super::backend::{ImagePickerOutcome, PickedImage, oversized_image_message};
+use crate::features::runtime::android::guard_jni_result;
 
 #[manganis::ffi("android/image-picker")]
 unsafe extern "Kotlin" {}
@@ -152,9 +153,10 @@ fn load_app_class<'local>(
 }
 
 fn clear_jni_exception(env: &mut JNIEnv<'_>, context: &str, error: jni::errors::Error) -> String {
-    if env.exception_check().unwrap_or(false) {
-        let _ = env.exception_clear();
-    }
+    let error = match guard_jni_result::<()>(env, context, Err(error)) {
+        Err(error) => error,
+        Ok(()) => unreachable!("guarding a JNI error unexpectedly returned Ok"),
+    };
     format!("{context}: {error}")
 }
 

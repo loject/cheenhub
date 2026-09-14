@@ -10,7 +10,7 @@ use jni::objects::{JObject, JValue};
 use jni::sys::jint;
 
 use crate::features::runtime::android::{
-    AndroidBridgeError, ForegroundServiceKind, android_bridge,
+    AndroidBridgeError, ForegroundServiceKind, android_bridge, guard_jni_result,
 };
 
 use super::{
@@ -55,9 +55,10 @@ pub(crate) async fn load_voice_output_route() -> Result<Option<VoiceOutputRoute>
 {
     let (sender, receiver) = oneshot::channel();
     wry::prelude::dispatch(move |env, activity, _| {
-        let result = env
+        let call = env
             .call_method(activity, "getCheenHubVoiceOutputRoute", "()I", &[])
-            .and_then(|value| value.i())
+            .and_then(|value| value.i());
+        let result = guard_jni_result(env, "getCheenHubVoiceOutputRoute", call)
             .map_err(|error| {
                 AndroidBridgeError::new(format!(
                     "Не удалось получить Android-маршрут вывода звонка: {error}"
@@ -91,14 +92,15 @@ pub(crate) async fn set_voice_output_route(
     let speaker = route == VoiceOutputRoute::Speaker;
     let (sender, receiver) = oneshot::channel();
     wry::prelude::dispatch(move |env, activity, _| {
-        let result = env
+        let call = env
             .call_method(
                 activity,
                 "setCheenHubVoiceOutputRoute",
                 "(Z)Z",
                 &[JValue::Bool(speaker.into())],
             )
-            .and_then(|value| value.z())
+            .and_then(|value| value.z());
+        let result = guard_jni_result(env, "setCheenHubVoiceOutputRoute", call)
             .map_err(|error| {
                 AndroidBridgeError::new(format!(
                     "Не удалось переключить Android-маршрут вывода звонка: {error}"
@@ -139,7 +141,7 @@ pub(crate) fn update_active_voice_notification(notification: Option<ActiveVoiceN
     wry::prelude::dispatch(move |env, activity, _| {
         let empty = JObject::null();
         let Some(notification) = notification else {
-            if let Err(error) = env.call_method(
+            let result = env.call_method(
                 activity,
                 "updateCheenHubVoiceNotification",
                 "(ZILjava/lang/String;Ljava/lang/String;I)V",
@@ -150,7 +152,8 @@ pub(crate) fn update_active_voice_notification(notification: Option<ActiveVoiceN
                     JValue::Object(&empty),
                     JValue::Int(0),
                 ],
-            ) {
+            );
+            if let Err(error) = guard_jni_result(env, "updateCheenHubVoiceNotification", result) {
                 warn!(%error, "failed to clear Android active voice notification");
             }
             return;
@@ -166,21 +169,33 @@ pub(crate) fn update_active_voice_notification(notification: Option<ActiveVoiceN
             VoiceNotificationMicrophoneState::Live => 2,
             VoiceNotificationMicrophoneState::Unavailable => 3,
         };
-        let target_id = match env.new_string(notification.target_id) {
+        let target_id_result = env.new_string(notification.target_id);
+        let target_id = match guard_jni_result(
+            env,
+            "updateCheenHubVoiceNotification.target_id",
+            target_id_result,
+        ) {
             Ok(value) => value,
             Err(error) => {
                 warn!(%error, "failed to encode Android voice notification target id");
                 return;
             }
         };
-        let target_name = match env.new_string(notification.target_name) {
+
+        let target_name_result = env.new_string(notification.target_name);
+        let target_name = match guard_jni_result(
+            env,
+            "updateCheenHubVoiceNotification.target_name",
+            target_name_result,
+        ) {
             Ok(value) => value,
             Err(error) => {
                 warn!(%error, "failed to encode Android voice notification target name");
                 return;
             }
         };
-        if let Err(error) = env.call_method(
+
+        let result = env.call_method(
             activity,
             "updateCheenHubVoiceNotification",
             "(ZILjava/lang/String;Ljava/lang/String;I)V",
@@ -191,7 +206,8 @@ pub(crate) fn update_active_voice_notification(notification: Option<ActiveVoiceN
                 JValue::Object(&target_name),
                 JValue::Int(microphone),
             ],
-        ) {
+        );
+        if let Err(error) = guard_jni_result(env, "updateCheenHubVoiceNotification", result) {
             warn!(%error, target_kind, microphone, "failed to update Android active voice notification");
         }
     });
