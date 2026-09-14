@@ -11,3 +11,4 @@
 
 -keep,allowoptimization class ru.cheenhub.imagepicker.** {
     *;
+}
