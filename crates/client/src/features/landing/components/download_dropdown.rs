@@ -5,11 +5,15 @@ use dioxus::prelude::*;
 use crate::features::landing::components::chevron_down_icon::ChevronDownIcon;
 use crate::features::landing::components::download_icon::DownloadIcon;
 use crate::features::landing::components::download_link::DownloadLink;
-use crate::features::landing::data::{app_version, windows_installer_url};
+use crate::features::landing::data::{
+    android_apk_url, app_version, linux_deb_url, windows_installer_url,
+};
 
 #[component]
 pub(crate) fn DownloadDropdown(opens_up: bool, large: bool) -> Element {
     let app_version = app_version();
+    let android_apk_url = android_apk_url();
+    let linux_deb_url = linux_deb_url();
     let windows_installer_url = windows_installer_url();
     let mut is_open = use_signal(|| false);
 
@@ -76,19 +80,53 @@ pub(crate) fn DownloadDropdown(opens_up: bool, large: bool) -> Element {
                 }
 
                 DownloadLink {
-                    href: None,
-                    label: "Ubuntu/Linux",
+                    href: Some(linux_deb_url),
+                    label: "Ubuntu",
                     format: ".deb",
-                    disabled: true,
-                    status: Some("в разработке"),
+                    disabled: false,
+                    status: None,
                 }
 
                 DownloadLink {
                     href: None,
+                    label: "Linux AppImage",
+                    format: ".AppImage",
+                    disabled: true,
+                    status: Some("скоро"),
+                }
+
+                DownloadLink {
+                    href: Some(android_apk_url),
                     label: "Android",
                     format: ".apk",
+                    disabled: false,
+                    status: None,
+                }
+
+                DownloadLink {
+                    href: Some("https://www.rustore.ru/catalog/app/ru.cheenhub".to_owned()),
+                    label: "Android · RuStore",
+                    format: "RuStore",
+                    disabled: false,
+                    status: None,
+                }
+
+                DownloadLink {
+                    href: None,
+                    label: "Google Play",
+                    format: "Google Play",
                     disabled: true,
-                    status: Some("в разработке"),
+                    status: Some("скоро"),
+                }
+
+                div { class: "my-1 h-px bg-zinc-800/80" }
+
+                DownloadLink {
+                    href: Some("https://github.com/loject/cheenhub".to_owned()),
+                    label: "Собрать из исходников",
+                    format: "GitHub",
+                    disabled: false,
+                    status: None,
                 }
             }
         }

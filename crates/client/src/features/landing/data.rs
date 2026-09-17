@@ -55,9 +55,35 @@ pub(crate) fn windows_installer_url() -> String {
     windows_installer_url_for_release(&release_version)
 }
 
+/// Возвращает ссылку на Ubuntu DEB-пакет последнего релиза.
+pub(crate) fn linux_deb_url() -> String {
+    let release_version = release_version_tag();
+
+    linux_deb_url_for_release(&release_version)
+}
+
+/// Возвращает ссылку на Android APK последнего релиза.
+pub(crate) fn android_apk_url() -> String {
+    let release_version = release_version_tag();
+
+    android_apk_url_for_release(&release_version)
+}
+
 fn windows_installer_url_for_release(release_version: &str) -> String {
     format!(
         "https://github.com/loject/cheenhub/releases/download/{release_version}/cheenhub-{release_version}-windows-x64-setup.exe"
+    )
+}
+
+fn linux_deb_url_for_release(release_version: &str) -> String {
+    format!(
+        "https://github.com/loject/cheenhub/releases/download/{release_version}/cheenhub-{release_version}-linux-x64.deb"
+    )
+}
+
+fn android_apk_url_for_release(release_version: &str) -> String {
+    format!(
+        "https://github.com/loject/cheenhub/releases/download/{release_version}/cheenhub-{release_version}-android.apk"
     )
 }
 
@@ -175,7 +201,10 @@ pub(crate) const TECH_GROUPS: &[TechGroup] = &[
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_release_version_tag, windows_installer_url_for_release};
+    use super::{
+        android_apk_url_for_release, linux_deb_url_for_release, normalize_release_version_tag,
+        windows_installer_url_for_release,
+    };
 
     #[test]
     fn release_version_tag_adds_missing_prefix() {
@@ -192,6 +221,22 @@ mod tests {
         assert_eq!(
             windows_installer_url_for_release("v0.18.1"),
             "https://github.com/loject/cheenhub/releases/download/v0.18.1/cheenhub-v0.18.1-windows-x64-setup.exe"
+        );
+    }
+
+    #[test]
+    fn linux_deb_url_uses_same_version_for_tag_and_filename() {
+        assert_eq!(
+            linux_deb_url_for_release("v0.18.1"),
+            "https://github.com/loject/cheenhub/releases/download/v0.18.1/cheenhub-v0.18.1-linux-x64.deb"
+        );
+    }
+
+    #[test]
+    fn android_apk_url_uses_same_version_for_tag_and_filename() {
+        assert_eq!(
+            android_apk_url_for_release("v0.18.1"),
+            "https://github.com/loject/cheenhub/releases/download/v0.18.1/cheenhub-v0.18.1-android.apk"
         );
     }
 }
