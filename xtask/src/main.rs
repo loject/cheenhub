@@ -545,7 +545,8 @@ fn create_git_tag(tag: &str) -> XtaskResult<()> {
 
 fn push_git_tag(tag: &str) -> XtaskResult<()> {
     println!("Pushing git tag {tag} to origin.");
-    checked_command(&mut push_git_tag_command(tag))?;
+    checked_status(&mut push_git_tag_command(tag))?;
+    println!("Pushed git tag {tag} to origin.");
     Ok(())
 }
 
@@ -693,5 +694,17 @@ mod tests {
 
         assert!(updated.contains("[workspace.package]\nversion = \"0.13.0\"\nedition = \"2024\""));
         assert!(updated.contains("[package]\nversion = \"ignored\""));
+    }
+
+    #[test]
+    fn pushes_only_the_created_tag_to_origin() {
+        let command = push_git_tag_command("v0.13.0");
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(command.get_program(), "git");
+        assert_eq!(args, ["push", "origin", "refs/tags/v0.13.0"]);
     }
 }
