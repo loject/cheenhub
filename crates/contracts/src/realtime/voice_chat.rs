@@ -56,6 +56,10 @@ pub enum VoiceChatKind {
     VideoStreamEnded,
     /// Актуальный целевой битрейт Opus-аудио голосовых комнат сервера.
     ServerAudioBitrateUpdated,
+    /// Опубликовать последнее измерение RTT участника до сервера.
+    PublishNetworkQuality,
+    /// Событие изменения RTT одного участника голосового общения.
+    ParticipantNetworkQualityUpdated,
 }
 
 /// Полезная нагрузка запроса на присоединение к комнате с поддержкой голоса.
@@ -260,6 +264,38 @@ pub struct ServerAudioBitrate {
     pub server_id: String,
     /// Целевой битрейт Opus-аудио в битах в секунду.
     pub audio_bitrate_bps: u32,
+}
+
+/// Публикация последнего RTT текущего клиента до сервера.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublishVoiceNetworkQuality {
+    /// Измеренное время туда-обратно в миллисекундах.
+    pub rtt_ms: u32,
+}
+
+/// Тип голосовой цели, к которой относится сетевая метрика.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceNetworkTargetKind {
+    /// Серверная голосовая комната.
+    Server,
+    /// Личный голосовой звонок.
+    DirectMessage,
+}
+
+/// Актуальное измерение RTT одного участника голосового общения.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParticipantNetworkQualityUpdated {
+    /// Тип голосовой цели.
+    pub target_kind: VoiceNetworkTargetKind,
+    /// Маршрутный идентификатор сервера или личного диалога.
+    pub server_id: String,
+    /// Идентификатор комнаты или личного диалога.
+    pub room_id: String,
+    /// Идентификатор пользователя, выполнившего измерение.
+    pub user_id: String,
+    /// Измеренное время туда-обратно в миллисекундах.
+    pub rtt_ms: u32,
 }
 
 /// Полезная нагрузка запроса на исключение участника из голосовой комнаты.

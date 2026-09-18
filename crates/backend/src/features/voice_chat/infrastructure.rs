@@ -1,12 +1,16 @@
 //! Инфраструктура присутствия голосового чата.
 
 use chrono::{DateTime, Utc};
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use super::media_policy::VideoPublicationTracker;
+use network_quality_rate_limit::NetworkQualityRateLimiter;
 
 mod direct_calls;
+mod network_quality_rate_limit;
 mod uplink;
 
 pub(crate) use direct_calls::{
@@ -22,6 +26,9 @@ pub(crate) struct InMemoryVoicePresenceStore {
     entries: Mutex<Vec<VoicePresence>>,
     microphone_uplink_grants: Mutex<Vec<MicrophoneUplinkGrant>>,
     microphone_uplink_bindings: Mutex<Vec<MicrophoneUplinkBinding>>,
+    network_quality_rate_limiter: Mutex<NetworkQualityRateLimiter>,
+    #[cfg(test)]
+    room_participants_calls: AtomicUsize,
     pub(super) video_publications: Mutex<VideoPublicationTracker>,
 }
 
@@ -89,6 +96,7 @@ impl InMemoryVoicePresenceStore {
             removed
         };
         self.revoke_microphone_uplinks_for(&removed).await;
+        self.clear_network_quality_rate_limits_for(&removed).await;
         self.clear_video_publications_for(&removed).await;
 
         removed
@@ -155,6 +163,7 @@ impl InMemoryVoicePresenceStore {
             removed
         };
         self.revoke_microphone_uplinks_for(&removed).await;
+        self.clear_network_quality_rate_limits_for(&removed).await;
         self.clear_video_publications_for(&removed).await;
 
         removed
@@ -174,6 +183,8 @@ impl InMemoryVoicePresenceStore {
         server_id: &Uuid,
         room_id: &Uuid,
     ) -> Vec<VoicePresence> {
+        #[cfg(test)]
+        self.room_participants_calls.fetch_add(1, Ordering::Relaxed);
         let mut participants = self
             .entries
             .lock()
@@ -236,6 +247,22 @@ impl InMemoryVoicePresenceStore {
                 entry.target_kind == target_kind
                     && &entry.room_id == room_id
                     && &entry.user_id == user_id
+            })
+            .cloned()
+    }
+
+    /// Возвращает присутствие, принадлежащее указанному realtime-потоку и пользователю.
+    pub(crate) async fn presence_for_stream(
+        &self,
+        realtime_stream_id: &Uuid,
+        user_id: &Uuid,
+    ) -> Option<VoicePresence> {
+        self.entries
+            .lock()
+            .await
+            .iter()
+            .find(|entry| {
+                &entry.realtime_stream_id == realtime_stream_id && &entry.user_id == user_id
             })
             .cloned()
     }

@@ -22,7 +22,7 @@ use crate::features::camera::{CameraCodec, EncodedCameraFrame};
 use super::video_fragments::{self, OutboundVideoFrame};
 
 #[path = "realtime_decode.rs"]
-mod realtime_decode;
+pub(super) mod realtime_decode;
 
 /// Inbound relayed voice frame.
 #[derive(Debug, Clone, PartialEq, Eq)]

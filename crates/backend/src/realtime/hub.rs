@@ -1,5 +1,6 @@
 //! Общий реестр потоков realtime и вещания.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use cheenhub_contracts::realtime::{RealtimeKind, RealtimeModule};
@@ -307,6 +308,7 @@ impl RealtimeHub {
         module: RealtimeModule,
         user_ids: &[Uuid],
     ) -> Vec<RealtimeRecipient> {
+        let user_ids = user_ids.iter().copied().collect::<HashSet<_>>();
         self.streams
             .lock()
             .await
@@ -330,6 +332,7 @@ impl RealtimeHub {
     ) where
         P: Serialize + Clone,
     {
+        let stream_ids = stream_ids.iter().copied().collect::<HashSet<_>>();
         let streams = self
             .streams
             .lock()

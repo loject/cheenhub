@@ -4,8 +4,8 @@ use cheenhub_contracts::media::{
     MEDIA_DATAGRAM_FLAG_KEY_FRAME, MediaCodec, MediaDatagram, MediaDatagramKind,
 };
 use cheenhub_contracts::realtime::{
-    RealtimeEnvelope, RealtimeKind, RealtimeModule, ServerAudioBitrate, VoiceChatKind,
-    VoiceRoomSnapshot, VoiceVideoStreamEnded,
+    ParticipantNetworkQualityUpdated, RealtimeEnvelope, RealtimeKind, RealtimeModule,
+    ServerAudioBitrate, VoiceChatKind, VoiceRoomSnapshot, VoiceVideoStreamEnded,
 };
 
 use super::{InboundVideoFrame, InboundVideoStreamEnded, InboundVoiceFrame};
@@ -28,6 +28,18 @@ pub(super) fn participants_changed(envelope: RealtimeEnvelope) -> Option<VoiceRo
     }
 
     serde_json::from_value::<VoiceRoomSnapshot>(envelope.payload).ok()
+}
+
+pub(in crate::features::voice_chat) fn participant_network_quality(
+    envelope: RealtimeEnvelope,
+) -> Option<ParticipantNetworkQualityUpdated> {
+    if envelope.module != RealtimeModule::VoiceChat
+        || envelope.kind != RealtimeKind::VoiceChat(VoiceChatKind::ParticipantNetworkQualityUpdated)
+    {
+        return None;
+    }
+
+    serde_json::from_value(envelope.payload).ok()
 }
 
 pub(super) fn video_stream_ended(envelope: RealtimeEnvelope) -> Option<InboundVideoStreamEnded> {
@@ -89,5 +101,34 @@ pub(super) fn video_frame_from_datagram(datagram: MediaDatagram) -> InboundVideo
         duration_us: datagram.duration_us,
         bytes: datagram.payload,
         key_frame: datagram.flags & MEDIA_DATAGRAM_FLAG_KEY_FRAME != 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cheenhub_contracts::realtime::{
+        ParticipantNetworkQualityUpdated, RealtimeEnvelope, VoiceNetworkTargetKind,
+    };
+
+    use super::*;
+
+    #[test]
+    fn decodes_participant_network_quality_event() {
+        let event = ParticipantNetworkQualityUpdated {
+            target_kind: VoiceNetworkTargetKind::Server,
+            server_id: "server".to_owned(),
+            room_id: "room".to_owned(),
+            user_id: "user".to_owned(),
+            rtt_ms: 48,
+        };
+        let envelope = RealtimeEnvelope::new(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::ParticipantNetworkQualityUpdated),
+            None,
+            event.clone(),
+        )
+        .expect("event serializes");
+
+        assert_eq!(participant_network_quality(envelope), Some(event));
     }
 }

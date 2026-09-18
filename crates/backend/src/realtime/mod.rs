@@ -26,6 +26,8 @@ use web_transport_quinn::Server;
 use crate::state::AppState;
 
 pub(crate) use sink::EnvelopeSink;
+#[cfg(test)]
+pub(crate) use sink::WebSocketOutbound;
 pub(crate) use tls::ensure_tls_config;
 
 const REALTIME_PATH: &str = "/realtime";

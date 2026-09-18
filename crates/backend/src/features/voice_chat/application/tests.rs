@@ -26,6 +26,7 @@ use crate::state::AppState;
 
 mod direct_messages;
 mod join;
+mod network_quality;
 mod nickname;
 
 pub(super) fn state() -> AppState {

@@ -37,8 +37,9 @@ pub use voice_chat::{
     DirectMessageVoiceRoomsSnapshot, EndDirectCall, IssueMicrophoneUplinkGrant,
     JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom,
     LeaveVoiceRoom, ListDirectCalls, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
-    MicrophoneUplinkBound, MicrophoneUplinkGrantIssued, RespondDirectCall, ServerAudioBitrate,
-    ServerVoiceRoomsSnapshot, StartDirectCall, StopVoiceVideoStream, VoiceChatKind,
+    MicrophoneUplinkBound, MicrophoneUplinkGrantIssued, ParticipantNetworkQualityUpdated,
+    PublishVoiceNetworkQuality, RespondDirectCall, ServerAudioBitrate, ServerVoiceRoomsSnapshot,
+    StartDirectCall, StopVoiceVideoStream, VoiceChatKind, VoiceNetworkTargetKind,
     VoiceRoomParticipant, VoiceRoomSnapshot, VoiceVideoStreamEnded, VoiceVideoStreamSource,
 };
 
@@ -278,6 +279,40 @@ mod tests {
         let payload: ServerAudioBitrate =
             serde_json::from_value(decoded.payload).expect("payload decodes");
         assert_eq!(payload.audio_bitrate_bps, 48_000);
+    }
+
+    #[test]
+    fn voice_network_quality_envelopes_round_trip() {
+        let published = RealtimeEnvelope::new(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::PublishNetworkQuality),
+            None,
+            PublishVoiceNetworkQuality { rtt_ms: 42 },
+        )
+        .expect("network quality publication serializes");
+        let published_json =
+            serde_json::to_string(&published).expect("network quality publication encodes");
+        assert!(published_json.contains("\"kind\":\"publish_network_quality\""));
+        assert!(published_json.contains("\"rtt_ms\":42"));
+
+        let update = ParticipantNetworkQualityUpdated {
+            target_kind: VoiceNetworkTargetKind::DirectMessage,
+            server_id: Uuid::new_v4().to_string(),
+            room_id: Uuid::new_v4().to_string(),
+            user_id: Uuid::new_v4().to_string(),
+            rtt_ms: 73,
+        };
+        let envelope = RealtimeEnvelope::new(
+            RealtimeModule::VoiceChat,
+            RealtimeKind::VoiceChat(VoiceChatKind::ParticipantNetworkQualityUpdated),
+            None,
+            update.clone(),
+        )
+        .expect("network quality update serializes");
+        let decoded: ParticipantNetworkQualityUpdated =
+            serde_json::from_value(envelope.payload).expect("network quality update decodes");
+
+        assert_eq!(decoded, update);
     }
 
     #[test]

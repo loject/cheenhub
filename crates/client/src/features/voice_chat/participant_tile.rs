@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 
 use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 
+use super::network_quality_indicator::VoiceNetworkQualityIndicator;
 use super::video_streams::{ParticipantVideoCanvas, ParticipantVideoSource};
 
 /// Видеороль или fallback-содержимое плитки участника.
@@ -128,6 +129,10 @@ pub(crate) fn VoiceParticipantTile(
                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" }
                     }
                 }
+            }
+            VoiceNetworkQualityIndicator {
+                participant_user_id: participant.user_id.clone(),
+                participant_name: participant.nickname.clone(),
             }
             if !screen_sharing && !camera_on {
                 div { class: "relative z-10 flex min-h-full flex-col items-center justify-center text-center",

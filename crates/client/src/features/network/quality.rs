@@ -30,12 +30,16 @@ pub(crate) struct NetworkQualityState {
 #[derive(Clone, Copy)]
 pub(crate) struct NetworkQualityHandle {
     state: Signal<NetworkQualityState>,
+    frequent_probes: Signal<bool>,
 }
 
 impl NetworkQualityHandle {
     /// Создает хендл на базе переданного сигнала Dioxus.
-    pub(crate) fn new(state: Signal<NetworkQualityState>) -> Self {
-        Self { state }
+    pub(crate) fn new(state: Signal<NetworkQualityState>, frequent_probes: Signal<bool>) -> Self {
+        Self {
+            state,
+            frequent_probes,
+        }
     }
 
     /// Возвращает текущий снимок качества сети.
@@ -46,22 +50,7 @@ impl NetworkQualityHandle {
     /// Записывает завершенное ping-pong-измерение.
     pub(crate) fn record_ping(&mut self, received_at_ms: u64, rtt_ms: f64) {
         self.state.with_mut(|state| {
-            let jitter_ms = calculate_jitter(state.latest_rtt_ms, state.latest_jitter_ms, rtt_ms);
-            debug!(
-                rtt_ms,
-                jitter_ms, "recorded realtime network quality sample"
-            );
-            state.latest_rtt_ms = Some(rtt_ms);
-            state.latest_jitter_ms = Some(jitter_ms);
-            state.samples.push(PingSample {
-                received_at_ms,
-                rtt_ms,
-                jitter_ms,
-            });
-            let cutoff_ms = received_at_ms.saturating_sub(HISTORY_WINDOW_MS);
-            state
-                .samples
-                .retain(|sample| sample.received_at_ms >= cutoff_ms);
+            record_sample(state, received_at_ms, rtt_ms);
         });
     }
 
@@ -69,6 +58,39 @@ impl NetworkQualityHandle {
     pub(crate) fn clear(&mut self) {
         self.state.set(NetworkQualityState::default());
     }
+
+    /// Включает или выключает частые измерения для активного медиасеанса.
+    pub(crate) fn set_frequent_probes(&mut self, enabled: bool) {
+        if (self.frequent_probes)() == enabled {
+            return;
+        }
+        debug!(enabled, "updated realtime network probe frequency");
+        self.frequent_probes.set(enabled);
+    }
+
+    /// Возвращает, нужны ли сейчас частые сетевые измерения.
+    pub(crate) fn frequent_probes(&self) -> bool {
+        (self.frequent_probes)()
+    }
+}
+
+fn record_sample(state: &mut NetworkQualityState, received_at_ms: u64, rtt_ms: f64) {
+    let jitter_ms = calculate_jitter(state.latest_rtt_ms, state.latest_jitter_ms, rtt_ms);
+    debug!(
+        rtt_ms,
+        jitter_ms, "recorded realtime network quality sample"
+    );
+    state.latest_rtt_ms = Some(rtt_ms);
+    state.latest_jitter_ms = Some(jitter_ms);
+    state.samples.push(PingSample {
+        received_at_ms,
+        rtt_ms,
+        jitter_ms,
+    });
+    let cutoff_ms = received_at_ms.saturating_sub(HISTORY_WINDOW_MS);
+    state
+        .samples
+        .retain(|sample| sample.received_at_ms >= cutoff_ms);
 }
 
 fn calculate_jitter(
@@ -87,12 +109,31 @@ fn calculate_jitter(
 
 #[cfg(test)]
 mod tests {
-    use super::calculate_jitter;
+    use super::{NetworkQualityState, calculate_jitter, record_sample};
 
     #[test]
     fn smooths_rtt_changes_into_jitter() {
         assert_eq!(calculate_jitter(None, None, 100.0), 0.0);
         assert_eq!(calculate_jitter(Some(100.0), None, 140.0), 40.0);
         assert_eq!(calculate_jitter(Some(140.0), Some(40.0), 100.0), 40.0);
+    }
+
+    #[test]
+    fn keeps_only_the_latest_minute_at_voice_ping_frequency() {
+        let mut state = NetworkQualityState::default();
+
+        for index in 0..=100 {
+            record_sample(&mut state, index * 750, 20.0 + index as f64);
+        }
+
+        assert_eq!(state.samples.len(), 81);
+        assert_eq!(
+            state.samples.first().map(|sample| sample.received_at_ms),
+            Some(15_000)
+        );
+        assert_eq!(
+            state.samples.last().map(|sample| sample.received_at_ms),
+            Some(75_000)
+        );
     }
 }

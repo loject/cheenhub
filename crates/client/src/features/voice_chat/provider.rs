@@ -13,6 +13,7 @@ use crate::features::audio_playback::{
 };
 use crate::features::camera::{CameraHandle, CameraStatus};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
+use crate::features::network::NetworkQualityHandle;
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 
@@ -23,6 +24,7 @@ use super::local_video::{
     reconcile_screen_share_target, release_local_video_target,
 };
 use super::microphone_uplink;
+use super::network_quality::use_voice_network_quality_runtime;
 use super::notification_sounds::{
     ConnectionNotificationSoundState, ToggleNotificationSoundState, VoiceNotificationSoundState,
 };
@@ -43,6 +45,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let camera = use_context::<CameraHandle>();
     let screen_share = use_context::<ScreenShareHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
+    let network_quality = use_context::<NetworkQualityHandle>();
     let state = use_signal(|| VoiceConnectionState::Disconnected);
     let mut platform_call_active = use_signal(|| false);
     let mut voice_audio_focused = use_signal(|| true);
@@ -88,6 +91,12 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     });
     let context_handle = handle.clone();
     use_context_provider(move || context_handle.clone());
+    use_voice_network_quality_runtime(
+        state,
+        current_user.id.clone(),
+        realtime.clone(),
+        network_quality,
+    );
 
     let snapshot_realtime = realtime.clone();
     let snapshot_handle = handle.clone();

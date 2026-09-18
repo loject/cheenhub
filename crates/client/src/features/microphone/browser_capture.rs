@@ -121,8 +121,8 @@ async fn request_default_microphone_stream(
 
 fn microphone_track_constraints(config: &MicrophoneConfig) -> MediaTrackConstraints {
     let audio = MediaTrackConstraints::new();
-    audio.set_channel_count(&JsValue::from_f64(f64::from(config.channels)));
     let browser_voice_processing = JsValue::from_bool(browser_voice_processing_enabled());
+    audio.set_channel_count(&JsValue::from_f64(f64::from(config.channels)));
     audio.set_echo_cancellation(&browser_voice_processing);
     audio.set_noise_suppression(&browser_voice_processing);
     audio.set_auto_gain_control(&browser_voice_processing);
@@ -144,7 +144,11 @@ fn microphone_track_constraints(config: &MicrophoneConfig) -> MediaTrackConstrai
 }
 
 fn browser_voice_processing_enabled() -> bool {
-    !browser_media_diagnostics_enabled()
+    browser_voice_processing_enabled_for(browser_media_diagnostics_enabled())
+}
+
+fn browser_voice_processing_enabled_for(diagnostics_enabled: bool) -> bool {
+    !diagnostics_enabled
 }
 
 fn exact_device_id_constraint(device_id: &str) -> JsValue {
@@ -235,4 +239,19 @@ fn microphone_error(error: JsValue) -> MicrophoneError {
 
 fn set_property(object: &Object, name: &str, value: &JsValue) {
     let _ = Reflect::set(object, &JsValue::from_str(name), value);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{browser_voice_processing_enabled, browser_voice_processing_enabled_for};
+
+    #[test]
+    fn diagnostics_disable_browser_voice_processing() {
+        assert!(!browser_voice_processing_enabled_for(true));
+        assert!(browser_voice_processing_enabled_for(false));
+        assert_eq!(
+            browser_voice_processing_enabled(),
+            !cfg!(feature = "browser-media-diagnostics")
+        );
+    }
 }

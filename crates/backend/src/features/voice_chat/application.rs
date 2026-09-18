@@ -18,6 +18,7 @@ mod avatar;
 mod direct_call_push;
 mod direct_calls;
 mod fanout;
+mod network_quality;
 mod permissions;
 mod presence;
 mod uplink;
@@ -29,6 +30,11 @@ pub(crate) use direct_calls::{
 use fanout::{
     direct_message_voice_target, fanout_removed_rooms, fanout_snapshot, participant_summary,
     room_snapshot, server_voice_target,
+};
+pub(crate) use network_quality::publish_network_quality;
+#[cfg(test)]
+use network_quality::{
+    authorize_network_quality_publication_at, prepare_network_quality_broadcast,
 };
 use presence::active_presence_for_user;
 pub(crate) use presence::disconnect_realtime_stream;

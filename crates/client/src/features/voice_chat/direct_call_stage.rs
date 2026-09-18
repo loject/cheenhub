@@ -7,6 +7,7 @@ use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::components::user_context_menu::UserContextMenu;
 use crate::features::audio_playback::AudioPlaybackHandle;
 
+use super::network_quality_indicator::VoiceNetworkQualityIndicator;
 use super::video_streams::{
     ParticipantVideoCanvas, ParticipantVideoHandle, ParticipantVideoSource,
 };
@@ -179,6 +180,10 @@ pub(crate) fn DirectCallStage(
                         svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm6 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" }
                         }
+                    }
+                    VoiceNetworkQualityIndicator {
+                        participant_user_id: peer_user_id.clone(),
+                        participant_name: peer_nickname.clone(),
                     }
                 }
                 if local_camera_live {
