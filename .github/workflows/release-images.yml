@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -37,6 +37,7 @@ jobs:
       backend-image: ${{ steps.images.outputs.backend }}
       web-image: ${{ steps.images.outputs.web }}
       app-version: ${{ steps.app-version.outputs.version }}
+      release-tag: ${{ steps.app-version.outputs.release-tag }}
 
     steps:
       - name: Checkout
@@ -58,14 +59,17 @@ jobs:
 
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             version="${release_tag}"
+            artifact_tag="${GITHUB_REF_NAME}"
             if [[ "${GITHUB_REF_NAME}" != "${release_tag}" ]]; then
               echo "Release tag ${GITHUB_REF_NAME} must match workspace version ${release_tag}." >&2
               exit 1
             fi
           else
             version="${release_tag}-${GITHUB_SHA::7}"
+            artifact_tag="dev"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "release-tag=${artifact_tag}" >> "$GITHUB_OUTPUT"
 
       - name: Validate release configuration
         shell: bash
@@ -76,7 +80,7 @@ jobs:
           fi
 
   build-backend:
-    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/')
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
     name: Build and push backend image
     runs-on: ubuntu-24.04
     needs: prepare
@@ -120,12 +124,12 @@ jobs:
           cache-to: type=registry,ref=${{ needs.prepare.outputs.backend-image }}:buildcache,mode=max
 
       - name: Export backend release image archive
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         shell: bash
         run: |
           mkdir -p dist/backend
           docker pull "${{ needs.prepare.outputs.backend-image }}:${GITHUB_REF_NAME}"
-          docker save "${{ needs.prepare.outputs.backend-image }}:${GITHUB_REF_NAME}" | gzip -9 > "dist/backend/cheenhub-backend-${GITHUB_REF_NAME}.docker-image.tar.gz"
+          docker save "${{ needs.prepare.outputs.backend-image }}:${GITHUB_REF_NAME}" | gzip -9 > "dist/backend/cheenhub-backend-${{ needs.prepare.outputs.release-tag }}.docker-image.tar.gz"
 
       - name: Publish backend release archive
         if: startsWith(github.ref, 'refs/tags/')
@@ -135,8 +139,16 @@ jobs:
         shell: bash
         run: cargo run --quiet -p xtask -- release-artifacts publish "${GITHUB_REF_NAME}" dist/backend
 
+      - name: Upload backend release archive
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-release-image
+          path: dist/backend/*
+          if-no-files-found: error
+
   build-web:
-    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/')
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
     name: Build and push web image
     runs-on: ubuntu-24.04
     needs: prepare
@@ -186,12 +198,12 @@ jobs:
           cache-to: type=registry,ref=${{ needs.prepare.outputs.web-image }}:buildcache,mode=max
 
       - name: Export web release image archive
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         shell: bash
         run: |
           mkdir -p dist/web
           docker pull "${{ needs.prepare.outputs.web-image }}:${GITHUB_REF_NAME}"
-          docker save "${{ needs.prepare.outputs.web-image }}:${GITHUB_REF_NAME}" | gzip -9 > "dist/web/cheenhub-web-${GITHUB_REF_NAME}.docker-image.tar.gz"
+          docker save "${{ needs.prepare.outputs.web-image }}:${GITHUB_REF_NAME}" | gzip -9 > "dist/web/cheenhub-web-${{ needs.prepare.outputs.release-tag }}.docker-image.tar.gz"
 
       - name: Publish web release archive
         if: startsWith(github.ref, 'refs/tags/')
@@ -200,6 +212,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: cargo run --quiet -p xtask -- release-artifacts publish "${GITHUB_REF_NAME}" dist/web
+
+      - name: Upload web release archive
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-release-image
+          path: dist/web/*
+          if-no-files-found: error
 
   build-windows-client:
     name: Build Windows client installers
@@ -280,10 +300,10 @@ jobs:
           Copy-Item target/x86_64-pc-windows-msvc/desktop-release/cheenhub_installer.exe dist/windows/installer/cheenhub-installer.exe
 
       - name: Normalize Windows release assets
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         shell: pwsh
         run: |
-          cargo run --quiet -p xtask -- release-artifacts collect windows dist/windows/installer dist/client $env:GITHUB_REF_NAME
+          cargo run --quiet -p xtask -- release-artifacts collect windows dist/windows/installer dist/client "${{ needs.prepare.outputs.release-tag }}"
 
       - name: Publish Windows release assets
         if: startsWith(github.ref, 'refs/tags/')
@@ -294,7 +314,7 @@ jobs:
         run: cargo run --quiet -p xtask -- release-artifacts publish $env:GITHUB_REF_NAME dist/client
 
       - name: Upload Windows release assets
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         uses: actions/upload-artifact@v6
         with:
           name: client-release-windows
@@ -305,7 +325,7 @@ jobs:
     name: Build Linux client packages
     runs-on: ubuntu-24.04
     needs: prepare
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     env:
       CHEENHUB_APP_VERSION: ${{ needs.prepare.outputs.app-version }}
 
@@ -372,9 +392,10 @@ jobs:
       - name: Normalize Linux release assets
         shell: bash
         run: |
-          cargo run --quiet -p xtask -- release-artifacts collect linux dist/linux/raw dist/client "${GITHUB_REF_NAME}"
+          cargo run --quiet -p xtask -- release-artifacts collect linux dist/linux/raw dist/client "${{ needs.prepare.outputs.release-tag }}"
 
       - name: Publish Linux release assets
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -392,7 +413,7 @@ jobs:
     name: Build Android client APK
     runs-on: ubuntu-24.04
     needs: prepare
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     env:
       CHEENHUB_APP_VERSION: ${{ needs.prepare.outputs.app-version }}
 
@@ -513,8 +534,8 @@ jobs:
           set -euo pipefail
 
           version_name="${CHEENHUB_APP_VERSION#v}"
-          if [[ ! "${version_name}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            echo "Android version must contain exactly three numeric segments: ${version_name}." >&2
+          if [[ ! "${version_name}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9a-f]{7})?$ ]]; then
+            echo "Android version must contain three numeric segments and an optional commit suffix: ${version_name}." >&2
             exit 1
           fi
 
@@ -562,19 +583,39 @@ jobs:
 
           export GENERATED_ANDROID_GRADLE_FILE="${generated_gradle_file}"
           python3 - <<'PY'
+          import json
           import os
+          import re
           from pathlib import Path
 
           gradle_file = Path(os.environ["GENERATED_ANDROID_GRADLE_FILE"])
           contents = gradle_file.read_text(encoding="utf-8")
-          old = "versionCode = 1"
-          replacement = f"versionCode = {os.environ['ANDROID_VERSION_CODE']}"
-          if contents.count(old) != 1:
+          version_code = "versionCode = 1"
+          version_code_replacement = f"versionCode = {os.environ['ANDROID_VERSION_CODE']}"
+          if contents.count(version_code) != 1:
               raise SystemExit(
-                  f"Expected exactly one {old!r} in {gradle_file}, "
-                  f"found {contents.count(old)}."
+                  f"Expected exactly one {version_code!r} in {gradle_file}, "
+                  f"found {contents.count(version_code)}."
               )
-          gradle_file.write_text(contents.replace(old, replacement, 1), encoding="utf-8")
+          contents = contents.replace(version_code, version_code_replacement, 1)
+
+          version_name_pattern = r'versionName = "[^"]+"'
+          version_name_matches = re.findall(version_name_pattern, contents)
+          if len(version_name_matches) != 1:
+              raise SystemExit(
+                  f"Expected exactly one Android versionName in {gradle_file}, "
+                  f"found {len(version_name_matches)}."
+              )
+          version_name_replacement = (
+              f"versionName = {json.dumps(os.environ['ANDROID_VERSION_NAME'])}"
+          )
+          contents = re.sub(
+              version_name_pattern,
+              version_name_replacement,
+              contents,
+              count=1,
+          )
+          gradle_file.write_text(contents, encoding="utf-8")
           PY
 
           chmod +x "${generated_android_root}/gradlew"
@@ -642,7 +683,7 @@ jobs:
       - name: Normalize Android release asset
         shell: bash
         run: |
-          cargo run --quiet -p xtask -- release-artifacts collect android dist/android/release dist/client "${GITHUB_REF_NAME}"
+          cargo run --quiet -p xtask -- release-artifacts collect android dist/android/release dist/client "${{ needs.prepare.outputs.release-tag }}"
 
       - name: Upload Android release artifact
         uses: actions/upload-artifact@v7
@@ -896,3 +937,85 @@ jobs:
 
           echo "RuStore version ${version_id} was sent to moderation."
           echo "::endgroup::"
+
+  publish-dev-release:
+    name: Publish rolling development release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    needs:
+      - prepare
+      - build-backend
+      - build-web
+      - build-windows-client
+      - build-linux-client
+      - build-android-client
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download development release assets
+        uses: actions/download-artifact@v8
+        with:
+          pattern: "*-release-*"
+          path: dist/dev
+          merge-multiple: true
+
+      - name: Validate development release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected_assets=(
+            "cheenhub-backend-dev.docker-image.tar.gz"
+            "cheenhub-web-dev.docker-image.tar.gz"
+            "cheenhub-dev-windows-x64-setup.exe"
+            "cheenhub-dev-linux-x64.deb"
+            "cheenhub-dev-linux-x64.AppImage"
+            "cheenhub-dev-android.apk"
+          )
+          for asset in "${expected_assets[@]}"; do
+            if [[ ! -f "dist/dev/${asset}" ]]; then
+              echo "Development release asset is missing: ${asset}." >&2
+              exit 1
+            fi
+          done
+
+          actual_count="$(find dist/dev -maxdepth 1 -type f | wc -l)"
+          if [[ "${actual_count}" -ne "${#expected_assets[@]}" ]]; then
+            echo "Development release contains ${actual_count} assets; expected ${#expected_assets[@]}." >&2
+            find dist/dev -maxdepth 1 -type f -print >&2
+            exit 1
+          fi
+
+      - name: Update development tag and release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git tag --force dev "${GITHUB_SHA}"
+          git push --force origin refs/tags/dev
+
+          release_notes="Automatically built from commit ${GITHUB_SHA} on the main branch."
+          if gh release view dev >/dev/null 2>&1; then
+            gh release edit dev \
+              --title "Development build" \
+              --notes "${release_notes}" \
+              --prerelease \
+              --latest=false \
+              --verify-tag
+          else
+            gh release create dev \
+              --title "Development build" \
+              --notes "${release_notes}" \
+              --prerelease \
+              --latest=false \
+              --verify-tag
+          fi
+
+          gh release upload dev dist/dev/* --clobber
