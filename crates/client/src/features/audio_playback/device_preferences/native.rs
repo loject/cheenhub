@@ -12,6 +12,15 @@ pub(crate) const DEVICE_ID_KEY: &str = "cheenhub.audio_playback.output_device_id
 #[cfg(not(all(target_os = "linux", feature = "linux")))]
 /// Ключ отображаемого имени устройства.
 pub(crate) const DEVICE_LABEL_KEY: &str = "cheenhub.audio_playback.output_device_label";
-#[cfg(not(all(target_os = "linux", feature = "linux")))]
+#[cfg(all(
+    not(all(target_os = "linux", feature = "linux")),
+    any(
+        target_os = "android",
+        all(
+            not(target_arch = "wasm32"),
+            any(feature = "windows", feature = "linux", feature = "macos")
+        )
+    )
+))]
 /// Разрешает восстановление выбранного устройства по сохранённому имени.
 pub(crate) const RECOVER_BY_LABEL: bool = true;

@@ -1,5 +1,5 @@
 //! Проверки сроков, одноразовости восстановления и отзыва доступа.
-use super::{AuthStore, InMemoryAuthStore};
+use super::{AuthStore, InMemoryAuthStore, OAuthStore};
 use crate::features::auth::domain::RegistrationLegalAcceptance;
 use chrono::{Duration, Utc};
 

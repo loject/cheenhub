@@ -36,7 +36,7 @@ pub(super) async fn lock_postgres(
     loop {
         let transaction = database.begin().await?;
         let row = transaction
-            .query_one(transaction.get_database_backend().build(&query))
+            .query_one(&query)
             .await?
             .ok_or_else(|| anyhow::anyhow!("account lifecycle lock returned no result"))?;
         if row.try_get::<bool>("", "acquired")? {

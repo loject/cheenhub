@@ -161,7 +161,7 @@ impl AudioPlaybackHandle {
             return;
         }
 
-        if !crate::features::audio_playback::device_preferences::RECOVER_BY_LABEL {
+        if !crate::features::audio_playback::device_preferences::native::RECOVER_BY_LABEL {
             return;
         }
 

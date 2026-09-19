@@ -1,48 +1,30 @@
 //! Android-реализация реестра Activity/Service bridge.
 
 #[cfg(target_os = "android")]
-use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
+
 #[cfg(target_os = "android")]
-use std::sync::{Arc, Mutex, OnceLock};
+mod callbacks;
 
 #[cfg(target_os = "android")]
 use super::{
-    AndroidBridge, AndroidBridgeError, AndroidPermission, AndroidPushInstallation,
-    ForegroundServiceKind, MediaProjectionGrant, PermissionResult, guard_jni_result,
+    AndroidBridge, AndroidBridgeError, AndroidPermission, ForegroundServiceKind, guard_jni_result,
 };
 #[cfg(target_os = "android")]
-use jni::JNIEnv;
+use jni::objects::{JObject, JString, JValue};
+
 #[cfg(target_os = "android")]
-use jni::objects::{GlobalRef, JObject, JString, JValue};
+use callbacks::{
+    PermissionCallback, ProjectionCallback, PushInstallationCallback, finish_permission_request,
+    finish_projection_request, finish_push_installation_request, lock_error, next_request_id,
+    permission_callbacks, projection_callbacks, push_installation_callbacks,
+};
+
 #[cfg(target_os = "android")]
-use jni::sys::{jboolean, jint, jstring};
+pub(crate) use callbacks::take_media_projection_grant;
 
 #[cfg(target_os = "android")]
 static ANDROID_BRIDGE: OnceLock<Arc<dyn AndroidBridge>> = OnceLock::new();
-
-#[cfg(target_os = "android")]
-type PermissionCallback =
-    Box<dyn FnOnce(Result<PermissionResult, AndroidBridgeError>) + Send + 'static>;
-#[cfg(target_os = "android")]
-type ProjectionCallback =
-    Box<dyn FnOnce(Result<Option<MediaProjectionGrant>, AndroidBridgeError>) + Send + 'static>;
-#[cfg(target_os = "android")]
-type PushInstallationCallback =
-    Box<dyn FnOnce(Result<AndroidPushInstallation, AndroidBridgeError>) + Send + 'static>;
-
-#[cfg(target_os = "android")]
-static PERMISSION_CALLBACKS: OnceLock<Mutex<HashMap<i32, PermissionCallback>>> = OnceLock::new();
-#[cfg(target_os = "android")]
-static PROJECTION_CALLBACKS: OnceLock<Mutex<HashMap<i32, ProjectionCallback>>> = OnceLock::new();
-#[cfg(target_os = "android")]
-static PUSH_INSTALLATION_CALLBACKS: OnceLock<Mutex<HashMap<i32, PushInstallationCallback>>> =
-    OnceLock::new();
-#[cfg(target_os = "android")]
-static PROJECTION_GRANTS: OnceLock<Mutex<HashMap<u64, GlobalRef>>> = OnceLock::new();
-#[cfg(target_os = "android")]
-static NEXT_REQUEST_ID: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(1000);
-#[cfg(target_os = "android")]
-static NEXT_GRANT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 #[cfg(target_os = "android")]
 struct JniAndroidBridge;
@@ -322,19 +304,6 @@ pub(crate) fn android_bridge() -> Result<&'static Arc<dyn AndroidBridge>, Androi
 }
 
 #[cfg(target_os = "android")]
-pub(crate) fn take_media_projection_grant(
-    grant: MediaProjectionGrant,
-) -> Result<GlobalRef, AndroidBridgeError> {
-    projection_grants()
-        .lock()
-        .map_err(lock_error)?
-        .remove(&grant.0)
-        .ok_or_else(|| {
-            AndroidBridgeError::new("MediaProjection grant отсутствует или уже использован")
-        })
-}
-
-#[cfg(target_os = "android")]
 fn dispatch_service(method: &'static str, kind: ForegroundServiceKind) {
     let kind = match kind {
         ForegroundServiceKind::VoicePlayback => "voicePlayback",
@@ -355,184 +324,4 @@ fn dispatch_service(method: &'static str, kind: ForegroundServiceKind) {
             let _ = guard_jni_result(env, method, result);
         }
     });
-}
-
-#[cfg(target_os = "android")]
-fn next_request_id() -> i32 {
-    NEXT_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-}
-
-#[cfg(target_os = "android")]
-fn permission_callbacks() -> &'static Mutex<HashMap<i32, PermissionCallback>> {
-    PERMISSION_CALLBACKS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-#[cfg(target_os = "android")]
-fn projection_callbacks() -> &'static Mutex<HashMap<i32, ProjectionCallback>> {
-    PROJECTION_CALLBACKS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-#[cfg(target_os = "android")]
-fn push_installation_callbacks() -> &'static Mutex<HashMap<i32, PushInstallationCallback>> {
-    PUSH_INSTALLATION_CALLBACKS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-#[cfg(target_os = "android")]
-fn finish_permission_request(
-    request_id: i32,
-    result: Result<PermissionResult, AndroidBridgeError>,
-) {
-    let callback = permission_callbacks()
-        .lock()
-        .ok()
-        .and_then(|mut callbacks| callbacks.remove(&request_id));
-    if let Some(callback) = callback {
-        callback(result);
-    }
-}
-
-#[cfg(target_os = "android")]
-fn finish_projection_request(
-    request_id: i32,
-    result: Result<Option<MediaProjectionGrant>, AndroidBridgeError>,
-) {
-    let callback = projection_callbacks()
-        .lock()
-        .ok()
-        .and_then(|mut callbacks| callbacks.remove(&request_id));
-    if let Some(callback) = callback {
-        callback(result);
-    }
-}
-
-#[cfg(target_os = "android")]
-fn finish_push_installation_request(
-    request_id: i32,
-    result: Result<AndroidPushInstallation, AndroidBridgeError>,
-) {
-    let callback = push_installation_callbacks()
-        .lock()
-        .ok()
-        .and_then(|mut callbacks| callbacks.remove(&request_id));
-    if let Some(callback) = callback {
-        callback(result);
-    }
-}
-
-#[cfg(target_os = "android")]
-fn projection_grants() -> &'static Mutex<HashMap<u64, GlobalRef>> {
-    PROJECTION_GRANTS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-#[cfg(target_os = "android")]
-fn lock_error<T>(_error: std::sync::PoisonError<T>) -> AndroidBridgeError {
-    AndroidBridgeError::new("Android bridge state повреждён")
-}
-
-#[cfg(target_os = "android")]
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_dioxus_main_MainActivity_nativeOnCheenHubPermissionResult(
-    _env: JNIEnv<'_>,
-    _activity: JObject<'_>,
-    request_id: jint,
-    granted: jboolean,
-    can_ask_again: jboolean,
-) {
-    let callback = permission_callbacks()
-        .lock()
-        .ok()
-        .and_then(|mut callbacks| callbacks.remove(&request_id));
-    if let Some(callback) = callback {
-        callback(Ok(if granted != 0 {
-            PermissionResult::Granted
-        } else if can_ask_again != 0 {
-            PermissionResult::Denied
-        } else {
-            PermissionResult::DeniedPermanently
-        }));
-    }
-}
-
-#[cfg(target_os = "android")]
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_dioxus_main_MainActivity_nativeOnCheenHubMediaProjectionResult(
-    env: JNIEnv<'_>,
-    _activity: JObject<'_>,
-    request_id: jint,
-    granted: jboolean,
-    data: JObject<'_>,
-) {
-    let callback = projection_callbacks()
-        .lock()
-        .ok()
-        .and_then(|mut callbacks| callbacks.remove(&request_id));
-    if let Some(callback) = callback {
-        if granted == 0 || data.is_null() {
-            callback(Ok(None));
-            return;
-        }
-        match env.new_global_ref(data) {
-            Ok(data) => {
-                let id = NEXT_GRANT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if let Ok(mut grants) = projection_grants().lock() {
-                    grants.insert(id, data);
-                    callback(Ok(Some(MediaProjectionGrant(id))));
-                } else {
-                    callback(Err(AndroidBridgeError::new(
-                        "Не удалось сохранить MediaProjection grant",
-                    )));
-                }
-            }
-            Err(error) => callback(Err(AndroidBridgeError::new(format!(
-                "Не удалось сохранить MediaProjection Intent: {error}"
-            )))),
-        }
-    }
-}
-
-/// Завершает асинхронное получение Android push-установки.
-#[cfg(target_os = "android")]
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_dioxus_main_MainActivity_nativeOnCheenHubPushInstallationResult(
-    mut env: JNIEnv<'_>,
-    _activity: JObject<'_>,
-    request_id: jint,
-    installation_id: jstring,
-    token: jstring,
-    error_code: jstring,
-) {
-    let callback = push_installation_callbacks()
-        .lock()
-        .ok()
-        .and_then(|mut callbacks| callbacks.remove(&request_id));
-    let Some(callback) = callback else {
-        return;
-    };
-    if let Some(error_code) = optional_java_string(&mut env, error_code) {
-        callback(Err(AndroidBridgeError::new(format!(
-            "Android push installation недоступна: {error_code}"
-        ))));
-        return;
-    }
-    let installation_id = optional_java_string(&mut env, installation_id);
-    let token = optional_java_string(&mut env, token);
-    match (installation_id, token) {
-        (Some(installation_id), Some(token)) => callback(Ok(AndroidPushInstallation {
-            installation_id,
-            token,
-        })),
-        _ => callback(Err(AndroidBridgeError::new(
-            "Android не вернул идентификатор установки или FCM token",
-        ))),
-    }
-}
-
-#[cfg(target_os = "android")]
-fn optional_java_string(env: &mut JNIEnv<'_>, value: jstring) -> Option<String> {
-    if value.is_null() {
-        return None;
-    }
-    // SAFETY: ссылка передана JVM в текущий native callback и живёт до его завершения.
-    let value = unsafe { JString::from_raw(value) };
-    env.get_string(&value).ok().map(Into::into)
 }

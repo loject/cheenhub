@@ -4,7 +4,7 @@ use chrono::{Duration, Utc};
 use sea_orm::Database;
 use uuid::Uuid;
 
-use super::{AuthStore, PostgresAuthStore};
+use super::{AuthStore, OAuthStore, PostgresAuthStore};
 use crate::features::auth::domain::{
     DesktopOAuthAttempt, DesktopOAuthIdentity, DesktopOAuthStatus,
 };

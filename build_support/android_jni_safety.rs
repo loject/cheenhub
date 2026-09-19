@@ -1,5 +1,4 @@
-/// Build-time guard against unprotected Android JNI calls.
-
+// Проверка Android JNI-вызовов во время сборки.
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};

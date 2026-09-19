@@ -55,7 +55,7 @@ where
         .col_expr(
             conversation_member_states::Column::UnreadCount,
             Func::greatest([
-                Expr::col(conversation_member_states::Column::UnreadCount).into(),
+                Expr::col(conversation_member_states::Column::UnreadCount),
                 Expr::value(0),
             ])
             .add(1),

@@ -1,6 +1,6 @@
 //! Проверки одноразового получения и отмены desktop OAuth.
 
-use super::{AuthStore, InMemoryAuthStore};
+use super::{AuthStore, InMemoryAuthStore, OAuthStore};
 use crate::features::auth::domain::{
     DesktopOAuthAttempt, DesktopOAuthIdentity, DesktopOAuthStatus,
 };

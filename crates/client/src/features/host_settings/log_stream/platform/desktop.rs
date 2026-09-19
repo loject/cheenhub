@@ -5,11 +5,14 @@ use futures_channel::mpsc;
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
+#[path = "endpoint.rs"]
+mod endpoint;
+
 pub(in crate::features::host_settings::log_stream) async fn run(
     access_token: String,
     output: mpsc::UnboundedSender<HostLogStreamMessage>,
 ) -> Result<(), String> {
-    let url = crate::config::host_logs_websocket_url()?.to_string();
+    let url = endpoint::url()?.to_string();
     let (mut websocket, _) = connect_async(url.as_str())
         .await
         .map_err(|error| format!("Не удалось открыть поток логов: {error}"))?;

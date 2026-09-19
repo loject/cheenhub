@@ -3,7 +3,7 @@
 use super::{attempts, cleanup, oauth_handoffs, oauth_states};
 use crate::features::auth::{
     domain::{DesktopOAuthAttempt, DesktopOAuthIdentity},
-    infrastructure::{AuthStore, PostgresAuthStore},
+    infrastructure::{AuthStore, OAuthStore, PostgresAuthStore},
     security::refresh_token,
 };
 use chrono::{Duration, Utc};

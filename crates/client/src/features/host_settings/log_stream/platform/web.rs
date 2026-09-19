@@ -1,13 +1,14 @@
 //! Browser WebSocket для realtime-журнала бэкенда.
 
-#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
-
 use std::{cell::RefCell, rc::Rc};
 
 use cheenhub_contracts::rest::HostLogStreamMessage;
 use futures_channel::{mpsc, oneshot};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket};
+
+#[path = "endpoint.rs"]
+mod endpoint;
 
 /// Снимает JS callbacks до уничтожения wasm-bindgen `Closure`.
 ///
@@ -35,7 +36,7 @@ pub(in crate::features::host_settings::log_stream) async fn run(
     access_token: String,
     output: mpsc::UnboundedSender<HostLogStreamMessage>,
 ) -> Result<(), String> {
-    let url = crate::config::host_logs_websocket_url()?.to_string();
+    let url = endpoint::url()?.to_string();
     let websocket = WebSocket::new(&url)
         .map_err(|error| format!("Не удалось открыть поток логов: {}", js_error(error)))?;
 

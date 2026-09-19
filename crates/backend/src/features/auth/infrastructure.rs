@@ -16,6 +16,7 @@ mod in_memory_password_reset;
 mod in_memory_profile;
 mod in_memory_refresh;
 mod in_memory_user;
+mod oauth_store;
 mod postgres;
 mod postgres_deletion;
 mod postgres_deletion_finalize;
@@ -38,13 +39,13 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::features::auth::domain::{
-    AccountDeletion, DesktopOAuthAttempt, DesktopOAuthIdentity, DesktopOAuthStatus, OAuthAccount,
-    OAuthHandoff, OAuthRegistrationIntent, OAuthState, PasswordResetToken, RefreshSession,
-    RegistrationLegalAcceptance, UserAccount, UserSession,
+    AccountDeletion, DesktopOAuthAttempt, DesktopOAuthIdentity, DesktopOAuthStatus,
+    PasswordResetToken, RefreshSession, RegistrationLegalAcceptance, UserAccount, UserSession,
 };
 
 pub(crate) use account_lifecycle::AccountLifecycleGuard;
 pub(crate) use in_memory::InMemoryAuthStore;
+pub(crate) use oauth_store::OAuthStore;
 pub(crate) use postgres_store::PostgresAuthStore;
 
 /// Конфликт уникального поля пользователя.
@@ -110,7 +111,7 @@ pub(crate) enum RefreshReuseOutcome {
 
 /// Граница хранилища аутентификации.
 #[async_trait]
-pub(crate) trait AuthStore: Send + Sync {
+pub(crate) trait AuthStore: OAuthStore + Send + Sync {
     /// Сериализует прикладные операции удаления аккаунта и создания серверов.
     async fn lock_account_lifecycle(&self, user_id: &Uuid)
     -> anyhow::Result<AccountLifecycleGuard>;
@@ -363,105 +364,4 @@ pub(crate) trait AuthStore: Send + Sync {
         password_hash: String,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<PasswordResetToken>>;
-
-    /// Вставляет краткоживущий OAuth state.
-    async fn insert_oauth_state(
-        &self,
-        state_hash: String,
-        nonce: String,
-        flow_kind: String,
-        user_id: Option<Uuid>,
-        now: DateTime<Utc>,
-        expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<Uuid>;
-
-    /// Потребляет активный OAuth state.
-    async fn consume_oauth_state(
-        &self,
-        state_hash: &str,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<Option<OAuthState>>;
-
-    /// Находит привязанный OAuth-аккаунт по subject провайдера.
-    async fn find_oauth_account_by_subject(
-        &self,
-        provider: &str,
-        provider_subject: &str,
-    ) -> anyhow::Result<Option<OAuthAccount>>;
-
-    /// Находит привязанный OAuth-аккаунт для пользователя.
-    async fn find_oauth_account_for_user(
-        &self,
-        provider: &str,
-        user_id: &Uuid,
-    ) -> anyhow::Result<Option<OAuthAccount>>;
-
-    /// Список привязанных OAuth-аккаунтов пользователя.
-    async fn list_oauth_accounts(&self, user_id: &Uuid) -> anyhow::Result<Vec<OAuthAccount>>;
-
-    /// Вставляет привязанный OAuth-аккаунт.
-    async fn insert_oauth_account(
-        &self,
-        user_id: &Uuid,
-        provider: String,
-        provider_subject: String,
-        email: String,
-        display_name: Option<String>,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<OAuthAccount>;
-
-    /// Удаляет привязанный OAuth-аккаунт пользователя.
-    async fn delete_oauth_account(&self, provider: &str, user_id: &Uuid) -> anyhow::Result<bool>;
-
-    /// Вставляет краткоживущий OAuth-handoff для фронтенда.
-    async fn insert_oauth_handoff(
-        &self,
-        code_hash: String,
-        kind: String,
-        user_id: Option<Uuid>,
-        registration_intent_id: Option<Uuid>,
-        now: DateTime<Utc>,
-        expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<()>;
-
-    /// Находит активный OAuth-handoff фронтенда.
-    async fn find_active_oauth_handoff(
-        &self,
-        code_hash: &str,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<Option<OAuthHandoff>>;
-
-    /// Атомарно помечает активный OAuth-handoff фронтенда как использованный.
-    ///
-    /// Возвращает `true`, только если текущий вызов первым потребил handoff.
-    async fn consume_oauth_handoff(
-        &self,
-        handoff_id: &Uuid,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<bool>;
-
-    /// Вставляет краткоживущее намерение регистрации OAuth.
-    async fn insert_oauth_registration_intent(
-        &self,
-        provider: String,
-        provider_subject: String,
-        email: String,
-        display_name: Option<String>,
-        now: DateTime<Utc>,
-        expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<OAuthRegistrationIntent>;
-
-    /// Находит активное намерение регистрации OAuth.
-    async fn find_active_oauth_registration_intent(
-        &self,
-        intent_id: &Uuid,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<Option<OAuthRegistrationIntent>>;
-
-    /// Помечает намерение регистрации OAuth как использованное.
-    async fn consume_oauth_registration_intent(
-        &self,
-        intent_id: &Uuid,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<()>;
 }
