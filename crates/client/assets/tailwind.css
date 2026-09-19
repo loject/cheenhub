@@ -1192,6 +1192,7 @@ html,
 }
 
 .participants-grid > article {
+  align-self: center;
   flex: var(--tile-grow, 1) 1 var(--tile-basis, clamp(240px, 26%, 520px));
   min-width: var(--tile-min, 220px);
   max-width: var(--tile-max, 100%);
