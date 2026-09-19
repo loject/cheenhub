@@ -186,13 +186,12 @@ libpulse-binding = { version = "2.30", optional = true }
 [target.'cfg(target_os = "android")'.dependencies]
 manganis = "=0.8.0-alpha.1"
 oboe = "0.6.1"
-rustls-platform-verifier = "0.6.2"
+webpki-roots = "1"
 
 [build-dependencies]
 dotenvy.workspace = true
 rcgen.workspace = true
 rustls-pemfile.workspace = true
-serde_json.workspace = true
 sha2.workspace = true
 time.workspace = true
 url.workspace = true

@@ -1499,7 +1499,6 @@ dependencies = [
  "reqwest",
  "rustls 0.23.40",
  "rustls-pemfile",
- "rustls-platform-verifier",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -1515,6 +1514,7 @@ dependencies = [
  "web-time",
  "web-transport",
  "webbrowser",
+ "webpki-roots 1.0.7",
  "windows-sys 0.61.2",
  "wry",
 ]

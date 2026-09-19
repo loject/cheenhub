@@ -31,10 +31,6 @@ mod android_jni_safety {
     include!("../../build_support/android_jni_safety.rs");
 }
 
-mod android_platform_verifier {
-    include!("../../build_support/android_platform_verifier.rs");
-}
-
 fn main() {
     file_lines::check_workspace_file_lines();
     validate_platform_features();
@@ -42,7 +38,6 @@ fn main() {
     dotenvy::from_filename("../../.env").ok();
     android_launcher_icons::install();
     android_network_security::install();
-    android_platform_verifier::install();
     prepare_installer_payload();
 
     println!("cargo:rerun-if-changed=../../.env");
