@@ -36,10 +36,15 @@ pub(crate) fn ProviderButton(provider: AuthProvider) -> Element {
         return rsx! {
             DesktopGoogleButton {
                 flow: OAuthFlow::Login,
-                on_complete: move |completion| match completion {
-                    api::OAuthCompletion::RegistrationRequired(details) => registration.set(Some(details)),
-                    _ => { let _ = navigator.replace(Route::AppHome {}); }
+                on_complete: move |completion| {
+                    if let Err(error) = finish_google_sign_in(completion, &navigator, registration) {
+                        warn!(%error, "desktop Google OAuth completion failed");
+                        status.set(error);
+                    }
                 },
+            }
+            if !status().is_empty() {
+                p { class: "text-xs text-red-300", "{status()}" }
             }
         };
     }
@@ -64,7 +69,7 @@ pub(crate) fn ProviderButton(provider: AuthProvider) -> Element {
                             match google_sign_in::authenticate().await {
                                 Ok(Some(completion)) => {
                                     if let Err(error) =
-                                        finish_google_sign_in(completion, &navigator)
+                                        finish_google_sign_in(completion, &navigator, registration)
                                     {
                                         warn!(%error, "native Android Google sign-in completion failed");
                                         status.set(error);
@@ -121,23 +126,20 @@ pub(crate) fn ProviderButton(provider: AuthProvider) -> Element {
 fn finish_google_sign_in(
     completion: api::OAuthCompletion,
     navigator: &Navigator,
+    mut registration: Signal<Option<api::OAuthRegistrationRequired>>,
 ) -> Result<(), String> {
     match completion {
         api::OAuthCompletion::Authenticated(_) | api::OAuthCompletion::Linked => {
-            info!("native Android Google sign-in succeeded");
+            info!("Google sign-in succeeded");
             let _ = navigator.replace(Route::AppHome {});
             Ok(())
         }
-        api::OAuthCompletion::RegistrationRequired(registration) => {
-            if registration.registration_token.is_empty() {
+        api::OAuthCompletion::RegistrationRequired(details) => {
+            if details.registration_token.is_empty() {
                 return Err("Сервер не вернул токен регистрации Google.".to_owned());
             }
-            info!("native Android Google sign-in requires registration");
-            let _ = navigator.replace(Route::OAuthCallback {
-                code: None,
-                handoff_code: Some(registration.registration_token),
-                error: None,
-            });
+            info!("Google sign-in requires registration");
+            registration.set(Some(details));
             Ok(())
         }
     }
