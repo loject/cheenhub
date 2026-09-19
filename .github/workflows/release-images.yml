@@ -644,6 +644,35 @@ jobs:
         run: |
           cargo run --quiet -p xtask -- release-artifacts collect android dist/android/release dist/client "${GITHUB_REF_NAME}"
 
+      - name: Upload Android release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: client-release-android
+          path: dist/client/*
+          if-no-files-found: error
+
+  publish-android-github:
+    name: Publish Android APK to GitHub Release
+    runs-on: ubuntu-24.04
+    needs: build-android-client
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal
+          rustup default "${RUST_TOOLCHAIN}"
+
+      - name: Download Android release artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: client-release-android
+          path: dist/client
+
       - name: Publish Android release asset
         env:
           GH_REPO: ${{ github.repository }}
@@ -651,9 +680,209 @@ jobs:
         shell: bash
         run: cargo run --quiet -p xtask -- release-artifacts publish "${GITHUB_REF_NAME}" dist/client
 
-      - name: Upload Android release asset
-        uses: actions/upload-artifact@v6
+  publish-android-rustore:
+    name: Publish Android APK to RuStore
+    runs-on: ubuntu-24.04
+    needs: build-android-client
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download Android release artifact
+        uses: actions/download-artifact@v8
         with:
           name: client-release-android
-          path: dist/client/*
-          if-no-files-found: error
+          path: dist/client
+
+      - name: Publish Android APK to RuStore
+        env:
+          RUSTORE_KEY_ID: ${{ secrets.RUSTORE_KEY_ID }}
+          RUSTORE_PRIVATE_KEY: ${{ secrets.RUSTORE_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          API="https://public-api.rustore.ru"
+          PACKAGE_NAME="ru.cheenhub"
+          APK_PATH="dist/client/cheenhub-${GITHUB_REF_NAME}-android.apk"
+
+          if [[ -z "${RUSTORE_KEY_ID}" ]]; then
+            echo "RUSTORE_KEY_ID is not configured." >&2
+            exit 1
+          fi
+
+          if [[ -z "${RUSTORE_PRIVATE_KEY}" ]]; then
+            echo "RUSTORE_PRIVATE_KEY is not configured." >&2
+            exit 1
+          fi
+
+          if [[ ! -f "${APK_PATH}" ]]; then
+            echo "Android release APK not found: ${APK_PATH}" >&2
+            exit 1
+          fi
+
+          private_key_raw="${RUNNER_TEMP}/rustore-private-key"
+          private_key_pem="${RUNNER_TEMP}/rustore-private-key.pem"
+          trap 'rm -f "${private_key_raw}" "${private_key_pem}"' EXIT
+
+          echo "::group::Authenticate in RuStore"
+
+          timestamp="$(date -u '+%Y-%m-%dT%H:%M:%S.%3N+00:00')"
+
+          if ! printf '%s' "${RUSTORE_PRIVATE_KEY}" \
+            | tr -d '\r\n ' \
+            | base64 --decode > "${private_key_raw}"
+          then
+            echo "RUSTORE_PRIVATE_KEY is not valid Base64." >&2
+            exit 1
+          fi
+
+          if ! openssl pkey \
+            -inform DER \
+            -in "${private_key_raw}" \
+            -out "${private_key_pem}" 2>/dev/null
+          then
+            if ! openssl pkey \
+              -in "${private_key_raw}" \
+              -out "${private_key_pem}" 2>/dev/null
+            then
+              echo "Unable to parse the RuStore RSA private key." >&2
+              exit 1
+            fi
+          fi
+
+          signature="$(
+            printf '%s' "${RUSTORE_KEY_ID}${timestamp}" \
+              | openssl dgst -sha512 -sign "${private_key_pem}" \
+              | base64 -w0
+          )"
+
+          auth_response="$(
+            curl --fail-with-body --silent --show-error \
+              --request POST \
+              "${API}/public/auth/" \
+              --header "Content-Type: application/json" \
+              --data "$(
+                jq -n \
+                  --arg keyId "${RUSTORE_KEY_ID}" \
+                  --arg timestamp "${timestamp}" \
+                  --arg signature "${signature}" \
+                  '{
+                    keyId: $keyId,
+                    timestamp: $timestamp,
+                    signature: $signature
+                  }'
+              )"
+          )"
+
+          if [[ "$(jq -r '.code // empty' <<< "${auth_response}")" != "OK" ]]; then
+            echo "RuStore authentication failed." >&2
+            jq '{code, message, timestamp}' <<< "${auth_response}" >&2 || true
+            exit 1
+          fi
+
+          token="$(jq -r '.body.jwe // empty' <<< "${auth_response}")"
+          if [[ -z "${token}" ]]; then
+            echo "RuStore did not return a JWE token." >&2
+            exit 1
+          fi
+          echo "::add-mask::${token}"
+
+          echo "::endgroup::"
+
+          echo "::group::Check for an existing RuStore draft"
+
+          versions_response="$(
+            curl --fail-with-body --silent --show-error \
+              "${API}/public/v1/application/${PACKAGE_NAME}/version?versionStatuses=DRAFT&page=0&size=20" \
+              --header "Public-Token: ${token}"
+          )"
+
+          if [[ "$(jq -r '.code // empty' <<< "${versions_response}")" != "OK" ]]; then
+            echo "Failed to query RuStore versions." >&2
+            jq '{code, message, timestamp}' <<< "${versions_response}" >&2 || true
+            exit 1
+          fi
+
+          draft_count="$(jq -r '.body.totalElements // 0' <<< "${versions_response}")"
+          if (( draft_count > 0 )); then
+            echo "RuStore already contains a DRAFT version for ${PACKAGE_NAME}." >&2
+            echo "Finish or delete the existing draft in RuStore Console, then rerun this job." >&2
+            jq '.body.content[] | {versionId, versionName, versionCode, versionStatus}' \
+              <<< "${versions_response}" >&2 || true
+            exit 1
+          fi
+
+          echo "::endgroup::"
+
+          echo "::group::Create RuStore draft"
+
+          version_name="${GITHUB_REF_NAME#v}"
+          draft_response="$(
+            curl --fail-with-body --silent --show-error \
+              --request POST \
+              "${API}/public/v1/application/${PACKAGE_NAME}/version" \
+              --header "Public-Token: ${token}" \
+              --header "Content-Type: application/json" \
+              --data "$(
+                jq -n \
+                  --arg whatsNew "Версия ${version_name}" \
+                  '{
+                    appType: "MAIN",
+                    publishType: "INSTANTLY",
+                    partialValue: 100,
+                    whatsNew: $whatsNew
+                  }'
+              )"
+          )"
+
+          if [[ "$(jq -r '.code // empty' <<< "${draft_response}")" != "OK" ]]; then
+            echo "Failed to create a RuStore draft." >&2
+            jq '{code, message, timestamp}' <<< "${draft_response}" >&2 || true
+            exit 1
+          fi
+
+          version_id="$(jq -r '.content.versionId // empty' <<< "${draft_response}")"
+          if [[ -z "${version_id}" ]]; then
+            echo "RuStore did not return versionId for the new draft." >&2
+            exit 1
+          fi
+
+          echo "Created RuStore draft ${version_id}."
+          echo "::endgroup::"
+
+          echo "::group::Upload APK to RuStore"
+
+          upload_response="$(
+            curl --fail-with-body --silent --show-error \
+              --request POST \
+              "${API}/public/v1/application/${PACKAGE_NAME}/version/${version_id}/apk?isMainApk=true&servicesType=Unknown" \
+              --header "Public-Token: ${token}" \
+              --form "file=@${APK_PATH}"
+          )"
+
+          if [[ "$(jq -r '.code // empty' <<< "${upload_response}")" != "OK" ]]; then
+            echo "Failed to upload APK to RuStore." >&2
+            jq '{code, message, timestamp}' <<< "${upload_response}" >&2 || true
+            exit 1
+          fi
+
+          echo "::endgroup::"
+
+          echo "::group::Send RuStore draft to moderation"
+
+          moderation_response="$(
+            curl --fail-with-body --silent --show-error \
+              --request POST \
+              "${API}/public/v1/application/${PACKAGE_NAME}/version/${version_id}/commit?priorityUpdate=0" \
+              --header "Public-Token: ${token}"
+          )"
+
+          if [[ "$(jq -r '.code // empty' <<< "${moderation_response}")" != "OK" ]]; then
+            echo "Failed to send RuStore draft to moderation." >&2
+            jq '{code, message, timestamp}' <<< "${moderation_response}" >&2 || true
+            exit 1
+          fi
+
+          echo "RuStore version ${version_id} was sent to moderation."
+          echo "::endgroup::"
