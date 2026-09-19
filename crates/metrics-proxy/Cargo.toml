@@ -5,6 +5,15 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+autobins = false
+
+[features]
+container-runtime = []
+
+[[bin]]
+name = "cheenhub_metrics_proxy"
+path = "src/main.rs"
+required-features = ["container-runtime"]
 
 [dependencies]
 anyhow.workspace = true
