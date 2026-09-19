@@ -842,7 +842,17 @@ jobs:
             exit 1
           fi
 
-          version_id="$(jq -r '.content.versionId // empty' <<< "${draft_response}")"
+          version_id="$(jq -r '
+            if (.body | type) == "number" then
+              .body
+            elif .content.versionId? != null then
+              .content.versionId
+            elif .body.versionId? != null then
+              .body.versionId
+            else
+              empty
+            end
+          ' <<< "${draft_response}")"
           if [[ -z "${version_id}" ]]; then
             echo "RuStore did not return versionId for the new draft." >&2
             exit 1
