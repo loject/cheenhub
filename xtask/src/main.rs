@@ -134,7 +134,8 @@ fn run_release_version(args: Vec<String>) -> XtaskResult<()> {
             commit_release_changes(&release.tag)?;
             ensure_clean_worktree("before creating the git tag")?;
             create_git_tag(&release.tag)?;
-            println!("Created git tag {}.", release.tag);
+            push_git_tag(&release.tag)?;
+            println!("Created and pushed git tag {}.", release.tag);
         }
         "-h" | "--help" | "help" => {
             println!(
@@ -542,6 +543,21 @@ fn create_git_tag(tag: &str) -> XtaskResult<()> {
     Ok(())
 }
 
+fn push_git_tag(tag: &str) -> XtaskResult<()> {
+    println!("Pushing git tag {tag} to origin.");
+    checked_command(&mut push_git_tag_command(tag))?;
+    Ok(())
+}
+
+fn push_git_tag_command(tag: &str) -> Command {
+    let tag_ref = format!("refs/tags/{tag}");
+    let mut command = Command::new("git");
+    command
+        .args(["push", "origin"])
+        .arg(format!("{tag_ref}:{tag_ref}"));
+    command
+}
+
 fn run_release_build() -> XtaskResult<()> {
     println!("Running cargo build before creating the git tag.");
     checked_status(Command::new("cargo").args(["build", "--workspace", "--exclude", "xtask"]))?;
@@ -636,7 +652,22 @@ fn is_section_header(line: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{release_target_from_tag, replace_workspace_version};
+    use super::{push_git_tag_command, release_target_from_tag, replace_workspace_version};
+
+    #[test]
+    fn pushes_only_the_created_tag_to_origin() {
+        let command = push_git_tag_command("v0.28.6");
+        let arguments = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(command.get_program(), "git");
+        assert_eq!(
+            arguments,
+            ["push", "origin", "refs/tags/v0.28.6:refs/tags/v0.28.6"]
+        );
+    }
 
     #[test]
     fn normalizes_release_tag_to_workspace_version() {
