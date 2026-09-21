@@ -12,6 +12,7 @@ type XtaskResult<T> = Result<T, String>;
 
 const ROOT_MANIFEST: &str = "Cargo.toml";
 
+mod ensure_cargo_cli;
 mod release_artifacts;
 
 fn main() {
@@ -28,6 +29,7 @@ fn run() -> XtaskResult<()> {
     };
 
     match command.as_str() {
+        "ensure-cargo-cli" => ensure_cargo_cli::run(args.collect()),
         "line-stats" => run_line_stats(),
         "release-artifacts" => release_artifacts::run(args.collect()),
         "release-version" => run_release_version(args.collect()),
@@ -38,7 +40,7 @@ fn run() -> XtaskResult<()> {
 
 fn print_usage() -> XtaskResult<()> {
     println!(
-        "Usage:\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag [<release-tag>]\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>\n  cargo run -p xtask -- release-artifacts publish <release-tag> <asset-dir>"
+        "Usage:\n  cargo run -p xtask -- ensure-cargo-cli <crate> <binary> <version>\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag [<release-tag>]\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>\n  cargo run -p xtask -- release-artifacts publish <release-tag> <asset-dir>"
     );
     Ok(())
 }
