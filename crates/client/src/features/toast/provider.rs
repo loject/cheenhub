@@ -86,8 +86,8 @@ impl Toast {
         self.hovered || !application_focused
     }
 
-    pub(super) fn exiting(&self) -> bool {
-        self.exiting
+    pub(super) fn countdown_active(&self) -> bool {
+        !self.kind.persistent() && !self.exiting
     }
 
     pub(super) fn begin_exit(&mut self) -> bool {
@@ -207,14 +207,6 @@ impl ToastHandle {
         }
         toasts.set(next_toasts);
         debug!(toast_id = id, kind = ?kind, "queued toast notification");
-
-        if !kind.persistent() {
-            spawn(super::timer::run_toast_countdown(
-                toasts,
-                id,
-                self.application_focus,
-            ));
-        }
     }
 }
 
@@ -224,6 +216,12 @@ pub(crate) fn ToastProvider(children: Element) -> Element {
     let toasts = use_signal(Vec::<Toast>::new);
     let next_id = use_signal(|| 0_u64);
     let application_focus = use_context::<ApplicationFocusContext>();
+    use_hook(move || {
+        super::timer::spawn_scheduler_task(super::timer::run_toast_scheduler(
+            toasts,
+            application_focus,
+        ))
+    });
     let handle = ToastHandle {
         toasts,
         next_id,

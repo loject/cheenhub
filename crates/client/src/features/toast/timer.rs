@@ -1,5 +1,8 @@
 //! Управление временем жизни toast-уведомлений.
 
+use std::future::Future;
+
+use dioxus::dioxus_core::Task;
 use dioxus::prelude::*;
 
 use crate::features::application_focus::ApplicationFocusContext;
@@ -11,35 +14,47 @@ pub(super) const TOAST_TTL_MS: u32 = 4_200;
 const TOAST_TIMER_TICK_MS: u32 = 100;
 const TOAST_EXIT_MS: u32 = 180;
 
-pub(super) async fn run_toast_countdown(
+/// Запускает scheduler в scope владеющего toast-provider.
+pub(super) fn spawn_scheduler_task(task: impl Future<Output = ()> + 'static) -> Task {
+    spawn(task)
+}
+
+pub(super) async fn run_toast_scheduler(
     mut toasts: Signal<Vec<Toast>>,
-    id: u64,
     application_focus: ApplicationFocusContext,
 ) {
+    debug!("started toast countdown scheduler");
+
     loop {
         sleep_ms(TOAST_TIMER_TICK_MS).await;
 
         let mut next_toasts = toasts();
-        let Some(toast) = next_toasts.iter_mut().find(|toast| toast.id() == id) else {
-            return;
-        };
-        if toast.exiting() {
-            return;
-        }
-        let became_evictable = application_focus.is_focused() && toast.mark_focused_display();
         let application_focused = application_focus.is_focused();
-        if toast.timer_paused(application_focused) {
-            if became_evictable {
-                toasts.set(next_toasts);
+        let mut changed = false;
+        let mut expired_ids = Vec::new();
+
+        for toast in &mut next_toasts {
+            if !toast.countdown_active() {
+                continue;
             }
-            continue;
+
+            let became_evictable = application_focused && toast.mark_focused_display();
+            if toast.timer_paused(application_focused) {
+                changed |= became_evictable;
+                continue;
+            }
+
+            changed = true;
+            if toast.tick(TOAST_TIMER_TICK_MS, application_focused) {
+                expired_ids.push(toast.id());
+            }
         }
 
-        let expired = toast.tick(TOAST_TIMER_TICK_MS, application_focused);
-        toasts.set(next_toasts);
-        if expired {
+        if changed {
+            toasts.set(next_toasts);
+        }
+        for id in expired_ids {
             begin_dismiss_toast(&mut toasts, id);
-            return;
         }
     }
 }

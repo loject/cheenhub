@@ -2,6 +2,8 @@
 
 mod provider;
 mod timer;
+#[cfg(test)]
+mod timer_lifecycle_tests;
 mod update_available;
 
 pub(crate) use provider::{ToastHandle, ToastProvider};
