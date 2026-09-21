@@ -7,9 +7,13 @@ mod browser;
 mod browser_capture;
 mod browser_errors;
 mod native;
+mod picker_flow;
+mod picker_host;
 mod provider;
 mod provider_context;
 mod provider_runtime;
+mod source_picker;
+mod source_preview;
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 mod unsupported;
 

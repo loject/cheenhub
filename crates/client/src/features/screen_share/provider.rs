@@ -10,7 +10,9 @@ use super::backend::{
     ScreenShareBackend, ScreenShareConfig, ScreenShareFrameCallback, ScreenShareSession,
     ScreenShareStatus,
 };
+use super::picker_flow::{ScreenShareControlIntent, screen_share_control_intent};
 use super::provider_runtime::{next_generation, screen_share_callbacks, status_from_error};
+use super::source_preview;
 
 /// Контекстный хэндл, используемый функциями, которым нужен захват экрана.
 #[derive(Clone)]
@@ -20,6 +22,7 @@ pub(crate) struct ScreenShareHandle {
     pub(super) generation: Signal<u64>,
     pub(super) backend: Rc<dyn ScreenShareBackend>,
     pub(super) toast: ToastHandle,
+    pub(super) picker_open: Signal<bool>,
 }
 
 impl ScreenShareHandle {
@@ -102,13 +105,14 @@ impl ScreenShareHandle {
 
     /// Toggles screen sharing capture.
     pub(crate) fn toggle(&self, on_frame: ScreenShareFrameCallback) {
-        if matches!(
-            self.status(),
-            ScreenShareStatus::Live | ScreenShareStatus::Starting
-        ) {
-            self.stop();
-        } else {
-            self.start(on_frame);
+        match screen_share_control_intent(source_preview::selection_available(), &self.status()) {
+            ScreenShareControlIntent::OpenPicker => {
+                let mut picker_open = self.picker_open;
+                picker_open.set(true);
+                info!("opened screen share source picker");
+            }
+            ScreenShareControlIntent::Start => self.start(on_frame),
+            ScreenShareControlIntent::Stop => self.stop(),
         }
     }
 

@@ -154,7 +154,6 @@ impl ToastHandle {
     }
 
     /// Показывает информационное сообщение.
-    #[allow(dead_code)]
     pub(crate) fn info(&self, message: impl Into<String>) {
         self.push_message(ToastKind::Info, message.into(), false);
     }
