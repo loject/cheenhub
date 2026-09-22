@@ -66,6 +66,12 @@
 - Run `cargo test --workspace --all-targets` only when the change touches functionality that has related Rust tests or affects shared Rust contracts/behavior. If the change is UI-only, styling-only, documentation-only, or otherwise has no related tests in the repo, do not run the full test suite just for ceremony.
 - If relevant tests cannot be run, explain the blocker and the remaining risk before handing off. If tests are intentionally skipped because there are no related tests, say that explicitly.
 
+## Git Commits
+
+- Write commit messages in Conventional Commits format: `type(scope): concise summary`, for example `fix(client): reset text chat composer height after send`.
+- Use a lowercase type and scope, and choose a type that matches the change, such as `feat`, `fix`, `refactor`, `docs`, `build`, `test`, or `chore`.
+- Check recent commit history before committing so the message matches the repository's established style.
+
 ## Handoff Summary
 
 - После реализации изменений в резюме перечисляй все tradeoff'ы, принятые во время реализации, и возможные последствия каждого решения кратким тезисным списком.
