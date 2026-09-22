@@ -219,6 +219,7 @@ pub(crate) fn VoiceStage() -> Element {
                     volume: menu.volume,
                     x: menu.x,
                     y: menu.y,
+                    on_close: move |_| open_user_menu.set(None),
                 }
             }
         }

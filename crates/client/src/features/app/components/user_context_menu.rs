@@ -11,6 +11,7 @@ pub(crate) fn UserContextMenu(
     volume: u32,
     x: f64,
     y: f64,
+    on_close: EventHandler<()>,
     on_volume_change: EventHandler<u32>,
     on_kick_voice: EventHandler<()>,
 ) -> Element {
@@ -24,6 +25,11 @@ pub(crate) fn UserContextMenu(
     let muted = volume == 0;
 
     rsx! {
+        div {
+            class: "fixed inset-0 z-[999] cursor-default",
+            "aria-label": "Закрыть меню участника",
+            onclick: move |_| on_close.call(()),
+        }
         div {
             class: "user-menu fixed z-[1000] w-[240px] rounded-[18px] border border-zinc-800 bg-zinc-950/96 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,.65)] backdrop-blur-xl",
             style: pos_style,

@@ -10,6 +10,7 @@ use futures_util::StreamExt;
 use crate::Route;
 use crate::features::app::components::app_sidebar_footer::AppSidebarFooter;
 use crate::features::app::components::avatar::UserAvatar;
+use crate::features::app::components::sidebar_menu_dismiss_layer::SidebarMenuDismissLayer;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::realtime::RealtimeHandle;
 use crate::features::voice_chat::{DirectCallHeader, VoiceConnectionHandle};
@@ -50,6 +51,8 @@ pub(crate) fn SocialPage(
     let is_loading = use_signal(|| false);
     let mut is_search_open = use_signal(|| false);
     let mut loaded = use_signal(|| false);
+    let mut is_profile_menu_open = use_signal(|| false);
+    let mut is_connection_status_open = use_signal(|| false);
     let mut requests_collapsed = use_signal(|| true);
     let mut friend_menu = use_signal(|| None::<FriendMenuRequest>);
     let mut loaded_route_conversation_id = use_signal(|| None::<String>);
@@ -228,12 +231,26 @@ pub(crate) fn SocialPage(
     } else {
         "false"
     };
+    let sidebar_overlay_open = is_profile_menu_open() || is_connection_status_open();
+    let close_sidebar_overlay = use_callback(move |_| {
+        is_profile_menu_open.set(false);
+        is_connection_status_open.set(false);
+    });
+    let social_sidebar_class = if sidebar_overlay_open {
+        "social-sidebar relative z-[95] flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/90"
+    } else {
+        "social-sidebar flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/90"
+    };
 
     rsx! {
+        if sidebar_overlay_open {
+            SidebarMenuDismissLayer { on_close: move |_| close_sidebar_overlay.call(()) }
+        }
         section {
             class: "social-workspace flex h-full min-h-0 flex-1 bg-zinc-950 text-zinc-100",
             "data-mobile-conversation-open": "{mobile_conversation_open}",
-            aside { class: "social-sidebar flex w-[284px] shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/90",
+            aside { class: social_sidebar_class,
+                onclick: move |_| close_sidebar_overlay.call(()),
                 div { class: "flex h-16 shrink-0 items-center justify-between gap-3 border-b border-zinc-800/80 px-4",
                     div { class: "min-w-0",
                         h1 { class: "text-[15px] font-semibold text-zinc-50", "Друзья" }
@@ -290,6 +307,8 @@ pub(crate) fn SocialPage(
                     settings_workspace_active: false,
                     show_voice_controls: true,
                     on_open_user_settings,
+                    is_profile_menu_open,
+                    is_connection_status_open,
                 }
             }
 

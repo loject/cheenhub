@@ -10,7 +10,11 @@ use super::server_rooms_sidebar_styles as sidebar_styles;
 
 /// Рендерит строку realtime-статуса в боковой панели приложения.
 #[component]
-pub(crate) fn ServerRealtimeStatus(label: String, settings_workspace_active: bool) -> Element {
+pub(crate) fn ServerRealtimeStatus(
+    label: String,
+    settings_workspace_active: bool,
+    is_connection_status_open: Signal<bool>,
+) -> Element {
     let realtime = use_context::<RealtimeHandle>();
     let mut realtime_status = use_signal(|| realtime.connection_status());
     let connection_status_class =
@@ -33,7 +37,7 @@ pub(crate) fn ServerRealtimeStatus(label: String, settings_workspace_active: boo
 
     rsx! {
         div { class: connection_status_class,
-            RealtimeConnectionStatusIndicator {}
+            RealtimeConnectionStatusIndicator { is_open: is_connection_status_open }
             div { class: connection_details_class,
                 div { class: "truncate text-[11px] font-medium text-zinc-100", "{label}" }
                 div { class: "truncate text-[11px] text-zinc-500", "{realtime_status_label}" }

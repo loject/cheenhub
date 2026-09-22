@@ -19,7 +19,7 @@ pub(crate) fn ProfileMenu(on_close: EventHandler<()>) -> Element {
 
     rsx! {
         div {
-            class: "absolute bottom-[calc(100%+10px)] left-3 right-3 z-50 overflow-hidden rounded-[18px] border border-zinc-800 bg-zinc-950/96 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,.58)] backdrop-blur-xl",
+            class: "absolute bottom-[calc(100%+10px)] left-3 right-3 z-[100] overflow-hidden rounded-[18px] border border-zinc-800 bg-zinc-950/96 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,.58)] backdrop-blur-xl",
             onclick: move |event| event.stop_propagation(),
             div { class: "px-2.5 py-2",
                 p { class: "truncate text-[13px] font-semibold text-zinc-100", "{current_user.nickname}" }

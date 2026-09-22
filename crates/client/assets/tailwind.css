@@ -2242,6 +2242,14 @@ html,
   z-index: 999;
 }
 
+.z-\[99\] {
+  z-index: 99;
+}
+
+.z-\[94\] {
+  z-index: 94;
+}
+
 .order-1 {
   order: 1;
 }

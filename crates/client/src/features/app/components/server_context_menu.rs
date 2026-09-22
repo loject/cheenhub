@@ -35,7 +35,7 @@ pub(crate) fn ServerContextMenu(
 
     rsx! {
         div {
-            class: "absolute left-4 right-4 top-[86px] z-40 overflow-hidden rounded-[20px] border border-zinc-800 bg-zinc-950/95 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,.55)] backdrop-blur-xl",
+            class: "absolute left-4 right-4 top-[86px] z-[100] overflow-hidden rounded-[20px] border border-zinc-800 bg-zinc-950/95 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,.55)] backdrop-blur-xl",
             onclick: move |event| event.stop_propagation(),
             if can_open_settings {
                 button {

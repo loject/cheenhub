@@ -204,6 +204,7 @@ pub(crate) fn DirectCallStage(
                     volume: peer_volume(),
                     x,
                     y,
+                    on_close: move |_| menu_position.set(None),
                     on_volume_change: move |volume| {
                         peer_volume.set(volume);
                         playback.set_user_volume(&peer_user_id, volume);

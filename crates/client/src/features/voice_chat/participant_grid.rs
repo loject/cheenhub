@@ -248,6 +248,7 @@ pub(crate) fn VoiceParticipantGrid(
                     volume: user_volumes().get(&menu.user_id).copied().unwrap_or(100),
                     x: menu.x,
                     y: menu.y,
+                    on_close: move |_| open_user_menu.set(None),
                     on_volume_change: move |vol: u32| {
                         user_volumes.write().insert(menu.user_id.clone(), vol);
                         playback.set_user_volume(&menu.user_id, vol);

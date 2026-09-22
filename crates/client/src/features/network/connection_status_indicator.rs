@@ -14,12 +14,11 @@ const GRAPH_PADDING: f32 = 8.0;
 
 /// Рендерит текущее состояние соединения WebTransport.
 #[component]
-pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
+pub(crate) fn RealtimeConnectionStatusIndicator(mut is_open: Signal<bool>) -> Element {
     let realtime = use_context::<RealtimeHandle>();
     let network_quality = use_context::<NetworkQualityHandle>();
     let mut status = use_signal(|| realtime.connection_status());
     let mut fallback_info = use_signal(|| realtime.fallback_info());
-    let mut is_open = use_signal(|| false);
 
     let status_realtime = realtime.clone();
     use_hook(move || {
@@ -112,7 +111,10 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
                 class: "group relative flex h-9 w-9 items-center justify-center rounded-xl border {class}",
                 "aria-label": "{tooltip}",
                 "aria-expanded": "{is_open()}",
-                onclick: move |_| is_open.set(!is_open()),
+                onclick: move |event| {
+                    event.stop_propagation();
+                    is_open.set(!is_open());
+                },
                 span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-0 z-[90] w-max min-w-[184px] translate-y-1 rounded-xl border border-zinc-800 bg-zinc-950/95 p-3 text-left opacity-0 shadow-[0_16px_40px_rgba(0,0,0,.45)] backdrop-blur-xl transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100",
                     span { class: "block text-[12px] font-medium text-zinc-100", "{label}" }
                     span { class: "mt-1 block text-[11px] text-zinc-500", "{tooltip}" }
@@ -136,6 +138,7 @@ pub(crate) fn RealtimeConnectionStatusIndicator() -> Element {
             if is_open() {
                 div {
                     class: "absolute bottom-[calc(100%+10px)] left-0 z-[100] w-[260px] rounded-xl border border-zinc-800 bg-zinc-950/95 p-3 text-left text-zinc-200 shadow-[0_18px_46px_rgba(0,0,0,.5)] backdrop-blur-xl",
+                    onclick: move |event| event.stop_propagation(),
                     if let Some(fallback) = active_fallback {
                         div { class: "mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5",
                             span { class: "block text-[12px] font-semibold text-amber-200", "Резервный режим" }

@@ -17,20 +17,24 @@ pub(crate) fn AppSidebarFooter(
     settings_workspace_active: bool,
     show_voice_controls: bool,
     on_open_user_settings: EventHandler<()>,
+    mut is_profile_menu_open: Signal<bool>,
+    mut is_connection_status_open: Signal<bool>,
 ) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
-    let mut is_profile_menu_open = use_signal(|| false);
     let sidebar_voice_class = sidebar_styles::sidebar_voice_class(settings_workspace_active);
     let user_bar_class = sidebar_styles::user_bar_class(settings_workspace_active);
     let user_details_class = sidebar_styles::user_details_class(settings_workspace_active);
-
     rsx! {
         div {
             class: "relative z-40 border-t border-zinc-800/80 p-3",
-            onclick: move |_| is_profile_menu_open.set(false),
+            onclick: move |_| {
+                is_profile_menu_open.set(false);
+                is_connection_status_open.set(false);
+            },
             ServerRealtimeStatus {
                 label: realtime_label,
                 settings_workspace_active,
+                is_connection_status_open,
             }
             if show_voice_controls {
                 div { class: sidebar_voice_class,
@@ -65,6 +69,7 @@ pub(crate) fn AppSidebarFooter(
                     onclick: move |event| {
                         event.stop_propagation();
                         is_profile_menu_open.set(false);
+                        is_connection_status_open.set(false);
                         on_open_user_settings.call(());
                     },
                     svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24",

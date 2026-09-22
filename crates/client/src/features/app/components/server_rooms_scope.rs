@@ -23,12 +23,14 @@ use super::server_room_workspace_sync::synchronize_room_workspace;
 use super::server_rooms_action_error::ServerRoomsActionError;
 use super::server_rooms_load_error::ServerRoomsLoadError;
 use super::server_rooms_loading::ServerRoomsLoading;
+use super::server_rooms_menu_trigger::ServerRoomsMenuTrigger;
 use super::server_rooms_sidebar_styles as sidebar_styles;
 use super::server_rooms_state::{
     RoomModal, ServerWorkspace, active_room, chat_open_for_room,
     clear_workspace_selection_if_needed, close_server_settings_workspace, ensure_workspace_mounted,
     open_server_settings_workspace, resolve_active_room_id, room_by_id, upsert_room,
 };
+use super::sidebar_menu_dismiss_layer::SidebarMenuDismissLayer;
 
 /// Owns room state for one server and renders the room sidebar and active room.
 #[component]
@@ -52,6 +54,8 @@ pub(crate) fn ServerRoomsScope(
     let mut room_action_status = use_signal(String::new);
     let mut room_modal = use_signal(|| None::<RoomModal>);
     let mut is_server_menu_open = use_signal(|| false);
+    let mut is_profile_menu_open = use_signal(|| false);
+    let mut is_connection_status_open = use_signal(|| false);
     let mut active_workspace = use_signal(|| None::<ServerWorkspace>);
     let mut mounted_workspaces = use_signal(Vec::<ServerWorkspace>::new);
     let mut mobile_workspace_open = use_signal(|| false);
@@ -86,7 +90,15 @@ pub(crate) fn ServerRoomsScope(
     };
     let selected_room = active_room(&current_rooms, active_room_id().as_deref());
     let settings_workspace_active = matches!(active_workspace(), Some(ServerWorkspace::Settings));
-    let sidebar_class = sidebar_styles::rooms_sidebar_class(settings_workspace_active);
+    let sidebar_overlay_open =
+        is_server_menu_open() || is_profile_menu_open() || is_connection_status_open();
+    let sidebar_class =
+        sidebar_styles::rooms_sidebar_class(settings_workspace_active, sidebar_overlay_open);
+    let close_sidebar_overlay = use_callback(move |_| {
+        is_server_menu_open.set(false);
+        is_profile_menu_open.set(false);
+        is_connection_status_open.set(false);
+    });
     let sidebar_header_text_class =
         sidebar_styles::rooms_sidebar_header_text_class(settings_workspace_active);
     let sidebar_header_icon_class =
@@ -163,29 +175,21 @@ pub(crate) fn ServerRoomsScope(
     });
 
     rsx! {
+        if sidebar_overlay_open {
+            SidebarMenuDismissLayer { on_close: move |_| close_sidebar_overlay.call(()) }
+        }
         aside {
             class: sidebar_class,
             "data-mobile-workspace-open": if mobile_workspace_open() { "true" } else { "false" },
-            onclick: move |_| is_server_menu_open.set(false),
+            onclick: move |_| close_sidebar_overlay.call(()),
             div { class: "relative border-b border-zinc-800/80 p-4",
-                button {
-                    r#type: "button",
-                    class: "flex w-full items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-900/80 px-4 py-3 text-left transition-[background,border-color,color,transform,opacity] duration-150 hover:border-zinc-700 hover:bg-zinc-800",
-                    "aria-haspopup": "menu",
-                    "aria-expanded": if is_server_menu_open() { "true" } else { "false" },
-                    onclick: move |event| {
-                        event.stop_propagation();
-                        is_server_menu_open.set(!is_server_menu_open());
-                    },
-                    span { class: sidebar_header_text_class,
-                        span { class: "block text-[13px] font-semibold tracking-[-0.02em] text-zinc-100", "{server_name}" }
-                        span { class: "mt-0.5 block text-[11px] text-zinc-500",
-                            if is_owner { "Владелец сервера" } else { "Участник сервера" }
-                        }
-                    }
-                    svg { class: sidebar_header_icon_class, fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
-                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "m6 9 6 6 6-6" }
-                    }
+                ServerRoomsMenuTrigger {
+                    server_name: server_name.clone(),
+                    is_owner,
+                    is_open: is_server_menu_open(),
+                    text_class: sidebar_header_text_class,
+                    icon_class: sidebar_header_icon_class,
+                    on_toggle: move |_| is_server_menu_open.set(!is_server_menu_open()),
                 }
                 if is_server_menu_open() {
                     ServerContextMenu {
@@ -382,6 +386,8 @@ pub(crate) fn ServerRoomsScope(
                 settings_workspace_active,
                 show_voice_controls: true,
                 on_open_user_settings,
+                is_profile_menu_open,
+                is_connection_status_open,
             }
         }
         for workspace in mounted_workspaces() {

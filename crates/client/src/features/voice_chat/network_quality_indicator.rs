@@ -35,6 +35,10 @@ impl IndicatorDisclosureState {
     fn toggle_pinned(&mut self) {
         self.pinned = !self.pinned;
     }
+
+    fn dismiss(&mut self) {
+        self.pinned = false;
+    }
 }
 
 /// Показывает встроенные сетевые метрики текущего пользователя и собеседника.
@@ -47,6 +51,11 @@ pub(crate) fn VoiceNetworkQualityIndicator(
     let quality = use_context::<VoiceNetworkQualityHandle>();
     let mut disclosure = use_signal(IndicatorDisclosureState::default);
     let expanded = disclosure().expanded();
+    let indicator_z = if disclosure().pinned {
+        "z-[100]"
+    } else {
+        "z-30"
+    };
     let local = quality.reading_for(&current_user_id);
     let participant = quality.reading_for(&participant_user_id);
     let is_self = participant_user_id == current_user_id;
@@ -91,9 +100,16 @@ pub(crate) fn VoiceNetworkQualityIndicator(
     };
 
     rsx! {
+        if disclosure().pinned {
+            div {
+                class: "fixed inset-0 z-[99] cursor-default",
+                "aria-label": "Закрыть сведения о качестве соединения",
+                onclick: move |_| disclosure.write().dismiss(),
+            }
+        }
         button {
             r#type: "button",
-            class: "absolute left-3 top-3 z-30 flex items-center overflow-hidden rounded-xl text-left backdrop-blur-xl transition-[width,min-height,padding,background-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96] motion-reduce:transition-none {container_size} {tone}",
+            class: "absolute left-3 top-3 {indicator_z} flex items-center overflow-hidden rounded-xl text-left backdrop-blur-xl transition-[width,min-height,padding,background-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96] motion-reduce:transition-none {container_size} {tone}",
             "aria-label": aria_label,
             "aria-expanded": if expanded { "true" } else { "false" },
             onpointerenter: move |event| {
@@ -291,6 +307,11 @@ mod tests {
         state.set_mouse_hovered(false);
         assert!(state.expanded());
         state.toggle_pinned();
+        assert!(!state.expanded());
+
+        state.toggle_pinned();
+        assert!(state.expanded());
+        state.dismiss();
         assert!(!state.expanded());
     }
 }
