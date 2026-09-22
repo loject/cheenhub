@@ -65,6 +65,7 @@ pub(crate) fn AppShell() -> Element {
     let mut is_add_server_open = use_signal(|| false);
     let mut is_create_server_open = use_signal(|| false);
     let mut is_user_settings_open = use_signal(|| false);
+    let mut download_menu_open = use_signal(|| false);
     let mut shell_state = use_signal(default_server_shell_state);
     let mut shell_state_by_server = use_signal(Vec::<(String, ServerShellState)>::new);
     let mut app_modal = use_signal(|| None::<AppModal>);
@@ -216,6 +217,7 @@ pub(crate) fn AppShell() -> Element {
                 is_host_owner,
                 is_loading: is_loading_servers(),
                 status: server_status(),
+                download_menu_open,
                 on_select_server: move |server_id: String| {
                     info!(%server_id, "switching app shell to server workspace");
                     let next_shell_state =
@@ -319,6 +321,13 @@ pub(crate) fn AppShell() -> Element {
                             is_user_settings_open.set(true);
                         },
                     }
+                }
+            }
+            if download_menu_open() {
+                div {
+                    class: "fixed inset-0 z-[999] cursor-default",
+                    "aria-label": "Закрыть меню загрузки",
+                    onclick: move |_| download_menu_open.set(false),
                 }
             }
             if is_add_server_open() {

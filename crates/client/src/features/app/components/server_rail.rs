@@ -20,6 +20,7 @@ pub(crate) fn ServerRail(
     is_host_owner: bool,
     is_loading: bool,
     status: String,
+    download_menu_open: Signal<bool>,
     on_select_server: EventHandler<String>,
     on_open_social: EventHandler<()>,
     on_open_host_settings: EventHandler<()>,
@@ -37,9 +38,16 @@ pub(crate) fn ServerRail(
     } else {
         "mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-100 text-zinc-950 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-blue-400/30 hover:bg-blue-50"
     };
+    let rail_class = if download_menu_open() {
+        "server-rail relative z-[1000] flex w-[76px] shrink-0 flex-col overflow-visible border-r border-zinc-800/80 bg-zinc-950/85 p-3 backdrop-blur-xl"
+    } else {
+        "server-rail relative z-[90] flex w-[76px] shrink-0 flex-col overflow-visible border-r border-zinc-800/80 bg-zinc-950/85 p-3 backdrop-blur-xl"
+    };
 
     rsx! {
-        aside { class: "server-rail relative z-[90] flex w-[76px] shrink-0 flex-col overflow-visible border-r border-zinc-800/80 bg-zinc-950/85 p-3 backdrop-blur-xl",
+        aside {
+            class: rail_class,
+            onclick: move |_| download_menu_open.set(false),
             button {
                 r#type: "button",
                 class: logo_class,
@@ -141,7 +149,13 @@ pub(crate) fn ServerRail(
                         }
                     }
                 }
-                DownloadDropdown { opens_up: false, large: false, compact: true, opens_right: true }
+                DownloadDropdown {
+                    opens_up: false,
+                    large: false,
+                    compact: true,
+                    opens_right: true,
+                    external_open: Some(download_menu_open),
+                }
             }
         }
     }
