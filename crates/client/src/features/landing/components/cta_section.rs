@@ -25,7 +25,7 @@ pub(crate) fn CtaSection() -> Element {
                     }
                     div { class: "mt-7 flex flex-wrap items-center justify-center gap-3",
                         WebButton { large: true }
-                        DownloadDropdown { opens_up: true, large: true }
+                        DownloadDropdown { opens_up: true, large: true, compact: false, opens_right: false }
                     }
                     SocialLinks { class_name: "mt-5 flex flex-wrap items-center justify-center gap-4 text-[13px] text-zinc-500", hover_class: "transition hover:text-zinc-200" }
                 }

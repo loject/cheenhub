@@ -5,8 +5,8 @@ use dioxus::prelude::*;
 
 use crate::features::landing::components::logo_icon::LogoIcon;
 
-use super::native_client_download::NativeClientDownload;
 use super::server_rail_button::ServerRailButton;
+use crate::features::landing::components::download_dropdown::DownloadDropdown;
 
 /// Renders the server switcher rail.
 #[component]
@@ -141,7 +141,7 @@ pub(crate) fn ServerRail(
                         }
                     }
                 }
-                NativeClientDownload {}
+                DownloadDropdown { opens_up: false, large: false, compact: true, opens_right: true }
             }
         }
     }

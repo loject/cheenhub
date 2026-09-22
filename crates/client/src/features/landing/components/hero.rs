@@ -36,7 +36,7 @@ pub(crate) fn Hero() -> Element {
                 }
                 div { class: "a4 relative z-[30] mt-8 flex flex-wrap items-center justify-center gap-3",
                     WebButton { large: false }
-                    DownloadDropdown { opens_up: false, large: false }
+                    DownloadDropdown { opens_up: false, large: false, compact: false, opens_right: false }
                 }
                 SocialLinks { class_name: "a5 mt-5 flex flex-wrap items-center justify-center gap-4 text-[13px] text-zinc-500", hover_class: "transition hover:text-zinc-200" }
                 div { class: "a5 relative z-[10] mt-8 flex flex-wrap items-center justify-center gap-2",
