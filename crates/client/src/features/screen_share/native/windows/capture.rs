@@ -11,24 +11,31 @@ use windows::Graphics::Capture::{
 };
 use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
 use windows::Graphics::DirectX::DirectXPixelFormat;
-use windows::Win32::Foundation::{HMODULE, LPARAM, RECT};
+use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
     ID3D11DeviceContext,
 };
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
-use windows::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW,
-};
 use windows::Win32::System::WinRT::Direct3D11::CreateDirect3D11DeviceFromDXGIDevice;
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
 use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize, RoUninitialize};
-use windows::core::{BOOL, Interface, factory};
+use windows::core::{Interface, factory};
 
+use super::encoder::WindowsVp9Encoder;
+use super::frames::I420Frame;
+use super::monitor::find_monitor;
+use super::readback::FrameReadback;
 use super::{CaptureControl, FRAME_POOL_BUFFER_COUNT, FRAME_REPORT_INTERVAL};
+use crate::features::screen_share::{
+    EncodedScreenShareFrame, ScreenShareCodec, ScreenShareTargetQuality,
+};
+use crate::features::video_encoding::VideoFrameRateGate;
 
 pub(super) enum WorkerEvent {
+    /// Готовый VP9-кадр для существующего медиапути.
+    Frame(EncodedScreenShareFrame),
     /// Источник штатно закрылся.
     Ended,
     /// Worker обнаружил ошибку WGC или D3D.
@@ -52,6 +59,8 @@ pub(super) struct StartupInfo {
 /// Запускает WGC lifecycle внутри dedicated capture thread.
 pub(super) fn capture_worker(
     source_id: String,
+    target: ScreenShareTargetQuality,
+    bitrate_bps: u32,
     control: Arc<CaptureControl>,
     startup_sender: oneshot::Sender<Result<StartupInfo, String>>,
     runtime_sender: mpsc::UnboundedSender<WorkerEvent>,
@@ -65,7 +74,14 @@ pub(super) fn capture_worker(
         }
     };
 
-    let outcome = run_capture(&source_id, &control, &mut startup_sender);
+    let outcome = run_capture(
+        &source_id,
+        &target,
+        bitrate_bps,
+        &control,
+        &mut startup_sender,
+        &runtime_sender,
+    );
 
     info!(source_id = %source_id, "Windows screen capture cleanup completed");
 
@@ -101,8 +117,11 @@ impl Drop for MtaGuard {
 
 fn run_capture(
     source_id: &str,
+    target: &ScreenShareTargetQuality,
+    bitrate_bps: u32,
     control: &Arc<CaptureControl>,
     startup_sender: &mut Option<oneshot::Sender<Result<StartupInfo, String>>>,
+    runtime_sender: &mpsc::UnboundedSender<WorkerEvent>,
 ) -> Result<CaptureOutcome, String> {
     if !GraphicsCaptureSession::IsSupported().map_err(platform_error)? {
         return Err("Windows Graphics Capture не поддерживается этой системой".to_owned());
@@ -110,7 +129,11 @@ fn run_capture(
 
     let monitor = find_monitor(source_id)?;
     info!(source_id = %source_id, "Windows screen capture source found");
-    let (_device, direct3d_device) = create_d3d_device()?;
+    let (device, direct3d_device, context) = create_d3d_device()?;
+    let mut readback = FrameReadback::new(device, context);
+    let mut encoder =
+        WindowsVp9Encoder::new(target.width, target.height, bitrate_bps, target.max_fps)?;
+    let mut frame_rate_gate = VideoFrameRateGate::new(target.max_fps);
     let interop: IGraphicsCaptureItemInterop =
         factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>().map_err(platform_error)?;
     let item: GraphicsCaptureItem =
@@ -221,12 +244,47 @@ fn run_capture(
             {
                 return capture_error(first_frame_received, error);
             }
-        } else {
-            drop(frame);
+            native_size = Some(current_size);
+            continue;
         }
         native_size = Some(current_size);
         frames_total = frames_total.saturating_add(1);
         frames_since_report = frames_since_report.saturating_add(1);
+
+        let timestamp_us = capture_started_at
+            .elapsed()
+            .as_micros()
+            .min(u128::from(u64::MAX)) as u64;
+        if !frame_rate_gate.accept(timestamp_us) {
+            continue;
+        }
+        let surface = match frame.Surface() {
+            Ok(surface) => surface,
+            Err(error) => return capture_error(first_frame_received, platform_error(error)),
+        };
+        let (pixels, stride) = match readback.read(&surface, current_size.0, current_size.1) {
+            Ok(result) => result,
+            Err(error) => return capture_error(first_frame_received, error),
+        };
+        let image = match I420Frame::from_bgra(
+            pixels,
+            current_size.0 as usize,
+            current_size.1 as usize,
+            stride,
+            target.width as usize,
+            target.height as usize,
+        ) {
+            Ok(image) => image,
+            Err(error) => return capture_error(first_frame_received, error),
+        };
+        drop(frame);
+        let packets = match encoder.encode(&image, timestamp_us) {
+            Ok(packets) => packets,
+            Err(error) => return capture_error(first_frame_received, error),
+        };
+        if packets.is_empty() {
+            continue;
+        }
 
         if !first_frame_received {
             first_frame_received = true;
@@ -241,8 +299,26 @@ fn run_capture(
                 native_width = current_size.0,
                 native_height = current_size.1,
                 startup_elapsed_ms = capture_started_at.elapsed().as_millis(),
-                "Windows screen capture first valid frame confirmed"
+                "Windows screen capture first encoded frame confirmed"
             );
+        }
+
+        for packet in packets {
+            if runtime_sender
+                .unbounded_send(WorkerEvent::Frame(EncodedScreenShareFrame {
+                    sequence: packet.sequence,
+                    timestamp_us: packet.timestamp_us,
+                    duration_us: packet.duration_us,
+                    codec: ScreenShareCodec::Vp9,
+                    key_frame: packet.key_frame,
+                    width: packet.width,
+                    height: packet.height,
+                    bytes: packet.bytes,
+                }))
+                .is_err()
+            {
+                return Ok(CaptureOutcome::ExplicitStop);
+            }
         }
 
         if last_report.elapsed() >= FRAME_REPORT_INTERVAL {
@@ -291,73 +367,7 @@ fn validate_size(width: i32, height: i32) -> Result<(), String> {
     }
 }
 
-fn find_monitor(source_id: &str) -> Result<HMONITOR, String> {
-    unsafe extern "system" fn callback(
-        handle: HMONITOR,
-        _device_context: HDC,
-        _rect: *mut RECT,
-        state: LPARAM,
-    ) -> BOOL {
-        let state = unsafe { &mut *(state.0 as *mut MonitorSearch) };
-        if state.handle.is_none()
-            && let Some(id) = monitor_id(handle)
-            && id == state.source_id
-        {
-            state.handle = Some(handle);
-        }
-        true.into()
-    }
-
-    let mut search = MonitorSearch {
-        source_id,
-        handle: None,
-    };
-    let success = unsafe {
-        EnumDisplayMonitors(
-            None,
-            None,
-            Some(callback),
-            LPARAM((&mut search as *mut MonitorSearch) as isize),
-        )
-        .as_bool()
-    };
-    if !success {
-        return Err(platform_error(windows::core::Error::from_win32()));
-    }
-    search
-        .handle
-        .ok_or_else(|| format!("выбранный монитор {source_id} больше не найден"))
-}
-
-struct MonitorSearch<'a> {
-    source_id: &'a str,
-    handle: Option<HMONITOR>,
-}
-
-fn monitor_id(handle: HMONITOR) -> Option<String> {
-    let mut info = MONITORINFOEXW::default();
-    info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
-    if !unsafe {
-        GetMonitorInfoW(
-            handle,
-            (&mut info as *mut MONITORINFOEXW).cast::<MONITORINFO>(),
-        )
-        .as_bool()
-    } {
-        return None;
-    }
-    Some(wide_string(&info.szDevice))
-}
-
-fn wide_string(value: &[u16]) -> String {
-    let length = value
-        .iter()
-        .position(|character| *character == 0)
-        .unwrap_or(value.len());
-    String::from_utf16_lossy(&value[..length])
-}
-
-fn create_d3d_device() -> Result<(ID3D11Device, IDirect3DDevice), String> {
+fn create_d3d_device() -> Result<(ID3D11Device, IDirect3DDevice, ID3D11DeviceContext), String> {
     let mut device = None;
     let mut context: Option<ID3D11DeviceContext> = None;
     let hardware_result = unsafe {
@@ -397,7 +407,8 @@ fn create_d3d_device() -> Result<(ID3D11Device, IDirect3DDevice), String> {
     let inspectable =
         unsafe { CreateDirect3D11DeviceFromDXGIDevice(&dxgi_device) }.map_err(platform_error)?;
     let direct3d_device = inspectable.cast().map_err(platform_error)?;
-    Ok((device, direct3d_device))
+    let context = context.ok_or_else(|| "D3D11 не вернул контекст устройства".to_owned())?;
+    Ok((device, direct3d_device, context))
 }
 
 struct CaptureResources {

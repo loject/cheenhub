@@ -17,6 +17,10 @@ use super::super::backend::{
 };
 
 mod capture;
+mod encoder;
+mod frames;
+mod monitor;
+mod readback;
 use capture::{WorkerEvent, capture_worker};
 
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(5);
@@ -39,6 +43,25 @@ impl ScreenShareBackend for WindowsScreenShareBackend {
                     "Windows backend требует выбранный физический монитор.",
                 ));
             };
+            let selected_preset = request
+                .config
+                .allowed_presets
+                .iter()
+                .copied()
+                .find(|preset| {
+                    let spec = preset.spec();
+                    spec.source == cheenhub_contracts::video_presets::VideoStreamSource::ScreenShare
+                        && spec.width == target.width
+                        && spec.height == target.height
+                        && target.max_fps > 0
+                        && target.max_fps <= spec.max_fps
+                });
+            let Some(selected_preset) = selected_preset else {
+                return Err(ScreenShareError::new(
+                    "выбранное качество демонстрации недоступно",
+                ));
+            };
+            let bitrate_bps = selected_preset.spec().bitrate_bps;
 
             info!(
                 source_id = %source_id,
@@ -55,11 +78,14 @@ impl ScreenShareBackend for WindowsScreenShareBackend {
 
             let worker_control = control.clone();
             let worker_source_id = source_id.clone();
+            let worker_target = target;
             let worker = thread::Builder::new()
                 .name("cheenhub-screen-capture".to_owned())
                 .spawn(move || {
                     capture_worker(
                         worker_source_id,
+                        worker_target,
+                        bitrate_bps,
                         worker_control,
                         startup_sender,
                         runtime_sender,
@@ -201,12 +227,14 @@ fn spawn_runtime_event_relay(
     mut events: mpsc::UnboundedReceiver<WorkerEvent>,
     callbacks: ScreenShareCallbacks,
 ) {
+    let on_frame = callbacks.on_frame;
     let on_ended = callbacks.on_ended;
     let on_error = callbacks.on_error;
     Runtime::current().in_scope(provider_scope, || {
         spawn(async move {
             while let Some(event) = events.next().await {
                 match event {
+                    WorkerEvent::Frame(frame) => on_frame(frame),
                     WorkerEvent::Ended => on_ended(),
                     WorkerEvent::Error(message) => on_error(ScreenShareError::new(message)),
                 }

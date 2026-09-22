@@ -74,7 +74,7 @@ mobile = [
 system-tray = []
 browser-media-diagnostics = []
 # Windows-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
-windows = ["dep:cpal", "dep:opus", "dep:windows", "dep:windows-sys"]
+windows = ["dep:cpal", "dep:opus", "dep:windows", "dep:windows-sys", "dep:libvpx-native-sys"]
 # Linux-реализация desktop-клиента: PulseAudio API для ввода/вывода и Opus для голоса.
 linux = ["dep:libpulse-binding", "dep:opus"]
 # macOS-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
@@ -183,6 +183,7 @@ windows-sys = { workspace = true, optional = true, features = [
 ] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+libvpx-native-sys = { version = "5.0.17", optional = true }
 windows = { version = "0.61.3", optional = true, features = [
     "Foundation",
     "Graphics",
