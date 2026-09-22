@@ -6,6 +6,7 @@ use std::{cell::Cell, rc::Rc};
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
+use wasm_bindgen::JsCast;
 
 use crate::features::app::components::app_shell::ActiveRoom;
 use crate::features::app::server_permissions::ServerPermissionsContext;
@@ -57,6 +58,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let is_near_bottom = use_signal(|| true);
     let mut list_element = use_signal(|| None::<Rc<MountedData>>);
     let mut compose_input_element = use_signal(|| None::<Rc<MountedData>>);
+    let mut compose_textarea = use_signal(|| None::<web_sys::HtmlTextAreaElement>);
     let mut refocus_requested = use_signal(|| false);
     let component_current = Rc::new(Cell::new(true));
     use_drop({
@@ -214,6 +216,12 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 EventHandler::new({
                     let component_current = submit_component_current.clone();
                     move |_| {
+                        if draft().is_empty() {
+                            if let Some(textarea) = compose_textarea() {
+                                let _ = textarea.style().set_property("height", "40px");
+                                textarea.set_scroll_top(0.0);
+                            }
+                        }
                         restore_compose_input_focus(
                             compose_input_element,
                             refocus_requested,
@@ -402,11 +410,34 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                         value: "{draft()}",
                         readonly: is_sending(),
                         placeholder: "Сообщение в {placeholder_prefix} {room.name}",
-                        class: "max-h-28 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[13px] leading-5 text-zinc-100 outline-none placeholder:text-zinc-600",
+                        class: "max-h-80 min-h-10 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-[13px] leading-5 text-zinc-100 outline-none placeholder:text-zinc-600",
                         onmounted: move |event| {
                             compose_input_element.set(Some(event.data.clone()));
                         },
-                        oninput: move |event| draft.set(event.value()),
+                        oninput: move |event| {
+                            draft.set(event.value());
+                            let event_data = event.data();
+                            let Some(browser_event) = event_data.downcast::<web_sys::Event>() else {
+                                return;
+                            };
+                            let Some(textarea) = browser_event
+                                .target()
+                                .and_then(|target| target.dyn_into::<web_sys::HtmlTextAreaElement>().ok())
+                            else {
+                                return;
+                            };
+                            compose_textarea.set(Some(textarea.clone()));
+                            let style = textarea.style();
+                            if event.value().is_empty() {
+                                let _ = style.set_property("height", "40px");
+                                textarea.set_scroll_top(0.0);
+                                return;
+                            }
+                            let _ = style.set_property("height", "auto");
+                            let height = textarea.scroll_height().clamp(40, 320);
+                            let _ = style.set_property("height", &format!("{height}px"));
+                            textarea.set_scroll_top(f64::from(height));
+                        },
                         onblur: move |_| refocus_requested.set(false),
                         onpaste: move |event| {
                             if !is_sending()
