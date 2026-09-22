@@ -24,6 +24,8 @@ struct SenderMixerState {
     gain: f32,
     loop_samples: Option<Vec<f32>>,
     loop_position: usize,
+    loop_gain: Option<f32>,
+    fade_remaining_samples: Option<(usize, usize)>,
 }
 
 /// Создает пустой микшер с общей громкостью вывода.
@@ -120,7 +122,9 @@ impl MixerState {
     fn next_sample(&mut self) -> f32 {
         let output_gain = self.output_gain;
         let mut mixed = 0.0_f32;
-        for sender in self.senders.values_mut() {
+        let mut finished_fades = Vec::new();
+        for (sender_id, sender) in &mut self.senders {
+            let is_loop_sample = sender.samples.is_empty();
             let sample = sender.samples.pop_front().or_else(|| {
                 let loop_samples = sender.loop_samples.as_ref()?;
                 if loop_samples.is_empty() {
@@ -131,8 +135,28 @@ impl MixerState {
                 Some(sample)
             });
             if let Some(sample) = sample {
-                mixed += sample * sender.gain * output_gain;
+                let gain = if is_loop_sample {
+                    sender.loop_gain.unwrap_or(sender.gain)
+                } else {
+                    sender.gain
+                };
+                let fade_gain = if is_loop_sample
+                    && let Some((remaining, total)) = sender.fade_remaining_samples.as_mut()
+                {
+                    let gain = *remaining as f32 / *total as f32;
+                    *remaining = remaining.saturating_sub(1);
+                    if *remaining == 0 {
+                        finished_fades.push(sender_id.clone());
+                    }
+                    gain
+                } else {
+                    1.0
+                };
+                mixed += sample * gain * fade_gain * output_gain;
             }
+        }
+        for sender_id in finished_fades {
+            self.senders.remove(&sender_id);
         }
         mixed.clamp(-1.0, 1.0)
     }
@@ -162,6 +186,8 @@ pub(super) fn queue_sender_samples(
             gain,
             loop_samples: None,
             loop_position: 0,
+            loop_gain: None,
+            fade_remaining_samples: None,
         });
     sender.gain = gain;
     if sender.samples.len() > SENDER_BACKLOG_DROP_SAMPLES {
@@ -182,33 +208,51 @@ pub(super) fn queue_sender_samples(
         .extend(samples.into_iter().map(|sample| sample.clamp(-1.0, 1.0)));
 }
 
-/// Запускает бесконечное воспроизведение PCM-образца для одного отправителя.
-pub(super) fn loop_sender_samples(
+/// Добавляет loop после уже поставленных в очередь one-shot samples.
+pub(super) fn queue_then_loop_sender_samples(
     mixer: &MixerHandle,
     sender_user_id: &str,
-    samples: Vec<f32>,
-    gain: f32,
+    one_shot_samples: Vec<f32>,
+    loop_samples: Vec<f32>,
+    one_shot_gain: f32,
+    loop_gain: f32,
 ) {
-    if samples.is_empty() {
+    if loop_samples.is_empty() {
         return;
     }
     let Ok(mut mixer) = mixer.lock() else {
-        warn!(%sender_user_id, "native audio mixer lock is poisoned; failed to loop samples");
+        warn!(%sender_user_id, "native audio mixer lock is poisoned; failed to queue sequential samples");
         return;
     };
-    let sender = mixer
-        .senders
-        .entry(sender_user_id.to_owned())
-        .or_insert_with(|| SenderMixerState {
-            samples: VecDeque::new(),
-            gain,
-            loop_samples: None,
-            loop_position: 0,
-        });
+    let sender = mixer.senders.entry(sender_user_id.to_owned()).or_default();
     sender.samples.clear();
-    sender.gain = gain;
-    sender.loop_samples = Some(samples);
+    sender.samples.extend(
+        one_shot_samples
+            .into_iter()
+            .map(|sample| sample.clamp(-1.0, 1.0)),
+    );
+    sender.gain = one_shot_gain;
+    sender.loop_samples = Some(
+        loop_samples
+            .into_iter()
+            .map(|sample| sample.clamp(-1.0, 1.0))
+            .collect(),
+    );
     sender.loop_position = 0;
+    sender.loop_gain = Some(loop_gain);
+    sender.fade_remaining_samples = None;
+}
+
+/// Начинает плавное затухание sender перед его удалением.
+pub(super) fn fade_out_sender(mixer: &MixerHandle, sender_user_id: &str, fade_samples: usize) {
+    let Ok(mut mixer) = mixer.lock() else {
+        warn!(%sender_user_id, "native audio mixer lock is poisoned; failed to fade sender");
+        return;
+    };
+    if let Some(sender) = mixer.senders.get_mut(sender_user_id) {
+        let fade_samples = fade_samples.max(1);
+        sender.fade_remaining_samples = Some((fade_samples, fade_samples));
+    }
 }
 
 /// Возвращает количество PCM samples в очереди одного отправителя.
@@ -242,6 +286,8 @@ pub(super) fn update_sender_gain(mixer: &MixerHandle, sender_user_id: &str, gain
             gain,
             loop_samples: None,
             loop_position: 0,
+            loop_gain: None,
+            fade_remaining_samples: None,
         })
         .gain = gain;
 }
@@ -302,6 +348,8 @@ mod tests {
                         gain: 1.0,
                         loop_samples: None,
                         loop_position: 0,
+                        loop_gain: None,
+                        fade_remaining_samples: None,
                     },
                 ),
                 (
@@ -311,6 +359,8 @@ mod tests {
                         gain: 1.0,
                         loop_samples: None,
                         loop_position: 0,
+                        loop_gain: None,
+                        fade_remaining_samples: None,
                     },
                 ),
             ]),
@@ -335,12 +385,26 @@ mod tests {
     #[test]
     fn looped_sender_restarts_after_last_sample() {
         let mixer = new_mixer(1.0);
-        loop_sender_samples(&mixer, "signal", vec![0.25, 0.5], 1.0);
+        queue_then_loop_sender_samples(&mixer, "signal", Vec::new(), vec![0.25, 0.5], 1.0, 1.0);
         let mut mixer = mixer.lock().expect("mixer lock");
 
         assert_eq!(mixer.next_sample(), 0.25);
         assert_eq!(mixer.next_sample(), 0.5);
         assert_eq!(mixer.next_sample(), 0.25);
+    }
+
+    #[test]
+    fn one_shot_finishes_before_loop_and_loop_fades_out() {
+        let mixer = new_mixer(1.0);
+        queue_then_loop_sender_samples(&mixer, "signal", vec![0.2, 0.4], vec![1.0], 1.0, 1.0);
+        fade_out_sender(&mixer, "signal", 2);
+        let mut state = mixer.lock().expect("mixer lock");
+        assert_eq!(state.next_sample(), 0.2);
+        assert_eq!(state.next_sample(), 0.4);
+        assert_eq!(state.next_sample(), 1.0);
+        assert_eq!(state.next_sample(), 0.5);
+        assert_eq!(state.next_sample(), 0.0);
+        assert!(!state.senders.contains_key("signal"));
     }
 
     #[test]

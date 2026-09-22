@@ -5,10 +5,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::features::audio_playback::NotificationSound;
 
-use super::mixer::{loop_sender_samples, queue_sender_samples, remove_sender};
+use super::mixer::{fade_out_sender, queue_sender_samples, queue_then_loop_sender_samples};
 use super::{AUDIO_SAMPLE_RATE_HZ, AudioPlaybackHandle};
 
 const NOTIFICATION_PREROLL_MS: u32 = 40;
+const CONNECTION_LOOP_FADE_MS: u32 = 15;
 
 const MESSAGE_RECEIVED: &[u8] =
     include_bytes!("../../../../public/audio/notifications/message_received.wav");
@@ -38,6 +39,49 @@ const CONNECTION_SIGNAL_LOOP_SENDER_ID: &str = "notification:connection-signal-l
 static NEXT_NOTIFICATION_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
 
 impl AudioPlaybackHandle {
+    /// Проигрывает звук потери полностью, затем запускает повторяющийся сигнал.
+    pub(crate) fn play_connection_lost_then_loop(&self) {
+        if self.is_muted() {
+            return;
+        }
+        if let Err(error) = self.ensure_engine() {
+            warn!(%error, "failed to initialize native connection notification playback");
+            return;
+        }
+        let lost = match notification_samples(NotificationSound::ConnectionLost) {
+            Ok(samples) => samples,
+            Err(error) => {
+                warn!(%error, "failed to decode native connection lost sound");
+                return;
+            }
+        };
+        let loop_samples = match notification_samples(NotificationSound::ConnectionSignalLoop) {
+            Ok(samples) => samples,
+            Err(error) => {
+                warn!(%error, "failed to decode native connection signal loop");
+                return;
+            }
+        };
+        let Some(mixer) = self
+            .inner
+            .borrow()
+            .engine
+            .as_ref()
+            .map(|engine| engine.mixer.clone())
+        else {
+            return;
+        };
+        queue_then_loop_sender_samples(
+            &mixer,
+            CONNECTION_SIGNAL_LOOP_SENDER_ID,
+            lost,
+            loop_samples,
+            NotificationSound::ConnectionLost.volume_multiplier(),
+            NotificationSound::ConnectionSignalLoop.volume_multiplier(),
+        );
+        debug!("queued native connection lost sound followed by signal loop");
+    }
+
     /// Проигрывает короткий системный звук уведомления.
     pub(crate) fn play_notification_sound(&self, sound: NotificationSound) {
         if self.is_muted() {
@@ -87,35 +131,6 @@ impl AudioPlaybackHandle {
         );
     }
 
-    /// Запускает повторяющийся сигнал потери соединения для активного голосового чата.
-    pub(crate) fn start_connection_signal_loop(&self) {
-        if self.is_muted() {
-            return;
-        }
-        if let Err(error) = self.ensure_engine() {
-            warn!(%error, "failed to initialize native connection signal loop");
-            return;
-        }
-        let samples = match notification_samples(NotificationSound::ConnectionSignalLoop) {
-            Ok(samples) => samples,
-            Err(error) => {
-                warn!(%error, "failed to decode native connection signal loop");
-                return;
-            }
-        };
-        let Some(mixer) = self
-            .inner
-            .borrow()
-            .engine
-            .as_ref()
-            .map(|engine| engine.mixer.clone())
-        else {
-            return;
-        };
-        loop_sender_samples(&mixer, CONNECTION_SIGNAL_LOOP_SENDER_ID, samples, 1.0);
-        debug!("started native connection signal loop");
-    }
-
     /// Останавливает повторяющийся сигнал потери соединения.
     pub(crate) fn stop_connection_signal_loop(&self) {
         let mixer = self
@@ -125,8 +140,12 @@ impl AudioPlaybackHandle {
             .as_ref()
             .map(|engine| engine.mixer.clone());
         if let Some(mixer) = mixer {
-            remove_sender(&mixer, CONNECTION_SIGNAL_LOOP_SENDER_ID);
-            debug!("stopped native connection signal loop");
+            let fade_samples = (AUDIO_SAMPLE_RATE_HZ * CONNECTION_LOOP_FADE_MS / 1_000) as usize;
+            fade_out_sender(&mixer, CONNECTION_SIGNAL_LOOP_SENDER_ID, fade_samples);
+            debug!(
+                fade_ms = CONNECTION_LOOP_FADE_MS,
+                "fading out native connection signal loop"
+            );
         }
     }
 }

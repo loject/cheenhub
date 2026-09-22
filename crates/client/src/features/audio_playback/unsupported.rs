@@ -174,10 +174,10 @@ impl AudioPlaybackHandle {
         );
     }
 
-    /// Отмечает отсутствие поддержки повторяющегося сигнала соединения.
-    pub(crate) fn start_connection_signal_loop(&self) {
+    /// Отмечает недоступность последовательного звука потери соединения.
+    pub(crate) fn play_connection_lost_then_loop(&self) {
         if !self.is_muted() {
-            debug!("skipped connection signal loop without native playback backend");
+            debug!("skipped connection notification without native playback backend");
         }
     }
 

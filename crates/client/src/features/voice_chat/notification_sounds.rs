@@ -132,10 +132,11 @@ impl ConnectionNotificationSoundState {
         }
 
         if self.has_connected && !self.lost_after_connect {
-            playback.play_notification_sound(NotificationSound::ConnectionLost);
             if voice_chat_active {
-                playback.start_connection_signal_loop();
+                playback.play_connection_lost_then_loop();
                 debug!("started connection signal loop for active voice chat");
+            } else {
+                playback.play_notification_sound(NotificationSound::ConnectionLost);
             }
             self.lost_after_connect = true;
         }
