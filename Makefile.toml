@@ -3,8 +3,9 @@ default_to_workspace = false
 
 [env]
 CARGO_MAKE_CRATE_INSTALLATION_LOCKED = true
-CARGO_INSTALL_ROOT = { value = "${HOME}/.local", condition = { env_not_set = ["CARGO_INSTALL_ROOT"] } }
-PATH = "${CARGO_INSTALL_ROOT}/bin:${PATH}"
+CARGO_INSTALL_ROOT = { value = "${CARGO_MAKE_CARGO_HOME}", condition = { env_not_set = ["CARGO_INSTALL_ROOT"] } }
+CARGO_CLI_PATH_SEPARATOR = { source = "${CARGO_MAKE_RUST_TARGET_OS}", mapping = { windows = ";", linux = ":", macos = ":" }, default_value = ":" }
+PATH = "${CARGO_INSTALL_ROOT}/bin${CARGO_CLI_PATH_SEPARATOR}${PATH}"
 DIOXUS_ADDR = { value = "0.0.0.0", condition = { env_not_set = ["DIOXUS_ADDR"] } }
 DIOXUS_PORT = { value = "8080", condition = { env_not_set = ["DIOXUS_PORT"] } }
 DIOXUS_WEB_PORT = { value = "8081", condition = { env_not_set = ["DIOXUS_WEB_PORT"] } }

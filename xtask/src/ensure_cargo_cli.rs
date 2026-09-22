@@ -13,20 +13,20 @@ pub(super) fn run(args: Vec<String>) -> XtaskResult<()> {
         );
     };
 
-    if find_in_path(binary_name)
-        .is_some_and(|path| binary_has_expected_version(&path, expected_version))
-    {
+    let install_root = install_root(
+        env::var_os("CARGO_INSTALL_ROOT").as_deref(),
+        env::var_os("CARGO_HOME").as_deref(),
+        env::var_os("HOME").as_deref(),
+        env::var_os("USERPROFILE").as_deref(),
+    )?;
+    let installed_binary = installed_binary_path(&install_root, binary_name);
+    if binary_has_expected_version(&installed_binary, expected_version) {
         return Ok(());
     }
 
     let cargo = find_in_path("cargo").ok_or_else(|| {
         format!("Cargo не найден: невозможно установить {crate_name} {expected_version}.")
     })?;
-    let install_root = install_root(
-        env::var_os("CARGO_INSTALL_ROOT").as_deref(),
-        env::var_os("HOME").as_deref(),
-        env::var_os("USERPROFILE").as_deref(),
-    )?;
 
     println!(
         "{crate_name} {expected_version} не найден. Устанавливаю его в {}.",
@@ -42,7 +42,6 @@ pub(super) fn run(args: Vec<String>) -> XtaskResult<()> {
         ));
     }
 
-    let installed_binary = installed_binary_path(&install_root, binary_name);
     if !binary_has_expected_version(&installed_binary, expected_version) {
         return Err(format!(
             "{crate_name} {expected_version} установлен некорректно: {} не найден или имеет другую версию.",
@@ -79,6 +78,7 @@ fn binary_has_expected_version(binary: &Path, expected_version: &str) -> bool {
 
 fn install_root(
     configured_root: Option<&OsStr>,
+    cargo_home: Option<&OsStr>,
     home: Option<&OsStr>,
     user_profile: Option<&OsStr>,
 ) -> XtaskResult<PathBuf> {
@@ -86,11 +86,23 @@ fn install_root(
         return Ok(PathBuf::from(configured_root));
     }
 
-    home.filter(|root| !root.is_empty())
-        .or_else(|| user_profile.filter(|root| !root.is_empty()))
-        .map(|root| PathBuf::from(root).join(".local"))
+    if let Some(cargo_home) = cargo_home.filter(|root| !root.is_empty()) {
+        return Ok(PathBuf::from(cargo_home));
+    }
+
+    let standard_home = if cfg!(windows) {
+        user_profile
+            .filter(|root| !root.is_empty())
+            .or_else(|| home.filter(|root| !root.is_empty()))
+    } else {
+        home.filter(|root| !root.is_empty())
+            .or_else(|| user_profile.filter(|root| !root.is_empty()))
+    };
+
+    standard_home
+        .map(|root| PathBuf::from(root).join(".cargo"))
         .ok_or_else(|| {
-            "Не заданы CARGO_INSTALL_ROOT, HOME и USERPROFILE: невозможно выбрать каталог установки Cargo."
+            "Не заданы CARGO_INSTALL_ROOT, CARGO_HOME, HOME и USERPROFILE: невозможно выбрать каталог установки Cargo."
                 .to_owned()
         })
 }
@@ -157,27 +169,47 @@ mod tests {
     }
 
     #[test]
-    fn prefers_configured_install_root_and_falls_back_to_home_local() {
+    fn prefers_configured_install_root_then_cargo_home_then_platform_home() {
         assert_eq!(
             install_root(
                 Some(OsStr::new("custom-root")),
                 Some(OsStr::new("home")),
+                Some(OsStr::new("profile")),
                 Some(OsStr::new("profile")),
             )
             .expect("configured root"),
             PathBuf::from("custom-root")
         );
         assert_eq!(
-            install_root(None, Some(OsStr::new("home")), Some(OsStr::new("profile")),)
-                .expect("home fallback"),
-            PathBuf::from("home").join(".local")
+            install_root(
+                None,
+                Some(OsStr::new("cargo-home")),
+                Some(OsStr::new("home")),
+                Some(OsStr::new("profile")),
+            )
+            .expect("CARGO_HOME fallback"),
+            PathBuf::from("cargo-home")
         );
         assert_eq!(
-            install_root(None, None, Some(OsStr::new("profile")))
-                .expect("Windows profile fallback"),
-            PathBuf::from("profile").join(".local")
+            install_root(
+                None,
+                None,
+                Some(OsStr::new("home")),
+                Some(OsStr::new("profile"))
+            )
+            .expect("standard Cargo home fallback"),
+            if cfg!(windows) {
+                PathBuf::from("profile").join(".cargo")
+            } else {
+                PathBuf::from("home").join(".cargo")
+            }
         );
-        assert!(install_root(None, None, None).is_err());
+        assert_eq!(
+            install_root(None, None, None, Some(OsStr::new("profile")))
+                .expect("single home fallback"),
+            PathBuf::from("profile").join(".cargo")
+        );
+        assert!(install_root(None, None, None, None).is_err());
     }
 
     #[test]
