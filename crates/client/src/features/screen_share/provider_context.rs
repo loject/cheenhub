@@ -1,7 +1,9 @@
 //! Компонент провайдера контекста демонстрации экрана.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
+use dioxus::core::current_scope_id;
 use dioxus::prelude::*;
 
 use crate::features::toast::ToastHandle;
@@ -21,12 +23,14 @@ pub(crate) fn ScreenShareProvider(children: Element) -> Element {
     let toast = use_context::<ToastHandle>();
     let backend = default_backend();
     let handle = ScreenShareHandle {
+        provider_scope: current_scope_id(),
         status,
         session,
         generation,
         backend,
         toast,
         picker_open,
+        pending_on_frame: Rc::new(RefCell::new(None)),
     };
     use_context_provider(move || handle.clone());
 

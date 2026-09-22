@@ -7,8 +7,8 @@ use futures_util::FutureExt;
 use futures_util::future::LocalBoxFuture;
 
 use super::backend::{
-    ScreenShareBackend, ScreenShareCallbacks, ScreenShareConfig, ScreenShareError,
-    ScreenShareSession,
+    ScreenShareBackend, ScreenShareCallbacks, ScreenShareError, ScreenShareSession,
+    ScreenShareStartRequest,
 };
 
 /// Backend демонстрации экрана для платформ без поддержки захвата.
@@ -17,12 +17,13 @@ pub(crate) struct UnavailableScreenShareBackend;
 impl ScreenShareBackend for UnavailableScreenShareBackend {
     fn start(
         &self,
-        _config: ScreenShareConfig,
+        _request: ScreenShareStartRequest,
         callbacks: ScreenShareCallbacks,
     ) -> LocalBoxFuture<'static, Result<Rc<dyn ScreenShareSession>, ScreenShareError>> {
         let ScreenShareCallbacks {
             on_frame: _on_frame,
             on_ended: _on_ended,
+            on_error: _on_error,
         } = callbacks;
 
         async move {

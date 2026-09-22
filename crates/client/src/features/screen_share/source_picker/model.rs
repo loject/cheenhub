@@ -28,6 +28,14 @@ pub(crate) enum ScreenShareResolution {
 }
 
 impl ScreenShareResolution {
+    /// Возвращает целевые размеры кадра для выбранного разрешения.
+    pub(crate) const fn dimensions(self) -> (u32, u32) {
+        match self {
+            Self::P720 => (1_280, 720),
+            Self::P1080 => (1_920, 1_080),
+        }
+    }
+
     /// Возвращает значение для HTML-списка.
     pub(crate) const fn value(self) -> &'static str {
         match self {
@@ -65,6 +73,14 @@ pub(crate) enum ScreenShareFrameRate {
 }
 
 impl ScreenShareFrameRate {
+    /// Возвращает целевую максимальную частоту кадров.
+    pub(crate) const fn max_fps(self) -> u32 {
+        match self {
+            Self::Fps15 => 15,
+            Self::Fps30 => 30,
+        }
+    }
+
     /// Возвращает значение для HTML-списка.
     pub(crate) const fn value(self) -> &'static str {
         match self {
@@ -400,5 +416,17 @@ mod tests {
         assert!(ScreenShareSourceTab::Screens.can_confirm(Some(&selection)));
         assert!(!ScreenShareSourceTab::Windows.can_confirm(Some(&selection)));
         assert!(!ScreenShareSourceTab::Screens.can_confirm(None));
+    }
+
+    #[test]
+    fn resolution_maps_to_exact_target_dimensions() {
+        assert_eq!(ScreenShareResolution::P720.dimensions(), (1_280, 720));
+        assert_eq!(ScreenShareResolution::P1080.dimensions(), (1_920, 1_080));
+    }
+
+    #[test]
+    fn frame_rate_maps_to_exact_target_fps() {
+        assert_eq!(ScreenShareFrameRate::Fps15.max_fps(), 15);
+        assert_eq!(ScreenShareFrameRate::Fps30.max_fps(), 30);
     }
 }

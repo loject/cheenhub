@@ -14,6 +14,9 @@ pub(crate) type ScreenShareFrameCallback = Rc<dyn Fn(EncodedScreenShareFrame)>;
 /// Callback, вызываемый, когда источник захвата завершается вне управления приложения.
 pub(crate) type ScreenShareEndedCallback = Rc<dyn Fn()>;
 
+/// Callback, вызываемый при ошибке уже запущенной сессии захвата.
+pub(crate) type ScreenShareErrorCallback = Rc<dyn Fn(ScreenShareError)>;
+
 /// Кодек закодированной демонстрации экрана.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ScreenShareCodec {
@@ -28,6 +31,40 @@ pub(crate) struct ScreenShareConfig {
     pub(crate) codec: ScreenShareCodec,
     /// Пресеты, разрешённые текущими возможностями пользователя.
     pub(crate) allowed_presets: Vec<VideoPresetId>,
+}
+
+/// Точное целевое качество, выбранное до запуска захвата.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ScreenShareTargetQuality {
+    /// Целевая ширина кадра.
+    pub(crate) width: u32,
+    /// Целевая высота кадра.
+    pub(crate) height: u32,
+    /// Максимальная целевая частота кадров.
+    pub(crate) max_fps: u32,
+}
+
+/// Источник, который должен использовать backend захвата.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ScreenShareCaptureSource {
+    /// Источник выбирается платформенным API.
+    PlatformDefault,
+    /// Источник выбран в собственном picker'е приложения.
+    Selected {
+        /// Идентификатор физического монитора.
+        source_id: String,
+        /// Точное качество, выбранное пользователем.
+        target: ScreenShareTargetQuality,
+    },
+}
+
+/// Запрос на запуск демонстрации экрана.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ScreenShareStartRequest {
+    /// Общая конфигурация screen sharing.
+    pub(crate) config: ScreenShareConfig,
+    /// Источник захвата.
+    pub(crate) source: ScreenShareCaptureSource,
 }
 
 impl ScreenShareConfig {
@@ -89,6 +126,8 @@ pub(crate) struct ScreenShareCallbacks {
     pub(crate) on_frame: ScreenShareFrameCallback,
     /// Capture-ended callback.
     pub(crate) on_ended: ScreenShareEndedCallback,
+    /// Callback, вызываемый при runtime-ошибке активной сессии.
+    pub(crate) on_error: ScreenShareErrorCallback,
 }
 
 /// Один закодированный кадр демонстрации экрана.
@@ -135,10 +174,10 @@ pub(crate) trait ScreenShareSession {
 
 /// Backend захвата экрана.
 pub(crate) trait ScreenShareBackend {
-    /// Starts capture and calls `on_frame` for every encoded frame.
+    /// Запускает захват и вызывает `on_frame` для каждого закодированного кадра.
     fn start(
         &self,
-        config: ScreenShareConfig,
+        request: ScreenShareStartRequest,
         callbacks: ScreenShareCallbacks,
     ) -> LocalBoxFuture<'static, Result<Rc<dyn ScreenShareSession>, ScreenShareError>>;
 }

@@ -4,6 +4,9 @@ use std::rc::Rc;
 
 use super::backend::ScreenShareBackend;
 
+#[cfg(all(target_os = "windows", feature = "windows"))]
+mod windows;
+
 /// Возвращает backend демонстрации экрана для текущей платформы.
 pub(super) fn default_backend() -> Rc<dyn ScreenShareBackend> {
     default_backend_platform()
@@ -19,7 +22,16 @@ fn default_backend_platform() -> Rc<dyn ScreenShareBackend> {
     Rc::new(super::android::AndroidScreenShareBackend)
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+#[cfg(all(target_os = "windows", feature = "windows"))]
+fn default_backend_platform() -> Rc<dyn ScreenShareBackend> {
+    Rc::new(windows::WindowsScreenShareBackend)
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(target_os = "android"),
+    not(all(target_os = "windows", feature = "windows"))
+))]
 fn default_backend_platform() -> Rc<dyn ScreenShareBackend> {
     Rc::new(super::unsupported::UnavailableScreenShareBackend)
 }

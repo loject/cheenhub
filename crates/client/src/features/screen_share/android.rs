@@ -1,8 +1,8 @@
 //! Android MediaProjection через Surface системного `MediaCodec`.
 
 use super::backend::{
-    EncodedScreenShareFrame, ScreenShareBackend, ScreenShareCallbacks, ScreenShareCodec,
-    ScreenShareConfig, ScreenShareError, ScreenShareSession,
+    EncodedScreenShareFrame, ScreenShareBackend, ScreenShareCallbacks, ScreenShareCaptureSource,
+    ScreenShareCodec, ScreenShareError, ScreenShareSession, ScreenShareStartRequest,
 };
 use crate::features::video_encoding::{
     AndroidSurfaceVideoEncoder, AndroidVideoCaptureSession, AndroidVideoEncodingManager,
@@ -19,10 +19,16 @@ pub(crate) struct AndroidScreenShareBackend;
 impl ScreenShareBackend for AndroidScreenShareBackend {
     fn start(
         &self,
-        config: ScreenShareConfig,
+        request: ScreenShareStartRequest,
         callbacks: ScreenShareCallbacks,
     ) -> LocalBoxFuture<'static, Result<Rc<dyn ScreenShareSession>, ScreenShareError>> {
         Box::pin(async move {
+            if matches!(request.source, ScreenShareCaptureSource::Selected { .. }) {
+                return Err(ScreenShareError::new(
+                    "Выбор физического монитора недоступен в Android backend.",
+                ));
+            }
+            let config = request.config;
             let preset = config.preset_for_capture(1280, 720);
             let bridge = android_video_capture_bridge().map_err(ScreenShareError::new)?;
             let target = callbacks.on_frame.clone();

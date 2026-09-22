@@ -1,6 +1,8 @@
 //! Выбор действия для кнопки демонстрации экрана.
 
 use super::ScreenShareStatus;
+use super::backend::{ScreenShareCaptureSource, ScreenShareTargetQuality};
+use super::source_picker::ScreenShareSelection;
 
 /// Намерение, выбранное для нажатия кнопки демонстрации экрана.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,10 +32,31 @@ pub(super) fn screen_share_control_intent(
     }
 }
 
+/// Преобразует UI-модель выбора в платформенно-нейтральный источник захвата.
+pub(super) fn capture_source_from_selection(
+    selection: &ScreenShareSelection,
+) -> ScreenShareCaptureSource {
+    let (width, height) = selection.resolution.dimensions();
+    ScreenShareCaptureSource::Selected {
+        source_id: selection.source_id.clone(),
+        target: ScreenShareTargetQuality {
+            width,
+            height,
+            max_fps: selection.frame_rate.max_fps(),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::{
+        ScreenShareCaptureSource, ScreenShareTargetQuality, capture_source_from_selection,
+    };
     use super::{ScreenShareControlIntent, screen_share_control_intent};
     use crate::features::screen_share::ScreenShareStatus;
+    use crate::features::screen_share::source_picker::{
+        ScreenShareFrameRate, ScreenShareResolution, ScreenShareSelection,
+    };
 
     #[test]
     fn opens_picker_when_platform_supports_source_selection() {
@@ -60,6 +83,27 @@ mod tests {
         assert_eq!(
             screen_share_control_intent(true, &ScreenShareStatus::Starting),
             ScreenShareControlIntent::Stop
+        );
+    }
+
+    #[test]
+    fn selected_picker_choice_becomes_platform_neutral_request_source() {
+        let selection = ScreenShareSelection {
+            source_id: "\\\\.\\DISPLAY2".to_owned(),
+            resolution: ScreenShareResolution::P720,
+            frame_rate: ScreenShareFrameRate::Fps15,
+        };
+
+        assert_eq!(
+            capture_source_from_selection(&selection),
+            ScreenShareCaptureSource::Selected {
+                source_id: "\\\\.\\DISPLAY2".to_owned(),
+                target: ScreenShareTargetQuality {
+                    width: 1_280,
+                    height: 720,
+                    max_fps: 15,
+                },
+            }
         );
     }
 }

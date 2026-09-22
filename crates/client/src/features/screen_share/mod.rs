@@ -19,9 +19,10 @@ mod unsupported;
 
 #[allow(unused_imports)]
 pub(crate) use backend::{
-    EncodedScreenShareFrame, ScreenShareBackend, ScreenShareCallbacks, ScreenShareCodec,
-    ScreenShareConfig, ScreenShareEndedCallback, ScreenShareError, ScreenShareFrameCallback,
-    ScreenShareSession, ScreenShareStatus,
+    EncodedScreenShareFrame, ScreenShareBackend, ScreenShareCallbacks, ScreenShareCaptureSource,
+    ScreenShareCodec, ScreenShareConfig, ScreenShareEndedCallback, ScreenShareError,
+    ScreenShareErrorCallback, ScreenShareFrameCallback, ScreenShareSession,
+    ScreenShareStartRequest, ScreenShareStatus, ScreenShareTargetQuality,
 };
 pub(crate) use provider::ScreenShareHandle;
 pub(crate) use provider_context::ScreenShareProvider;

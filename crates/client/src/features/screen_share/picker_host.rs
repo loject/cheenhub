@@ -4,8 +4,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use dioxus::prelude::*;
 
-use crate::features::toast::ToastHandle;
-
+use super::provider::ScreenShareHandle;
 use super::source_picker::{
     ScreenShareSelection, ScreenShareSource, ScreenShareSourcePicker, ScreenShareSourcePickerState,
 };
@@ -14,7 +13,8 @@ use super::source_preview::{self, MonitorPreview};
 /// Загружает превью и обслуживает результат окна выбора.
 #[component]
 pub(super) fn ScreenSharePickerHost(mut open: Signal<bool>) -> Element {
-    let toast = use_context::<ToastHandle>();
+    let screen_share = use_context::<ScreenShareHandle>();
+    let screen_share_for_close = screen_share.clone();
     let mut previews = use_resource(source_preview::load_previews);
     let picker_state = match previews.state().cloned() {
         UseResourceState::Pending => ScreenShareSourcePickerState::Loading,
@@ -28,17 +28,11 @@ pub(super) fn ScreenSharePickerHost(mut open: Signal<bool>) -> Element {
             }
         }
     };
-    let confirmation_sources = match &picker_state {
-        ScreenShareSourcePickerState::Ready(sources) => sources.clone(),
-        ScreenShareSourcePickerState::Loading | ScreenShareSourcePickerState::Error(_) => {
-            Vec::new()
-        }
-    };
-
     rsx! {
         ScreenShareSourcePicker {
             state: picker_state,
             on_close: move |_| {
+                screen_share_for_close.clear_pending_on_frame();
                 open.set(false);
                 debug!("screen share source picker closed");
             },
@@ -48,17 +42,14 @@ pub(super) fn ScreenSharePickerHost(mut open: Signal<bool>) -> Element {
                 previews.restart();
             },
             on_confirm: move |selection: ScreenShareSelection| {
-                let summary = selection
-                    .confirmation_summary(&confirmation_sources)
-                    .unwrap_or_else(|| "Параметры демонстрации выбраны".to_owned());
                 info!(
                     source_id = %selection.source_id,
                     resolution = ?selection.resolution,
                     frame_rate = ?selection.frame_rate,
-                    "screen share source selection accepted for preview-only flow"
+                    "screen share source selection accepted"
                 );
                 open.set(false);
-                toast.info(format!("Выбрано: {summary}"));
+                screen_share.start_selected(&selection);
             },
         }
     }

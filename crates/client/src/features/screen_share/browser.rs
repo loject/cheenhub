@@ -17,8 +17,9 @@ use crate::features::video_encoding::{
 };
 
 use super::backend::{
-    EncodedScreenShareFrame, ScreenShareBackend, ScreenShareCallbacks, ScreenShareCodec,
-    ScreenShareConfig, ScreenShareError, ScreenShareErrorKind, ScreenShareSession,
+    EncodedScreenShareFrame, ScreenShareBackend, ScreenShareCallbacks, ScreenShareCaptureSource,
+    ScreenShareCodec, ScreenShareConfig, ScreenShareError, ScreenShareErrorKind,
+    ScreenShareSession, ScreenShareStartRequest,
 };
 use super::browser_capture::{
     first_video_track, log_selected_video_track, request_screen_stream, video_track_settings,
@@ -36,10 +37,18 @@ pub(crate) struct BrowserScreenShareBackend;
 impl ScreenShareBackend for BrowserScreenShareBackend {
     fn start(
         &self,
-        config: ScreenShareConfig,
+        request: ScreenShareStartRequest,
         callbacks: ScreenShareCallbacks,
     ) -> LocalBoxFuture<'static, Result<Rc<dyn ScreenShareSession>, ScreenShareError>> {
-        async move { start_browser_session(config, callbacks).await }.boxed_local()
+        async move {
+            if matches!(request.source, ScreenShareCaptureSource::Selected { .. }) {
+                return Err(ScreenShareError::new(
+                    "Выбор физического монитора недоступен в browser backend.",
+                ));
+            }
+            start_browser_session(request.config, callbacks).await
+        }
+        .boxed_local()
     }
 }
 
