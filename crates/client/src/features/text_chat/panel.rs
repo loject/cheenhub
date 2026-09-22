@@ -219,7 +219,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                         if draft().is_empty() {
                             if let Some(textarea) = compose_textarea() {
                                 let _ = textarea.style().set_property("height", "40px");
-                                textarea.set_scroll_top(0.0);
+                                textarea.set_scroll_top(0.into());
                             }
                         }
                         restore_compose_input_focus(
@@ -430,13 +430,13 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             let style = textarea.style();
                             if event.value().is_empty() {
                                 let _ = style.set_property("height", "40px");
-                                textarea.set_scroll_top(0.0);
+                                textarea.set_scroll_top(0.into());
                                 return;
                             }
                             let _ = style.set_property("height", "auto");
                             let height = textarea.scroll_height().clamp(40, 320);
                             let _ = style.set_property("height", &format!("{height}px"));
-                            textarea.set_scroll_top(f64::from(height));
+                            textarea.set_scroll_top(height.into());
                         },
                         onblur: move |_| refocus_requested.set(false),
                         onpaste: move |event| {
