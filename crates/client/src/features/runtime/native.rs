@@ -2,6 +2,13 @@
 
 use std::time::Duration;
 
+#[cfg(all(
+    target_os = "windows",
+    feature = "desktop",
+    not(target_arch = "wasm32")
+))]
+mod windows;
+
 /// Асинхронно ожидает указанную продолжительность через Tokio runtime.
 #[cfg(all(
     not(target_arch = "wasm32"),
@@ -58,15 +65,23 @@ pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element, started_hidde
         WindowCloseBehaviour::WindowCloses
     };
 
+    let config = Config::new()
+        .with_disable_dma_buf_on_wayland(false)
+        .with_window(window)
+        .with_icon(icon)
+        .with_close_behaviour(close_behaviour)
+        .with_menu(None);
+    #[cfg(target_os = "windows")]
+    let config = {
+        dioxus::logger::tracing::info!(
+            origin = "http://dioxus.index.html",
+            "разрешён secure context WebView2 для WebCodecs"
+        );
+        config.with_windows_browser_args(windows::webview_browser_arguments())
+    };
+
     dioxus::LaunchBuilder::desktop()
-        .with_cfg(
-            Config::new()
-                .with_disable_dma_buf_on_wayland(false)
-                .with_window(window)
-                .with_icon(icon)
-                .with_close_behaviour(close_behaviour)
-                .with_menu(None),
-        )
+        .with_cfg(config)
         .launch(app);
 }
 

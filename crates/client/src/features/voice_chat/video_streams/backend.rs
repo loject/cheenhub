@@ -4,6 +4,8 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
 
+use futures_util::future::LocalBoxFuture;
+
 use super::ParticipantVideoFrame;
 
 /// Платформенно-независимая фабрика renderer'ов видео участника.
@@ -19,8 +21,11 @@ pub(crate) trait ParticipantVideoBackend {
 
 /// Платформенный renderer одного видеопотока участника.
 pub(crate) trait ParticipantVideoRenderer {
-    /// Декодирует и рендерит один входящий закодированный VP9 кадр.
-    fn decode(&self, frame: &ParticipantVideoFrame) -> Result<(), ParticipantVideoRenderError>;
+    /// Асинхронно декодирует и отображает один VP9-кадр.
+    fn decode(
+        &self,
+        frame: ParticipantVideoFrame,
+    ) -> LocalBoxFuture<'_, Result<(), ParticipantVideoRenderError>>;
 
     /// Освобождает платформенный decoder и ресурсы рендеринга.
     fn close(&self);

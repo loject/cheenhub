@@ -2,7 +2,6 @@
 
 mod backend;
 mod native;
-mod unsupported;
 mod web;
 
 use std::cell::RefCell;
@@ -351,14 +350,19 @@ pub(crate) fn ParticipantVideoCanvas(user_id: String, source: ParticipantVideoSo
                     if frame.key_frame {
                         waiting_for_key_frame.set(false);
                     }
-                    if let Err(error) = renderer.decode(&frame) {
-                        warn!(
-                            %error,
-                            sender_user_id = %frame.sender_user_id,
-                            sequence = frame.sequence,
-                            source = source.label(),
-                            "failed to render participant video frame"
-                        );
+                    let sender_user_id = frame.sender_user_id.clone();
+                    let sequence = frame.sequence;
+                    match renderer.decode(frame).await {
+                        Ok(()) => {}
+                        Err(error) => {
+                            warn!(
+                                %error,
+                                %sender_user_id,
+                                sequence,
+                                source = source.label(),
+                                "failed to render participant video frame"
+                            );
+                        }
                     }
                 }
 

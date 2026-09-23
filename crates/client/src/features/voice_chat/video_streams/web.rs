@@ -5,6 +5,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use dioxus::prelude::{debug, warn};
+use futures_util::future::LocalBoxFuture;
 use gloo_timers::future::TimeoutFuture;
 use js_sys::{Array, Function, Object, Reflect, Uint8Array};
 use wasm_bindgen::JsCast;
@@ -124,36 +125,41 @@ impl BrowserParticipantVideoRenderer {
 }
 
 impl ParticipantVideoRenderer for BrowserParticipantVideoRenderer {
-    fn decode(&self, frame: &ParticipantVideoFrame) -> Result<(), ParticipantVideoRenderError> {
-        if self.closed.get() {
-            return Ok(());
-        }
-        if frame.bytes.is_empty() {
-            return Ok(());
-        }
-        if !self.received_key_frame.get() && !frame.key_frame {
-            if !self.waiting_key_frame_logged.replace(true) {
+    fn decode(
+        &self,
+        frame: ParticipantVideoFrame,
+    ) -> LocalBoxFuture<'_, Result<(), ParticipantVideoRenderError>> {
+        Box::pin(async move {
+            if self.closed.get() {
+                return Ok(());
+            }
+            if frame.bytes.is_empty() {
+                return Ok(());
+            }
+            if !self.received_key_frame.get() && !frame.key_frame {
+                if !self.waiting_key_frame_logged.replace(true) {
+                    debug!(
+                        sender_user_id = %frame.sender_user_id,
+                        sequence = frame.sequence,
+                        source = self.source_label,
+                        "waiting for participant video key frame before decoding"
+                    );
+                }
+                return Ok(());
+            }
+            if frame.key_frame && !self.received_key_frame.replace(true) {
                 debug!(
                     sender_user_id = %frame.sender_user_id,
                     sequence = frame.sequence,
+                    payload_bytes = frame.bytes.len(),
                     source = self.source_label,
-                    "waiting for participant video key frame before decoding"
+                    "received first participant video key frame for decoder"
                 );
             }
-            return Ok(());
-        }
-        if frame.key_frame && !self.received_key_frame.replace(true) {
-            debug!(
-                sender_user_id = %frame.sender_user_id,
-                sequence = frame.sequence,
-                payload_bytes = frame.bytes.len(),
-                source = self.source_label,
-                "received first participant video key frame for decoder"
-            );
-        }
 
-        let chunk = encoded_video_chunk(frame).map_err(render_error)?;
-        self.decoder.decode(&chunk).map_err(render_error)
+            let chunk = encoded_video_chunk(&frame).map_err(render_error)?;
+            self.decoder.decode(&chunk).map_err(render_error)
+        })
     }
 
     fn close(&self) {
