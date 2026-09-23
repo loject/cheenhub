@@ -2230,6 +2230,10 @@ html,
   z-index: 90;
 }
 
+.z-\[94\] {
+  z-index: 94;
+}
+
 .z-\[950\] {
   z-index: 950;
 }
@@ -2244,10 +2248,6 @@ html,
 
 .z-\[99\] {
   z-index: 99;
-}
-
-.z-\[94\] {
-  z-index: 94;
 }
 
 .order-1 {
@@ -2681,6 +2681,10 @@ html,
 
 .max-h-64 {
   max-height: 16rem;
+}
+
+.max-h-80 {
+  max-height: 20rem;
 }
 
 .max-h-\[760px\] {
@@ -4751,10 +4755,6 @@ html,
 
 .pb-1 {
   padding-bottom: 0.25rem;
-}
-
-.pb-1\.5 {
-  padding-bottom: 0.375rem;
 }
 
 .pb-10 {
