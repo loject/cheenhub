@@ -6985,6 +6985,95 @@ html,
   scrollbar-gutter: stable;
 }
 
+/* Focus mode reuses the existing participant tiles instead of a separate strip. */
+
+.participants-grid[data-focused="true"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 220px));
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: stretch;
+  align-items: end;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.participants-grid[data-focused="true"] > article {
+  display: block;
+  grid-row: 2;
+  align-self: end;
+  justify-self: center;
+  flex: none;
+  min-width: 0;
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.participants-grid[data-focused="true"] > article[data-focused="true"] {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  align-self: center;
+  justify-self: center;
+  width: auto;
+  height: min(calc(100cqh - 8.5rem), 56.25cqw);
+  max-width: 100cqw;
+  max-height: 100%;
+}
+
+.participants-grid[data-focused="true"][data-count="1"] > article[data-focused="true"] {
+  height: min(100cqh, 56.25cqw);
+}
+
+.voice-focus-strip {
+  display: none !important;
+}
+
+/* Refine focused layout: center the reused participant tiles. */
+
+.participants-grid[data-focused="true"] {
+  grid-template-columns: repeat(var(--focus-strip-columns, 1), minmax(220px, 280px));
+  grid-template-rows: minmax(0, 1fr) auto;
+  justify-content: center;
+  justify-items: center;
+  align-content: stretch;
+  align-items: end;
+  gap: 0.875rem;
+}
+
+.participants-grid[data-focused="true"] > article {
+  grid-row: 2;
+  align-self: end;
+  justify-self: center;
+  width: 100%;
+  max-width: 280px;
+}
+
+.participants-grid[data-focused="true"] > article[data-focused="true"] {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  align-self: center;
+  justify-self: center;
+  width: auto;
+  height: min(calc(100cqh - 10rem), 56.25cqw);
+  max-width: 100cqw;
+  max-height: 100%;
+}
+
+.participants-grid[data-focused="true"][data-count="1"] > article[data-focused="true"] {
+  height: min(100cqh, 56.25cqw);
+}
+
+@media (max-width: 900px) {
+  .participants-grid[data-focused="true"] {
+    grid-template-columns: repeat(var(--focus-strip-columns, 1), minmax(180px, 240px));
+  }
+
+  .participants-grid[data-focused="true"] > article {
+    max-width: 240px;
+  }
+}
+
 .marker\:text-zinc-600 *::marker {
   color: rgb(82 82 91 );
 }

@@ -56,10 +56,11 @@ pub(super) fn participant_grid_layout(tile_count: usize) -> ParticipantGridLayou
     let count = tile_count.max(1);
     let columns = participant_grid_columns(count);
     let rows = count.div_ceil(columns);
+    let focus_strip_columns = count.saturating_sub(1).max(1);
     let column_gap_rem = columns.saturating_sub(1) as f64;
     let row_gap_width_rem = rows.saturating_sub(1) as f64 * 1.777;
     let style = format!(
-        "--tile-grow: 0; --tile-min: 0; --tile-columns: {columns}; --tile-rows: {rows}; --tile-basis: min(calc((100cqw - {column_gap_rem:.3}rem) / {columns}), calc((177.777cqh - {row_gap_width_rem:.3}rem) / {rows})); --tile-max: var(--tile-basis);"
+        "--tile-grow: 0; --tile-min: 0; --tile-columns: {columns}; --tile-rows: {rows}; --focus-strip-columns: {focus_strip_columns}; --tile-basis: min(calc((100cqw - {column_gap_rem:.3}rem) / {columns}), calc((177.777cqh - {row_gap_width_rem:.3}rem) / {rows})); --tile-max: var(--tile-basis);"
     );
 
     ParticipantGridLayout {
