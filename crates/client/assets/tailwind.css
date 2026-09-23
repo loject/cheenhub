@@ -1346,7 +1346,7 @@ html,
   pointer-events: none;
 }
 
-.user-tile[data-focused="true"][data-video="true"]::after {
+.user-tile[data-video="true"]::after {
   display: none;
 }
 

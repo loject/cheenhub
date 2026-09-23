@@ -90,16 +90,10 @@ pub(crate) fn VoiceParticipantTile(
                     user_id: participant.user_id.clone(),
                     source: ParticipantVideoSource::ScreenShare,
                 }
-                if !focused {
-                    div { class: "pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-zinc-950/65 via-transparent to-zinc-950/20" }
-                }
             } else if camera_on {
                 ParticipantVideoCanvas {
                     user_id: participant.user_id.clone(),
                     source: ParticipantVideoSource::Camera,
-                }
-                if !focused {
-                    div { class: "pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-zinc-950/65 via-transparent to-zinc-950/20" }
                 }
             }
             button {
