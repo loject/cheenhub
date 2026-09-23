@@ -4510,12 +4510,6 @@ html,
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 }
 
-.from-zinc-950\/65 {
-  --tw-gradient-from: rgb(9 9 11 / 0.65) var(--tw-gradient-from-position);
-  --tw-gradient-to: rgb(9 9 11 / 0) var(--tw-gradient-to-position);
-  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
-}
-
 .from-zinc-950\/70 {
   --tw-gradient-from: rgb(9 9 11 / 0.7) var(--tw-gradient-from-position);
   --tw-gradient-to: rgb(9 9 11 / 0) var(--tw-gradient-to-position);
