@@ -10,9 +10,8 @@ use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::camera::{CameraHandle, CameraStatus};
 
-use super::participant_focus_strip::{FocusStripSelection, ParticipantFocusStrip};
 use super::participant_grid_data::{
-    focus_strip_tiles, participant_grid_layout, participant_tiles, preferred_focus_tile_key,
+    participant_grid_layout, participant_tiles, preferred_focus_tile_key,
 };
 use super::participant_tile::VoiceParticipantTile;
 use super::state::VoiceConnectionHandle;
@@ -94,7 +93,6 @@ pub(crate) fn VoiceParticipantGrid(
         camera_live,
     );
     let grid_layout = participant_grid_layout(participant_tiles.len());
-    let focus_strip_items = focus_strip_tiles(&participants, &participant_tiles, &current_user_id);
     let active_focus_tile_key = focused_tile_key().and_then(|key| {
         participant_tiles
             .iter()
@@ -185,26 +183,6 @@ pub(crate) fn VoiceParticipantGrid(
                                 toggle_voice_user_menu(&mut open_user_menu, name, user_id, x, y);
                             },
                         }
-                    }
-                }
-                if focused {
-                    ParticipantFocusStrip {
-                        tiles: focus_strip_items,
-                        active_tile_key: active_focus_tile_key.clone(),
-                        on_select: move |selection: FocusStripSelection| {
-                            let target_tile_key = selection.tile_key;
-                            let target_user_id = selection.user_id;
-                            let target_media = selection.media;
-                            if focused_tile_key().as_deref() != Some(target_tile_key.as_str()) {
-                                info!(
-                                    user_id = %target_user_id,
-                                    tile_key = %target_tile_key,
-                                    media = target_media.log_kind(),
-                                    "opened focused voice participant tile from focus strip"
-                                );
-                                focused_tile_key.set(Some(target_tile_key));
-                            }
-                        },
                     }
                 }
                 button {

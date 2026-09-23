@@ -20,25 +20,6 @@ pub(super) struct ParticipantTileEntry {
     pub(super) media: VoiceParticipantTileMedia,
 }
 
-/// Данные тайла для нижнего списка в режиме фокуса.
-#[derive(Clone, PartialEq)]
-pub(super) struct FocusStripTile {
-    /// Идентификатор пользователя.
-    pub(super) user_id: String,
-    /// Отображаемое имя пользователя.
-    pub(super) nickname: String,
-    /// URL аватара пользователя.
-    pub(super) avatar_url: Option<String>,
-    /// Ключ тайла, который будет сфокусирован при выборе участника.
-    pub(super) tile_key: String,
-    /// Признак активной речи участника.
-    pub(super) speaking: bool,
-    /// Тип медиа выбранного тайла.
-    pub(super) media: VoiceParticipantTileMedia,
-    /// Признак текущего пользователя.
-    pub(super) is_self: bool,
-}
-
 /// Расчетные параметры flex-сетки участников.
 pub(super) struct ParticipantGridLayout {
     /// Фактическое число тайлов.
@@ -69,30 +50,6 @@ pub(super) fn participant_grid_layout(tile_count: usize) -> ParticipantGridLayou
         rows,
         style,
     }
-}
-
-/// Собирает тайлы нижнего списка режима фокуса.
-pub(super) fn focus_strip_tiles(
-    participants: &[VoiceRoomParticipant],
-    tiles: &[ParticipantTileEntry],
-    current_user_id: &str,
-) -> Vec<FocusStripTile> {
-    let mut items = Vec::with_capacity(tiles.len());
-
-    if let Some(participant) = participants
-        .iter()
-        .find(|participant| participant.user_id == current_user_id)
-    {
-        push_focus_strip_tiles(&mut items, participant, tiles, current_user_id);
-    }
-
-    for participant in participants {
-        if participant.user_id != current_user_id {
-            push_focus_strip_tiles(&mut items, participant, tiles, current_user_id);
-        }
-    }
-
-    items
 }
 
 /// Выбирает лучший тайл для глобальной кнопки режима отображения.
@@ -161,28 +118,6 @@ pub(super) fn participant_tiles(
     tiles
 }
 
-fn push_focus_strip_tiles(
-    items: &mut Vec<FocusStripTile>,
-    participant: &VoiceRoomParticipant,
-    tiles: &[ParticipantTileEntry],
-    current_user_id: &str,
-) {
-    for tile in tiles
-        .iter()
-        .filter(|tile| tile.participant.user_id == participant.user_id)
-    {
-        items.push(FocusStripTile {
-            user_id: participant.user_id.clone(),
-            nickname: participant.nickname.clone(),
-            avatar_url: participant.avatar_url.clone(),
-            tile_key: tile.key.clone(),
-            speaking: tile.speaking,
-            media: tile.media,
-            is_self: participant.user_id == current_user_id,
-        });
-    }
-}
-
 fn participant_grid_columns(count: usize) -> usize {
     match count {
         0 | 1 => 1,
@@ -229,45 +164,3 @@ fn tile_entry(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn focus_strip_includes_all_tiles_for_participant() {
-        let participants = vec![
-            participant("current-user", "Текущий"),
-            participant("other-user", "Сосед"),
-        ];
-        let tiles = participant_tiles(
-            &participants,
-            &[],
-            &[],
-            &["current-user".to_owned()],
-            "current-user",
-            true,
-        );
-
-        let focus_tiles = focus_strip_tiles(&participants, &tiles, "current-user");
-
-        assert_eq!(focus_tiles.len(), 3);
-        assert_eq!(focus_tiles[0].user_id, "current-user");
-        assert_eq!(focus_tiles[0].tile_key, "current-user-screen");
-        assert_eq!(focus_tiles[0].media, VoiceParticipantTileMedia::ScreenShare);
-        assert_eq!(focus_tiles[1].user_id, "current-user");
-        assert_eq!(focus_tiles[1].tile_key, "current-user-camera");
-        assert_eq!(focus_tiles[1].media, VoiceParticipantTileMedia::Camera);
-        assert_eq!(focus_tiles[2].user_id, "other-user");
-        assert_eq!(focus_tiles[2].tile_key, "other-user-avatar");
-        assert_eq!(focus_tiles[2].media, VoiceParticipantTileMedia::Avatar);
-    }
-
-    fn participant(user_id: &str, nickname: &str) -> VoiceRoomParticipant {
-        VoiceRoomParticipant {
-            user_id: user_id.to_owned(),
-            nickname: nickname.to_owned(),
-            avatar_url: None,
-            joined_at: "2026-06-19T00:00:00Z".to_owned(),
-        }
-    }
-}

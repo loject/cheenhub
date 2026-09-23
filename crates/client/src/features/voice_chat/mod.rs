@@ -19,7 +19,6 @@ mod network_quality;
 mod network_quality_indicator;
 mod network_quality_publication;
 mod notification_sounds;
-mod participant_focus_strip;
 mod participant_grid;
 mod participant_grid_data;
 mod participant_tile;
