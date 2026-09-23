@@ -1,5 +1,7 @@
 //! Проверка access JWT на стороне клиента.
 
+use std::fmt;
+
 use web_time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
@@ -36,6 +38,29 @@ struct JwtHeader {
     kid: String,
 }
 
+/// Ошибка проверки access JWT на стороне клиента.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum JwtVerifyError {
+    /// Токен имеет неверный формат, claims, алгоритм, kid или подпись.
+    InvalidToken,
+    /// Встроенный публичный ключ проверки недоступен или имеет неверный формат.
+    VerificationKeyUnavailable,
+    /// Токен корректно подписан, но срок его действия уже истёк.
+    Expired,
+}
+
+impl fmt::Display for JwtVerifyError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidToken => "Некорректная сессия.",
+            Self::VerificationKeyUnavailable => "Ключ проверки сессии недоступен.",
+            Self::Expired => "Сессия истекла.",
+        })
+    }
+}
+
+impl std::error::Error for JwtVerifyError {}
+
 /// Возвращает, можно ли использовать access token без немедленного обновления.
 pub(crate) fn is_fresh(token: &str) -> bool {
     verify(token)
@@ -44,63 +69,71 @@ pub(crate) fn is_fresh(token: &str) -> bool {
 }
 
 /// Возвращает число секунд до обновления access JWT.
-pub(crate) fn seconds_until_refresh(token: &str) -> Result<u32, String> {
-    let claims = verify(token)?;
+pub(crate) fn seconds_until_refresh(token: &str) -> Result<u32, JwtVerifyError> {
+    let claims = match verify(token) {
+        Ok(claims) => claims,
+        Err(JwtVerifyError::Expired) => return Ok(0),
+        Err(error) => return Err(error),
+    };
     let seconds = claims.exp - now_seconds() - REFRESH_SKEW_SECONDS;
     Ok(seconds.max(0) as u32)
 }
 
 /// Проверяет подписанный access JWT с помощью встроенного публичного ключа.
-pub(crate) fn verify(token: &str) -> Result<AccessClaims, String> {
+pub(crate) fn verify(token: &str) -> Result<AccessClaims, JwtVerifyError> {
     let mut parts = token.split('.');
     let header = parts
         .next()
-        .ok_or_else(|| "Некорректная сессия.".to_owned())?;
+        .ok_or(JwtVerifyError::InvalidToken)?;
     let payload = parts
         .next()
-        .ok_or_else(|| "Некорректная сессия.".to_owned())?;
+        .ok_or(JwtVerifyError::InvalidToken)?;
     let signature = parts
         .next()
-        .ok_or_else(|| "Некорректная сессия.".to_owned())?;
+        .ok_or(JwtVerifyError::InvalidToken)?;
     if parts.next().is_some() {
-        return Err("Некорректная сессия.".to_owned());
+        return Err(JwtVerifyError::InvalidToken);
     }
 
     let header_bytes = URL_SAFE_NO_PAD
         .decode(header)
-        .map_err(|_| "Некорректная сессия.".to_owned())?;
+        .map_err(|_| JwtVerifyError::InvalidToken)?;
     let parsed_header: JwtHeader =
-        serde_json::from_slice(&header_bytes).map_err(|_| "Некорректная сессия.".to_owned())?;
+        serde_json::from_slice(&header_bytes).map_err(|_| JwtVerifyError::InvalidToken)?;
     if parsed_header.alg != "EdDSA" || parsed_header.kid != active_key_id() {
-        return Err("Некорректная сессия.".to_owned());
+        return Err(JwtVerifyError::InvalidToken);
     }
 
     let public_key = STANDARD
         .decode(active_public_key())
-        .map_err(|_| "Ключ проверки сессии недоступен.".to_owned())?;
+        .map_err(|_| JwtVerifyError::VerificationKeyUnavailable)?;
     let public_key: [u8; 32] = public_key
         .try_into()
-        .map_err(|_| "Ключ проверки сессии недоступен.".to_owned())?;
+        .map_err(|_| JwtVerifyError::VerificationKeyUnavailable)?;
     let verifying_key =
-        VerifyingKey::from_bytes(&public_key).map_err(|_| "Ключ проверки сессии недоступен.")?;
+        VerifyingKey::from_bytes(&public_key)
+            .map_err(|_| JwtVerifyError::VerificationKeyUnavailable)?;
     let signature = URL_SAFE_NO_PAD
         .decode(signature)
-        .map_err(|_| "Некорректная сессия.".to_owned())?;
+        .map_err(|_| JwtVerifyError::InvalidToken)?;
     let signature: [u8; 64] = signature
         .try_into()
-        .map_err(|_| "Некорректная сессия.".to_owned())?;
+        .map_err(|_| JwtVerifyError::InvalidToken)?;
     let signature = Signature::from_bytes(&signature);
     verifying_key
         .verify(format!("{header}.{payload}").as_bytes(), &signature)
-        .map_err(|_| "Некорректная сессия.".to_owned())?;
+        .map_err(|_| JwtVerifyError::InvalidToken)?;
 
     let payload_bytes = URL_SAFE_NO_PAD
         .decode(payload)
-        .map_err(|_| "Некорректная сессия.".to_owned())?;
+        .map_err(|_| JwtVerifyError::InvalidToken)?;
     let claims: AccessClaims =
-        serde_json::from_slice(&payload_bytes).map_err(|_| "Некорректная сессия.".to_owned())?;
-    if claims.kid != active_key_id() || claims.exp <= now_seconds() {
-        return Err("Сессия истекла.".to_owned());
+        serde_json::from_slice(&payload_bytes).map_err(|_| JwtVerifyError::InvalidToken)?;
+    if claims.kid != active_key_id() {
+        return Err(JwtVerifyError::InvalidToken);
+    }
+    if claims.exp <= now_seconds() {
+        return Err(JwtVerifyError::Expired);
     }
 
     Ok(claims)

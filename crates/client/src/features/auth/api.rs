@@ -422,7 +422,7 @@ where
 }
 
 fn save_response(response: AuthResponse) -> Result<AuthUser, String> {
-    jwt::verify(&response.access_token)?;
+    jwt::verify(&response.access_token).map_err(|error| error.to_string())?;
     storage::save(&response.access_token, &response.refresh_token);
     Ok(response.user)
 }
