@@ -149,12 +149,14 @@ pub(crate) fn ServerRail(
                         }
                     }
                 }
-                DownloadDropdown {
-                    opens_up: false,
-                    large: false,
-                    compact: true,
-                    opens_right: true,
-                    external_open: Some(download_menu_open),
+                if cfg!(feature = "web") {
+                    DownloadDropdown {
+                        opens_up: false,
+                        large: false,
+                        compact: true,
+                        opens_right: true,
+                        external_open: Some(download_menu_open),
+                    }
                 }
             }
         }
