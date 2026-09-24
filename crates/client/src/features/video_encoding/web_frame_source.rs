@@ -202,7 +202,8 @@ impl VideoElementSourceState {
                 return;
             };
             state.callback_id.set(None);
-            let _registered_closure = state.pending_frame_closure.borrow_mut().take();
+            // Keep the wasm-bindgen callback alive until JavaScript returns from it.
+            // The next read replaces it after this callback has finished executing.
             let Some(sender) = state.pending.borrow_mut().take() else {
                 return;
             };
@@ -346,12 +347,10 @@ fn video_frame_from_element(
 }
 
 fn frame_timestamp_us(now_ms: f64, metadata: &JsValue) -> f64 {
-    Reflect::get(metadata, &JsValue::from_str("mediaTime"))
-        .ok()
-        .and_then(|value| value.as_f64())
-        .filter(|value| value.is_finite() && *value >= 0.0)
-        .map(|seconds| seconds * 1_000_000.0)
-        .unwrap_or_else(|| now_ms.max(0.0) * 1_000.0)
+    let _ = metadata;
+    // Firefox reports mediaTime = 0 for display-media frames, so use the
+    // monotonic requestVideoFrameCallback timestamp for the fallback path.
+    now_ms.max(0.0) * 1_000.0
 }
 
 fn global_function(name: &str) -> Result<Function, VideoEncodingError> {

@@ -63,6 +63,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         participant_video_subscribers,
         participant_video_generations,
         participant_video_blocked_streams,
+        dioxus::core::current_scope_id(),
     );
     let participant_video_context = participant_video.clone();
     use_context_provider(move || participant_video_context.clone());

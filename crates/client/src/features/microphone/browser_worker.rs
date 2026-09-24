@@ -37,7 +37,7 @@ impl BrowserWorkerUplink {
         if set_property(&stop, "kind", JsValue::from_str("stop")).is_ok() {
             let _ = self.worker.post_message(stop.as_ref());
         }
-        self.worker.terminate();
+        detach_worker_callbacks_and_terminate(&self.worker);
     }
 
     pub(super) fn set_bitrate_bps(&self, bitrate_bps: u32) {
@@ -119,17 +119,17 @@ pub(super) async fn start_worker_uplink(
     match ready {
         Either::Left((Ok(Ok(())), _)) => {}
         Either::Left((Ok(Err(message)), _)) => {
-            worker.terminate();
+            detach_worker_callbacks_and_terminate(&worker);
             return Err(MicrophoneError::new(message));
         }
         Either::Left((Err(_), _)) => {
-            worker.terminate();
+            detach_worker_callbacks_and_terminate(&worker);
             return Err(MicrophoneError::new(
                 "Dedicated Worker микрофона завершился до готовности.",
             ));
         }
         Either::Right(((), _)) => {
-            worker.terminate();
+            detach_worker_callbacks_and_terminate(&worker);
             return Err(MicrophoneError::new(
                 "Dedicated Worker микрофона не запустился вовремя.",
             ));
@@ -142,6 +142,12 @@ pub(super) async fn start_worker_uplink(
         _message_closure: message_closure,
         _error_closure: error_closure,
     })
+}
+
+fn detach_worker_callbacks_and_terminate(worker: &Worker) {
+    worker.set_onmessage(None);
+    worker.set_onerror(None);
+    worker.terminate();
 }
 
 fn module_worker(url: &str) -> Result<Worker, MicrophoneError> {

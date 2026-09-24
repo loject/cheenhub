@@ -1,14 +1,19 @@
 //! Floating voice room controls component.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
+use futures_channel::mpsc;
+use futures_util::StreamExt;
 
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::camera::{CameraHandle, CameraStatus};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
-use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
+use crate::features::screen_share::{
+    EncodedScreenShareFrame, ScreenShareFrameCallback, ScreenShareHandle, ScreenShareStatus,
+};
 
 use super::android_output_route_button::AndroidOutputRouteButton;
 use super::direct_call_state::DirectCallHandle;
@@ -93,6 +98,8 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
     let screen_realtime_handle = realtime_handle.clone();
     let screen_server_id = target.server_id.clone();
     let screen_room_id = target.room_id.clone();
+    let screen_current_user_id = current_user_id.clone();
+    let screen_participant_video = participant_video.clone();
 
     if !is_active_room {
         return rsx! {};
@@ -227,30 +234,24 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                         if !media_controls_enabled {
                             return;
                         }
-                        let send_realtime = screen_realtime_handle.clone();
-                        let send_server_id = screen_server_id.clone();
-                        let send_room_id = screen_room_id.clone();
+                        let send_frame = screen_frame_sender_callback(
+                            screen_realtime_handle.clone(),
+                            screen_server_id.clone(),
+                            screen_room_id.clone(),
+                        );
+                        let local_user_id = screen_current_user_id.clone();
+                        let local_video = screen_participant_video.clone();
+                        let local_room_id = screen_room_id.clone();
                         toggle_screen_share.toggle(Rc::new(move |frame| {
-                            let frame_realtime = send_realtime.clone();
-                            let frame_server_id = send_server_id.clone();
-                            let frame_room_id = send_room_id.clone();
-                            spawn(async move {
-                                if let Err(error) = realtime::send_screen_frame(
-                                    &frame_realtime,
-                                    &frame_server_id,
-                                    &frame_room_id,
-                                    frame,
-                                )
-                                .await
-                                {
-                                    warn!(
-                                        %error,
-                                        server_id = %frame_server_id,
-                                        room_id = %frame_room_id,
-                                        "failed to send encoded screen frame"
-                                    );
-                                }
-                            });
+                            local_video.publish_frame(
+                                ParticipantVideoSource::ScreenShare,
+                                ParticipantVideoFrame::from_local_screen_share(
+                                    local_room_id.clone(),
+                                    local_user_id.clone(),
+                                    frame.clone(),
+                                ),
+                            );
+                            send_frame(frame);
                         }));
                     },
                     span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "{screen_share_label}" }
@@ -289,6 +290,79 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
             }
         }
     }
+}
+
+#[derive(Default)]
+struct PendingScreenFrames {
+    key_frame: Option<EncodedScreenShareFrame>,
+    delta_frame: Option<EncodedScreenShareFrame>,
+}
+
+impl PendingScreenFrames {
+    fn push(&mut self, frame: EncodedScreenShareFrame) {
+        if frame.key_frame {
+            self.key_frame = Some(frame);
+            self.delta_frame = None;
+            return;
+        }
+        self.delta_frame = Some(frame);
+    }
+
+    fn take(&mut self) -> Option<EncodedScreenShareFrame> {
+        self.key_frame.take().or_else(|| self.delta_frame.take())
+    }
+}
+
+fn screen_frame_sender_callback(
+    realtime: RealtimeHandle,
+    server_id: String,
+    room_id: String,
+) -> ScreenShareFrameCallback {
+    let pending = Rc::new(RefCell::new(PendingScreenFrames::default()));
+    let (wake_sender, wake_receiver) = mpsc::channel(1);
+    spawn_screen_frame_sender(
+        wake_receiver,
+        Rc::clone(&pending),
+        realtime,
+        server_id,
+        room_id,
+    );
+    let wake_sender = RefCell::new(wake_sender);
+
+    Rc::new(move |frame| {
+        pending.borrow_mut().push(frame);
+        let _ = wake_sender.borrow_mut().try_send(());
+    })
+}
+
+fn spawn_screen_frame_sender(
+    mut wake_receiver: mpsc::Receiver<()>,
+    pending: Rc<RefCell<PendingScreenFrames>>,
+    realtime: RealtimeHandle,
+    server_id: String,
+    room_id: String,
+) {
+    spawn(async move {
+        while wake_receiver.next().await.is_some() {
+            loop {
+                let frame = pending.borrow_mut().take();
+                let Some(frame) = frame else {
+                    break;
+                };
+                if let Err(error) =
+                    realtime::send_screen_frame(&realtime, &server_id, &room_id, frame).await
+                {
+                    warn!(
+                        %error,
+                        server_id = %server_id,
+                        room_id = %room_id,
+                        "failed to send encoded screen frame"
+                    );
+                    break;
+                }
+            }
+        }
+    });
 }
 
 fn control_icon_class(visible: bool) -> &'static str {

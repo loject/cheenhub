@@ -51,7 +51,6 @@ struct RealtimeInner {
     pending: PendingRequests,
     event_listeners: EventListeners,
     datagram_listeners: DatagramListeners,
-    datagram_writes: Mutex<()>,
     inbound: mpsc::UnboundedSender<RealtimeEnvelope>,
     generation: Cell<u64>,
     connection_status: Cell<RealtimeConnectionStatus>,
@@ -90,17 +89,18 @@ impl RealtimeHandle {
 
         match connected.transport {
             ConnectedTransport::WebTransport(session) => {
-                let wait_started_at = Instant::now();
-                let _write_guard = self.inner.datagram_writes.lock().await;
-                let write_wait = wait_started_at.elapsed();
+                // web-transport 0.12 gives each Session clone its own in-flight
+                // datagram operation while sharing the browser writer/backpressure.
+                // Do not serialize all media behind an application-level mutex:
+                // that creates head-of-line blocking between voice and video.
+                let session = session.as_ref().clone();
                 let send_started_at = Instant::now();
                 let result = session.send_datagram(bytes).await.map_err(|error| {
                     RealtimeError::new(format!("Failed to send realtime datagram: {error}"))
                 });
                 let send_elapsed = send_started_at.elapsed();
                 if result.is_ok()
-                    && (write_wait >= SLOW_DATAGRAM_SEND_WARN_AFTER
-                        || send_elapsed >= SLOW_DATAGRAM_SEND_WARN_AFTER)
+                    && send_elapsed >= SLOW_DATAGRAM_SEND_WARN_AFTER
                     && should_emit_cell_warning(
                         &self.inner.last_slow_datagram_send_warning_ms,
                         realtime_now_ms(),
@@ -110,7 +110,6 @@ impl RealtimeHandle {
                     warn!(
                         generation,
                         payload_bytes,
-                        write_wait_ms = write_wait.as_millis(),
                         send_elapsed_ms = send_elapsed.as_millis(),
                         "slow outbound realtime datagram send"
                     );
@@ -400,7 +399,6 @@ pub(crate) fn create_handle() -> RealtimeHandle {
             pending: Rc::new(RefCell::new(HashMap::new())),
             event_listeners: Rc::new(RefCell::new(Vec::new())),
             datagram_listeners: Rc::new(RefCell::new(Vec::new())),
-            datagram_writes: Mutex::new(()),
             inbound,
             generation: Cell::new(0),
             connection_status: Cell::new(RealtimeConnectionStatus::Disconnected),

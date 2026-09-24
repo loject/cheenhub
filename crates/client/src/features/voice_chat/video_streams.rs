@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use dioxus::core::{Runtime, ScopeId};
 use dioxus::dioxus_core::spawn_forever;
 use dioxus::prelude::*;
 use futures_channel::mpsc;
@@ -16,6 +17,7 @@ use uuid::Uuid;
 
 use crate::features::camera::EncodedCameraFrame;
 use crate::features::runtime::sleep_ms;
+use crate::features::screen_share::EncodedScreenShareFrame;
 
 use self::backend::{ParticipantVideoBackend, ParticipantVideoRenderer};
 use super::realtime::InboundVideoFrame;
@@ -89,6 +91,23 @@ impl ParticipantVideoFrame {
             key_frame: frame.key_frame,
         }
     }
+
+    /// Создает локальный кадр демонстрации экрана текущего пользователя.
+    pub(crate) fn from_local_screen_share(
+        room_id: String,
+        sender_user_id: String,
+        frame: EncodedScreenShareFrame,
+    ) -> Self {
+        Self {
+            room_id,
+            sender_user_id,
+            sequence: frame.sequence,
+            timestamp_us: frame.timestamp_us,
+            duration_us: frame.duration_us,
+            bytes: frame.bytes,
+            key_frame: frame.key_frame,
+        }
+    }
 }
 
 impl From<InboundVideoFrame> for ParticipantVideoFrame {
@@ -115,6 +134,7 @@ pub(crate) struct ParticipantVideoActivity {
 /// Состояние видео участников внутри функции голосового чата.
 #[derive(Clone)]
 pub(crate) struct ParticipantVideoHandle {
+    owner_scope: ScopeId,
     live_streams: Signal<Vec<ParticipantVideoActivity>>,
     subscribers: ParticipantVideoSubscribers,
     generations: ParticipantVideoGenerations,
@@ -129,8 +149,10 @@ impl ParticipantVideoHandle {
         subscribers: ParticipantVideoSubscribers,
         generations: ParticipantVideoGenerations,
         blocked_streams: ParticipantVideoBlockedStreams,
+        owner_scope: ScopeId,
     ) -> Self {
         Self {
+            owner_scope,
             live_streams,
             subscribers,
             generations,
@@ -154,22 +176,25 @@ impl ParticipantVideoHandle {
         source: ParticipantVideoSource,
         frame: ParticipantVideoFrame,
     ) {
-        let key = ParticipantVideoKey::new(source, frame.sender_user_id.clone());
-        if self.should_drop_blocked_frame(&key, frame.key_frame) {
-            debug!(
-                user_id = %key.user_id,
-                source = key.source.label(),
-                sequence = frame.sequence,
-                "dropped participant video frame until next key frame"
-            );
-            return;
-        }
-        self.mark_live(key.clone());
-        let mut subscribers = self.subscribers.borrow_mut();
-        let Some(stream_subscribers) = subscribers.get_mut(&key) else {
-            return;
-        };
-        stream_subscribers.retain(|subscriber| subscriber.unbounded_send(frame.clone()).is_ok());
+        Runtime::current().in_scope(self.owner_scope, || {
+            let key = ParticipantVideoKey::new(source, frame.sender_user_id.clone());
+            if self.should_drop_blocked_frame(&key, frame.key_frame) {
+                debug!(
+                    user_id = %key.user_id,
+                    source = key.source.label(),
+                    sequence = frame.sequence,
+                    "dropped participant video frame until next key frame"
+                );
+                return;
+            }
+            self.mark_live(key.clone());
+            let mut subscribers = self.subscribers.borrow_mut();
+            let Some(stream_subscribers) = subscribers.get_mut(&key) else {
+                return;
+            };
+            stream_subscribers
+                .retain(|subscriber| subscriber.unbounded_send(frame.clone()).is_ok());
+        });
     }
 
     /// Немедленно освобождает индикатор активности одного видеопотока.

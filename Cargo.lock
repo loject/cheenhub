@@ -1465,8 +1465,8 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
- "web-transport",
- "web-transport-quinn",
+ "web-transport 0.10.5",
+ "web-transport-quinn 0.11.9",
  "x509-parser",
 ]
 
@@ -1513,7 +1513,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "web-time",
- "web-transport",
+ "web-transport 0.12.0",
  "webbrowser",
  "webpki-roots 1.0.7",
  "windows 0.61.3",
@@ -3591,6 +3591,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "generator"
+version = "0.8.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54ade96dc9003043bce7c035c85a9df5a858bfb2039c5a2e6fdf00f324f6c551"
+dependencies = [
+ "cc",
+ "cfg-if",
+ "libc",
+ "log",
+ "rustversion",
+ "windows-link 0.2.1",
+ "windows-result 0.4.1",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4654,6 +4669,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "kio"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3033155c4fffcd86959a9ebdfbcadbed7ec4bfcc2fb545469778f791adf704eb"
+dependencies = [
+ "loom",
+ "smallvec",
+]
+
+[[package]]
 name = "konst"
 version = "0.2.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4967,6 +4992,20 @@ name = "longest-increasing-subsequence"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b3bd0dd2cd90571056fdb71f6275fada10131182f84899f4b2a916e565d81d86"
+
+[[package]]
+name = "loom"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "419e0dc8046cb947daa77eb95ae174acfbddb7673b4151f56d1eed8e93fbfaca"
+dependencies = [
+ "cfg-if",
+ "generator",
+ "pin-utils",
+ "scoped-tls",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "loop9"
@@ -6990,6 +7029,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "scoped-tls"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8943,8 +8988,21 @@ dependencies = [
  "bytes",
  "thiserror 2.0.18",
  "url",
- "web-transport-quinn",
- "web-transport-wasm",
+ "web-transport-quinn 0.11.9",
+ "web-transport-wasm 0.5.7",
+]
+
+[[package]]
+name = "web-transport"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58e6681edd99e0c4175fa63b5ae51898adabcd840fdc839ebc39ae6f7e1f1bb0"
+dependencies = [
+ "bytes",
+ "thiserror 2.0.18",
+ "url",
+ "web-transport-quinn 0.12.1",
+ "web-transport-wasm 0.6.0",
 ]
 
 [[package]]
@@ -8978,7 +9036,28 @@ dependencies = [
  "tracing",
  "url",
  "web-transport-proto",
- "web-transport-trait",
+ "web-transport-trait 0.3.4",
+]
+
+[[package]]
+name = "web-transport-quinn"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63a239cba370789ab705c39b66d223e3b8aef85e2762046fd6b59e560f156756"
+dependencies = [
+ "bytes",
+ "futures",
+ "http 1.4.0",
+ "kio",
+ "quinn",
+ "rustls 0.23.40",
+ "rustls-native-certs",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "web-transport-proto",
+ "web-transport-trait 0.4.0",
 ]
 
 [[package]]
@@ -8986,6 +9065,15 @@ name = "web-transport-trait"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb67841c4a481ca3c1412ee4c9f463987401991e1ddc000903df2124f3dc85e9"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
+name = "web-transport-trait"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a916df726e858e8e6cc21e852129f59e6277d3a01bb2254c0506dcf829fdd5d"
 dependencies = [
  "bytes",
 ]
@@ -9004,6 +9092,22 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-streams",
  "web-sys",
+]
+
+[[package]]
+name = "web-transport-wasm"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d587cda0c9a7dd4591c6368d74834d62cb967f863122f712e22eb3b8b8ececfb"
+dependencies = [
+ "bytes",
+ "js-sys",
+ "thiserror 2.0.18",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-transport-trait 0.4.0",
 ]
 
 [[package]]
