@@ -108,7 +108,7 @@ pub(crate) fn VoiceParticipantTile(
             div { class: "absolute right-3 top-3 z-30",
                 button {
                     r#type: "button",
-                    class: "flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-950/88 text-zinc-400 shadow-[0_0_0_1px_rgba(255,255,255,.08)] transition-[scale,background-color,color,box-shadow] duration-150 hover:bg-zinc-900 hover:text-zinc-100 active:scale-[0.96]",
+                    class: "participant-tile-menu flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-950/88 text-zinc-400 shadow-[0_0_0_1px_rgba(255,255,255,.08)] transition-[scale,background-color,color,box-shadow,opacity,transform] duration-150 hover:bg-zinc-900 hover:text-zinc-100 active:scale-[0.96]",
                     "aria-label": "Меню пользователя",
                     onclick: {
                         let nickname = participant.nickname.clone();
@@ -133,13 +133,13 @@ pub(crate) fn VoiceParticipantTile(
                     UserAvatar {
                         nickname: participant.nickname.clone(),
                         avatar_url: participant.avatar_url.clone(),
-                        class: "flex h-20 w-20 items-center justify-center rounded-full bg-zinc-900/80 text-[26px] font-bold text-zinc-100 shadow-[0_16px_36px_rgba(0,0,0,.24)] outline outline-1 -outline-offset-1 outline-white/10".to_owned(),
+                        class: "participant-tile-avatar flex h-20 w-20 items-center justify-center rounded-full bg-zinc-900/80 text-[26px] font-bold text-zinc-100 shadow-[0_16px_36px_rgba(0,0,0,.24)] outline outline-1 -outline-offset-1 outline-white/10".to_owned(),
                         avatar_seed: Some(participant.user_id.clone()),
                     }
                 }
             }
-            div { class: "absolute inset-x-4 bottom-4 z-20 flex justify-center",
-                div { class: "max-w-full rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-1.5 text-[13px] font-semibold text-zinc-100 shadow-[0_12px_30px_rgba(0,0,0,.32)] backdrop-blur-xl",
+            div { class: "participant-tile-label absolute inset-x-4 bottom-4 z-20 flex justify-center",
+                div { class: "participant-tile-label-surface max-w-full rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-1.5 text-[13px] font-semibold text-zinc-100 shadow-[0_12px_30px_rgba(0,0,0,.32)] backdrop-blur-xl",
                     div { class: "flex min-w-0 items-center gap-1.5",
                         if speaking {
                             span { class: "h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,.12)]" }
@@ -155,7 +155,7 @@ pub(crate) fn VoiceParticipantTile(
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "m15 10 4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14m0-4v4m0-4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2" }
                             }
                         }
-                        div { class: "truncate", "{participant.nickname}" }
+                        div { class: "participant-tile-nickname truncate", "{participant.nickname}" }
                     }
                 }
             }
