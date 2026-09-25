@@ -1,5 +1,15 @@
 # CheenHub
 
+## Скачать последнюю версию
+
+[Открыть последний релиз](https://github.com/loject/cheenhub/releases/latest) и скачать файл для своей платформы:
+
+- Windows: установщик `.exe`
+- Ubuntu: пакет `.deb`
+- Android: файл `.apk` или [установка через RuStore](https://www.rustore.ru/catalog/app/ru.cheenhub)
+
+[Все версии и примечания к релизам](https://github.com/loject/cheenhub/releases)
+
 ## Локальный запуск
 
 Проект использует cargo-make для dev-задач и cargo-watch/Dioxus CLI для
