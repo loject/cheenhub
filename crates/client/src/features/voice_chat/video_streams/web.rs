@@ -61,6 +61,8 @@ impl BrowserParticipantVideoRenderer {
         let output_target_id = target_id.clone();
         let output_user_id = user_id.clone();
         let output_source_label = source_label;
+        let output_sequence = Rc::new(Cell::new(0_u64));
+        let output_trace_sequence = output_sequence.clone();
         let output_closure = Closure::wrap(Box::new(move |frame: VideoFrame| {
             if output_closed.get() {
                 let _ = frame.close();
@@ -79,6 +81,18 @@ impl BrowserParticipantVideoRenderer {
                     return;
                 }
             };
+
+            let trace_sequence = output_trace_sequence.get();
+            output_trace_sequence.set(trace_sequence.saturating_add(1));
+            if trace_sequence.is_multiple_of(15) {
+                debug!(
+                    sequence = trace_sequence,
+                    frame_age_ms = frame_age_ms(frame.timestamp().max(0.0) as u64),
+                    sender_user_id = %output_user_id,
+                    source = output_source_label,
+                    "screen share latency trace: decoder output"
+                );
+            }
 
             if let Err(error) = draw_video_frame(&canvas, &frame) {
                 warn!(
@@ -157,6 +171,16 @@ impl ParticipantVideoRenderer for BrowserParticipantVideoRenderer {
                 );
             }
 
+            if frame.sequence.is_multiple_of(15) {
+                debug!(
+                    sequence = frame.sequence,
+                    frame_age_ms = frame_age_ms(frame.timestamp_us),
+                    decode_queue_size = self.decoder.decode_queue_size(),
+                    sender_user_id = %frame.sender_user_id,
+                    source = self.source_label,
+                    "screen share latency trace: decoder input"
+                );
+            }
             let chunk = encoded_video_chunk(&frame).map_err(render_error)?;
             self.decoder.decode(&chunk).map_err(render_error)
         })
@@ -322,6 +346,23 @@ fn set_property(object: &JsValue, name: &str, value: &JsValue) {
     let _ = Reflect::set(object, &JsValue::from_str(name), value);
 }
 
+fn frame_age_ms(timestamp_us: u64) -> f64 {
+    performance_now_ms()
+        .map(|now_ms| (now_ms - timestamp_us as f64 / 1_000.0).max(0.0))
+        .unwrap_or(-1.0)
+}
+
+fn performance_now_ms() -> Option<f64> {
+    let performance = Reflect::get(&js_sys::global(), &JsValue::from_str("performance")).ok()?;
+    Reflect::get(&performance, &JsValue::from_str("now"))
+        .ok()?
+        .dyn_into::<Function>()
+        .ok()?
+        .call0(&performance)
+        .ok()?
+        .as_f64()
+}
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_name = VideoDecoder)]
@@ -333,6 +374,9 @@ extern "C" {
 
     #[wasm_bindgen(method, catch, js_name = configure)]
     fn configure(this: &VideoDecoder, config: &JsValue) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(method, getter, js_name = decodeQueueSize)]
+    fn decode_queue_size(this: &VideoDecoder) -> u32;
 
     #[wasm_bindgen(method, catch, js_name = decode)]
     fn decode(this: &VideoDecoder, chunk: &EncodedVideoChunk) -> Result<(), JsValue>;
@@ -354,6 +398,9 @@ extern "C" {
 
     #[wasm_bindgen(method, getter, js_name = displayHeight)]
     fn display_height(this: &VideoFrame) -> u32;
+
+    #[wasm_bindgen(method, getter)]
+    fn timestamp(this: &VideoFrame) -> f64;
 
     #[wasm_bindgen(method, catch, js_name = close)]
     fn close(this: &VideoFrame) -> Result<(), JsValue>;

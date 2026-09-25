@@ -129,6 +129,7 @@ struct VideoElementSourceState {
     pending: RefCell<Option<oneshot::Sender<PendingFrame>>>,
     pending_frame_closure: RefCell<Option<VideoFrameCallbackClosure>>,
     track_ended_closure: RefCell<Option<Closure<dyn FnMut()>>>,
+    trace_frame_count: Cell<u64>,
 }
 
 impl VideoElementSourceState {
@@ -153,6 +154,20 @@ impl VideoElementSourceState {
         set_property(&video, "muted", &JsValue::TRUE)?;
         set_property(&video, "autoplay", &JsValue::TRUE)?;
         set_property(&video, "playsInline", &JsValue::TRUE)?;
+        call_method2(
+            &video,
+            "setAttribute",
+            &JsValue::from_str("style"),
+            &JsValue::from_str(
+                "position:fixed;top:12px;right:12px;width:320px;max-width:35vw;z-index:2147483647;border:2px solid #38bdf8;border-radius:8px;background:#000;pointer-events:none;",
+            ),
+        )?;
+        if let Ok(body) = Reflect::get(document.as_ref(), &JsValue::from_str("body"))
+            && !body.is_null()
+            && !body.is_undefined()
+        {
+            call_method1(&body, "appendChild", &video)?;
+        }
         play_video(&video).await?;
 
         let state = Rc::new(Self {
@@ -163,6 +178,7 @@ impl VideoElementSourceState {
             pending: RefCell::new(None),
             pending_frame_closure: RefCell::new(None),
             track_ended_closure: RefCell::new(None),
+            trace_frame_count: Cell::new(0),
         });
         state.install_track_ended_handler()?;
         Ok(state)
@@ -212,6 +228,19 @@ impl VideoElementSourceState {
                 return;
             }
             let timestamp_us = frame_timestamp_us(now_ms, &metadata);
+            let trace_frame = state.trace_frame_count.get();
+            state.trace_frame_count.set(trace_frame.saturating_add(1));
+            if trace_frame.is_multiple_of(15) {
+                let presented_frames =
+                    Reflect::get(&metadata, &JsValue::from_str("presentedFrames"))
+                        .ok()
+                        .and_then(|value| value.as_f64())
+                        .unwrap_or(-1.0);
+                debug!(
+                    now_ms,
+                    timestamp_us, presented_frames, "screen share latency trace: raw video frame"
+                );
+            }
             let _ = sender.send(video_frame_from_element(&state.video, timestamp_us).map(Some));
         }) as Box<dyn FnMut(f64, JsValue)>);
         self.pending_frame_closure.replace(Some(closure));
@@ -248,6 +277,7 @@ impl VideoElementSourceState {
         }
         self.pending_frame_closure.borrow_mut().take();
         let _ = call_method0(&self.video, "pause");
+        let _ = call_method0(&self.video, "remove");
         let _ = set_property(&self.video, "srcObject", &JsValue::NULL);
         let _ = set_property(self.track.as_ref(), "onended", &JsValue::NULL);
         self.track_ended_closure.borrow_mut().take();
@@ -371,6 +401,17 @@ fn call_method1(
 ) -> Result<JsValue, VideoEncodingError> {
     method(target, name)?
         .call1(target, argument)
+        .map_err(video_error)
+}
+
+fn call_method2(
+    target: &JsValue,
+    name: &str,
+    first: &JsValue,
+    second: &JsValue,
+) -> Result<JsValue, VideoEncodingError> {
+    method(target, name)?
+        .call2(target, first, second)
         .map_err(video_error)
 }
 

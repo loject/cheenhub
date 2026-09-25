@@ -162,12 +162,26 @@ impl VideoFrameEncoder for BrowserVideoEncoder {
 #[derive(Clone)]
 pub(crate) struct BrowserVideoEncoderHandle {
     encoder: VideoEncoder,
+    trace_input_sequence: Rc<Cell<u64>>,
 }
 
 impl VideoFrameEncoder for BrowserVideoEncoderHandle {
     type InputFrame = BrowserVideoFrame;
 
     fn encode(&self, frame: &Self::InputFrame, key_frame: bool) -> Result<(), VideoEncodingError> {
+        let trace_sequence = self.trace_input_sequence.get();
+        self.trace_input_sequence
+            .set(trace_sequence.saturating_add(1));
+        if trace_sequence.is_multiple_of(15) {
+            debug!(
+                sequence = trace_sequence,
+                frame_age_ms = frame_age_ms(frame.timestamp_us()),
+                encode_queue_size = self.encoder.encode_queue_size(),
+                key_frame,
+                "screen share latency trace: encoder input"
+            );
+        }
+
         if !key_frame {
             return self.encoder.encode(&frame.frame).map_err(video_error);
         }
@@ -215,6 +229,7 @@ fn create_webcodecs_encoder(
 ) -> Result<BrowserVideoEncoder, VideoEncodingError> {
     let sequence = Rc::new(Cell::new(0_u64));
     let output_sequence = sequence.clone();
+    let trace_input_sequence = Rc::new(Cell::new(0_u64));
     let codec = config.codec;
     let width = config.width;
     let height = config.height;
@@ -228,6 +243,14 @@ fn create_webcodecs_encoder(
         destination.copy_to(&mut bytes);
         let sequence = output_sequence.get();
         output_sequence.set(sequence.saturating_add(1));
+        if sequence.is_multiple_of(15) {
+            debug!(
+                sequence,
+                frame_age_ms = frame_age_ms(chunk.timestamp().max(0.0) as u64),
+                payload_bytes = byte_length,
+                "screen share latency trace: encoder output"
+            );
+        }
         on_frame(EncodedVideoFrame {
             sequence,
             timestamp_us: chunk.timestamp().max(0.0) as u64,
@@ -265,7 +288,10 @@ fn create_webcodecs_encoder(
     );
 
     Ok(BrowserVideoEncoder {
-        handle: BrowserVideoEncoderHandle { encoder },
+        handle: BrowserVideoEncoderHandle {
+            encoder,
+            trace_input_sequence,
+        },
         _output_closure: output_closure,
         _error_closure: error_closure,
     })
@@ -312,6 +338,7 @@ fn webcodecs_encoder_config(config: &VideoEncoderConfig) -> JsValue {
         "bitrate",
         &JsValue::from_f64(f64::from(config.bitrate_bps)),
     );
+    set_property(&object, "latencyMode", &JsValue::from_str("realtime"));
     object.into()
 }
 
@@ -331,6 +358,23 @@ pub(super) fn global_constructor_available(name: &str) -> bool {
 
 fn set_property(object: &Object, name: &str, value: &JsValue) {
     let _ = Reflect::set(object, &JsValue::from_str(name), value);
+}
+
+fn frame_age_ms(timestamp_us: u64) -> f64 {
+    performance_now_ms()
+        .map(|now_ms| (now_ms - timestamp_us as f64 / 1_000.0).max(0.0))
+        .unwrap_or(-1.0)
+}
+
+fn performance_now_ms() -> Option<f64> {
+    let performance = Reflect::get(&js_sys::global(), &JsValue::from_str("performance")).ok()?;
+    Reflect::get(&performance, &JsValue::from_str("now"))
+        .ok()?
+        .dyn_into::<Function>()
+        .ok()?
+        .call0(&performance)
+        .ok()?
+        .as_f64()
 }
 
 fn video_error(error: JsValue) -> VideoEncodingError {
@@ -374,6 +418,9 @@ extern "C" {
 
     #[wasm_bindgen(method, catch, js_name = close)]
     fn close(this: &VideoEncoder) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(method, getter, js_name = encodeQueueSize)]
+    fn encode_queue_size(this: &VideoEncoder) -> u32;
 
     #[wasm_bindgen(js_name = EncodedVideoChunk)]
     #[derive(Clone)]
