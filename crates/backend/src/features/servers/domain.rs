@@ -5,6 +5,13 @@ use cheenhub_contracts::rest::ServerRoomKind;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+/// Максимальное количество действующих ссылок-приглашений, которое может создать один пользователь на одном сервере.
+///
+/// Сейчас значение фиксировано для всех пользователей и серверов. В следующих итерациях лимит станет
+/// зависеть от роли пользователя и будет настраиваться владельцем сервера индивидуально для каждой роли,
+/// а пользователю будет возвращаться максимум среди ролей, которые ему назначены.
+pub(crate) const MAX_OWN_INVITE_LINKS: u32 = 10;
+
 /// Данные сервера, используемые в потоках сервера.
 #[derive(Debug, Clone)]
 pub(crate) struct Server {
@@ -97,6 +104,9 @@ pub(crate) struct ServerInvite {
     pub(crate) created_at: DateTime<Utc>,
     /// Invite revocation timestamp.
     pub(crate) revoked_at: Option<DateTime<Utc>>,
+    /// Invite soft-delete timestamp. The invite stops being usable, but stays stored together
+    /// with its uses so that it remains possible to tell which invite brought a member in.
+    pub(crate) deleted_at: Option<DateTime<Utc>>,
 }
 
 /// Данные участника сервера, используемые в потоках сервера.

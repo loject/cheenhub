@@ -1,13 +1,11 @@
 //! Потоки приложения серверов.
 
-use cheenhub_contracts::realtime::ServerRolePermission;
 use cheenhub_contracts::rest::{
-    CreateServerInviteRequest, CreateServerInviteResponse, CreateServerRequest,
-    CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
+    CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
     ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse, ServerInviteSummary,
     ServerRoomKind, UpdateServerRoomRequest, UpdateServerRoomResponse,
 };
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use uuid::Uuid;
 
 use crate::features::auth::application as auth_application;
@@ -17,12 +15,13 @@ use crate::state::AppState;
 
 use self::support::{
     current_user_id, map_auth_error, owned_server, parse_server_id, room_summary,
-    server_for_member_or_owner, server_summary, user_has_server_permission,
+    server_for_member_or_owner, server_summary,
 };
 
 mod accept_invite;
 mod invite_settings;
 mod members_settings;
+mod own_invites;
 mod profile;
 mod role_settings;
 mod support;
@@ -35,6 +34,7 @@ pub(crate) use invite_settings::{
 pub(crate) use members_settings::{
     assign_server_member_role, kick_server_member, list_server_members, revoke_server_member_role,
 };
+pub(crate) use own_invites::{create_invite, delete_own_invite, list_own_invite_links};
 pub(crate) use profile::{update, update_avatar};
 pub(crate) use role_settings::{list_server_roles, save_server_roles};
 pub(crate) use voice_settings::{get_voice_settings, update_voice_settings};
@@ -102,56 +102,6 @@ pub(crate) async fn list(
         summaries.push(server_summary(state, &access.server, &user_id, access.is_member).await);
     }
     Ok(ListServersResponse { servers: summaries })
-}
-
-/// Создает приглашение для сервера, где текущий пользователь имеет нужное право.
-pub(crate) async fn create_invite(
-    state: &AppState,
-    access_token: &str,
-    server_id: String,
-    request: CreateServerInviteRequest,
-) -> Result<CreateServerInviteResponse, ServerError> {
-    let user_id = current_user_id(state, access_token).await?;
-    let server_id = parse_server_id(server_id)?;
-    let valid = validation::create_server_invite(request.max_uses, request.expires_in_days)
-        .map_err(|message| ServerError::BadRequest(message.to_owned()))?;
-    let server = server_for_member_or_owner(state, &server_id, &user_id).await?;
-    if !user_has_server_permission(
-        state,
-        &server,
-        &user_id,
-        ServerRolePermission::CreateInviteLinks,
-    )
-    .await?
-    {
-        tracing::warn!(
-            server_id = %server.id,
-            user_id = %user_id,
-            "rejected server invite creation without permission"
-        );
-        return Err(ServerError::NotFound(
-            "Сервер не найден или недоступен.".to_owned(),
-        ));
-    }
-    let expires_at = valid
-        .expires_in_days
-        .map(|days| Utc::now() + Duration::days(days.into()));
-    let invite = state
-        .server_store
-        .insert_server_invite(&server.id, &user_id, valid.max_uses, expires_at)
-        .await
-        .map_err(ServerError::Internal)?;
-
-    tracing::info!(
-        server_id = %server.id,
-        invite_code = %invite.id,
-        user_id = %user_id,
-        "created server invite"
-    );
-
-    Ok(CreateServerInviteResponse {
-        code: invite.id.to_string(),
-    })
 }
 
 /// Загружает информацию о приглашении сервера для текущего пользователя.

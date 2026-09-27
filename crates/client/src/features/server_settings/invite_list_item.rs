@@ -91,14 +91,14 @@ pub(super) fn InviteListItem(
                 div { class: "flex shrink-0 flex-wrap gap-2",
                     button {
                         r#type: "button",
-                        disabled: invite.status == InviteStatus::Revoked,
+                        disabled: !can_revoke(invite.status),
                         class: revoke_button_class(invite.status),
                         onclick: {
                             let invite_id = invite.id.clone();
                             let invite_code = invite.code.clone();
                             let invite_status = invite.status;
                             move |_| {
-                                if invite_status == InviteStatus::Revoked {
+                                if !can_revoke(invite_status) {
                                     return;
                                 }
                                 on_action.call(InviteListItemAction::RemoveInvite {
@@ -239,7 +239,7 @@ fn invite_icon_class(status: InviteStatus) -> &'static str {
         InviteStatus::Active => {
             "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-blue-200"
         }
-        InviteStatus::Revoked => {
+        InviteStatus::Revoked | InviteStatus::Deleted => {
             "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-500"
         }
     }
@@ -253,6 +253,9 @@ fn status_badge_class(status: InviteStatus) -> &'static str {
         InviteStatus::Revoked => {
             "rounded-full border border-zinc-700 bg-zinc-950 px-2 py-0.5 text-[10px] font-medium text-zinc-400"
         }
+        InviteStatus::Deleted => {
+            "rounded-full border border-zinc-700 bg-zinc-950 px-2 py-0.5 text-[10px] font-medium text-zinc-400"
+        }
     }
 }
 
@@ -260,7 +263,13 @@ fn status_label(status: InviteStatus) -> &'static str {
     match status {
         InviteStatus::Active => "Активна",
         InviteStatus::Revoked => "Отозвана",
+        InviteStatus::Deleted => "Удалена",
     }
+}
+
+/// Можно ли ещё отозвать приглашение: удалённое и отозванное уже не действуют.
+fn can_revoke(status: InviteStatus) -> bool {
+    status == InviteStatus::Active
 }
 
 fn revoke_button_class(status: InviteStatus) -> &'static str {
@@ -268,7 +277,7 @@ fn revoke_button_class(status: InviteStatus) -> &'static str {
         InviteStatus::Active => {
             "flex h-9 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/10 px-3 text-[12px] font-medium text-red-200 transition hover:border-red-500/35 hover:bg-red-500/15"
         }
-        InviteStatus::Revoked => {
+        InviteStatus::Revoked | InviteStatus::Deleted => {
             "flex h-9 cursor-not-allowed items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-[12px] font-medium text-zinc-500"
         }
     }
@@ -278,6 +287,7 @@ fn revoke_button_label(status: InviteStatus) -> &'static str {
     match status {
         InviteStatus::Active => "Отозвать",
         InviteStatus::Revoked => "Восстановить",
+        InviteStatus::Deleted => "Удалена автором",
     }
 }
 
@@ -299,5 +309,6 @@ fn access_text(status: InviteStatus) -> String {
     match status {
         InviteStatus::Active => "доступна для входа".to_owned(),
         InviteStatus::Revoked => "отозвана".to_owned(),
+        InviteStatus::Deleted => "удалена, история входов сохранена".to_owned(),
     }
 }

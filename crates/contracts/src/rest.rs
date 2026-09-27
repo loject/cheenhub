@@ -31,7 +31,8 @@ pub use push_notifications::{PushPlatform, UpsertPushInstallationRequest};
 pub use servers::{
     AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,
     CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
-    ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse, ServerInviteSummary,
+    DeleteServerInviteResponse, ListServerRoomsResponse, ListServersResponse,
+    ServerInviteInfoResponse, ServerInviteLinksResponse, ServerInviteSummary, ServerOwnInviteLink,
     ServerRoomKind, ServerRoomSummary, ServerSummary, ServerVoiceSettings,
     UpdateServerAvatarResponse, UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest,
     UpdateServerRoomResponse,

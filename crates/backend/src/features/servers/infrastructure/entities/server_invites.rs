@@ -21,6 +21,8 @@ pub struct Model {
     pub created_at: DateTimeUtc,
     /// Временная метка отзыва приглашения.
     pub revoked_at: Option<DateTimeUtc>,
+    /// Временная метка мягкого удаления приглашения.
+    pub deleted_at: Option<DateTimeUtc>,
 }
 
 /// Связи приглашения сервера.

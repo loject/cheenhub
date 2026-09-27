@@ -163,18 +163,13 @@ impl ServerStore for InMemoryServerStore {
         max_uses: Option<u32>,
         expires_at: Option<DateTime<Utc>>,
     ) -> anyhow::Result<ServerInvite> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let invite = ServerInvite {
-            id: Uuid::new_v4(),
-            server_id: *server_id,
-            creator_user_id: *creator_user_id,
+        super::in_memory_invites::insert_server_invite(
+            &self.state,
+            server_id,
+            creator_user_id,
             max_uses,
             expires_at,
-            created_at: Utc::now(),
-            revoked_at: None,
-        };
-        state.invites.push(invite.clone());
-        Ok(invite)
+        )
     }
 
     async fn find_server_invite(&self, code: &Uuid) -> anyhow::Result<Option<ServerInvite>> {
@@ -182,20 +177,40 @@ impl ServerStore for InMemoryServerStore {
         Ok(state
             .invites
             .iter()
-            .find(|invite| invite.id == *code)
+            .find(|invite| invite.id == *code && invite.deleted_at.is_none())
             .cloned())
     }
 
     async fn list_server_invites(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerInvite>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        let mut invites = state
-            .invites
-            .iter()
-            .filter(|invite| invite.server_id == *server_id)
-            .cloned()
-            .collect::<Vec<_>>();
-        invites.sort_by_key(|invite| std::cmp::Reverse(invite.created_at));
-        Ok(invites)
+        super::in_memory_invites::list_server_invites(&self.state, server_id)
+    }
+
+    async fn list_server_invites_by_creator(
+        &self,
+        server_id: &Uuid,
+        creator_user_id: &Uuid,
+    ) -> anyhow::Result<Vec<ServerInvite>> {
+        super::in_memory_invites::list_server_invites_by_creator(
+            &self.state,
+            server_id,
+            creator_user_id,
+        )
+    }
+
+    async fn soft_delete_server_invite_created_by(
+        &self,
+        server_id: &Uuid,
+        invite_id: &Uuid,
+        creator_user_id: &Uuid,
+        deleted_at: DateTime<Utc>,
+    ) -> anyhow::Result<Option<ServerInvite>> {
+        super::in_memory_invites::soft_delete_server_invite_created_by(
+            &self.state,
+            server_id,
+            invite_id,
+            creator_user_id,
+            deleted_at,
+        )
     }
 
     async fn list_server_invite_uses(

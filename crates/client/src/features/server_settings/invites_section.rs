@@ -119,7 +119,7 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                             p { class: "mt-0.5 text-[16px] font-semibold text-zinc-100", "{active_count}" }
                         }
                         div { class: "rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 py-2",
-                            p { class: "text-[11px] text-zinc-500", "Отозваны" }
+                            p { class: "text-[11px] text-zinc-500", "Не действуют" }
                             p { class: "mt-0.5 text-[16px] font-semibold text-zinc-100", "{revoked_count}" }
                         }
                     }

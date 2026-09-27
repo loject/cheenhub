@@ -132,11 +132,54 @@ pub struct CreateServerInviteRequest {
     pub expires_in_days: Option<u32>,
 }
 
+/// Ссылка-приглашение сервера, созданная текущим пользователем.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerOwnInviteLink {
+    /// Стабильный код приглашения.
+    pub code: String,
+    /// Временная метка создания приглашения в формате RFC3339.
+    pub created_at: String,
+    /// Необязательная временная метка истечения приглашения в формате RFC3339.
+    pub expires_at: Option<String>,
+    /// Необязательный максимальный лимит использований приглашения.
+    pub max_uses: Option<u32>,
+    /// Количество успешных использований приглашения.
+    pub uses: u32,
+    /// Действует ли приглашение прямо сейчас: не отозвано, срок не истёк, лимит использований не исчерпан.
+    pub is_active: bool,
+}
+
+/// Состояние ссылок-приглашений, созданных текущим пользователем на сервере.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerInviteLinksResponse {
+    /// Стабильный идентификатор сервера.
+    pub server_id: String,
+    /// Ссылки-приглашения, созданные текущим пользователем, от новых к старым.
+    pub links: Vec<ServerOwnInviteLink>,
+    /// Максимальное количество действующих ссылок-приглашений, доступное текущему пользователю.
+    pub limit: u32,
+}
+
 /// Успешный ответ о создании приглашения сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateServerInviteResponse {
     /// Стабильный код приглашения.
     pub code: String,
+    /// Ссылки-приглашения текущего пользователя после создания, от новых к старым.
+    pub links: Vec<ServerOwnInviteLink>,
+    /// Максимальное количество действующих ссылок-приглашений, доступное текущему пользователю.
+    pub limit: u32,
+}
+
+/// Успешный ответ на удаление приглашения сервера.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeleteServerInviteResponse {
+    /// Удаленный код приглашения.
+    pub code: String,
+    /// Ссылки-приглашения текущего пользователя после удаления, от новых к старым.
+    pub links: Vec<ServerOwnInviteLink>,
+    /// Максимальное количество действующих ссылок-приглашений, доступное текущему пользователю.
+    pub limit: u32,
 }
 
 /// Данные приглашения сервера, возвращаемые lookup-эндпоинтами.

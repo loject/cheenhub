@@ -1,4 +1,4 @@
-//! Invite-link settings modal.
+//! Меню создания ссылок приглашения для сервера.
 
 use dioxus::prelude::*;
 
@@ -7,9 +7,12 @@ use crate::features::clipboard::copy_text;
 use crate::features::runtime::sleep_ms;
 use crate::features::toast::ToastHandle;
 
+use super::invite_link_data::{OwnInviteLink, OwnInviteLinks, own_invite_from_rest};
 use super::modal::Modal;
+use super::own_invite_link_item::OwnInviteLinkAction;
+use super::own_invite_links_section::OwnInviteLinksSection;
 
-/// Renders invite-link configuration controls.
+/// Отрисовывает настройки и список ссылок приглашения сервера.
 #[component]
 pub(crate) fn InviteLinkModal(
     server_id: String,
@@ -26,6 +29,53 @@ pub(crate) fn InviteLinkModal(
     let mut is_busy = use_signal(|| false);
     let mut is_copied = use_signal(|| false);
     let mut copy_generation = use_signal(|| 0_u64);
+    let mut links = use_signal(|| None::<OwnInviteLinks>);
+    let mut load_error = use_signal(String::new);
+    let mut deleting_code = use_signal(String::new);
+    let mut reload_generation = use_signal(|| 0_u64);
+    let create_server_id = server_id.clone();
+    let load_server_id = server_id.clone();
+    let invite_links = use_resource(move || {
+        let request_server_id = load_server_id.clone();
+        // Чтение сигнала перезапускает загрузку списка по кнопке повторной попытки.
+        let _ = reload_generation();
+
+        async move { api::list_own_server_invites(request_server_id).await }
+    });
+    let links_result = invite_links.read().clone();
+    let effect_server_id = server_id.clone();
+    let mut processed_generation = use_signal(|| None::<u64>);
+    use_effect(move || {
+        let Some(result) = links_result.clone() else {
+            return;
+        };
+        let current = reload_generation();
+        if processed_generation() == Some(current) {
+            return;
+        }
+        processed_generation.set(Some(current));
+
+        match result {
+            Ok(response) => {
+                links.set(Some(OwnInviteLinks {
+                    links: response
+                        .links
+                        .into_iter()
+                        .map(own_invite_from_rest)
+                        .collect::<Vec<OwnInviteLink>>(),
+                    limit: response.limit,
+                }));
+                if !load_error.peek().is_empty() {
+                    load_error.set(String::new());
+                }
+            }
+            Err(error) => {
+                warn!(%error, server_id = %effect_server_id, "failed to load own server invite links");
+                load_error.set(error);
+            }
+        }
+    });
+    let limit_reached = links().is_some_and(|links| links.is_limit_reached());
     let limit_panel_class = if has_usage_limit() {
         "max-h-24 translate-y-0 opacity-100"
     } else {
@@ -212,6 +262,79 @@ pub(crate) fn InviteLinkModal(
                     }
                 }
 
+                OwnInviteLinksSection {
+                    links: links(),
+                    load_error: load_error(),
+                    deleting_code: deleting_code(),
+                    on_reload: move |_| {
+                        load_error.set(String::new());
+                        processed_generation.set(None);
+                        reload_generation += 1;
+                    },
+                    on_action: move |action: OwnInviteLinkAction| {
+                        match action {
+                            OwnInviteLinkAction::Copy { code } => {
+                                spawn(async move {
+                                    match current_invite_url(&code).await {
+                                        Ok(link) => match copy_text(link).await {
+                                            Ok(()) => {
+                                                toast.success("Ссылка приглашения скопирована.");
+                                                info!(%code, "copied own server invite link");
+                                            }
+                                            Err(error) => {
+                                                warn!(%error, %code, "failed to copy own server invite link");
+                                                toast.error(error);
+                                            }
+                                        },
+                                        Err(error) => {
+                                            warn!(%error, %code, "failed to build invite url for copying");
+                                            toast.error(error);
+                                        }
+                                    }
+                                });
+                            }
+                            OwnInviteLinkAction::Delete { code } => {
+                                if is_busy() || !deleting_code().is_empty() {
+                                    return;
+                                }
+
+                                let request_server_id = server_id.clone();
+                                let deleted_code = code.clone();
+                                deleting_code.set(code);
+                                spawn(async move {
+                                    match api::delete_own_server_invite(
+                                        request_server_id,
+                                        deleted_code.clone(),
+                                    )
+                                    .await
+                                    {
+                                        Ok(response) => {
+                                            info!(code = %deleted_code, "deleted own server invite link in ui");
+                                            links.set(Some(OwnInviteLinks {
+                                                links: response
+                                                    .links
+                                                    .into_iter()
+                                                    .map(own_invite_from_rest)
+                                                    .collect::<Vec<OwnInviteLink>>(),
+                                                limit: response.limit,
+                                            }));
+                                            if is_generated_link_for(&generated_link, &deleted_code) {
+                                                generated_link.set(None);
+                                            }
+                                            toast.success("Ссылка приглашения удалена.");
+                                        }
+                                        Err(error) => {
+                                            warn!(%error, code = %deleted_code, "failed to delete own server invite link in ui");
+                                            toast.error(error);
+                                        }
+                                    }
+                                    deleting_code.set(String::new());
+                                });
+                            }
+                        }
+                    },
+                }
+
                 div { class: "flex justify-end gap-2 pt-1",
                     button {
                         r#type: "button",
@@ -222,10 +345,10 @@ pub(crate) fn InviteLinkModal(
                     }
                     button {
                         r#type: "button",
-                        disabled: is_busy(),
+                        disabled: is_busy() || limit_reached,
                         class: "flex h-10 items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60",
                         onclick: move |_| {
-                            if is_busy() {
+                            if is_busy() || limit_reached {
                                 return;
                             }
 
@@ -251,7 +374,7 @@ pub(crate) fn InviteLinkModal(
                                     return;
                                 }
                             };
-                            let request_server_id = server_id.clone();
+                            let request_server_id = create_server_id.clone();
                             is_busy.set(true);
                             status.set(String::new());
                             generated_link.set(None);
@@ -264,16 +387,26 @@ pub(crate) fn InviteLinkModal(
                                 )
                                 .await
                                 {
-                                    Ok(code) => match current_invite_url(&code).await {
-                                        Ok(link) => {
-                                            generated_link.set(Some(link));
-                                            toast.success("Ссылка приглашения создана.");
+                                    Ok(response) => {
+                                        links.set(Some(OwnInviteLinks {
+                                            links: response
+                                                .links
+                                                .into_iter()
+                                                .map(own_invite_from_rest)
+                                                .collect::<Vec<OwnInviteLink>>(),
+                                            limit: response.limit,
+                                        }));
+                                        match current_invite_url(&response.code).await {
+                                            Ok(link) => {
+                                                generated_link.set(Some(link));
+                                                toast.success("Ссылка приглашения создана.");
+                                            }
+                                            Err(error) => {
+                                                warn!(%error, "failed to build invite url for created server invite");
+                                                toast.error(error);
+                                            }
                                         }
-                                        Err(error) => {
-                                            toast.error(error.clone());
-                                            status.set(error);
-                                        }
-                                    },
+                                    }
                                     Err(error) => {
                                         toast.error(error.clone());
                                         status.set(error);
@@ -282,12 +415,26 @@ pub(crate) fn InviteLinkModal(
                                 is_busy.set(false);
                             });
                         },
-                        if is_busy() { "Создаем..." } else { "Создать" }
+                        if is_busy() {
+                            "Создаем..."
+                        } else if limit_reached {
+                            "Лимит ссылок исчерпан"
+                        } else {
+                            "Создать"
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/// Проверяет, что показанная готовая ссылка собрана именно из удаленного приглашения.
+fn is_generated_link_for(generated_link: &Signal<Option<String>>, code: &str) -> bool {
+    let compact = code.replace('-', "");
+    let current = generated_link.peek();
+
+    current.as_ref().is_some_and(|link| link.contains(&compact))
 }
 
 fn optional_number(enabled: bool, value: String, label: &str) -> Result<Option<u32>, String> {

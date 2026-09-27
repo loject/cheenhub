@@ -9,6 +9,8 @@ pub(super) enum InviteStatus {
     Active,
     /// Приглашение отозвано и больше не действует.
     Revoked,
+    /// Приглашение удалено его автором и больше не действует, но остаётся с историей входов.
+    Deleted,
 }
 
 /// Ссылка-приглашение сервера, отображаемая в настройках.
@@ -54,7 +56,9 @@ pub(super) fn invite_from_realtime(invite: ServerInviteLink) -> InviteLink {
         created_at: invite.created_at,
         expires_at: invite.expires_at.unwrap_or_else(|| "без срока".to_owned()),
         max_uses: invite.max_uses,
-        status: if invite.revoked_at.is_some() {
+        status: if invite.deleted_at.is_some() {
+            InviteStatus::Deleted
+        } else if invite.revoked_at.is_some() {
             InviteStatus::Revoked
         } else {
             InviteStatus::Active

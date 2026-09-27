@@ -7,7 +7,97 @@ use uuid::Uuid;
 
 use super::AcceptInviteOutcome;
 use super::in_memory::InMemoryState;
-use crate::features::servers::domain::{ServerInviteUse, ServerMember};
+use crate::features::servers::domain::{ServerInvite, ServerInviteUse, ServerMember};
+
+pub(super) fn insert_server_invite(
+    shared_state: &Mutex<InMemoryState>,
+    server_id: &Uuid,
+    creator_user_id: &Uuid,
+    max_uses: Option<u32>,
+    expires_at: Option<DateTime<Utc>>,
+) -> anyhow::Result<ServerInvite> {
+    let mut state = shared_state
+        .lock()
+        .map_err(|_| anyhow::anyhow!("in-memory server store lock poisoned"))?;
+    let invite = ServerInvite {
+        id: Uuid::new_v4(),
+        server_id: *server_id,
+        creator_user_id: *creator_user_id,
+        max_uses,
+        expires_at,
+        created_at: Utc::now(),
+        revoked_at: None,
+        deleted_at: None,
+    };
+    state.invites.push(invite.clone());
+
+    Ok(invite)
+}
+
+pub(super) fn list_server_invites(
+    shared_state: &Mutex<InMemoryState>,
+    server_id: &Uuid,
+) -> anyhow::Result<Vec<ServerInvite>> {
+    let state = shared_state
+        .lock()
+        .map_err(|_| anyhow::anyhow!("in-memory server store lock poisoned"))?;
+    let mut invites = state
+        .invites
+        .iter()
+        .filter(|invite| invite.server_id == *server_id)
+        .cloned()
+        .collect::<Vec<_>>();
+    invites.sort_by_key(|invite| std::cmp::Reverse(invite.created_at));
+
+    Ok(invites)
+}
+
+pub(super) fn list_server_invites_by_creator(
+    shared_state: &Mutex<InMemoryState>,
+    server_id: &Uuid,
+    creator_user_id: &Uuid,
+) -> anyhow::Result<Vec<ServerInvite>> {
+    let state = shared_state
+        .lock()
+        .map_err(|_| anyhow::anyhow!("in-memory server store lock poisoned"))?;
+    let mut invites = state
+        .invites
+        .iter()
+        .filter(|invite| {
+            invite.server_id == *server_id
+                && invite.creator_user_id == *creator_user_id
+                && invite.deleted_at.is_none()
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    invites.sort_by_key(|invite| std::cmp::Reverse(invite.created_at));
+
+    Ok(invites)
+}
+
+pub(super) fn soft_delete_server_invite_created_by(
+    shared_state: &Mutex<InMemoryState>,
+    server_id: &Uuid,
+    invite_id: &Uuid,
+    creator_user_id: &Uuid,
+    deleted_at: DateTime<Utc>,
+) -> anyhow::Result<Option<ServerInvite>> {
+    let mut state = shared_state
+        .lock()
+        .map_err(|_| anyhow::anyhow!("in-memory server store lock poisoned"))?;
+    let Some(invite) = state.invites.iter_mut().find(|invite| {
+        invite.server_id == *server_id
+            && invite.id == *invite_id
+            && invite.creator_user_id == *creator_user_id
+            && invite.deleted_at.is_none()
+    }) else {
+        return Ok(None);
+    };
+
+    invite.deleted_at = Some(deleted_at);
+
+    Ok(Some(invite.clone()))
+}
 
 pub(super) fn accept_server_invite(
     shared_state: &Mutex<InMemoryState>,
@@ -21,7 +111,7 @@ pub(super) fn accept_server_invite(
     let Some(invite) = state
         .invites
         .iter()
-        .find(|invite| invite.id == *invite_id)
+        .find(|invite| invite.id == *invite_id && invite.deleted_at.is_none())
         .cloned()
     else {
         return Ok(AcceptInviteOutcome::NotFound);

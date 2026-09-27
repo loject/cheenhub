@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use cheenhub_contracts::rest::ServerRoomKind;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
     PaginatorTrait, QueryFilter, QueryOrder, Set,
@@ -186,6 +186,7 @@ impl ServerStore for PostgresServerStore {
             expires_at: Set(expires_at),
             created_at: Set(created_at),
             revoked_at: Set(None),
+            deleted_at: Set(None),
         }
         .insert(&self.database)
         .await?;
@@ -195,6 +196,7 @@ impl ServerStore for PostgresServerStore {
 
     async fn find_server_invite(&self, code: &Uuid) -> anyhow::Result<Option<ServerInvite>> {
         Ok(server_invites::Entity::find_by_id(*code)
+            .filter(server_invites::Column::DeletedAt.is_null())
             .one(&self.database)
             .await?
             .map(Into::into))
@@ -209,6 +211,36 @@ impl ServerStore for PostgresServerStore {
             .into_iter()
             .map(Into::into)
             .collect())
+    }
+
+    async fn list_server_invites_by_creator(
+        &self,
+        server_id: &Uuid,
+        creator_user_id: &Uuid,
+    ) -> anyhow::Result<Vec<ServerInvite>> {
+        super::postgres_invites::list_server_invites_by_creator(
+            &self.database,
+            server_id,
+            creator_user_id,
+        )
+        .await
+    }
+
+    async fn soft_delete_server_invite_created_by(
+        &self,
+        server_id: &Uuid,
+        invite_id: &Uuid,
+        creator_user_id: &Uuid,
+        deleted_at: DateTime<Utc>,
+    ) -> anyhow::Result<Option<ServerInvite>> {
+        super::postgres_invites::soft_delete_server_invite_created_by(
+            &self.database,
+            server_id,
+            invite_id,
+            creator_user_id,
+            deleted_at,
+        )
+        .await
     }
 
     async fn list_server_invite_uses(

@@ -204,6 +204,7 @@ async fn invite_links(
             max_uses: invite.max_uses,
             uses: uses.len().try_into().unwrap_or(u32::MAX),
             revoked_at: invite.revoked_at.map(|revoked_at| revoked_at.to_rfc3339()),
+            deleted_at: invite.deleted_at.map(|deleted_at| deleted_at.to_rfc3339()),
             joined_members,
         });
     }

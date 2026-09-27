@@ -3,12 +3,56 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QuerySelect, Set, TransactionTrait, sea_query::LockType,
+    QueryOrder, QuerySelect, Set, TransactionTrait, sea_query::LockType,
 };
 use uuid::Uuid;
 
 use super::AcceptInviteOutcome;
 use super::entities::{server_invite_uses, server_invites, server_members};
+use crate::features::servers::domain::ServerInvite;
+
+pub(super) async fn list_server_invites_by_creator(
+    database: &DatabaseConnection,
+    server_id: &Uuid,
+    creator_user_id: &Uuid,
+) -> anyhow::Result<Vec<ServerInvite>> {
+    Ok(server_invites::Entity::find()
+        .filter(server_invites::Column::ServerId.eq(*server_id))
+        .filter(server_invites::Column::CreatorUserId.eq(*creator_user_id))
+        .filter(server_invites::Column::DeletedAt.is_null())
+        .order_by_desc(server_invites::Column::CreatedAt)
+        .all(database)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect())
+}
+
+pub(super) async fn soft_delete_server_invite_created_by(
+    database: &DatabaseConnection,
+    server_id: &Uuid,
+    invite_id: &Uuid,
+    creator_user_id: &Uuid,
+    deleted_at: DateTime<Utc>,
+) -> anyhow::Result<Option<ServerInvite>> {
+    let Some(invite) = server_invites::Entity::find_by_id(*invite_id)
+        .filter(server_invites::Column::ServerId.eq(*server_id))
+        .filter(server_invites::Column::CreatorUserId.eq(*creator_user_id))
+        .filter(server_invites::Column::DeletedAt.is_null())
+        .one(database)
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    // Приглашение и его использования сохраняются: строка нужна, чтобы определить,
+    // по какой ссылке пришёл участник сервера.
+    let mut active: server_invites::ActiveModel = invite.into();
+    active.deleted_at = Set(Some(deleted_at));
+    let deleted = active.update(database).await?;
+
+    Ok(Some(deleted.into()))
+}
 
 pub(super) async fn accept_server_invite(
     database: &DatabaseConnection,
@@ -18,6 +62,7 @@ pub(super) async fn accept_server_invite(
 ) -> anyhow::Result<AcceptInviteOutcome> {
     let transaction = database.begin().await?;
     let Some(invite) = server_invites::Entity::find_by_id(*invite_id)
+        .filter(server_invites::Column::DeletedAt.is_null())
         .lock(LockType::Update)
         .one(&transaction)
         .await?

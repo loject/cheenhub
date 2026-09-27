@@ -140,6 +140,7 @@ impl From<server_invites::Model> for ServerInvite {
             expires_at: row.expires_at,
             created_at: row.created_at,
             revoked_at: row.revoked_at,
+            deleted_at: row.deleted_at,
         }
     }
 }

@@ -31,7 +31,11 @@ pub(crate) fn routes() -> Router<AppState> {
         )
         .route(
             "/{server_id}/invites",
-            post(transport::handlers::create_invite),
+            get(transport::handlers::list_own_invites).post(transport::handlers::create_invite),
+        )
+        .route(
+            "/{server_id}/invites/{code}",
+            delete(transport::handlers::delete_own_invite),
         )
         .route(
             "/{server_id}/membership",

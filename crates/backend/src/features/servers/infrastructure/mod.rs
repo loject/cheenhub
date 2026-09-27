@@ -96,6 +96,26 @@ pub(crate) trait ServerStore: Send + Sync {
     /// Возвращает приглашения сервера в порядке от новых к старым.
     async fn list_server_invites(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerInvite>>;
 
+    /// Возвращает приглашения сервера, созданные конкретным пользователем и ещё не удалённые,
+    /// в порядке от новых к старым.
+    async fn list_server_invites_by_creator(
+        &self,
+        server_id: &Uuid,
+        creator_user_id: &Uuid,
+    ) -> anyhow::Result<Vec<ServerInvite>>;
+
+    /// Помечает приглашение сервера, созданное конкретным пользователем, как удалённое.
+    ///
+    /// Приглашение перестаёт действовать, но остаётся вместе со своими использованиями,
+    /// чтобы сохранить возможность определить, по какой ссылке пришёл участник.
+    async fn soft_delete_server_invite_created_by(
+        &self,
+        server_id: &Uuid,
+        invite_id: &Uuid,
+        creator_user_id: &Uuid,
+        deleted_at: chrono::DateTime<Utc>,
+    ) -> anyhow::Result<Option<ServerInvite>>;
+
     /// Возвращает успешные использования приглашений для идентификаторов приглашений в порядке от новых к старым.
     async fn list_server_invite_uses(
         &self,

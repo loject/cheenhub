@@ -10,7 +10,8 @@ use axum::{
 use cheenhub_contracts::rest::{
     AcceptServerInviteResponse, ApiError, CreateServerInviteRequest, CreateServerInviteResponse,
     CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
-    ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse, ServerVoiceSettings,
+    DeleteServerInviteResponse, ListServerRoomsResponse, ListServersResponse,
+    ServerInviteInfoResponse, ServerInviteLinksResponse, ServerVoiceSettings,
     UpdateServerAvatarResponse, UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest,
     UpdateServerRoomResponse,
 };
@@ -73,6 +74,30 @@ pub(crate) async fn create_invite(
 ) -> Result<Json<CreateServerInviteResponse>, ServerError> {
     let token = bearer_token(&headers)?;
     application::create_invite(&state, token, server_id, request)
+        .await
+        .map(Json)
+}
+
+/// Возвращает ссылки-приглашения, созданные текущим пользователем на сервере.
+pub(crate) async fn list_own_invites(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+) -> Result<Json<ServerInviteLinksResponse>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::list_own_invite_links(&state, token, server_id)
+        .await
+        .map(Json)
+}
+
+/// Удаляет ссылку-приглашение, созданную текущим пользователем на сервере.
+pub(crate) async fn delete_own_invite(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((server_id, code)): Path<(String, String)>,
+) -> Result<Json<DeleteServerInviteResponse>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::delete_own_invite(&state, token, server_id, code)
         .await
         .map(Json)
 }

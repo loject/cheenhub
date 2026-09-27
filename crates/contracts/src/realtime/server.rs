@@ -114,6 +114,9 @@ pub struct ServerInviteLink {
     pub uses: u32,
     /// Временная метка отзыва в формате RFC3339, когда приглашение отозвано.
     pub revoked_at: Option<String>,
+    /// Временная метка удаления в формате RFC3339, когда приглашение удалено его автором.
+    /// Приглашение больше не действует, но остаётся в списке вместе с историей входов.
+    pub deleted_at: Option<String>,
     /// Участники, вошедшие по этому приглашению.
     pub joined_members: Vec<ServerInviteJoinedMember>,
 }

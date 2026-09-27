@@ -3,8 +3,9 @@
 use cheenhub_contracts::rest::{
     AcceptServerInviteResponse, CreateServerInviteRequest, CreateServerInviteResponse,
     CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
-    ListServerRoomsResponse, ListServersResponse, ServerInviteInfoResponse, ServerRoomKind,
-    ServerRoomSummary, ServerSummary, UpdateServerRoomRequest, UpdateServerRoomResponse,
+    DeleteServerInviteResponse, ListServerRoomsResponse, ListServersResponse,
+    ServerInviteInfoResponse, ServerInviteLinksResponse, ServerRoomKind, ServerRoomSummary,
+    ServerSummary, UpdateServerRoomRequest, UpdateServerRoomResponse,
 };
 
 use crate::features::auth::api as auth_api;
@@ -55,7 +56,7 @@ pub(crate) async fn create_server_invite(
     server_id: String,
     max_uses: Option<u32>,
     expires_in_days: Option<u32>,
-) -> Result<String, String> {
+) -> Result<CreateServerInviteResponse, String> {
     let access_token = auth_api::fresh_access_token().await?;
     let response = auth_api::post(&format!("/servers/{server_id}/invites"))
         .header("Authorization", &format!("Bearer {access_token}"))
@@ -71,7 +72,49 @@ pub(crate) async fn create_server_invite(
         return response
             .json::<CreateServerInviteResponse>()
             .await
-            .map(|response| response.code)
+            .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned());
+    }
+
+    Err(auth_api::read_error(response).await)
+}
+
+/// Загружает ссылки-приглашения, созданные текущим пользователем на сервере.
+pub(crate) async fn list_own_server_invites(
+    server_id: String,
+) -> Result<ServerInviteLinksResponse, String> {
+    let access_token = auth_api::fresh_access_token().await?;
+    let response = auth_api::get(&format!("/servers/{server_id}/invites"))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if response.status().is_success() {
+        return response
+            .json::<ServerInviteLinksResponse>()
+            .await
+            .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned());
+    }
+
+    Err(auth_api::read_error(response).await)
+}
+
+/// Удаляет ссылку-приглашение, созданную текущим пользователем на сервере.
+pub(crate) async fn delete_own_server_invite(
+    server_id: String,
+    code: String,
+) -> Result<DeleteServerInviteResponse, String> {
+    let access_token = auth_api::fresh_access_token().await?;
+    let response = auth_api::delete(&format!("/servers/{server_id}/invites/{code}"))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if response.status().is_success() {
+        return response
+            .json::<DeleteServerInviteResponse>()
+            .await
             .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned());
     }
 
