@@ -115,7 +115,12 @@ pub(super) async fn create_room(
         .expect("member should insert");
     let room = state
         .server_store
-        .insert_server_room(&server.id, room_name.to_owned(), kind)
+        .insert_server_room(
+            &server.id,
+            room_name.to_owned(),
+            kind,
+            crate::features::servers::domain::ServerRoomWriteAccess::all_members(),
+        )
         .await
         .expect("room should insert");
 
@@ -208,6 +213,7 @@ async fn user_can_leave_after_room_becomes_text_only() {
             &room_uuid,
             "voice".to_owned(),
             ServerRoomKind::Text,
+            crate::features::servers::domain::ServerRoomWriteAccess::all_members(),
         )
         .await
         .expect("room update should succeed");

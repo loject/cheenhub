@@ -1,18 +1,22 @@
 //! Postgres row conversion helpers for server infrastructure.
 
 use cheenhub_contracts::realtime::ServerRoleKind;
-use cheenhub_contracts::rest::ServerRoomKind;
+use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomWriteAccessMode};
+use uuid::Uuid;
 
 use crate::features::servers::domain::{
     Server, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion, ServerRole,
-    ServerRoom,
+    ServerRoom, ServerRoomWriteAccess,
 };
 use crate::features::servers::infrastructure::entities::{
     server_invite_uses, server_invites, server_member_exclusions, server_members, server_roles,
     server_rooms, servers,
 };
 
-pub(super) fn server_room_from_model(row: server_rooms::Model) -> anyhow::Result<ServerRoom> {
+pub(super) fn server_room_from_model(
+    row: server_rooms::Model,
+    write_role_ids: Vec<Uuid>,
+) -> anyhow::Result<ServerRoom> {
     let position = row.position.try_into().unwrap_or(0);
 
     Ok(ServerRoom {
@@ -21,6 +25,10 @@ pub(super) fn server_room_from_model(row: server_rooms::Model) -> anyhow::Result
         name: row.name,
         kind: room_kind_from_str(&row.kind)?,
         position,
+        write_access: ServerRoomWriteAccess {
+            mode: write_access_mode_from_str(&row.write_access_mode)?,
+            role_ids: write_role_ids,
+        },
         created_at: row.created_at,
         updated_at: row.updated_at,
     })
@@ -31,6 +39,23 @@ pub(super) fn room_kind_as_str(kind: ServerRoomKind) -> &'static str {
         ServerRoomKind::Text => "text",
         ServerRoomKind::Voice => "voice",
         ServerRoomKind::TextAndVoice => "text_and_voice",
+    }
+}
+
+pub(super) fn write_access_mode_as_str(mode: ServerRoomWriteAccessMode) -> &'static str {
+    match mode {
+        ServerRoomWriteAccessMode::AllMembers => "all_members",
+        ServerRoomWriteAccessMode::SelectedRoles => "selected_roles",
+    }
+}
+
+fn write_access_mode_from_str(mode: &str) -> anyhow::Result<ServerRoomWriteAccessMode> {
+    match mode {
+        "all_members" => Ok(ServerRoomWriteAccessMode::AllMembers),
+        "selected_roles" => Ok(ServerRoomWriteAccessMode::SelectedRoles),
+        other => Err(anyhow::anyhow!(
+            "unknown server room write access mode: {other}"
+        )),
     }
 }
 
@@ -76,6 +101,7 @@ pub(super) fn role_permission_as_str(
             "kick_voice_members"
         }
         cheenhub_contracts::realtime::ServerRolePermission::DeleteMessages => "delete_messages",
+        cheenhub_contracts::realtime::ServerRolePermission::ManageRooms => "manage_rooms",
     }
 }
 
@@ -112,6 +138,7 @@ pub(super) fn role_permission_from_str(
             Ok(cheenhub_contracts::realtime::ServerRolePermission::KickVoiceMembers)
         }
         "delete_messages" => Ok(cheenhub_contracts::realtime::ServerRolePermission::DeleteMessages),
+        "manage_rooms" => Ok(cheenhub_contracts::realtime::ServerRolePermission::ManageRooms),
         other => Err(anyhow::anyhow!("unknown server role permission: {other}")),
     }
 }

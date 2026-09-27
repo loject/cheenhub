@@ -5,7 +5,7 @@ use cheenhub_contracts::rest::{
     CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
     DeleteServerInviteResponse, ListServerRoomsResponse, ListServersResponse,
     ServerInviteInfoResponse, ServerInviteLinksResponse, ServerRoomKind, ServerRoomSummary,
-    ServerSummary, UpdateServerRoomRequest, UpdateServerRoomResponse,
+    ServerRoomWriteAccess, ServerSummary, UpdateServerRoomRequest, UpdateServerRoomResponse,
 };
 
 use crate::features::auth::api as auth_api;
@@ -197,16 +197,21 @@ pub(crate) async fn list_server_rooms(server_id: String) -> Result<Vec<ServerRoo
     Err(auth_api::read_error(response).await)
 }
 
-/// Создает комнату на сервере, принадлежащем текущему пользователю.
+/// Создает комнату на сервере, которым текущий пользователь управляет как владелец или по праву управления комнатами.
 pub(crate) async fn create_server_room(
     server_id: String,
     name: String,
     kind: ServerRoomKind,
+    write_access: ServerRoomWriteAccess,
 ) -> Result<ServerRoomSummary, String> {
     let access_token = auth_api::fresh_access_token().await?;
     let response = auth_api::post(&format!("/servers/{server_id}/rooms"))
         .header("Authorization", &format!("Bearer {access_token}"))
-        .json(&CreateServerRoomRequest { name, kind })
+        .json(&CreateServerRoomRequest {
+            name,
+            kind,
+            write_access,
+        })
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
@@ -222,17 +227,22 @@ pub(crate) async fn create_server_room(
     Err(auth_api::read_error(response).await)
 }
 
-/// Обновляет комнату на сервере, принадлежащем текущему пользователю.
+/// Обновляет комнату на сервере, которым текущий пользователь управляет как владелец или по праву управления комнатами.
 pub(crate) async fn update_server_room(
     server_id: String,
     room_id: String,
     name: String,
     kind: ServerRoomKind,
+    write_access: ServerRoomWriteAccess,
 ) -> Result<ServerRoomSummary, String> {
     let access_token = auth_api::fresh_access_token().await?;
     let response = auth_api::put(&format!("/servers/{server_id}/rooms/{room_id}"))
         .header("Authorization", &format!("Bearer {access_token}"))
-        .json(&UpdateServerRoomRequest { name, kind })
+        .json(&UpdateServerRoomRequest {
+            name,
+            kind,
+            write_access,
+        })
         .send()
         .await
         .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;

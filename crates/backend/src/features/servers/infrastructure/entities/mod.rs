@@ -7,5 +7,6 @@ pub(crate) mod server_member_roles;
 pub(crate) mod server_members;
 pub(crate) mod server_role_permissions;
 pub(crate) mod server_roles;
+pub(crate) mod server_room_write_roles;
 pub(crate) mod server_rooms;
 pub(crate) mod servers;

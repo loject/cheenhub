@@ -66,6 +66,11 @@ async fn new_server_has_default_room() {
     assert_eq!(rooms.rooms[0].name, "общий");
     assert_eq!(rooms.rooms[0].kind, ServerRoomKind::TextAndVoice);
     assert_eq!(rooms.rooms[0].position, 0);
+    assert_eq!(
+        rooms.rooms[0].write_access.mode,
+        ServerRoomWriteAccessMode::AllMembers
+    );
+    assert!(rooms.rooms[0].can_write);
 }
 
 #[tokio::test]
@@ -178,6 +183,7 @@ async fn owner_can_create_update_and_delete_room() {
         CreateServerRoomRequest {
             name: "  x  ".to_owned(),
             kind: ServerRoomKind::Text,
+            write_access: ServerRoomWriteAccess::default(),
         },
     )
     .await
@@ -190,6 +196,7 @@ async fn owner_can_create_update_and_delete_room() {
         UpdateServerRoomRequest {
             name: "Voice".to_owned(),
             kind: ServerRoomKind::Voice,
+            write_access: ServerRoomWriteAccess::default(),
         },
     )
     .await
@@ -209,8 +216,13 @@ async fn owner_can_create_update_and_delete_room() {
     assert_eq!(created.room.name, "x");
     assert_eq!(created.room.kind, ServerRoomKind::Text);
     assert_eq!(created.room.position, 1);
+    assert!(created.room.can_write);
     assert_eq!(updated.room.name, "Voice");
     assert_eq!(updated.room.kind, ServerRoomKind::Voice);
+    assert_eq!(
+        updated.room.write_access.mode,
+        ServerRoomWriteAccessMode::AllMembers
+    );
     assert_eq!(rooms.rooms.len(), 1);
     assert_eq!(rooms.rooms[0].name, "общий");
 }
@@ -277,6 +289,7 @@ async fn non_owner_member_cannot_mutate_rooms() {
         CreateServerRoomRequest {
             name: "Denied".to_owned(),
             kind: ServerRoomKind::Text,
+            write_access: ServerRoomWriteAccess::default(),
         },
     )
     .await
@@ -289,6 +302,7 @@ async fn non_owner_member_cannot_mutate_rooms() {
         UpdateServerRoomRequest {
             name: "Denied".to_owned(),
             kind: ServerRoomKind::Voice,
+            write_access: ServerRoomWriteAccess::default(),
         },
     )
     .await
@@ -378,6 +392,7 @@ async fn room_flows_reject_invalid_ids_and_names() {
         UpdateServerRoomRequest {
             name: "Room".to_owned(),
             kind: ServerRoomKind::Text,
+            write_access: ServerRoomWriteAccess::default(),
         },
     )
     .await
@@ -389,6 +404,7 @@ async fn room_flows_reject_invalid_ids_and_names() {
         CreateServerRoomRequest {
             name: " ".to_owned(),
             kind: ServerRoomKind::Text,
+            write_access: ServerRoomWriteAccess::default(),
         },
     )
     .await

@@ -17,6 +17,8 @@ pub struct Model {
     pub kind: String,
     /// Позиция в порядке добавления внутри сервера.
     pub position: i32,
+    /// Сохраненный режим доступа к записи в комнату.
+    pub write_access_mode: String,
     /// Временная метка создания комнаты.
     pub created_at: DateTimeUtc,
     /// Временная метка последнего обновления комнаты.

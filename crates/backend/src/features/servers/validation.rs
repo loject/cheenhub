@@ -1,5 +1,10 @@
 //! Валидация входных данных сервера.
 
+use cheenhub_contracts::rest::{ServerRoomWriteAccess, ServerRoomWriteAccessMode};
+use uuid::Uuid;
+
+use crate::features::servers::domain::ServerRoomWriteAccess as ValidatedWriteAccess;
+
 /// Нормализованный ввод для создания сервера.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ValidCreateServer {
@@ -24,10 +29,15 @@ pub(crate) fn create_server(name: String) -> Result<ValidCreateServer, &'static 
 pub(crate) struct ValidServerRoom {
     /// Человекочитаемое имя комнаты.
     pub(crate) name: String,
+    /// Настройка доступа к записи в комнату.
+    pub(crate) write_access: ValidatedWriteAccess,
 }
 
 /// Проверяет и нормализует ввод для комнаты.
-pub(crate) fn server_room(name: String) -> Result<ValidServerRoom, &'static str> {
+pub(crate) fn server_room(
+    name: String,
+    write_access: ServerRoomWriteAccess,
+) -> Result<ValidServerRoom, &'static str> {
     let name = name.trim().to_owned();
     let len = name.chars().count();
 
@@ -35,7 +45,33 @@ pub(crate) fn server_room(name: String) -> Result<ValidServerRoom, &'static str>
         return Err("Название комнаты должно быть длиной от 1 до 48 символов.");
     }
 
-    Ok(ValidServerRoom { name })
+    Ok(ValidServerRoom {
+        name,
+        write_access: normalized_write_access(write_access)?,
+    })
+}
+
+/// Нормализует настройку доступа к записи: вне режима выбора ролей список очищается, дубликаты убираются.
+pub(crate) fn normalized_write_access(
+    write_access: ServerRoomWriteAccess,
+) -> Result<ValidatedWriteAccess, &'static str> {
+    if write_access.mode != ServerRoomWriteAccessMode::SelectedRoles {
+        return Ok(ValidatedWriteAccess::all_members());
+    }
+
+    let mut role_ids: Vec<Uuid> = Vec::new();
+    for role_id in write_access.role_ids {
+        let role_id = Uuid::parse_str(&role_id)
+            .map_err(|_| "Выбрана роль, которая не принадлежит этому серверу.")?;
+        if !role_ids.contains(&role_id) {
+            role_ids.push(role_id);
+        }
+    }
+
+    Ok(ValidatedWriteAccess {
+        mode: ServerRoomWriteAccessMode::SelectedRoles,
+        role_ids,
+    })
 }
 
 /// Нормализованный ввод для создания приглашения.
@@ -68,7 +104,10 @@ pub(crate) fn create_server_invite(
 
 #[cfg(test)]
 mod tests {
-    use super::{create_server, server_room};
+    use cheenhub_contracts::rest::{ServerRoomWriteAccess, ServerRoomWriteAccessMode};
+    use uuid::Uuid;
+
+    use super::{ValidatedWriteAccess, create_server};
 
     #[test]
     fn trims_valid_server_name() {
@@ -94,19 +133,74 @@ mod tests {
 
     #[test]
     fn trims_valid_room_name() {
-        let valid = server_room("  x  ".to_owned()).expect("room name should be valid");
+        let valid = super::server_room("  x  ".to_owned(), ServerRoomWriteAccess::default())
+            .expect("room name should be valid");
 
         assert_eq!(valid.name, "x");
     }
 
     #[test]
     fn rejects_empty_room_name() {
-        assert!(server_room("   ".to_owned()).is_err());
+        assert!(super::server_room("   ".to_owned(), ServerRoomWriteAccess::default()).is_err());
     }
 
     #[test]
     fn rejects_long_room_name() {
-        assert!(server_room("a".repeat(49)).is_err());
+        assert!(super::server_room("a".repeat(49), ServerRoomWriteAccess::default()).is_err());
+    }
+
+    #[test]
+    fn room_write_access_defaults_to_all_members() {
+        let valid = super::server_room("общий".to_owned(), ServerRoomWriteAccess::default())
+            .expect("room should be valid");
+
+        assert_eq!(valid.write_access, ValidatedWriteAccess::all_members());
+    }
+
+    #[test]
+    fn clears_room_write_roles_in_all_members_mode() {
+        let valid = super::server_room(
+            "общий".to_owned(),
+            ServerRoomWriteAccess {
+                mode: ServerRoomWriteAccessMode::AllMembers,
+                role_ids: vec![Uuid::new_v4().to_string()],
+            },
+        )
+        .expect("room should be valid");
+
+        assert_eq!(valid.write_access, ValidatedWriteAccess::all_members());
+    }
+
+    #[test]
+    fn rejects_malformed_room_write_role() {
+        let result = super::server_room(
+            "курилка".to_owned(),
+            ServerRoomWriteAccess {
+                mode: ServerRoomWriteAccessMode::SelectedRoles,
+                role_ids: vec!["не-uuid".to_owned()],
+            },
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deduplicates_room_write_roles() {
+        let role_id = Uuid::new_v4();
+        let valid = super::server_room(
+            "курилка".to_owned(),
+            ServerRoomWriteAccess {
+                mode: ServerRoomWriteAccessMode::SelectedRoles,
+                role_ids: vec![role_id.to_string(), role_id.to_string()],
+            },
+        )
+        .expect("room should be valid");
+
+        assert_eq!(
+            valid.write_access.mode,
+            ServerRoomWriteAccessMode::SelectedRoles
+        );
+        assert_eq!(valid.write_access.role_ids, vec![role_id]);
     }
 
     #[test]

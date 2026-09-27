@@ -240,6 +240,8 @@ pub enum ServerRolePermission {
     KickVoiceMembers,
     /// Разрешает удалять любые сообщения в текстовых комнатах.
     DeleteMessages,
+    /// Разрешает создавать, редактировать и удалять комнаты сервера.
+    ManageRooms,
 }
 
 /// Краткая сводка роли сервера, встроенная в серверные ответы для проверки прав на клиенте.
@@ -247,6 +249,10 @@ pub enum ServerRolePermission {
 pub struct ServerRoleSummary {
     /// Стабильный идентификатор роли.
     pub role_id: String,
+    /// Человекочитаемое имя роли.
+    pub name: String,
+    /// Цвет роли в hex.
+    pub color: String,
     /// Вид роли (owner / member / custom).
     pub kind: ServerRoleKind,
     /// Права, предоставляемые этой ролью.

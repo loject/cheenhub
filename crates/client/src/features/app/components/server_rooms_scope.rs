@@ -76,6 +76,8 @@ pub(crate) fn ServerRoomsScope(
     let is_owner = server.is_owner;
     let server_permissions = ServerPermissionsContext::from_server(&server);
     let can_create_invite_links = server_permissions.can_create_invite_links;
+    let can_manage_rooms = server_permissions.can_manage_rooms;
+    let room_roles = server.roles.clone();
     use_context_provider(move || server_permissions);
     let room_load_resource = use_resource(move || {
         let request_server_id = load_server_id.clone();
@@ -234,7 +236,7 @@ pub(crate) fn ServerRoomsScope(
             div { class: "min-h-0 flex-1 overflow-y-auto p-3",
                 div { class: "mb-1.5 flex items-center justify-between px-1 text-[10px] font-medium uppercase tracking-[0.22em] text-zinc-600",
                     span { class: room_section_title_class, "Комнаты" }
-                    if is_owner {
+                    if can_manage_rooms {
                         button {
                             r#type: "button",
                             class: "rounded-md p-1 text-zinc-600 hover:bg-zinc-900 hover:text-zinc-300",
@@ -255,13 +257,13 @@ pub(crate) fn ServerRoomsScope(
                     div { class: "rounded-xl border border-zinc-800 bg-zinc-900/70 p-3",
                         p { class: "text-[12px] font-medium text-zinc-100", "Комнат пока нет" }
                         p { class: "mt-1 text-[11px] leading-5 text-zinc-500",
-                            if is_owner {
+                            if can_manage_rooms {
                                 "Создай первую комнату для этого сервера."
                             } else {
                                 "Владелец сервера еще не создал комнаты."
                             }
                         }
-                        if is_owner {
+                        if can_manage_rooms {
                             button {
                                 r#type: "button",
                                 class: "mt-3 flex h-9 w-full items-center justify-center rounded-xl bg-accent px-3 text-[12px] font-semibold text-white transition hover:bg-blue-400",
@@ -277,7 +279,7 @@ pub(crate) fn ServerRoomsScope(
                                 key: "{room.id}",
                                 room: room.clone(),
                                 is_active: matches!(active_workspace(), Some(ServerWorkspace::Room(ref id)) if id == &room.id),
-                                is_owner,
+                                can_manage_rooms,
                                 voice_participants: voice.room_participants(&server.id, &room.id).unwrap_or_default(),
                                 compact_when_settings_active: settings_workspace_active,
                                 on_select: {
@@ -442,13 +444,13 @@ pub(crate) fn ServerRoomsScope(
                 div { class: "max-w-sm text-center",
                     h2 { class: "text-[16px] font-semibold text-zinc-100", "Комнат пока нет" }
                     p { class: "mt-2 text-[13px] leading-6 text-zinc-500",
-                        if server.is_owner {
+                        if can_manage_rooms {
                             "Создай первую комнату, чтобы участникам было куда перейти."
                         } else {
                             "Владелец сервера еще не создал комнаты."
                         }
                     }
-                    if is_owner {
+                    if can_manage_rooms {
                         button {
                             r#type: "button",
                             class: "mt-4 inline-flex h-10 items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white transition hover:bg-blue-400",
@@ -466,6 +468,7 @@ pub(crate) fn ServerRoomsScope(
                     RoomModal::Create => None,
                     RoomModal::Edit(room) => Some(room),
                 },
+                roles: room_roles.clone(),
                 on_close: move |_| room_modal.set(None),
                 on_saved: move |saved_room: ServerRoomSummary| {
                     let mut next_rooms = rooms().unwrap_or_default();

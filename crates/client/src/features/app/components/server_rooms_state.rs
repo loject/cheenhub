@@ -111,11 +111,7 @@ pub(super) fn active_room(
         .and_then(|room_id| rooms.iter().find(|room| room.id == room_id))
         .or_else(|| rooms.first())?;
 
-    Some(ActiveRoom {
-        id: room.id.clone(),
-        kind: room.kind,
-        name: room.name.clone(),
-    })
+    Some(ActiveRoom::from_summary(room))
 }
 
 pub(super) fn resolve_active_room_id(
@@ -133,11 +129,7 @@ pub(super) fn resolve_active_room_id(
 pub(super) fn room_by_id(rooms: &[ServerRoomSummary], room_id: &str) -> Option<ActiveRoom> {
     let room = rooms.iter().find(|room| room.id == room_id)?;
 
-    Some(ActiveRoom {
-        id: room.id.clone(),
-        kind: room.kind,
-        name: room.name.clone(),
-    })
+    Some(ActiveRoom::from_summary(room))
 }
 
 pub(super) fn chat_open_for_room(chat_open_by_room: &[(String, bool)], room_id: &str) -> bool {

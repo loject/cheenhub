@@ -5,7 +5,7 @@ use chrono::Utc;
 use std::sync::Mutex;
 use uuid::Uuid;
 
-use crate::features::servers::domain::ServerRoom;
+use crate::features::servers::domain::{ServerRoom, ServerRoomWriteAccess};
 use crate::features::servers::infrastructure::in_memory::InMemoryState;
 
 pub(super) fn insert_server_room(
@@ -13,6 +13,7 @@ pub(super) fn insert_server_room(
     server_id: &Uuid,
     name: String,
     kind: ServerRoomKind,
+    write_access: ServerRoomWriteAccess,
 ) -> anyhow::Result<ServerRoom> {
     let mut state = state.lock().map_err(|_| poisoned())?;
     let position = state
@@ -30,6 +31,7 @@ pub(super) fn insert_server_room(
         name,
         kind,
         position,
+        write_access,
         created_at: now,
         updated_at: now,
     };
@@ -75,6 +77,7 @@ pub(super) fn update_server_room(
     room_id: &Uuid,
     name: String,
     kind: ServerRoomKind,
+    write_access: ServerRoomWriteAccess,
 ) -> anyhow::Result<Option<ServerRoom>> {
     let mut state = state.lock().map_err(|_| poisoned())?;
     let Some(room) = state
@@ -87,6 +90,7 @@ pub(super) fn update_server_room(
 
     room.name = name;
     room.kind = kind;
+    room.write_access = write_access;
     room.updated_at = Utc::now();
 
     Ok(Some(room.clone()))

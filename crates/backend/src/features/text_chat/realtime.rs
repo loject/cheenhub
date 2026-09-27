@@ -190,6 +190,9 @@ async fn reject_application_error(
         TextChatApplicationError::NotFound(message) => {
             send_rejection(send, request_id, RejectionCode::BadRequest, &message).await
         }
+        TextChatApplicationError::ReadOnlyRoom(message) => {
+            send_rejection(send, request_id, RejectionCode::Unauthorized, &message).await
+        }
         TextChatApplicationError::Misconfigured {
             feature,
             missing,

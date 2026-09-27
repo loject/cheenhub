@@ -5,7 +5,9 @@ use image::GenericImageView;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use super::{TextChatApplicationError, ensure_room_text_available, parse_id};
+use super::{
+    TextChatApplicationError, ensure_room_text_available, ensure_room_write_allowed, parse_id,
+};
 use crate::features::text_chat::domain::{ChatAttachment, NewChatAttachment};
 use crate::state::AppState;
 
@@ -22,7 +24,7 @@ pub(crate) async fn upload_chat_image(
 ) -> Result<ChatImageUploadResponse, TextChatApplicationError> {
     let server_id = parse_id(&server_id, "Сервер не найден.")?;
     let room_id = parse_id(&room_id, "Комната не найдена.")?;
-    ensure_room_text_available(state, user_id, &server_id, &room_id).await?;
+    ensure_room_write_allowed(state, user_id, &server_id, &room_id).await?;
 
     let validated = validate_chat_image(bytes)?;
     let attachment_id = Uuid::new_v4();

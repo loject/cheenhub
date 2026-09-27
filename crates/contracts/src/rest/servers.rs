@@ -71,6 +71,28 @@ pub enum ServerRoomKind {
     TextAndVoice,
 }
 
+/// Режим доступа участников сервера к записи в комнате.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServerRoomWriteAccessMode {
+    /// Писать в комнату могут все участники сервера.
+    #[default]
+    AllMembers,
+    /// Писать в комнату могут только владелец сервера и участники с выбранными ролями.
+    SelectedRoles,
+}
+
+/// Настройка доступа к записи в комнату.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerRoomWriteAccess {
+    /// Режим доступа к записи.
+    #[serde(default)]
+    pub mode: ServerRoomWriteAccessMode,
+    /// Идентификаторы ролей, которым разрешено писать, в режиме `selected_roles`.
+    #[serde(default)]
+    pub role_ids: Vec<String>,
+}
+
 /// Данные комнаты сервера, возвращаемые room-эндпоинтами.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerRoomSummary {
@@ -82,6 +104,10 @@ pub struct ServerRoomSummary {
     pub kind: ServerRoomKind,
     /// Позиция комнаты в порядке добавления внутри сервера.
     pub position: u32,
+    /// Настройка доступа к записи в комнату.
+    pub write_access: ServerRoomWriteAccess,
+    /// Может ли текущий пользователь писать в эту комнату.
+    pub can_write: bool,
 }
 
 /// Тело запроса для создания комнаты сервера.
@@ -91,6 +117,9 @@ pub struct CreateServerRoomRequest {
     pub name: String,
     /// Тип взаимодействия комнаты.
     pub kind: ServerRoomKind,
+    /// Настройка доступа к записи в комнату.
+    #[serde(default)]
+    pub write_access: ServerRoomWriteAccess,
 }
 
 /// Тело запроса для обновления комнаты сервера.
@@ -100,6 +129,9 @@ pub struct UpdateServerRoomRequest {
     pub name: String,
     /// Тип взаимодействия комнаты.
     pub kind: ServerRoomKind,
+    /// Настройка доступа к записи в комнату.
+    #[serde(default)]
+    pub write_access: ServerRoomWriteAccess,
 }
 
 /// Ответ со списком комнат сервера.

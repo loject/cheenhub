@@ -14,6 +14,7 @@ mod message_item;
 mod messages;
 mod panel;
 mod pending_attachment;
+pub(crate) mod read_only_notice;
 pub(crate) mod realtime;
 mod room_compose_state;
 mod scroll;

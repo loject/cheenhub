@@ -377,6 +377,9 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 }
             }
             div { class: input_outer_class,
+                if !room.can_write {
+                    {super::read_only_notice::read_only_notice()}
+                } else {
                 div { class: CHAT_COMPOSER_GROUP_CLASS,
                     if is_reading_clipboard() {
                         div { class: "flex items-center gap-2 px-2 text-[11px] text-zinc-400", role: "status", "aria-live": "polite",
@@ -478,6 +481,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             "{status()}"
                         }
                     }
+                }
                 }
             }
         }

@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::features::servers::domain::{
     Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
-    ServerRole, ServerRoom,
+    ServerRole, ServerRoom, ServerRoomWriteAccess,
 };
 
 pub(crate) use in_memory::InMemoryServerStore;
@@ -189,6 +189,7 @@ pub(crate) trait ServerStore: Send + Sync {
         server_id: &Uuid,
         name: String,
         kind: ServerRoomKind,
+        write_access: ServerRoomWriteAccess,
     ) -> anyhow::Result<ServerRoom>;
 
     /// Возвращает комнаты сервера в порядке отображения.
@@ -208,6 +209,7 @@ pub(crate) trait ServerStore: Send + Sync {
         room_id: &Uuid,
         name: String,
         kind: ServerRoomKind,
+        write_access: ServerRoomWriteAccess,
     ) -> anyhow::Result<Option<ServerRoom>>;
 
     /// Удаляет комнату, принадлежащую серверу.
