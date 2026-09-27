@@ -9,7 +9,6 @@ PATH = "${CARGO_INSTALL_ROOT}/bin${CARGO_CLI_PATH_SEPARATOR}${PATH}"
 DIOXUS_ADDR = { value = "0.0.0.0", condition = { env_not_set = ["DIOXUS_ADDR"] } }
 DIOXUS_PORT = { value = "8080", condition = { env_not_set = ["DIOXUS_PORT"] } }
 DIOXUS_WEB_PORT = { value = "8081", condition = { env_not_set = ["DIOXUS_WEB_PORT"] } }
-POSTGRES_CONTAINER = { value = "cheenhub-postgres", condition = { env_not_set = ["POSTGRES_CONTAINER"] } }
 POSTGRES_USER = { value = "postgres", condition = { env_not_set = ["POSTGRES_USER"] } }
 POSTGRES_PASSWORD = { value = "mysecretpassword", condition = { env_not_set = ["POSTGRES_PASSWORD"] } }
 POSTGRES_DB = { value = "cheenhub", condition = { env_not_set = ["POSTGRES_DB"] } }
@@ -651,87 +650,59 @@ exit 1
 ''',
 ]
 
-[tasks.ensure-postgres]
-description = "Ensure the local Postgres container exists, is running, and accepts connections."
-dependencies = [
-    "postgres-start-existing",
-    "postgres-create-missing",
-    "postgres-ready",
-]
-
-[tasks.postgres-start-existing]
-private = true
-ignore_errors = true
-command = "docker"
-args = ["start", "${POSTGRES_CONTAINER}"]
-
-[tasks.postgres-create-missing]
-private = true
-ignore_errors = true
+[tasks.dev-compose-up]
+description = "Start the local Docker services and wait until they report healthy."
+env_files = [".env"]
 command = "docker"
 args = [
-    "run",
-    "--name",
-    "${POSTGRES_CONTAINER}",
-    "-e",
-    "POSTGRES_USER=${POSTGRES_USER}",
-    "-e",
-    "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}",
-    "-e",
-    "POSTGRES_DB=${POSTGRES_DB}",
-    "-p",
-    "${POSTGRES_PORT}:5432",
-    "-v",
-    "cheenhub-postgres-data:/var/lib/postgresql/data",
+    "compose",
+    "--env-file",
+    ".env",
+    "-f",
+    "deploy/compose.dev.yml",
+    "up",
     "-d",
-    "postgres:16",
+    "--wait",
+    "db",
 ]
 
-[tasks.postgres-ready]
-private = true
-linux_alias = "postgres-ready-unix"
-mac_alias = "postgres-ready-unix"
-windows_alias = "postgres-ready-windows"
+[tasks.dev-compose-down]
+description = "Stop the local Docker services of this worktree."
+env_files = [".env"]
+command = "docker"
+args = ["compose", "--env-file", ".env", "-f", "deploy/compose.dev.yml", "down"]
 
-[tasks.postgres-ready-unix]
-private = true
-script = '''
-attempt=1
-while [ "$attempt" -le 60 ]; do
-    if docker exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
-        echo "Postgres is ready."
-        exit 0
-    fi
-    sleep 1
-    attempt=$((attempt + 1))
-done
-
-echo "Postgres did not become ready within 60 seconds." >&2
-exit 1
-'''
-
-[tasks.postgres-ready-windows]
-private = true
-command = "powershell"
+[tasks.dev-compose-ps]
+description = "Show the status of the local Docker services of this worktree."
+env_files = [".env"]
+command = "docker"
 args = [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-Command",
-    '''
-for ($attempt = 1; $attempt -le 60; $attempt++) {
-    docker exec $env:POSTGRES_CONTAINER pg_isready -U $env:POSTGRES_USER -d $env:POSTGRES_DB *> $null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Postgres is ready."
-        exit 0
-    }
-    Start-Sleep -Seconds 1
-}
-
-Write-Error "Postgres did not become ready within 60 seconds."
-exit 1
-''',
+    "compose",
+    "--env-file",
+    ".env",
+    "-f",
+    "deploy/compose.dev.yml",
+    "ps",
 ]
+
+[tasks.dev-compose-logs]
+description = "Follow the logs of the local Docker services of this worktree."
+env_files = [".env"]
+command = "docker"
+args = [
+    "compose",
+    "--env-file",
+    ".env",
+    "-f",
+    "deploy/compose.dev.yml",
+    "logs",
+    "-f",
+    "db",
+]
+
+[tasks.ensure-postgres]
+description = "Ensure the local Postgres service is running and accepts connections."
+dependencies = ["dev-compose-up"]
 
 [tasks.migrate-database]
 description = "Run database migrations using local .env configuration."

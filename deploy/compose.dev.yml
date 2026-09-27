@@ -1,0 +1,37 @@
+# Локальный docker-стенд CheenHub.
+#
+# Имя проекта и имя тома Postgres берутся из .env, поэтому каждая git-ворктрия
+# получает собственные контейнеры, собственный том и собственный порт.
+# Значения по умолчанию совпадают с историческими именами локальной БД, поэтому
+# существующие локальные данные не теряются при переходе на compose.
+#
+# Сервисы приложения добавляются следующим этапом: backend, затем nginx.
+
+name: ${CHEENHUB_DEV_PROJECT:-cheenhub-dev}
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      # Публикуем порт наружу, потому что backend на этом этапе запускается
+      # на хосте. Внутри compose Postgres всегда доступен как db:5432.
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres-data:
+    # Явное имя тома вместо префикса проекта: старый локальный том назывался
+    # cheenhub-postgres-data, и переименование обнулило бы локальную БД.
+    # Для дополнительной ворктрии укажи здесь собственное уникальное имя.
+    name: ${CHEENHUB_DEV_POSTGRES_VOLUME:-cheenhub-postgres-data}
