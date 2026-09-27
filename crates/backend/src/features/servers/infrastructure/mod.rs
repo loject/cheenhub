@@ -3,11 +3,13 @@
 mod entities;
 mod in_memory;
 mod in_memory_invites;
+mod in_memory_members;
 mod in_memory_roles;
 mod in_memory_rooms;
 mod postgres;
 mod postgres_conversions;
 mod postgres_invites;
+mod postgres_members;
 mod postgres_roles;
 mod postgres_rooms;
 

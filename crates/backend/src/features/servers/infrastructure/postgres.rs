@@ -295,17 +295,7 @@ impl ServerStore for PostgresServerStore {
         server_id: &Uuid,
         user_id: &Uuid,
     ) -> anyhow::Result<ServerMember> {
-        let model = server_members::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            server_id: Set(*server_id),
-            user_id: Set(*user_id),
-            joined_at: Set(Utc::now()),
-            left_at: Set(None),
-        }
-        .insert(&self.database)
-        .await?;
-
-        Ok(model.into())
+        super::postgres_members::insert_server_member(&self.database, server_id, user_id).await
     }
 
     async fn find_active_server_member(
@@ -313,45 +303,18 @@ impl ServerStore for PostgresServerStore {
         server_id: &Uuid,
         user_id: &Uuid,
     ) -> anyhow::Result<Option<ServerMember>> {
-        Ok(server_members::Entity::find()
-            .filter(server_members::Column::ServerId.eq(*server_id))
-            .filter(server_members::Column::UserId.eq(*user_id))
-            .filter(server_members::Column::LeftAt.is_null())
-            .one(&self.database)
-            .await?
-            .map(Into::into))
+        super::postgres_members::find_active_server_member(&self.database, server_id, user_id).await
     }
 
     async fn list_active_server_members(
         &self,
         server_id: &Uuid,
     ) -> anyhow::Result<Vec<ServerMember>> {
-        Ok(server_members::Entity::find()
-            .filter(server_members::Column::ServerId.eq(*server_id))
-            .filter(server_members::Column::LeftAt.is_null())
-            .order_by_asc(server_members::Column::JoinedAt)
-            .all(&self.database)
-            .await?
-            .into_iter()
-            .map(Into::into)
-            .collect())
+        super::postgres_members::list_active_server_members(&self.database, server_id).await
     }
 
     async fn leave_server(&self, server_id: &Uuid, user_id: &Uuid) -> anyhow::Result<()> {
-        let Some(member) = server_members::Entity::find()
-            .filter(server_members::Column::ServerId.eq(*server_id))
-            .filter(server_members::Column::UserId.eq(*user_id))
-            .filter(server_members::Column::LeftAt.is_null())
-            .one(&self.database)
-            .await?
-        else {
-            return Ok(());
-        };
-        let mut member = member.into_active_model();
-        member.left_at = Set(Some(Utc::now()));
-        member.update(&self.database).await?;
-
-        Ok(())
+        super::postgres_members::leave_server(&self.database, server_id, user_id).await
     }
 
     async fn insert_server_member_exclusion(
@@ -359,36 +322,31 @@ impl ServerStore for PostgresServerStore {
         server_id: &Uuid,
         user_id: &Uuid,
         initiator_user_id: &Uuid,
-        expires_at: chrono::DateTime<Utc>,
+        expires_at: DateTime<Utc>,
     ) -> anyhow::Result<ServerMemberExclusion> {
-        let model = server_member_exclusions::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            server_id: Set(*server_id),
-            user_id: Set(*user_id),
-            initiator_user_id: Set(*initiator_user_id),
-            expires_at: Set(expires_at),
-            created_at: Set(Utc::now()),
-        }
-        .insert(&self.database)
-        .await?;
-
-        Ok(model.into())
+        super::postgres_members::insert_server_member_exclusion(
+            &self.database,
+            server_id,
+            user_id,
+            initiator_user_id,
+            expires_at,
+        )
+        .await
     }
 
     async fn find_active_server_member_exclusion(
         &self,
         server_id: &Uuid,
         user_id: &Uuid,
-        now: chrono::DateTime<Utc>,
+        now: DateTime<Utc>,
     ) -> anyhow::Result<Option<ServerMemberExclusion>> {
-        Ok(server_member_exclusions::Entity::find()
-            .filter(server_member_exclusions::Column::ServerId.eq(*server_id))
-            .filter(server_member_exclusions::Column::UserId.eq(*user_id))
-            .filter(server_member_exclusions::Column::ExpiresAt.gt(now))
-            .order_by_desc(server_member_exclusions::Column::ExpiresAt)
-            .one(&self.database)
-            .await?
-            .map(Into::into))
+        super::postgres_members::find_active_server_member_exclusion(
+            &self.database,
+            server_id,
+            user_id,
+            now,
+        )
+        .await
     }
 
     async fn count_server_invite_uses(&self, invite_id: &Uuid) -> anyhow::Result<u32> {

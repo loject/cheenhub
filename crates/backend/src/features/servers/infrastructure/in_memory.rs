@@ -22,7 +22,7 @@ pub(super) struct InMemoryState {
     servers: Vec<Server>,
     pub(super) invites: Vec<ServerInvite>,
     pub(super) members: Vec<ServerMember>,
-    exclusions: Vec<ServerMemberExclusion>,
+    pub(super) exclusions: Vec<ServerMemberExclusion>,
     pub(super) invite_uses: Vec<ServerInviteUse>,
     pub(super) rooms: Vec<ServerRoom>,
     pub(super) roles: Vec<ServerRole>,
@@ -264,18 +264,7 @@ impl ServerStore for InMemoryServerStore {
         server_id: &Uuid,
         user_id: &Uuid,
     ) -> anyhow::Result<ServerMember> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let member = ServerMember {
-            id: Uuid::new_v4(),
-            server_id: *server_id,
-            user_id: *user_id,
-            joined_at: Utc::now(),
-            left_at: None,
-        };
-
-        state.members.push(member.clone());
-
-        Ok(member)
+        super::in_memory_members::insert_server_member(&self.state, server_id, user_id)
     }
 
     async fn find_active_server_member(
@@ -283,45 +272,18 @@ impl ServerStore for InMemoryServerStore {
         server_id: &Uuid,
         user_id: &Uuid,
     ) -> anyhow::Result<Option<ServerMember>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-
-        Ok(state
-            .members
-            .iter()
-            .find(|member| {
-                member.server_id == *server_id
-                    && member.user_id == *user_id
-                    && member.left_at.is_none()
-            })
-            .cloned())
+        super::in_memory_members::find_active_server_member(&self.state, server_id, user_id)
     }
 
     async fn list_active_server_members(
         &self,
         server_id: &Uuid,
     ) -> anyhow::Result<Vec<ServerMember>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        let mut members = state
-            .members
-            .iter()
-            .filter(|member| member.server_id == *server_id && member.left_at.is_none())
-            .cloned()
-            .collect::<Vec<_>>();
-        members.sort_by_key(|member| member.joined_at);
-
-        Ok(members)
+        super::in_memory_members::list_active_server_members(&self.state, server_id)
     }
 
     async fn leave_server(&self, server_id: &Uuid, user_id: &Uuid) -> anyhow::Result<()> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-
-        if let Some(member) = state.members.iter_mut().find(|member| {
-            member.server_id == *server_id && member.user_id == *user_id && member.left_at.is_none()
-        }) {
-            member.left_at = Some(Utc::now());
-        }
-
-        Ok(())
+        super::in_memory_members::leave_server(&self.state, server_id, user_id)
     }
 
     async fn insert_server_member_exclusion(
@@ -331,19 +293,13 @@ impl ServerStore for InMemoryServerStore {
         initiator_user_id: &Uuid,
         expires_at: DateTime<Utc>,
     ) -> anyhow::Result<ServerMemberExclusion> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let exclusion = ServerMemberExclusion {
-            id: Uuid::new_v4(),
-            server_id: *server_id,
-            user_id: *user_id,
-            initiator_user_id: *initiator_user_id,
+        super::in_memory_members::insert_server_member_exclusion(
+            &self.state,
+            server_id,
+            user_id,
+            initiator_user_id,
             expires_at,
-            created_at: Utc::now(),
-        };
-
-        state.exclusions.push(exclusion.clone());
-
-        Ok(exclusion)
+        )
     }
 
     async fn find_active_server_member_exclusion(
@@ -352,18 +308,12 @@ impl ServerStore for InMemoryServerStore {
         user_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<ServerMemberExclusion>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-
-        Ok(state
-            .exclusions
-            .iter()
-            .filter(|exclusion| {
-                exclusion.server_id == *server_id
-                    && exclusion.user_id == *user_id
-                    && exclusion.expires_at > now
-            })
-            .max_by_key(|exclusion| exclusion.expires_at)
-            .cloned())
+        super::in_memory_members::find_active_server_member_exclusion(
+            &self.state,
+            server_id,
+            user_id,
+            now,
+        )
     }
 
     async fn count_server_invite_uses(&self, invite_id: &Uuid) -> anyhow::Result<u32> {
