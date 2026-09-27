@@ -110,7 +110,47 @@ pub(super) async fn create_server_room(
         .expect("member should insert");
     let room = state
         .server_store
-        .insert_server_room(&server.id, room_name.to_owned(), room_kind)
+        .insert_server_room(
+            &server.id,
+            room_name.to_owned(),
+            room_kind,
+            crate::features::servers::domain::ServerRoomWriteAccess::all_members(),
+        )
+        .await
+        .expect("room should insert");
+
+    (server.id.to_string(), room.id.to_string())
+}
+
+pub(super) async fn create_limited_server_room(
+    state: &AppState,
+    owner_user_id: &Uuid,
+    server_name: &str,
+    room_name: &str,
+    room_kind: ServerRoomKind,
+    role_ids: Vec<Uuid>,
+) -> (String, String) {
+    let server = state
+        .server_store
+        .insert_server(owner_user_id, server_name.to_owned())
+        .await
+        .expect("server should insert");
+    state
+        .server_store
+        .insert_server_member(&server.id, owner_user_id)
+        .await
+        .expect("member should insert");
+    let room = state
+        .server_store
+        .insert_server_room(
+            &server.id,
+            room_name.to_owned(),
+            room_kind,
+            crate::features::servers::domain::ServerRoomWriteAccess {
+                mode: cheenhub_contracts::rest::ServerRoomWriteAccessMode::SelectedRoles,
+                role_ids,
+            },
+        )
         .await
         .expect("room should insert");
 

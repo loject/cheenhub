@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::features::servers::domain::{
     Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
-    ServerRole, ServerRoom,
+    ServerRole, ServerRoom, ServerRoomWriteAccess,
 };
 use crate::features::servers::infrastructure::{AcceptInviteOutcome, ServerStore};
 /// In-memory-хранилище серверов для локального запуска и тестов.
@@ -377,8 +377,9 @@ impl ServerStore for InMemoryServerStore {
         server_id: &Uuid,
         name: String,
         kind: ServerRoomKind,
+        write_access: ServerRoomWriteAccess,
     ) -> anyhow::Result<ServerRoom> {
-        super::in_memory_rooms::insert_server_room(&self.state, server_id, name, kind)
+        super::in_memory_rooms::insert_server_room(&self.state, server_id, name, kind, write_access)
     }
 
     async fn list_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRoom>> {
@@ -399,8 +400,16 @@ impl ServerStore for InMemoryServerStore {
         room_id: &Uuid,
         name: String,
         kind: ServerRoomKind,
+        write_access: ServerRoomWriteAccess,
     ) -> anyhow::Result<Option<ServerRoom>> {
-        super::in_memory_rooms::update_server_room(&self.state, server_id, room_id, name, kind)
+        super::in_memory_rooms::update_server_room(
+            &self.state,
+            server_id,
+            room_id,
+            name,
+            kind,
+            write_access,
+        )
     }
 
     async fn delete_server_room(&self, server_id: &Uuid, room_id: &Uuid) -> anyhow::Result<()> {

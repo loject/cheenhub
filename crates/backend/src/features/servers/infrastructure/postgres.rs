@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::features::servers::domain::{
     Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
-    ServerRole, ServerRoom,
+    ServerRole, ServerRoom, ServerRoomWriteAccess,
 };
 use crate::features::servers::infrastructure::entities::{
     server_invite_uses, server_invites, server_member_exclusions, server_members, servers,
@@ -382,8 +382,10 @@ impl ServerStore for PostgresServerStore {
         server_id: &Uuid,
         name: String,
         kind: ServerRoomKind,
+        write_access: ServerRoomWriteAccess,
     ) -> anyhow::Result<ServerRoom> {
-        postgres_rooms::insert_server_room(&self.database, server_id, name, kind).await
+        postgres_rooms::insert_server_room(&self.database, server_id, name, kind, write_access)
+            .await
     }
 
     async fn list_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRoom>> {
@@ -404,8 +406,17 @@ impl ServerStore for PostgresServerStore {
         room_id: &Uuid,
         name: String,
         kind: ServerRoomKind,
+        write_access: ServerRoomWriteAccess,
     ) -> anyhow::Result<Option<ServerRoom>> {
-        postgres_rooms::update_server_room(&self.database, server_id, room_id, name, kind).await
+        postgres_rooms::update_server_room(
+            &self.database,
+            server_id,
+            room_id,
+            name,
+            kind,
+            write_access,
+        )
+        .await
     }
 
     async fn delete_server_room(&self, server_id: &Uuid, room_id: &Uuid) -> anyhow::Result<()> {

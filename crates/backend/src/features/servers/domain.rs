@@ -1,7 +1,7 @@
 //! Доменные модели сервера.
 
 use cheenhub_contracts::realtime::{ServerRoleKind, ServerRolePermission};
-use cheenhub_contracts::rest::ServerRoomKind;
+use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomWriteAccessMode};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
@@ -35,6 +35,25 @@ pub(crate) struct ServerAccess {
     pub(crate) is_member: bool,
 }
 
+/// Настройка доступа к записи в комнату сервера.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ServerRoomWriteAccess {
+    /// Режим доступа к записи.
+    pub(crate) mode: ServerRoomWriteAccessMode,
+    /// Идентификаторы ролей, которым разрешено писать, в режиме `SelectedRoles`.
+    pub(crate) role_ids: Vec<Uuid>,
+}
+
+impl ServerRoomWriteAccess {
+    /// Создает настройку доступа, где писать могут все участники сервера.
+    pub(crate) fn all_members() -> Self {
+        Self {
+            mode: ServerRoomWriteAccessMode::AllMembers,
+            role_ids: Vec::new(),
+        }
+    }
+}
+
 /// Данные комнаты сервера, используемые в потоках сервера.
 #[derive(Debug, Clone)]
 pub(crate) struct ServerRoom {
@@ -48,6 +67,8 @@ pub(crate) struct ServerRoom {
     pub(crate) kind: ServerRoomKind,
     /// Append-only ordering position inside the server.
     pub(crate) position: u32,
+    /// Room write access settings.
+    pub(crate) write_access: ServerRoomWriteAccess,
     /// Room creation timestamp.
     #[allow(dead_code)]
     pub(crate) created_at: DateTime<Utc>,

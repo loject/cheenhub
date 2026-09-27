@@ -5,7 +5,8 @@ use std::sync::Arc;
 use bytes::Bytes;
 use cheenhub_contracts::rest::{
     CreateServerInviteRequest, CreateServerRequest, CreateServerRoomRequest, RegisterRequest,
-    ServerRoomKind, UpdateServerRequest, UpdateServerRoomRequest,
+    ServerRoomKind, ServerRoomWriteAccess, ServerRoomWriteAccessMode, UpdateServerRequest,
+    UpdateServerRoomRequest,
 };
 use uuid::Uuid;
 
@@ -33,6 +34,7 @@ mod invite_settings;
 mod invites;
 mod members_settings;
 mod rooms_and_list;
+mod rooms_write_access;
 mod server_profile;
 mod voice_settings;
 

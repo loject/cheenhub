@@ -12,6 +12,8 @@ pub(crate) struct ServerPermissionsContext {
     pub(crate) can_kick_voice: bool,
     /// Может ли пользователь удалять чужие сообщения.
     pub(crate) can_delete_messages: bool,
+    /// Может ли пользователь создавать, редактировать и удалять комнаты.
+    pub(crate) can_manage_rooms: bool,
 }
 
 impl ServerPermissionsContext {
@@ -24,6 +26,7 @@ impl ServerPermissionsContext {
             ),
             can_kick_voice: has_permission(server, ServerRolePermission::KickVoiceMembers),
             can_delete_messages: has_permission(server, ServerRolePermission::DeleteMessages),
+            can_manage_rooms: has_permission(server, ServerRolePermission::ManageRooms),
         }
     }
 }
@@ -96,6 +99,36 @@ mod tests {
         assert!(with_role.can_create_invite_links);
     }
 
+    #[test]
+    fn manage_rooms_permission_grants_room_management() {
+        let permissions = ServerPermissionsContext::from_server(&server_summary(
+            true,
+            vec![role(
+                "rooms-manager",
+                ServerRoleKind::Custom,
+                vec![ServerRolePermission::ManageRooms],
+            )],
+            vec!["rooms-manager".to_owned()],
+        ));
+
+        assert!(permissions.can_manage_rooms);
+    }
+
+    #[test]
+    fn room_management_is_denied_without_permission() {
+        let permissions = ServerPermissionsContext::from_server(&server_summary(
+            true,
+            vec![role(
+                "plain-member",
+                ServerRoleKind::Custom,
+                vec![ServerRolePermission::DeleteMessages],
+            )],
+            vec!["plain-member".to_owned()],
+        ));
+
+        assert!(!permissions.can_manage_rooms);
+    }
+
     fn server_summary(
         is_member: bool,
         roles: Vec<ServerRoleSummary>,
@@ -119,6 +152,8 @@ mod tests {
     ) -> ServerRoleSummary {
         ServerRoleSummary {
             role_id: role_id.to_owned(),
+            name: role_id.to_owned(),
+            color: "#3b82f6".to_owned(),
             kind,
             permissions,
         }

@@ -1,6 +1,6 @@
 //! Main authenticated CheenHub application shell.
 
-use cheenhub_contracts::rest::{ServerRoomKind, ServerSummary};
+use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomSummary, ServerSummary};
 use dioxus::prelude::*;
 
 use crate::Route;
@@ -25,6 +25,19 @@ pub(crate) struct ActiveRoom {
     pub(crate) id: String,
     pub(crate) kind: ServerRoomKind,
     pub(crate) name: String,
+    pub(crate) can_write: bool,
+}
+
+impl ActiveRoom {
+    /// Собирает активную комнату из серверной сводки комнаты.
+    pub(crate) fn from_summary(summary: &ServerRoomSummary) -> Self {
+        Self {
+            id: summary.id.clone(),
+            kind: summary.kind,
+            name: summary.name.clone(),
+            can_write: summary.can_write,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]

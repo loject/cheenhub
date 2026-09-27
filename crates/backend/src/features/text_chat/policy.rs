@@ -2,7 +2,7 @@
 
 use cheenhub_contracts::realtime::ServerRoleKind;
 use cheenhub_contracts::realtime::ServerRolePermission;
-use cheenhub_contracts::rest::ServerRoomKind;
+use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomWriteAccessMode};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -77,4 +77,53 @@ pub(crate) async fn can_receive_room_event(
         .find_active_server_member(server_id, user_id)
         .await?
         .is_some())
+}
+
+/// Возвращает, может ли пользователь писать в комнату по настройке доступа к записи.
+pub(crate) async fn can_write_to_room(
+    state: &AppState,
+    user_id: &Uuid,
+    server_id: &Uuid,
+    room_id: &Uuid,
+) -> anyhow::Result<bool> {
+    let Some(room) = state
+        .server_store
+        .find_server_room(server_id, room_id)
+        .await?
+    else {
+        return Ok(false);
+    };
+    let Some(server) = state.server_store.find_server(server_id).await? else {
+        return Ok(false);
+    };
+    let is_owner = server.owner_user_id == *user_id;
+    if is_owner {
+        return Ok(true);
+    }
+    if state
+        .server_store
+        .find_active_server_member(server_id, user_id)
+        .await?
+        .is_none()
+    {
+        return Ok(false);
+    }
+    if room.write_access.mode == ServerRoomWriteAccessMode::AllMembers {
+        return Ok(true);
+    }
+
+    let member_role_ids: Vec<Uuid> = state
+        .server_store
+        .list_server_member_roles(server_id)
+        .await?
+        .into_iter()
+        .filter(|(member_user_id, _)| member_user_id == user_id)
+        .map(|(_, role_id)| role_id)
+        .collect();
+
+    Ok(room
+        .write_access
+        .role_ids
+        .iter()
+        .any(|role_id| member_role_ids.contains(role_id)))
 }

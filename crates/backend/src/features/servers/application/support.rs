@@ -1,7 +1,9 @@
 //! Shared server application helpers.
 
 use cheenhub_contracts::realtime::{ServerRoleKind, ServerRolePermission, ServerRoleSummary};
-use cheenhub_contracts::rest::{ServerRoomSummary, ServerSummary};
+use cheenhub_contracts::rest::{
+    ServerRoomSummary, ServerRoomWriteAccess, ServerRoomWriteAccessMode, ServerSummary,
+};
 use uuid::Uuid;
 
 use crate::features::auth::application as auth_application;
@@ -42,6 +44,8 @@ async fn fetch_role_data(
             .into_iter()
             .map(|role| ServerRoleSummary {
                 role_id: role.id.to_string(),
+                name: role.name,
+                color: role.color,
                 kind: role.kind,
                 permissions: role.permissions,
             })
@@ -60,13 +64,91 @@ async fn fetch_role_data(
     (roles, member_role_ids)
 }
 
-pub(super) fn room_summary(room: &ServerRoom) -> ServerRoomSummary {
+pub(super) fn room_summary(room: &ServerRoom, can_write: bool) -> ServerRoomSummary {
     ServerRoomSummary {
         id: room.id.to_string(),
         name: room.name.clone(),
         kind: room.kind,
         position: room.position,
+        write_access: ServerRoomWriteAccess {
+            mode: room.write_access.mode,
+            role_ids: room
+                .write_access
+                .role_ids
+                .iter()
+                .map(|role_id| role_id.to_string())
+                .collect(),
+        },
+        can_write,
     }
+}
+
+/// Определяет, может ли пользователь писать в комнату по настройке доступа и своим ролям.
+pub(super) fn room_write_allowed(
+    room: &ServerRoom,
+    is_owner: bool,
+    is_member: bool,
+    member_role_ids: &[Uuid],
+) -> bool {
+    if is_owner {
+        return true;
+    }
+    if !is_member {
+        return false;
+    }
+    if room.write_access.mode == ServerRoomWriteAccessMode::AllMembers {
+        return true;
+    }
+
+    room.write_access
+        .role_ids
+        .iter()
+        .any(|role_id| member_role_ids.contains(role_id))
+}
+
+/// Возвращает идентификаторы ролей, назначенных пользователю на сервере.
+pub(super) async fn user_role_ids(
+    state: &AppState,
+    server_id: &Uuid,
+    user_id: &Uuid,
+) -> Result<Vec<Uuid>, ServerError> {
+    Ok(state
+        .server_store
+        .list_server_member_roles(server_id)
+        .await
+        .map_err(ServerError::Internal)?
+        .into_iter()
+        .filter(|(member_user_id, _)| member_user_id == user_id)
+        .map(|(_, role_id)| role_id)
+        .collect())
+}
+
+/// Проверяет, что все переданные роли принадлежат серверу, и возвращает их идентификаторы.
+pub(super) async fn validated_write_role_ids(
+    state: &AppState,
+    server_id: &Uuid,
+    role_ids: &[Uuid],
+) -> Result<Vec<Uuid>, ServerError> {
+    if role_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let server_roles = state
+        .server_store
+        .list_server_roles(server_id)
+        .await
+        .map_err(ServerError::Internal)?;
+    let mut result = Vec::new();
+    for role_id in role_ids {
+        if !server_roles.iter().any(|role| role.id == *role_id) {
+            return Err(ServerError::BadRequest(
+                "Выбрана роль, которая не принадлежит этому серверу.".to_owned(),
+            ));
+        }
+        result.push(*role_id);
+    }
+
+    Ok(result)
 }
 
 pub(super) async fn current_user_id(
@@ -156,21 +238,30 @@ pub(super) async fn user_has_server_permission(
         .list_server_roles(&server.id)
         .await
         .map_err(ServerError::Internal)?;
-    let member_roles = state
-        .server_store
-        .list_server_member_roles(&server.id)
-        .await
-        .map_err(ServerError::Internal)?;
-    let user_role_ids = member_roles
-        .into_iter()
-        .filter(|(member_user_id, _)| *member_user_id == *user_id)
-        .map(|(_, role_id)| role_id)
-        .collect::<Vec<_>>();
+    let member_role_ids = user_role_ids(state, &server.id, user_id).await?;
 
     Ok(roles.iter().any(|role| {
-        (role.kind == ServerRoleKind::Member || user_role_ids.contains(&role.id))
+        (role.kind == ServerRoleKind::Member || member_role_ids.contains(&role.id))
             && role.permissions.contains(&permission)
     }))
+}
+
+/// Возвращает сервер, если текущий пользователь владеет им или имеет право `ManageRooms`.
+pub(super) async fn server_for_room_manager(
+    state: &AppState,
+    server_id: &Uuid,
+    user_id: &Uuid,
+) -> Result<Server, ServerError> {
+    let server = server_for_member_or_owner(state, server_id, user_id).await?;
+    if user_has_server_permission(state, &server, user_id, ServerRolePermission::ManageRooms)
+        .await?
+    {
+        return Ok(server);
+    }
+
+    Err(ServerError::NotFound(
+        "Сервер не найден или недоступен.".to_owned(),
+    ))
 }
 
 pub(super) fn map_auth_error(error: AuthError) -> ServerError {

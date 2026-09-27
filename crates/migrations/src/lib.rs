@@ -34,6 +34,7 @@ mod m20260825_000030_create_host_settings;
 mod m20260829_000031_add_server_audio_bitrate;
 mod m20260904_000032_create_desktop_oauth_attempts;
 mod m20260908_000033_add_user_deletion;
+mod m20260927_000034_create_server_room_write_roles;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -77,6 +78,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260829_000031_add_server_audio_bitrate::Migration),
             Box::new(m20260904_000032_create_desktop_oauth_attempts::Migration),
             Box::new(m20260908_000033_add_user_deletion::Migration),
+            Box::new(m20260927_000034_create_server_room_write_roles::Migration),
         ]
     }
 }

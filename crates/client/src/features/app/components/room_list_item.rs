@@ -11,7 +11,7 @@ use super::server_rooms_state::{room_icon, room_icon_class};
 pub(super) fn RoomListItem(
     room: ServerRoomSummary,
     is_active: bool,
-    is_owner: bool,
+    can_manage_rooms: bool,
     voice_participants: Vec<VoiceRoomParticipant>,
     compact_when_settings_active: bool,
     on_select: EventHandler<()>,
@@ -84,7 +84,7 @@ pub(super) fn RoomListItem(
                     }
                 }
             }
-            if is_owner {
+            if can_manage_rooms {
                 span { class: room_actions_class,
                     button {
                         r#type: "button",

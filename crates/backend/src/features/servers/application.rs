@@ -11,13 +11,15 @@ use chrono::{Duration, Utc};
 use uuid::Uuid;
 
 use crate::features::auth::application as auth_application;
+use crate::features::servers::domain::ServerRoomWriteAccess;
 use crate::features::servers::error::ServerError;
 use crate::features::servers::validation;
 use crate::state::AppState;
 
 use self::support::{
-    current_user_id, map_auth_error, owned_server, parse_server_id, room_summary,
-    server_for_member_or_owner, server_summary, user_has_server_permission,
+    current_user_id, map_auth_error, parse_server_id, room_summary, room_write_allowed,
+    server_for_member_or_owner, server_for_room_manager, server_summary,
+    user_has_server_permission, user_role_ids, validated_write_role_ids,
 };
 
 mod accept_invite;
@@ -72,7 +74,12 @@ pub(crate) async fn create(
         .map_err(ServerError::Internal)?;
     state
         .server_store
-        .insert_server_room(&server.id, "общий".to_owned(), ServerRoomKind::TextAndVoice)
+        .insert_server_room(
+            &server.id,
+            "общий".to_owned(),
+            ServerRoomKind::TextAndVoice,
+            ServerRoomWriteAccess::all_members(),
+        )
         .await
         .map_err(ServerError::Internal)?;
 
@@ -299,36 +306,60 @@ pub(crate) async fn list_rooms(
         .list_server_rooms(&server.id)
         .await
         .map_err(ServerError::Internal)?;
+    let is_owner = server.owner_user_id == user_id;
+    let is_member = is_owner
+        || state
+            .server_store
+            .find_active_server_member(&server.id, &user_id)
+            .await
+            .map_err(ServerError::Internal)?
+            .is_some();
+    let member_role_ids = user_role_ids(state, &server.id, &user_id).await?;
 
     Ok(ListServerRoomsResponse {
-        rooms: rooms.iter().map(room_summary).collect(),
+        rooms: rooms
+            .iter()
+            .map(|room| {
+                let can_write = room_write_allowed(room, is_owner, is_member, &member_role_ids);
+                room_summary(room, can_write)
+            })
+            .collect(),
     })
 }
 
-/// Создает комнату на сервере, принадлежащем текущему пользователю.
+/// Создает комнату на сервере, которым текущий пользователь управляет как владелец или по праву `ManageRooms`.
 pub(crate) async fn create_room(
     state: &AppState,
     access_token: &str,
     server_id: String,
     request: CreateServerRoomRequest,
 ) -> Result<CreateServerRoomResponse, ServerError> {
-    let owner_user_id = current_user_id(state, access_token).await?;
+    let user_id = current_user_id(state, access_token).await?;
     let server_id = parse_server_id(server_id)?;
-    let valid = validation::server_room(request.name)
+    let valid = validation::server_room(request.name, request.write_access)
         .map_err(|message| ServerError::BadRequest(message.to_owned()))?;
-    let server = owned_server(state, &server_id, &owner_user_id).await?;
+    let server = server_for_room_manager(state, &server_id, &user_id).await?;
+    let write_access = resolve_write_access(state, &server.id, valid.write_access).await?;
     let room = state
         .server_store
-        .insert_server_room(&server.id, valid.name, request.kind)
+        .insert_server_room(&server.id, valid.name, request.kind, write_access)
         .await
         .map_err(ServerError::Internal)?;
 
+    tracing::info!(
+        server_id = %server.id,
+        room_id = %room.id,
+        write_access_mode = ?room.write_access.mode,
+        write_role_count = room.write_access.role_ids.len(),
+        "created server room"
+    );
+
     Ok(CreateServerRoomResponse {
-        room: room_summary(&room),
+        room: room_summary(&room, true),
     })
 }
 
-/// Обновляет комнату на сервере, принадлежащем текущему пользователю.
+/// Обновляет комнату на сервере, которым текущий пользователь управляет как владелец или по праву `ManageRooms`.
 pub(crate) async fn update_room(
     state: &AppState,
     access_token: &str,
@@ -336,39 +367,48 @@ pub(crate) async fn update_room(
     room_id: String,
     request: UpdateServerRoomRequest,
 ) -> Result<UpdateServerRoomResponse, ServerError> {
-    let owner_user_id = current_user_id(state, access_token).await?;
+    let user_id = current_user_id(state, access_token).await?;
     let server_id = parse_server_id(server_id)?;
     let room_id = Uuid::parse_str(&room_id)
         .map_err(|_| ServerError::BadRequest("Комната не найдена.".to_owned()))?;
-    let valid = validation::server_room(request.name)
+    let valid = validation::server_room(request.name, request.write_access)
         .map_err(|message| ServerError::BadRequest(message.to_owned()))?;
-    let server = owned_server(state, &server_id, &owner_user_id).await?;
+    let server = server_for_room_manager(state, &server_id, &user_id).await?;
+    let write_access = resolve_write_access(state, &server.id, valid.write_access).await?;
     let Some(room) = state
         .server_store
-        .update_server_room(&server.id, &room_id, valid.name, request.kind)
+        .update_server_room(&server.id, &room_id, valid.name, request.kind, write_access)
         .await
         .map_err(ServerError::Internal)?
     else {
         return Err(ServerError::NotFound("Комната не найдена.".to_owned()));
     };
 
+    tracing::info!(
+        server_id = %server.id,
+        room_id = %room.id,
+        write_access_mode = ?room.write_access.mode,
+        write_role_count = room.write_access.role_ids.len(),
+        "updated server room"
+    );
+
     Ok(UpdateServerRoomResponse {
-        room: room_summary(&room),
+        room: room_summary(&room, true),
     })
 }
 
-/// Удаляет комнату с сервера, принадлежащего текущему пользователю.
+/// Удаляет комнату с сервера, которым текущий пользователь управляет как владелец или по праву `ManageRooms`.
 pub(crate) async fn delete_room(
     state: &AppState,
     access_token: &str,
     server_id: String,
     room_id: String,
 ) -> Result<(), ServerError> {
-    let owner_user_id = current_user_id(state, access_token).await?;
+    let user_id = current_user_id(state, access_token).await?;
     let server_id = parse_server_id(server_id)?;
     let room_id = Uuid::parse_str(&room_id)
         .map_err(|_| ServerError::BadRequest("Комната не найдена.".to_owned()))?;
-    let server = owned_server(state, &server_id, &owner_user_id).await?;
+    let server = server_for_room_manager(state, &server_id, &user_id).await?;
     let Some(room) = state
         .server_store
         .find_server_room(&server.id, &room_id)
@@ -393,7 +433,29 @@ pub(crate) async fn delete_room(
         .server_store
         .delete_server_room(&server.id, &room.id)
         .await
-        .map_err(ServerError::Internal)
+        .map_err(ServerError::Internal)?;
+
+    tracing::info!(
+        server_id = %server.id,
+        room_id = %room.id,
+        "deleted server room"
+    );
+
+    Ok(())
+}
+
+/// Проверяет принадлежность ролей серверу и возвращает нормализованную настройку доступа к записи.
+async fn resolve_write_access(
+    state: &AppState,
+    server_id: &Uuid,
+    write_access: ServerRoomWriteAccess,
+) -> Result<ServerRoomWriteAccess, ServerError> {
+    let role_ids = validated_write_role_ids(state, server_id, &write_access.role_ids).await?;
+
+    Ok(ServerRoomWriteAccess {
+        mode: write_access.mode,
+        role_ids,
+    })
 }
 
 #[cfg(test)]

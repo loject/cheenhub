@@ -87,7 +87,7 @@ pub(crate) async fn send_message(
 ) -> Result<SendMessageAccepted, TextChatApplicationError> {
     let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
     let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
-    ensure_room_text_available(state, user_id, &server_id, &room_id).await?;
+    ensure_room_write_allowed(state, user_id, &server_id, &room_id).await?;
     let attachments = load_message_attachments(
         state,
         user_id,
@@ -220,6 +220,8 @@ pub(crate) enum TextChatApplicationError {
     Unauthorized(String),
     /// Ресурс не найден.
     NotFound(String),
+    /// В комнате запись разрешена только участникам с выбранными ролями.
+    ReadOnlyRoom(String),
     /// Требуемая интеграция не настроена.
     Misconfigured {
         /// Имя интеграции или функции.
@@ -264,6 +266,33 @@ pub(super) async fn ensure_room_text_available(
             "Нет доступа к этой комнате.".to_owned(),
         ))
     }
+}
+
+/// Проверяет, что комната доступна для чтения и что пользователю разрешено в неё писать.
+pub(super) async fn ensure_room_write_allowed(
+    state: &AppState,
+    user_id: &Uuid,
+    server_id: &Uuid,
+    room_id: &Uuid,
+) -> Result<(), TextChatApplicationError> {
+    ensure_room_text_available(state, user_id, server_id, room_id).await?;
+    if policy::can_write_to_room(state, user_id, server_id, room_id)
+        .await
+        .map_err(TextChatApplicationError::Internal)?
+    {
+        return Ok(());
+    }
+
+    tracing::warn!(
+        server_id = %server_id,
+        room_id = %room_id,
+        user_id = %user_id,
+        "rejected text chat write in read-only room"
+    );
+
+    Err(TextChatApplicationError::ReadOnlyRoom(
+        "В этой комнате писать могут только участники с выбранными ролями.".to_owned(),
+    ))
 }
 
 async fn fanout_message_created(state: &AppState, message: TextChatMessage) -> anyhow::Result<()> {

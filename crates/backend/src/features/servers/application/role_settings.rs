@@ -363,5 +363,6 @@ fn all_permissions() -> Vec<ServerRolePermission> {
         ServerRolePermission::ManageRoles,
         ServerRolePermission::KickVoiceMembers,
         ServerRolePermission::DeleteMessages,
+        ServerRolePermission::ManageRooms,
     ]
 }

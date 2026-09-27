@@ -1,7 +1,7 @@
 //! Функция управления серверами.
 
-mod application;
-mod domain;
+pub(crate) mod application;
+pub(crate) mod domain;
 mod error;
 pub(crate) mod infrastructure;
 pub(crate) mod realtime;

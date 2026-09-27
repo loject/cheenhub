@@ -1,17 +1,22 @@
 //! Модальное окно создания и редактирования комнаты.
 
-use cheenhub_contracts::rest::{ServerRoomKind, ServerRoomSummary};
+use cheenhub_contracts::realtime::{ServerRoleKind, ServerRoleSummary};
+use cheenhub_contracts::rest::{
+    ServerRoomKind, ServerRoomSummary, ServerRoomWriteAccess, ServerRoomWriteAccessMode,
+};
 use dioxus::prelude::*;
 
 use crate::features::app::api;
 
 use super::modal::Modal;
+use super::room_write_access_field::write_access_field;
 
 /// Рендерит поток создания и редактирования комнаты.
 #[component]
 pub(crate) fn RoomEditorModal(
     server_id: String,
     room: Option<ServerRoomSummary>,
+    roles: Vec<ServerRoleSummary>,
     on_close: EventHandler<()>,
     on_saved: EventHandler<ServerRoomSummary>,
 ) -> Element {
@@ -24,6 +29,18 @@ pub(crate) fn RoomEditorModal(
         .map(|room| room.kind)
         .unwrap_or(ServerRoomKind::TextAndVoice);
     let room_id = room.as_ref().map(|room| room.id.clone());
+    let assignable_roles: Vec<ServerRoleSummary> = roles
+        .into_iter()
+        .filter(|role| role.kind != ServerRoleKind::Owner)
+        .collect();
+    let initial_write_mode = room
+        .as_ref()
+        .map(|room| room.write_access.mode)
+        .unwrap_or_default();
+    let initial_write_role_ids = room
+        .as_ref()
+        .map(|room| room.write_access.role_ids.clone())
+        .unwrap_or_default();
     let title = if room_id.is_some() {
         "Изменить комнату"
     } else {
@@ -41,8 +58,25 @@ pub(crate) fn RoomEditorModal(
     };
     let mut name = use_signal(|| initial_name);
     let mut kind = use_signal(|| initial_kind);
+    let mut write_mode = use_signal(|| initial_write_mode);
+    let mut selected_role_ids = use_signal(|| initial_write_role_ids);
     let mut status = use_signal(String::new);
     let mut is_busy = use_signal(|| false);
+    let on_mode_change = use_callback(move |mode: ServerRoomWriteAccessMode| {
+        write_mode.set(mode);
+        if mode == ServerRoomWriteAccessMode::AllMembers {
+            selected_role_ids.set(Vec::new());
+        }
+    });
+    let on_toggle_role = use_callback(move |role_id: String| {
+        let mut next = selected_role_ids();
+        if let Some(position) = next.iter().position(|saved| *saved == role_id) {
+            next.remove(position);
+        } else {
+            next.push(role_id);
+        }
+        selected_role_ids.set(next);
+    });
 
     rsx! {
         Modal {
@@ -76,6 +110,14 @@ pub(crate) fn RoomEditorModal(
                     }
                 }
 
+                {write_access_field(
+                    write_mode(),
+                    &selected_role_ids(),
+                    &assignable_roles,
+                    on_mode_change,
+                    on_toggle_role,
+                )}
+
                 if !status().is_empty() {
                     p { class: "rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] leading-5 text-red-200",
                         "{status()}"
@@ -104,6 +146,15 @@ pub(crate) fn RoomEditorModal(
                             let request_room_id = room_id.clone();
                             let request_name = name();
                             let request_kind = kind();
+                            let request_write_access = ServerRoomWriteAccess {
+                                mode: write_mode(),
+                                role_ids: if write_mode() == ServerRoomWriteAccessMode::AllMembers
+                                {
+                                    Vec::new()
+                                } else {
+                                    selected_role_ids()
+                                },
+                            };
 
                             spawn(async move {
                                 let result = if let Some(room_id) = request_room_id {
@@ -112,6 +163,7 @@ pub(crate) fn RoomEditorModal(
                                         room_id,
                                         request_name,
                                         request_kind,
+                                        request_write_access,
                                     )
                                     .await
                                 } else {
@@ -119,6 +171,7 @@ pub(crate) fn RoomEditorModal(
                                         request_server_id,
                                         request_name,
                                         request_kind,
+                                        request_write_access,
                                     )
                                     .await
                                 };
