@@ -82,15 +82,9 @@ pub(crate) fn seconds_until_refresh(token: &str) -> Result<u32, JwtVerifyError> 
 /// Проверяет подписанный access JWT с помощью встроенного публичного ключа.
 pub(crate) fn verify(token: &str) -> Result<AccessClaims, JwtVerifyError> {
     let mut parts = token.split('.');
-    let header = parts
-        .next()
-        .ok_or(JwtVerifyError::InvalidToken)?;
-    let payload = parts
-        .next()
-        .ok_or(JwtVerifyError::InvalidToken)?;
-    let signature = parts
-        .next()
-        .ok_or(JwtVerifyError::InvalidToken)?;
+    let header = parts.next().ok_or(JwtVerifyError::InvalidToken)?;
+    let payload = parts.next().ok_or(JwtVerifyError::InvalidToken)?;
+    let signature = parts.next().ok_or(JwtVerifyError::InvalidToken)?;
     if parts.next().is_some() {
         return Err(JwtVerifyError::InvalidToken);
     }
@@ -110,9 +104,8 @@ pub(crate) fn verify(token: &str) -> Result<AccessClaims, JwtVerifyError> {
     let public_key: [u8; 32] = public_key
         .try_into()
         .map_err(|_| JwtVerifyError::VerificationKeyUnavailable)?;
-    let verifying_key =
-        VerifyingKey::from_bytes(&public_key)
-            .map_err(|_| JwtVerifyError::VerificationKeyUnavailable)?;
+    let verifying_key = VerifyingKey::from_bytes(&public_key)
+        .map_err(|_| JwtVerifyError::VerificationKeyUnavailable)?;
     let signature = URL_SAFE_NO_PAD
         .decode(signature)
         .map_err(|_| JwtVerifyError::InvalidToken)?;

@@ -163,4 +163,3 @@ fn tile_entry(
         media,
     }
 }
-
