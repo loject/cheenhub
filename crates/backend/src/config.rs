@@ -138,16 +138,28 @@ impl AppConfig {
     }
 
     /// Возвращает socket address, используемый HTTP-слушателем.
+    ///
+    /// IPv6-хост оборачивается в скобки: без них `::` + порт не парсится.
+    /// Нужен, чтобы можно было слушать dual-stack через `[::]` и принимать
+    /// подключения и по IPv4, и по IPv6.
     pub(crate) fn socket_addr(&self) -> anyhow::Result<SocketAddr> {
-        format!("{}:{}", self.backend_host, self.backend_port)
-            .parse()
-            .with_context(|| {
-                format!(
-                    "BACKEND_HOST and BACKEND_PORT must form a valid socket address: {}:{}",
-                    self.backend_host, self.backend_port
-                )
-            })
+        socket_addr_from(&self.backend_host, self.backend_port)
     }
+}
+
+/// Собирает socket address из хоста и порта, оборачивая IPv6-хост в скобки.
+fn socket_addr_from(host: &str, port: u16) -> anyhow::Result<SocketAddr> {
+    let host = host.trim();
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    // IPv6-литерал содержит двоеточия, поэтому его нужно закрыть скобками.
+    let address = if bare.contains(':') {
+        format!("[{bare}]:{port}")
+    } else {
+        format!("{bare}:{port}")
+    };
+    address.parse().with_context(|| {
+        format!("BACKEND_HOST and BACKEND_PORT must form a valid socket address: {address}")
+    })
 }
 
 fn api_base_url(base_url: &str) -> anyhow::Result<String> {
@@ -277,7 +289,31 @@ fn optional_bool(key: &str, default: bool) -> anyhow::Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::api_base_url;
+    use super::{api_base_url, socket_addr_from};
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+
+    #[test]
+    fn wraps_ipv6_host_into_brackets() {
+        let address = socket_addr_from("::", 3000).expect("ipv6 any address");
+        assert_eq!(address, SocketAddr::from((Ipv6Addr::UNSPECIFIED, 3000)));
+    }
+
+    #[test]
+    fn keeps_ipv4_host_without_brackets() {
+        let address = socket_addr_from("0.0.0.0", 3000).expect("ipv4 any address");
+        assert_eq!(address, SocketAddr::from((Ipv4Addr::UNSPECIFIED, 3000)));
+    }
+
+    #[test]
+    fn accepts_already_bracketed_ipv6_host() {
+        let address = socket_addr_from("[::1]", 3000).expect("bracketed ipv6");
+        assert_eq!(address, SocketAddr::from((Ipv6Addr::LOCALHOST, 3000)));
+    }
+
+    #[test]
+    fn rejects_invalid_host() {
+        assert!(socket_addr_from("not-a-host", 3000).is_err());
+    }
 
     #[test]
     fn derives_api_url_from_service_base_url() {
