@@ -57,7 +57,7 @@ pub(crate) fn OwnInviteLinkItem(
             }
             button {
                 r#type: "button",
-                class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 transition hover:border-zinc-700 hover:text-zinc-100",
+                class: "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 transition hover:border-zinc-700 hover:text-zinc-100",
                 "aria-label": "Скопировать ссылку приглашения",
                 onclick: move |_| {
                     let code = copy_code.clone();

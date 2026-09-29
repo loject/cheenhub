@@ -18,27 +18,33 @@ pub(crate) fn OwnInviteLinksSection(
     let limit_reached = links.as_ref().is_some_and(|links| links.is_limit_reached());
 
     rsx! {
-        div { class: "space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-3",
-            div { class: "flex items-center justify-between gap-3",
-                p { class: "text-[13px] font-medium text-zinc-100", "Твои ссылки приглашения" }
-                if let Some(links) = links.as_ref() {
-                    span { class: "shrink-0 rounded-full border border-zinc-800 bg-zinc-950 px-2 py-0.5 text-[11px] font-medium text-zinc-400",
-                        "{links.active_count()} из {links.limit}"
+        section { class: "flex h-full min-h-0 flex-col rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4",
+            div { class: "shrink-0",
+                div { class: "flex items-center justify-between gap-3",
+                    h3 { class: "text-[14px] font-semibold text-zinc-50", "Твои ссылки приглашения" }
+                    if let Some(links) = links.as_ref() {
+                        span { class: "shrink-0 rounded-full border border-zinc-800 bg-zinc-950 px-2 py-0.5 text-[11px] font-medium text-zinc-400",
+                            if let Some(limit) = links.limit {
+                                "{links.active_count()} из {limit}"
+                            } else {
+                                "{links.active_count()}"
+                            }
+                        }
                     }
                 }
-            }
-            p { class: "mt-0.5 text-[12px] leading-5 text-zinc-500",
-                "Ссылки, которые ты создал для этого сервера. Их можно копировать и удалить."
+                p { class: "mt-1 text-[12px] leading-5 text-zinc-500",
+                    "Ссылки, которые ты создал для этого сервера. Их можно копировать и удалить."
+                }
             }
 
             if is_loading {
                 div { class: "mt-3 space-y-2",
-                    for _ in 0..2 {
+                    for _ in 0..3 {
                         div { class: "h-[58px] animate-pulse rounded-xl border border-zinc-800 bg-zinc-950/70" }
                     }
                 }
             } else if !load_error.is_empty() {
-                div { class: "mt-3 space-y-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3",
+                div { class: "mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3",
                     p { class: "text-[12px] leading-5 text-amber-100", "{load_error}" }
                     button {
                         r#type: "button",
@@ -48,7 +54,7 @@ pub(crate) fn OwnInviteLinksSection(
                     }
                 }
             } else if links.as_ref().is_some_and(|links| links.links.is_empty()) {
-                div { class: "mt-3 rounded-xl border border-dashed border-zinc-800 bg-zinc-950/50 p-3",
+                div { class: "mt-3 rounded-xl border border-dashed border-zinc-800 bg-zinc-950/50 p-4 text-center",
                     p { class: "text-[12px] leading-5 text-zinc-400",
                         "Ты еще не создавал ссылки приглашения для этого сервера. Создай первую, чтобы пригласить людей."
                     }
@@ -61,7 +67,7 @@ pub(crate) fn OwnInviteLinksSection(
                         }
                     }
                 }
-                div { class: "mt-3 space-y-2",
+                div { class: "mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1",
                     for link in links.links.iter() {
                         OwnInviteLinkItem {
                             key: "{link.code}",

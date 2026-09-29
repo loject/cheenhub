@@ -10,7 +10,7 @@ use cheenhub_contracts::rest::{
 use chrono::{DateTime, Duration, Utc};
 use uuid::Uuid;
 
-use crate::features::servers::domain::{MAX_OWN_INVITE_LINKS, Server, ServerInvite};
+use crate::features::servers::domain::{Server, ServerInvite, invite_links_limit};
 use crate::features::servers::error::ServerError;
 use crate::features::servers::validation;
 use crate::state::AppState;
@@ -31,15 +31,19 @@ pub(crate) async fn create_invite(
     let valid = validation::create_server_invite(request.max_uses, request.expires_in_days)
         .map_err(|message| ServerError::BadRequest(message.to_owned()))?;
     let server = invite_links_server(state, &server_id, &user_id).await?;
+    let limit = invite_links_limit(&server, &user_id);
     let links_before = own_invite_links(state, &server.id, &user_id).await?;
     let active_count = active_link_count(&links_before);
 
-    if active_count >= MAX_OWN_INVITE_LINKS {
+    // Владелец сервера не ограничен лимитом, поэтому проверка выполняется только когда он есть.
+    if let Some(limit) = limit
+        && active_count >= limit
+    {
         tracing::warn!(
             server_id = %server.id,
             user_id = %user_id,
             active_links = active_count,
-            limit = MAX_OWN_INVITE_LINKS,
+            limit = limit,
             "rejected server invite creation because the per-user link limit was reached"
         );
         return Err(ServerError::BadRequest(
@@ -62,14 +66,14 @@ pub(crate) async fn create_invite(
         invite_code = %invite.id,
         user_id = %user_id,
         active_links = active_count + 1,
-        limit = MAX_OWN_INVITE_LINKS,
+        limit = ?limit,
         "created server invite"
     );
 
     Ok(CreateServerInviteResponse {
         code: invite.id.to_string(),
         links: own_invite_links(state, &server.id, &user_id).await?,
-        limit: MAX_OWN_INVITE_LINKS,
+        limit,
     })
 }
 
@@ -82,6 +86,7 @@ pub(crate) async fn list_own_invite_links(
     let user_id = current_user_id(state, access_token).await?;
     let server_id = parse_server_id(server_id)?;
     let server = invite_links_server(state, &server_id, &user_id).await?;
+    let limit = invite_links_limit(&server, &user_id);
     let links = own_invite_links(state, &server.id, &user_id).await?;
 
     tracing::debug!(
@@ -89,14 +94,14 @@ pub(crate) async fn list_own_invite_links(
         user_id = %user_id,
         invite_count = links.len(),
         active_count = active_link_count(&links),
-        limit = MAX_OWN_INVITE_LINKS,
+        limit = ?limit,
         "listed own server invite links"
     );
 
     Ok(ServerInviteLinksResponse {
         server_id: server.id.to_string(),
         links,
-        limit: MAX_OWN_INVITE_LINKS,
+        limit,
     })
 }
 
@@ -137,7 +142,7 @@ pub(crate) async fn delete_own_invite(
     Ok(DeleteServerInviteResponse {
         code: invite.id.to_string(),
         links: own_invite_links(state, &server.id, &user_id).await?,
-        limit: MAX_OWN_INVITE_LINKS,
+        limit: invite_links_limit(&server, &user_id),
     })
 }
 

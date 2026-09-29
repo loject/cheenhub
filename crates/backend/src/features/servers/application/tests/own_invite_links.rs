@@ -2,7 +2,7 @@ use cheenhub_contracts::realtime::{
     AssignServerMemberRole, ListServerInvites, ListServerRoles, SaveServerRoles, ServerRoleDraft,
     ServerRoleKind, ServerRolePermission,
 };
-use cheenhub_contracts::rest::{AuthResponse, ServerSummary};
+use cheenhub_contracts::rest::{AuthResponse, ServerOwnInviteLink, ServerSummary};
 
 use super::*;
 use crate::features::servers::domain::{MAX_OWN_INVITE_LINKS, ServerInvite, ServerRole};
@@ -66,7 +66,7 @@ async fn create_invite_returns_own_links_and_limit() {
     .await
     .expect("second invite creation should succeed");
 
-    assert_eq!(first.limit, MAX_OWN_INVITE_LINKS);
+    assert_eq!(first.limit, None);
     assert_eq!(first.links.len(), 1);
     assert_eq!(first.links[0].code, first.code);
     assert!(first.links[0].is_active);
@@ -119,20 +119,36 @@ async fn list_own_invite_links_returns_only_links_of_current_user() {
     assert_eq!(owner_links.links[0].code, owner_invite.code);
     assert_eq!(member_links.links.len(), 1);
     assert_eq!(member_links.links[0].code, member_invite.code);
-    assert_eq!(owner_links.limit, MAX_OWN_INVITE_LINKS);
-    assert_eq!(member_links.limit, MAX_OWN_INVITE_LINKS);
+    assert_eq!(owner_links.limit, None);
+    assert_eq!(member_links.limit, Some(MAX_OWN_INVITE_LINKS));
 }
 
 #[tokio::test]
 async fn create_invite_is_rejected_when_link_limit_is_reached() {
     let state = state();
-    let auth = register(&state, "limits_owner").await;
-    let server = create_server(&state, &auth.access_token, "Limits Hub").await;
+    let owner = register(&state, "limits_owner").await;
+    let member = register(&state, "limits_member").await;
+    let server = create_server(&state, &owner.access_token, "Limits Hub").await;
+    let join_invite = create_invite(
+        &state,
+        &owner.access_token,
+        server.id.clone(),
+        CreateServerInviteRequest {
+            max_uses: None,
+            expires_in_days: None,
+        },
+    )
+    .await
+    .expect("owner invite creation should succeed");
+    accept_invite(&state, &member.access_token, join_invite.code.clone())
+        .await
+        .expect("member should join through the invite");
+    grant_create_invite_permission(&state, &owner, &server, &member.user.id).await;
 
     for _ in 0..MAX_OWN_INVITE_LINKS {
         create_invite(
             &state,
-            &auth.access_token,
+            &member.access_token,
             server.id.clone(),
             CreateServerInviteRequest {
                 max_uses: None,
@@ -145,7 +161,7 @@ async fn create_invite_is_rejected_when_link_limit_is_reached() {
 
     let error = create_invite(
         &state,
-        &auth.access_token,
+        &member.access_token,
         server.id.clone(),
         CreateServerInviteRequest {
             max_uses: None,
@@ -157,9 +173,50 @@ async fn create_invite_is_rejected_when_link_limit_is_reached() {
 
     assert!(matches!(error, ServerError::BadRequest(_)));
     assert_eq!(
-        server_store_invites(&state, &server).await.len() as u32,
+        member_invite_links(&state, &member, &server).await.len() as u32,
         MAX_OWN_INVITE_LINKS
     );
+}
+
+#[tokio::test]
+async fn server_owner_is_not_limited_by_invite_link_count() {
+    let state = state();
+    let owner = register(&state, "unlimited_owner").await;
+    let server = create_server(&state, &owner.access_token, "Unlimited Hub").await;
+
+    for _ in 0..=MAX_OWN_INVITE_LINKS {
+        create_invite(
+            &state,
+            &owner.access_token,
+            server.id.clone(),
+            CreateServerInviteRequest {
+                max_uses: None,
+                expires_in_days: None,
+            },
+        )
+        .await
+        .expect("owner invite creation should succeed above the shared limit");
+    }
+
+    let listed = list_own_invite_links(&state, &owner.access_token, server.id.clone())
+        .await
+        .expect("owner link listing should succeed");
+
+    // Владелец не ограничен лимитом, поэтому лимит в ответе отсутствует.
+    assert_eq!(listed.limit, None);
+    assert_eq!(listed.links.len() as u32, MAX_OWN_INVITE_LINKS + 1);
+}
+
+/// Возвращает ссылки-приглашения участника сервера для проверки лимита.
+async fn member_invite_links(
+    state: &AppState,
+    member: &AuthResponse,
+    server: &ServerSummary,
+) -> Vec<ServerOwnInviteLink> {
+    list_own_invite_links(state, &member.access_token, server.id.clone())
+        .await
+        .expect("member link listing should succeed")
+        .links
 }
 
 #[tokio::test]
@@ -242,7 +299,7 @@ async fn user_can_delete_own_invite_link() {
     assert_eq!(response.code, first.code);
     assert_eq!(response.links.len(), 1);
     assert_ne!(response.links[0].code, first.code);
-    assert_eq!(response.limit, MAX_OWN_INVITE_LINKS);
+    assert_eq!(response.limit, None);
 
     // Строка приглашения сохраняется с отметкой удаления, чтобы не терять источник входа.
     let stored = server_store_invites(&state, &server).await;

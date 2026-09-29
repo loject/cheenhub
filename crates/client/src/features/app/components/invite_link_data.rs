@@ -25,7 +25,9 @@ pub(crate) struct OwnInviteLinks {
     /// Ссылки-приглашения текущего пользователя, от новых к старым.
     pub(crate) links: Vec<OwnInviteLink>,
     /// Максимальное количество действующих ссылок, доступное пользователю.
-    pub(crate) limit: u32,
+    ///
+    /// Значение `None` означает, что ограничения нет, например у владельца сервера.
+    pub(crate) limit: Option<u32>,
 }
 
 impl OwnInviteLinks {
@@ -35,8 +37,10 @@ impl OwnInviteLinks {
     }
 
     /// Достигнут ли лимит действующих ссылок.
+    ///
+    /// Без лимита ограничение никогда не считается достигнутым.
     pub(crate) fn is_limit_reached(&self) -> bool {
-        self.active_count() >= self.limit
+        self.limit.is_some_and(|limit| self.active_count() >= limit)
     }
 }
 
@@ -67,7 +71,7 @@ mod tests {
         }
     }
 
-    fn links(limit: u32, active: usize, inactive: usize) -> OwnInviteLinks {
+    fn links(limit: Option<u32>, active: usize, inactive: usize) -> OwnInviteLinks {
         let mut all = (0..active).map(|_| link(true)).collect::<Vec<_>>();
         all.extend((0..inactive).map(|_| link(false)));
 
@@ -76,18 +80,24 @@ mod tests {
 
     #[test]
     fn counts_only_active_links() {
-        assert_eq!(links(3, 2, 4).active_count(), 2);
+        assert_eq!(links(Some(3), 2, 4).active_count(), 2);
     }
 
     #[test]
     fn reports_limit_reached_only_when_active_count_matches_limit() {
-        assert!(!links(3, 2, 0).is_limit_reached());
-        assert!(links(3, 3, 0).is_limit_reached());
-        assert!(links(3, 4, 0).is_limit_reached());
+        assert!(!links(Some(3), 2, 0).is_limit_reached());
+        assert!(links(Some(3), 3, 0).is_limit_reached());
+        assert!(links(Some(3), 4, 0).is_limit_reached());
     }
 
     #[test]
     fn keeps_creating_allowed_when_only_inactive_links_exist() {
-        assert!(!links(1, 0, 5).is_limit_reached());
+        assert!(!links(Some(1), 0, 5).is_limit_reached());
+    }
+
+    #[test]
+    fn never_reports_limit_reached_without_a_limit() {
+        assert!(!links(None, 0, 0).is_limit_reached());
+        assert!(!links(None, 50, 50).is_limit_reached());
     }
 }

@@ -7,6 +7,7 @@ use crate::features::clipboard::copy_text;
 use crate::features::runtime::sleep_ms;
 use crate::features::toast::ToastHandle;
 
+use super::generated_invite_link::GeneratedInviteLink;
 use super::invite_link_data::{OwnInviteLink, OwnInviteLinks, own_invite_from_rest};
 use super::modal::Modal;
 use super::own_invite_link_item::OwnInviteLinkAction;
@@ -42,35 +43,38 @@ pub(crate) fn InviteLinkModal(
 
         async move { api::list_own_server_invites(request_server_id).await }
     });
-    let links_result = invite_links.read().clone();
     let effect_server_id = server_id.clone();
-    let mut processed_generation = use_signal(|| None::<u64>);
     use_effect(move || {
-        let Some(result) = links_result.clone() else {
+        // Ресурс читается внутри эффекта, иначе эффект не подпишется на ответ списка
+        // и загруженные ссылки не появятся: значение было бы захвачено до запроса.
+        let Some(result) = invite_links.read().clone() else {
             return;
         };
-        let current = reload_generation();
-        if processed_generation() == Some(current) {
-            return;
-        }
-        processed_generation.set(Some(current));
 
         match result {
             Ok(response) => {
-                links.set(Some(OwnInviteLinks {
+                let loaded = OwnInviteLinks {
                     links: response
                         .links
                         .into_iter()
                         .map(own_invite_from_rest)
                         .collect::<Vec<OwnInviteLink>>(),
                     limit: response.limit,
-                }));
+                };
+                info!(
+                    server_id = %effect_server_id,
+                    invite_count = loaded.links.len(),
+                    active_count = loaded.active_count(),
+                    limit = loaded.limit,
+                    "loaded own server invite links in ui"
+                );
+                links.set(Some(loaded));
                 if !load_error.peek().is_empty() {
                     load_error.set(String::new());
                 }
             }
             Err(error) => {
-                warn!(%error, server_id = %effect_server_id, "failed to load own server invite links");
+                warn!(%error, server_id = %effect_server_id, "failed to load own server invite links in ui");
                 load_error.set(error);
             }
         }
@@ -86,132 +90,128 @@ pub(crate) fn InviteLinkModal(
     } else {
         "pointer-events-none max-h-0 -translate-y-1 opacity-0"
     };
-    let copy_icon_class = if is_copied() {
-        "opacity-0"
-    } else {
-        "opacity-100"
-    };
-    let copy_icon_style = if is_copied() {
-        "transform: scale(0.72) rotate(-12deg);"
-    } else {
-        "transform: scale(1) rotate(0deg);"
-    };
-    let check_icon_class = if is_copied() {
-        "opacity-100"
-    } else {
-        "opacity-0"
-    };
-    let check_icon_style = if is_copied() {
-        "transform: scale(1) rotate(0deg);"
-    } else {
-        "transform: scale(0.72) rotate(12deg);"
-    };
+    let created_link = generated_link();
 
     rsx! {
         Modal {
             title: "Ссылка приглашения",
+            max_width: Some("max-w-[920px]"),
             on_close,
-            div { class: "space-y-4",
-                div { class: "rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4",
-                    div { class: "flex items-start gap-3",
-                        span { class: "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-blue-200",
-                            svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" }
-                            }
-                        }
-                        div { class: "min-w-0 flex-1",
-                            p { class: "truncate text-[14px] font-semibold text-zinc-50", "{server_name}" }
-                            p { class: "mt-1 text-[12px] leading-5 text-zinc-400", "При необходимости ограничь срок и количество использований приглашения." }
-                        }
-                    }
-                }
-
-                div { class: "rounded-2xl bg-zinc-900/60 p-3",
-                    label { class: "flex min-h-11 cursor-pointer items-center gap-3",
-                        input {
-                            r#type: "checkbox",
-                            checked: has_usage_limit(),
-                            onchange: move |event| has_usage_limit.set(event.checked()),
-                            class: "h-4 w-4 rounded bg-zinc-950 accent-blue-500"
-                        }
-                        span { class: "min-w-0",
-                            span { class: "block text-[13px] font-medium text-zinc-100", "Задать лимит использований" }
-                            span { class: "mt-0.5 block text-[12px] leading-5 text-zinc-500", "Без лимита ссылка будет доступна для любого количества входов." }
-                        }
-                    }
-
-                    div { class: "overflow-hidden transition-[max-height,opacity,transform] duration-200 ease-out {limit_panel_class}",
-                        label { class: "block pt-3",
-                            span { class: "mb-1.5 block text-[12px] font-medium text-zinc-300", "Лимит использований" }
-                            div { class: "relative",
-                                input {
-                                    r#type: "number",
-                                    min: "1",
-                                    max: "999",
-                                    step: "1",
-                                    inputmode: "numeric",
-                                    name: "invite-usage-limit",
-                                    autocomplete: "off",
-                                    value: "{usage_limit()}",
-                                    oninput: move |event| usage_limit.set(event.value()),
-                                    class: "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 pr-32 text-[14px] text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-accent/70 focus:ring-4 focus:ring-accent/10"
+            div { class: "grid min-h-0 flex-1 gap-5 lg:grid-cols-2 lg:grid-rows-1 lg:gap-6",
+                div { class: "flex min-h-0 min-w-0 flex-col gap-4",
+                    div { class: "min-h-0 flex-1 space-y-3",
+                        div { class: "rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4",
+                            div { class: "flex items-start gap-3",
+                                span { class: "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-blue-200",
+                                    svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" }
+                                    }
                                 }
-                                span { class: "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-zinc-500", "использований" }
-                            }
-                        }
-                    }
-                }
-
-                div { class: "rounded-2xl bg-zinc-900/60 p-3",
-                    label { class: "flex min-h-11 cursor-pointer items-center gap-3",
-                        input {
-                            r#type: "checkbox",
-                            checked: has_expiration(),
-                            onchange: move |event| has_expiration.set(event.checked()),
-                            class: "h-4 w-4 rounded bg-zinc-950 accent-blue-500"
-                        }
-                        span { class: "min-w-0",
-                            span { class: "block text-[13px] font-medium text-zinc-100", "Задать срок действия" }
-                            span { class: "mt-0.5 block text-[12px] leading-5 text-zinc-500", "Без срока ссылка останется активной, пока ее не отключат." }
-                        }
-                    }
-
-                    div { class: "overflow-hidden transition-[max-height,opacity,transform] duration-200 ease-out {expiration_panel_class}",
-                        label { class: "block pt-3",
-                            span { class: "mb-1.5 block text-[12px] font-medium text-zinc-300", "Срок действия" }
-                            div { class: "relative",
-                                input {
-                                    r#type: "number",
-                                    min: "1",
-                                    max: "365",
-                                    step: "1",
-                                    inputmode: "numeric",
-                                    name: "invite-expiration-days",
-                                    autocomplete: "off",
-                                    value: "{expiration_days()}",
-                                    oninput: move |event| expiration_days.set(event.value()),
-                                    class: "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 pr-20 text-[14px] text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-accent/70 focus:ring-4 focus:ring-accent/10"
+                                div { class: "min-w-0 flex-1",
+                                    p { class: "truncate text-[14px] font-semibold text-zinc-50", "{server_name}" }
+                                    p { class: "mt-1 text-[12px] leading-5 text-zinc-400", "При необходимости ограничь срок и количество использований приглашения." }
                                 }
-                                span { class: "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-zinc-500", "дней" }
+                            }
+                        }
+
+                        div { class: "rounded-2xl bg-zinc-900/60 p-3",
+                            label { class: "flex min-h-11 cursor-pointer items-center gap-3",
+                                input {
+                                    r#type: "checkbox",
+                                    checked: has_usage_limit(),
+                                    onchange: move |event| has_usage_limit.set(event.checked()),
+                                    class: "h-4 w-4 rounded bg-zinc-950 accent-blue-500"
+                                }
+                                span { class: "min-w-0",
+                                    span { class: "block text-[13px] font-medium text-zinc-100", "Задать лимит использований" }
+                                    span { class: "mt-0.5 block text-[12px] leading-5 text-zinc-500", "Без лимита ссылка будет доступна для любого количества входов." }
+                                }
+                            }
+
+                            div { class: "overflow-hidden transition-[max-height,opacity,transform] duration-200 ease-out {limit_panel_class}",
+                                label { class: "block pt-3",
+                                    span { class: "mb-1.5 block text-[12px] font-medium text-zinc-300", "Лимит использований" }
+                                    div { class: "relative",
+                                        input {
+                                            r#type: "number",
+                                            min: "1",
+                                            max: "999",
+                                            step: "1",
+                                            inputmode: "numeric",
+                                            name: "invite-usage-limit",
+                                            autocomplete: "off",
+                                            value: "{usage_limit()}",
+                                            oninput: move |event| usage_limit.set(event.value()),
+                                            class: "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 pr-32 text-[14px] text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-accent/70 focus:ring-4 focus:ring-accent/10"
+                                        }
+                                        span { class: "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-zinc-500", "использований" }
+                                    }
+                                }
+                            }
+                        }
+
+                        div { class: "rounded-2xl bg-zinc-900/60 p-3",
+                            label { class: "flex min-h-11 cursor-pointer items-center gap-3",
+                                input {
+                                    r#type: "checkbox",
+                                    checked: has_expiration(),
+                                    onchange: move |event| has_expiration.set(event.checked()),
+                                    class: "h-4 w-4 rounded bg-zinc-950 accent-blue-500"
+                                }
+                                span { class: "min-w-0",
+                                    span { class: "block text-[13px] font-medium text-zinc-100", "Задать срок действия" }
+                                    span { class: "mt-0.5 block text-[12px] leading-5 text-zinc-500", "Без срока ссылка останется активной, пока ее не отключат." }
+                                }
+                            }
+
+                            div { class: "overflow-hidden transition-[max-height,opacity,transform] duration-200 ease-out {expiration_panel_class}",
+                                label { class: "block pt-3",
+                                    span { class: "mb-1.5 block text-[12px] font-medium text-zinc-300", "Срок действия" }
+                                    div { class: "relative",
+                                        input {
+                                            r#type: "number",
+                                            min: "1",
+                                            max: "365",
+                                            step: "1",
+                                            inputmode: "numeric",
+                                            name: "invite-expiration-days",
+                                            autocomplete: "off",
+                                            value: "{expiration_days()}",
+                                            oninput: move |event| expiration_days.set(event.value()),
+                                            class: "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 pr-20 text-[14px] text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-accent/70 focus:ring-4 focus:ring-accent/10"
+                                        }
+                                        span { class: "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-zinc-500", "дней" }
+                                    }
+                                }
+                            }
+                        }
+
+                        if let Some(link) = created_link.clone() {
+                            GeneratedInviteLink { link }
+                        }
+
+                        div { class: "min-h-[38px]",
+                            if !status().is_empty() {
+                                p { class: "rounded-xl border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-[12px] leading-5 text-zinc-300",
+                                "{status()}"
+                                }
                             }
                         }
                     }
-                }
 
-                if let Some(link) = generated_link() {
-                    div { class: "space-y-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3",
-                        span { class: "block text-[12px] font-medium text-emerald-100", "Готовая ссылка" }
-                        div { class: "flex gap-2",
-                            input {
-                                r#type: "text",
-                                readonly: true,
-                                value: "{link}",
-                                class: "h-11 min-w-0 flex-1 rounded-xl border border-emerald-500/20 bg-zinc-950 px-3 text-[13px] text-zinc-100 outline-none"
-                            }
+                    div { class: "mt-auto flex justify-end gap-2 border-t border-zinc-800 pt-4",
+                        button {
+                            r#type: "button",
+                            disabled: is_busy(),
+                            class: "flex h-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 px-4 text-[13px] font-medium text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60",
+                            onclick: move |_| on_close.call(()),
+                            "Закрыть"
+                        }
+                        if let Some(link) = created_link.clone() {
                             button {
                                 r#type: "button",
-                                class: "relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-emerald-950 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-emerald-400",
-                                "aria-label": if is_copied() { "Ссылка скопирована" } else { "Скопировать ссылку" },
+                                disabled: is_busy(),
+                                class: "flex h-10 items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60",
                                 onclick: move |_| {
                                     let link_to_copy = link.clone();
                                     is_copied.set(false);
@@ -238,193 +238,177 @@ pub(crate) fn InviteLinkModal(
                                         }
                                     });
                                 },
-                                span { class: "absolute inset-0 flex items-center justify-center transition-[opacity,transform] duration-200 ease-out {copy_icon_class}", style: copy_icon_style, "aria-hidden": "true",
-                                    svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24",
-                                        rect { x: "8", y: "8", width: "11", height: "11", rx: "2", ry: "2" }
-                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" }
-                                    }
-                                }
-                                span { class: "absolute inset-0 flex items-center justify-center transition-[opacity,transform] duration-200 ease-out {check_icon_class}", style: check_icon_style, "aria-hidden": "true",
-                                    svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "2.2", view_box: "0 0 24 24",
-                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M20 6 9 17l-5-5" }
-                                    }
+                                if is_busy() {
+                                    "Копируем..."
+                                } else if is_copied() {
+                                    "Скопировано"
+                                } else {
+                                    "Копировать"
                                 }
                             }
-                        }
-                    }
-                }
-
-                div { class: "min-h-[38px]",
-                    if !status().is_empty() {
-                        p { class: "rounded-xl border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-[12px] leading-5 text-zinc-300",
-                        "{status()}"
-                        }
-                    }
-                }
-
-                OwnInviteLinksSection {
-                    links: links(),
-                    load_error: load_error(),
-                    deleting_code: deleting_code(),
-                    on_reload: move |_| {
-                        load_error.set(String::new());
-                        processed_generation.set(None);
-                        reload_generation += 1;
-                    },
-                    on_action: move |action: OwnInviteLinkAction| {
-                        match action {
-                            OwnInviteLinkAction::Copy { code } => {
-                                spawn(async move {
-                                    match current_invite_url(&code).await {
-                                        Ok(link) => match copy_text(link).await {
-                                            Ok(()) => {
-                                                toast.success("Ссылка приглашения скопирована.");
-                                                info!(%code, "copied own server invite link");
-                                            }
-                                            Err(error) => {
-                                                warn!(%error, %code, "failed to copy own server invite link");
-                                                toast.error(error);
-                                            }
-                                        },
-                                        Err(error) => {
-                                            warn!(%error, %code, "failed to build invite url for copying");
-                                            toast.error(error);
-                                        }
-                                    }
-                                });
-                            }
-                            OwnInviteLinkAction::Delete { code } => {
-                                if is_busy() || !deleting_code().is_empty() {
-                                    return;
-                                }
-
-                                let request_server_id = server_id.clone();
-                                let deleted_code = code.clone();
-                                deleting_code.set(code);
-                                spawn(async move {
-                                    match api::delete_own_server_invite(
-                                        request_server_id,
-                                        deleted_code.clone(),
-                                    )
-                                    .await
-                                    {
-                                        Ok(response) => {
-                                            info!(code = %deleted_code, "deleted own server invite link in ui");
-                                            links.set(Some(OwnInviteLinks {
-                                                links: response
-                                                    .links
-                                                    .into_iter()
-                                                    .map(own_invite_from_rest)
-                                                    .collect::<Vec<OwnInviteLink>>(),
-                                                limit: response.limit,
-                                            }));
-                                            if is_generated_link_for(&generated_link, &deleted_code) {
-                                                generated_link.set(None);
-                                            }
-                                            toast.success("Ссылка приглашения удалена.");
-                                        }
-                                        Err(error) => {
-                                            warn!(%error, code = %deleted_code, "failed to delete own server invite link in ui");
-                                            toast.error(error);
-                                        }
-                                    }
-                                    deleting_code.set(String::new());
-                                });
-                            }
-                        }
-                    },
-                }
-
-                div { class: "flex justify-end gap-2 pt-1",
-                    button {
-                        r#type: "button",
-                        disabled: is_busy(),
-                        class: "flex h-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 px-4 text-[13px] font-medium text-zinc-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100",
-                        onclick: move |_| on_close.call(()),
-                        "Отмена"
-                    }
-                    button {
-                        r#type: "button",
-                        disabled: is_busy() || limit_reached,
-                        class: "flex h-10 items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60",
-                        onclick: move |_| {
-                            if is_busy() || limit_reached {
-                                return;
-                            }
-
-                            let max_uses = match optional_number(
-                                has_usage_limit(),
-                                usage_limit(),
-                                "лимит использований",
-                            ) {
-                                Ok(value) => value,
-                                Err(error) => {
-                                    status.set(error);
-                                    return;
-                                }
-                            };
-                            let expires_in_days = match optional_number(
-                                has_expiration(),
-                                expiration_days(),
-                                "срок действия",
-                            ) {
-                                Ok(value) => value,
-                                Err(error) => {
-                                    status.set(error);
-                                    return;
-                                }
-                            };
-                            let request_server_id = create_server_id.clone();
-                            is_busy.set(true);
-                            status.set(String::new());
-                            generated_link.set(None);
-
-                            spawn(async move {
-                                match api::create_server_invite(
-                                    request_server_id,
-                                    max_uses,
-                                    expires_in_days,
-                                )
-                                .await
-                                {
-                                    Ok(response) => {
-                                        links.set(Some(OwnInviteLinks {
-                                            links: response
-                                                .links
-                                                .into_iter()
-                                                .map(own_invite_from_rest)
-                                                .collect::<Vec<OwnInviteLink>>(),
-                                            limit: response.limit,
-                                        }));
-                                        match current_invite_url(&response.code).await {
-                                            Ok(link) => {
-                                                generated_link.set(Some(link));
-                                                toast.success("Ссылка приглашения создана.");
-                                            }
-                                            Err(error) => {
-                                                warn!(%error, "failed to build invite url for created server invite");
-                                                toast.error(error);
-                                            }
-                                        }
-                                    }
-                                    Err(error) => {
-                                        toast.error(error.clone());
-                                        status.set(error);
-                                    }
-                                }
-                                is_busy.set(false);
-                            });
-                        },
-                        if is_busy() {
-                            "Создаем..."
-                        } else if limit_reached {
-                            "Лимит ссылок исчерпан"
                         } else {
-                            "Создать"
+                            button {
+                                r#type: "button",
+                                disabled: is_busy() || limit_reached,
+                                class: "flex h-10 items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_0_0_1px_rgba(59,130,246,0.3),0_8px_28px_rgba(59,130,246,0.18)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60",
+                                onclick: move |_| {
+                                    // Проверка и установка флага происходят синхронно,
+                                    // поэтому быстрые повторные клики не создают дубликаты.
+                                    if is_busy() || limit_reached {
+                                        return;
+                                    }
+
+                                    let max_uses = match optional_number(
+                                        has_usage_limit(),
+                                        usage_limit(),
+                                        "лимит использований",
+                                    ) {
+                                        Ok(value) => value,
+                                        Err(error) => {
+                                            status.set(error);
+                                            return;
+                                        }
+                                    };
+                                    let expires_in_days = match optional_number(
+                                        has_expiration(),
+                                        expiration_days(),
+                                        "срок действия",
+                                    ) {
+                                        Ok(value) => value,
+                                        Err(error) => {
+                                            status.set(error);
+                                            return;
+                                        }
+                                    };
+                                    let request_server_id = create_server_id.clone();
+                                    is_busy.set(true);
+                                    status.set(String::new());
+                                    generated_link.set(None);
+
+                                    spawn(async move {
+                                        match api::create_server_invite(
+                                            request_server_id,
+                                            max_uses,
+                                            expires_in_days,
+                                        )
+                                        .await
+                                        {
+                                            Ok(response) => {
+                                                links.set(Some(OwnInviteLinks {
+                                                    links: response
+                                                        .links
+                                                        .into_iter()
+                                                        .map(own_invite_from_rest)
+                                                        .collect::<Vec<OwnInviteLink>>(),
+                                                    limit: response.limit,
+                                                }));
+                                                match current_invite_url(&response.code).await {
+                                                    Ok(link) => {
+                                                        generated_link.set(Some(link));
+                                                        toast.success("Ссылка приглашения создана.");
+                                                    }
+                                                    Err(error) => {
+                                                        warn!(%error, "failed to build invite url for created server invite");
+                                                        toast.error(error);
+                                                    }
+                                                }
+                                            }
+                                            Err(error) => {
+                                                toast.error(error.clone());
+                                                status.set(error);
+                                            }
+                                        }
+                                        is_busy.set(false);
+                                    });
+                                },
+                                if is_busy() {
+                                    "Создаем..."
+                                } else if limit_reached {
+                                    "Лимит ссылок исчерпан"
+                                } else {
+                                    "Создать"
+                                }
+                            }
                         }
+                    }
+                }
+
+                div { class: "flex min-h-0 min-w-0 flex-col",
+                    OwnInviteLinksSection {
+                        links: links(),
+                        load_error: load_error(),
+                        deleting_code: deleting_code(),
+                        on_reload: move |_| {
+                            load_error.set(String::new());
+                            links.set(None);
+                            reload_generation += 1;
+                        },
+                        on_action: move |action: OwnInviteLinkAction| {
+                            match action {
+                                OwnInviteLinkAction::Copy { code } => {
+                                    spawn(async move {
+                                        match current_invite_url(&code).await {
+                                            Ok(link) => match copy_text(link).await {
+                                                Ok(()) => {
+                                                    toast.success("Ссылка приглашения скопирована.");
+                                                    info!(%code, "copied own server invite link");
+                                                }
+                                                Err(error) => {
+                                                    warn!(%error, %code, "failed to copy own server invite link");
+                                                    toast.error(error);
+                                                }
+                                            },
+                                            Err(error) => {
+                                                warn!(%error, %code, "failed to build invite url for copying");
+                                                toast.error(error);
+                                            }
+                                        }
+                                    });
+                                }
+                                OwnInviteLinkAction::Delete { code } => {
+                                    if is_busy() || !deleting_code().is_empty() {
+                                        return;
+                                    }
+
+                                    let request_server_id = server_id.clone();
+                                    let deleted_code = code.clone();
+                                    deleting_code.set(code);
+                                    spawn(async move {
+                                        match api::delete_own_server_invite(
+                                            request_server_id,
+                                            deleted_code.clone(),
+                                        )
+                                        .await
+                                        {
+                                            Ok(response) => {
+                                                info!(code = %deleted_code, "deleted own server invite link in ui");
+                                                links.set(Some(OwnInviteLinks {
+                                                    links: response
+                                                        .links
+                                                        .into_iter()
+                                                        .map(own_invite_from_rest)
+                                                        .collect::<Vec<OwnInviteLink>>(),
+                                                    limit: response.limit,
+                                                }));
+                                                if is_generated_link_for(&generated_link, &deleted_code) {
+                                                    generated_link.set(None);
+                                                }
+                                                toast.success("Ссылка приглашения удалена.");
+                                            }
+                                            Err(error) => {
+                                                warn!(%error, code = %deleted_code, "failed to delete own server invite link in ui");
+                                                toast.error(error);
+                                            }
+                                        }
+                                        deleting_code.set(String::new());
+                                    });
+                                }
+                            }
+                        },
                     }
                 }
             }
+
         }
     }
 }

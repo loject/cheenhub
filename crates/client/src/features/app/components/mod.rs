@@ -8,6 +8,8 @@ pub(crate) mod avatar;
 pub(crate) mod chat_image_viewer;
 pub(crate) mod create_server_modal;
 pub(crate) mod empty_servers_panel;
+/// Блок готовой ссылки приглашения с копированием.
+pub(crate) mod generated_invite_link;
 pub(crate) mod invite_link_data;
 pub(crate) mod invite_link_modal;
 pub(crate) mod modal;
