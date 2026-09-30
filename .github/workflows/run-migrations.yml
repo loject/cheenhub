@@ -1,6 +1,26 @@
 name: Deploy production
 
 on:
+  workflow_call:
+    inputs:
+      backend_image_ref:
+        description: "Full backend image reference for the release."
+        required: true
+        type: string
+      web_image_ref:
+        description: "Full web image reference for the release."
+        required: true
+        type: string
+      compose_project_dir:
+        description: "Absolute path to the checked-out CheenHub directory on the Ubuntu server."
+        required: false
+        default: "/opt/cheenhub"
+        type: string
+      env_file:
+        description: "Production env file path relative to compose_project_dir."
+        required: false
+        default: ".env.production"
+        type: string
   workflow_dispatch:
     inputs:
       backend_image_ref:
@@ -36,6 +56,9 @@ jobs:
     runs-on: ubuntu-24.04
     environment: production
     timeout-minutes: 20
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
 
     steps:
       - name: Resolve image references

@@ -938,6 +938,23 @@ jobs:
           echo "RuStore version ${version_id} was sent to moderation."
           echo "::endgroup::"
 
+  deploy-production:
+    name: Deploy completed release to production
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.event.created == true
+    needs:
+      - prepare
+      - build-backend
+      - build-web
+      - build-windows-client
+      - build-linux-client
+      - build-android-client
+      - publish-android-github
+    uses: ./.github/workflows/run-migrations.yml
+    with:
+      backend_image_ref: ${{ needs.prepare.outputs.backend-image }}:${{ github.ref_name }}
+      web_image_ref: ${{ needs.prepare.outputs.web-image }}:${{ github.ref_name }}
+    secrets: inherit
+
   publish-dev-release:
     name: Publish rolling development release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
