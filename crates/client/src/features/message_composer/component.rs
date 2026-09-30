@@ -172,7 +172,7 @@ pub(crate) fn MessageComposer(
                     }
                     button {
                         r#type: "button", disabled: busy,
-                        class: "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:opacity-45",
+                        class: "message-emoji-button flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:opacity-45",
                         "aria-label": "Выбрать эмодзи", title: "Эмодзи",
                         popovertarget: picker_id.clone(),
                         onmounted: move |event| emoji_button.set(Some(event.data.clone())),

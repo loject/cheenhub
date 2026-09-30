@@ -19,7 +19,7 @@ pub(super) fn EmojiPicker(
         div {
             id: id.clone(), popover: "auto",
             style: format!("{position_style} margin: 0; right: auto; bottom: auto; width: min(320px, calc(100dvw - 24px)); max-height: calc(100dvh - 24px);"),
-            class: "fixed z-50 flex flex-col gap-3 overflow-y-auto rounded-2xl border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-[0_16px_50px_rgba(0,0,0,0.5)] [&:not(:popover-open)]:hidden",
+            class: "message-emoji-picker fixed z-50 flex flex-col gap-3 overflow-y-auto rounded-2xl border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-[0_16px_50px_rgba(0,0,0,0.5)] [&:not(:popover-open)]:hidden",
             role: "dialog", "aria-label": "Выбор эмодзи",
             onkeydown: move |event| { if event.key() == Key::Escape { event.stop_propagation(); on_close.call(()); } },
             div { class: "flex items-center justify-between gap-2",
@@ -39,12 +39,12 @@ pub(super) fn EmojiPicker(
                 }
             }
             if emojis.is_empty() {
-                div { class: "py-6 text-center text-sm text-zinc-400", role: "status",
+                div { class: "message-emoji-empty py-6 text-center text-sm text-zinc-400", role: "status",
                     p { "Эмодзи не найдены" }
                     button { r#type: "button", class: "mt-2 text-blue-300 hover:text-blue-200", onclick: move |_| { query.set(String::new()); category.set(None); }, "Показать все" }
                 }
             } else {
-                div { class: "grid max-h-56 grid-cols-8 gap-1 overflow-y-auto",
+                div { class: "message-emoji-grid grid max-h-56 grid-cols-8 gap-1 overflow-y-auto",
                     for emoji in emojis {
                         button { key: "{emoji.symbol}", r#type: "button", disabled, popovertarget: id.clone(), popovertargetaction: "hide", class: "flex size-8 items-center justify-center rounded-lg text-xl transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300", title: emoji.name, "aria-label": emoji.name,
                             onclick: move |_| on_select.call(emoji.symbol.to_owned()), "{emoji.symbol}" }

@@ -6,6 +6,31 @@
     overflow-anchor: none;
 }
 
+/* Список и пустой результат сохраняют высоту панели при фильтрации. */
+.message-emoji-grid,
+.message-emoji-empty {
+    height: 14rem;
+    flex-shrink: 0;
+}
+
+.message-emoji-grid {
+    grid-auto-rows: 2rem;
+    align-content: start;
+}
+
+.message-emoji-empty {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Подсветка следует за нативным состоянием popover, включая Escape и клик снаружи. */
+.message-composer-shell:has(.message-emoji-picker:popover-open) .message-emoji-button {
+    color: #bfdbfe;
+    background-color: rgb(59 130 246 / 0.18);
+    box-shadow: inset 0 0 0 1px rgb(96 165 250 / 0.35), 0 0 16px rgb(59 130 246 / 0.12);
+}
+
 @keyframes dm-unread-badge-in {
     from {
         opacity: 0;
@@ -1878,6 +1903,7 @@
   .participants-grid[data-focused="true"] > article:not([data-focused="true"]) {
     max-width: 210px;
   }
+}
 
 /* Индикация активного скачивания и установки обновления. */
 .application-update-progress-card {
