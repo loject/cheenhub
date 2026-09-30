@@ -22,8 +22,8 @@ use crate::features::text_chat::{
 use crate::features::voice_chat::{DirectCallHandle, VoiceConnectionHandle, VoiceConnectionState};
 
 use super::direct_message_chat_platform;
-use super::direct_message_composer::{DirectMessageComposer, DirectMessageComposerOutcome};
 use super::direct_message_group::{DirectMessageGroup, prepare_direct_message_groups};
+use super::direct_message_sending::use_direct_message_operations;
 use super::direct_message_state::DirectMessageState;
 use super::direct_message_voice_surface::DirectMessageVoiceSurface;
 use super::presentation::{
@@ -31,6 +31,7 @@ use super::presentation::{
 };
 use super::realtime::subscribe_social_events;
 use super::voice_target::direct_message_voice_target;
+use crate::features::message_composer::{MessageComposer, use_message_compose_state};
 
 const DIRECT_CALL_SURFACE_EXIT_MS: u32 = 160;
 
@@ -68,6 +69,14 @@ pub(crate) fn DirectMessageWorkspace(
         list_element,
         pending_scroll,
     };
+    let compose_state = use_message_compose_state();
+    let on_sent = use_callback(move |message: DmMessageSummary| {
+        if push_message_with_motion(messages, appearing_message_ids, message) {
+            pending_scroll.set(Some(ScrollCommand::Bottom));
+        }
+        on_overview_changed.call(());
+    });
+    let compose_operations = use_direct_message_operations(conversation.id.clone(), on_sent);
     let mut embedded_chat_height_px = use_signal(|| None::<f64>);
     let mut embedded_chat_resize_origin = use_signal(|| None::<(f64, f64, f64)>);
     let mut content_split_element = use_signal(|| None::<Rc<MountedData>>);
@@ -462,16 +471,11 @@ pub(crate) fn DirectMessageWorkspace(
                         if !status().is_empty() {
                             p { class: "mx-auto w-full max-w-5xl px-6 pb-2 text-[11px] leading-4 text-red-200", "{status()}" }
                         }
-                        DirectMessageComposer {
-                            conversation: conversation.clone(),
-                            on_outcome: move |outcome| match outcome {
-                                DirectMessageComposerOutcome::MessageSent(message) => {
-                                    if push_message_with_motion(messages, appearing_message_ids, message) {
-                                        pending_scroll.set(Some(ScrollCommand::Bottom));
-                                    }
-                                    on_overview_changed.call(());
-                                }
-                            },
+                        MessageComposer {
+                            state: compose_state,
+                            operations: compose_operations,
+                            placeholder: format!("Сообщение для {}", conversation.friend_nickname),
+                            active: !voice_layout_active || direct_chat_open(),
                         }
                     }
                 }

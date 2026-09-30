@@ -16,4 +16,4 @@ mod implementation;
 ))]
 #[path = "platform/unsupported.rs"]
 mod implementation;
-pub(crate) use implementation::read_pasted_image;
+pub(crate) use implementation::{read_image_png, read_pasted_image, supports_keydown_image_paste};

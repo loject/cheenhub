@@ -1,55 +1,40 @@
 //! Компонент панели текстового чата комнаты.
 
+use std::rc::Rc;
 use std::time::Duration;
-use std::{cell::Cell, rc::Rc};
 
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
-use wasm_bindgen::JsCast;
 
 use crate::features::app::components::app_shell::ActiveRoom;
 use crate::features::app::server_permissions::ServerPermissionsContext;
-use crate::features::image_picker::{ImagePickerButton, ImagePickerOutcome, PickedImage};
+use crate::features::message_composer::{MessageComposeState, MessageComposer};
 use crate::features::realtime::RealtimeHandle;
 use crate::features::runtime::sleep_duration;
 
-use super::clipboard;
-use super::compose::{ComposeState, send_current_message};
-use super::compose_actions::add_pending_image;
+use super::compose::use_room_message_operations;
 use super::history::{
     HistoryState, HistoryTarget, load_initial_history, load_initial_history_when_connected,
     load_older_history,
 };
 use super::messages::{append_message, remove_message};
-use super::pending_attachment::{
-    PendingImageAttachment, can_send_message, pending_image_attachment,
-};
 use super::realtime::{self, TextChatEvent};
 use super::scroll::{ScrollCommand, apply_scroll_command, update_scroll_state};
 use super::{
-    CHAT_COMPOSER_CLASS, CHAT_COMPOSER_GROUP_CLASS, CHAT_CONTENT_CLASS, ChatAttachmentPreview,
-    ChatHistoryLoadingState, ChatMessageDateDivider, ChatMessageGroup, RoomComposeState,
+    CHAT_CONTENT_CLASS, ChatHistoryLoadingState, ChatMessageDateDivider, ChatMessageGroup,
     VirtualChatLayout, VirtualChatRow, prepare_text_chat_groups,
 };
-
-const MAX_CHAT_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 
 /// Рендерит панель realtime-текстового чата для одной комнаты.
 #[component]
 pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) -> Element {
     let realtime = use_context::<RealtimeHandle>();
     let permissions = use_context::<ServerPermissionsContext>();
-    let room_compose_state = use_context::<RoomComposeState>();
+    let room_compose_state = use_context::<MessageComposeState>();
     let mut messages = use_signal(Vec::<TextChatMessage>::new);
     let mut appearing_message_ids = use_signal(Vec::<String>::new);
     let mut removing_message_ids = use_signal(Vec::<String>::new);
-    let mut draft = room_compose_state.draft;
-    let mut status = room_compose_state.status;
-    let is_sending = room_compose_state.is_sending;
-    let mut is_selecting_image = room_compose_state.is_selecting_image;
-    let mut is_reading_clipboard = room_compose_state.is_reading_clipboard;
-    let mut pending_attachment = room_compose_state.pending_attachment;
     let initial_loading = use_signal(|| true);
     let older_loading = use_signal(|| false);
     let history_error = use_signal(|| None::<String>);
@@ -57,14 +42,6 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let has_more = use_signal(|| false);
     let is_near_bottom = use_signal(|| true);
     let mut list_element = use_signal(|| None::<Rc<MountedData>>);
-    let mut compose_input_element = use_signal(|| None::<Rc<MountedData>>);
-    let mut compose_textarea = use_signal(|| None::<web_sys::HtmlTextAreaElement>);
-    let mut refocus_requested = use_signal(|| false);
-    let component_current = Rc::new(Cell::new(true));
-    use_drop({
-        let component_current = component_current.clone();
-        move || component_current.set(false)
-    });
     let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
     let virtual_layout = use_signal(VirtualChatLayout::default);
     let event_room_id = room.id.clone();
@@ -80,7 +57,6 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let history_realtime = realtime.clone();
     let event_realtime = realtime.clone();
     let older_realtime = realtime.clone();
-    let send_realtime = realtime.clone();
     let history_target = HistoryTarget {
         realtime: history_realtime,
         server_id: history_server_id,
@@ -102,15 +78,6 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         list_element,
         pending_scroll,
     };
-    let compose_state = ComposeState {
-        draft,
-        messages,
-        appearing_message_ids,
-        status,
-        is_sending,
-        pending_attachment,
-        pending_scroll,
-    };
     let placeholder_prefix = if compact { "&" } else { "#" };
     let list_class = if compact {
         "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#08090b] p-4 pt-3"
@@ -121,16 +88,6 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         "min-w-0 w-full space-y-4"
     } else {
         CHAT_CONTENT_CLASS
-    };
-    let input_outer_class = if compact {
-        "shrink-0 bg-[#08090b] px-3 pb-3 pt-2"
-    } else {
-        "shrink-0 bg-[#08090b] px-5 pb-5 pt-2 lg:px-8"
-    };
-    let input_wrap_class = if compact {
-        "chat-input-wrap flex min-w-0 w-full items-end gap-2 rounded-[20px] bg-[#181a20]/95 p-2 shadow-[0_0_0_1px_rgba(255,255,255,0.07),0_18px_50px_rgba(0,0,0,0.32)]"
-    } else {
-        CHAT_COMPOSER_CLASS
     };
     let appearing_message_ids_list = appearing_message_ids();
     let removing_message_ids_list = removing_message_ids();
@@ -192,46 +149,14 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         });
     });
 
-    let can_send = can_send_message(
-        &draft(),
-        pending_attachment().is_some(),
-        is_sending() || is_selecting_image() || is_reading_clipboard(),
+    let operations = use_room_message_operations(
+        realtime.clone(),
+        send_server_id,
+        send_room_id,
+        messages,
+        appearing_message_ids,
+        pending_scroll,
     );
-    let submit_realtime = send_realtime.clone();
-    let submit_server_id = send_server_id.clone();
-    let submit_room_id = send_room_id.clone();
-    let submit_component_current = component_current.clone();
-    let submit_message = use_callback(move |_| {
-        if can_send_message(
-            &draft(),
-            pending_attachment().is_some(),
-            is_sending() || is_selecting_image() || is_reading_clipboard(),
-        ) {
-            refocus_requested.set(true);
-            send_current_message(
-                submit_realtime.clone(),
-                submit_server_id.clone(),
-                submit_room_id.clone(),
-                compose_state,
-                EventHandler::new({
-                    let component_current = submit_component_current.clone();
-                    move |_| {
-                        if draft().is_empty() {
-                            if let Some(textarea) = compose_textarea() {
-                                let _ = textarea.style().set_property("height", "40px");
-                                textarea.set_scroll_top(0.into());
-                            }
-                        }
-                        restore_compose_input_focus(
-                            compose_input_element,
-                            refocus_requested,
-                            component_current.clone(),
-                        );
-                    }
-                }),
-            );
-        }
-    });
     let load_older = use_callback(move |_| {
         load_older_history(older_target.clone(), history_state);
     });
@@ -249,23 +174,6 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
             removing_message_ids.write().retain(|id| id != &message_id);
         });
     });
-    let add_pending_image = use_callback(move |result: Result<PendingImageAttachment, String>| {
-        add_pending_image(room_compose_state, result);
-    });
-    let select_pending_image = use_callback(move |outcome: ImagePickerOutcome| {
-        let result = match outcome {
-            ImagePickerOutcome::Selected(PickedImage { file_name, bytes }) => {
-                pending_image_attachment(file_name, bytes, MAX_CHAT_IMAGE_BYTES)
-            }
-            ImagePickerOutcome::Failed(error) => Err(error),
-        };
-        add_pending_image.call(result);
-    });
-    let clipboard_outcome = use_callback(move |result: Result<PendingImageAttachment, String>| {
-        is_reading_clipboard.set(false);
-        add_pending_image.call(result);
-    });
-
     rsx! {
         div { class: "flex h-full min-h-0 min-w-0 w-full flex-col bg-[#08090b]",
             div {
@@ -376,154 +284,18 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 }
                 }
             }
-            div { class: input_outer_class,
-                if !room.can_write {
+            if !room.can_write {
+                div { class: "shrink-0 px-3 pb-3 pt-2",
                     {super::read_only_notice::read_only_notice()}
-                } else {
-                div { class: CHAT_COMPOSER_GROUP_CLASS,
-                    if is_reading_clipboard() {
-                        div { class: "flex items-center gap-2 px-2 text-[11px] text-zinc-400", role: "status", "aria-live": "polite",
-                        span { class: "size-3 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-300", "aria-hidden": "true" }
-                        "Получаем изображение из буфера обмена…"
-                        }
-                    }
-                    if let Some(attachment) = pending_attachment() {
-                        ChatAttachmentPreview {
-                            attachment,
-                            busy: is_sending(),
-                            on_remove: move |_| {
-                                if !is_sending() {
-                                    info!("removed pending text chat image");
-                                    pending_attachment.set(None);
-                                    status.set(String::new());
-                                }
-                            }
-                        }
-                    }
-                    div { class: input_wrap_class,
-                    ImagePickerButton {
-                        disabled: is_sending() || is_reading_clipboard() || pending_attachment().is_some(),
-                        busy: is_selecting_image() || is_reading_clipboard(),
-                        max_bytes: MAX_CHAT_IMAGE_BYTES,
-                        on_outcome: move |outcome| select_pending_image.call(outcome),
-                        on_active_change: move |active| is_selecting_image.set(active),
-                    }
-                    textarea {
-                        rows: "1",
-                        value: "{draft()}",
-                        readonly: is_sending(),
-                        placeholder: "Сообщение в {placeholder_prefix} {room.name}",
-                        class: "max-h-80 min-h-10 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-[13px] leading-5 text-zinc-100 outline-none placeholder:text-zinc-600",
-                        onmounted: move |event| {
-                            compose_input_element.set(Some(event.data.clone()));
-                        },
-                        oninput: move |event| {
-                            draft.set(event.value());
-                            let event_data = event.data();
-                            let Some(browser_event) = event_data.downcast::<web_sys::Event>() else {
-                                return;
-                            };
-                            let Some(textarea) = browser_event
-                                .target()
-                                .and_then(|target| target.dyn_into::<web_sys::HtmlTextAreaElement>().ok())
-                            else {
-                                return;
-                            };
-                            compose_textarea.set(Some(textarea.clone()));
-                            let style = textarea.style();
-                            if event.value().is_empty() {
-                                let _ = style.set_property("height", "40px");
-                                textarea.set_scroll_top(0.into());
-                                return;
-                            }
-                            let _ = style.set_property("height", "auto");
-                            let height = textarea.scroll_height().clamp(40, 320);
-                            let _ = style.set_property("height", &format!("{height}px"));
-                            textarea.set_scroll_top(height.into());
-                        },
-                        onblur: move |_| refocus_requested.set(false),
-                        onpaste: move |event| {
-                            if !is_sending()
-                                && !is_selecting_image()
-                                && !is_reading_clipboard()
-                                && pending_attachment().is_none()
-                                && clipboard::read_pasted_image(event, clipboard_outcome)
-                            {
-                                is_reading_clipboard.set(true);
-                            }
-                        },
-                        onkeydown: move |event| {
-                            if event.key() == Key::Enter && !event.modifiers().shift() {
-                                event.prevent_default();
-                                submit_message.call(());
-                            }
-                        },
-                    }
-                    button {
-                        r#type: "button",
-                        disabled: !can_send,
-                        class: "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-white shadow-[0_0_0_1px_rgba(96,165,250,0.28),0_6px_18px_rgba(37,99,235,0.2)] transition-[background-color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-blue-400 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 disabled:hover:bg-accent disabled:active:scale-100",
-                        "aria-label": "Отправить сообщение",
-                        onpointerdown: move |event| {
-                            event.prevent_default();
-                            submit_message.call(());
-                        },
-                        onclick: move |_| {
-                            submit_message.call(());
-                        },
-                        svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6 12 3.269 3.126A59.77 59.77 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.876L6 12Zm0 0h7.5" }
-                        }
-                    }
-                    }
-                    if !status().is_empty() {
-                        p { class: "px-2 text-[11px] leading-4 text-red-200", "aria-live": "polite",
-                            "{status()}"
-                        }
-                    }
                 }
+            } else {
+                MessageComposer {
+                    state: room_compose_state,
+                    operations,
+                    placeholder: format!("Сообщение в {placeholder_prefix} {}", room.name),
+                    compact,
                 }
             }
         }
-    }
-}
-
-fn restore_compose_input_focus(
-    input_element: Signal<Option<Rc<MountedData>>>,
-    refocus_requested: Signal<bool>,
-    component_current: Rc<Cell<bool>>,
-) {
-    if !should_refocus(component_current.get(), refocus_requested()) {
-        return;
-    }
-
-    let Some(element) = input_element.cloned() else {
-        return;
-    };
-
-    spawn(async move {
-        if !should_refocus(component_current.get(), refocus_requested()) {
-            return;
-        }
-
-        if let Err(error) = element.set_focus(true).await {
-            debug!(?error, "failed to restore text chat input focus");
-        }
-    });
-}
-
-fn should_refocus(component_current: bool, refocus_requested: bool) -> bool {
-    component_current && refocus_requested
-}
-
-#[cfg(test)]
-mod tests {
-    use super::should_refocus;
-
-    #[test]
-    fn refocus_requires_an_active_component_and_submit_intent() {
-        assert!(should_refocus(true, true));
-        assert!(!should_refocus(false, true));
-        assert!(!should_refocus(true, false));
     }
 }
