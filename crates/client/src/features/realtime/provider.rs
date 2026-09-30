@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 use futures_util::future::{Either, FutureExt, select};
 use web_time::Instant;
 
+use crate::features::application_focus::application_is_focused;
 use crate::features::auth::api as auth_api;
 use crate::features::network::{
     NetworkQualityHandle, RealtimeFallbackNotice, realtime as network_realtime,
@@ -63,6 +64,7 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                         reconnect_delay_ms = RECONNECT_INITIAL_DELAY_MS;
                         let mut last_success_at = Instant::now();
                         let mut ping_watchdog = PingWatchdog::default();
+                        let mut probe_wakeup_delay_ms = 0;
                         loop {
                             let attempt_started_at = Instant::now();
                             let ping = network_realtime::ping(&realtime).boxed_local();
@@ -78,16 +80,26 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                                     false
                                 }
                                 Either::Left((Err(error), _)) => {
-                                    debug!(
+                                    warn!(
                                         %error,
+                                        application_focused = application_is_focused(),
+                                        connection_status = ?realtime.connection_status(),
+                                        attempt_elapsed_ms = attempt_started_at.elapsed().as_millis(),
+                                        probe_wakeup_delay_ms,
                                         elapsed_without_pong_ms = last_success_at.elapsed().as_millis(),
                                         "realtime ping attempt failed"
                                     );
                                     true
                                 }
                                 Either::Right((_, _)) => {
-                                    debug!(
+                                    warn!(
                                         timeout_ms = PING_ATTEMPT_TIMEOUT_MS,
+                                        application_focused = application_is_focused(),
+                                        connection_status = ?realtime.connection_status(),
+                                        attempt_elapsed_ms = attempt_started_at.elapsed().as_millis(),
+                                        timer_overrun_ms = attempt_started_at.elapsed().as_millis()
+                                            .saturating_sub(u128::from(PING_ATTEMPT_TIMEOUT_MS)),
+                                        probe_wakeup_delay_ms,
                                         elapsed_without_pong_ms =
                                             last_success_at.elapsed().as_millis(),
                                         "realtime ping attempt timed out"
@@ -98,10 +110,13 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                             let elapsed_without_pong_ms = last_success_at.elapsed().as_millis();
                             let frequent_probes = network_quality.frequent_probes();
                             if probe_failed && ping_watchdog.record_failure(frequent_probes) {
+                                let connection_status = realtime.connection_status();
                                 network_quality.clear();
                                 realtime.mark_disconnected().await;
                                 warn!(
                                     elapsed_without_pong_ms,
+                                    ?connection_status,
+                                    failed_probes = ping_watchdog.consecutive_failed_probes,
                                     frequent_probes,
                                     delay_ms = reconnect_delay_ms,
                                     "realtime ping remained unavailable; reconnecting"
@@ -114,7 +129,14 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
                                 network_quality.frequent_probes(),
                             );
                             if remaining_ms > 0 {
+                                let sleep_started_at = Instant::now();
                                 sleep_ms(remaining_ms).await;
+                                probe_wakeup_delay_ms = sleep_started_at
+                                    .elapsed()
+                                    .as_millis()
+                                    .saturating_sub(u128::from(remaining_ms));
+                            } else {
+                                probe_wakeup_delay_ms = 0;
                             }
                         }
                     }

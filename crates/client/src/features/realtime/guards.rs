@@ -7,7 +7,7 @@ use std::rc::Rc;
 use cheenhub_contracts::realtime::{
     ControlKind, RealtimeEnvelope, RealtimeKind, RealtimeModule, Rejected, RejectionCode,
 };
-use dioxus::prelude::warn;
+use dioxus::prelude::{debug, warn};
 use futures_channel::oneshot;
 use futures_util::lock::Mutex;
 use uuid::Uuid;
@@ -44,6 +44,11 @@ impl Drop for PendingRequestGuard {
     fn drop(&mut self) {
         if self.active.get() {
             self.pending.borrow_mut().remove(&self.key);
+            debug!(
+                module = ?self.key.0,
+                request_id = %self.key.1,
+                "canceled pending realtime request"
+            );
         }
     }
 }

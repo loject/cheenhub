@@ -1,6 +1,7 @@
 //! Модуль оценки качества сети realtime.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use tracing::{debug, warn};
 
 use cheenhub_contracts::realtime::{
     NetworkKind, Ping, Pong, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
@@ -22,8 +23,10 @@ pub(crate) async fn handle(
             let request_id = require_request_id(&envelope)?;
             let received_at = now_ms();
             let payload: Ping = decode_payload(&envelope)?;
+            let started_at = Instant::now();
+            debug!(%request_id, "received realtime network ping");
             let server_sent_at = now_ms();
-            write_envelope(
+            let result = write_envelope(
                 send,
                 RealtimeModule::Network,
                 RealtimeKind::Network(NetworkKind::Pong),
@@ -34,7 +37,21 @@ pub(crate) async fn handle(
                     server_sent_at_ms: server_sent_at,
                 },
             )
-            .await
+            .await;
+            match &result {
+                Ok(()) => debug!(
+                    %request_id,
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "wrote realtime network pong"
+                ),
+                Err(error) => warn!(
+                    %request_id,
+                    %error,
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "failed to write realtime network pong"
+                ),
+            }
+            result
         }
         RealtimeKind::Network(_) => {
             send_rejection(
