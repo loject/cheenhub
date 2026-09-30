@@ -23,7 +23,7 @@ use super::realtime::{self, TextChatEvent};
 use super::scroll::{ScrollCommand, apply_scroll_command, update_scroll_state};
 use super::{
     CHAT_CONTENT_CLASS, ChatHistoryLoadingState, ChatMessageDateDivider, ChatMessageGroup,
-    VirtualChatLayout, VirtualChatRow, prepare_text_chat_groups,
+    VirtualChatLayout, VirtualChatRow, prepare_text_chat_groups, use_history_overflow,
 };
 
 /// Рендерит панель realtime-текстового чата для одной комнаты.
@@ -42,6 +42,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let has_more = use_signal(|| false);
     let is_near_bottom = use_signal(|| true);
     let mut list_element = use_signal(|| None::<Rc<MountedData>>);
+    let (history_overflowing, measure_history) = use_history_overflow(list_element);
     let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
     let virtual_layout = use_signal(VirtualChatLayout::default);
     let event_room_id = room.id.clone();
@@ -178,7 +179,11 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         div { class: "flex h-full min-h-0 min-w-0 w-full flex-col bg-[#08090b]",
             div {
                 class: list_class,
-                onmounted: move |event| list_element.set(Some(event.data.clone())),
+                onmounted: move |event| {
+                    list_element.set(Some(event.data.clone()));
+                    measure_history.call(());
+                },
+                onresize: move |_| measure_history.call(()),
                 onscroll: move |_| {
                     if let Some(element) = list_element.cloned() {
                         spawn(async move {
@@ -194,6 +199,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                     }
                 },
                 div { class: inner_class,
+                    onresize: move |_| measure_history.call(()),
                     if older_loading() {
                         div { class: "flex items-center justify-center gap-2 py-2 text-[11px] text-zinc-500", role: "status", "aria-live": "polite",
                             div { class: "h-4 w-4 animate-spin rounded-full border-2 border-zinc-800 border-t-blue-400", "aria-hidden": "true" }
@@ -244,7 +250,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                         for (group_index, (group_key, date_label, estimated_height, group)) in message_groups.iter().cloned().enumerate() {
                             div { key: "{group_key}", class: "contents",
                                 if let Some(label) = date_label {
-                                    ChatMessageDateDivider { label }
+                                    ChatMessageDateDivider { label, overflowing: history_overflowing() }
                                 }
                                 VirtualChatRow {
                                     row_id: group_key.clone(),

@@ -18,6 +18,7 @@ use crate::features::runtime::sleep_ms;
 use crate::features::text_chat::{
     CHAT_CONTENT_CLASS, ChatHistoryLoadingState, ChatMessageDateDivider, ScrollCommand,
     VirtualChatLayout, VirtualChatRow, apply_scroll_command, update_near_bottom_state,
+    use_history_overflow,
 };
 use crate::features::voice_chat::{DirectCallHandle, VoiceConnectionHandle, VoiceConnectionState};
 
@@ -53,6 +54,7 @@ pub(crate) fn DirectMessageWorkspace(
     let older_messages_loading = use_signal(|| false);
     let is_near_bottom = use_signal(|| true);
     let mut list_element = use_signal(|| None::<Rc<MountedData>>);
+    let (history_overflowing, measure_history) = use_history_overflow(list_element);
     let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
     let virtual_layout = use_signal(VirtualChatLayout::default);
     let status = use_signal(String::new);
@@ -382,7 +384,11 @@ pub(crate) fn DirectMessageWorkspace(
                         }
                         div {
                             class: "direct-message-list min-h-0 flex-1 overflow-y-auto bg-[#08090b] px-5 py-7 lg:px-8 lg:py-8",
-                            onmounted: move |event| list_element.set(Some(event.data.clone())),
+                            onmounted: move |event| {
+                                list_element.set(Some(event.data.clone()));
+                                measure_history.call(());
+                            },
+                            onresize: move |_| measure_history.call(()),
                             onscroll: move |_| {
                                 if let Some(element) = list_element.cloned() {
                                     spawn(async move {
@@ -406,6 +412,7 @@ pub(crate) fn DirectMessageWorkspace(
                                 }
                             },
                             div { class: CHAT_CONTENT_CLASS,
+                                onresize: move |_| measure_history.call(()),
                                 if is_loading_messages() {
                                     ChatHistoryLoadingState {}
                                 } else if !has_messages && !status().is_empty() {
@@ -432,7 +439,7 @@ pub(crate) fn DirectMessageWorkspace(
                                     for (group_index, (group_key, date_label, estimated_height, group)) in message_groups.iter().cloned().enumerate() {
                                         div { key: "{group_key}", class: "contents",
                                             if let Some(label) = date_label {
-                                                ChatMessageDateDivider { label }
+                                                ChatMessageDateDivider { label, overflowing: history_overflowing() }
                                             }
                                             VirtualChatRow {
                                                 row_id: group_key.clone(),
