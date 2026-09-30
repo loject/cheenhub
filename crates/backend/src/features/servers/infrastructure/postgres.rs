@@ -15,7 +15,7 @@ use crate::features::servers::domain::{
     ServerRole, ServerRoom, ServerRoomWriteAccess,
 };
 use crate::features::servers::infrastructure::entities::{
-    server_invite_uses, server_invites, server_member_exclusions, server_members, servers,
+    server_invite_uses, server_invites, server_members, servers,
 };
 use crate::features::servers::infrastructure::postgres_roles;
 use crate::features::servers::infrastructure::postgres_rooms;

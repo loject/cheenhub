@@ -13,6 +13,7 @@ mod message_group;
 mod message_item;
 mod messages;
 mod panel;
+mod panel_focus;
 mod pending_attachment;
 pub(crate) mod read_only_notice;
 pub(crate) mod realtime;

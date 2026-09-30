@@ -21,6 +21,7 @@ use super::room_list_item::RoomListItem;
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
 use super::server_room_workspace_sync::synchronize_room_workspace;
 use super::server_rooms_action_error::ServerRoomsActionError;
+use super::server_rooms_empty_state::ServerRoomsEmptyState;
 use super::server_rooms_load_error::ServerRoomsLoadError;
 use super::server_rooms_loading::ServerRoomsLoading;
 use super::server_rooms_menu_trigger::ServerRoomsMenuTrigger;
@@ -440,25 +441,9 @@ pub(crate) fn ServerRoomsScope(
             }
         }
         if !is_loading_rooms && selected_room.is_none() && !matches!(active_workspace(), Some(ServerWorkspace::Settings)) {
-            section { class: "flex min-w-0 flex-1 items-center justify-center bg-zinc-950/35 p-6",
-                div { class: "max-w-sm text-center",
-                    h2 { class: "text-[16px] font-semibold text-zinc-100", "Комнат пока нет" }
-                    p { class: "mt-2 text-[13px] leading-6 text-zinc-500",
-                        if can_manage_rooms {
-                            "Создай первую комнату, чтобы участникам было куда перейти."
-                        } else {
-                            "Владелец сервера еще не создал комнаты."
-                        }
-                    }
-                    if can_manage_rooms {
-                        button {
-                            r#type: "button",
-                            class: "mt-4 inline-flex h-10 items-center justify-center rounded-xl bg-accent px-4 text-[13px] font-semibold text-white transition hover:bg-blue-400",
-                            onclick: move |_| room_modal.set(Some(RoomModal::Create)),
-                            "Создать комнату"
-                        }
-                    }
-                }
+            ServerRoomsEmptyState {
+                can_manage_rooms,
+                on_create: move |_| room_modal.set(Some(RoomModal::Create)),
             }
         }
         if let Some(modal) = room_modal() {

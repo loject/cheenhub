@@ -10,7 +10,7 @@ use web_sys::{AudioBufferSourceNode, GainNode, Response};
 use crate::features::audio_playback::NotificationSound;
 
 use super::AudioPlaybackHandle;
-use super::browser_helpers::{js_error_message, stop_audio_source};
+use super::browser_helpers::{js_error_message, stop_audio_source, stop_audio_source_at};
 
 #[derive(Default)]
 pub(super) struct ConnectionSignalLoopState {
@@ -80,7 +80,7 @@ impl AudioPlaybackHandle {
                 let _ = parameter.cancel_scheduled_values(now);
                 let _ = parameter.set_value_at_time(parameter.value(), now);
                 let _ = parameter.linear_ramp_to_value_at_time(0.0, end);
-                if let Err(error) = source.stop_with_when(end) {
+                if let Err(error) = stop_audio_source_at(&source, end) {
                     warn!(error = %js_error_message(error), "failed to schedule connection signal fade-out");
                 } else {
                     debug!(fade_ms = 15, "fading out browser connection signal loop");

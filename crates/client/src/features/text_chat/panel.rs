@@ -22,6 +22,7 @@ use super::history::{
     load_older_history,
 };
 use super::messages::{append_message, remove_message};
+use super::panel_focus::restore_compose_input_focus;
 use super::pending_attachment::{
     PendingImageAttachment, can_send_message, pending_image_attachment,
 };
@@ -216,11 +217,11 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 EventHandler::new({
                     let component_current = submit_component_current.clone();
                     move |_| {
-                        if draft().is_empty() {
-                            if let Some(textarea) = compose_textarea() {
-                                let _ = textarea.style().set_property("height", "40px");
-                                textarea.set_scroll_top(0.into());
-                            }
+                        if draft().is_empty()
+                            && let Some(textarea) = compose_textarea()
+                        {
+                            let _ = textarea.style().set_property("height", "40px");
+                            textarea.set_scroll_top(0);
                         }
                         restore_compose_input_focus(
                             compose_input_element,
@@ -433,13 +434,13 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             let style = textarea.style();
                             if event.value().is_empty() {
                                 let _ = style.set_property("height", "40px");
-                                textarea.set_scroll_top(0.into());
+                                textarea.set_scroll_top(0);
                                 return;
                             }
                             let _ = style.set_property("height", "auto");
                             let height = textarea.scroll_height().clamp(40, 320);
                             let _ = style.set_property("height", &format!("{height}px"));
-                            textarea.set_scroll_top(height.into());
+                            textarea.set_scroll_top(height);
                         },
                         onblur: move |_| refocus_requested.set(false),
                         onpaste: move |event| {
@@ -485,45 +486,5 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 }
             }
         }
-    }
-}
-
-fn restore_compose_input_focus(
-    input_element: Signal<Option<Rc<MountedData>>>,
-    refocus_requested: Signal<bool>,
-    component_current: Rc<Cell<bool>>,
-) {
-    if !should_refocus(component_current.get(), refocus_requested()) {
-        return;
-    }
-
-    let Some(element) = input_element.cloned() else {
-        return;
-    };
-
-    spawn(async move {
-        if !should_refocus(component_current.get(), refocus_requested()) {
-            return;
-        }
-
-        if let Err(error) = element.set_focus(true).await {
-            debug!(?error, "failed to restore text chat input focus");
-        }
-    });
-}
-
-fn should_refocus(component_current: bool, refocus_requested: bool) -> bool {
-    component_current && refocus_requested
-}
-
-#[cfg(test)]
-mod tests {
-    use super::should_refocus;
-
-    #[test]
-    fn refocus_requires_an_active_component_and_submit_intent() {
-        assert!(should_refocus(true, true));
-        assert!(!should_refocus(false, true));
-        assert!(!should_refocus(true, false));
     }
 }

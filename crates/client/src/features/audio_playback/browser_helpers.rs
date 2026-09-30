@@ -35,8 +35,15 @@ pub(super) fn set_property(object: &Object, name: &str, value: &JsValue) {
 }
 
 pub(super) fn stop_audio_source(source: &AudioBufferSourceNode) -> Result<(), JsValue> {
+    stop_audio_source_at(source, 0.0)
+}
+
+pub(super) fn stop_audio_source_at(
+    source: &AudioBufferSourceNode,
+    when: f64,
+) -> Result<(), JsValue> {
     let stop = Reflect::get(source.as_ref(), &JsValue::from_str("stop"))?.dyn_into::<Function>()?;
-    stop.call1(source.as_ref(), &JsValue::from_f64(0.0))
+    stop.call1(source.as_ref(), &JsValue::from_f64(when))
         .map(|_| ())
 }
 
