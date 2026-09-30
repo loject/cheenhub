@@ -1,12 +1,12 @@
-//! Состояние формы сообщения, ограниченное одной комнатой.
+//! Состояние формы сообщения, ограниченное одним диалогом.
 
 use dioxus::prelude::*;
 
 use super::pending_attachment::PendingImageAttachment;
 
-/// Общее состояние всех представлений формы одной комнаты.
-#[derive(Clone, Copy)]
-pub(crate) struct RoomComposeState {
+/// Общее состояние представлений формы одной комнаты или личного диалога.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) struct MessageComposeState {
     /// Текст черновика.
     pub(crate) draft: Signal<String>,
     /// Сообщение об ошибке операции формы.
@@ -21,9 +21,9 @@ pub(crate) struct RoomComposeState {
     pub(crate) pending_attachment: Signal<Option<PendingImageAttachment>>,
 }
 
-/// Создаёт состояние формы, живущее в keyed-экземпляре комнаты.
-pub(crate) fn use_room_compose_state() -> RoomComposeState {
-    RoomComposeState {
+/// Создаёт состояние формы, живущее в keyed-экземпляре комнаты или личного диалога.
+pub(crate) fn use_message_compose_state() -> MessageComposeState {
+    MessageComposeState {
         draft: use_signal(String::new),
         status: use_signal(String::new),
         is_sending: use_signal(|| false),

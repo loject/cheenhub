@@ -12,6 +12,8 @@ pub(crate) mod host_settings;
 pub(crate) mod image_picker;
 pub(crate) mod landing;
 pub(crate) mod legal;
+/// Единая форма ввода и отправки сообщений.
+pub(crate) mod message_composer;
 pub(crate) mod microphone;
 pub(crate) mod network;
 pub(crate) mod notifications;

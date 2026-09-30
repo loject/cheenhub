@@ -1,24 +1,26 @@
-//! Web-реализация чтения изображения из Dioxus paste-события.
+//! Web-реализация вставки изображения из Dioxus paste-события.
 
 use dioxus::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
-use super::super::super::pending_attachment::{
-    PendingImageAttachment, is_supported_image_mime, pending_image_attachment,
+use crate::features::message_composer::pending_attachment::{
+    PendingImageAttachment, pending_image_attachment,
 };
 
-/// Синхронно извлекает файл из browser event, пока `DataTransfer` доступен.
+use crate::features::message_composer::MAX_IMAGE_BYTES;
+
+/// Синхронно извлекает изображение из browser event и запускает чтение в Dioxus runtime.
 pub(crate) fn read_pasted_image(
     event: ClipboardEvent,
     on_outcome: EventHandler<Result<PendingImageAttachment, String>>,
 ) -> bool {
     let Some(browser_event) = browser_clipboard_event(&event) else {
-        warn!("text chat paste event did not contain a browser ClipboardEvent");
+        warn!("message composer paste event did not contain a browser ClipboardEvent");
         return false;
     };
     let Some(data) = browser_event.clipboard_data() else {
-        debug!("text chat browser paste has no clipboard data");
+        debug!("message composer browser paste has no clipboard data");
         return false;
     };
     let item_count = data.items().length();
@@ -26,7 +28,7 @@ pub(crate) fn read_pasted_image(
     let Some(file) = find_image_file(&data) else {
         debug!(
             item_count,
-            file_count, "text chat browser paste has no supported image item"
+            file_count, "message composer browser paste has no supported image item"
         );
         return false;
     };
@@ -36,21 +38,29 @@ pub(crate) fn read_pasted_image(
     let byte_size = file.size();
     info!(
         has_file_name = file_name.is_some(),
-        byte_size, "found text chat image in browser paste"
+        byte_size, "found message composer image in browser paste"
     );
     spawn(async move {
         let result = read_image_file(file, file_name).await;
         match &result {
             Ok(attachment) => info!(
                 byte_size = attachment.byte_size,
-                has_preview = attachment.preview_data_url.is_some(),
-                "accepted text chat image from browser paste"
+                "added pending message composer image from browser paste"
             ),
-            Err(error) => warn!(%error, "rejected text chat image from browser paste"),
+            Err(error) => warn!(%error, "rejected message composer image from browser paste"),
         }
         on_outcome.call(result);
     });
     true
+}
+
+/// Web не читает системный буфер по keydown: файл доступен только в paste-событии.
+pub(crate) async fn read_image_png() -> Result<Option<Vec<u8>>, String> {
+    Ok(None)
+}
+
+pub(crate) fn supports_keydown_image_paste() -> bool {
+    false
 }
 
 fn browser_clipboard_event(event: &ClipboardEvent) -> Option<web_sys::ClipboardEvent> {
@@ -68,7 +78,7 @@ async fn read_image_file(
     pending_image_attachment(
         file_name,
         js_sys::Uint8Array::new(&buffer).to_vec(),
-        10 * 1024 * 1024,
+        MAX_IMAGE_BYTES,
     )
 }
 
@@ -87,4 +97,11 @@ fn find_image_file(data: &web_sys::DataTransfer) -> Option<web_sys::File> {
                     .and_then(|result| result.ok().flatten())
             })
         })
+}
+
+fn is_supported_image_mime(value: &str) -> bool {
+    matches!(
+        value,
+        "image/jpeg" | "image/png" | "image/webp" | "image/gif"
+    )
 }

@@ -1,34 +1,32 @@
 //! Desktop-реализация чтения изображения из системного буфера обмена.
 
-use super::super::super::pending_attachment::{PendingImageAttachment, pending_image_attachment};
 use dioxus::prelude::*;
 use image::ImageEncoder;
 
+use crate::features::message_composer::pending_attachment::PendingImageAttachment;
+
+/// Desktop-клиент читает изображение по сочетанию клавиш, а не из browser event.
 pub(crate) fn read_pasted_image(
-    event: ClipboardEvent,
-    on_outcome: EventHandler<Result<PendingImageAttachment, String>>,
+    _event: ClipboardEvent,
+    _on_outcome: EventHandler<Result<PendingImageAttachment, String>>,
 ) -> bool {
-    match read_image_png() {
-        Ok(Some(bytes)) => {
-            event.prevent_default();
-            info!(
-                byte_size = bytes.len(),
-                "read text chat image from desktop clipboard"
-            );
-            spawn(async move {
-                on_outcome.call(pending_image_attachment(None, bytes, 10 * 1024 * 1024));
-            });
-            true
-        }
-        Ok(None) => false,
-        Err(error) => {
-            warn!(%error, "failed to read text chat image from desktop clipboard");
-            false
-        }
-    }
+    false
 }
 
-fn read_image_png() -> Result<Option<Vec<u8>>, String> {
+pub(crate) fn supports_keydown_image_paste() -> bool {
+    true
+}
+
+/// Асинхронно возвращает изображение из системного буфера в формате PNG.
+pub(crate) async fn read_image_png() -> Result<Option<Vec<u8>>, String> {
+    tokio::task::spawn_blocking(read_image_png_blocking)
+        .await
+        .map_err(|error| {
+            format!("Не удалось завершить чтение изображения из буфера обмена: {error}")
+        })?
+}
+
+fn read_image_png_blocking() -> Result<Option<Vec<u8>>, String> {
     let mut clipboard = arboard::Clipboard::new()
         .map_err(|_| "Не удалось открыть системный буфер обмена.".to_owned())?;
     let image = match clipboard.get_image() {

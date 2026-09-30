@@ -1,4 +1,4 @@
-//! Временное вложение, принадлежащее форме сообщения одной комнаты.
+//! Временное вложение общей формы сообщения.
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -17,7 +17,7 @@ pub(crate) struct PendingImageAttachment {
     /// Идентификатор уже загруженного изображения для повторной отправки.
     pub(crate) uploaded_id: Option<String>,
     /// Безопасный data URL для локального thumbnail без platform API.
-    pub(crate) preview_data_url: Option<String>,
+    pub(crate) preview_data_url: String,
 }
 
 /// Создаёт ожидающее вложение после локальной проверки размера.
@@ -40,9 +40,9 @@ pub(crate) fn pending_image_attachment(
         .filter(|name| !name.trim().is_empty())
         .unwrap_or("Изображение из буфера")
         .to_owned();
-    let preview_data_url = image_content_type(&bytes)
-        .filter(|content_type| is_supported_image_mime(content_type))
-        .map(|content_type| format!("data:{content_type};base64,{}", BASE64.encode(&bytes)));
+    let content_type = image_content_type(&bytes)
+        .ok_or_else(|| "Выберите изображение PNG, JPEG, GIF или WebP.".to_owned())?;
+    let preview_data_url = format!("data:{content_type};base64,{}", BASE64.encode(&bytes));
     Ok(PendingImageAttachment {
         display_name,
         file_name,
@@ -68,14 +68,6 @@ pub(crate) fn image_content_type(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-/// Проверяет MIME type, который браузер пометил как поддерживаемое изображение.
-pub(crate) fn is_supported_image_mime(value: &str) -> bool {
-    matches!(
-        value,
-        "image/jpeg" | "image/png" | "image/webp" | "image/gif"
-    )
-}
-
 /// Проверяет, что форма содержит данные для отправки и не занята операцией.
 pub(crate) fn can_send_message(draft: &str, has_attachment: bool, busy: bool) -> bool {
     !busy && (has_attachment || !draft.trim().is_empty())
@@ -95,9 +87,12 @@ pub(crate) fn format_attachment_size(byte_size: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        can_send_message, format_attachment_size, image_content_type, is_supported_image_mime,
-        pending_image_attachment,
+        can_send_message, format_attachment_size, image_content_type, pending_image_attachment,
     };
+    #[test]
+    fn rejects_unknown_image_before_upload() {
+        assert!(pending_image_attachment(None, b"not an image".to_vec(), 1024).is_err());
+    }
     #[test]
     fn formats_compact_attachment_sizes() {
         assert_eq!(format_attachment_size(1_572_864), "1.5 МБ");
@@ -116,8 +111,7 @@ mod tests {
         assert!(
             attachment
                 .preview_data_url
-                .as_deref()
-                .is_some_and(|url| url.starts_with("data:image/png;base64,"))
+                .starts_with("data:image/png;base64,")
         );
     }
 
@@ -127,13 +121,5 @@ mod tests {
         assert!(can_send_message("", true, false));
         assert!(can_send_message("текст", false, false));
         assert!(!can_send_message("текст", true, true));
-    }
-
-    #[test]
-    fn accepts_only_supported_browser_image_mime_types() {
-        assert!(is_supported_image_mime("image/png"));
-        assert!(is_supported_image_mime("image/jpeg"));
-        assert!(!is_supported_image_mime("image/svg+xml"));
-        assert!(!is_supported_image_mime("text/plain"));
     }
 }
