@@ -97,7 +97,11 @@ fn UpdaterApp() -> Element {
     });
 
     let state_value = state();
-    let progress = stage_progress(state_value.stage);
+    let progress = if state_value.stage == UpdaterStage::Complete {
+        100
+    } else {
+        0
+    };
     let version = CONFIG
         .get()
         .and_then(|config| config.version.as_deref())
@@ -122,13 +126,15 @@ fn UpdaterApp() -> Element {
                     }
                 }
                 div { class: "mt-5 h-2 overflow-hidden rounded-full bg-zinc-900",
+                    role: "progressbar",
+                    aria_label: "{title}",
                     div {
-                        class: progress_fill_class(is_failed),
-                        style: "width: {progress}%;"
+                        class: if is_failed || is_complete { progress_fill_class(is_failed) } else { "application-update-progress-fill application-update-progress-indeterminate" },
+                        style: if is_failed || is_complete { format!("width: {progress}%;") } else { "width: 35%;".to_owned() }
                     }
                 }
                 div { class: "mt-3 flex items-center justify-between gap-3",
-                    span { class: "text-[12px] font-medium text-zinc-500", "{progress}%" }
+                    span { class: "text-[12px] font-medium text-zinc-500", "{title}" }
                     span { class: "text-[12px] text-zinc-500", "Завершится автоматически" }
                 }
                 if is_complete {
@@ -358,16 +364,6 @@ fn stage_title(stage: UpdaterStage) -> &'static str {
         UpdaterStage::Restarting => "Перезапуск",
         UpdaterStage::Complete => "Готово",
         UpdaterStage::Failed => "Ошибка установки",
-    }
-}
-
-fn stage_progress(stage: UpdaterStage) -> u8 {
-    match stage {
-        UpdaterStage::Preparing => 16,
-        UpdaterStage::WaitingForApp => 34,
-        UpdaterStage::Installing => 72,
-        UpdaterStage::Restarting => 90,
-        UpdaterStage::Complete | UpdaterStage::Failed => 100,
     }
 }
 

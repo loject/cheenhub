@@ -67,6 +67,13 @@ pub(crate) enum UpdateDownloadStatus {
         /// Прогресс скачивания файла.
         progress: UpdateDownloadProgress,
     },
+    /// Скачанное обновление устанавливается.
+    Installing {
+        /// Версия устанавливаемого обновления.
+        version: String,
+        /// Процент операций APT, если он уже получен.
+        percentage: Option<u8>,
+    },
     /// Система открывает прямую ссылку на установщик во внешнем приложении.
     OpeningExternal {
         /// Версия открываемого обновления.

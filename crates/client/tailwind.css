@@ -1878,3 +1878,41 @@
   .participants-grid[data-focused="true"] > article:not([data-focused="true"]) {
     max-width: 210px;
   }
+
+/* Индикация активного скачивания и установки обновления. */
+.application-update-progress-card {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 70;
+  width: min(24rem, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid rgb(96 165 250 / 0.3);
+  border-radius: 1rem;
+  background: #09090b;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.4);
+}
+.application-update-progress-track {
+  height: 0.5rem;
+  margin-top: 0.5rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: #18181b;
+}
+.application-update-progress-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: #60a5fa;
+  transition: width 150ms ease-out;
+}
+.application-update-progress-indeterminate {
+  animation: application-update-progress 1.4s ease-in-out infinite;
+}
+@keyframes application-update-progress {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(290%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .application-update-progress-indeterminate { animation-duration: 4s; }
+  .application-update-progress-fill { transition: none; }
+}

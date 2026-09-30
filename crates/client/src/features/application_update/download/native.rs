@@ -92,6 +92,12 @@ pub(crate) fn primary_action_presentation(
     download_status: &UpdateDownloadStatus,
 ) -> PrimaryUpdateActionPresentation {
     match download_status {
+        UpdateDownloadStatus::Installing { .. } => PrimaryUpdateActionPresentation {
+            label: "Устанавливаем...",
+            disabled: true,
+            installs_downloaded: false,
+            requested_message: "Устанавливаем обновление.",
+        },
         UpdateDownloadStatus::Downloading { version, .. } if version == &update.version => {
             PrimaryUpdateActionPresentation {
                 label: "Скачиваем...",
@@ -248,6 +254,7 @@ pub(crate) async fn download_update_asset(
 pub(crate) fn install_downloaded_update(
     version: &str,
     file: &DownloadedUpdate,
+    progress: futures_channel::mpsc::UnboundedSender<Result<u8, String>>,
 ) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     if linux_deb::is_deb_update(file) {
@@ -257,9 +264,23 @@ pub(crate) fn install_downloaded_update(
             "installing DEB update directly from the running application"
         );
 
-        return linux_deb::install_deb_update(version, file);
+        let version = version.to_owned();
+        let file = file.clone();
+        std::thread::Builder::new()
+            .name("cheenhub-deb-update".to_owned())
+            .spawn(move || {
+                if let Err(message) = linux_deb::install_deb_update(&version, &file, |percentage| {
+                    let _ = progress.unbounded_send(Ok(percentage));
+                }) {
+                    dioxus::prelude::warn!(update_version = %version, %message, "DEB installation failed");
+                    let _ = progress.unbounded_send(Err(message));
+                }
+            })
+            .map_err(|error| format!("Не удалось начать установку обновления: {error}"))?;
+        return Ok(());
     }
 
+    drop(progress);
     info!(
         update_version = %version,
         update_path = %file.path,

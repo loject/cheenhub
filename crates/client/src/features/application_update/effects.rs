@@ -100,6 +100,7 @@ pub(super) fn ApplicationUpdateEffects(children: Element) -> Element {
     use_effect(move || match handle.download_status() {
         UpdateDownloadStatus::Idle
         | UpdateDownloadStatus::Downloading { .. }
+        | UpdateDownloadStatus::Installing { .. }
         | UpdateDownloadStatus::OpeningExternal { .. } => {
             if reported_download_status().is_some() {
                 reported_download_status.set(None);
@@ -202,6 +203,7 @@ fn update_available_toast(
 
 fn update_notification_key(version: &str, download_status: &UpdateDownloadStatus) -> String {
     let phase = match download_status {
+        UpdateDownloadStatus::Installing { .. } => "installing",
         UpdateDownloadStatus::Downloading {
             version: download_version,
             ..

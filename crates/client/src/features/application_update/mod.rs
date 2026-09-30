@@ -5,6 +5,7 @@ mod download;
 mod effects;
 mod handle;
 mod notifications;
+mod progress;
 mod provider;
 mod shutdown;
 mod storage;

@@ -1,8 +1,12 @@
 //! Прямая установка DEB-обновления без отдельного update-helper.
 
 use dioxus::prelude::info;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+
+#[path = "linux_deb/progress.rs"]
+mod progress;
 
 use crate::features::application_update::DownloadedUpdate;
 
@@ -23,6 +27,7 @@ pub(super) fn is_deb_update(file: &DownloadedUpdate) -> bool {
 pub(super) fn install_deb_update(
     expected_version: &str,
     file: &DownloadedUpdate,
+    mut on_progress: impl FnMut(u8),
 ) -> Result<(), String> {
     use std::os::unix::process::CommandExt;
 
@@ -61,9 +66,9 @@ pub(super) fn install_deb_update(
         );
     }
 
-    if !command_exists("apt") {
+    if !command_exists("apt-get") {
         return Err(
-            "Автоматическая установка DEB-обновления недоступна: в системе не найден apt."
+            "Автоматическая установка DEB-обновления недоступна: в системе не найден apt-get."
                 .to_owned(),
         );
     }
@@ -72,17 +77,43 @@ pub(super) fn install_deb_update(
         package = %metadata.package,
         package_version = %metadata.version,
         path = %installer_path.display(),
-        "running apt install for DEB update"
+        "running apt-get install for DEB update"
     );
 
-    let status = Command::new("pkexec")
-        .arg("apt")
+    let mut child = Command::new("pkexec")
+        .arg("apt-get")
         .arg("install")
         .arg("-y")
         .arg("--allow-downgrades")
+        .arg("-o")
+        .arg("APT::Status-Fd=1")
         .arg(installer_path)
-        .status()
+        .stdout(Stdio::piped())
+        .spawn()
         .map_err(|error| format!("Не удалось запустить установку DEB-обновления: {error}"))?;
+
+    let mut read_error = None;
+    if let Some(stdout) = child.stdout.take() {
+        for line in BufReader::new(stdout).lines() {
+            match line {
+                Ok(line) => {
+                    if let Some(percentage) = progress::parse_percentage(&line) {
+                        on_progress(percentage);
+                    }
+                }
+                Err(error) => {
+                    read_error = Some(error);
+                    break;
+                }
+            }
+        }
+    }
+    let status = child
+        .wait()
+        .map_err(|error| format!("Не удалось дождаться установки обновления: {error}"))?;
+    if let Some(error) = read_error {
+        dioxus::prelude::warn!(%error, "could not read APT installation progress");
+    }
 
     if !status.success() {
         return Err(format!(

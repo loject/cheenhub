@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use dioxus::dioxus_core::spawn_forever;
 use dioxus::prelude::*;
 use web_time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -10,6 +11,7 @@ use super::download;
 use super::storage;
 use super::types::{AvailableUpdate, UpdateDownloadStatus};
 
+mod installation;
 mod release_history;
 
 const QUICK_DISMISS_SECONDS: u32 = 5 * 60;
@@ -200,6 +202,7 @@ impl ApplicationUpdateHandle {
                         let keep_download_status = matches!(
                             &state.download_status,
                             UpdateDownloadStatus::Downloading { .. }
+                                | UpdateDownloadStatus::Installing { .. }
                                 | UpdateDownloadStatus::OpeningExternal { .. }
                         ) || matches!(
                             &state.download_status,
@@ -243,7 +246,9 @@ impl ApplicationUpdateHandle {
         let version = update.version.clone();
         if matches!(
             (self.state)().download_status,
-            UpdateDownloadStatus::Downloading { .. } | UpdateDownloadStatus::OpeningExternal { .. }
+            UpdateDownloadStatus::Downloading { .. }
+                | UpdateDownloadStatus::Installing { .. }
+                | UpdateDownloadStatus::OpeningExternal { .. }
         ) {
             debug!(update_version = %version, "application update action is already running");
             return;
@@ -278,7 +283,7 @@ impl ApplicationUpdateHandle {
             state.download_status = initial_status;
         });
 
-        spawn(async move {
+        spawn_forever(async move {
             let started_at = Instant::now();
             let mut progress_state = state;
             let progress_version = version.clone();
@@ -331,38 +336,6 @@ impl ApplicationUpdateHandle {
                 }
             }
         });
-    }
-
-    /// Запускает установщик уже скачанного обновления.
-    pub(crate) fn install_downloaded_update(&self) -> bool {
-        let UpdateDownloadStatus::Downloaded { version, file } = (self.state)().download_status
-        else {
-            warn!("application update install requested without downloaded update");
-            return false;
-        };
-
-        match download::install_downloaded_update(&version, &file) {
-            Ok(()) => {
-                info!(
-                    update_version = %version,
-                    update_path = %file.path,
-                    "application update installer started"
-                );
-                true
-            }
-            Err(message) => {
-                warn!(
-                    update_version = %version,
-                    %message,
-                    "application update installer failed to start"
-                );
-                let mut state = self.state;
-                state.with_mut(|state| {
-                    state.download_status = UpdateDownloadStatus::Failed { version, message };
-                });
-                false
-            }
-        }
     }
 
     /// Скрывает уведомление об обновлении на пять минут.

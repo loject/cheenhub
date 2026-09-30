@@ -210,6 +210,7 @@ fn download_status_panel_for_version(
     let matches_version = match status {
         UpdateDownloadStatus::Idle => false,
         UpdateDownloadStatus::Downloading { version, .. }
+        | UpdateDownloadStatus::Installing { version, .. }
         | UpdateDownloadStatus::OpeningExternal { version }
         | UpdateDownloadStatus::OpenedExternally { version }
         | UpdateDownloadStatus::Downloaded { version, .. }
@@ -225,7 +226,7 @@ fn download_status_panel_for_version(
 
 fn download_status_panel(status: &UpdateDownloadStatus) -> Element {
     match status {
-        UpdateDownloadStatus::Idle => rsx! {},
+        UpdateDownloadStatus::Idle | UpdateDownloadStatus::Installing { .. } => rsx! {},
         UpdateDownloadStatus::Downloading { version, progress } => rsx! {
             {download_progress_panel(version, *progress)}
         },
@@ -262,7 +263,12 @@ fn download_status_panel(status: &UpdateDownloadStatus) -> Element {
 
 fn download_progress_panel(version: &str, progress: UpdateDownloadProgress) -> Element {
     let percentage = progress_percentage(progress);
-    let progress_width = percentage.unwrap_or(100.0);
+    let progress_width = percentage.unwrap_or(35.0);
+    let fill_class = if percentage.is_some() {
+        "application-update-progress-fill"
+    } else {
+        "application-update-progress-fill application-update-progress-indeterminate"
+    };
     let progress_style = format!("width: {progress_width:.1}%;");
     let downloaded = format_bytes(progress.downloaded_bytes);
     let total = progress
@@ -284,7 +290,7 @@ fn download_progress_panel(version: &str, progress: UpdateDownloadProgress) -> E
                 }
             }
             div { class: "mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-900",
-                div { class: "h-full rounded-full bg-blue-400", style: "{progress_style}" }
+                div { class: fill_class, style: "{progress_style}" }
             }
             p { class: "mt-2 text-[12px] leading-5 text-blue-100/75",
                 "{downloaded} из {total} · {speed}"

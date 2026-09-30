@@ -37,6 +37,7 @@ pub(crate) async fn download_update_asset(
 pub(crate) fn install_downloaded_update(
     _version: &str,
     _file: &DownloadedUpdate,
+    _progress: futures_channel::mpsc::UnboundedSender<Result<u8, String>>,
 ) -> Result<(), String> {
     Err("Установка обновления недоступна на этой платформе.".to_owned())
 }

@@ -99,7 +99,11 @@ fn InstallerApp() -> Element {
     });
 
     let state_value = state();
-    let progress = stage_progress(state_value.stage);
+    let progress = if state_value.stage == InstallerStage::Complete {
+        100
+    } else {
+        0
+    };
     let title = stage_title(state_value.stage);
     let is_ready = state_value.stage == InstallerStage::Ready;
     let is_working = matches!(
@@ -133,13 +137,15 @@ fn InstallerApp() -> Element {
                     }
                 }
                 div { class: "mt-4 h-2 overflow-hidden rounded-full bg-zinc-900",
+                    role: "progressbar",
+                    aria_label: "{title}",
                     div {
-                        class: progress_fill_class(is_failed),
-                        style: "width: {progress}%;"
+                        class: if is_ready || is_failed || is_complete { progress_fill_class(is_failed) } else { "application-update-progress-fill application-update-progress-indeterminate" },
+                        style: if is_ready || is_failed || is_complete { format!("width: {progress}%;") } else { "width: 35%;".to_owned() }
                     }
                 }
                 div { class: "mt-4 flex items-center justify-between gap-3",
-                    span { class: "text-[12px] font-medium text-zinc-500", "{progress}%" }
+                    span { class: "text-[12px] font-medium text-zinc-500", "{title}" }
                     if is_ready {
                         button {
                             class: primary_button_class(false),
@@ -372,15 +378,6 @@ fn stage_title(stage: InstallerStage) -> &'static str {
     }
 }
 
-fn stage_progress(stage: InstallerStage) -> u8 {
-    match stage {
-        InstallerStage::Ready => 0,
-        InstallerStage::Extracting => 34,
-        InstallerStage::Installing => 76,
-        InstallerStage::Complete | InstallerStage::Failed => 100,
-    }
-}
-
 fn has_silent_flag() -> bool {
     std::env::args().skip(1).any(|arg| {
         let arg = arg.to_ascii_lowercase();
@@ -411,14 +408,4 @@ fn write_log(config: &InstallerConfig, message: &str) {
     };
 
     let _ = writeln!(file, "[cheenhub_installer] {message}");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{InstallerStage, stage_progress};
-
-    #[test]
-    fn ready_stage_starts_without_progress() {
-        assert_eq!(stage_progress(InstallerStage::Ready), 0);
-    }
 }

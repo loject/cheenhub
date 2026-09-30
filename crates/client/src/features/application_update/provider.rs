@@ -17,6 +17,7 @@ pub(crate) fn ApplicationUpdateProvider(children: Element) -> Element {
         ToastProvider {
             ApplicationUpdateEffects {
                 {children}
+                super::progress::ApplicationUpdateProgress {}
             }
         }
     }
