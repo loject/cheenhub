@@ -1,12 +1,12 @@
 //! Модальное окно создания и редактирования комнаты.
 
-use cheenhub_contracts::realtime::{ServerRoleKind, ServerRoleSummary};
 use cheenhub_contracts::rest::{
     ServerRoomKind, ServerRoomSummary, ServerRoomWriteAccess, ServerRoomWriteAccessMode,
 };
 use dioxus::prelude::*;
 
 use crate::features::app::api;
+use crate::features::server_registry::ServerRegistry;
 
 use super::modal::Modal;
 use super::room_write_access_field::write_access_field;
@@ -16,7 +16,6 @@ use super::room_write_access_field::write_access_field;
 pub(crate) fn RoomEditorModal(
     server_id: String,
     room: Option<ServerRoomSummary>,
-    roles: Vec<ServerRoleSummary>,
     on_close: EventHandler<()>,
     on_saved: EventHandler<ServerRoomSummary>,
 ) -> Element {
@@ -29,10 +28,7 @@ pub(crate) fn RoomEditorModal(
         .map(|room| room.kind)
         .unwrap_or(ServerRoomKind::TextAndVoice);
     let room_id = room.as_ref().map(|room| room.id.clone());
-    let assignable_roles: Vec<ServerRoleSummary> = roles
-        .into_iter()
-        .filter(|role| role.kind != ServerRoleKind::Owner)
-        .collect();
+    let assignable_roles = use_context::<ServerRegistry>().roles(&server_id);
     let initial_write_mode = room
         .as_ref()
         .map(|room| room.write_access.mode)

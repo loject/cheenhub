@@ -8,12 +8,16 @@ use super::kick_member_modal::KickMemberModal;
 use super::member_row::MemberRow;
 use super::members_data::{CustomRole, KickMemberTarget, ServerMemberRow, member_from_realtime};
 use super::realtime;
+use crate::features::app::current_user::CurrentUserContext;
 use crate::features::realtime::RealtimeHandle;
+use crate::features::server_registry::ServerRegistry;
 
 /// Renders server member viewing and management controls.
 #[component]
 pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: String) -> Element {
     let realtime_handle = use_context::<RealtimeHandle>();
+    let server_registry = use_context::<ServerRegistry>();
+    let current_user = use_context::<CurrentUserContext>();
     let mut members = use_signal(|| None::<Vec<ServerMemberRow>>);
     let mut member_load_processed = use_signal(|| false);
     let mut custom_roles = use_signal(Vec::<CustomRole>::new);
@@ -56,6 +60,13 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
         match result {
             Ok(response) => {
                 let response_server_id = response.server_id.clone();
+                if let Some(member) = response
+                    .members
+                    .iter()
+                    .find(|member| member.user_id == current_user.require_user().id)
+                {
+                    server_registry.set_member_roles(&response_server_id, member.role_ids.clone());
+                }
                 members.set(Some(
                     response
                         .members
@@ -92,6 +103,7 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
             return;
         };
         roles_load_processed.set(true);
+        server_registry.set_roles(&response.server_id, &response.roles);
         let next_roles = response
             .roles
             .into_iter()
@@ -238,7 +250,7 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
                                                     )
                                                     .await
                                                     {
-                                                        Ok(_) => {
+                                                        Ok(response) => {
                                                             members.set(Some(
                                                                 members()
                                                                     .unwrap_or_default()
@@ -251,6 +263,11 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
                                                                     })
                                                                     .collect(),
                                                             ));
+                                                            if current_user.require_user().id == uid
+                                                                && let Some(member) = members().unwrap_or_default().iter().find(|member| member.id == uid)
+                                                            {
+                                                                server_registry.set_member_roles(&response.server_id, member.role_ids.clone());
+                                                            }
                                                             info!(user_id = %uid, role_id = %rid, "revoked role");
                                                         }
                                                         Err(e) => warn!(%e, "failed to revoke role"),
@@ -261,7 +278,7 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
                                                     )
                                                     .await
                                                     {
-                                                        Ok(_) => {
+                                                        Ok(response) => {
                                                             members.set(Some(
                                                                 members()
                                                                     .unwrap_or_default()
@@ -274,6 +291,11 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
                                                                     })
                                                                     .collect(),
                                                             ));
+                                                            if current_user.require_user().id == uid
+                                                                && let Some(member) = members().unwrap_or_default().iter().find(|member| member.id == uid)
+                                                            {
+                                                                server_registry.set_member_roles(&response.server_id, member.role_ids.clone());
+                                                            }
                                                             info!(user_id = %uid, role_id = %rid, "assigned role");
                                                         }
                                                         Err(e) => warn!(%e, "failed to assign role"),

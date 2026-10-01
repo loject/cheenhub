@@ -9,6 +9,7 @@ use super::roles_data::{
     roles_to_realtime, selected_role, update_selected_role,
 };
 use crate::features::realtime::RealtimeHandle;
+use crate::features::server_registry::ServerRegistry;
 use crate::features::toast::ToastHandle;
 use dioxus::prelude::*;
 /// Renders a role management UI.
@@ -19,6 +20,7 @@ pub(crate) fn ServerRolesSettingsSection(
     is_owner: bool,
 ) -> Element {
     let realtime_handle = use_context::<RealtimeHandle>();
+    let server_registry = use_context::<ServerRegistry>();
     let toast = use_context::<ToastHandle>();
     let mut roles = use_signal(|| None::<Vec<RoleDraft>>);
     let mut selected_role_id = use_signal(|| OWNER_ROLE_ID.to_owned());
@@ -45,6 +47,7 @@ pub(crate) fn ServerRolesSettingsSection(
 
         match result {
             Ok(response) => {
+                server_registry.set_roles(&response.server_id, &response.roles);
                 let loaded_roles = roles_from_realtime(response.roles);
                 let selected = loaded_roles
                     .iter()
@@ -417,6 +420,7 @@ pub(crate) fn ServerRolesSettingsSection(
                         .await
                         {
                             Ok(response) => {
+                                server_registry.set_roles(&response.server_id, &response.roles);
                                 let saved_roles = roles_from_realtime(response.roles);
                                 let selected = selected_role_id();
                                 let next_selected = saved_roles

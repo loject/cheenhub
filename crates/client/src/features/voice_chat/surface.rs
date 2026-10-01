@@ -4,8 +4,8 @@ use cheenhub_contracts::rest::ServerRoomKind;
 use dioxus::prelude::*;
 
 use crate::features::app::components::app_shell::ActiveRoom;
-use crate::features::app::server_permissions::ServerPermissionsContext;
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
+use crate::features::server_registry::ServerRegistry;
 
 use super::participant_grid::{VoiceParticipantGrid, VoiceParticipantGridStatus};
 use super::state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget};
@@ -15,7 +15,7 @@ use super::voice_controls::VoiceControls;
 #[component]
 pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
-    let permissions = use_context::<ServerPermissionsContext>();
+    let permissions = use_context::<ServerRegistry>().permissions(&server_id);
     let microphone = use_context::<MicrophoneHandle>();
     let state = voice.state();
     let is_active_room = state.is_active_room(&server_id, &room.id);

@@ -21,6 +21,8 @@ pub(crate) mod pwa;
 pub(crate) mod realtime;
 pub(crate) mod runtime;
 pub(crate) mod screen_share;
+/// Метаданные серверов, роли и права текущего пользователя.
+pub(crate) mod server_registry;
 pub(crate) mod server_settings;
 pub(crate) mod single_instance;
 pub(crate) mod social;

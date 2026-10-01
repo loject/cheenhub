@@ -8,10 +8,10 @@ use dioxus::prelude::*;
 use futures_util::StreamExt;
 
 use crate::features::app::components::app_shell::ActiveRoom;
-use crate::features::app::server_permissions::ServerPermissionsContext;
 use crate::features::message_composer::{MessageComposeState, MessageComposer};
 use crate::features::realtime::RealtimeHandle;
 use crate::features::runtime::sleep_duration;
+use crate::features::server_registry::ServerRegistry;
 
 use super::compose::use_room_message_operations;
 use super::history::{
@@ -30,7 +30,7 @@ use super::{
 #[component]
 pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) -> Element {
     let realtime = use_context::<RealtimeHandle>();
-    let permissions = use_context::<ServerPermissionsContext>();
+    let permissions = use_context::<ServerRegistry>().permissions(&server_id);
     let room_compose_state = use_context::<MessageComposeState>();
     let mut messages = use_signal(Vec::<TextChatMessage>::new);
     let mut appearing_message_ids = use_signal(Vec::<String>::new);

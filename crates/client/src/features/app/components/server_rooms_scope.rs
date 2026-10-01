@@ -10,7 +10,7 @@ use crate::features::app::current_user::CurrentUserContext;
 use crate::features::server_settings::ServerSettingsScope;
 use crate::features::voice_chat::VoiceConnectionHandle;
 
-use crate::features::app::server_permissions::ServerPermissionsContext;
+use crate::features::server_registry::ServerRegistry;
 
 use super::app_shell::{AppModal, ServerShellState, room_kind_attr};
 use super::app_sidebar_footer::AppSidebarFooter;
@@ -75,11 +75,10 @@ pub(crate) fn ServerRoomsScope(
     let server_name = server.name.clone();
     let invite_server_name = server_name.clone();
     let is_owner = server.is_owner;
-    let server_permissions = ServerPermissionsContext::from_server(&server);
+    let server_registry = use_context::<ServerRegistry>();
+    let server_permissions = server_registry.permissions(&server.id);
     let can_create_invite_links = server_permissions.can_create_invite_links;
     let can_manage_rooms = server_permissions.can_manage_rooms;
-    let room_roles = server.roles.clone();
-    use_context_provider(move || server_permissions);
     let room_load_resource = use_resource(move || {
         let request_server_id = load_server_id.clone();
         async move { api::list_server_rooms(request_server_id).await }
@@ -453,7 +452,6 @@ pub(crate) fn ServerRoomsScope(
                     RoomModal::Create => None,
                     RoomModal::Edit(room) => Some(room),
                 },
-                roles: room_roles.clone(),
                 on_close: move |_| room_modal.set(None),
                 on_saved: move |saved_room: ServerRoomSummary| {
                     let mut next_rooms = rooms().unwrap_or_default();

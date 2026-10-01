@@ -4,8 +4,8 @@ use cheenhub_contracts::realtime::{ServerRoleKind, ServerRolePermission};
 use cheenhub_contracts::rest::ServerSummary;
 
 /// Описывает действия, доступные текущему пользователю на активном сервере.
-#[derive(Clone, Copy)]
-pub(crate) struct ServerPermissionsContext {
+#[derive(Clone, Copy, Default)]
+pub(crate) struct ServerPermissions {
     /// Может ли пользователь создавать ссылки приглашения.
     pub(crate) can_create_invite_links: bool,
     /// Может ли пользователь исключать участников из голосовых комнат.
@@ -16,7 +16,7 @@ pub(crate) struct ServerPermissionsContext {
     pub(crate) can_manage_rooms: bool,
 }
 
-impl ServerPermissionsContext {
+impl ServerPermissions {
     /// Собирает права текущего пользователя из серверной сводки.
     pub(crate) fn from_server(server: &ServerSummary) -> Self {
         Self {
@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn member_role_permission_applies_to_active_member_without_assigned_role_id() {
-        let permissions = ServerPermissionsContext::from_server(&server_summary(
+        let permissions = ServerPermissions::from_server(&server_summary(
             true,
             vec![role(
                 "member-role",
@@ -63,7 +63,7 @@ mod tests {
 
     #[test]
     fn member_role_permission_does_not_apply_to_non_member_preview() {
-        let permissions = ServerPermissionsContext::from_server(&server_summary(
+        let permissions = ServerPermissions::from_server(&server_summary(
             false,
             vec![role(
                 "member-role",
@@ -84,12 +84,9 @@ mod tests {
             vec![ServerRolePermission::CreateInviteLinks],
         );
 
-        let without_role = ServerPermissionsContext::from_server(&server_summary(
-            true,
-            vec![role.clone()],
-            Vec::new(),
-        ));
-        let with_role = ServerPermissionsContext::from_server(&server_summary(
+        let without_role =
+            ServerPermissions::from_server(&server_summary(true, vec![role.clone()], Vec::new()));
+        let with_role = ServerPermissions::from_server(&server_summary(
             true,
             vec![role],
             vec!["custom-role".to_owned()],
@@ -101,7 +98,7 @@ mod tests {
 
     #[test]
     fn manage_rooms_permission_grants_room_management() {
-        let permissions = ServerPermissionsContext::from_server(&server_summary(
+        let permissions = ServerPermissions::from_server(&server_summary(
             true,
             vec![role(
                 "rooms-manager",
@@ -116,7 +113,7 @@ mod tests {
 
     #[test]
     fn room_management_is_denied_without_permission() {
-        let permissions = ServerPermissionsContext::from_server(&server_summary(
+        let permissions = ServerPermissions::from_server(&server_summary(
             true,
             vec![role(
                 "plain-member",
