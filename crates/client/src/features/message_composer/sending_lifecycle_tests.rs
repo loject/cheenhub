@@ -1,6 +1,7 @@
 //! Регрессионные проверки отмены отправки при смене представления чата.
 
 use super::{MessageComposeState, MessageOperations, use_message_compose_state};
+use crate::features::typing::TypingNotifier;
 use dioxus::prelude::*;
 use futures_util::FutureExt;
 use std::cell::RefCell;
@@ -27,6 +28,7 @@ fn SendingOwner(state: MessageComposeState) -> Element {
     let operations = MessageOperations {
         upload: use_callback(move |_| async { Ok("image".to_owned()) }.boxed_local()),
         send: use_callback(move |_| futures_util::future::pending().boxed_local()),
+        typing: TypingNotifier::new_for_tests(),
     };
     use_hook(move || {
         let mut state = state;
@@ -82,6 +84,7 @@ fn retry_reuses_uploaded_image_and_preserves_draft_until_success() {
                 upload_count.set(upload_count.get() + 1);
                 async { Ok("image-id".to_owned()) }.boxed_local()
             }),
+            typing: TypingNotifier::new_for_tests(),
             send: Callback::new(move |(body, image_id): (String, Option<String>)| {
                 assert_eq!(body, "сообщение");
                 assert_eq!(image_id.as_deref(), Some("image-id"));

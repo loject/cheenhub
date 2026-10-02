@@ -8,10 +8,14 @@ use dioxus::prelude::*;
 use futures_util::StreamExt;
 
 use crate::features::app::components::app_shell::ActiveRoom;
+use crate::features::app::current_user::CurrentUserContext;
 use crate::features::app::server_permissions::ServerPermissionsContext;
 use crate::features::message_composer::{MessageComposeState, MessageComposer};
 use crate::features::realtime::RealtimeHandle;
 use crate::features::runtime::sleep_duration;
+use crate::features::typing::{
+    TypingIndicator, TypingTarget, TypingTransport, use_typing_notifier, use_typing_participants,
+};
 
 use super::compose::use_room_message_operations;
 use super::history::{
@@ -31,6 +35,7 @@ use super::{
 #[component]
 pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) -> Element {
     let realtime = use_context::<RealtimeHandle>();
+    let current_user = use_context::<CurrentUserContext>().require_user();
     let permissions = use_context::<ServerPermissionsContext>();
     let room_compose_state = use_context::<MessageComposeState>();
     let mut messages = use_signal(Vec::<TextChatMessage>::new);
@@ -144,6 +149,14 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         });
     });
 
+    let typing_target = TypingTarget::Room {
+        server_id: server_id.clone(),
+        room_id: room.id.clone(),
+    };
+    let typing_transport = TypingTransport::new(realtime.clone(), typing_target.clone());
+    let typing = use_typing_notifier(typing_transport);
+    let typing_participants =
+        use_typing_participants(&realtime, typing_target, current_user.id.clone());
     let operations = use_room_message_operations(
         realtime.clone(),
         send_server_id,
@@ -151,6 +164,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         messages,
         appearing_message_ids,
         pending_scroll,
+        typing,
     );
     let load_older = use_callback(move |_| {
         load_older_history(older_target.clone(), history_state);
@@ -278,6 +292,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 }
                 }
             }
+            TypingIndicator { typers: typing_participants() }
             if !room.can_write {
                 div { class: "shrink-0 px-3 pb-3 pt-2",
                     {super::read_only_notice::read_only_notice()}

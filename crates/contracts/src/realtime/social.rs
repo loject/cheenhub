@@ -1,6 +1,12 @@
 //! Realtime-контракты друзей и личных сообщений.
+//!
+//! Имена видов и payload'ов набора повторяют комнатные из `text_chat`, поэтому
+//! типы переименованы в `DirectMessage*`: в одном модуле `realtime` два разных
+//! набора нельзя экспортировать под одинаковым именем.
 
 use serde::{Deserialize, Serialize};
+
+use super::typing::TypingAuthor;
 
 /// Тип realtime-сообщения social-модуля.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -16,6 +22,14 @@ pub enum SocialKind {
     DirectMessageCreated,
     /// Участник подтвердил прочтение личного диалога.
     ConversationReadCheckpoint,
+    /// Сообщить, что пользователь печатает сообщение в личном диалоге.
+    StartDirectMessageTyping,
+    /// Сообщить, что пользователь перестал печатать в личном диалоге.
+    StopDirectMessageTyping,
+    /// Запросить снимок участников диалога, которые сейчас печатают.
+    DirectMessageTypingSnapshot,
+    /// Событие о начале или завершении набора сообщения в личном диалоге.
+    DirectMessageTypingChanged,
 }
 
 /// Пустой запрос подписки на social-события.
@@ -77,4 +91,53 @@ pub enum SocialChangeReason {
     Friends,
     /// Изменились личные сообщения или список диалогов.
     DirectMessages,
+}
+
+/// Полезная нагрузка запроса о начале набора сообщения в личном диалоге.
+///
+/// Отправляется один раз при переходе из состояния «не печатает» в состояние
+/// «печатает» и повторяется как продление, пока пользователь печатает.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartDirectMessageTyping {
+    /// Идентификатор личного диалога.
+    pub conversation_id: String,
+}
+
+/// Полезная нагрузка запроса о завершении набора в личном диалоге.
+///
+/// Отправляется после отправки сообщения, очистки черновика или закрытия
+/// вкладки, чтобы собеседник сразу перестал видеть индикатор набора.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StopDirectMessageTyping {
+    /// Идентификатор личного диалога.
+    pub conversation_id: String,
+}
+
+/// Полезная нагрузка запроса снимка участников диалога, которые печатают.
+///
+/// Нужна при открытии диалога и после переподключения realtime.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectMessageTypingSnapshotRequest {
+    /// Идентификатор личного диалога.
+    pub conversation_id: String,
+}
+
+/// Полезная нагрузка ответа со снимком участников диалога, которые печатают.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectMessageTypingSnapshot {
+    /// Идентификатор личного диалога.
+    pub conversation_id: String,
+    /// Участники, которые печатают сообщение прямо сейчас.
+    pub typers: Vec<TypingAuthor>,
+}
+
+/// Полезная нагрузка события о начале или завершении набора в личном диалоге.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectMessageTypingChanged {
+    /// Идентификатор личного диалога.
+    pub conversation_id: String,
+    /// Участник, который начал или закончил печатать.
+    pub author: TypingAuthor,
+    /// Признак того, что участник печатает сообщение.
+    pub is_typing: bool,
 }

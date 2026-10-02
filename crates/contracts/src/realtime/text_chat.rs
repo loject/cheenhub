@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::rest::DmMessageDeliveryStatus;
 
+use super::typing::TypingAuthor;
+
 /// Виды сообщений модуля текстового чата.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -32,6 +34,14 @@ pub enum TextChatKind {
     DeleteMessageAccepted,
     /// Сообщение удалено автором; получатели должны убрать его.
     MessageDeleted,
+    /// Сообщить, что пользователь печатает сообщение в комнате.
+    StartTyping,
+    /// Сообщить, что пользователь перестал печатать сообщение в комнате.
+    StopTyping,
+    /// Запросить снимок участников комнаты, которые сейчас печатают.
+    TypingSnapshot,
+    /// Событие о начале или завершении набора сообщения в комнате.
+    TypingChanged,
 }
 
 /// Полезная нагрузка запроса для загрузки истории комнаты.
@@ -198,4 +208,65 @@ pub struct TextChatMessage {
     pub delivery_status: Option<DmMessageDeliveryStatus>,
     /// Временная метка создания сообщения в формате RFC3339.
     pub created_at: String,
+}
+
+/// Полезная нагрузка запроса о начале набора сообщения в комнате.
+///
+/// Отправляется один раз при переходе из состояния «не печатает» в состояние
+/// «печатает» и повторяется как продление, пока пользователь печатает.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartTyping {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+}
+
+/// Полезная нагрузка запроса о завершении набора сообщения в комнате.
+///
+/// Отправляется после отправки сообщения, очистки черновика, потери фокуса
+/// формы или закрытия вкладки, чтобы другие участники быстро увидели, что
+/// пользователь перестал печатать.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StopTyping {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+}
+
+/// Полезная нагрузка запроса снимка участников комнаты, которые печатают.
+///
+/// Нужна при открытии комнаты и после переподключения realtime, чтобы показать
+/// текущее состояние набора, а не ждать следующего события от других участников.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TypingSnapshotRequest {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+}
+
+/// Полезная нагрузка ответа со снимком участников комнаты, которые печатают.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TypingSnapshot {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+    /// Участники, которые печатают сообщение прямо сейчас.
+    pub typers: Vec<TypingAuthor>,
+}
+
+/// Полезная нагрузка события о начале или завершении набора в комнате.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TypingChanged {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+    /// Участник, который начал или закончил печатать.
+    pub author: TypingAuthor,
+    /// Признак того, что участник печатает сообщение.
+    pub is_typing: bool,
 }

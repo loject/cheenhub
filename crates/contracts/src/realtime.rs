@@ -6,6 +6,7 @@ mod network;
 mod server;
 mod social;
 mod text_chat;
+mod typing;
 mod voice_chat;
 
 pub use control::{
@@ -23,14 +24,18 @@ pub use server::{
     ServerRoleSummary, ServerRolesSaved,
 };
 pub use social::{
-    ConversationReadCheckpoint, DirectMessageCreated, SocialChangeReason, SocialChanged,
-    SocialKind, SocialReady, SubscribeSocial,
+    ConversationReadCheckpoint, DirectMessageCreated, DirectMessageTypingChanged,
+    DirectMessageTypingSnapshot, DirectMessageTypingSnapshotRequest, SocialChangeReason,
+    SocialChanged, SocialKind, SocialReady, StartDirectMessageTyping, StopDirectMessageTyping,
+    SubscribeSocial,
 };
 pub use text_chat::{
     ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
     LoadChatImage, LoadRoomHistory, MessageDeletedPayload, RoomHistory, SendMessage,
-    SendMessageAccepted, TextChatImageAttachment, TextChatKind, TextChatMessage, UploadChatImage,
+    SendMessageAccepted, StartTyping, StopTyping, TextChatImageAttachment, TextChatKind,
+    TextChatMessage, TypingChanged, TypingSnapshot, TypingSnapshotRequest, UploadChatImage,
 };
+pub use typing::TypingAuthor;
 pub use voice_chat::{
     BindMicrophoneUplink, CancelDirectCall, DirectCallEndReason, DirectCallLifecycleEvent,
     DirectCallResponse, DirectCallSnapshot, DirectCallState, DirectCallsSnapshot,
@@ -47,6 +52,79 @@ pub use voice_chat::{
 mod tests {
     use super::*;
     use uuid::Uuid;
+
+    #[test]
+    fn typing_kinds_resolve_to_their_owning_module() {
+        // Оба модуля используют одинаковое имя вида `start_typing`, поэтому
+        // проверка пары модуль/вид не должна путать комнату с личным диалогом.
+        let room = RealtimeEnvelope::new(
+            RealtimeModule::TextChat,
+            RealtimeKind::TextChat(TextChatKind::StartTyping),
+            None,
+            StartTyping {
+                server_id: Uuid::new_v4().to_string(),
+                room_id: Uuid::new_v4().to_string(),
+            },
+        )
+        .expect("payload serializes");
+        let direct_message = RealtimeEnvelope::new(
+            RealtimeModule::Social,
+            RealtimeKind::Social(SocialKind::StartDirectMessageTyping),
+            None,
+            StartDirectMessageTyping {
+                conversation_id: Uuid::new_v4().to_string(),
+            },
+        )
+        .expect("payload serializes");
+
+        let decoded_room: RealtimeEnvelope =
+            serde_json::from_str(&serde_json::to_string(&room).expect("serializes"))
+                .expect("room envelope decodes");
+        let decoded_direct_message: RealtimeEnvelope =
+            serde_json::from_str(&serde_json::to_string(&direct_message).expect("serializes"))
+                .expect("direct message envelope decodes");
+
+        assert!(decoded_room.has_matching_module_kind());
+        assert_eq!(
+            decoded_room.kind,
+            RealtimeKind::TextChat(TextChatKind::StartTyping)
+        );
+        assert!(decoded_direct_message.has_matching_module_kind());
+        assert_eq!(
+            decoded_direct_message.kind,
+            RealtimeKind::Social(SocialKind::StartDirectMessageTyping)
+        );
+    }
+
+    #[test]
+    fn typing_changed_events_round_trip_for_both_targets() {
+        let author = TypingAuthor {
+            user_id: Uuid::new_v4().to_string(),
+            nickname: "печатает".to_owned(),
+            avatar_url: None,
+        };
+        let room = TypingChanged {
+            server_id: Uuid::new_v4().to_string(),
+            room_id: Uuid::new_v4().to_string(),
+            author: author.clone(),
+            is_typing: true,
+        };
+        let direct_message = DirectMessageTypingChanged {
+            conversation_id: Uuid::new_v4().to_string(),
+            author,
+            is_typing: false,
+        };
+
+        let decoded_room: TypingChanged =
+            serde_json::from_value(serde_json::to_value(&room).expect("serializes"))
+                .expect("room typing event decodes");
+        let decoded_direct_message: DirectMessageTypingChanged =
+            serde_json::from_value(serde_json::to_value(&direct_message).expect("serializes"))
+                .expect("direct message typing event decodes");
+
+        assert_eq!(decoded_room, room);
+        assert_eq!(decoded_direct_message, direct_message);
+    }
 
     #[test]
     fn envelope_round_trips_uuid_and_typed_kind() {

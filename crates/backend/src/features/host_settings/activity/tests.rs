@@ -62,6 +62,7 @@ fn state() -> AppState {
         google_oauth_redirect_uri: Some(
             "http://localhost/api/auth/oauth/google/callback".to_owned(),
         ),
+        typing_store: Arc::new(crate::features::typing::InMemoryTypingStore::default()),
         cheenhub_client_base_url: "http://localhost".to_owned(),
         cheenhub_api_base_url: "http://localhost/api".to_owned(),
         oauth_state_lifetime_minutes: 10,

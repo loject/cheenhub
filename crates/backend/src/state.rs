@@ -14,6 +14,7 @@ use crate::features::push_notifications::application::PushNotifications;
 use crate::features::servers::infrastructure::ServerStore;
 use crate::features::social::infrastructure::SocialStore;
 use crate::features::text_chat::infrastructure::{ChatAttachmentObjectStore, TextChatStore};
+use crate::features::typing::infrastructure::InMemoryTypingStore;
 use crate::features::voice_chat::infrastructure::{
     InMemoryDirectCallStore, InMemoryVoicePresenceStore,
 };
@@ -51,6 +52,8 @@ pub(crate) struct AppState {
     pub(crate) voice_presence_store: Arc<InMemoryVoicePresenceStore>,
     /// Незавершённые приглашения и активные личные звонки.
     pub(crate) direct_call_store: Arc<InMemoryDirectCallStore>,
+    /// Оперативное состояние набора сообщения в комнатах и личных диалогах.
+    pub(crate) typing_store: Arc<InMemoryTypingStore>,
     /// Общий реестр потоков realtime и хаб вещания.
     pub(crate) realtime_hub: Arc<RealtimeHub>,
     /// Ключи подписи Access JWT.

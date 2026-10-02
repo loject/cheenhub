@@ -205,6 +205,7 @@ async fn main() -> anyhow::Result<()> {
         direct_call_store: Arc::new(
             features::voice_chat::infrastructure::InMemoryDirectCallStore::default(),
         ),
+        typing_store: Arc::new(features::typing::InMemoryTypingStore::default()),
         realtime_hub: Arc::new(realtime::hub::RealtimeHub::default()),
         auth_keys,
         access_token_lifetime_minutes: config.access_token_lifetime_minutes,
@@ -226,6 +227,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(features::auth::application::run_account_deletion_worker(
         state.clone(),
     ));
+    features::typing::spawn_expiry_sweeper(state.clone()).await;
     if push_notifications.worker_enabled() {
         tokio::spawn(push_notifications.run_delivery_worker());
     }

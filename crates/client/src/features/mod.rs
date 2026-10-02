@@ -27,6 +27,8 @@ pub(crate) mod social;
 pub(crate) mod system_tray;
 pub(crate) mod text_chat;
 pub(crate) mod toast;
+/// Индикатор набора сообщения в комнатах и личных диалогах.
+pub(crate) mod typing;
 pub(crate) mod user_settings;
 pub(crate) mod video_encoding;
 pub(crate) mod voice_chat;
