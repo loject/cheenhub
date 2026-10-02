@@ -48,17 +48,15 @@ pub(crate) fn ServerRealtimeStatus(
 
 fn realtime_connection_status_label(status: RealtimeConnectionStatus) -> &'static str {
     match status {
-        RealtimeConnectionStatus::ConnectingWebTransport => "Подключение через WebTransport…",
+        RealtimeConnectionStatus::ConnectingWebTransport => "Подключение…",
         RealtimeConnectionStatus::ConnectingWebSocketFallback => {
             "Подключение через WebSocket fallback…"
         }
-        RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebTransport) => {
-            "Подключено через WebTransport"
-        }
+        RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebTransport) => "Подключено",
         RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebSocketFallback) => {
             "Подключено через WebSocket fallback"
         }
-        RealtimeConnectionStatus::Disconnected => "Отключено",
+        RealtimeConnectionStatus::Disconnected => "Нет соединения",
     }
 }
 
@@ -70,7 +68,7 @@ mod tests {
     fn describes_each_realtime_connection_attempt() {
         assert_eq!(
             realtime_connection_status_label(RealtimeConnectionStatus::ConnectingWebTransport),
-            "Подключение через WebTransport…"
+            "Подключение…"
         );
         assert_eq!(
             realtime_connection_status_label(RealtimeConnectionStatus::ConnectingWebSocketFallback),
