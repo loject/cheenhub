@@ -12,6 +12,7 @@ pub(super) fn RoomListItem(
     room: ServerRoomSummary,
     is_active: bool,
     can_manage_rooms: bool,
+    is_deleting: bool,
     voice_participants: Vec<VoiceRoomParticipant>,
     compact_when_settings_active: bool,
     on_select: EventHandler<()>,
@@ -45,7 +46,10 @@ pub(super) fn RoomListItem(
             }
             if show_voice_participants {
                 div { class: "group/voice-tooltip relative ml-2 flex shrink-0 items-center",
-                    div { class: "flex items-center -space-x-1",
+                    button {
+                        r#type: "button",
+                        class: "flex items-center -space-x-1 rounded-full",
+                        "aria-label": "Показать участников голосовой комнаты",
                         for participant in visible_voice_participants {
                             UserAvatar {
                                 key: "{participant.user_id}",
@@ -88,7 +92,8 @@ pub(super) fn RoomListItem(
                 span { class: room_actions_class,
                     button {
                         r#type: "button",
-                        class: "rounded-md p-1 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-200",
+                        disabled: is_deleting,
+                        class: "rounded-md p-1 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50",
                         "aria-label": "Изменить комнату {room.name}",
                         onclick: move |_| on_edit(()),
                         svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
@@ -97,7 +102,8 @@ pub(super) fn RoomListItem(
                     }
                     button {
                         r#type: "button",
-                        class: "rounded-md p-1 text-zinc-600 hover:bg-red-500/10 hover:text-red-200",
+                        disabled: is_deleting,
+                        class: "rounded-md p-1 text-zinc-600 hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50",
                         "aria-label": "Удалить комнату {room.name}",
                         onclick: move |_| on_delete(()),
                         svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
@@ -120,8 +126,8 @@ fn room_name_class(compact_when_settings_active: bool) -> &'static str {
 
 fn room_actions_class(compact_when_settings_active: bool) -> &'static str {
     if compact_when_settings_active {
-        "ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 max-[1440px]:hidden max-[1440px]:group-hover/rooms:flex max-[1440px]:group-focus-within/rooms:flex"
+        "ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 max-[1440px]:hidden max-[1440px]:group-hover/rooms:flex max-[1440px]:group-focus-within/rooms:flex max-[900px]:flex max-[900px]:opacity-100"
     } else {
-        "ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100"
+        "ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 max-[900px]:opacity-100"
     }
 }

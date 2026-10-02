@@ -16,6 +16,10 @@ pub(crate) mod modal;
 pub(crate) mod own_invite_link_item;
 pub(crate) mod own_invite_links_section;
 pub(crate) mod profile_menu;
+/// Диалог удаления комнаты сервера.
+pub(crate) mod room_delete_confirm;
+/// Запуск удаления комнаты по подтверждению пользователя.
+pub(crate) mod room_delete_flow;
 pub(crate) mod room_editor_modal;
 pub(crate) mod room_header;
 pub(crate) mod room_instance;
@@ -29,10 +33,12 @@ pub(crate) mod server_rail_button;
 pub(crate) mod server_realtime_status;
 mod server_room_workspace_sync;
 mod server_rooms_action_error;
+mod server_rooms_delete;
 mod server_rooms_empty_state;
 mod server_rooms_load_error;
 mod server_rooms_loading;
 pub(crate) mod server_rooms_menu_trigger;
+mod server_rooms_save;
 pub(crate) mod server_rooms_scope;
 mod server_rooms_sidebar_styles;
 mod server_rooms_state;

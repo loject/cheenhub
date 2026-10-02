@@ -11,7 +11,7 @@ pub(super) enum RoomModal {
     Edit(ServerRoomSummary),
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ServerWorkspace {
     Room(String),
     Settings,
