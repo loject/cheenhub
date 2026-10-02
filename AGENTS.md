@@ -8,7 +8,7 @@
 - Treat feature and layer boundaries as hard design constraints. Do not move state, contracts, or behavior across those boundaries for convenience unless the user explicitly approves the boundary violation after the tradeoff is stated.
 - Do not add repository/service traits, generic abstraction layers, macros, or domain entities before they solve a real problem.
 - Each file should have a current purpose: startup, config, telemetry, database, HTTP shell, contracts, migrations, UI feature, or styling.
-- If a file violates the project file-size limit, decompose it along real ownership and purpose boundaries. Do not satisfy the limit by moving unrelated fragments into arbitrary files, by creating helper modules with no coherent responsibility, or by relying on formatter/linter loopholes such as intentionally unwrapped long lines.
+- Project source files must not exceed 500 physical lines, including blank lines and comments. If a file exceeds this limit, decompose it along real ownership and purpose boundaries. Do not satisfy the limit by moving unrelated fragments into arbitrary files, by creating helper modules with no coherent responsibility, or by relying on formatter/linter loopholes such as intentionally unwrapped long lines.
 - Do not add `#[allow(...)]`, `#![allow(...)]`, lower lint levels, or equivalent suppression merely to make warnings or Clippy pass. Remove unused code, correct visibility, or move platform-specific behavior behind the proper module boundary instead. A narrowly scoped suppression is allowed only for a demonstrated compiler/tooling limitation, requires explicit user approval, and must include an adjacent Russian comment explaining why it cannot be expressed safely in code.
 - Use GUID/UUID values for persistent identifiers; expose them at API boundaries as strings only when the wire format requires it.
 
@@ -23,7 +23,7 @@
 
 - Prefer local component state with Dioxus signals/events.
 - Prefer Dioxus-provided primitives over custom lifecycle state. For async data loading, use `use_resource` before adding manual `use_effect`/`spawn` guards such as `loaded_*` flags.
-- Do not introduce global state, shared state modules, or context providers unless several independent feature boundaries need the same state.
+- Do not introduce global state, shared state modules, or cross-feature context providers unless several independent feature boundaries need the same state. Feature-local context for contextual render metadata is allowed under the rule below.
 - Keep component props explicit and small.
 - Do not add props only to pass contextual render metadata through generic UI components. Prefer a narrow Dioxus context/provider for values such as current user identity, avatar seed/color, or feature-local ambient state when several UI components need the same value.
 - Keep Dioxus components isolated: a file must define exactly one `#[component]`. Helper functions are allowed, but additional components must live in separate files.
@@ -32,7 +32,7 @@
 - Avoid prop drilling multiple unrelated callbacks through UI-only components. When a child component represents a menu, toolbar, or command surface with several actions, prefer a small feature-local action enum and a single `EventHandler<Action>` prop.
 - Keep action enums local to the nearest feature or component boundary that owns the resulting state changes. Do not promote them to shared modules unless multiple feature boundaries use the same action contract.
 - UI components should receive the data they render and emit user intent or completed local command outcomes; parent scopes should decide how that intent changes state, opens modals, or switches views.
-- Use Dioxus context/providers only when the same state or commands are needed by several independent feature boundaries. Do not introduce context only to avoid passing one or two props within a single local component tree.
+- Use Dioxus context/providers for state or commands shared by several independent feature boundaries, or for contextual render metadata needed by several UI components within a feature. Keep feature-local providers scoped to the owning feature. Do not introduce context only to avoid passing one or two ordinary data or callback props within a single local component tree.
 - Do not use direct `web_sys`, `js_sys`, JavaScript snippets, or browser APIs without explicit approval; prefer Dioxus-provided APIs such as Dioxus storage/events.
 
 ## Client Styling
@@ -84,8 +84,10 @@
 
 ## Backend
 
-- REST is the default client-server control plane.
-- WebTransport is reserved for voice/media transport.
+- REST is the default client-server control plane for operations outside the realtime flows described below.
+- WebTransport is the primary transport for voice/media and product realtime flows, including text chat requests/events, realtime metrics, message reaction events, and typing indicators. These realtime flows must use the generic realtime APIs rather than REST.
+- WebSocket is the fallback transport for product realtime flows when WebTransport is unavailable; it is not a separate primary transport. Keep feature adapters independent of the selected realtime transport. This rule does not require implementing voice/media fallback over WebSocket.
+- Reaction events, typing indicators, and other future realtime features listed here are architectural examples, not authorization to implement them before explicitly requested.
 - WebCodecs is reserved for browser-side audio/video processing.
 - WebRTC считать куском кала и неподходящей технологией для CheenHub. Никогда не рекомендовать WebRTC как технологию, которую стоит использовать в этом проекте; предпочитать архитектуры на базе WebTransport/WebCodecs или заранее явно согласовывать любую смежную альтернативу.
 - Do not implement voice rooms, authentication, WebTransport, or WebCodecs behavior until explicitly requested.
