@@ -66,7 +66,6 @@ pub(crate) fn AppShell() -> Element {
         host_dashboard_active || host_email_settings_active || host_logs_active;
     let workspace = AppWorkspaceRoute::from_route(&route).unwrap_or(AppWorkspaceRoute::Friends);
     let route_active_server_id = workspace.server_id().map(ToOwned::to_owned);
-    let selected_conversation_id = workspace.conversation_id().map(ToOwned::to_owned);
     let mut servers = use_signal(Vec::<ServerSummary>::new);
     let mut active_server_id = use_signal(|| route_active_server_id.clone());
     let mut loaded_servers = use_signal(|| false);
@@ -101,11 +100,16 @@ pub(crate) fn AppShell() -> Element {
     let active_room = use_context::<ActiveRoomContext>();
 
     // Синхронизируем активную комнату и активный DM-диалог с маршрутом.
-    let route_room_id = workspace.room_id().map(ToOwned::to_owned);
-    let route_conversation_id = workspace.conversation_id().map(ToOwned::to_owned);
+    // Маршрут читается внутри эффекта: иначе `use_effect` не подписывается на
+    // роутер, эффект выполняется один раз при монтировании, а активный диалог
+    // остаётся устаревшим. Из-за этого Android не подавляет уведомления
+    // открытого диалога и не снимает его при переходе из push.
+    let workspace_router = router();
     use_effect(move || {
-        active_room.set(route_room_id.clone());
-        active_room.set_conversation_id(route_conversation_id.clone());
+        let workspace = AppWorkspaceRoute::from_route(&workspace_router.current::<Route>())
+            .unwrap_or(AppWorkspaceRoute::Friends);
+        active_room.set(workspace.room_id().map(ToOwned::to_owned));
+        active_room.set_conversation_id(workspace.conversation_id().map(ToOwned::to_owned));
     });
 
     let route_active_server_id_for_sync = route_active_server_id.clone();
@@ -264,7 +268,6 @@ pub(crate) fn AppShell() -> Element {
                 HostLogsPage {}
             } else if social_workspace_active {
                 SocialPage {
-                    selected_conversation_id,
                     on_open_user_settings: move |_| {
                         info!("opening user settings from social workspace");
                         is_user_settings_open.set(true);
