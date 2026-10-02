@@ -3,8 +3,8 @@
 use cheenhub_contracts::realtime::{
     DirectMessageVoiceRoomsSnapshot, JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember,
     LeaveDirectMessageVoiceRoom, LeaveVoiceRoom, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
-    RealtimeKind, RealtimeModule, ServerAudioBitrate, ServerVoiceRoomsSnapshot,
-    StopVoiceVideoStream, VoiceChatKind, VoiceRoomSnapshot, VoiceVideoStreamEnded,
+    RealtimeKind, RealtimeModule, ServerAudioBitrate, ServerVoiceRoomsSnapshot, VoiceChatKind,
+    VoiceRoomSnapshot,
 };
 use cheenhub_contracts::rest::{AuthUser, ServerRoomKind};
 use chrono::Utc;
@@ -14,6 +14,7 @@ use crate::features::social::{self, DirectMessageVoiceAccess, SocialError};
 use crate::features::voice_chat::infrastructure::VoicePresence;
 use crate::state::AppState;
 
+mod activity;
 mod avatar;
 mod direct_call_push;
 mod direct_calls;
@@ -22,7 +23,9 @@ mod network_quality;
 mod permissions;
 mod presence;
 mod uplink;
+mod video;
 
+pub(crate) use activity::activity_snapshot;
 pub(crate) use avatar::update_user_avatar;
 pub(crate) use direct_calls::{
     cancel_direct_call, end_direct_call, list_direct_calls, respond_direct_call, start_direct_call,
@@ -36,9 +39,9 @@ pub(crate) use network_quality::publish_network_quality;
 use network_quality::{
     authorize_network_quality_publication_at, prepare_network_quality_broadcast,
 };
-use presence::active_presence_for_user;
 pub(crate) use presence::disconnect_realtime_stream;
 pub(crate) use uplink::{bind_microphone_uplink, issue_microphone_uplink_grant};
+pub(crate) use video::stop_video_stream;
 
 /// Входит в одну комнату с поддержкой голоса и возвращает текущий снимок участников.
 pub(crate) async fn join_room(
@@ -293,71 +296,6 @@ pub(crate) async fn list_direct_message_voice_rooms(
     );
 
     Ok(DirectMessageVoiceRoomsSnapshot { rooms })
-}
-
-/// Рассылает участникам комнаты событие остановки видеопотока отправителя.
-pub(crate) async fn stop_video_stream(
-    state: &AppState,
-    realtime_stream_id: Uuid,
-    session_id: Uuid,
-    user_id: &Uuid,
-    request: StopVoiceVideoStream,
-) -> Result<(), VoiceChatApplicationError> {
-    let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
-    let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
-    let Some(presence) = active_presence_for_user(state, &room_id, user_id).await else {
-        return Err(VoiceChatApplicationError::NotFound(
-            "Пользователь не находится в этой голосовой комнате.".to_owned(),
-        ));
-    };
-
-    if presence.server_id != server_id || presence.room_id != room_id {
-        return Err(VoiceChatApplicationError::BadRequest(
-            "Комната не найдена.".to_owned(),
-        ));
-    }
-    if presence.realtime_stream_id != realtime_stream_id || presence.session_id != session_id {
-        return Err(VoiceChatApplicationError::Unauthorized(
-            "Видеопоток принадлежит другой realtime-сессии.".to_owned(),
-        ));
-    }
-
-    let recipients = state
-        .voice_presence_store
-        .room_participants(presence.target_kind, &server_id, &room_id)
-        .await;
-    let stream_ids = recipients
-        .iter()
-        .filter(|recipient| recipient.realtime_stream_id != realtime_stream_id)
-        .map(|recipient| recipient.realtime_stream_id)
-        .collect::<Vec<_>>();
-    tracing::info!(
-        server_id = %server_id,
-        room_id = %room_id,
-        target_kind = ?presence.target_kind,
-        user_id = %user_id,
-        source = ?request.source,
-        recipients = stream_ids.len(),
-        "fanning out voice video stream ended event"
-    );
-
-    state
-        .realtime_hub
-        .fanout_to_streams(
-            RealtimeModule::VoiceChat,
-            &server_id,
-            RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded),
-            &stream_ids,
-            VoiceVideoStreamEnded {
-                server_id: server_id.to_string(),
-                room_id: room_id.to_string(),
-                user_id: user_id.to_string(),
-                source: request.source,
-            },
-        )
-        .await;
-
-    Ok(())
 }
 
 /// Обновляет активные снимки голосового присутствия после изменения никнейма профиля.

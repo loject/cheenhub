@@ -118,7 +118,7 @@ async fn handle_room_media_frame(
     if let Some(allowed_video_presets) = allowed_video_presets {
         let admission = state
             .voice_presence_store
-            .inspect_video_datagram(session_id, user_id, &datagram, allowed_video_presets)
+            .inspect_video_datagram(session_id, &datagram, allowed_video_presets)
             .await;
         if !video_admission_allows_fanout(
             admission,
