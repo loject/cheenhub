@@ -3067,6 +3067,10 @@ html,
   max-width: 920px;
 }
 
+.max-w-\[calc\(100\%-1\.5rem\)\] {
+  max-width: calc(100% - 1.5rem);
+}
+
 .max-w-\[calc\(100vw-1\.5rem\)\] {
   max-width: calc(100vw - 1.5rem);
 }
@@ -5980,6 +5984,12 @@ html,
 .shadow-\[0_30px_110px_rgba\(0\2c 0\2c 0\2c \.7\)\] {
   --tw-shadow: 0 30px 110px rgba(0,0,0,.7);
   --tw-shadow-colored: 0 30px 110px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+.shadow-\[0_4px_20px_rgba\(0\2c 0\2c 0\2c 0\.3\)\] {
+  --tw-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  --tw-shadow-colored: 0 4px 20px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
