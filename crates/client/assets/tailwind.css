@@ -1953,6 +1953,10 @@ html,
   pointer-events: auto;
 }
 
+.\!visible {
+  visibility: visible !important;
+}
+
 .visible {
   visibility: visible;
 }
@@ -2163,10 +2167,6 @@ html,
 
 .top-full {
   top: 100%;
-}
-
-.right-1 {
-  right: 0.25rem;
 }
 
 .z-0 {
@@ -2484,6 +2484,11 @@ html,
   height: 0.5rem;
 }
 
+.size-2\.5 {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
 .size-3 {
   width: 0.75rem;
   height: 0.75rem;
@@ -2519,13 +2524,17 @@ html,
   height: 2.25rem;
 }
 
-.size-2\.5 {
-  width: 0.625rem;
-  height: 0.625rem;
+.size-\[3px\] {
+  width: 3px;
+  height: 3px;
 }
 
 .h-0 {
   height: 0px;
+}
+
+.h-0\.5 {
+  height: 0.125rem;
 }
 
 .h-1 {
@@ -2598,6 +2607,10 @@ html,
 
 .h-5 {
   height: 1.25rem;
+}
+
+.h-56 {
+  height: 14rem;
 }
 
 .h-6 {
@@ -2678,18 +2691,6 @@ html,
 
 .h-screen {
   height: 100vh;
-}
-
-.h-44 {
-  height: 11rem;
-}
-
-.h-0\.5 {
-  height: 0.125rem;
-}
-
-.h-56 {
-  height: 14rem;
 }
 
 .max-h-0 {
@@ -3491,6 +3492,10 @@ html,
   gap: 2rem;
 }
 
+.gap-\[3px\] {
+  gap: 3px;
+}
+
 .gap-x-2 {
   -moz-column-gap: 0.5rem;
        column-gap: 0.5rem;
@@ -3507,11 +3512,6 @@ html,
 
 .gap-y-2 {
   row-gap: 0.5rem;
-}
-
-.gap-x-6 {
-  -moz-column-gap: 1.5rem;
-       column-gap: 1.5rem;
 }
 
 .-space-x-1 > :not([hidden]) ~ :not([hidden]) {
@@ -3931,6 +3931,10 @@ html,
   border-color: rgb(248 113 113 / 0.25);
 }
 
+.border-red-400\/30 {
+  border-color: rgb(248 113 113 / 0.3);
+}
+
 .border-red-500\/15 {
   border-color: rgb(239 68 68 / 0.15);
 }
@@ -4069,6 +4073,11 @@ html,
   border-top-color: rgb(125 211 252 / var(--tw-border-opacity, 1));
 }
 
+.border-t-violet-300 {
+  --tw-border-opacity: 1;
+  border-top-color: rgb(196 181 253 / var(--tw-border-opacity, 1));
+}
+
 .border-t-white {
   --tw-border-opacity: 1;
   border-top-color: rgb(255 255 255 / var(--tw-border-opacity, 1));
@@ -4082,11 +4091,6 @@ html,
 .border-t-zinc-400 {
   --tw-border-opacity: 1;
   border-top-color: rgb(161 161 170 / var(--tw-border-opacity, 1));
-}
-
-.border-t-violet-300 {
-  --tw-border-opacity: 1;
-  border-top-color: rgb(196 181 253 / var(--tw-border-opacity, 1));
 }
 
 .bg-\[\#08090b\] {
@@ -4206,6 +4210,11 @@ html,
 .bg-blue-100 {
   --tw-bg-opacity: 1;
   background-color: rgb(219 234 254 / var(--tw-bg-opacity, 1));
+}
+
+.bg-blue-300 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(147 197 253 / var(--tw-bg-opacity, 1));
 }
 
 .bg-blue-400 {
@@ -4475,6 +4484,10 @@ html,
 
 .bg-zinc-950\/35 {
   background-color: rgb(9 9 11 / 0.35);
+}
+
+.bg-zinc-950\/40 {
+  background-color: rgb(9 9 11 / 0.4);
 }
 
 .bg-zinc-950\/45 {
@@ -4796,6 +4809,10 @@ html,
   padding-bottom: 0.25rem;
 }
 
+.pb-1\.5 {
+  padding-bottom: 0.375rem;
+}
+
 .pb-10 {
   padding-bottom: 2.5rem;
 }
@@ -4886,6 +4903,10 @@ html,
 
 .pt-1 {
   padding-top: 0.25rem;
+}
+
+.pt-1\.5 {
+  padding-top: 0.375rem;
 }
 
 .pt-2 {
@@ -6684,6 +6705,96 @@ html,
   box-shadow: inset 0 0 0 1px rgb(96 165 250 / 0.35), 0 0 16px rgb(59 130 246 / 0.12);
 }
 
+/* Индикатор набора сообщения.
+   Строка появляется мягким подъемом, точки идут волной с задержкой друг на друга,
+   поэтому движение читается как «печатает...», а не как статичный текст. Появление
+   короткое намеренно: индикатор часто гаснет через 1-2 кадра при отправке
+   сообщения, и медленный уход дергал бы форму под редактором. */
+
+.typing-indicator {
+  animation: typing-indicator-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.typing-dots {
+  animation: typing-dots-in 280ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+}
+
+.typing-dot {
+  animation: typing-dot-wave 1.2s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes typing-indicator-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes typing-dots-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px) scale(0.7);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* Точка сначала приподнимается с растяжением, затем опадает и сжимается: цикл
+   читается как живое движение, а не как простое мигание. */
+
+@keyframes typing-dot-wave {
+  0% {
+    opacity: 0.35;
+    transform: translateY(0) scale(0.86);
+  }
+
+  35% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1);
+  }
+
+  70% {
+    opacity: 0.55;
+    transform: translateY(0) scale(0.94);
+  }
+
+  100% {
+    opacity: 0.35;
+    transform: translateY(0) scale(0.86);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-indicator,
+    .typing-dots,
+    .typing-dot {
+    animation: none;
+  }
+
+  /* Точки остаются видимыми без движения, иначе индикатор выглядел бы пустым. */
+
+  .typing-dot {
+    opacity: 0.7;
+  }
+}
+
 @keyframes dm-unread-badge-in {
   from {
     opacity: 0;
@@ -8314,6 +8425,10 @@ html,
 }
 
 @media (max-width: 900px) {
+  .max-\[900px\]\:flex {
+    display: flex;
+  }
+
   .max-\[900px\]\:gap-3 {
     gap: 0.75rem;
   }
@@ -8324,6 +8439,10 @@ html,
 
   .max-\[900px\]\:pt-4 {
     padding-top: 1rem;
+  }
+
+  .max-\[900px\]\:opacity-100 {
+    opacity: 1;
   }
 }
 
