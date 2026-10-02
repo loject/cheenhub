@@ -11,13 +11,33 @@ use super::{
     AUDIO_SAMPLE_RATE_HZ, AudioPlaybackHandle, playback_now_ms, playback_now_us,
     should_emit_sender_warning,
 };
-use crate::features::audio_playback::backend::{PlaybackCodec, VoiceFrame};
+use crate::features::audio_playback::backend::{
+    PlaybackCodec, VoiceFrame, target_playout_depth_seconds,
+};
+use crate::features::audio_playback::time_scale::{self, VoiceTimeCompressor};
 use crate::features::runtime::sleep_duration;
 
 const MAX_OPUS_FRAME_SAMPLES: usize = 5_760;
 const AUDIO_PLAYBACK_WARNING_INTERVAL_MS: u64 = 5_000;
 const JITTER_PENDING_WARN_FRAMES: usize = 12;
 const JITTER_DRAIN_WAKE_LATE_WARN_MS: u64 = 120;
+/// Порог, выше которого коэффициент сжатия считается отличным от единицы.
+const COMPRESSED_RATE_THRESHOLD: f64 = 1.0 + 1.0e-4;
+
+/// Возвращает коэффициент сжатия времени по избытку очереди воспроизведения.
+///
+/// Отставание считается в единицах исходного контента: очередь микшера хранит уже
+/// сжатый звук, поэтому её длина умножается на применённый коэффициент, и к ней
+/// добавляется контент, ещё не выведенный компрессором.
+fn catch_up_rate(
+    backlog_samples: usize,
+    applied_rate: f64,
+    pending_content_samples: usize,
+    target_samples: f64,
+) -> f64 {
+    let buffered_content = backlog_samples as f64 * applied_rate + pending_content_samples as f64;
+    time_scale::catch_up_rate((buffered_content - target_samples) / f64::from(AUDIO_SAMPLE_RATE_HZ))
+}
 
 impl AudioPlaybackHandle {
     /// Принимает входящий voice frame и передает его через jitter buffer.
@@ -40,6 +60,7 @@ impl AudioPlaybackHandle {
 
         let sender_user_id = frame.sender_user_id.clone();
         let sequence = frame.sequence;
+        let duration_us = frame.duration_us;
         let outcome = {
             let mut inner = self.inner.borrow_mut();
             if inner.muted {
@@ -115,6 +136,9 @@ impl AudioPlaybackHandle {
             }
         }
 
+        if let Some(pause) = self.inner.borrow().playback_pauses.get(&sender_user_id) {
+            pause.postpone(playback_now_us(), duration_us, target_delay_us);
+        }
         self.ensure_jitter_drain(sender_user_id);
     }
 
@@ -219,7 +243,8 @@ impl AudioPlaybackHandle {
     fn decode_voice_frame(&self, frame: VoiceFrame) -> Result<(), String> {
         let sender_user_id = frame.sender_user_id;
         let sequence = frame.sequence;
-        let mixer = {
+        let duration_us = frame.duration_us;
+        let (mixer, compression_rate, backlog_samples) = {
             let mut inner = self.inner.borrow_mut();
             let decoder = inner
                 .decoders
@@ -240,9 +265,45 @@ impl AudioPlaybackHandle {
                 .as_ref()
                 .map(|engine| engine.mixer.clone())
                 .ok_or_else(|| "Native audio output stream не запущен.".to_owned())?;
+            let backlog_samples = queued_sender_samples(&mixer, &sender_user_id);
+            let target_samples = target_playout_depth_seconds(inner.jitter_buffer_us)
+                * f64::from(AUDIO_SAMPLE_RATE_HZ);
+            let compressor = inner
+                .time_compressors
+                .entry(sender_user_id.clone())
+                .or_insert_with(|| VoiceTimeCompressor::new(AUDIO_SAMPLE_RATE_HZ));
+            let compression_rate = catch_up_rate(
+                backlog_samples,
+                compressor.rate(),
+                compressor.pending_content_samples(),
+                target_samples,
+            );
+            let was_compressing = compressor.rate() > COMPRESSED_RATE_THRESHOLD;
+            compressor.set_rate(compression_rate);
+            if was_compressing != (compression_rate > COMPRESSED_RATE_THRESHOLD) {
+                debug!(
+                    %sender_user_id,
+                    sequence,
+                    compression_rate,
+                    backlog_samples,
+                    "native inbound voice output queue catch-up state changed"
+                );
+            }
+            let decoded = compressor.process(&decoded);
             queue_sender_samples(&mixer, &sender_user_id, decoded, gain, sequence);
-            mixer
+            (mixer, compression_rate, backlog_samples)
         };
+        self.arm_playback_pause(&sender_user_id, duration_us);
+        if compression_rate > COMPRESSED_RATE_THRESHOLD && self.should_warn_decoder(&sender_user_id)
+        {
+            warn!(
+                %sender_user_id,
+                sequence,
+                compression_rate,
+                backlog_samples,
+                "native inbound audio output queue is catching up"
+            );
+        }
         if queued_sender_samples(&mixer, &sender_user_id) >= SENDER_BACKLOG_WARN_SAMPLES
             && self.should_warn_decoder(&sender_user_id)
         {

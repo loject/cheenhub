@@ -12,8 +12,12 @@ mod jitter_buffer;
 mod jitter_runtime;
 #[path = "playback_pipeline.rs"]
 mod playback_pipeline;
+#[path = "playback_schedule.rs"]
+mod playback_schedule;
 #[path = "web_notifications.rs"]
 mod web_notifications;
+#[path = "web_pause.rs"]
+mod web_pause;
 #[path = "web_voice_playback.rs"]
 mod web_voice_playback;
 use self::browser_diagnostics::{
@@ -21,9 +25,8 @@ use self::browser_diagnostics::{
 };
 use self::browser_helpers::{apply_output_device_to_context, js_error_message, stop_audio_source};
 use self::jitter_buffer::JitterBuffer;
-use self::playback_pipeline::{
-    ScheduledAudioSource, SenderPlayback, create_sender_playback, encoded_audio_chunk,
-};
+use self::playback_pipeline::{SenderPlayback, create_sender_playback, encoded_audio_chunk};
+use self::playback_schedule::ScheduledAudioSource;
 use self::web_notifications::ConnectionSignalLoopState;
 use super::backend::VoiceFrame;
 use super::output_devices::AudioOutputDevice;
@@ -210,6 +213,9 @@ impl AudioPlaybackHandle {
         let (sender, sources) = {
             let mut inner = self.inner.borrow_mut();
             let sender = inner.senders.remove(sender_user_id);
+            if let Some(sender) = &sender {
+                sender.pause.cancel();
+            }
             inner.jitter_buffers.remove(sender_user_id);
             inner.jitter_warning_at_ms.remove(sender_user_id);
             inner.decoder_queue_warning_at_ms.remove(sender_user_id);

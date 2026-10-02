@@ -1,5 +1,13 @@
 //! Общие контракты audio playback.
 
+/// Возвращает целевую глубину буфера воспроизведения в секундах.
+///
+/// Возвращает настройку jitter buffer в секундах. PCM-планировщик может дополнительно
+/// учитывать минимальный запас своей платформы.
+pub(crate) fn target_playout_depth_seconds(jitter_buffer_us: u32) -> f64 {
+    f64::from(jitter_buffer_us) / 1_000_000.0
+}
+
 /// Кодек закодированного воспроизведения.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlaybackCodec {
@@ -97,5 +105,22 @@ impl NotificationSound {
             Self::ConnectionRestored => "connection-restored",
             Self::ConnectionSignalLoop => "connection-signal-loop",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::target_playout_depth_seconds;
+
+    #[test]
+    fn target_playout_depth_follows_jitter_buffer_setting() {
+        assert!((target_playout_depth_seconds(10_000) - 0.01).abs() < 1e-9);
+        assert!((target_playout_depth_seconds(200_000) - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn target_playout_depth_supports_small_settings() {
+        assert!((target_playout_depth_seconds(500) - 0.0005).abs() < 1e-9);
+        assert_eq!(target_playout_depth_seconds(0), 0.0);
     }
 }
