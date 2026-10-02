@@ -139,6 +139,26 @@ pub(crate) fn RealtimeConnectionStatusIndicator(mut is_open: Signal<bool>) -> El
                 div {
                     class: "absolute bottom-[calc(100%+10px)] left-0 z-[100] w-[260px] rounded-xl border border-zinc-800 bg-zinc-950/95 p-3 text-left text-zinc-200 shadow-[0_18px_46px_rgba(0,0,0,.5)] backdrop-blur-xl",
                     onclick: move |event| event.stop_propagation(),
+                    if current_status != RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebTransport) {
+                        div { class: "mb-3",
+                            button {
+                                r#type: "button",
+                                class: "flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 text-[12px] font-medium text-zinc-100 transition-[background-color,transform] duration-150 hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100",
+                                disabled: is_connecting,
+                                "aria-busy": "{is_connecting}",
+                                onclick: move |_| { realtime.request_reconnect(); },
+                                if is_connecting {
+                                    svg { class: "h-4 w-4 animate-spin motion-reduce:animate-none", fill: "none", view_box: "0 0 24 24", "aria-hidden": "true",
+                                        circle { class: "opacity-25", cx: "12", cy: "12", r: "9", stroke: "currentColor", stroke_width: "2.5" }
+                                        path { d: "M21 12a9 9 0 0 0-9-9", stroke: "currentColor", stroke_width: "2.5", stroke_linecap: "round" }
+                                    }
+                                    "Подключаемся…"
+                                } else {
+                                    "Переподключиться"
+                                }
+                            }
+                        }
+                    }
                     if let Some(fallback) = active_fallback {
                         div { class: "mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5",
                             span { class: "block text-[12px] font-semibold text-amber-200", "Резервный режим" }

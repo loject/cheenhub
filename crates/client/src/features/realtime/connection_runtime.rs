@@ -1,6 +1,8 @@
 //! Подключение, ping-watchdog и backoff realtime-сессии.
 
 use dioxus::prelude::*;
+use futures_channel::mpsc;
+use futures_util::StreamExt;
 use futures_util::future::{Either, FutureExt, select};
 use web_time::Instant;
 
@@ -23,13 +25,35 @@ const RECONNECT_MAX_DELAY_MS: u32 = 30_000;
 pub(super) async fn run_connection(
     realtime: &RealtimeHandle,
     mut network_quality: NetworkQualityHandle,
+    reconnect_requests: &mut mpsc::UnboundedReceiver<()>,
 ) {
+    loop {
+        let connection = run_connection_loop(realtime, network_quality).boxed_local();
+        let requested = reconnect_requests.next().boxed_local();
+        match select(requested, connection).await {
+            Either::Left((request, connection)) => {
+                drop(connection);
+                network_quality.clear();
+                realtime.mark_disconnected().await;
+                if request.is_none() {
+                    return;
+                }
+                info!("restarting realtime runtime after manual reconnect request");
+            }
+            Either::Right(((), _)) => return,
+        }
+    }
+}
+
+async fn run_connection_loop(realtime: &RealtimeHandle, mut network_quality: NetworkQualityHandle) {
     let mut reconnect_delay_ms = RECONNECT_INITIAL_DELAY_MS;
     loop {
+        realtime.mark_connecting(RealtimeTransportKind::WebTransport);
         info!("opening realtime session");
         let access_token = match auth_api::fresh_access_token().await {
             Ok(access_token) => access_token,
             Err(error) => {
+                realtime.mark_disconnected().await;
                 warn!(
                     %error,
                     delay_ms = reconnect_delay_ms,
@@ -41,7 +65,6 @@ pub(super) async fn run_connection(
             }
         };
 
-        realtime.mark_connecting(RealtimeTransportKind::WebTransport);
         match realtime.connect(access_token).await {
             Ok(authenticated) => {
                 info!(

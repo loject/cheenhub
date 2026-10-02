@@ -3,9 +3,51 @@
 use futures_channel::mpsc;
 
 use super::{ConnectedTransport, RealtimeHandle};
-use crate::features::realtime::RealtimeConnectionStatus;
+use crate::features::realtime::{RealtimeConnectionStatus, RealtimeTransportKind};
 
 impl RealtimeHandle {
+    /// Запрашивает немедленную новую попытку WebTransport вместо отключения или fallback.
+    ///
+    /// Возвращает `false`, если уже идёт подключение, активен WebTransport или runtime
+    /// недоступен. Принятый запрос сразу меняет статус, блокируя повторные нажатия;
+    /// закрытием текущего транспорта и новой попыткой управляет провайдер.
+    pub(crate) fn request_reconnect(&self) -> bool {
+        let status = self.connection_status();
+        if !matches!(
+            status,
+            RealtimeConnectionStatus::Disconnected
+                | RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebSocketFallback)
+        ) {
+            return false;
+        }
+        let requests = self.inner.reconnect_requests.borrow();
+        if !requests
+            .as_ref()
+            .is_some_and(|sender| sender.unbounded_send(()).is_ok())
+        {
+            dioxus::prelude::warn!(
+                ?status,
+                "manual realtime reconnect unavailable without runtime"
+            );
+            return false;
+        }
+        dioxus::prelude::info!(?status, "manual realtime reconnect requested");
+        self.mark_connecting(RealtimeTransportKind::WebTransport);
+        true
+    }
+
+    /// Регистрирует единственного владельца ручных запросов переподключения.
+    ///
+    /// Провайдер хранит receiver на протяжении своего жизненного цикла,
+    /// включая приостановку соединения в фоне.
+    pub(in crate::features::realtime) fn subscribe_reconnect_requests(
+        &self,
+    ) -> mpsc::UnboundedReceiver<()> {
+        let (sender, receiver) = mpsc::unbounded();
+        self.inner.reconnect_requests.replace(Some(sender));
+        receiver
+    }
+
     /// Указывает, требуется ли соединение активной сессии при скрытом приложении.
     pub(crate) fn set_background_activity_required(&self, required: bool) {
         self.inner.background_activity.set_required(required);
@@ -61,6 +103,111 @@ mod tests {
     use crate::features::realtime::handle::{ConnectedSession, create_handle};
     use dioxus::prelude::*;
     use futures_util::{FutureExt, StreamExt};
+
+    #[test]
+    fn manual_reconnect_wakes_runtime_and_blocks_duplicate_requests() {
+        let dom = VirtualDom::new(|| rsx! {});
+        dom.in_scope(ScopeId::ROOT, || {
+            for status in [
+                RealtimeConnectionStatus::Disconnected,
+                RealtimeConnectionStatus::Connected(
+                    crate::features::realtime::RealtimeTransportKind::WebSocketFallback,
+                ),
+            ] {
+                let realtime = create_handle();
+                let mut requests = realtime.subscribe_reconnect_requests();
+                realtime.set_connection_status(status);
+                assert!(realtime.request_reconnect());
+                assert_eq!(
+                    realtime.connection_status(),
+                    RealtimeConnectionStatus::ConnectingWebTransport
+                );
+                assert!(!realtime.request_reconnect());
+                assert_eq!(requests.next().now_or_never(), Some(Some(())));
+                assert!(requests.next().now_or_never().is_none());
+            }
+        });
+    }
+
+    #[test]
+    fn manual_reconnect_does_not_interrupt_primary_or_connecting_transport() {
+        let dom = VirtualDom::new(|| rsx! {});
+        dom.in_scope(ScopeId::ROOT, || {
+            for status in [
+                RealtimeConnectionStatus::ConnectingWebTransport,
+                RealtimeConnectionStatus::ConnectingWebSocketFallback,
+                RealtimeConnectionStatus::Connected(
+                    crate::features::realtime::RealtimeTransportKind::WebTransport,
+                ),
+            ] {
+                let realtime = create_handle();
+                let mut requests = realtime.subscribe_reconnect_requests();
+                realtime.set_connection_status(status);
+                assert!(!realtime.request_reconnect());
+                assert_eq!(realtime.connection_status(), status);
+                assert!(requests.next().now_or_never().is_none());
+            }
+        });
+    }
+
+    #[test]
+    fn manual_reconnect_without_runtime_keeps_disconnected_status() {
+        let dom = VirtualDom::new(|| rsx! {});
+        dom.in_scope(ScopeId::ROOT, || {
+            let realtime = create_handle();
+            assert!(!realtime.request_reconnect());
+            let receiver = realtime.subscribe_reconnect_requests();
+            drop(receiver);
+            assert!(!realtime.request_reconnect());
+            assert_eq!(
+                realtime.connection_status(),
+                RealtimeConnectionStatus::Disconnected
+            );
+        });
+    }
+
+    #[test]
+    fn runtime_consumes_manual_reconnect_and_closes_fallback_session() {
+        let dom = VirtualDom::new(|| rsx! {});
+        dom.in_scope(ScopeId::ROOT, || {
+            let realtime = create_handle();
+            let mut requests = realtime.subscribe_reconnect_requests();
+            let (sender, mut receiver) = mpsc::unbounded();
+            let (sender, _, _) =
+                crate::features::realtime::websocket::WebSocketOutboundSender::new(sender);
+            *realtime.inner.session.try_lock().unwrap() = Some(ConnectedSession {
+                generation: 1,
+                transport: ConnectedTransport::WebSocket(sender),
+            });
+            realtime.set_connection_status(RealtimeConnectionStatus::Connected(
+                RealtimeTransportKind::WebSocketFallback,
+            ));
+            let mut quality = crate::features::network::NetworkQualityHandle::new(
+                Signal::new(Default::default()),
+                Signal::new(false),
+            );
+            quality.record_ping(1_000, 25.0);
+            assert!(realtime.request_reconnect());
+            // Закрытие очереди после запроса останавливает runtime до обращения к сети.
+            realtime.inner.reconnect_requests.borrow_mut().take();
+            assert_eq!(
+                crate::features::realtime::connection_runtime::run_connection(
+                    &realtime,
+                    quality,
+                    &mut requests,
+                )
+                .now_or_never(),
+                Some(())
+            );
+            assert!(matches!(receiver.next().now_or_never(), Some(None)));
+            assert!(realtime.inner.session.try_lock().unwrap().is_none());
+            assert!(quality.current().samples.is_empty());
+            assert_eq!(
+                realtime.connection_status(),
+                RealtimeConnectionStatus::Disconnected
+            );
+        });
+    }
 
     #[test]
     fn disconnect_closes_websocket_even_when_sender_clones_survive() {

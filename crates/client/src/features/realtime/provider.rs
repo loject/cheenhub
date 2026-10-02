@@ -30,14 +30,19 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
     use_hook(move || {
         let visibility = crate::features::runtime::lifecycle::subscribe_visibility();
         let background = realtime.subscribe_background_activity();
+        let mut reconnect_requests = realtime.subscribe_reconnect_requests();
         spawn(async move {
             let mut gate = ActivityGate::new(visibility, background);
             let mut network_quality = network_quality;
             loop {
                 gate.wait_until_allowed().await;
                 info!("realtime activity allowed; starting connection runtime");
-                gate.run_until_suspended(run_connection(&realtime, network_quality))
-                    .await;
+                gate.run_until_suspended(run_connection(
+                    &realtime,
+                    network_quality,
+                    &mut reconnect_requests,
+                ))
+                .await;
                 info!("realtime suspended while application is hidden without active session");
                 network_quality.clear();
                 realtime.mark_disconnected().await;

@@ -6328,6 +6328,12 @@ html,
   transition-duration: 150ms;
 }
 
+.transition-\[background-color\2c transform\] {
+  transition-property: background-color,transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
 .transition-\[border-color\2c background\2c box-shadow\] {
   transition-property: border-color,background,box-shadow;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -7969,6 +7975,12 @@ html,
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 
+.active\:scale-\[0\.98\]:active {
+  --tw-scale-x: 0.98;
+  --tw-scale-y: 0.98;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
 .disabled\:cursor-default:disabled {
   cursor: default;
 }
@@ -8141,6 +8153,10 @@ html,
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .motion-reduce\:animate-none {
+    animation: none;
+  }
+
   .motion-reduce\:transition-none {
     transition-property: none;
   }
