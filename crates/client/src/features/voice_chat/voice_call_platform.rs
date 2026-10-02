@@ -78,3 +78,24 @@ pub(crate) use implementation::{
     set_voice_output_route, subscribe_voice_audio_focus, subscribe_voice_notification_actions,
     supports_voice_output_route, update_active_voice_notification,
 };
+
+/// Сохраняет realtime во время подключения, звонка и выхода; освобождает его после завершения.
+pub(super) fn use_background_realtime_activity(
+    state: dioxus::prelude::Signal<super::state::VoiceConnectionState>,
+    realtime: crate::features::realtime::RealtimeHandle,
+) {
+    use super::state::VoiceConnectionState;
+    use dioxus::prelude::{use_drop, use_effect};
+
+    let effect_realtime = realtime.clone();
+    use_effect(move || {
+        let required = matches!(
+            state(),
+            VoiceConnectionState::Connecting { .. }
+                | VoiceConnectionState::Connected { .. }
+                | VoiceConnectionState::Disconnecting { .. }
+        );
+        effect_realtime.set_background_activity_required(required);
+    });
+    use_drop(move || realtime.set_background_activity_required(false));
+}

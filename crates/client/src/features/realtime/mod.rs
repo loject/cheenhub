@@ -1,6 +1,8 @@
 //! Каркас realtime WebTransport-клиента.
 
+mod activity;
 mod config;
+mod connection_runtime;
 mod error;
 mod framing;
 mod guards;

@@ -183,6 +183,7 @@ impl RealtimeHandle {
         info!(%url, "connecting WebSocket realtime fallback session");
         let (writer, reader) = websocket::split(url.as_str()).await?;
         let (sender, receiver) = mpsc::unbounded();
+        let (sender, writer_abort, reader_abort) = websocket::WebSocketOutboundSender::new(sender);
         let generation = self.next_generation();
         self.inner.streams.lock().await.clear();
         self.inner.pending.borrow_mut().clear();
@@ -193,14 +194,14 @@ impl RealtimeHandle {
         websocket::spawn_writer(
             url.to_string(),
             generation,
-            writer,
+            (writer, writer_abort),
             receiver,
             Some(self.clone()),
         );
         websocket::spawn_reader(
             url.to_string(),
             generation,
-            reader,
+            (reader, reader_abort),
             self.inner.inbound.clone(),
             self.inner.datagram_listeners.clone(),
             self.clone(),

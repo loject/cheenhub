@@ -99,6 +99,8 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         network_quality,
     );
 
+    voice_call_platform::use_background_realtime_activity(state, realtime.clone());
+
     let snapshot_realtime = realtime.clone();
     let snapshot_handle = handle.clone();
     use_hook(move || {

@@ -31,7 +31,7 @@ pub(in crate::features::realtime) async fn split(
 pub(in crate::features::realtime) fn spawn_writer(
     _url: String,
     _generation: u64,
-    _writer: WebSocketWriter,
+    _writer: (WebSocketWriter, futures_util::future::AbortRegistration),
     _outbound: mpsc::UnboundedReceiver<WebSocketOutbound>,
     _realtime: Option<RealtimeHandle>,
 ) {
@@ -40,7 +40,7 @@ pub(in crate::features::realtime) fn spawn_writer(
 pub(in crate::features::realtime) fn spawn_reader(
     _url: String,
     _generation: u64,
-    _reader: WebSocketReader,
+    _reader: (WebSocketReader, futures_util::future::AbortRegistration),
     _inbound: mpsc::UnboundedSender<RealtimeEnvelope>,
     _datagram_listeners: DatagramListeners,
     _realtime: RealtimeHandle,

@@ -2,6 +2,7 @@
 
 use dioxus::prelude::{debug, info, warn};
 use futures_channel::mpsc;
+use futures_util::future::{AbortRegistration, Abortable};
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
@@ -33,30 +34,40 @@ pub(in crate::features::realtime) async fn split(
 pub(in crate::features::realtime) fn spawn_writer(
     url: String,
     generation: u64,
-    mut writer: WebSocketWriter,
+    writer: (WebSocketWriter, AbortRegistration),
     mut outbound: mpsc::UnboundedReceiver<WebSocketOutbound>,
     realtime: Option<RealtimeHandle>,
 ) {
+    let (mut writer, cancellation) = writer;
     spawn_task(async move {
-        while let Some(message) = outbound.next().await {
-            let message = match encode_message(message, &url, generation) {
-                Some(message) => message,
-                None => continue,
-            };
+        let _ = Abortable::new(
+            async move {
+                while let Some(message) = outbound.next().await {
+                    let message = match encode_message(message, &url, generation) {
+                        Some(message) => message,
+                        None => continue,
+                    };
 
-            if let Err(error) = writer.send(message).await {
-                warn!(
-                    %url,
-                    %generation,
-                    %error,
-                    "WebSocket realtime fallback write failed"
-                );
-                if let Some(realtime) = &realtime {
-                    realtime.clear_generation(generation).await;
+                    if let Err(error) = writer.send(message).await {
+                        warn!(
+                            %url,
+                            %generation,
+                            %error,
+                            "WebSocket realtime fallback write failed"
+                        );
+                        if let Some(realtime) = &realtime {
+                            realtime.clear_generation(generation).await;
+                        }
+                        break;
+                    }
                 }
-                break;
-            }
-        }
+                if let Err(error) = writer.close().await {
+                    debug!(%url, %generation, %error, "WebSocket realtime fallback close failed");
+                }
+            },
+            cancellation,
+        )
+        .await;
     });
 }
 
@@ -81,40 +92,47 @@ fn encode_message(message: WebSocketOutbound, url: &str, generation: u64) -> Opt
 pub(in crate::features::realtime) fn spawn_reader(
     url: String,
     generation: u64,
-    mut reader: WebSocketReader,
+    reader: (WebSocketReader, AbortRegistration),
     inbound: mpsc::UnboundedSender<cheenhub_contracts::realtime::RealtimeEnvelope>,
     datagram_listeners: DatagramListeners,
     realtime: RealtimeHandle,
 ) {
+    let (mut reader, cancellation) = reader;
     spawn_task(async move {
-        while let Some(message) = reader.next().await {
-            match message {
-                Ok(Message::Text(text)) => {
-                    if !dispatch_text_envelope(&url, generation, text.as_str(), &inbound) {
-                        break;
+        let _ = Abortable::new(
+            async move {
+                while let Some(message) = reader.next().await {
+                    match message {
+                        Ok(Message::Text(text)) => {
+                            if !dispatch_text_envelope(&url, generation, text.as_str(), &inbound) {
+                                break;
+                            }
+                        }
+                        Ok(Message::Binary(bytes)) => {
+                            dispatch_datagram(bytes, &datagram_listeners);
+                        }
+                        Ok(Message::Close(_)) => {
+                            debug!(%url, %generation, "WebSocket realtime fallback closed by peer");
+                            break;
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            warn!(
+                                %url,
+                                %generation,
+                                %error,
+                                "WebSocket realtime fallback read failed"
+                            );
+                            break;
+                        }
                     }
                 }
-                Ok(Message::Binary(bytes)) => {
-                    dispatch_datagram(bytes, &datagram_listeners);
-                }
-                Ok(Message::Close(_)) => {
-                    debug!(%url, %generation, "WebSocket realtime fallback closed by peer");
-                    break;
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    warn!(
-                        %url,
-                        %generation,
-                        %error,
-                        "WebSocket realtime fallback read failed"
-                    );
-                    break;
-                }
-            }
-        }
 
-        info!(%url, %generation, "WebSocket realtime fallback session closed");
-        realtime.clear_generation(generation).await;
+                info!(%url, %generation, "WebSocket realtime fallback session closed");
+                realtime.clear_generation(generation).await;
+            },
+            cancellation,
+        )
+        .await;
     });
 }

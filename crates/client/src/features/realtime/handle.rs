@@ -3,6 +3,7 @@
 mod connection;
 mod fallback;
 mod fire_and_forget;
+mod lifecycle;
 mod one_shot;
 
 use std::cell::{Cell, RefCell};
@@ -53,6 +54,7 @@ struct RealtimeInner {
     datagram_listeners: DatagramListeners,
     inbound: mpsc::UnboundedSender<RealtimeEnvelope>,
     generation: Cell<u64>,
+    background_activity: super::activity::BackgroundActivity,
     connection_status: Cell<RealtimeConnectionStatus>,
     status_listeners: StatusListeners,
     fallback_info: Cell<Option<RealtimeFallbackInfo>>,
@@ -355,28 +357,6 @@ impl RealtimeHandle {
         generation
     }
 
-    /// Marks the current realtime connection as disconnected.
-    pub(crate) async fn mark_disconnected(&self) {
-        self.inner.session.lock().await.take();
-        self.inner.streams.lock().await.clear();
-        self.inner.pending.borrow_mut().clear();
-        self.set_connection_status(RealtimeConnectionStatus::Disconnected);
-    }
-
-    pub(super) async fn clear_generation(&self, generation: u64) {
-        let mut session = self.inner.session.lock().await;
-        let should_clear = session
-            .as_ref()
-            .is_some_and(|connected| connected.generation == generation);
-        if should_clear {
-            session.take();
-            drop(session);
-            self.inner.streams.lock().await.clear();
-            self.inner.pending.borrow_mut().clear();
-            self.set_connection_status(RealtimeConnectionStatus::Disconnected);
-        }
-    }
-
     fn set_connection_status(&self, status: RealtimeConnectionStatus) {
         if self.inner.connection_status.get() == status {
             return;
@@ -401,6 +381,7 @@ pub(crate) fn create_handle() -> RealtimeHandle {
             datagram_listeners: Rc::new(RefCell::new(Vec::new())),
             inbound,
             generation: Cell::new(0),
+            background_activity: Default::default(),
             connection_status: Cell::new(RealtimeConnectionStatus::Disconnected),
             status_listeners: Rc::new(RefCell::new(Vec::new())),
             fallback_info: Cell::new(None),
