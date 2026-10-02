@@ -123,7 +123,7 @@ pub(crate) fn ServerRoomsScope(
         rooms.set(Some(next_rooms));
         if !voice_sidebar_loaded() {
             voice_sidebar_loaded.set(true);
-            voice_loader.load_server_voice_rooms(voice_load_server_id.clone());
+            voice_loader.watch_server_voice_rooms(voice_load_server_id.clone());
         }
     });
 

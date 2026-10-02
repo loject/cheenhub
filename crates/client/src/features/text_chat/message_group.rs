@@ -15,6 +15,7 @@ use super::messages::is_appearing_message;
 #[component]
 pub(crate) fn ChatMessageGroup(
     messages: Vec<TextChatMessage>,
+    #[props(default)] anchor_elements: Option<super::scroll_anchor_runtime::AnchorElements>,
     appearing_message_ids: Vec<String>,
     removing_message_ids: Vec<String>,
     can_delete_messages: bool,
@@ -75,6 +76,7 @@ pub(crate) fn ChatMessageGroup(
                         ChatMessageItem {
                             key: "{message.id}",
                             message: message.clone(),
+                            anchor_elements,
                             animate: is_appearing_message(&message.id, &appearing_message_ids),
                             removing: removing_message_ids.contains(&message.id),
                             can_delete_messages,

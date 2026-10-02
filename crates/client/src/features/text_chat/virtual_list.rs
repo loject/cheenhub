@@ -90,6 +90,13 @@ impl VirtualChatLayout {
                 .min(ordered_rows.len())
     }
 
+    /// Удерживает восстановленную группу до получения новых событий видимости.
+    pub(super) fn restore_row(&mut self, row: String) {
+        self.visible_rows.clear();
+        self.visible_rows.insert(row.clone());
+        self.anchor_row = Some(row);
+    }
+
     /// Обновляет видимость строки, сохраняя последний вошедший в viewport якорь.
     fn set_visible(&mut self, row: &str, visible: bool) {
         if visible {
@@ -478,3 +485,7 @@ mod tests {
         assert_eq!(CHILD_RENDER_COUNT.with(Cell::get), 6);
     }
 }
+
+#[cfg(test)]
+#[path = "virtual_list_restore_tests.rs"]
+mod restore_tests;

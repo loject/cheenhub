@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 const BOTTOM_SCROLL_THRESHOLD: f64 = 24.0;
 const OLDER_PAGE_SCROLL_THRESHOLD: f64 = 48.0;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, PartialEq)]
 pub(crate) enum ScrollCommand {
     /// Мгновенно прокручивает список к последнему сообщению.
     Bottom,
@@ -16,6 +16,10 @@ pub(crate) enum ScrollCommand {
     SmoothBottom,
     /// Сохраняет видимую позицию после добавления сообщений выше текущего окна.
     Preserve { offset_y: f64, height: f64 },
+    /// Восстанавливает сообщение и смещение внутри него после обновления истории.
+    Restore {
+        anchor: super::scroll_anchor::ScrollAnchor,
+    },
 }
 
 pub(super) async fn update_scroll_state(
@@ -87,6 +91,9 @@ pub(crate) async fn apply_scroll_command(element: Rc<MountedData>, command: Scro
                     ScrollBehavior::Smooth,
                 )
                 .await;
+        }
+        ScrollCommand::Restore { .. } => {
+            // Якорь применяется реестром сообщений после монтирования целевой группы.
         }
         ScrollCommand::Preserve { offset_y, height } => {
             let Ok(scroll_size) = element.get_scroll_size().await else {

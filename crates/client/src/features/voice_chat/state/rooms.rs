@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
-use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle, RealtimeTransportKind};
+use crate::features::realtime::RealtimeConnectionStatus;
 
 use super::VoiceConnectionHandle;
 use crate::features::voice_chat::{realtime, room_presence};
@@ -18,47 +18,26 @@ impl VoiceConnectionHandle {
         room_presence::participants_for(&(self.room_snapshots)(), server_id, room_id)
     }
 
-    /// Loads active voice room snapshots for a server over realtime.
-    pub(crate) fn load_server_voice_rooms(&self, server_id: String) {
+    /// Обновляет участников голосовых комнат сервера при каждом подключении realtime.
+    pub(crate) fn watch_server_voice_rooms(&self, server_id: String) {
         let realtime = self.realtime.clone();
         let handle = self.clone();
+        let mut statuses = realtime.subscribe_connection_status();
         spawn(async move {
-            if !matches!(
-                realtime.connection_status(),
-                RealtimeConnectionStatus::Connected(_)
-            ) {
-                info!(
-                    server_id = %server_id,
-                    "waiting for realtime before loading server voice room sidebar participants"
-                );
-            }
-            let Some(transport) = wait_for_realtime_connection(&realtime).await else {
-                warn!(
-                    server_id = %server_id,
-                    "realtime status subscription closed before server voice room sidebar participants could load"
-                );
-                return;
-            };
-            debug!(
-                ?transport,
-                server_id = %server_id,
-                "realtime is ready; loading server voice room sidebar participants"
-            );
-            match realtime::list_server_voice_rooms(&realtime, server_id.clone()).await {
-                Ok(snapshot) => {
-                    info!(
-                        server_id = %snapshot.server_id,
-                        active_voice_rooms = snapshot.rooms.len(),
-                        "loaded server voice room sidebar participants"
-                    );
-                    handle.replace_server_room_snapshots(snapshot.server_id, snapshot.rooms);
-                }
-                Err(error) => {
-                    warn!(
-                        %error,
-                        server_id = %server_id,
-                        "failed to load server voice room sidebar participants"
-                    );
+            while let Some(status) = statuses.next().await {
+                let RealtimeConnectionStatus::Connected(transport) = status else {
+                    continue;
+                };
+                debug!(?transport, %server_id, "refreshing server voice room sidebar participants after connect");
+                match realtime::list_server_voice_rooms(&realtime, server_id.clone()).await {
+                    Ok(snapshot) => {
+                        info!(server_id = %snapshot.server_id, active_voice_rooms = snapshot.rooms.len(),
+                            "loaded server voice room sidebar participants");
+                        handle.replace_server_room_snapshots(snapshot.server_id, snapshot.rooms);
+                    }
+                    Err(error) => {
+                        warn!(%error, %server_id, "failed to load server voice room sidebar participants")
+                    }
                 }
             }
         });
@@ -106,15 +85,4 @@ impl VoiceConnectionHandle {
         let mut room_snapshots = self.room_snapshots;
         room_snapshots.set(next_snapshots);
     }
-}
-
-async fn wait_for_realtime_connection(realtime: &RealtimeHandle) -> Option<RealtimeTransportKind> {
-    let mut statuses = realtime.subscribe_connection_status();
-    while let Some(status) = statuses.next().await {
-        if let RealtimeConnectionStatus::Connected(transport) = status {
-            return Some(transport);
-        }
-    }
-
-    None
 }
