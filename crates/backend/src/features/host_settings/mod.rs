@@ -1,5 +1,7 @@
 //! Глобальные настройки экземпляра CheenHub и права владельцев хоста.
 
+pub(crate) mod activity;
+pub(crate) mod activity_monitor;
 pub(crate) mod application;
 pub(crate) mod domain;
 pub(crate) mod email_delivery;

@@ -14,18 +14,22 @@ use axum::{
 };
 use cheenhub_contracts::rest::{
     ApiError, GmailConnectionStartResponse, HostAccessResponse, HostEmailSettingsResponse,
-    HostLogStreamMessage, UpdateHostEmailSettingsRequest,
+    HostLogStreamMessage, HostVoiceActivityHistoryResponse, HostVoiceActivityResponse,
+    UpdateHostEmailSettingsRequest,
 };
 use serde::Deserialize;
 
 use crate::state::AppState;
 
+use super::activity::{activity as activity_flow, activity_history as activity_history_flow};
 use super::application::{self, HostSettingsError};
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/access", get(access))
         .route("/metrics", get(metrics))
+        .route("/activity", get(activity))
+        .route("/activity/history", get(activity_history))
         .route("/logs/ws", get(logs_ws))
         .route("/email", get(email_settings).patch(update_email_settings))
         .route("/email/gmail/connect", post(start_gmail_connection))
@@ -221,6 +225,27 @@ async fn metrics(
         .map(Json)
 }
 
+/// Возвращает текущие голосовые подключения и видеоисточники.
+async fn activity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<HostVoiceActivityResponse>, HostSettingsError> {
+    activity_flow(&state, bearer_token(&headers)?)
+        .await
+        .map(Json)
+}
+
+/// Возвращает историю голосовых подключений за последние 24 часа.
+async fn activity_history(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ActivityHistoryQuery>,
+) -> Result<Json<HostVoiceActivityHistoryResponse>, HostSettingsError> {
+    activity_history_flow(&state, bearer_token(&headers)?, query.after_unix_ms)
+        .await
+        .map(Json)
+}
+
 async fn access(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -312,6 +337,12 @@ impl IntoResponse for HostSettingsError {
         )
             .into_response()
     }
+}
+
+/// Запрос только новых точек истории после указанного времени в миллисекундах Unix.
+#[derive(Deserialize)]
+struct ActivityHistoryQuery {
+    after_unix_ms: Option<i64>,
 }
 
 #[derive(Deserialize)]

@@ -28,6 +28,35 @@ pub struct HostMetricsResponse {
     pub samples: Vec<HostMetricsSample>,
 }
 
+/// Текущая активность голосового чата на хосте.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostVoiceActivityResponse {
+    /// Число активных голосовых подключений: комнаты и личные звонки вместе.
+    pub voice_connections: u32,
+    /// Число активных видеоисточников: камера и экран считаются отдельно.
+    pub video_sources: u32,
+}
+
+/// История активности голосового чата, доступная владельцу установки.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostVoiceActivityHistoryResponse {
+    /// Доступна ли история: при сбое базы данных текущая активность остаётся доступна.
+    pub available: bool,
+    /// Снимки в хронологическом порядке; пусто при недоступной истории.
+    pub samples: Vec<HostVoiceActivitySample>,
+}
+
+/// Один снимок активности голосового чата на хосте.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostVoiceActivitySample {
+    /// Время измерения в миллисекундах Unix.
+    pub sampled_at_unix_ms: i64,
+    /// Число активных голосовых подключений в момент измерения.
+    pub voice_connections: u32,
+    /// Число активных видеоисточников в момент измерения: камера и экран считаются раздельно.
+    pub video_sources: u32,
+}
+
 /// Одно измерение нагрузки хоста.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct HostMetricsSample {

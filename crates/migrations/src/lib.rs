@@ -36,6 +36,7 @@ mod m20260904_000032_create_desktop_oauth_attempts;
 mod m20260908_000033_add_user_deletion;
 mod m20260927_000034_create_server_room_write_roles;
 mod m20260927_000035_add_server_invite_deleted_at;
+mod m20261010_000036_create_host_voice_activity_samples;
 
 pub use sea_orm_migration::prelude::*;
 
@@ -81,6 +82,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260908_000033_add_user_deletion::Migration),
             Box::new(m20260927_000034_create_server_room_write_roles::Migration),
             Box::new(m20260927_000035_add_server_invite_deleted_at::Migration),
+            Box::new(m20261010_000036_create_host_voice_activity_samples::Migration),
         ]
     }
 }

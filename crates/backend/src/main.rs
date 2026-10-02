@@ -220,6 +220,9 @@ async fn main() -> anyhow::Result<()> {
         password_reset_token_lifetime_minutes: config.password_reset_token_lifetime_minutes,
     };
     let app = http::router(state.clone());
+    let host_activity_monitor = Arc::new(
+        features::host_settings::activity_monitor::HostActivityMonitor::new(state.clone()),
+    );
     tokio::spawn(features::auth::application::run_account_deletion_worker(
         state.clone(),
     ));
@@ -227,6 +230,7 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(push_notifications.run_delivery_worker());
     }
     tokio::spawn(host_metrics.run());
+    tokio::spawn(host_activity_monitor.run());
     let realtime_address = address;
     let realtime_server = realtime::bind(
         realtime_address,

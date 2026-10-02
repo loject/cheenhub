@@ -25,6 +25,7 @@ pub use host_settings::{
     EmailTransport, GmailConnectionStartResponse, HostAccessResponse, HostCpuMetrics,
     HostDiskMetrics, HostEmailSettingsResponse, HostLogEntry, HostLogStreamMessage,
     HostMemoryMetrics, HostMetricsResponse, HostMetricsSample, HostNetworkMetrics,
+    HostVoiceActivityHistoryResponse, HostVoiceActivityResponse, HostVoiceActivitySample,
     UpdateHostEmailSettingsRequest,
 };
 pub use push_notifications::{PushPlatform, UpsertPushInstallationRequest};

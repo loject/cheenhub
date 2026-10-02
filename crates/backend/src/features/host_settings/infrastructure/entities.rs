@@ -102,5 +102,31 @@ pub(crate) mod host_gmail_oauth_states {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+/// Сущность снимка активности голосового чата хоста.
+pub(crate) mod host_voice_activity_samples {
+    use sea_orm::entity::prelude::*;
+
+    /// Одно измерение активности голосового чата с интервалом в 10 секунд.
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "host_voice_activity_samples")]
+    pub struct Model {
+        /// Уникальный идентификатор измерения.
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        /// Время измерения на сервере в UTC.
+        pub sampled_at: DateTimeUtc,
+        /// Число активных голосовых подключений в момент измерения.
+        pub voice_connections: i32,
+        /// Число активных видеоисточников в момент измерения.
+        pub video_sources: i32,
+    }
+
+    /// Связи измерения активности не используются напрямую.
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 // Импорт нужен derive-макросам вложенных SeaORM-сущностей.
 const _: Option<Uuid> = None;

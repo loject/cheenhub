@@ -83,6 +83,23 @@ impl HostEmailSettings {
     }
 }
 
+/// Одно измерение активности голосового чата, сохранённое в базе хоста.
+///
+/// Снимок хранит оба показателя: число голосовых подключений и число активных
+/// видеоисточников. Нулевые значения сохраняются как есть, чтобы график за сутки
+/// показывал и периоды полной тишины.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct VoiceActivitySample {
+    /// Уникальный идентификатор измерения.
+    pub(crate) id: Uuid,
+    /// Время измерения на сервере в UTC.
+    pub(crate) sampled_at: DateTime<Utc>,
+    /// Число активных голосовых подключений.
+    pub(crate) voice_connections: u32,
+    /// Число активных видеоисточников: камера и экран считаются раздельно.
+    pub(crate) video_sources: u32,
+}
+
 /// Одноразовое состояние подключения Gmail.
 pub(crate) struct GmailOAuthState {
     pub(crate) id: Uuid,

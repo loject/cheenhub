@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use uuid::Uuid;
 
-use super::domain::{GmailOAuthState, HostEmailSettings};
+use super::domain::{GmailOAuthState, HostEmailSettings, VoiceActivitySample};
 
 /// Операции хранения настроек хоста.
 #[async_trait]
@@ -28,6 +28,22 @@ pub(crate) trait HostSettingsStore: Send + Sync {
         state_hash: &str,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<Uuid>>;
+    async fn insert_voice_activity_sample(&self, sample: VoiceActivitySample)
+    -> anyhow::Result<()>;
+    /// Возвращает снимки активности в полуинтервале `(since, now]` в хронологическом порядке.
+    ///
+    /// Границы времени выражены в UTC. Пустой `since` означает запрос всей доступной
+    /// истории, но выборка дополнительно ограничивается 24 часами вызывающего кода.
+    async fn load_voice_activity_samples(
+        &self,
+        since: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<VoiceActivitySample>>;
+    /// Удаляет измерения старше указанного момента и возвращает число удалённых строк.
+    async fn delete_voice_activity_samples_before(
+        &self,
+        cutoff: DateTime<Utc>,
+    ) -> anyhow::Result<usize>;
 }
 
 /// PostgreSQL-хранилище настроек хоста.
@@ -137,8 +153,63 @@ impl HostSettingsStore for PostgresHostSettingsStore {
             .await?
             .map(|state| state.user_id))
     }
-}
 
+    async fn insert_voice_activity_sample(
+        &self,
+        sample: VoiceActivitySample,
+    ) -> anyhow::Result<()> {
+        use entities::host_voice_activity_samples;
+        host_voice_activity_samples::ActiveModel {
+            id: Set(sample.id),
+            sampled_at: Set(sample.sampled_at),
+            voice_connections: Set(i32::try_from(sample.voice_connections)?),
+            video_sources: Set(i32::try_from(sample.video_sources)?),
+        }
+        .insert(&self.database)
+        .await?;
+        Ok(())
+    }
+
+    async fn load_voice_activity_samples(
+        &self,
+        since: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<VoiceActivitySample>> {
+        use entities::host_voice_activity_samples;
+        use sea_orm::QueryOrder;
+
+        let models = host_voice_activity_samples::Entity::find()
+            .filter(host_voice_activity_samples::Column::SampledAt.gt(since))
+            .filter(host_voice_activity_samples::Column::SampledAt.lte(now))
+            .order_by_asc(host_voice_activity_samples::Column::SampledAt)
+            .all(&self.database)
+            .await?;
+
+        models
+            .into_iter()
+            .map(|model| {
+                Ok(VoiceActivitySample {
+                    id: model.id,
+                    sampled_at: model.sampled_at,
+                    voice_connections: u32::try_from(model.voice_connections)?,
+                    video_sources: u32::try_from(model.video_sources)?,
+                })
+            })
+            .collect()
+    }
+
+    async fn delete_voice_activity_samples_before(
+        &self,
+        cutoff: DateTime<Utc>,
+    ) -> anyhow::Result<usize> {
+        use entities::host_voice_activity_samples;
+        let result = host_voice_activity_samples::Entity::delete_many()
+            .filter(host_voice_activity_samples::Column::SampledAt.lt(cutoff))
+            .exec(&self.database)
+            .await?;
+        Ok(usize::try_from(result.rows_affected)?)
+    }
+}
 fn settings_from_model(
     model: entities::host_email_settings::Model,
 ) -> anyhow::Result<HostEmailSettings> {
@@ -167,6 +238,7 @@ pub(crate) struct InMemoryHostSettingsStore {
     settings: RwLock<HostEmailSettings>,
     owners: RwLock<Vec<Uuid>>,
     states: RwLock<Vec<(GmailOAuthState, Option<DateTime<Utc>>)>>,
+    pub(super) voice_activity: RwLock<Vec<VoiceActivitySample>>,
 }
 
 impl InMemoryHostSettingsStore {
@@ -225,92 +297,42 @@ impl HostSettingsStore for InMemoryHostSettingsStore {
         *consumed_at = Some(now);
         Ok(Some(state.user_id))
     }
-}
 
+    async fn insert_voice_activity_sample(
+        &self,
+        sample: VoiceActivitySample,
+    ) -> anyhow::Result<()> {
+        self.voice_activity
+            .write()
+            .expect("voice activity lock")
+            .push(sample);
+        Ok(())
+    }
+
+    async fn load_voice_activity_samples(
+        &self,
+        since: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<VoiceActivitySample>> {
+        let samples = self.voice_activity.read().expect("voice activity lock");
+        let mut selected: Vec<VoiceActivitySample> = samples
+            .iter()
+            .copied()
+            .filter(|sample| sample.sampled_at > since && sample.sampled_at <= now)
+            .collect();
+        selected.sort_by_key(|sample| sample.sampled_at);
+        Ok(selected)
+    }
+
+    async fn delete_voice_activity_samples_before(
+        &self,
+        cutoff: DateTime<Utc>,
+    ) -> anyhow::Result<usize> {
+        let mut samples = self.voice_activity.write().expect("voice activity lock");
+        let before = samples.len();
+        samples.retain(|sample| sample.sampled_at >= cutoff);
+        Ok(before - samples.len())
+    }
+}
 #[cfg(test)]
-mod tests {
-    use chrono::{Duration, Utc};
-    use uuid::Uuid;
-
-    use super::{HostSettingsStore, InMemoryHostSettingsStore};
-    use crate::features::host_settings::domain::{
-        EmailTransport, GmailOAuthState, HostEmailSettings,
-    };
-
-    #[tokio::test]
-    async fn distinguishes_host_owner_from_regular_user() {
-        let owner_id = Uuid::new_v4();
-        let regular_id = Uuid::new_v4();
-        let store = InMemoryHostSettingsStore::with_owner(owner_id);
-
-        assert!(store.is_host_owner(owner_id).await.expect("owner lookup"));
-        assert!(!store.is_host_owner(regular_id).await.expect("owner lookup"));
-    }
-
-    #[tokio::test]
-    async fn gmail_oauth_state_is_consumed_only_once() {
-        let owner_id = Uuid::new_v4();
-        let store = InMemoryHostSettingsStore::with_owner(owner_id);
-        let now = Utc::now();
-        store
-            .insert_gmail_oauth_state(GmailOAuthState {
-                id: Uuid::new_v4(),
-                state_hash: "hash".to_owned(),
-                user_id: owner_id,
-                created_at: now,
-                expires_at: now + Duration::minutes(10),
-            })
-            .await
-            .expect("state insert");
-
-        assert_eq!(
-            store
-                .consume_gmail_oauth_state("hash", now)
-                .await
-                .expect("first consume"),
-            Some(owner_id)
-        );
-        assert_eq!(
-            store
-                .consume_gmail_oauth_state("hash", now)
-                .await
-                .expect("second consume"),
-            None
-        );
-    }
-
-    #[tokio::test]
-    async fn email_transport_change_is_visible_without_recreating_store() {
-        let owner_id = Uuid::new_v4();
-        let store = InMemoryHostSettingsStore::with_owner(owner_id);
-        assert_eq!(
-            store
-                .load_email_settings()
-                .await
-                .expect("initial settings")
-                .transport,
-            EmailTransport::Smtp
-        );
-
-        store
-            .save_email_settings(
-                HostEmailSettings {
-                    transport: EmailTransport::GmailApi,
-                    ..HostEmailSettings::default()
-                },
-                owner_id,
-                Utc::now(),
-            )
-            .await
-            .expect("settings update");
-
-        assert_eq!(
-            store
-                .load_email_settings()
-                .await
-                .expect("updated settings")
-                .transport,
-            EmailTransport::GmailApi
-        );
-    }
-}
+mod store_tests;
