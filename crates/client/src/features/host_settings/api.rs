@@ -2,7 +2,8 @@
 
 use cheenhub_contracts::rest::{
     GmailConnectionStartResponse, HostAccessResponse, HostEmailSettingsResponse,
-    HostMetricsResponse, UpdateHostEmailSettingsRequest,
+    HostMetricsResponse, HostVoiceActivityHistoryResponse, HostVoiceActivityResponse,
+    UpdateHostEmailSettingsRequest,
 };
 use dioxus::prelude::{debug, info, warn};
 use reqwest::{Response, StatusCode};
@@ -188,8 +189,46 @@ async fn classify_error(response: Response) -> HostSettingsApiError {
     let forbidden = response.status() == StatusCode::FORBIDDEN;
     let message = auth_api::read_error(response).await;
     if forbidden {
+        warn!("host settings request rejected for a non-owner user");
         HostSettingsApiError::Forbidden(message)
     } else {
         HostSettingsApiError::Other(message)
     }
+}
+
+/// Загружает текущие голосовые подключения и видеоисточники хоста.
+pub(crate) async fn load_activity() -> Result<HostVoiceActivityResponse, HostSettingsApiError> {
+    let response = authorized_get("/host-settings/activity")
+        .await
+        .map_err(HostSettingsApiError::Other)?;
+    if response.status().is_success() {
+        return response.json().await.map_err(|_| {
+            HostSettingsApiError::Other(
+                "Не удалось прочитать активность голосового чата.".to_owned(),
+            )
+        });
+    }
+    Err(classify_error(response).await)
+}
+
+/// Загружает историю голосовых подключений за последние 24 часа.
+///
+/// `after_unix_ms` ограничивает ответ новыми точками после отметки последнего
+/// полученного измерения, чтобы клиент не забирал всю историю при каждом обновлении.
+pub(crate) async fn load_activity_history(
+    after_unix_ms: Option<i64>,
+) -> Result<HostVoiceActivityHistoryResponse, HostSettingsApiError> {
+    let path = match after_unix_ms {
+        Some(millis) => format!("/host-settings/activity/history?after_unix_ms={millis}"),
+        None => "/host-settings/activity/history".to_owned(),
+    };
+    let response = authorized_get(&path)
+        .await
+        .map_err(HostSettingsApiError::Other)?;
+    if response.status().is_success() {
+        return response.json().await.map_err(|_| {
+            HostSettingsApiError::Other("Не удалось прочитать историю активности.".to_owned())
+        });
+    }
+    Err(classify_error(response).await)
 }

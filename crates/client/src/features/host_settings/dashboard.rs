@@ -9,6 +9,7 @@ use dioxus::prelude::*;
 
 use crate::features::runtime::sleep_ms;
 
+use super::activity_panel::HostActivityPanel;
 use super::api::{self, HostSettingsApiError};
 use super::tabs::{HostSettingsTab, host_settings_tabs};
 
@@ -50,6 +51,8 @@ pub(crate) fn HostDashboardPage() -> Element {
             div { class: "mx-auto w-full max-w-[1180px] pb-10",
                 {header_block(metrics_result.as_ref().and_then(|result| result.as_ref().ok()))}
                 {host_settings_tabs(HostSettingsTab::Dashboard)}
+
+                {HostActivityPanel()}
 
                 {metrics_body(metrics_result.clone(), cpu_view, retry_metrics)}
             }

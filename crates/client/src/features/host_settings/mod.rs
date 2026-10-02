@@ -1,5 +1,7 @@
 //! Глобальные настройки хоста CheenHub.
 
+mod activity_chart;
+mod activity_panel;
 pub(crate) mod api;
 mod dashboard;
 mod log_stream;
