@@ -40,8 +40,8 @@ dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensur
 run_task = "dev-services-android-emulator"
 
 [tasks.dev-stack-backend]
-description = "Ensure local infrastructure and run the backend watcher."
-dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
+description = "Ensure local infrastructure, apply database migrations, and run the backend watcher."
+dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres", "migrate-database"]
 run_task = "backend-watch"
 
 [tasks.ensure-local-jwt-env]
