@@ -56,6 +56,12 @@
 
 - Every crate must include crate-level documentation.
 - Every public module, type, function, trait, enum, constant, and field must have `///` documentation when it is introduced.
+- Документация должна объяснять назначение и контракт API, а не просто пересказывать название. Это относится также к `pub(crate)` API.
+- Начинай `///` с краткого описания, затем через пустую строку раскрывай значимые детали: семантику входных данных и результата, единицы измерения, ограничения, граничные случаи и взаимодействие с вызывающим кодом.
+- Для типов и enum описывай, какую роль они играют, где используются и какие ограничения задают. Документируй смысл каждого варианта enum и поля, если он не очевиден из общего описания.
+- В `//!` описывай ответственность модуля, основные предоставляемые контракты и границы ответственности с соседними модулями.
+- Добавляй разделы `# Errors`, `# Panics` и примеры, когда соответствующее поведение существует и важно для правильного использования API.
+- Однострочная документация допустима только тогда, когда она полностью объясняет контракт. Не добавляй повторения, выдуманные гарантии или формальные абзацы ради объёма.
 - Write new documentation comments (`//!`, `///`) and regular code comments in Russian. Keep protocol names, API names, environment variable names, type and field names unchanged; prefer established English technical terms when translation would make the meaning less precise.
 - Crates use `#![warn(missing_docs)]`; warnings are acceptable during early development, but new public API should not add missing-doc warnings.
 - Run `cargo fmt` and `cargo clippy --workspace --all-targets` before handing off only when the task changes Rust source, Cargo manifests, migrations, contracts, or other Rust-facing generated code. Do not run cargo commands for documentation-only, CSS-only, asset-only, or other non-Rust changes unless they are needed for the task.
