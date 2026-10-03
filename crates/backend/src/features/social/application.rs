@@ -3,11 +3,12 @@
 mod attachments;
 mod direct_messages;
 mod friend_list;
+mod friendship_policy;
 
 use cheenhub_contracts::realtime::SocialChangeReason;
 use cheenhub_contracts::rest::{
     ListFriendRequestsResponse, SearchUsersResponse, SendFriendRequestRequest,
-    SendFriendRequestResponse, UserRelationStatus, UserSearchResult,
+    SendFriendRequestResponse, UserSearchResult,
 };
 use uuid::Uuid;
 
@@ -21,6 +22,10 @@ use crate::features::social::support::{
     request_summary,
 };
 use crate::state::AppState;
+
+use friendship_policy::{
+    accepted_friendship_exists, ensure_accepted_friendship, relation_statuses,
+};
 
 pub(crate) use attachments::{
     attachment_summaries_by_conversation, attachment_summary, dm_image, upload_dm_image,
@@ -67,7 +72,13 @@ pub(crate) async fn direct_message_voice_access(
         conversation.user_low_id
     };
     ensure_user_active(state, &friend_user_id).await?;
-    ensure_accepted_friendship(state, user_id, &friend_user_id).await?;
+    ensure_accepted_friendship(
+        state,
+        user_id,
+        &friend_user_id,
+        "Звонить можно только друзьям.",
+    )
+    .await?;
     Ok(DirectMessageVoiceAccess {
         conversation_id: conversation.id,
     })
@@ -141,10 +152,17 @@ pub(crate) async fn search_users(
         .search_users_by_nickname(query, USER_SEARCH_LIMIT)
         .await
         .map_err(SocialError::Internal)?;
-    let mut results = Vec::new();
-    for user in users.into_iter().filter(|user| user.id != current_user.id) {
-        let relation = relation_status(state, &current_user.id, &user.id).await?;
-        let user = auth_user(state, &user);
+    let candidates = users
+        .iter()
+        .map(|user| user.id)
+        .filter(|user_id| *user_id != current_user.id)
+        .collect::<Vec<_>>();
+    let relations = relation_statuses(state, &current_user.id, &candidates).await?;
+
+    let mut results = Vec::with_capacity(candidates.len());
+    for user in users.iter().filter(|user| user.id != current_user.id) {
+        let relation = relations.get(&user.id).copied();
+        let user = auth_user(state, user);
         results.push(UserSearchResult {
             id: user.id,
             nickname: user.nickname,
@@ -419,62 +437,6 @@ async fn change_request_status(
     Ok(SendFriendRequestResponse {
         request: request_summary(state, updated).await?,
     })
-}
-
-async fn relation_status(
-    state: &AppState,
-    current_user_id: &Uuid,
-    user_id: &Uuid,
-) -> Result<Option<UserRelationStatus>, SocialError> {
-    let Some(friendship) = state
-        .social_store
-        .friendship_between(current_user_id, user_id)
-        .await
-        .map_err(SocialError::Internal)?
-    else {
-        return Ok(None);
-    };
-
-    Ok(match friendship.status {
-        FriendshipStatus::Accepted => Some(UserRelationStatus::Friends),
-        FriendshipStatus::Pending if friendship.requester_user_id == *current_user_id => {
-            Some(UserRelationStatus::PendingOutgoing)
-        }
-        FriendshipStatus::Pending => Some(UserRelationStatus::PendingIncoming),
-        FriendshipStatus::Declined | FriendshipStatus::Cancelled => None,
-    })
-}
-
-async fn ensure_accepted_friendship(
-    state: &AppState,
-    current_user_id: &Uuid,
-    friend_user_id: &Uuid,
-) -> Result<(), SocialError> {
-    if accepted_friendship_exists(state, current_user_id, friend_user_id).await? {
-        Ok(())
-    } else {
-        tracing::warn!(
-            user_id = %current_user_id,
-            friend_user_id = %friend_user_id,
-            "rejected direct message voice access for non-friends"
-        );
-        Err(SocialError::Unauthorized(
-            "Звонить можно только друзьям.".to_owned(),
-        ))
-    }
-}
-
-async fn accepted_friendship_exists(
-    state: &AppState,
-    left_user_id: &Uuid,
-    right_user_id: &Uuid,
-) -> Result<bool, SocialError> {
-    let friendship = state
-        .social_store
-        .friendship_between(left_user_id, right_user_id)
-        .await
-        .map_err(SocialError::Internal)?;
-    Ok(friendship.is_some_and(|friendship| friendship.status == FriendshipStatus::Accepted))
 }
 
 #[cfg(test)]

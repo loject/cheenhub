@@ -3,9 +3,11 @@
 mod entities;
 mod in_memory;
 mod in_memory_friend_list;
+mod in_memory_friendships;
 mod postgres;
 mod postgres_conversions;
 mod postgres_friend_list;
+mod postgres_friendships;
 mod postgres_read_state;
 
 use async_trait::async_trait;
@@ -60,6 +62,20 @@ pub(crate) trait SocialStore: Send + Sync {
 
     /// Находит запись дружбы по идентификатору.
     async fn friendship_by_id(&self, friendship_id: &Uuid) -> anyhow::Result<Option<Friendship>>;
+
+    /// Находит записи дружбы текущего пользователя сразу по набору собеседников.
+    ///
+    /// Нужен там, где для каждого элемента страницы проверяется отношение с одним
+    /// и тем же пользователем, например в поиске пользователей: построчный вызов
+    /// `friendship_between` превращает один HTTP-запрос в N+1 запросов.
+    ///
+    /// Собственник пары всегда первый, поэтому передавать нужно только идентификаторы
+    /// собеседников. Если собеседник передан повторно, вернется одна запись.
+    async fn friendships_with_user(
+        &self,
+        user_id: &Uuid,
+        other_user_ids: &[Uuid],
+    ) -> anyhow::Result<Vec<Friendship>>;
 
     /// Создает или переоткрывает заявку в друзья для пары пользователей.
     async fn upsert_friend_request(

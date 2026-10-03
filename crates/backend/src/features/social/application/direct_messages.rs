@@ -12,7 +12,7 @@ use uuid::Uuid;
 use super::attachments::validate_attachment_owner;
 use crate::features::auth::application::require_current_user;
 use crate::features::push_notifications::{DirectMessagePush, direct_message_preview};
-use crate::features::social::domain::{DmMessage, FriendshipStatus};
+use crate::features::social::domain::DmMessage;
 use crate::features::social::error::SocialError;
 use crate::features::social::infrastructure::normalize_unread_count;
 use crate::features::social::realtime::{
@@ -53,7 +53,13 @@ pub(crate) async fn open_dm_conversation(
         .map_err(map_auth_error)?;
     let friend_user_id = parse_id(&request.friend_user_id, "Пользователь не найден.")?;
     ensure_user_active(state, &friend_user_id).await?;
-    ensure_friendship(state, &current_user.id, &friend_user_id).await?;
+    super::friendship_policy::ensure_accepted_friendship(
+        state,
+        &current_user.id,
+        &friend_user_id,
+        "Писать можно только друзьям.",
+    )
+    .await?;
     let conversation = state
         .social_store
         .get_or_create_conversation(&current_user.id, &friend_user_id, Utc::now())
@@ -218,7 +224,13 @@ pub(crate) async fn send_dm_message(
     let conversation = load_user_conversation(state, &conversation_id, &current_user.id).await?;
     let friend_user_id = other_user_id(&conversation, &current_user.id);
     ensure_user_active(state, &friend_user_id).await?;
-    ensure_friendship(state, &current_user.id, &friend_user_id).await?;
+    super::friendship_policy::ensure_accepted_friendship(
+        state,
+        &current_user.id,
+        &friend_user_id,
+        "Писать можно только друзьям.",
+    )
+    .await?;
     let image_id = request
         .image_id
         .as_deref()
@@ -313,26 +325,6 @@ pub(crate) async fn send_dm_message(
         )
         .await?,
     })
-}
-
-async fn ensure_friendship(
-    state: &AppState,
-    current_user_id: &Uuid,
-    friend_user_id: &Uuid,
-) -> Result<(), SocialError> {
-    let friendship = state
-        .social_store
-        .friendship_between(current_user_id, friend_user_id)
-        .await
-        .map_err(SocialError::Internal)?
-        .ok_or_else(|| SocialError::Unauthorized("Писать можно только друзьям.".to_owned()))?;
-    if friendship.status == FriendshipStatus::Accepted {
-        Ok(())
-    } else {
-        Err(SocialError::Unauthorized(
-            "Писать можно только друзьям.".to_owned(),
-        ))
-    }
 }
 
 async fn recipient_last_read_seq(

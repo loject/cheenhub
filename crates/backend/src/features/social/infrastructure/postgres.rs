@@ -44,22 +44,21 @@ impl SocialStore for PostgresSocialStore {
         left_user_id: &Uuid,
         right_user_id: &Uuid,
     ) -> anyhow::Result<Option<Friendship>> {
-        let (user_low_id, user_high_id) = ordered_pair(*left_user_id, *right_user_id);
-        Ok(friendships::Entity::find()
-            .filter(friendships::Column::UserLowId.eq(user_low_id))
-            .filter(friendships::Column::UserHighId.eq(user_high_id))
-            .one(&self.database)
-            .await?
-            .map(try_friendship)
-            .transpose()?)
+        super::postgres_friendships::friendship_between(&self.database, left_user_id, right_user_id)
+            .await
     }
 
     async fn friendship_by_id(&self, friendship_id: &Uuid) -> anyhow::Result<Option<Friendship>> {
-        Ok(friendships::Entity::find_by_id(*friendship_id)
-            .one(&self.database)
-            .await?
-            .map(try_friendship)
-            .transpose()?)
+        super::postgres_friendships::friendship_by_id(&self.database, friendship_id).await
+    }
+
+    async fn friendships_with_user(
+        &self,
+        user_id: &Uuid,
+        other_user_ids: &[Uuid],
+    ) -> anyhow::Result<Vec<Friendship>> {
+        super::postgres_friendships::friendships_with_user(&self.database, user_id, other_user_ids)
+            .await
     }
 
     async fn upsert_friend_request(
@@ -68,35 +67,13 @@ impl SocialStore for PostgresSocialStore {
         recipient_user_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Friendship> {
-        let (user_low_id, user_high_id) = ordered_pair(*requester_user_id, *recipient_user_id);
-        if let Some(row) = friendships::Entity::find()
-            .filter(friendships::Column::UserLowId.eq(user_low_id))
-            .filter(friendships::Column::UserHighId.eq(user_high_id))
-            .one(&self.database)
-            .await?
-        {
-            let mut active = row.into_active_model();
-            active.requester_user_id = Set(*requester_user_id);
-            active.recipient_user_id = Set(*recipient_user_id);
-            active.status = Set(FriendshipStatus::Pending.as_str().to_owned());
-            active.updated_at = Set(now);
-            return try_friendship(active.update(&self.database).await?);
-        }
-
-        try_friendship(
-            friendships::ActiveModel {
-                id: Set(Uuid::new_v4()),
-                requester_user_id: Set(*requester_user_id),
-                recipient_user_id: Set(*recipient_user_id),
-                user_low_id: Set(user_low_id),
-                user_high_id: Set(user_high_id),
-                status: Set(FriendshipStatus::Pending.as_str().to_owned()),
-                created_at: Set(now),
-                updated_at: Set(now),
-            }
-            .insert(&self.database)
-            .await?,
+        super::postgres_friendships::upsert_friend_request(
+            &self.database,
+            requester_user_id,
+            recipient_user_id,
+            now,
         )
+        .await
     }
 
     async fn update_friendship_status(
@@ -105,16 +82,31 @@ impl SocialStore for PostgresSocialStore {
         status: FriendshipStatus,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<Friendship>> {
-        let Some(row) = friendships::Entity::find_by_id(*friendship_id)
-            .one(&self.database)
-            .await?
-        else {
-            return Ok(None);
-        };
-        let mut active = row.into_active_model();
-        active.status = Set(status.as_str().to_owned());
-        active.updated_at = Set(now);
-        Ok(Some(try_friendship(active.update(&self.database).await?)?))
+        super::postgres_friendships::update_friendship_status(
+            &self.database,
+            friendship_id,
+            status,
+            now,
+        )
+        .await
+    }
+
+    async fn incoming_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>> {
+        super::postgres_friendships::request_rows(
+            &self.database,
+            friendships::Column::RecipientUserId,
+            user_id,
+        )
+        .await
+    }
+
+    async fn outgoing_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>> {
+        super::postgres_friendships::request_rows(
+            &self.database,
+            friendships::Column::RequesterUserId,
+            user_id,
+        )
+        .await
     }
 
     async fn friend_list_page(
@@ -124,24 +116,6 @@ impl SocialStore for PostgresSocialStore {
         limit: usize,
     ) -> anyhow::Result<FriendListPage> {
         super::postgres_friend_list::friend_list_page(&self.database, user_id, cursor, limit).await
-    }
-
-    async fn incoming_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>> {
-        request_rows(
-            &self.database,
-            friendships::Column::RecipientUserId,
-            user_id,
-        )
-        .await
-    }
-
-    async fn outgoing_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>> {
-        request_rows(
-            &self.database,
-            friendships::Column::RequesterUserId,
-            user_id,
-        )
-        .await
     }
 
     async fn conversation_by_id(
@@ -443,38 +417,4 @@ impl SocialStore for PostgresSocialStore {
         transaction.commit().await?;
         Ok(inserted)
     }
-}
-
-async fn request_rows(
-    database: &DatabaseConnection,
-    user_column: friendships::Column,
-    user_id: &Uuid,
-) -> anyhow::Result<Vec<Friendship>> {
-    rows_to_friendships(
-        friendships::Entity::find()
-            .filter(friendships::Column::Status.eq(FriendshipStatus::Pending.as_str()))
-            .filter(user_column.eq(*user_id))
-            .order_by_desc(friendships::Column::CreatedAt)
-            .all(database)
-            .await?,
-    )
-}
-
-fn rows_to_friendships(rows: Vec<friendships::Model>) -> anyhow::Result<Vec<Friendship>> {
-    rows.into_iter().map(try_friendship).collect()
-}
-
-fn try_friendship(row: friendships::Model) -> anyhow::Result<Friendship> {
-    let status = FriendshipStatus::from_str(&row.status)
-        .ok_or_else(|| anyhow::anyhow!("unknown friendship status {}", row.status))?;
-    Ok(Friendship {
-        id: row.id,
-        requester_user_id: row.requester_user_id,
-        recipient_user_id: row.recipient_user_id,
-        user_low_id: row.user_low_id,
-        user_high_id: row.user_high_id,
-        status,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-    })
 }
