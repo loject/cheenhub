@@ -45,7 +45,7 @@ impl SessionEnd {
 /// Классифицированная ошибка обновления auth-сессии.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum RefreshError {
-    /// Временная ошибка; сохранённые токены нельзя удалять.
+    /// Временная ошибка; токены нельзя удалять, а уже ротированную пару нужно сохранить.
     Retryable(String),
     /// Сервер или локальная проверка подтвердили завершение сессии.
     SessionEnded {
@@ -126,21 +126,46 @@ pub(crate) async fn refresh_access_token_classified() -> Result<String, RefreshE
         }
     };
 
-    // Сервер к этому моменту уже ротировал refresh-токен, поэтому повторная попытка с прежним
-    // токеном была бы классифицирована как reuse и привела бы к отзыву всей сессии.
-    // Непроверяемый ответ означает, что локальные JWT-ключи не соответствуют серверным,
-    // то есть восстановить локальную сессию уже невозможно.
-    if let Err(error) = jwt::verify(&response.access_token) {
+    apply_refresh_tokens(
+        &response.access_token,
+        &response.refresh_token,
+        jwt::verify(&response.access_token).map(|_| ()),
+        storage::save,
+        storage::clear,
+    )
+}
+
+fn apply_refresh_tokens(
+    access_token: &str,
+    refresh_token: &str,
+    verification: Result<(), jwt::JwtVerifyError>,
+    save: impl FnOnce(&str, &str),
+    clear: impl FnOnce(),
+) -> Result<String, RefreshError> {
+    // Expired возвращается только после проверки подписи и claims: это подлинный ответ,
+    // даже если часы устройства опережают сервер. Сохраняем уже ротированную пару до повтора.
+    if verification == Err(jwt::JwtVerifyError::Expired) {
+        save(access_token, refresh_token);
+        warn!(
+            "auth refresh returned a locally expired access token; preserved rotated tokens for retry"
+        );
+        return Err(RefreshError::Retryable(
+            "Не удалось обновить сессию. Проверь дату и время на устройстве.".to_owned(),
+        ));
+    }
+
+    // Неверную подпись или формат нельзя принимать; прежний refresh-токен уже потреблён.
+    if let Err(error) = verification {
         warn!(%error, "auth refresh returned an access token that failed local verification");
-        storage::clear();
+        clear();
         return Err(RefreshError::SessionEnded {
             reason: SessionEndReason::InvalidAccessToken,
             message: "Не удалось обновить сессию на этом устройстве. Войди снова.".to_owned(),
         });
     }
-    storage::save(&response.access_token, &response.refresh_token);
+    save(access_token, refresh_token);
     info!("refreshed auth tokens");
-    Ok(response.access_token)
+    Ok(access_token.to_owned())
 }
 
 /// Действие фонового цикла сессии после того, как сохранённый access JWT не прошёл локальную проверку.
@@ -153,8 +178,8 @@ pub(crate) enum AccessTokenRecovery {
     Recovered,
     /// Обновление не удалось по временной причине, попытку нужно повторить позже.
     ///
-    /// Сохранённые токены остаются нетронутыми: временный сбой сети или сервера не должен
-    /// завершать сессию пользователя.
+    /// Временный сбой сети или сервера сохраняет прежнюю пару; локальное истечение срока
+    /// нового JWT сохраняет ротированную пару. Ни один из этих случаев не завершает сессию.
     RetryLater(String),
     /// Сервер подтвердил завершение сессии, сохранённые токены уже удалены.
     SessionEnded(SessionEnd),

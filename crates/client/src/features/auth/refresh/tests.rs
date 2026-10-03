@@ -94,3 +94,94 @@ fn rejected(code: &str) -> RefreshFailure {
         network: false,
     }
 }
+
+#[test]
+fn locally_expired_refresh_response_preserves_rotated_tokens_for_delayed_retry() {
+    use crate::features::auth::{jwt::JwtVerifyError, storage::StoredTokens};
+    use std::cell::RefCell;
+
+    let stored = RefCell::new(Some(StoredTokens {
+        access_token: "old-access".to_owned(),
+        refresh_token: "consumed-refresh".to_owned(),
+    }));
+
+    let result = super::apply_refresh_tokens(
+        "signed-but-locally-expired-access",
+        "rotated-refresh",
+        Err(JwtVerifyError::Expired),
+        |access_token, refresh_token| {
+            *stored.borrow_mut() = Some(StoredTokens {
+                access_token: access_token.to_owned(),
+                refresh_token: refresh_token.to_owned(),
+            });
+        },
+        || {
+            *stored.borrow_mut() = None;
+        },
+    );
+
+    assert_eq!(
+        stored.into_inner(),
+        Some(StoredTokens {
+            access_token: "signed-but-locally-expired-access".to_owned(),
+            refresh_token: "rotated-refresh".to_owned(),
+        })
+    );
+    assert!(matches!(
+        classify_recovery(result),
+        AccessTokenRecovery::RetryLater(_)
+    ));
+}
+
+#[test]
+fn fresh_refresh_response_saves_rotated_pair_and_returns_access_token() {
+    let mut stored = None;
+
+    let result = super::apply_refresh_tokens(
+        "fresh-access",
+        "rotated-refresh",
+        Ok(()),
+        |access_token, refresh_token| {
+            stored = Some((access_token.to_owned(), refresh_token.to_owned()));
+        },
+        || panic!("fresh tokens must not clear the session"),
+    );
+
+    assert_eq!(result, Ok("fresh-access".to_owned()));
+    assert_eq!(
+        stored,
+        Some(("fresh-access".to_owned(), "rotated-refresh".to_owned()))
+    );
+}
+
+#[test]
+fn unauthentic_refresh_response_clears_session_without_saving_tokens() {
+    use crate::features::auth::jwt::JwtVerifyError;
+
+    for error in [
+        JwtVerifyError::InvalidToken,
+        JwtVerifyError::VerificationKeyUnavailable,
+    ] {
+        let mut cleared = false;
+
+        let result = super::apply_refresh_tokens(
+            "untrusted-access",
+            "untrusted-refresh",
+            Err(error),
+            |_, _| panic!("untrusted tokens must not be saved"),
+            || cleared = true,
+        );
+
+        assert!(cleared, "verification failure: {error:?}");
+        assert!(
+            matches!(
+                result,
+                Err(RefreshError::SessionEnded {
+                    reason: SessionEndReason::InvalidAccessToken,
+                    ..
+                })
+            ),
+            "verification failure: {error:?}"
+        );
+    }
+}
