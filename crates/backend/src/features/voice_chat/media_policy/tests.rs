@@ -1,3 +1,8 @@
+//! Проверки политики видеопубликаций и подсчёта активных видеоисточников.
+
+mod activity;
+pub(crate) mod support;
+
 use super::*;
 use cheenhub_contracts::{
     media::{MediaCodec, MediaDatagram},

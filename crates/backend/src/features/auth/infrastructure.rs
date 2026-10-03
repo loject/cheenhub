@@ -2,10 +2,6 @@
 
 mod account_lifecycle;
 mod conversions;
-#[cfg(test)]
-mod deletion_tests;
-#[cfg(test)]
-mod desktop_oauth_postgres_tests;
 mod entities;
 mod in_memory;
 mod in_memory_deletion;
@@ -31,7 +27,7 @@ mod postgres_store;
 mod postgres_user;
 
 #[cfg(test)]
-mod desktop_oauth_tests;
+mod tests;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};

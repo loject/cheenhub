@@ -217,5 +217,4 @@ async fn load_refresh(
 }
 
 #[cfg(test)]
-#[path = "history_refresh_tests.rs"]
 mod tests;

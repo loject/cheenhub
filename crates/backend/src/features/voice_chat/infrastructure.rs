@@ -355,4 +355,4 @@ impl VoicePresenceTarget {
 }
 
 #[cfg(test)]
-mod presence_tests;
+mod tests;

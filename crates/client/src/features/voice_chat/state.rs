@@ -379,5 +379,4 @@ impl VoiceConnectionHandle {
 }
 
 #[cfg(test)]
-#[path = "state_tests.rs"]
 mod tests;

@@ -74,5 +74,4 @@ impl PlaybackPause {
 }
 
 #[cfg(test)]
-#[path = "playout_timing_tests.rs"]
 mod tests;

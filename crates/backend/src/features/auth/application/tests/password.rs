@@ -2,8 +2,8 @@
 
 use cheenhub_contracts::rest::{ChangeCurrentUserPasswordRequest, LoginRequest};
 
-use super::{login, registered_user, state, state_with_mailer};
-use crate::features::auth::application::change_current_user_password;
+use super::support::{registered_user, state, state_with_mailer};
+use crate::features::auth::application::{change_current_user_password, login};
 
 #[tokio::test]
 async fn change_current_user_password_changes_password_and_sends_email() {
@@ -70,7 +70,7 @@ async fn change_current_user_password_rejects_invalid_current_password() {
 #[tokio::test]
 async fn passwordless_user_can_set_first_password_without_current_password() {
     let (state, mailer) = state_with_mailer();
-    let auth = super::google_only_user(&state).await;
+    let auth = super::support::google_only_user(&state).await;
 
     change_current_user_password(
         &state,

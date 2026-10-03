@@ -3,7 +3,7 @@
 use cheenhub_contracts::rest::UpdateCurrentUserRequest;
 use chrono::{Duration, Utc};
 
-use super::{registered_user, state};
+use super::support::{registered_user, state};
 use crate::features::auth::application::{me, update_current_user};
 use crate::features::auth::error::AuthError;
 

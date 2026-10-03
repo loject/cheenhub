@@ -4,7 +4,7 @@ use cheenhub_contracts::rest::{AccountRestoreRequest, LoginRequest, RefreshReque
 use chrono::{DateTime, Duration, Utc};
 use uuid::Uuid;
 
-use super::{registered_user, state_with_mailer};
+use super::support::{registered_user, state_with_mailer};
 use crate::features::auth::{
     application::{delete_current_user, login, me, refresh_with_user_agent, restore_account},
     email::tests::TestAuthMailer,
@@ -40,7 +40,7 @@ async fn deletion_emails_deadline_revokes_access_and_restores_only_explicitly() 
     let (state, mailer) = state_with_mailer();
     let auth = registered_user(&state, "delete_restore", "restore@example.com").await;
     let user_id = Uuid::parse_str(&auth.user.id).unwrap();
-    let disconnected = super::realtime::register_test_session(&state, &auth).await;
+    let disconnected = super::support::register_test_session(&state, &auth).await;
     let started = Utc::now();
     let response = delete_current_user(&state, &auth.access_token)
         .await
@@ -218,7 +218,7 @@ async fn email_delivery_failure_keeps_account_and_session_active() {
 #[tokio::test]
 async fn passwordless_account_can_restore_without_creating_a_password() {
     let (state, mailer) = state_with_mailer();
-    let auth = super::google_only_user(&state).await;
+    let auth = super::support::google_only_user(&state).await;
     let user_id = Uuid::parse_str(&auth.user.id).unwrap();
     delete_current_user(&state, &auth.access_token)
         .await

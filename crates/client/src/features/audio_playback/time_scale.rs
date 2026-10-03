@@ -352,5 +352,4 @@ impl VoiceTimeCompressor {
 }
 
 #[cfg(test)]
-#[path = "time_scale_tests.rs"]
 mod tests;

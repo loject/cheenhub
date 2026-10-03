@@ -9,7 +9,6 @@ use sea_orm::{
 use super::entities::{desktop_oauth_attempts as attempts, oauth_handoffs, oauth_states};
 
 #[cfg(test)]
-#[path = "postgres_desktop_oauth_cleanup_tests.rs"]
 mod tests;
 
 /// Удаляет ограниченную порцию истёкших попыток, не затрагивая браузерные потоки.

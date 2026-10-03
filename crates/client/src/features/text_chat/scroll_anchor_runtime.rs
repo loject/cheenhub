@@ -246,5 +246,4 @@ async fn restore_anchor(
 }
 
 #[cfg(test)]
-#[path = "scroll_anchor_runtime_tests.rs"]
 mod tests;

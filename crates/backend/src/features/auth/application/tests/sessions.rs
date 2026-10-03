@@ -2,7 +2,7 @@
 
 use cheenhub_contracts::rest::{LoginRequest, RegisterRequest, SessionDeviceKind};
 
-use super::{realtime::register_test_session, state};
+use super::support::{register_test_session, state};
 use crate::features::auth::application::sessions::active_sessions;
 use crate::features::auth::application::{
     active_sessions_with_user_agent, login_with_user_agent, me, register, register_with_user_agent,

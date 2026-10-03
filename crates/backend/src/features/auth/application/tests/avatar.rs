@@ -10,7 +10,7 @@ use crate::features::auth::application::{register, update_current_user_avatar};
 use crate::features::images::application::public_image;
 use crate::features::voice_chat::infrastructure::{VoicePresence, VoicePresenceTargetKind};
 
-use super::state;
+use super::support::state;
 
 #[tokio::test]
 async fn avatar_upload_returns_current_user_avatar_url() {

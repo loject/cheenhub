@@ -4,7 +4,7 @@ use cheenhub_contracts::rest::*;
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
-use super::{registered_user, state};
+use super::support::{registered_user, state};
 use crate::features::auth::application::desktop_oauth::finish_identity;
 use crate::features::auth::application::google::GoogleIdentity;
 use crate::features::auth::application::{

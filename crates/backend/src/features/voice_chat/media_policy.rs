@@ -332,8 +332,4 @@ fn source_for_kind(kind: MediaDatagramKind) -> Option<VideoStreamSource> {
 }
 
 #[cfg(test)]
-mod activity_tests;
-#[cfg(test)]
-pub(crate) mod test_support;
-#[cfg(test)]
-mod tests;
+pub(crate) mod tests;

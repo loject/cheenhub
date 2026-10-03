@@ -269,5 +269,8 @@ fn pulse_error(error: impl std::fmt::Display) -> String {
 }
 
 #[cfg(test)]
-#[path = "linux_engine_tests.rs"]
+// Модуль подключается через `#[path = "linux_engine.rs"]` из `native/linux.rs`, поэтому каталог
+// дочернего модуля вычисляется относительно `native/`. Без явного пути компилятор ищет
+// `native/tests.rs` вместо `native/linux_engine/tests.rs`.
+#[path = "linux_engine/tests.rs"]
 mod tests;

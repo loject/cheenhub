@@ -9,9 +9,9 @@ pub(crate) mod protocol;
 mod router;
 mod session;
 mod sink;
-mod tls;
 #[cfg(test)]
-mod tls_integration;
+mod tests;
+mod tls;
 mod tls_reload;
 pub(crate) mod websocket;
 

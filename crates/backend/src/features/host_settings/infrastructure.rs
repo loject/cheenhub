@@ -335,4 +335,4 @@ impl HostSettingsStore for InMemoryHostSettingsStore {
     }
 }
 #[cfg(test)]
-mod store_tests;
+mod tests;

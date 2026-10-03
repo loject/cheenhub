@@ -192,17 +192,8 @@ impl Drop for RegistryKey {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::ffi::OsString;
-    use std::path::Path;
-
-    use super::command_for_executable;
-
-    #[test]
-    fn startup_command_quotes_executable_path() {
-        assert_eq!(
-            command_for_executable(Path::new(r"C:\Program Files\CheenHub\cheen_hub.exe")),
-            OsString::from(r#""C:\Program Files\CheenHub\cheen_hub.exe" --startup-hidden"#)
-        );
-    }
-}
+// Модуль подключается через `#[path = "windows.rs"]` из `native.rs`, поэтому каталог дочернего
+// модуля вычисляется относительно `autostart/`. Без явного пути rustfmt ищет
+// `autostart/tests.rs` вместо `autostart/windows/tests.rs`.
+#[path = "windows/tests.rs"]
+mod tests;

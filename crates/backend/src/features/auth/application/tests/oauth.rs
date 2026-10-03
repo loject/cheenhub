@@ -5,7 +5,7 @@ use cheenhub_contracts::rest::{
 };
 use chrono::{Duration, Utc};
 
-use super::{google_only_user, registered_user, state};
+use super::support::{google_only_user, registered_user, state};
 use crate::features::auth::application::{
     complete_google_oauth, login, register_with_google_oauth, start_google_native_auth,
     unlink_google,

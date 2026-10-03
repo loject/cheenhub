@@ -210,16 +210,8 @@ async fn fetch_notification_buffer(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::connection_loop_start_time;
-
-    #[test]
-    fn loop_starts_after_lost_sample_finishes() {
-        assert_eq!(connection_loop_start_time(10.0, 12.5), 12.5);
-    }
-
-    #[test]
-    fn loop_starts_immediately_when_lost_sample_has_already_finished() {
-        assert_eq!(connection_loop_start_time(13.0, 12.5), 13.0);
-    }
-}
+// Модуль подключается через `#[path = "web_notifications.rs"]` из `web.rs`, поэтому каталог
+// дочернего модуля вычисляется относительно `audio_playback/`. Без явного пути компилятор ищет
+// `audio_playback/tests.rs` вместо `audio_playback/web_notifications/tests.rs`.
+#[path = "web_notifications/tests.rs"]
+mod tests;

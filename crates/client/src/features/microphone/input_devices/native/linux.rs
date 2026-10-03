@@ -154,5 +154,8 @@ pub(crate) async fn request_microphone_permission() -> AudioInputDevicesResult {
 }
 
 #[cfg(test)]
-#[path = "linux_tests.rs"]
+// Модуль подключается через `#[path = "native/linux.rs"]` из `input_devices/native.rs`, поэтому
+// каталог дочернего модуля вычисляется относительно `input_devices/`. Без явного пути компилятор
+// ищет `input_devices/tests.rs` вместо `input_devices/native/linux/tests.rs`.
+#[path = "linux/tests.rs"]
 mod tests;

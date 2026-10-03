@@ -1,0 +1,422 @@
+use super::*;
+use uuid::Uuid;
+
+#[test]
+fn typing_kinds_resolve_to_their_owning_module() {
+    // Оба модуля используют одинаковое имя вида `start_typing`, поэтому
+    // проверка пары модуль/вид не должна путать комнату с личным диалогом.
+    let room = RealtimeEnvelope::new(
+        RealtimeModule::TextChat,
+        RealtimeKind::TextChat(TextChatKind::StartTyping),
+        None,
+        StartTyping {
+            server_id: Uuid::new_v4().to_string(),
+            room_id: Uuid::new_v4().to_string(),
+        },
+    )
+    .expect("payload serializes");
+    let direct_message = RealtimeEnvelope::new(
+        RealtimeModule::Social,
+        RealtimeKind::Social(SocialKind::StartDirectMessageTyping),
+        None,
+        StartDirectMessageTyping {
+            conversation_id: Uuid::new_v4().to_string(),
+        },
+    )
+    .expect("payload serializes");
+
+    let decoded_room: RealtimeEnvelope =
+        serde_json::from_str(&serde_json::to_string(&room).expect("serializes"))
+            .expect("room envelope decodes");
+    let decoded_direct_message: RealtimeEnvelope =
+        serde_json::from_str(&serde_json::to_string(&direct_message).expect("serializes"))
+            .expect("direct message envelope decodes");
+
+    assert!(decoded_room.has_matching_module_kind());
+    assert_eq!(
+        decoded_room.kind,
+        RealtimeKind::TextChat(TextChatKind::StartTyping)
+    );
+    assert!(decoded_direct_message.has_matching_module_kind());
+    assert_eq!(
+        decoded_direct_message.kind,
+        RealtimeKind::Social(SocialKind::StartDirectMessageTyping)
+    );
+}
+
+#[test]
+fn typing_changed_events_round_trip_for_both_targets() {
+    let author = TypingAuthor {
+        user_id: Uuid::new_v4().to_string(),
+        nickname: "печатает".to_owned(),
+        avatar_url: None,
+    };
+    let room = TypingChanged {
+        server_id: Uuid::new_v4().to_string(),
+        room_id: Uuid::new_v4().to_string(),
+        author: author.clone(),
+        is_typing: true,
+    };
+    let direct_message = DirectMessageTypingChanged {
+        conversation_id: Uuid::new_v4().to_string(),
+        author,
+        is_typing: false,
+    };
+
+    let decoded_room: TypingChanged =
+        serde_json::from_value(serde_json::to_value(&room).expect("serializes"))
+            .expect("room typing event decodes");
+    let decoded_direct_message: DirectMessageTypingChanged =
+        serde_json::from_value(serde_json::to_value(&direct_message).expect("serializes"))
+            .expect("direct message typing event decodes");
+
+    assert_eq!(decoded_room, room);
+    assert_eq!(decoded_direct_message, direct_message);
+}
+
+#[test]
+fn envelope_round_trips_uuid_and_typed_kind() {
+    let request_id = Uuid::new_v4();
+    let envelope = RealtimeEnvelope::new(
+        RealtimeModule::Network,
+        RealtimeKind::Network(NetworkKind::Ping),
+        Some(request_id),
+        Ping { sent_at_ms: 42 },
+    )
+    .expect("payload serializes");
+
+    let json = serde_json::to_string(&envelope).expect("envelope serializes");
+    assert!(json.contains("\"module\":\"network\""));
+    assert!(json.contains("\"kind\":\"ping\""));
+    let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+
+    assert_eq!(decoded.request_id, Some(request_id));
+    assert_eq!(decoded.kind, RealtimeKind::Network(NetworkKind::Ping));
+    assert!(decoded.has_matching_module_kind());
+}
+
+#[test]
+fn module_kind_mismatch_is_detected() {
+    let envelope = RealtimeEnvelope::new(
+        RealtimeModule::Control,
+        RealtimeKind::Network(NetworkKind::Ping),
+        None,
+        Ping { sent_at_ms: 42 },
+    )
+    .expect("payload serializes");
+
+    assert!(!envelope.has_matching_module_kind());
+}
+
+#[test]
+fn text_chat_envelope_round_trips() {
+    let envelope = RealtimeEnvelope::new(
+        RealtimeModule::TextChat,
+        RealtimeKind::TextChat(TextChatKind::LoadRoomHistory),
+        Some(Uuid::new_v4()),
+        LoadRoomHistory {
+            server_id: Uuid::new_v4().to_string(),
+            room_id: Uuid::new_v4().to_string(),
+            before_message_id: None,
+        },
+    )
+    .expect("payload serializes");
+
+    let json = serde_json::to_string(&envelope).expect("envelope serializes");
+    assert!(json.contains("\"module\":\"text_chat\""));
+    assert!(json.contains("\"kind\":\"load_room_history\""));
+    let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+
+    assert_eq!(
+        decoded.kind,
+        RealtimeKind::TextChat(TextChatKind::LoadRoomHistory)
+    );
+    assert!(decoded.has_matching_module_kind());
+}
+
+#[test]
+fn voice_video_stream_ended_envelope_round_trips() {
+    let envelope = RealtimeEnvelope::new(
+        RealtimeModule::VoiceChat,
+        RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded),
+        None,
+        VoiceVideoStreamEnded {
+            server_id: Uuid::new_v4().to_string(),
+            room_id: Uuid::new_v4().to_string(),
+            user_id: Uuid::new_v4().to_string(),
+            source: VoiceVideoStreamSource::ScreenShare,
+        },
+    )
+    .expect("payload serializes");
+
+    let json = serde_json::to_string(&envelope).expect("envelope serializes");
+    assert!(json.contains("\"module\":\"voice_chat\""));
+    assert!(json.contains("\"kind\":\"video_stream_ended\""));
+    assert!(json.contains("\"source\":\"screen_share\""));
+    let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+
+    assert_eq!(
+        decoded.kind,
+        RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded)
+    );
+    assert!(decoded.has_matching_module_kind());
+}
+
+#[test]
+fn microphone_uplink_grant_envelopes_round_trip() {
+    let grant = Uuid::new_v4();
+    let issued = RealtimeEnvelope::new(
+        RealtimeModule::VoiceChat,
+        RealtimeKind::VoiceChat(VoiceChatKind::MicrophoneUplinkGrantIssued),
+        Some(Uuid::new_v4()),
+        MicrophoneUplinkGrantIssued {
+            grant: grant.to_string(),
+            room_id: Uuid::new_v4().to_string(),
+            expires_at: "2026-07-14T10:00:00Z".to_owned(),
+        },
+    )
+    .expect("grant envelope serializes");
+    let json = serde_json::to_string(&issued).expect("grant envelope encodes");
+    let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("grant envelope decodes");
+
+    assert_eq!(
+        decoded.kind,
+        RealtimeKind::VoiceChat(VoiceChatKind::MicrophoneUplinkGrantIssued)
+    );
+    assert!(decoded.has_matching_module_kind());
+
+    let bind = RealtimeEnvelope::new(
+        RealtimeModule::VoiceChat,
+        RealtimeKind::VoiceChat(VoiceChatKind::BindMicrophoneUplink),
+        Some(Uuid::new_v4()),
+        BindMicrophoneUplink {
+            grant: grant.to_string(),
+        },
+    )
+    .expect("bind envelope serializes");
+    assert!(bind.has_matching_module_kind());
+}
+
+#[test]
+fn server_invites_envelope_round_trips() {
+    let envelope = RealtimeEnvelope::new(
+        RealtimeModule::Server,
+        RealtimeKind::Server(ServerKind::ListServerInvites),
+        Some(Uuid::new_v4()),
+        ListServerInvites {
+            server_id: Uuid::new_v4().to_string(),
+        },
+    )
+    .expect("payload serializes");
+
+    let json = serde_json::to_string(&envelope).expect("envelope serializes");
+    assert!(json.contains("\"module\":\"server\""));
+    assert!(json.contains("\"kind\":\"list_server_invites\""));
+    let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+
+    assert_eq!(
+        decoded.kind,
+        RealtimeKind::Server(ServerKind::ListServerInvites)
+    );
+    assert!(decoded.has_matching_module_kind());
+}
+
+#[test]
+fn social_changed_envelope_round_trips() {
+    let envelope = RealtimeEnvelope::new(
+        RealtimeModule::Social,
+        RealtimeKind::Social(SocialKind::Changed),
+        None,
+        SocialChanged {
+            reason: SocialChangeReason::DirectMessages,
+            conversation_id: Some(Uuid::new_v4().to_string()),
+        },
+    )
+    .expect("envelope serializes");
+
+    let json = serde_json::to_string(&envelope).expect("envelope serializes");
+    assert!(json.contains("\"module\":\"social\""));
+    assert!(json.contains("\"kind\":\"changed\""));
+    let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+
+    assert_eq!(decoded.kind, RealtimeKind::Social(SocialKind::Changed));
+    assert!(decoded.has_matching_module_kind());
+}
+
+#[test]
+fn direct_message_created_envelope_round_trips() {
+    let message_id = Uuid::new_v4().to_string();
+    let conversation_id = Uuid::new_v4().to_string();
+    let sender_user_id = Uuid::new_v4().to_string();
+    let envelope = RealtimeEnvelope::new(
+        RealtimeModule::Social,
+        RealtimeKind::Social(SocialKind::DirectMessageCreated),
+        None,
+        DirectMessageCreated {
+            message_id: message_id.clone(),
+            conversation_id: conversation_id.clone(),
+            message_seq: 42,
+            sender_user_id: sender_user_id.clone(),
+            sender_nickname: "alice".to_owned(),
+            body: "Привет".to_owned(),
+            created_at: "2026-07-13T00:00:00Z".to_owned(),
+        },
+    )
+    .expect("envelope serializes");
+
+    let json = serde_json::to_string(&envelope).expect("envelope serializes");
+    let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+    let payload: DirectMessageCreated =
+        serde_json::from_value(decoded.payload).expect("payload decodes");
+
+    assert_eq!(
+        decoded.kind,
+        RealtimeKind::Social(SocialKind::DirectMessageCreated)
+    );
+    assert_eq!(payload.message_id, message_id);
+    assert_eq!(payload.conversation_id, conversation_id);
+    assert_eq!(payload.sender_user_id, sender_user_id);
+    assert_eq!(payload.message_seq, 42);
+}
+
+#[test]
+fn server_audio_bitrate_envelope_round_trips() {
+    let envelope = RealtimeEnvelope::new(
+        RealtimeModule::VoiceChat,
+        RealtimeKind::VoiceChat(VoiceChatKind::ServerAudioBitrateUpdated),
+        None,
+        ServerAudioBitrate {
+            server_id: Uuid::new_v4().to_string(),
+            audio_bitrate_bps: 48_000,
+        },
+    )
+    .expect("payload serializes");
+
+    let json = serde_json::to_string(&envelope).expect("envelope serializes");
+    assert!(json.contains("\"kind\":\"server_audio_bitrate_updated\""));
+    assert!(json.contains("\"audio_bitrate_bps\":48000"));
+    let decoded: RealtimeEnvelope = serde_json::from_str(&json).expect("envelope decodes");
+
+    assert_eq!(
+        decoded.kind,
+        RealtimeKind::VoiceChat(VoiceChatKind::ServerAudioBitrateUpdated)
+    );
+    let payload: ServerAudioBitrate =
+        serde_json::from_value(decoded.payload).expect("payload decodes");
+    assert_eq!(payload.audio_bitrate_bps, 48_000);
+}
+
+#[test]
+fn voice_network_quality_envelopes_round_trip() {
+    let published = RealtimeEnvelope::new(
+        RealtimeModule::VoiceChat,
+        RealtimeKind::VoiceChat(VoiceChatKind::PublishNetworkQuality),
+        None,
+        PublishVoiceNetworkQuality { rtt_ms: 42 },
+    )
+    .expect("network quality publication serializes");
+    let published_json =
+        serde_json::to_string(&published).expect("network quality publication encodes");
+    assert!(published_json.contains("\"kind\":\"publish_network_quality\""));
+    assert!(published_json.contains("\"rtt_ms\":42"));
+
+    let update = ParticipantNetworkQualityUpdated {
+        target_kind: VoiceNetworkTargetKind::DirectMessage,
+        server_id: Uuid::new_v4().to_string(),
+        room_id: Uuid::new_v4().to_string(),
+        user_id: Uuid::new_v4().to_string(),
+        rtt_ms: 73,
+    };
+    let envelope = RealtimeEnvelope::new(
+        RealtimeModule::VoiceChat,
+        RealtimeKind::VoiceChat(VoiceChatKind::ParticipantNetworkQualityUpdated),
+        None,
+        update.clone(),
+    )
+    .expect("network quality update serializes");
+    let decoded: ParticipantNetworkQualityUpdated =
+        serde_json::from_value(envelope.payload).expect("network quality update decodes");
+
+    assert_eq!(decoded, update);
+}
+
+#[test]
+fn voice_room_snapshot_with_audio_bitrate_round_trips() {
+    #[derive(serde::Deserialize)]
+    struct LegacyVoiceRoomSnapshot {
+        server_id: String,
+        room_id: String,
+        participants: Vec<VoiceRoomParticipant>,
+    }
+
+    let snapshot = VoiceRoomSnapshot {
+        server_id: Uuid::new_v4().to_string(),
+        room_id: Uuid::new_v4().to_string(),
+        participants: vec![VoiceRoomParticipant {
+            user_id: Uuid::new_v4().to_string(),
+            nickname: "voice_user".to_owned(),
+            avatar_url: None,
+            joined_at: "2026-09-01T00:00:00Z".to_owned(),
+        }],
+        audio_bitrate_bps: Some(48_000),
+    };
+
+    let json = serde_json::to_string(&snapshot).expect("snapshot serializes");
+    let decoded: VoiceRoomSnapshot = serde_json::from_str(&json).expect("snapshot deserializes");
+    let legacy: LegacyVoiceRoomSnapshot =
+        serde_json::from_str(&json).expect("legacy client ignores additive field");
+
+    assert_eq!(decoded, snapshot);
+    assert_eq!(decoded.audio_bitrate_bps, Some(48_000));
+    assert_eq!(legacy.server_id, snapshot.server_id);
+    assert_eq!(legacy.room_id, snapshot.room_id);
+    assert_eq!(legacy.participants, snapshot.participants);
+}
+
+#[test]
+fn voice_room_snapshot_accepts_legacy_payload_without_audio_bitrate() {
+    let server_id = Uuid::new_v4().to_string();
+    let room_id = Uuid::new_v4().to_string();
+    let json = serde_json::json!({
+        "server_id": server_id,
+        "room_id": room_id,
+        "participants": [],
+    });
+
+    let decoded: VoiceRoomSnapshot = serde_json::from_value(json).expect("legacy snapshot decodes");
+
+    assert_eq!(decoded.server_id, server_id);
+    assert_eq!(decoded.room_id, room_id);
+    assert_eq!(decoded.audio_bitrate_bps, None);
+}
+
+#[test]
+fn avatar_fields_round_trip_in_realtime_payloads() {
+    let message = TextChatMessage {
+        id: Uuid::new_v4().to_string(),
+        server_id: Uuid::new_v4().to_string(),
+        room_id: Uuid::new_v4().to_string(),
+        author_user_id: Uuid::new_v4().to_string(),
+        author_nickname: "avatar_user".to_owned(),
+        author_avatar_url: Some("http://localhost/api/images/avatar".to_owned()),
+        body: "hello".to_owned(),
+        attachments: Vec::new(),
+        delivery_status: None,
+        created_at: "2026-05-13T00:00:00Z".to_owned(),
+    };
+    let decoded: TextChatMessage =
+        serde_json::from_str(&serde_json::to_string(&message).expect("message serializes"))
+            .expect("message decodes");
+    assert_eq!(decoded.author_avatar_url, message.author_avatar_url);
+
+    let participant = VoiceRoomParticipant {
+        user_id: Uuid::new_v4().to_string(),
+        nickname: "voice_user".to_owned(),
+        avatar_url: Some("http://localhost/api/images/avatar".to_owned()),
+        joined_at: "2026-05-13T00:00:00Z".to_owned(),
+    };
+    let decoded: VoiceRoomParticipant =
+        serde_json::from_str(&serde_json::to_string(&participant).expect("participant serializes"))
+            .expect("participant decodes");
+    assert_eq!(decoded.avatar_url, participant.avatar_url);
+}

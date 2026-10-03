@@ -234,7 +234,7 @@ async fn outgoing_direct_message_is_read_when_recipient_read_seq_reaches_it() {
 #[tokio::test]
 async fn direct_message_image_upload_send_and_load_is_scoped_and_single_use() {
     let setup = setup_pair().await;
-    let bytes = test_png();
+    let bytes = png_bytes();
     let uploaded = upload_dm_image(
         &setup.state,
         &setup.alice_access_token,
@@ -338,7 +338,7 @@ async fn direct_message_image_is_hidden_from_unrelated_conversation_member() {
         &setup.state,
         &charlie.access_token,
         foreign_conversation.id.clone(),
-        Bytes::from(test_png()),
+        Bytes::from(png_bytes()),
     )
     .await
     .expect("foreign image should upload")
@@ -480,7 +480,7 @@ fn state() -> AppState {
     }
 }
 
-fn test_png() -> Vec<u8> {
+fn png_bytes() -> Vec<u8> {
     let image = ImageBuffer::from_pixel(2, 2, Rgba([40_u8, 120, 220, 255]));
     let mut bytes = std::io::Cursor::new(Vec::new());
     image

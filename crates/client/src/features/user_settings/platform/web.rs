@@ -17,14 +17,8 @@ pub(super) fn resolve_section(section: UserSettingsSection) -> UserSettingsSecti
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn browser_hides_and_rejects_system_settings() {
-        assert!(!is_section_available(UserSettingsSection::System));
-        assert!(resolve_section(UserSettingsSection::System) == UserSettingsSection::Profile);
-        assert!(is_section_available(UserSettingsSection::Sound));
-        assert!(resolve_section(UserSettingsSection::Sound) == UserSettingsSection::Sound);
-    }
-}
+// Модуль подключается через `#[path = "platform/web.rs"]` из `platform.rs`, поэтому каталог
+// дочернего модуля вычисляется относительно `user_settings/`. Без явного пути компилятор ищет
+// `user_settings/tests.rs` вместо `user_settings/platform/web/tests.rs`.
+#[path = "web/tests.rs"]
+mod tests;
