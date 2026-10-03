@@ -49,6 +49,11 @@ impl ServerStore for InMemoryServerStore {
         Ok(server)
     }
 
+    async fn count_servers(&self) -> anyhow::Result<u64> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+        Ok(state.servers.len() as u64)
+    }
+
     async fn list_servers(&self, user_id: &Uuid) -> anyhow::Result<Vec<ServerAccess>> {
         let state = self.state.lock().map_err(|_| poisoned())?;
         let mut result = state
@@ -383,6 +388,10 @@ impl ServerStore for InMemoryServerStore {
 
     async fn count_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<u32> {
         super::in_memory_rooms::count_server_rooms(&self.state, server_id)
+    }
+
+    async fn count_all_rooms(&self) -> anyhow::Result<u64> {
+        super::in_memory_rooms::count_all_rooms(&self.state)
     }
 
     async fn list_server_roles(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRole>> {

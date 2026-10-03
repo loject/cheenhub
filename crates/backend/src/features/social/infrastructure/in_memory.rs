@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::features::social::domain::{
     ConversationMemberState, ConversationReadCheckpoint, ConversationReadUpdate, DmConversation,
-    DmMessage, FriendListCursor, Friendship, FriendshipStatus, ordered_pair,
+    DmMessage, DmMessagesPerMinute, FriendListCursor, Friendship, FriendshipStatus, ordered_pair,
 };
 use crate::features::social::infrastructure::{
     DM_HISTORY_LIMIT, DmMessagePage, FriendListPage, SocialStore, normalize_unread_count,
@@ -386,6 +386,18 @@ impl SocialStore for InMemorySocialStore {
             .map_err(|_| poisoned())?
             .push(message.clone());
         Ok(message)
+    }
+
+    async fn count_dm_messages(&self) -> anyhow::Result<u64> {
+        super::in_memory_message_counts::count_dm_messages(&self.messages)
+    }
+
+    async fn count_dm_messages_per_minute(
+        &self,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<DmMessagesPerMinute>> {
+        super::in_memory_message_counts::count_dm_messages_per_minute(self, since, until)
     }
 }
 

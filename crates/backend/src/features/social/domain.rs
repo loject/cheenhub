@@ -118,6 +118,15 @@ pub(crate) struct DmMessage {
     pub(crate) deleted_at: Option<DateTime<Utc>>,
 }
 
+/// Число личных сообщений, отправленных в одну минуту окна статистики.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DmMessagesPerMinute {
+    /// Начало минуты в UTC, выровненное по границе минуты.
+    pub(crate) minute: DateTime<Utc>,
+    /// Число сообщений, созданных за эту минуту.
+    pub(crate) messages: u64,
+}
+
 /// Текущее состояние прочтения участника личного диалога.
 #[derive(Debug, Clone)]
 pub(crate) struct ConversationMemberState {

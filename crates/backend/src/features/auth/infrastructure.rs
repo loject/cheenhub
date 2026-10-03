@@ -200,6 +200,12 @@ pub(crate) trait AuthStore: OAuthStore + Send + Sync {
         now: DateTime<Utc>,
     ) -> Result<UserAccount, InsertUserError>;
 
+    /// Считает зарегистрированных пользователей без обезличенных аккаунтов.
+    ///
+    /// Аккаунт, удаление которого уже завершено, не учитывается: его данные
+    /// обезличены и пользователя фактически больше нет.
+    async fn count_registered_users(&self) -> anyhow::Result<u64>;
+
     /// Находит пользователя по нормализованному email.
     async fn find_user_by_email(
         &self,

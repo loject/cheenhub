@@ -11,6 +11,7 @@ use crate::features::runtime::sleep_ms;
 
 use super::activity_panel::HostActivityPanel;
 use super::api::{self, HostSettingsApiError};
+use super::stats_panel::HostStatsPanel;
 use super::tabs::{HostSettingsTab, host_settings_tabs};
 
 mod charts;
@@ -51,6 +52,8 @@ pub(crate) fn HostDashboardPage() -> Element {
             div { class: "mx-auto w-full max-w-[1180px] pb-10",
                 {header_block(metrics_result.as_ref().and_then(|result| result.as_ref().ok()))}
                 {host_settings_tabs(HostSettingsTab::Dashboard)}
+
+                {HostStatsPanel()}
 
                 {HostActivityPanel()}
 

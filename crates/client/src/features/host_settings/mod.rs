@@ -3,10 +3,13 @@
 mod activity_chart;
 mod activity_panel;
 pub(crate) mod api;
+mod chart_bridge;
 mod dashboard;
 mod log_stream;
 mod logs_page;
+mod messages_chart;
 mod page;
+mod stats_panel;
 mod tabs;
 
 pub(crate) use dashboard::HostDashboardPage;

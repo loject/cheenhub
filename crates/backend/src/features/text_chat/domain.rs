@@ -28,6 +28,15 @@ pub(crate) struct TextMessage {
     pub(crate) deleted_by_user_id: Option<Uuid>,
 }
 
+/// Число сообщений, отправленных в одну минуту окна статистики.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct MessagesPerMinute {
+    /// Начало минуты в UTC, выровненное по границе минуты.
+    pub(crate) minute: DateTime<Utc>,
+    /// Число сообщений, созданных за эту минуту.
+    pub(crate) messages: u64,
+}
+
 /// Метаданные вложения-изображения чата.
 #[derive(Debug, Clone)]
 pub(crate) struct ChatAttachment {

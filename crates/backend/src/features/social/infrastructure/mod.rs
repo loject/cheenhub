@@ -4,10 +4,12 @@ mod entities;
 mod in_memory;
 mod in_memory_friend_list;
 mod in_memory_friendships;
+mod in_memory_message_counts;
 mod postgres;
 mod postgres_conversions;
 mod postgres_friend_list;
 mod postgres_friendships;
+mod postgres_message_counts;
 mod postgres_read_state;
 
 use async_trait::async_trait;
@@ -15,8 +17,8 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::features::social::domain::{
-    ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage, FriendListCursor,
-    FriendListEntry, Friendship, FriendshipStatus,
+    ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage,
+    DmMessagesPerMinute, FriendListCursor, FriendListEntry, Friendship, FriendshipStatus,
 };
 
 pub(crate) use in_memory::InMemorySocialStore;
@@ -186,6 +188,18 @@ pub(crate) trait SocialStore: Send + Sync {
 
     /// Вставляет личное сообщение и обновляет время диалога.
     async fn insert_dm_message(&self, message: DmMessage) -> anyhow::Result<DmMessage>;
+
+    /// Считает все личные сообщения, включая мягко удалённые.
+    async fn count_dm_messages(&self) -> anyhow::Result<u64>;
+
+    /// Возвращает число личных сообщений по минутам в полуинтервале `(since, until]`.
+    ///
+    /// Минуты без сообщений в ответе отсутствуют. Границы задаются в UTC.
+    async fn count_dm_messages_per_minute(
+        &self,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<DmMessagesPerMinute>>;
 }
 
 #[cfg(test)]

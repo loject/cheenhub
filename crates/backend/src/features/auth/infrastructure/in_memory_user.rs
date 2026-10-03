@@ -94,6 +94,17 @@ pub(super) fn find_user_by_email(
         .map(|user| user.account.clone()))
 }
 
+/// Считает зарегистрированных пользователей без обезличенных аккаунтов.
+pub(super) fn count_registered_users(state: &Mutex<InMemoryState>) -> anyhow::Result<u64> {
+    let state = state.lock().map_err(|_| poisoned())?;
+
+    Ok(state
+        .users
+        .iter()
+        .filter(|user| user.deletion_finalized_at.is_none())
+        .count() as u64)
+}
+
 /// Находит пользователя по идентификатору.
 pub(super) fn find_user_by_id(
     state: &Mutex<InMemoryState>,

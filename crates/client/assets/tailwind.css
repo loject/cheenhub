@@ -4534,6 +4534,11 @@ html,
   background-color: rgb(9 9 11 / 0.95);
 }
 
+.bg-sky-300 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(125 211 252 / var(--tw-bg-opacity, 1));
+}
+
 .bg-\[radial-gradient\(circle_at_center\2c rgba\(255\2c 255\2c 255\2c \.055\)\2c transparent_38\%\)\] {
   background-image: radial-gradient(circle at center,rgba(255,255,255,.055),transparent 38%);
 }
@@ -5445,6 +5450,15 @@ html,
 .text-zinc-950 {
   --tw-text-opacity: 1;
   color: rgb(9 9 11 / var(--tw-text-opacity, 1));
+}
+
+.text-red-100\/80 {
+  color: rgb(254 226 226 / 0.8);
+}
+
+.text-sky-300 {
+  --tw-text-opacity: 1;
+  color: rgb(125 211 252 / var(--tw-text-opacity, 1));
 }
 
 .underline {

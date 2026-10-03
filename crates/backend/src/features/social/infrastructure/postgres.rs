@@ -10,8 +10,8 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::features::social::domain::{
-    ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage, FriendListCursor,
-    Friendship, FriendshipStatus, ordered_pair,
+    ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage,
+    DmMessagesPerMinute, FriendListCursor, Friendship, FriendshipStatus, ordered_pair,
 };
 use crate::features::social::infrastructure::entities::{
     self as friendships, conversation_member_states, conversation_read_checkpoints,
@@ -416,5 +416,18 @@ impl SocialStore for PostgresSocialStore {
         let inserted = inserted.into();
         transaction.commit().await?;
         Ok(inserted)
+    }
+
+    async fn count_dm_messages(&self) -> anyhow::Result<u64> {
+        super::postgres_message_counts::count_dm_messages(&self.database).await
+    }
+
+    async fn count_dm_messages_per_minute(
+        &self,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<DmMessagesPerMinute>> {
+        super::postgres_message_counts::count_dm_messages_per_minute(&self.database, since, until)
+            .await
     }
 }

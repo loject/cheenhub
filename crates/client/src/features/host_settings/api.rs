@@ -2,8 +2,8 @@
 
 use cheenhub_contracts::rest::{
     GmailConnectionStartResponse, HostAccessResponse, HostEmailSettingsResponse,
-    HostMetricsResponse, HostVoiceActivityHistoryResponse, HostVoiceActivityResponse,
-    UpdateHostEmailSettingsRequest,
+    HostMetricsResponse, HostStatsResponse, HostVoiceActivityHistoryResponse,
+    HostVoiceActivityResponse, UpdateHostEmailSettingsRequest,
 };
 use dioxus::prelude::{debug, info, warn};
 use reqwest::{Response, StatusCode};
@@ -73,6 +73,19 @@ pub(crate) async fn load_metrics() -> Result<HostMetricsResponse, HostSettingsAp
     if response.status().is_success() {
         return response.json().await.map_err(|_| {
             HostSettingsApiError::Other("Не удалось прочитать показатели нагрузки.".to_owned())
+        });
+    }
+    Err(classify_error(response).await)
+}
+
+/// Загружает сводную статистику CheenHub: пользователи, серверы, комнаты и сообщения.
+pub(crate) async fn load_stats() -> Result<HostStatsResponse, HostSettingsApiError> {
+    let response = authorized_get("/host-settings/stats")
+        .await
+        .map_err(HostSettingsApiError::Other)?;
+    if response.status().is_success() {
+        return response.json().await.map_err(|_| {
+            HostSettingsApiError::Other("Не удалось прочитать статистику CheenHub.".to_owned())
         });
     }
     Err(classify_error(response).await)

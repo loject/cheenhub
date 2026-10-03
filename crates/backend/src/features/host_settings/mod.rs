@@ -7,6 +7,7 @@ pub(crate) mod domain;
 pub(crate) mod email_delivery;
 pub(crate) mod infrastructure;
 pub(crate) mod metrics_monitor;
+mod stats;
 mod transport;
 
 use axum::Router;

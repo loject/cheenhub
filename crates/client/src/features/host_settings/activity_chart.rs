@@ -1,166 +1,42 @@
 //! График активности голосового чата на Apache ECharts.
 //!
-//! Библиотека лежит локально в `public/vendor`, поэтому график работает без
-//! доступа в интернет. Мост между Dioxus и ECharts построен на `document::eval`,
-//! который одинаково доступен во всех наших целях: браузере, desktop-webview и
-//! Android WebView. Отдельная платформенная реализация не требуется.
-
-use std::sync::atomic::{AtomicU32, Ordering};
+//! Модуль собирает только содержимое графика: временную шкалу, серии и шкалу
+//! значений. Жизненный цикл экземпляра ECharts берёт на себя общий
+//! [`super::chart_bridge`], поэтому оба графика дашборда используют один
+//! загруженный экземпляр библиотеки.
 
 use cheenhub_contracts::rest::HostVoiceActivitySample;
 use dioxus::prelude::*;
 
-/// Адрес локально вендоренной библиотеки.
-const ECHARTS_URL: &str = "/vendor/echarts.min.js?v=5.5.1";
+use super::chart_bridge;
+
 /// Глубина показываемой истории в миллисекундах: 24 часа.
 const HISTORY_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
 /// Пропуск между измерениями, который считается простоем сервера.
 const SAMPLE_GAP_MS: i64 = 30_000;
 
-static CHART_IDS: AtomicU32 = AtomicU32::new(0);
+/// Короткое имя графика в идентификаторе контейнера.
+const CHART_NAME: &str = "activity";
 
-/// Мост между Dioxus и ECharts: загрузка библиотеки, экземпляры и ресайз.
-///
-/// Объект кладётся в `window` один раз на всё приложение и переиспользуется
-/// всеми графиками; повторные вызовы `document::eval` просто берут тот же объект.
-const BRIDGE: &str = r#"(function bootstrap() {
-    if (window.__cheenhubCharts) {
-        return;
-    }
-    const registry = new Map();
-    let loading = null;
-
-    const load = () => {
-        if (window.echarts) {
-            return Promise.resolve(window.echarts);
-        }
-        if (loading) {
-            return loading;
-        }
-        loading = new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = '__ECHARTS_URL__';
-            script.async = true;
-            script.onload = () => window.echarts
-                ? resolve(window.echarts)
-                : reject(new Error('echarts asset loaded without global'));
-            script.onerror = () => reject(new Error('failed to load echarts asset'));
-            document.head.appendChild(script);
-        });
-        return loading;
-    };
-
-    window.__cheenhubCharts = {
-        async mount(id, option) {
-            const echarts = await load();
-            const element = document.getElementById(id);
-            if (!element) {
-                throw new Error('chart container is missing');
-            }
-            const existing = registry.get(id);
-            if (existing) {
-                existing.setOption(option, true);
-                existing.resize();
-                return true;
-            }
-            const chart = echarts.init(element, null, { renderer: 'canvas' });
-            chart.setOption(option, true);
-            if (typeof ResizeObserver !== 'undefined') {
-                const observer = new ResizeObserver(() => chart.resize());
-                observer.observe(element);
-                chart.__cheenhubResizeObserver = observer;
-            }
-            registry.set(id, chart);
-            return true;
-        },
-        update(id, option) {
-            const chart = registry.get(id);
-            if (!chart) {
-                return false;
-            }
-            chart.setOption(option, { replaceMerge: ['series'] });
-            chart.resize();
-            return true;
-        },
-        dispose(id) {
-            const chart = registry.get(id);
-            if (!chart) {
-                return false;
-            }
-            if (chart.__cheenhubResizeObserver) {
-                chart.__cheenhubResizeObserver.disconnect();
-            }
-            chart.dispose();
-            registry.delete(id);
-            return true;
-        }
-    };
-})();"#;
-
-/// Подставляет адрес библиотеки в подготовленный скрипт моста.
-fn bridge_script() -> String {
-    BRIDGE.replace("__ECHARTS_URL__", ECHARTS_URL)
-}
-
-/// Возвращает уникальный идентификатор контейнера графика.
-///
-/// Идентификатор стабилен между перерисовками, поэтому ECharts не пересоздаётся
-/// на каждом обновлении истории, а только получает новые данные.
+/// Возвращает уникальный идентификатор контейнера графика активности.
 pub(super) fn new_chart_id() -> String {
-    let next = CHART_IDS.fetch_add(1, Ordering::Relaxed);
-    format!("cheenhub-activity-chart-{next}")
+    chart_bridge::new_chart_id(CHART_NAME)
 }
 
-/// Создаёт экземпляр графика и сразу рисует первые данные.
+/// Создаёт экземпляр графика активности и сразу рисует первые данные.
 pub(super) async fn mount_chart(
     id: &str,
     samples: &[HostVoiceActivitySample],
 ) -> Result<(), String> {
-    let eval = document::eval(&format!(
-        r#"
-        const id = await dioxus.recv();
-        const option = JSON.parse(await dioxus.recv());
-        {bridge}
-        await window.__cheenhubCharts.mount(id, option);
-        return true;
-        "#,
-        bridge = bridge_script()
-    ));
-    eval.send(id.to_owned())
-        .map_err(|_| "Не удалось подготовить график.".to_owned())?;
-    eval.send(chart_option(samples))
-        .map_err(|_| "Не удалось подготовить данные графика.".to_owned())?;
-    eval.join::<bool>()
-        .await
-        .map(|_| ())
-        .map_err(|error| format!("График активности не построился: {error}"))
+    chart_bridge::mount_chart(id, &chart_option(samples)).await
 }
 
-/// Передаёт графику обновлённые измерения без пересоздания экземпляра.
+/// Передаёт графику активности обновлённые измерения.
 pub(super) async fn update_chart(
     id: &str,
     samples: &[HostVoiceActivitySample],
 ) -> Result<(), String> {
-    let eval = document::eval(&format!(
-        r#"
-        const id = await dioxus.recv();
-        const option = JSON.parse(await dioxus.recv());
-        {bridge}
-        if (!window.__cheenhubCharts.update(id, option)) {{
-            await window.__cheenhubCharts.mount(id, option);
-        }}
-        return true;
-        "#,
-        bridge = bridge_script()
-    ));
-    eval.send(id.to_owned())
-        .map_err(|_| "Не удалось подготовить обновление графика.".to_owned())?;
-    eval.send(chart_option(samples))
-        .map_err(|_| "Не удалось подготовить данные графика.".to_owned())?;
-    eval.join::<bool>()
-        .await
-        .map(|_| ())
-        .map_err(|error| format!("График активности не обновился: {error}"))
+    chart_bridge::update_chart(id, &chart_option(samples)).await
 }
 
 /// Удаляет точки старше 24 часов, чтобы график соответствовал заявленному окну.

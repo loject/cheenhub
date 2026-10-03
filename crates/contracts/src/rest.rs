@@ -24,9 +24,9 @@ pub use error::ApiError;
 pub use host_settings::{
     EmailTransport, GmailConnectionStartResponse, HostAccessResponse, HostCpuMetrics,
     HostDiskMetrics, HostEmailSettingsResponse, HostLogEntry, HostLogStreamMessage,
-    HostMemoryMetrics, HostMetricsResponse, HostMetricsSample, HostNetworkMetrics,
-    HostVoiceActivityHistoryResponse, HostVoiceActivityResponse, HostVoiceActivitySample,
-    UpdateHostEmailSettingsRequest,
+    HostMemoryMetrics, HostMessagesPerMinuteSample, HostMetricsResponse, HostMetricsSample,
+    HostNetworkMetrics, HostStatsResponse, HostVoiceActivityHistoryResponse,
+    HostVoiceActivityResponse, HostVoiceActivitySample, UpdateHostEmailSettingsRequest,
 };
 pub use push_notifications::{PushPlatform, UpsertPushInstallationRequest};
 pub use servers::{

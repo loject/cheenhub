@@ -57,6 +57,47 @@ pub struct HostVoiceActivitySample {
     pub video_sources: u32,
 }
 
+/// Сводная статистика CheenHub, доступная владельцу установки.
+///
+/// Значения отражают состояние на момент запроса и не меняются при сбое
+/// отдельного источника: любой сбой возвращается ошибкой, а не частичным ответом.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostStatsResponse {
+    /// Конец суточного окна сообщений в миллисекундах Unix по часам сервера.
+    ///
+    /// Клиент использует эту отметку для оси времени независимо от того,
+    /// когда было отправлено последнее сообщение.
+    pub messages_window_end_unix_ms: i64,
+    /// Число зарегистрированных пользователей без обезличенных аккаунтов.
+    pub users_total: u64,
+    /// Число серверов, созданных на хосте.
+    pub servers_total: u64,
+    /// Число комнат во всех серверах хоста.
+    pub rooms_total: u64,
+    /// Число сообщений, отправленных в комнатах, включая удалённые.
+    pub room_messages_total: u64,
+    /// Число личных сообщений, включая удалённые.
+    pub direct_messages_total: u64,
+    /// Сообщения комнат по минутам за последние сутки в хронологическом порядке.
+    ///
+    /// Хранятся только минуты с сообщениями; клиент сохраняет полное суточное
+    /// окно оси времени, используя [`Self::messages_window_end_unix_ms`].
+    pub room_messages_per_minute: Vec<HostMessagesPerMinuteSample>,
+    /// Личные сообщения по минутам за последние сутки в хронологическом порядке.
+    ///
+    /// Пустые минуты отсутствуют, как и в [`Self::room_messages_per_minute`].
+    pub direct_messages_per_minute: Vec<HostMessagesPerMinuteSample>,
+}
+
+/// Число сообщений, отправленных в одну минуту.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostMessagesPerMinuteSample {
+    /// Начало минуты в миллисекундах Unix, выровненное по границе минуты UTC.
+    pub minute_unix_ms: i64,
+    /// Число сообщений, созданных за эту минуту.
+    pub messages: u64,
+}
+
 /// Одно измерение нагрузки хоста.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct HostMetricsSample {

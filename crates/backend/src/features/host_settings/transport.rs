@@ -14,8 +14,8 @@ use axum::{
 };
 use cheenhub_contracts::rest::{
     ApiError, GmailConnectionStartResponse, HostAccessResponse, HostEmailSettingsResponse,
-    HostLogStreamMessage, HostVoiceActivityHistoryResponse, HostVoiceActivityResponse,
-    UpdateHostEmailSettingsRequest,
+    HostLogStreamMessage, HostStatsResponse, HostVoiceActivityHistoryResponse,
+    HostVoiceActivityResponse, UpdateHostEmailSettingsRequest,
 };
 use serde::Deserialize;
 
@@ -23,11 +23,13 @@ use crate::state::AppState;
 
 use super::activity::{activity as activity_flow, activity_history as activity_history_flow};
 use super::application::{self, HostSettingsError};
+use super::stats::stats as stats_flow;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/access", get(access))
         .route("/metrics", get(metrics))
+        .route("/stats", get(stats))
         .route("/activity", get(activity))
         .route("/activity/history", get(activity_history))
         .route("/logs/ws", get(logs_ws))
@@ -223,6 +225,14 @@ async fn metrics(
     application::metrics(&state, bearer_token(&headers)?)
         .await
         .map(Json)
+}
+
+/// Возвращает сводную статистику CheenHub владельцу хоста.
+async fn stats(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<HostStatsResponse>, HostSettingsError> {
+    stats_flow(&state, bearer_token(&headers)?).await.map(Json)
 }
 
 /// Возвращает текущие голосовые подключения и видеоисточники.
