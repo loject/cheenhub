@@ -6,6 +6,64 @@ use uuid::Uuid;
 /// Фиксированный идентификатор единственной строки настроек почты.
 pub(crate) const EMAIL_SETTINGS_ID: Uuid = Uuid::nil();
 
+/// Фиксированный идентификатор единственной строки настроек журнала.
+pub(crate) const LOG_SETTINGS_ID: Uuid = Uuid::nil();
+
+/// Минимальный уровень журналирования процесса хоста.
+///
+/// Уровень применяется ко всем модулям бэкенда сразу, поэтому не зависит от
+/// отдельных директив фильтра: выбор владельца заменяет фильтр целиком.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LogLevel {
+    /// Только ошибки.
+    Error,
+    /// Ошибки и предупреждения.
+    Warn,
+    /// Ошибки, предупреждения и обычные события.
+    Info,
+    /// Дополнительно диагностические сообщения.
+    Debug,
+    /// Полная трассировка внутренних вызовов.
+    Trace,
+}
+
+impl LogLevel {
+    /// Возвращает строковое значение для БД и контракта REST.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warn => "warn",
+            Self::Info => "info",
+            Self::Debug => "debug",
+            Self::Trace => "trace",
+        }
+    }
+
+    /// Разбирает значение из БД.
+    pub(crate) fn parse(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "error" => Ok(Self::Error),
+            "warn" => Ok(Self::Warn),
+            "info" => Ok(Self::Info),
+            "debug" => Ok(Self::Debug),
+            "trace" => Ok(Self::Trace),
+            _ => anyhow::bail!("unknown host log level: {value}"),
+        }
+    }
+}
+
+/// Настройка журналирования с отметкой последнего изменения.
+///
+/// Отсутствие уровня означает, что владелец вернул сервер к фильтру,
+/// заданному переменной окружения при запуске процесса.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct HostLogSettings {
+    /// Выбранный минимальный уровень или `None` для фильтра запуска.
+    pub(crate) min_level: Option<LogLevel>,
+    /// Время последнего изменения настройки.
+    pub(crate) updated_at: Option<DateTime<Utc>>,
+}
+
 /// Транспорт исходящих писем.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum EmailTransport {

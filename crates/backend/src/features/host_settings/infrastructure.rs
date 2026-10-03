@@ -9,13 +9,26 @@ use chrono::{DateTime, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use uuid::Uuid;
 
-use super::domain::{GmailOAuthState, HostEmailSettings, VoiceActivitySample};
+use super::domain::{GmailOAuthState, HostEmailSettings, HostLogSettings, VoiceActivitySample};
 
 /// Операции хранения настроек хоста.
 #[async_trait]
 pub(crate) trait HostSettingsStore: Send + Sync {
     async fn is_host_owner(&self, user_id: Uuid) -> anyhow::Result<bool>;
     async fn load_email_settings(&self) -> anyhow::Result<HostEmailSettings>;
+    /// Возвращает сохранённый минимальный уровень журнала.
+    ///
+    /// Отсутствие строки или пустой уровень означают фильтр, заданный при запуске.
+    async fn load_log_settings(&self) -> anyhow::Result<HostLogSettings>;
+    /// Сохраняет минимальный уровень журнала и отметку времени изменения.
+    ///
+    /// `None` в `settings.min_level` возвращает сервер к фильтру запуска.
+    async fn save_log_settings(
+        &self,
+        settings: HostLogSettings,
+        updated_by: Uuid,
+        updated_at: DateTime<Utc>,
+    ) -> anyhow::Result<HostLogSettings>;
     async fn save_email_settings(
         &self,
         settings: HostEmailSettings,
@@ -111,6 +124,52 @@ impl HostSettingsStore for PostgresHostSettingsStore {
             active.insert(&self.database).await?;
         }
         Ok(settings)
+    }
+
+    async fn load_log_settings(&self) -> anyhow::Result<HostLogSettings> {
+        use entities::host_log_settings;
+        let Some(model) = host_log_settings::Entity::find_by_id(super::domain::LOG_SETTINGS_ID)
+            .one(&self.database)
+            .await?
+        else {
+            return Ok(HostLogSettings::default());
+        };
+        Ok(HostLogSettings {
+            min_level: model
+                .min_level
+                .as_deref()
+                .map(super::domain::LogLevel::parse)
+                .transpose()?,
+            updated_at: Some(model.updated_at),
+        })
+    }
+
+    async fn save_log_settings(
+        &self,
+        settings: HostLogSettings,
+        updated_by: Uuid,
+        updated_at: DateTime<Utc>,
+    ) -> anyhow::Result<HostLogSettings> {
+        use entities::host_log_settings;
+        let active = host_log_settings::ActiveModel {
+            id: Set(super::domain::LOG_SETTINGS_ID),
+            min_level: Set(settings.min_level.map(|level| level.as_str().to_owned())),
+            updated_at: Set(updated_at),
+            updated_by_user_id: Set(Some(updated_by)),
+        };
+        if host_log_settings::Entity::find_by_id(super::domain::LOG_SETTINGS_ID)
+            .one(&self.database)
+            .await?
+            .is_some()
+        {
+            active.update(&self.database).await?;
+        } else {
+            active.insert(&self.database).await?;
+        }
+        Ok(HostLogSettings {
+            min_level: settings.min_level,
+            updated_at: Some(updated_at),
+        })
     }
 
     async fn insert_gmail_oauth_state(&self, state: GmailOAuthState) -> anyhow::Result<()> {
@@ -236,6 +295,7 @@ fn settings_from_model(
 #[derive(Default)]
 pub(crate) struct InMemoryHostSettingsStore {
     settings: RwLock<HostEmailSettings>,
+    log_settings: RwLock<HostLogSettings>,
     owners: RwLock<Vec<Uuid>>,
     states: RwLock<Vec<(GmailOAuthState, Option<DateTime<Utc>>)>>,
     pub(super) voice_activity: RwLock<Vec<VoiceActivitySample>>,
@@ -273,6 +333,26 @@ impl HostSettingsStore for InMemoryHostSettingsStore {
     ) -> anyhow::Result<HostEmailSettings> {
         *self.settings.write().expect("host settings lock") = settings.clone();
         Ok(settings)
+    }
+
+    async fn load_log_settings(&self) -> anyhow::Result<HostLogSettings> {
+        Ok(self
+            .log_settings
+            .read()
+            .expect("host log settings lock")
+            .clone())
+    }
+
+    async fn save_log_settings(
+        &self,
+        settings: HostLogSettings,
+        _updated_by: Uuid,
+        updated_at: DateTime<Utc>,
+    ) -> anyhow::Result<HostLogSettings> {
+        let mut stored = settings;
+        stored.updated_at = Some(updated_at);
+        *self.log_settings.write().expect("host log settings lock") = stored.clone();
+        Ok(stored)
     }
 
     async fn insert_gmail_oauth_state(&self, state: GmailOAuthState) -> anyhow::Result<()> {

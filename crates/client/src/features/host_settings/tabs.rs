@@ -7,6 +7,7 @@ use crate::Route;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum HostSettingsTab {
     Dashboard,
+    Settings,
     Email,
     Logs,
 }
@@ -14,12 +15,17 @@ pub(super) enum HostSettingsTab {
 pub(super) fn host_settings_tabs(active: HostSettingsTab) -> Element {
     rsx! {
         nav {
-            class: "mt-5 grid max-w-[560px] grid-cols-3 gap-1 rounded-xl border border-zinc-800 bg-zinc-950/70 p-1",
+            class: "mt-5 grid max-w-[560px] grid-cols-4 gap-1 rounded-xl border border-zinc-800 bg-zinc-950/70 p-1",
             "aria-label": "Разделы настроек хоста",
             Link {
                 to: Route::AppHostSettings {},
                 class: tab_class(active == HostSettingsTab::Dashboard),
                 "Дашборд"
+            }
+            Link {
+                to: Route::AppHostSystemSettings {},
+                class: tab_class(active == HostSettingsTab::Settings),
+                "Настройки"
             }
             Link {
                 to: Route::AppHostEmailSettings { gmail: None, email: None },

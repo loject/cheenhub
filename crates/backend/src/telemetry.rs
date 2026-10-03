@@ -4,7 +4,7 @@ use std::{
     collections::VecDeque,
     fmt,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
     },
 };
@@ -20,6 +20,7 @@ use tracing::{
 use tracing_subscriber::{
     EnvFilter, Layer, fmt as tracing_fmt,
     layer::{Context, SubscriberExt},
+    reload::Handle as ReloadHandle,
     util::SubscriberInitExt,
 };
 
@@ -169,15 +170,151 @@ fn is_sensitive_field(name: &str) -> bool {
 }
 
 /// Инициализирует трассировку и возвращает оперативный журнал процесса.
+///
+/// Фильтр оборачивается в перезагружаемый слой: [`set_log_level`] меняет
+/// уровень на живом процессе без перезапуска. `filter` сохраняется как
+/// фильтр запуска, к которому возвращает сброс настройки хоста.
 pub(crate) fn init(filter: &str) -> anyhow::Result<Arc<HostLogHub>> {
     let hub = Arc::new(HostLogHub::new(HOST_LOG_CAPACITY));
+    let (layer, reload_handle) = tracing_subscriber::reload::Layer::new(EnvFilter::new(filter));
 
     tracing_subscriber::registry()
-        .with(EnvFilter::new(filter))
+        .with(layer)
         .with(tracing_fmt::layer())
         .with(HostLogLayer { hub: hub.clone() })
         .try_init()
         .map_err(|error| anyhow!("failed to initialize tracing subscriber: {error}"))?;
 
+    let _ = STARTUP_FILTER.set(filter.to_owned());
+    install_reload_filter(reload_handle);
+
     Ok(hub)
+}
+
+/// Устанавливает перезагружаемый фильтр для тестов без глобального подписчика.
+///
+/// Тесты не поднимают процессный `tracing`, но сценарии уровня журнала всё
+/// равно проверяют успешное применение, поэтому фильтр инициализируется отдельно.
+/// Слой хранится в `static`: ручка перезагрузки ссылается на него слабо, и
+/// без хранения перезагрузка сообщала бы «subscriber no longer exists».
+#[cfg(test)]
+pub(crate) fn init_for_tests(filter: &str) {
+    let (layer, reload_handle) = tracing_subscriber::reload::Layer::new(EnvFilter::new(filter));
+    let _ = TEST_FILTER_LAYER.set(layer);
+    let _ = STARTUP_FILTER.set(filter.to_owned());
+    install_reload_filter::<tracing_subscriber::Registry>(reload_handle);
+}
+
+/// Слой фильтра, удерживаемый живым на время тестового процесса.
+#[cfg(test)]
+static TEST_FILTER_LAYER: OnceLock<
+    tracing_subscriber::reload::Layer<EnvFilter, tracing_subscriber::Registry>,
+> = OnceLock::new();
+
+/// Сохраняет ручку перезагрузки для последующих вызовов [`set_log_level`].
+///
+/// Тип подписчика выводится в точке вызова: он собран из слоёв и не имеет
+/// короткого имени, поэтому замыкание скрывает его от `static`.
+fn install_reload_filter<S>(reload_handle: ReloadHandle<EnvFilter, S>)
+where
+    S: Subscriber + Send + Sync + 'static,
+{
+    let current_handle = reload_handle.clone();
+    let _ = CURRENT_FILTER.set(Box::new(move || {
+        current_handle
+            .with_current(ToString::to_string)
+            .map_err(|error| anyhow!("failed to read tracing filter: {error}"))
+    }));
+    let _ = RELOAD_FILTER.set(Box::new(move |directive: &str| {
+        reload_handle
+            .reload(EnvFilter::new(directive))
+            .map_err(|error| anyhow!("failed to reload tracing filter: {error}"))
+    }) as ReloadFilter);
+}
+
+/// Фильтр, заданный переменной окружения при запуске процесса.
+static STARTUP_FILTER: OnceLock<String> = OnceLock::new();
+
+/// Переустановить фильтр процесса по новой директиве.
+///
+/// Замыкание хранит ручку `tracing_subscriber::reload`, чей тип подписчика
+/// собран из слоёв и не пригоден для явного именования в `static`.
+type ReloadFilter = Box<dyn Fn(&str) -> anyhow::Result<()> + Send + Sync>;
+
+/// Заполняется в [`init`] один раз за время работы процесса.
+static RELOAD_FILTER: OnceLock<ReloadFilter> = OnceLock::new();
+
+/// Применяет новый минимальный уровень журналирования ко всему процессу.
+///
+/// `None` возвращает фильтр, заданный при запуске. Вызов до [`init`] и ошибка
+/// разбора директивы возвращаются вызывающему коду: молчаливая смена уровня
+/// опаснее явного отказа.
+pub(crate) fn set_log_level(level: Option<&str>) -> anyhow::Result<()> {
+    let Some(reload_filter) = RELOAD_FILTER.get() else {
+        anyhow::bail!("tracing filter is not initialized");
+    };
+    let directive = match level {
+        Some(level) => level.to_owned(),
+        None => STARTUP_FILTER
+            .get()
+            .cloned()
+            .ok_or_else(|| anyhow!("startup tracing filter is unknown"))?,
+    };
+    reload_filter(&directive)
+}
+
+/// Возвращает директиву из живого слоя для изолированных проверок настроек.
+#[cfg(test)]
+pub(crate) fn current_filter_for_tests() -> String {
+    TEST_FILTER_LAYER
+        .get()
+        .unwrap()
+        .handle()
+        .with_current(ToString::to_string)
+        .unwrap()
+}
+
+/// Читает фактическую директиву слоя перед временным изменением.
+static CURRENT_FILTER: OnceLock<Box<dyn Fn() -> anyhow::Result<String> + Send + Sync>> =
+    OnceLock::new();
+
+/// Откатывает временный фильтр, если связанное сохранение не завершилось.
+///
+/// Вызывающий код обязан сериализовать изменения фильтра до уничтожения
+/// этой защиты, иначе откат мог бы затереть более новое изменение.
+pub(crate) struct LogFilterChange {
+    previous: Option<String>,
+}
+
+impl LogFilterChange {
+    /// Оставляет новый фильтр после успешного сохранения настройки.
+    pub(crate) fn commit(mut self) {
+        self.previous = None;
+    }
+}
+
+impl Drop for LogFilterChange {
+    fn drop(&mut self) {
+        if let Some(previous) = self.previous.take()
+            && let Some(reload) = RELOAD_FILTER.get()
+            && let Err(error) = reload(&previous)
+        {
+            tracing::error!(%error, "failed to roll back host log filter");
+        }
+    }
+}
+
+/// Применяет фильтр с синхронным откатом до подтверждения сохранения.
+///
+/// Возвращает ошибку чтения или применения до изменения настроек в хранилище.
+/// Защита восстанавливает фактическую директиву, включая фильтры отдельных targets.
+pub(crate) fn change_log_level(level: Option<&str>) -> anyhow::Result<LogFilterChange> {
+    let current = CURRENT_FILTER
+        .get()
+        .ok_or_else(|| anyhow!("tracing filter is not initialized"))?;
+    let previous = current()?;
+    set_log_level(level)?;
+    Ok(LogFilterChange {
+        previous: Some(previous),
+    })
 }

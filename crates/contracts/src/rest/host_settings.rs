@@ -250,6 +250,42 @@ pub struct HostLogEntry {
     pub fields: Vec<String>,
 }
 
+/// Минимальный уровень журналирования, доступный владельцу хоста.
+///
+/// Уровень задаётся строкой в нижнем регистре и совпадает с уровнями `tracing`.
+/// Значение соответствует фильтру всего процесса: записи ниже выбранного
+/// уровня не попадают ни в консоль, ни в оперативный журнал хоста.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostLogLevel {
+    /// Только ошибки.
+    Error,
+    /// Ошибки и предупреждения.
+    Warn,
+    /// Ошибки, предупреждения и обычные события.
+    Info,
+    /// Дополнительно диагностические сообщения.
+    Debug,
+    /// Полная трассировка внутренних вызовов.
+    Trace,
+}
+
+/// Настройка минимального уровня журнала хоста.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostLogSettingsResponse {
+    /// Выбранный уровень или `None`, если используется фильтр запуска сервера.
+    pub min_level: Option<HostLogLevel>,
+    /// Время последнего изменения в RFC 3339.
+    pub updated_at: Option<String>,
+}
+
+/// Изменение минимального уровня журнала владельцем хоста.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct UpdateHostLogSettingsRequest {
+    /// Новый уровень; `null` возвращает фильтр, заданный при запуске сервера.
+    pub min_level: Option<HostLogLevel>,
+}
+
 /// Сообщение realtime-потока журнала бэкенда.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

@@ -14,8 +14,9 @@ use axum::{
 };
 use cheenhub_contracts::rest::{
     ApiError, GmailConnectionStartResponse, HostAccessResponse, HostEmailSettingsResponse,
-    HostLogStreamMessage, HostStatsResponse, HostVoiceActivityHistoryResponse,
-    HostVoiceActivityResponse, UpdateHostEmailSettingsRequest,
+    HostLogSettingsResponse, HostLogStreamMessage, HostStatsResponse,
+    HostVoiceActivityHistoryResponse, HostVoiceActivityResponse, UpdateHostEmailSettingsRequest,
+    UpdateHostLogSettingsRequest,
 };
 use serde::Deserialize;
 
@@ -23,6 +24,7 @@ use crate::state::AppState;
 
 use super::activity::{activity as activity_flow, activity_history as activity_history_flow};
 use super::application::{self, HostSettingsError};
+use super::log_settings::{self, settings as log_settings_flow};
 use super::stats::stats as stats_flow;
 
 pub(crate) fn routes() -> Router<AppState> {
@@ -33,6 +35,10 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/activity", get(activity))
         .route("/activity/history", get(activity_history))
         .route("/logs/ws", get(logs_ws))
+        .route(
+            "/log-settings",
+            get(log_settings).patch(update_log_settings),
+        )
         .route("/email", get(email_settings).patch(update_email_settings))
         .route("/email/gmail/connect", post(start_gmail_connection))
         .route("/email/gmail/callback", get(gmail_callback))
@@ -261,6 +267,27 @@ async fn access(
     headers: HeaderMap,
 ) -> Result<Json<HostAccessResponse>, HostSettingsError> {
     application::access(&state, bearer_token(&headers)?)
+        .await
+        .map(Json)
+}
+
+/// Возвращает текущий минимальный уровень журнала сервера.
+async fn log_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<HostLogSettingsResponse>, HostSettingsError> {
+    log_settings_flow(&state, bearer_token(&headers)?)
+        .await
+        .map(Json)
+}
+
+/// Применяет и сохраняет новый минимальный уровень журнала.
+async fn update_log_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateHostLogSettingsRequest>,
+) -> Result<Json<HostLogSettingsResponse>, HostSettingsError> {
+    log_settings::update_settings(&state, bearer_token(&headers)?, request)
         .await
         .map(Json)
 }

@@ -23,10 +23,11 @@ pub use desktop_oauth::{
 pub use error::ApiError;
 pub use host_settings::{
     EmailTransport, GmailConnectionStartResponse, HostAccessResponse, HostCpuMetrics,
-    HostDiskMetrics, HostEmailSettingsResponse, HostLogEntry, HostLogStreamMessage,
-    HostMemoryMetrics, HostMessagesPerMinuteSample, HostMetricsResponse, HostMetricsSample,
-    HostNetworkMetrics, HostStatsResponse, HostVoiceActivityHistoryResponse,
-    HostVoiceActivityResponse, HostVoiceActivitySample, UpdateHostEmailSettingsRequest,
+    HostDiskMetrics, HostEmailSettingsResponse, HostLogEntry, HostLogLevel,
+    HostLogSettingsResponse, HostLogStreamMessage, HostMemoryMetrics, HostMessagesPerMinuteSample,
+    HostMetricsResponse, HostMetricsSample, HostNetworkMetrics, HostStatsResponse,
+    HostVoiceActivityHistoryResponse, HostVoiceActivityResponse, HostVoiceActivitySample,
+    UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
 };
 pub use push_notifications::{PushPlatform, UpsertPushInstallationRequest};
 pub use servers::{

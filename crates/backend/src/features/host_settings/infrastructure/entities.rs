@@ -102,6 +102,32 @@ pub(crate) mod host_gmail_oauth_states {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+/// Singleton-сущность настройки минимального уровня журнала хоста.
+pub(crate) mod host_log_settings {
+    use sea_orm::entity::prelude::*;
+
+    /// Единственная строка конфигурации журналирования.
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "host_log_settings")]
+    pub struct Model {
+        /// Фиксированный нулевой UUID singleton-записи.
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        /// Минимальный уровень фильтра; `NULL` означает фильтр запуска сервера.
+        pub min_level: Option<String>,
+        /// Время последнего обновления настройки.
+        pub updated_at: DateTimeUtc,
+        /// Пользователь, последним обновивший настройку.
+        pub updated_by_user_id: Option<Uuid>,
+    }
+
+    /// Связи настройки журнала не используются напрямую.
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 /// Сущность снимка активности голосового чата хоста.
 pub(crate) mod host_voice_activity_samples {
     use sea_orm::entity::prelude::*;

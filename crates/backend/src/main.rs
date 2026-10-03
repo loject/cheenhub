@@ -221,6 +221,7 @@ async fn main() -> anyhow::Result<()> {
         password_reset_token_lifetime_minutes: config.password_reset_token_lifetime_minutes,
     };
     let app = http::router(state.clone());
+    features::host_settings::log_settings::restore(&state).await;
     let host_activity_monitor = Arc::new(
         features::host_settings::activity_monitor::HostActivityMonitor::new(state.clone()),
     );

@@ -1,4 +1,4 @@
-//! Хранилище настроек хоста с недоступной историей активности.
+//! Хранилище с управляемым сбоем или задержкой записи уровня журнала.
 
 use std::sync::Arc;
 
@@ -11,20 +11,32 @@ use crate::features::host_settings::domain::{
 };
 use crate::features::host_settings::infrastructure::HostSettingsStore;
 
-/// Обёртка, у которой все операции истории завершаются ошибкой базы данных.
-pub(super) struct UnavailableHostSettingsStore {
+/// Тестовая обёртка для воспроизведения сбоя и конкурирующих записей.
+pub(super) struct ControlledStore {
     inner: Arc<dyn HostSettingsStore>,
+    fail: bool,
+    pub(super) started: tokio::sync::Notify,
+    pub(super) release: tokio::sync::Notify,
+    pub(super) finished: tokio::sync::Notify,
+    saves: std::sync::atomic::AtomicUsize,
 }
 
-impl UnavailableHostSettingsStore {
-    /// Оборачивает рабочее хранилище, сохраняя права владельца и настройки почты.
-    pub(super) fn new(inner: Arc<dyn HostSettingsStore>) -> Self {
-        Self { inner }
+impl ControlledStore {
+    /// Сохраняет остальные операции рабочего хранилища.
+    pub(super) fn new(inner: Arc<dyn HostSettingsStore>, fail: bool) -> Self {
+        Self {
+            inner,
+            fail,
+            started: Default::default(),
+            release: Default::default(),
+            finished: Default::default(),
+            saves: Default::default(),
+        }
     }
 }
 
 #[async_trait]
-impl HostSettingsStore for UnavailableHostSettingsStore {
+impl HostSettingsStore for ControlledStore {
     async fn is_host_owner(&self, user_id: Uuid) -> anyhow::Result<bool> {
         self.inner.is_host_owner(user_id).await
     }
@@ -54,9 +66,19 @@ impl HostSettingsStore for UnavailableHostSettingsStore {
         updated_by: Uuid,
         updated_at: DateTime<Utc>,
     ) -> anyhow::Result<HostLogSettings> {
-        self.inner
+        if self.fail {
+            anyhow::bail!("host settings database is unavailable");
+        }
+        if self.saves.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            self.started.notify_one();
+            self.release.notified().await;
+        }
+        let result = self
+            .inner
             .save_log_settings(settings, updated_by, updated_at)
-            .await
+            .await;
+        self.finished.notify_one();
+        result
     }
 
     async fn insert_gmail_oauth_state(&self, state: GmailOAuthState) -> anyhow::Result<()> {
@@ -73,23 +95,25 @@ impl HostSettingsStore for UnavailableHostSettingsStore {
 
     async fn insert_voice_activity_sample(
         &self,
-        _sample: VoiceActivitySample,
+        sample: VoiceActivitySample,
     ) -> anyhow::Result<()> {
-        anyhow::bail!("host settings database is unavailable")
+        self.inner.insert_voice_activity_sample(sample).await
     }
 
     async fn load_voice_activity_samples(
         &self,
-        _since: DateTime<Utc>,
-        _now: DateTime<Utc>,
+        since: DateTime<Utc>,
+        now: DateTime<Utc>,
     ) -> anyhow::Result<Vec<VoiceActivitySample>> {
-        anyhow::bail!("host settings database is unavailable")
+        self.inner.load_voice_activity_samples(since, now).await
     }
 
     async fn delete_voice_activity_samples_before(
         &self,
-        _cutoff: DateTime<Utc>,
+        cutoff: DateTime<Utc>,
     ) -> anyhow::Result<usize> {
-        anyhow::bail!("host settings database is unavailable")
+        self.inner
+            .delete_voice_activity_samples_before(cutoff)
+            .await
     }
 }
