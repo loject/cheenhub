@@ -136,6 +136,17 @@ pub(crate) trait SocialStore: Send + Sync {
         user_id: &Uuid,
     ) -> anyhow::Result<Option<ConversationMemberState>>;
 
+    /// Возвращает read-state пользователя по всем его диалогам одним обращением к хранилищу.
+    ///
+    /// Нужен для сборки списка диалогов: построчный вызов `conversation_member_state`
+    /// превращает один HTTP-запрос в N+1 запросов. Состояния диалогов, которых у
+    /// пользователя нет, в результате просто отсутствуют, поэтому вызывающая сторона
+    /// должна трактовать отсутствие как пустое состояние.
+    async fn conversation_member_states_for_user(
+        &self,
+        user_id: &Uuid,
+    ) -> anyhow::Result<Vec<ConversationMemberState>>;
+
     /// Возвращает суммарное количество непрочитанных личных сообщений пользователя.
     async fn total_unread_count(&self, user_id: &Uuid) -> anyhow::Result<i64>;
 

@@ -268,6 +268,20 @@ impl SocialStore for InMemorySocialStore {
             .cloned())
     }
 
+    async fn conversation_member_states_for_user(
+        &self,
+        user_id: &Uuid,
+    ) -> anyhow::Result<Vec<ConversationMemberState>> {
+        Ok(self
+            .member_states
+            .lock()
+            .map_err(|_| poisoned())?
+            .iter()
+            .filter(|row| row.user_id == *user_id)
+            .cloned()
+            .collect())
+    }
+
     async fn total_unread_count(&self, user_id: &Uuid) -> anyhow::Result<i64> {
         Ok(self
             .member_states

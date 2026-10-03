@@ -1,7 +1,7 @@
 //! Инфраструктурный слой изображений.
 
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use std::sync::Mutex;
 use uuid::Uuid;
 
@@ -19,6 +19,14 @@ pub(crate) trait ImageStore: Send + Sync {
 
     /// Находит сохраненное изображение по идентификатору.
     async fn find_image(&self, image_id: &Uuid) -> anyhow::Result<Option<StoredImage>>;
+
+    /// Находит сохраненные изображения по набору идентификаторов одним обращением к хранилищу.
+    ///
+    /// Нужен для сборки страниц, где к каждому элементу относится свое изображение:
+    /// построчный вызов `find_image` превращает один HTTP-запрос в N+1 запросов.
+    /// Порядок результата не гарантируется, повторяющиеся идентификаторы схлопываются,
+    /// а идентификаторы без сохраненной строки просто отсутствуют в результате.
+    async fn find_images_by_ids(&self, image_ids: &[Uuid]) -> anyhow::Result<Vec<StoredImage>>;
 }
 
 /// Хранилище изображений на базе Postgres.
@@ -64,6 +72,19 @@ impl ImageStore for PostgresImageStore {
             .await?
             .map(Into::into))
     }
+
+    async fn find_images_by_ids(&self, image_ids: &[Uuid]) -> anyhow::Result<Vec<StoredImage>> {
+        if image_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(entities::images::Entity::find()
+            .filter(entities::images::Column::Id.is_in(image_ids.iter().copied()))
+            .all(&self.database)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
 }
 
 /// In-memory-хранилище изображений для тестов и локальной разработки.
@@ -101,6 +122,21 @@ impl ImageStore for InMemoryImageStore {
             .iter()
             .find(|image| image.id == *image_id)
             .cloned())
+    }
+
+    async fn find_images_by_ids(&self, image_ids: &[Uuid]) -> anyhow::Result<Vec<StoredImage>> {
+        if image_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let images = self
+            .images
+            .lock()
+            .map_err(|_| anyhow::anyhow!("in-memory image store lock poisoned"))?;
+        Ok(images
+            .iter()
+            .filter(|image| image_ids.contains(&image.id))
+            .cloned()
+            .collect())
     }
 }
 

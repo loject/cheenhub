@@ -290,6 +290,19 @@ impl SocialStore for PostgresSocialStore {
             .map(Into::into))
     }
 
+    async fn conversation_member_states_for_user(
+        &self,
+        user_id: &Uuid,
+    ) -> anyhow::Result<Vec<ConversationMemberState>> {
+        Ok(conversation_member_states::Entity::find()
+            .filter(conversation_member_states::Column::UserId.eq(*user_id))
+            .all(&self.database)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
     async fn total_unread_count(&self, user_id: &Uuid) -> anyhow::Result<i64> {
         Ok(conversation_member_states::Entity::find()
             .filter(conversation_member_states::Column::UserId.eq(*user_id))
