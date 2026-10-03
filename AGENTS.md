@@ -8,7 +8,7 @@
 - Treat feature and layer boundaries as hard design constraints. Do not move state, contracts, or behavior across those boundaries for convenience unless the user explicitly approves the boundary violation after the tradeoff is stated.
 - Do not add repository/service traits, generic abstraction layers, macros, or domain entities before they solve a real problem.
 - Each file should have a current purpose: startup, config, telemetry, database, HTTP shell, contracts, migrations, UI feature, or styling.
-- Project source files must not exceed 500 physical lines, including blank lines and comments. If a file exceeds this limit, decompose it along real ownership and purpose boundaries. Do not satisfy the limit by moving unrelated fragments into arbitrary files, by creating helper modules with no coherent responsibility, or by relying on formatter/linter loopholes such as intentionally unwrapped long lines.
+- Production source files must not exceed 500 physical lines, including blank lines and comments. Files containing only tests and their helpers are exempt. If a file exceeds this limit, decompose it along real ownership and purpose boundaries. Do not satisfy the limit by moving unrelated fragments into arbitrary files, by creating helper modules with no coherent responsibility, or by relying on formatter/linter loopholes such as intentionally unwrapped long lines.
 - Do not add `#[allow(...)]`, `#![allow(...)]`, lower lint levels, or equivalent suppression merely to make warnings or Clippy pass. Remove unused code, correct visibility, or move platform-specific behavior behind the proper module boundary instead. A narrowly scoped suppression is allowed only for a demonstrated compiler/tooling limitation, requires explicit user approval, and must include an adjacent Russian comment explaining why it cannot be expressed safely in code.
 - Use GUID/UUID values for persistent identifiers; expose them at API boundaries as strings only when the wire format requires it.
 
@@ -56,24 +56,24 @@
 
 - Every crate must include crate-level documentation.
 - Every public module, type, function, trait, enum, constant, and field must have `///` documentation when it is introduced.
-- Документация должна объяснять назначение и контракт API, а не просто пересказывать название. Это относится также к `pub(crate)` API.
-- Начинай `///` с краткого описания, затем через пустую строку раскрывай значимые детали: семантику входных данных и результата, единицы измерения, ограничения, граничные случаи и взаимодействие с вызывающим кодом.
-- Для типов и enum описывай, какую роль они играют, где используются и какие ограничения задают. Документируй смысл каждого варианта enum и поля, если он не очевиден из общего описания.
-- В `//!` описывай ответственность модуля, основные предоставляемые контракты и границы ответственности с соседними модулями.
-- Добавляй разделы `# Errors`, `# Panics` и примеры, когда соответствующее поведение существует и важно для правильного использования API.
-- Однострочная документация допустима только тогда, когда она полностью объясняет контракт. Не добавляй повторения, выдуманные гарантии или формальные абзацы ради объёма.
+- Documentation must explain the purpose and contract of the API rather than merely restating its name. This also applies to `pub(crate)` APIs.
+- Start `///` with a brief description, then add a blank line before explaining relevant details: input and result semantics, units of measurement, constraints, edge cases, and interaction with calling code.
+- For types and enums, explain their role, where they are used, and the constraints they impose. Document the meaning of each enum variant and field unless it is clear from the overall description.
+- Use `//!` to explain the module responsibility, its main contracts, and the responsibility boundaries with neighboring modules.
+- Add `# Errors`, `# Panics`, and examples when the corresponding behavior exists and matters for correct API usage.
+- One-line documentation is acceptable only when it fully explains the contract. Do not add repetition, invented guarantees, or boilerplate paragraphs just to increase length.
 - Write new documentation comments (`//!`, `///`) and regular code comments in Russian. Keep protocol names, API names, environment variable names, type and field names unchanged; prefer established English technical terms when translation would make the meaning less precise.
 - Crates use `#![warn(missing_docs)]`; warnings are acceptable during early development, but new public API should not add missing-doc warnings.
 - Run `cargo fmt` and `cargo clippy --workspace --all-targets` before handing off only when the task changes Rust source, Cargo manifests, migrations, contracts, or other Rust-facing generated code. Do not run cargo commands for documentation-only, CSS-only, asset-only, or other non-Rust changes unless they are needed for the task.
 
 ## Test Organization
 
-- Внутренние тесты всегда выноси в дочерний `tests.rs`: для `foo.rs` и `foo/mod.rs` — `foo/tests.rs`, подключение — `#[cfg(test)] mod tests;`. Не используй встроенные тестовые блоки, `foo_tests.rs` или `#[path]`. Самостоятельные группы выноси в `tests/<behavior>.rs`, оставляя подключения в `tests.rs`; для одного связного набора папка не нужна. Лимит 500 строк действует и для тестов; дели по ответственности.
-- Сохраняй владельца feature/слоя и его тестовых зависимостей: application — use cases, infrastructure — хранилища/внешние адаптеры, transport — протокол; платформенные тесты — внутри platform-модуля. Не расширяй production API ради тестов: дочерним модулям доступны приватные API предков. `crates/<crate>/tests/` оставляй для внешнего публичного контракта; PostgreSQL допустимо проверять внутри infrastructure.
-- Файлы сценариев и функции называй по-английски в `snake_case`; функция описывает действие, существенное условие и результат, без `test_`, общих имён и обязательного `given_when_then`. Одна функция — один сценарий; связанные assertions и таблицы вариантов одного правила допустимы, если виден упавший случай. Подготовку, действие и проверку разделяй пустыми строками; русские комментарии объясняют только неочевидное.
-- Helpers держи в использующем их файле, общие для набора — в `tests/support.rs`, для внешних Cargo test targets — в `tests/support/mod.rs`. Общие для crate вводи лишь при повторяющейся потребности нескольких features, сохраняя их границы. Используй простые функции и данные, оставляй существенные условия видимыми; небольшое дублирование допустимо, универсальные fixtures/macros/абстракции требуют реальной необходимости.
-- Проверяй поведение, значимые границы и ошибки; приватные алгоритмы — при самостоятельных правилах, regression tests — на конкретный сбой. Каждый тест имеет собственное состояние и независим от порядка запуска. Обычные тесты работают без внешних ресурсов с простыми test doubles; для временных правил предпочитай управляемое время, если контракт позволяет.
-- Внешние ресурсы проверяй отдельным явным запуском: `#[ignore = "..."]` с русской причиной и условиями запуска; недоступность ресурса должна давать ошибку, а не успешный `return`. Изменяемые ресурсы должны быть изолированными тестовыми. При добавлении или содержательном изменении набора применяй стандарт к нему, без массового переноса несвязанных тестов.
+- Always place internal tests in a child `tests.rs`: use `foo/tests.rs` for both `foo.rs` and `foo/mod.rs`, declared with `#[cfg(test)] mod tests;`. Do not use inline test blocks, `foo_tests.rs`, or `#[path]`. Move independent groups into `tests/<behavior>.rs`, keeping module declarations in `tests.rs`; a single cohesive suite needs no scenario folder. Files containing only tests and their helpers have no line limit; split by responsibility, not file size.
+- Keep tests and their dependencies within the owning feature/layer: application tests cover use cases, infrastructure tests cover stores/external adapters, and transport tests cover the protocol; platform tests stay inside platform modules. Do not expand production API visibility for tests: child modules can access private APIs of ancestors. Reserve `crates/<crate>/tests/` for the external public contract; PostgreSQL tests may stay inside infrastructure.
+- Name scenario files and functions in English using `snake_case`; function names describe the action, relevant condition, and result, without `test_`, generic names, or a mandatory `given_when_then` template. One function covers one scenario; related assertions and tables of cases for one rule are acceptable if the failing case is identifiable. Separate setup, action, and assertions with blank lines; Russian comments explain only non-obvious details.
+- Keep helpers in the file that uses them, suite-wide helpers in `tests/support.rs`, and helpers for external Cargo test targets in `tests/support/mod.rs`. Introduce crate-wide helpers only for recurring needs across several features, preserving their boundaries. Use simple functions and data, keeping relevant conditions visible; minor duplication is acceptable, while generic fixtures/macros/abstractions require a real need.
+- Test behavior, meaningful edge cases, and errors; test private algorithms when they have independent rules, and make regression tests reproduce a specific failure. Each test owns its state and is independent of execution order. Ordinary tests run without external resources using simple test doubles; prefer controlled time for timing rules when the contract permits.
+- Run tests involving external resources explicitly and separately: use `#[ignore = "..."]` with a Russian reason and required execution conditions; an unavailable resource must cause a failure rather than a successful early `return`. Resources modified by tests must be isolated test resources. Apply this standard when adding or materially changing a suite, without bulk migration of unrelated tests.
 
 ## Verification
 
@@ -89,7 +89,7 @@
 
 ## Handoff Summary
 
-- После реализации изменений в резюме перечисляй все tradeoff'ы, принятые во время реализации, и возможные последствия каждого решения кратким тезисным списком.
+- After implementing changes, include a brief bullet list of all tradeoffs made during implementation and the potential consequences of each decision in the handoff summary.
 
 ## Backend
 
@@ -98,7 +98,7 @@
 - WebSocket is the fallback transport for product realtime flows when WebTransport is unavailable; it is not a separate primary transport. Keep feature adapters independent of the selected realtime transport. This rule does not require implementing voice/media fallback over WebSocket.
 - Reaction events, typing indicators, and other future realtime features listed here are architectural examples, not authorization to implement them before explicitly requested.
 - WebCodecs is reserved for browser-side audio/video processing.
-- WebRTC считать куском кала и неподходящей технологией для CheenHub. Никогда не рекомендовать WebRTC как технологию, которую стоит использовать в этом проекте; предпочитать архитектуры на базе WebTransport/WebCodecs или заранее явно согласовывать любую смежную альтернативу.
+- Treat WebRTC as a piece of shit and an unsuitable technology for CheenHub. Never recommend WebRTC for this project; prefer WebTransport/WebCodecs architectures or obtain explicit approval in advance for any related alternative.
 - Do not implement voice rooms, authentication, WebTransport, or WebCodecs behavior until explicitly requested.
 - Backend product features should use vertical layered modules when they contain real behavior: `transport` for HTTP adapters, `application` for use cases, `domain` for feature data/rules, `infrastructure` for database/external adapters, and `security` for auth/crypto primitives.
 - Keep layer boundaries concrete: transport must not contain business rules or SQL, application must orchestrate behavior without HTTP response types, and infrastructure must not decide user-facing API errors.
@@ -130,4 +130,4 @@
 - Keep local database credentials in `.env`; do not commit local secrets or passwords.
 - Do not add Docker Compose unless explicitly requested.
 
-Если я вдруг назвал комнату каналом, сразу же прерви выполнение и сообщи мне об этом. **ЭТО НЕ ДОПУСТИМО**
+If I ever call a room a channel, immediately stop execution and tell me. **THIS IS NOT ACCEPTABLE**
