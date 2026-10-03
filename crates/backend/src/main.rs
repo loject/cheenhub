@@ -5,6 +5,7 @@ mod config;
 mod db;
 mod features;
 mod http;
+mod lifecycle;
 mod realtime;
 mod state;
 mod telemetry;
@@ -234,28 +235,38 @@ async fn main() -> anyhow::Result<()> {
     }
     tokio::spawn(host_metrics.run());
     tokio::spawn(host_activity_monitor.run());
+    let lifecycle = lifecycle::lifecycle();
+    tokio::spawn(async move {
+        lifecycle::wait_for_shutdown_signal().await;
+        lifecycle.begin_draining();
+    });
+
+    let realtime_state = state.clone();
     let realtime_address = address;
     let realtime_server = realtime::bind(
         realtime_address,
         &realtime_tls.cert_path,
         &realtime_tls.key_path,
     )?;
-    tokio::spawn(async move {
-        if let Err(error) = realtime::serve(
-            state,
+    let realtime_task = tokio::spawn(async move {
+        realtime::serve(
+            realtime_state,
             realtime_address,
             realtime_server,
             realtime_tls,
             config.webtransport_tls_reload_interval_seconds,
         )
         .await
-        {
-            tracing::error!(%error, "webtransport realtime listener stopped");
-        }
     });
 
     info!(%address, "backend listening");
-    axum::serve(listener, app)
+    let http_result = axum::serve(listener, app)
+        .with_graceful_shutdown(lifecycle.wait_for_draining())
         .await
-        .context("backend server stopped with an error")
+        .context("backend server stopped with an error");
+    // Ошибка HTTP также завершает realtime до уничтожения runtime.
+    lifecycle.begin_draining();
+    let realtime_result = lifecycle::finish_realtime(realtime_task).await;
+    http_result?;
+    realtime_result
 }

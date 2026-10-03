@@ -16,6 +16,13 @@ pub(crate) enum WebSocketOutbound {
     Envelope(RealtimeEnvelope),
     /// Байты медиадатаграммы, закодированные как двоичное сообщение WebSocket.
     Datagram(Bytes),
+    /// Close-кадр с кодом причины, например при плановом рестарте backend.
+    Close {
+        /// Код закрытия по RFC 6455.
+        code: u32,
+        /// Человекочитаемая причина закрытия.
+        reason: &'static str,
+    },
 }
 
 /// Конкретный отправитель конвертов для надежных realtime-сообщений.

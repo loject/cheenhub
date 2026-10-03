@@ -34,6 +34,7 @@ mod video_streams;
 mod voice_call_platform;
 mod voice_controls;
 mod voice_frame_sender;
+mod voice_recovery;
 
 pub(crate) use direct_call_controls::DirectCallControls;
 pub(crate) use direct_call_controls_visibility::DirectCallControlsVisibility;

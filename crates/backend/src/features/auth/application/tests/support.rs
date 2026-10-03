@@ -22,7 +22,7 @@ use crate::state::AppState;
 pub(super) async fn register_test_session(
     state: &AppState,
     auth: &AuthResponse,
-) -> tokio::sync::watch::Receiver<bool> {
+) -> tokio::sync::watch::Receiver<Option<crate::realtime::hub::DisconnectReason>> {
     let claims = jwt::verify_access_token(&state.auth_keys, &auth.access_token)
         .expect("test access token should be valid");
     let user_id = Uuid::parse_str(&auth.user.id).expect("test user id should be a uuid");

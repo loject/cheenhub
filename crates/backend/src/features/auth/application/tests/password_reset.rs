@@ -183,7 +183,10 @@ async fn password_reset_revokes_existing_sessions() {
     )
     .await
     .expect("password reset confirm should succeed");
-    assert!(*realtime_disconnect.borrow());
+    assert_eq!(
+        *realtime_disconnect.borrow(),
+        Some(crate::realtime::hub::DisconnectReason::AuthSessionRevoked)
+    );
 
     let current_user = me(&state, &auth.access_token).await;
     assert!(current_user.is_err());

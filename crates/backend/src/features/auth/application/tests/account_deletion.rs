@@ -63,7 +63,10 @@ async fn deletion_emails_deadline_revokes_access_and_restores_only_explicitly() 
             .unwrap()
             .is_some()
     );
-    assert!(*disconnected.borrow());
+    assert_eq!(
+        *disconnected.borrow(),
+        Some(crate::realtime::hub::DisconnectReason::AuthSessionRevoked)
+    );
     assert!(me(&state, &auth.access_token).await.is_err());
     assert!(
         login(&state, credentials("restore@example.com"))

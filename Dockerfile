@@ -58,7 +58,7 @@ RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/regist
 
 FROM debian:bookworm-slim AS backend-runtime
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=backend-builder /usr/local/bin/cheenhub_backend /usr/local/bin/cheenhub_backend

@@ -66,6 +66,7 @@ fn voice_handle_with_generation(
         kicked_from_room: Signal::new(None),
         speaking_users: Signal::new(Vec::new()),
         room_snapshots: Signal::new(Vec::new()),
+        remembered_room: Signal::new(None),
         speaking_generations: Rc::new(RefCell::new(HashMap::new())),
         join_generation,
         realtime: create_handle(),
@@ -470,5 +471,18 @@ fn connected_server_room_without_current_user_marks_kick() {
 
         assert!(matches!(handle.state(), VoiceConnectionState::Disconnected));
         assert_eq!((handle.kicked_from_room)(), Some("Общий".to_owned()));
+    });
+}
+
+#[test]
+fn manual_leave_clears_recovery_target_while_disconnected() {
+    with_dioxus_runtime(|| {
+        let target = VoiceRoomTarget::server("server-1".into(), "room-1".into(), "Общая".into());
+        let (mut handle, _) = voice_handle(VoiceConnectionState::Disconnected);
+        handle.remember_room(target);
+
+        handle.leave();
+
+        assert_eq!(handle.take_remembered_room(), None);
     });
 }

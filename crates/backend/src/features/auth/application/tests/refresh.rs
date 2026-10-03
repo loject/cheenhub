@@ -50,7 +50,10 @@ async fn explicitly_revoked_refresh_is_not_reported_as_reuse() {
     )
     .await
     .expect("logout should revoke session");
-    assert!(*realtime_disconnect.borrow());
+    assert_eq!(
+        *realtime_disconnect.borrow(),
+        Some(crate::realtime::hub::DisconnectReason::AuthSessionRevoked)
+    );
 
     let error = refresh_with_user_agent(
         &state,
@@ -102,7 +105,10 @@ async fn refresh_replay_outside_grace_revokes_session() {
             ..
         }
     ));
-    assert!(*realtime_disconnect.borrow());
+    assert_eq!(
+        *realtime_disconnect.borrow(),
+        Some(crate::realtime::hub::DisconnectReason::AuthSessionRevoked)
+    );
 
     let error = refresh_with_user_agent(
         &state,
