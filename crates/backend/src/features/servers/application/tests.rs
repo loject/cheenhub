@@ -11,7 +11,7 @@ use cheenhub_contracts::rest::{
 use uuid::Uuid;
 
 use super::{
-    accept_invite, assign_server_member_role, create, create_invite, create_room,
+    accept_invite, assign_server_member_role, create, create_invite, create_room, delete,
     delete_own_invite, delete_room, get_voice_settings, invite_info, kick_server_invite_member,
     kick_server_member, leave, list, list_own_invite_links, list_rooms, list_server_invites,
     list_server_members, list_server_roles, revoke_server_invite, save_server_roles, update,
@@ -37,6 +37,7 @@ mod members_settings;
 mod own_invite_links;
 mod rooms_and_list;
 mod rooms_write_access;
+mod server_deletion;
 mod server_profile;
 mod voice_settings;
 

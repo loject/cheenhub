@@ -128,6 +128,17 @@ impl InMemoryVoicePresenceStore {
         .await
     }
 
+    /// Удаляет голосовое присутствие только в комнатах указанного сервера.
+    ///
+    /// Личные звонки и присутствие на других серверах сохраняются; связанные
+    /// uplink-разрешения и состояние видеопубликаций очищаются вместе с presence.
+    pub(crate) async fn remove_server(&self, server_id: &Uuid) -> Vec<VoicePresence> {
+        self.remove_presence(|entry| {
+            entry.target_kind == VoicePresenceTargetKind::Server && entry.server_id == *server_id
+        })
+        .await
+    }
+
     /// Удаляет все записи присутствия одного пользователя в одной комнате (kick).
     pub(crate) async fn kick_user_from_room(
         &self,

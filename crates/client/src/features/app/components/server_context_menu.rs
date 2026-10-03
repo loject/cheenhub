@@ -1,7 +1,9 @@
 //! Компонент контекстного меню сервера.
 
+use dioxus::logger::tracing::{info, warn};
 use dioxus::prelude::*;
 
+use super::server_delete_confirm::ServerDeleteConfirm;
 use crate::features::app::api;
 
 /// Действия, отправляемые контекстным меню сервера.
@@ -12,13 +14,16 @@ pub(crate) enum ServerMenuAction {
     /// Open the server invite flow.
     CreateInvite,
     /// The current user left the server.
-    LeftServer(String),
+    ServerLeft(String),
+    /// The current user deleted the server they own.
+    ServerDeleted(String),
 }
 
 /// Рендерит действия уровня сервера.
 #[component]
 pub(crate) fn ServerContextMenu(
     server_id: String,
+    server_name: String,
     is_owner: bool,
     can_open_settings: bool,
     can_create_invite_links: bool,
@@ -26,7 +31,13 @@ pub(crate) fn ServerContextMenu(
 ) -> Element {
     let mut is_leaving = use_signal(|| false);
     let mut leave_status = use_signal(String::new);
+    let mut is_delete_confirm_open = use_signal(|| false);
+    let mut is_deleting = use_signal(|| false);
+    let mut delete_status = use_signal(String::new);
     let has_server_actions = can_open_settings || can_create_invite_links;
+    // Выход и удаление используют один и тот же идентификатор в разных ветках меню,
+    // поэтому каждое замыкание захватывает собственную копию.
+    let leave_server_id = server_id.clone();
     let leave_button_class = if is_leaving() {
         "flex w-full cursor-wait items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300/60 opacity-80"
     } else {
@@ -83,6 +94,34 @@ pub(crate) fn ServerContextMenu(
                         "Владелец сервера не может покинуть сервер"
                     }
                 }
+                button {
+                    r#type: "button",
+                    disabled: is_deleting(),
+                    class: if is_deleting() {
+                        "flex w-full cursor-wait items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300/60 opacity-80"
+                    } else {
+                        "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:bg-red-500/10 hover:text-red-200"
+                    },
+                    onclick: move |_| {
+                        if is_deleting() {
+                            return;
+                        }
+
+                        delete_status.set(String::new());
+                        is_delete_confirm_open.set(true);
+                    },
+                    svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" }
+                    }
+                    if is_deleting() {
+                        "Удаляем..."
+                    } else {
+                        "Удалить сервер"
+                    }
+                }
+                if !delete_status().is_empty() {
+                    p { class: "px-3 pb-2 pt-1 text-[11px] leading-4 text-red-200", "{delete_status}" }
+                }
             } else {
                 button {
                     r#type: "button",
@@ -95,11 +134,11 @@ pub(crate) fn ServerContextMenu(
 
                         leave_status.set(String::new());
                         is_leaving.set(true);
-                        let request_server_id = server_id.clone();
+                        let request_server_id = leave_server_id.clone();
                         spawn(async move {
                             match api::leave_server(request_server_id.clone()).await {
                                 Ok(()) => {
-                                    on_action.call(ServerMenuAction::LeftServer(request_server_id));
+                                    on_action.call(ServerMenuAction::ServerLeft(request_server_id));
                                 }
                                 Err(error) => {
                                     leave_status.set(error);
@@ -120,6 +159,53 @@ pub(crate) fn ServerContextMenu(
                 if !leave_status().is_empty() {
                     p { class: "px-3 pb-2 pt-1 text-[11px] leading-4 text-red-200", "{leave_status}" }
                 }
+            }
+        }
+        if is_delete_confirm_open() {
+            ServerDeleteConfirm {
+                server_name: server_name.clone(),
+                is_deleting: is_deleting(),
+                on_cancel: move |_| {
+                    // Пока идёт запрос, закрывать диалог нельзя: пользователь
+                    // потеряет обратную связь о выполняющейся операции.
+                    if is_deleting() {
+                        return;
+                    }
+                    is_delete_confirm_open.set(false);
+                },
+                on_confirm: {
+                    let confirm_server_id = server_id.clone();
+                    move |_| {
+                        if is_deleting() {
+                            return;
+                        }
+
+                        is_delete_confirm_open.set(false);
+                        is_deleting.set(true);
+                        let request_server_id = confirm_server_id.clone();
+                        let mut status = delete_status;
+                        let mut deleting = is_deleting;
+                        let action = on_action;
+                        spawn(async move {
+                            info!(%request_server_id, "deleting own server");
+                            match api::delete_server(request_server_id.clone()).await {
+                                Ok(()) => {
+                                    info!(%request_server_id, "own server deleted");
+                                    action.call(ServerMenuAction::ServerDeleted(request_server_id));
+                                }
+                                Err(error) => {
+                                    warn!(
+                                        %request_server_id,
+                                        %error,
+                                        "failed to delete own server"
+                                    );
+                                    status.set(error);
+                                    deleting.set(false);
+                                }
+                            }
+                        });
+                    }
+                },
             }
         }
     }

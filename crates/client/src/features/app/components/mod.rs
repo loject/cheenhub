@@ -27,7 +27,11 @@ pub(crate) mod room_list_item;
 mod room_write_access_field;
 pub(crate) mod server_avatar;
 pub(crate) mod server_context_menu;
+/// Диалог подтверждения удаления сервера.
+mod server_delete_confirm;
 pub(crate) mod server_instance;
+/// Применение действий контекстного меню сервера.
+pub(crate) mod server_menu_actions;
 pub(crate) mod server_rail;
 pub(crate) mod server_rail_button;
 pub(crate) mod server_realtime_status;

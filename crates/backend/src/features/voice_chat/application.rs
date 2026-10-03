@@ -39,7 +39,7 @@ pub(crate) use network_quality::publish_network_quality;
 use network_quality::{
     authorize_network_quality_publication_at, prepare_network_quality_broadcast,
 };
-pub(crate) use presence::disconnect_realtime_stream;
+pub(crate) use presence::{disconnect_realtime_stream, remove_deleted_server};
 pub(crate) use uplink::{bind_microphone_uplink, issue_microphone_uplink_grant};
 pub(crate) use video::stop_video_stream;
 
@@ -77,7 +77,13 @@ pub(crate) async fn join_room(
         })
         .await;
 
-    fanout_removed_rooms(state, removed, Some(target)).await;
+    // Удаление могло завершиться после проверки доступа, но до записи presence.
+    let available = state
+        .server_store
+        .find_server(&server_id)
+        .await
+        .map(|server| server.is_some());
+    presence::finish_server_join(state, realtime_stream_id, target, removed, available).await?;
     let mut snapshot = room_snapshot(state, target).await;
     fanout_snapshot(state, target, snapshot.clone()).await;
     snapshot.audio_bitrate_bps = Some(server.audio_bitrate_bps);

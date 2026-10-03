@@ -174,6 +174,21 @@ impl ServerStore for PostgresServerStore {
         Ok(Some(server.update(&self.database).await?.into()))
     }
 
+    async fn delete_owned_server(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+    ) -> anyhow::Result<bool> {
+        // Комнаты, сообщения, участники, приглашения и роли удаляются каскадом по внешним ключам.
+        let result = servers::Entity::delete_many()
+            .filter(servers::Column::Id.eq(*server_id))
+            .filter(servers::Column::OwnerUserId.eq(*owner_user_id))
+            .exec(&self.database)
+            .await?;
+
+        Ok(result.rows_affected > 0)
+    }
+
     async fn insert_server_invite(
         &self,
         server_id: &Uuid,

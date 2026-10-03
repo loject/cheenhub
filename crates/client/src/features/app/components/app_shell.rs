@@ -306,17 +306,21 @@ pub(crate) fn AppShell() -> Element {
                             }
                         },
                         on_open_modal: move |modal: AppModal| app_modal.set(Some(modal)),
-                        on_left_server: move |left_server_id: String| {
+                        on_server_removed: move |removed_server_id: String| {
+                            info!(
+                                server_id = %removed_server_id,
+                                "server left the app server list"
+                            );
                             let mut next_servers = servers();
-                            next_servers.retain(|server| server.id != left_server_id);
+                            next_servers.retain(|server| server.id != removed_server_id);
 
                             let mut next_states = shell_state_by_server();
-                            next_states.retain(|(server_id, _)| server_id != &left_server_id);
+                            next_states.retain(|(server_id, _)| server_id != &removed_server_id);
                             shell_state_by_server.set(next_states.clone());
 
                             let next_active_server_id = active_server_id()
                                 .as_ref()
-                                .filter(|server_id| server_id.as_str() != left_server_id.as_str())
+                                .filter(|server_id| server_id.as_str() != removed_server_id.as_str())
                                 .cloned();
                             let next_shell_state = next_active_server_id
                                 .as_deref()
@@ -328,7 +332,7 @@ pub(crate) fn AppShell() -> Element {
                             servers.set(next_servers);
                             shell_state.set(next_shell_state);
                             server_status.set(String::new());
-                            if active_server_id().as_deref() == Some(left_server_id.as_str()) {
+                            if active_server_id().as_deref() == Some(removed_server_id.as_str()) {
                                 navigator.replace(Route::AppFriends {});
                             }
                         },

@@ -19,7 +19,7 @@ pub(crate) struct InMemoryServerStore {
 
 #[derive(Default)]
 pub(super) struct InMemoryState {
-    servers: Vec<Server>,
+    pub(super) servers: Vec<Server>,
     pub(super) invites: Vec<ServerInvite>,
     pub(super) members: Vec<ServerMember>,
     pub(super) exclusions: Vec<ServerMemberExclusion>,
@@ -159,6 +159,20 @@ impl ServerStore for InMemoryServerStore {
         server.audio_bitrate_bps = audio_bitrate_bps;
         server.updated_at = Utc::now();
         Ok(Some(server.clone()))
+    }
+
+    async fn delete_owned_server(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+    ) -> anyhow::Result<bool> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+
+        Ok(super::in_memory_deletion::delete_owned_server(
+            &mut state,
+            server_id,
+            owner_user_id,
+        ))
     }
 
     async fn insert_server_invite(

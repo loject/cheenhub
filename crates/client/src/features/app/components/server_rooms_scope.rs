@@ -20,6 +20,7 @@ use super::room_editor_modal::RoomEditorModal;
 use super::room_instance::RoomInstance;
 use super::room_list_item::RoomListItem;
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
+use super::server_menu_actions::{ServerMenuScope, apply_server_menu_action};
 use super::server_room_workspace_sync::synchronize_room_workspace;
 use super::server_rooms_action_error::ServerRoomsActionError;
 use super::server_rooms_delete::RoomSidebarContext;
@@ -32,7 +33,7 @@ use super::server_rooms_sidebar_styles as sidebar_styles;
 use super::server_rooms_state::{
     RoomModal, ServerWorkspace, active_room, chat_open_for_room,
     clear_workspace_selection_if_needed, close_server_settings_workspace, ensure_workspace_mounted,
-    open_server_settings_workspace, resolve_active_room_id, room_by_id,
+    resolve_active_room_id, room_by_id,
 };
 use super::sidebar_menu_dismiss_layer::SidebarMenuDismissLayer;
 
@@ -44,7 +45,7 @@ pub(crate) fn ServerRoomsScope(
     requested_room_id: Option<String>,
     on_state_change: EventHandler<(String, ServerShellState)>,
     on_open_modal: EventHandler<AppModal>,
-    on_left_server: EventHandler<String>,
+    on_server_removed: EventHandler<String>,
     on_server_updated: EventHandler<ServerSummary>,
     on_open_user_settings: EventHandler<()>,
 ) -> Element {
@@ -68,7 +69,6 @@ pub(crate) fn ServerRoomsScope(
     let chat_open_by_room = use_signal(Vec::<(String, bool)>::new);
     let load_server_id = server.id.clone();
     let server_id = server.id.clone();
-    let invite_server_id = server.id.clone();
     let server_name = server.name.clone();
     let invite_server_name = server_name.clone();
     let is_owner = server.is_owner;
@@ -221,40 +221,28 @@ pub(crate) fn ServerRoomsScope(
                     if is_server_menu_open() {
                         ServerContextMenu {
                             server_id: server.id.clone(),
+                            server_name: server_name.clone(),
                             is_owner,
                             can_open_settings: is_owner,
                             can_create_invite_links,
                             on_action: {
                                 let menu_server_id = server_id.clone();
+                                let menu_invite_server_name = invite_server_name.clone();
+                                let menu_scope = ServerMenuScope {
+                                    is_menu_open: is_server_menu_open,
+                                    mounted_workspaces,
+                                    active_workspace,
+                                    mobile_workspace_open,
+                                    on_open_modal,
+                                    on_server_removed,
+                                };
                                 move |action: ServerMenuAction| {
-                                is_server_menu_open.set(false);
-
-                                match action {
-                                    ServerMenuAction::OpenSettings => {
-                                        info!(
-                                            server_id = %menu_server_id,
-                                            "opened server settings workspace"
-                                        );
-                                        open_server_settings_workspace(
-                                            mounted_workspaces,
-                                            active_workspace,
-                                            mobile_workspace_open,
-                                        );
-                                    }
-                                    ServerMenuAction::CreateInvite => {
-                                        info!(
-                                            server_id = %invite_server_id,
-                                            "opened server invite modal from context menu"
-                                        );
-                                        on_open_modal.call(AppModal::InviteLink {
-                                            server_id: invite_server_id.clone(),
-                                            server_name: invite_server_name.clone(),
-                                        });
-                                    }
-                                    ServerMenuAction::LeftServer(left_server_id) => {
-                                        on_left_server.call(left_server_id);
-                                    }
-                                }
+                                    apply_server_menu_action(
+                                        action,
+                                        menu_server_id.clone(),
+                                        menu_invite_server_name.clone(),
+                                        menu_scope,
+                                    );
                                 }
                             },
                         }
