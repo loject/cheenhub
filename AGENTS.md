@@ -66,6 +66,15 @@
 - Crates use `#![warn(missing_docs)]`; warnings are acceptable during early development, but new public API should not add missing-doc warnings.
 - Run `cargo fmt` and `cargo clippy --workspace --all-targets` before handing off only when the task changes Rust source, Cargo manifests, migrations, contracts, or other Rust-facing generated code. Do not run cargo commands for documentation-only, CSS-only, asset-only, or other non-Rust changes unless they are needed for the task.
 
+## Test Organization
+
+- Внутренние тесты всегда выноси в дочерний `tests.rs`: для `foo.rs` и `foo/mod.rs` — `foo/tests.rs`, подключение — `#[cfg(test)] mod tests;`. Не используй встроенные тестовые блоки, `foo_tests.rs` или `#[path]`. Самостоятельные группы выноси в `tests/<behavior>.rs`, оставляя подключения в `tests.rs`; для одного связного набора папка не нужна. Лимит 500 строк действует и для тестов; дели по ответственности.
+- Сохраняй владельца feature/слоя и его тестовых зависимостей: application — use cases, infrastructure — хранилища/внешние адаптеры, transport — протокол; платформенные тесты — внутри platform-модуля. Не расширяй production API ради тестов: дочерним модулям доступны приватные API предков. `crates/<crate>/tests/` оставляй для внешнего публичного контракта; PostgreSQL допустимо проверять внутри infrastructure.
+- Файлы сценариев и функции называй по-английски в `snake_case`; функция описывает действие, существенное условие и результат, без `test_`, общих имён и обязательного `given_when_then`. Одна функция — один сценарий; связанные assertions и таблицы вариантов одного правила допустимы, если виден упавший случай. Подготовку, действие и проверку разделяй пустыми строками; русские комментарии объясняют только неочевидное.
+- Helpers держи в использующем их файле, общие для набора — в `tests/support.rs`, для внешних Cargo test targets — в `tests/support/mod.rs`. Общие для crate вводи лишь при повторяющейся потребности нескольких features, сохраняя их границы. Используй простые функции и данные, оставляй существенные условия видимыми; небольшое дублирование допустимо, универсальные fixtures/macros/абстракции требуют реальной необходимости.
+- Проверяй поведение, значимые границы и ошибки; приватные алгоритмы — при самостоятельных правилах, regression tests — на конкретный сбой. Каждый тест имеет собственное состояние и независим от порядка запуска. Обычные тесты работают без внешних ресурсов с простыми test doubles; для временных правил предпочитай управляемое время, если контракт позволяет.
+- Внешние ресурсы проверяй отдельным явным запуском: `#[ignore = "..."]` с русской причиной и условиями запуска; недоступность ресурса должна давать ошибку, а не успешный `return`. Изменяемые ресурсы должны быть изолированными тестовыми. При добавлении или содержательном изменении набора применяй стандарт к нему, без массового переноса несвязанных тестов.
+
 ## Verification
 
 - Before completing a task, run the narrowest relevant verification for the files and behavior changed.
