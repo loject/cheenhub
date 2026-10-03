@@ -50,7 +50,7 @@ fn typing_label(typers: &[TyperEntry]) -> String {
         [author] => format!("{} печатает", author.author.nickname),
         [first, second] => {
             format!(
-                "{} и {} печатают…",
+                "{} и {} печатают",
                 first.author.nickname, second.author.nickname
             )
         }
