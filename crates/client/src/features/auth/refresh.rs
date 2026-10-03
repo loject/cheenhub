@@ -14,7 +14,7 @@ const REFRESH_WAIT_ERROR_MESSAGE: &str =
 pub(crate) enum SessionEndReason {
     /// Сохранённые токены отсутствуют, например после выхода в другой вкладке.
     TokensMissing,
-    /// Сохранённый access JWT повреждён или имеет неподдерживаемый формат.
+    /// Сохранённый access JWT повреждён, а refresh-токен не позволил получить валидную замену.
     InvalidAccessToken,
     /// Сервер подтвердил, что refresh-токен неизвестен, истёк или относится к завершённой сессии.
     RefreshTokenInvalidOrExpired,
@@ -126,13 +126,59 @@ pub(crate) async fn refresh_access_token_classified() -> Result<String, RefreshE
         }
     };
 
-    jwt::verify(&response.access_token).map_err(|error| {
-        warn!(%error, "auth refresh returned an invalid access token");
-        RefreshError::Retryable("Не удалось проверить ответ сервера.".to_owned())
-    })?;
+    // Сервер к этому моменту уже ротировал refresh-токен, поэтому повторная попытка с прежним
+    // токеном была бы классифицирована как reuse и привела бы к отзыву всей сессии.
+    // Непроверяемый ответ означает, что локальные JWT-ключи не соответствуют серверным,
+    // то есть восстановить локальную сессию уже невозможно.
+    if let Err(error) = jwt::verify(&response.access_token) {
+        warn!(%error, "auth refresh returned an access token that failed local verification");
+        storage::clear();
+        return Err(RefreshError::SessionEnded {
+            reason: SessionEndReason::InvalidAccessToken,
+            message: "Не удалось обновить сессию на этом устройстве. Войди снова.".to_owned(),
+        });
+    }
     storage::save(&response.access_token, &response.refresh_token);
     info!("refreshed auth tokens");
     Ok(response.access_token)
+}
+
+/// Действие фонового цикла сессии после того, как сохранённый access JWT не прошёл локальную проверку.
+///
+/// Вызывается, когда `jwt::verify` отверг сохранённый access token: битый формат, чужая подпись,
+/// несовпадение `kid` или недоступный встроенный публичный ключ.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AccessTokenRecovery {
+    /// Сервер выдал новый access token, который проходит локальную проверку: сессия живёт дальше.
+    Recovered,
+    /// Обновление не удалось по временной причине, попытку нужно повторить позже.
+    ///
+    /// Сохранённые токены остаются нетронутыми: временный сбой сети или сервера не должен
+    /// завершать сессию пользователя.
+    RetryLater(String),
+    /// Сервер подтвердил завершение сессии, сохранённые токены уже удалены.
+    SessionEnded(SessionEnd),
+}
+
+/// Пытается заменить access JWT, не прошедший локальную проверку, новым access token с сервера.
+///
+/// Локальная ошибка проверки сама по себе не означает, что сессия мертва: повреждённым может быть
+/// только access token, а refresh-токен остаётся действительным. Поэтому сначала выполняется
+/// обычный запрос `/auth/refresh`, и разлогин происходит только когда сервер подтверждает, что
+/// refresh-токен тоже недействителен.
+pub(crate) async fn recover_invalid_access_token() -> AccessTokenRecovery {
+    classify_recovery(refresh_access_token_classified().await)
+}
+
+/// Преобразует результат обновления токенов в решение фонового цикла сессии.
+fn classify_recovery(result: Result<String, RefreshError>) -> AccessTokenRecovery {
+    match result {
+        Ok(_) => AccessTokenRecovery::Recovered,
+        Err(RefreshError::Retryable(message)) => AccessTokenRecovery::RetryLater(message),
+        Err(RefreshError::SessionEnded { reason, message }) => {
+            AccessTokenRecovery::SessionEnded(SessionEnd::new(reason, message))
+        }
+    }
 }
 
 #[derive(Debug)]

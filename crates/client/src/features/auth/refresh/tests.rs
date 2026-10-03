@@ -1,4 +1,7 @@
-use super::{RefreshError, RefreshFailure, SessionEndReason};
+use super::{
+    AccessTokenRecovery, RefreshError, RefreshFailure, SessionEnd, SessionEndReason,
+    classify_recovery,
+};
 use reqwest::StatusCode;
 
 #[test]
@@ -38,6 +41,40 @@ fn confirmed_refresh_rejections_preserve_exact_reason() {
             ..
         }
     ));
+}
+
+#[test]
+fn successful_refresh_recovers_an_invalid_access_token() {
+    assert_eq!(
+        classify_recovery(Ok("new-access-token".to_owned())),
+        AccessTokenRecovery::Recovered
+    );
+}
+
+#[test]
+fn transient_refresh_failure_defers_access_token_recovery() {
+    let recovery = classify_recovery(Err(RefreshError::Retryable("offline".to_owned())));
+
+    assert_eq!(
+        recovery,
+        AccessTokenRecovery::RetryLater("offline".to_owned())
+    );
+}
+
+#[test]
+fn confirmed_refresh_rejection_ends_session_during_access_token_recovery() {
+    let recovery = classify_recovery(Err(RefreshError::SessionEnded {
+        reason: SessionEndReason::RefreshTokenInvalidOrExpired,
+        message: "expired".to_owned(),
+    }));
+
+    assert_eq!(
+        recovery,
+        AccessTokenRecovery::SessionEnded(SessionEnd::new(
+            SessionEndReason::RefreshTokenInvalidOrExpired,
+            "expired"
+        ))
+    );
 }
 
 fn server_failure(status: StatusCode) -> RefreshFailure {
