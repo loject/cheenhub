@@ -1,7 +1,7 @@
 //! Обработка медиадатаграмм голосового чата.
 
-use bytes::Bytes;
-use cheenhub_contracts::media::MediaDatagram;
+use bytes::{Bytes, BytesMut};
+use cheenhub_contracts::media::{MediaDatagram, MediaDatagramError};
 use cheenhub_contracts::video_presets::{
     BASE_CAMERA_VIDEO_PRESETS, BASE_SCREEN_SHARE_VIDEO_PRESETS, VideoPresetId,
 };
@@ -11,6 +11,168 @@ use uuid::Uuid;
 use super::infrastructure::VoicePresenceTargetKind;
 use super::media_policy::{VideoAdmission, VideoDropReason};
 use crate::state::AppState;
+
+const MEDIA_DATAGRAM_HEADER_LEN: usize = 64;
+const MEDIA_DATAGRAM_VOICE_KIND: u8 = 1;
+const MEDIA_DATAGRAM_OPUS_CODEC: u8 = 1;
+const MEDIA_DATAGRAM_SENDER_USER_ID_START: usize = 44;
+const MEDIA_DATAGRAM_SENDER_USER_ID_END: usize = 60;
+
+/// Заголовок voice/Opus датаграммы, разобранный без копирования payload.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct VoiceDatagramHeader {
+    pub(crate) sequence: u64,
+    pub(crate) timestamp_us: u64,
+    pub(crate) duration_us: u32,
+    pub(crate) room_id: Uuid,
+    pub(crate) payload_len: usize,
+    wire_len: usize,
+}
+
+impl VoiceDatagramHeader {
+    /// Разбирает voice/Opus wire-заголовок без копирования закодированного аудио.
+    pub(crate) fn decode(bytes: &[u8]) -> Result<Option<Self>, MediaDatagramError> {
+        if bytes.len() < MEDIA_DATAGRAM_HEADER_LEN {
+            return Err(MediaDatagramError::Truncated);
+        }
+        if &bytes[..4] != b"CHUB" {
+            return Err(MediaDatagramError::BadMagic);
+        }
+        if bytes[4] != 1 {
+            return Err(MediaDatagramError::UnknownVersion(bytes[4]));
+        }
+        if bytes[5] != MEDIA_DATAGRAM_VOICE_KIND || bytes[6] != MEDIA_DATAGRAM_OPUS_CODEC {
+            return Ok(None);
+        }
+
+        let payload_len = u32::from_be_bytes(copy_array(&bytes[60..64])) as usize;
+        let wire_len = MEDIA_DATAGRAM_HEADER_LEN
+            .checked_add(payload_len)
+            .ok_or(MediaDatagramError::PayloadTooLarge(payload_len))?;
+        if bytes.len() < wire_len {
+            return Err(MediaDatagramError::Truncated);
+        }
+
+        Ok(Some(Self {
+            sequence: u64::from_be_bytes(copy_array(&bytes[8..16])),
+            timestamp_us: u64::from_be_bytes(copy_array(&bytes[16..24])),
+            duration_us: u32::from_be_bytes(copy_array(&bytes[24..28])),
+            room_id: Uuid::from_bytes(copy_array(&bytes[28..44])),
+            payload_len,
+            wire_len,
+        }))
+    }
+
+    fn into_relay_bytes(
+        self,
+        bytes: Bytes,
+        sender_user_id: Uuid,
+    ) -> Result<Bytes, MediaDatagramError> {
+        if bytes.len() < self.wire_len {
+            return Err(MediaDatagramError::Truncated);
+        }
+
+        let mut bytes = match bytes.try_into_mut() {
+            Ok(bytes) => bytes,
+            Err(bytes) => BytesMut::from(bytes.as_ref()),
+        };
+        bytes.truncate(self.wire_len);
+        bytes[MEDIA_DATAGRAM_SENDER_USER_ID_START..MEDIA_DATAGRAM_SENDER_USER_ID_END]
+            .copy_from_slice(sender_user_id.as_bytes());
+        Ok(bytes.freeze())
+    }
+}
+
+fn copy_array<const N: usize>(slice: &[u8]) -> [u8; N] {
+    let mut array = [0; N];
+    array.copy_from_slice(slice);
+    array
+}
+
+/// Ретранслирует voice/Opus datagram без декодирования и повторного кодирования payload.
+pub(crate) async fn handle_voice_frame_bytes(
+    state: &AppState,
+    session_id: Uuid,
+    user_id: Uuid,
+    bytes: Bytes,
+    header: VoiceDatagramHeader,
+) {
+    debug!(
+        %session_id,
+        %user_id,
+        room_id = %header.room_id,
+        media_kind = "voice",
+        sequence = header.sequence,
+        timestamp_us = header.timestamp_us,
+        duration_us = header.duration_us,
+        payload_bytes = header.payload_len,
+        "received voice room media datagram"
+    );
+
+    let Some(presence) = active_presence_for_user(state, &header.room_id, &user_id).await else {
+        debug!(
+            %session_id,
+            %user_id,
+            room_id = %header.room_id,
+            media_kind = "voice",
+            "dropping media datagram from user outside target room"
+        );
+        return;
+    };
+
+    let is_presence_session = presence.session_id == session_id;
+    let is_bound_microphone_uplink = if is_presence_session {
+        false
+    } else {
+        state
+            .voice_presence_store
+            .microphone_uplink_is_bound(
+                &session_id,
+                &user_id,
+                &header.room_id,
+                &presence.session_id,
+            )
+            .await
+    };
+    if !is_presence_session && !is_bound_microphone_uplink {
+        debug!(
+            %session_id,
+            expected_session_id = %presence.session_id,
+            %user_id,
+            room_id = %header.room_id,
+            media_kind = "voice",
+            "dropping media datagram from unauthorized session"
+        );
+        return;
+    }
+
+    let recipients = state
+        .voice_presence_store
+        .media_recipient_sessions(presence.target_kind, &header.room_id, &presence.session_id)
+        .await;
+    if recipients.is_empty() {
+        return;
+    }
+
+    let bytes = match header.into_relay_bytes(bytes, user_id) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            warn!(
+                %session_id,
+                %user_id,
+                room_id = %header.room_id,
+                media_kind = "voice",
+                %error,
+                "failed to prepare zero-copy voice datagram relay"
+            );
+            return;
+        }
+    };
+    state
+        .realtime_hub
+        .fanout_datagram_to_sessions(&recipients, bytes)
+        .await;
+}
 
 /// Обрабатывает одну декодированную медиадатаграмму голоса.
 pub(crate) async fn handle_voice_frame(
@@ -93,8 +255,10 @@ async fn handle_room_media_frame(
         return;
     };
     let is_presence_session = presence.session_id == session_id;
-    let is_bound_microphone_uplink = allow_microphone_uplink
-        && state
+    let is_bound_microphone_uplink = if is_presence_session || !allow_microphone_uplink {
+        false
+    } else {
+        state
             .voice_presence_store
             .microphone_uplink_is_bound(
                 &session_id,
@@ -102,7 +266,8 @@ async fn handle_room_media_frame(
                 &datagram.room_id,
                 &presence.session_id,
             )
-            .await;
+            .await
+    };
     if !is_presence_session && !is_bound_microphone_uplink {
         debug!(
             %session_id,

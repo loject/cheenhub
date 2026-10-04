@@ -48,7 +48,7 @@ impl InMemoryVoicePresenceStore {
         self.microphone_uplink_bindings
             .lock()
             .await
-            .retain(|entry| {
+            .retain(|_, entry| {
                 entry.user_id != grant.user_id
                     || entry.room_id != grant.room_id
                     || entry.presence_session_id != grant.presence_session_id
@@ -90,8 +90,7 @@ impl InMemoryVoicePresenceStore {
             presence_session_id: grant.presence_session_id,
         };
         let mut bindings = self.microphone_uplink_bindings.lock().await;
-        bindings.retain(|entry| entry.session_id != session_id);
-        bindings.push(binding.clone());
+        bindings.insert(session_id, binding.clone());
         Ok(binding)
     }
 
@@ -106,10 +105,9 @@ impl InMemoryVoicePresenceStore {
         self.microphone_uplink_bindings
             .lock()
             .await
-            .iter()
-            .any(|entry| {
-                &entry.session_id == session_id
-                    && &entry.user_id == user_id
+            .get(session_id)
+            .is_some_and(|entry| {
+                &entry.user_id == user_id
                     && &entry.room_id == room_id
                     && &entry.presence_session_id == presence_session_id
             })
@@ -130,7 +128,7 @@ impl InMemoryVoicePresenceStore {
         self.microphone_uplink_bindings
             .lock()
             .await
-            .retain(|binding| !session_ids.contains(&binding.presence_session_id));
+            .retain(|_, binding| !session_ids.contains(&binding.presence_session_id));
     }
 }
 

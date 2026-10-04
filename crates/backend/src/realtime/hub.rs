@@ -1,6 +1,6 @@
 //! Общий реестр потоков realtime и вещания.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use cheenhub_contracts::realtime::{RealtimeKind, RealtimeModule};
@@ -68,7 +68,7 @@ impl DisconnectReason {
 #[derive(Default)]
 pub(crate) struct RealtimeHub {
     streams: Mutex<Vec<RealtimeStream>>,
-    sessions: Mutex<Vec<RealtimeSession>>,
+    sessions: Mutex<HashMap<Uuid, RealtimeSession>>,
     last_slow_datagram_fanout_warning_at: Mutex<Option<Instant>>,
 }
 
@@ -154,17 +154,20 @@ impl RealtimeHub {
         datagrams: DatagramSink,
     ) -> watch::Receiver<Option<DisconnectReason>> {
         let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.iter().find(|session| session.id == session_id) {
+        if let Some(session) = sessions.get(&session_id) {
             return session.disconnect.subscribe();
         }
         let (disconnect, receiver) = watch::channel(None);
-        sessions.push(RealtimeSession {
-            id: session_id,
-            user_id,
-            auth_session_id,
-            datagrams,
-            disconnect,
-        });
+        sessions.insert(
+            session_id,
+            RealtimeSession {
+                id: session_id,
+                user_id,
+                auth_session_id,
+                datagrams,
+                disconnect,
+            },
+        );
         debug!(%session_id, %user_id, %auth_session_id, "registered realtime session");
         receiver
     }
@@ -172,7 +175,7 @@ impl RealtimeHub {
     /// Удаляет аутентифицированную сессию WebTransport.
     pub(crate) async fn unregister_session(&self, session_id: Uuid) {
         let mut sessions = self.sessions.lock().await;
-        sessions.retain(|session| session.id != session_id);
+        sessions.remove(&session_id);
         debug!(%session_id, "unregistered realtime session");
     }
 
@@ -223,7 +226,7 @@ impl RealtimeHub {
         let mut sessions = self.sessions.lock().await;
         let before = sessions.len();
         let mut disconnected = 0;
-        sessions.retain(|session| {
+        sessions.retain(|_, session| {
             if !matches(session) {
                 return true;
             }
@@ -253,14 +256,13 @@ impl RealtimeHub {
     ) {
         let started_at = Instant::now();
         let payload_bytes = bytes.len();
-        let sessions = self
-            .sessions
-            .lock()
-            .await
-            .iter()
-            .filter(|session| session_ids.contains(&session.id))
-            .cloned()
-            .collect::<Vec<_>>();
+        let sessions = {
+            let sessions = self.sessions.lock().await;
+            session_ids
+                .iter()
+                .filter_map(|session_id| sessions.get(session_id).cloned())
+                .collect::<Vec<_>>()
+        };
         let recipient_count = sessions.len();
 
         // TODO: benchmark this hot path before adding bounded concurrency or task spawning.

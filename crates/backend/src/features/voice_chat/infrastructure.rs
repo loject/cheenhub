@@ -1,6 +1,8 @@
 //! Инфраструктура присутствия голосового чата.
 
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
+use std::sync::RwLock;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Mutex;
@@ -24,12 +26,37 @@ pub(crate) use uplink::{
 #[derive(Default)]
 pub(crate) struct InMemoryVoicePresenceStore {
     entries: Mutex<Vec<VoicePresence>>,
+    presence_indexes: RwLock<VoicePresenceIndexes>,
     microphone_uplink_grants: Mutex<Vec<MicrophoneUplinkGrant>>,
-    microphone_uplink_bindings: Mutex<Vec<MicrophoneUplinkBinding>>,
+    microphone_uplink_bindings: Mutex<HashMap<Uuid, MicrophoneUplinkBinding>>,
     network_quality_rate_limiter: Mutex<NetworkQualityRateLimiter>,
     #[cfg(test)]
     room_participants_calls: AtomicUsize,
     pub(super) video_publications: Mutex<VideoPublicationTracker>,
+}
+
+#[derive(Default)]
+struct VoicePresenceIndexes {
+    by_room_user: HashMap<(VoicePresenceTargetKind, Uuid, Uuid), VoicePresence>,
+    room_sessions: HashMap<(VoicePresenceTargetKind, Uuid), Vec<Uuid>>,
+}
+
+impl VoicePresenceIndexes {
+    fn from_entries(entries: &[VoicePresence]) -> Self {
+        let mut indexes = Self::default();
+        for entry in entries {
+            indexes.by_room_user.insert(
+                (entry.target_kind, entry.room_id, entry.user_id),
+                entry.clone(),
+            );
+            indexes
+                .room_sessions
+                .entry((entry.target_kind, entry.room_id))
+                .or_default()
+                .push(entry.session_id);
+        }
+        indexes
+    }
 }
 
 /// Активная запись присутствия в голосовой комнате.
@@ -76,6 +103,14 @@ pub(crate) struct VoicePresenceTarget {
 }
 
 impl InMemoryVoicePresenceStore {
+    fn rebuild_presence_indexes(&self, entries: &[VoicePresence]) {
+        let mut indexes = self
+            .presence_indexes
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *indexes = VoicePresenceIndexes::from_entries(entries);
+    }
+
     /// Заменяет присутствие одного пользователя или realtime-потока и возвращает удаленные записи.
     pub(crate) async fn join(&self, presence: VoicePresence) -> Vec<VoicePresence> {
         let removed = {
@@ -93,6 +128,7 @@ impl InMemoryVoicePresenceStore {
                 !should_remove
             });
             entries.push(presence);
+            self.rebuild_presence_indexes(&entries);
             removed
         };
         self.revoke_microphone_uplinks_for(&removed).await;
@@ -171,6 +207,7 @@ impl InMemoryVoicePresenceStore {
                     true
                 }
             });
+            self.rebuild_presence_indexes(&entries);
             removed
         };
         self.revoke_microphone_uplinks_for(&removed).await;
@@ -250,15 +287,11 @@ impl InMemoryVoicePresenceStore {
         room_id: &Uuid,
         user_id: &Uuid,
     ) -> Option<VoicePresence> {
-        self.entries
-            .lock()
-            .await
-            .iter()
-            .find(|entry| {
-                entry.target_kind == target_kind
-                    && &entry.room_id == room_id
-                    && &entry.user_id == user_id
-            })
+        self.presence_indexes
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .by_room_user
+            .get(&(target_kind, *room_id, *user_id))
             .cloned()
     }
 
@@ -294,6 +327,7 @@ impl InMemoryVoicePresenceStore {
                 rooms.push(room);
             }
         }
+        self.rebuild_presence_indexes(&entries);
 
         rooms
     }
@@ -314,6 +348,7 @@ impl InMemoryVoicePresenceStore {
                 rooms.push(room);
             }
         }
+        self.rebuild_presence_indexes(&entries);
 
         rooms
     }
@@ -333,16 +368,15 @@ impl InMemoryVoicePresenceStore {
         room_id: &Uuid,
         sender_session_id: &Uuid,
     ) -> Vec<Uuid> {
-        self.entries
-            .lock()
-            .await
-            .iter()
-            .filter(|entry| {
-                entry.target_kind == target_kind
-                    && &entry.room_id == room_id
-                    && &entry.session_id != sender_session_id
-            })
-            .map(|entry| entry.session_id)
+        self.presence_indexes
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .room_sessions
+            .get(&(target_kind, *room_id))
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|session_id| session_id != sender_session_id)
             .collect()
     }
 }
