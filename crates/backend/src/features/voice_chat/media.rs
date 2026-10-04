@@ -1,7 +1,7 @@
 //! Обработка медиадатаграмм голосового чата.
 
 use bytes::{Bytes, BytesMut};
-use cheenhub_contracts::media::{MediaDatagram, MediaDatagramError};
+use cheenhub_contracts::media::{MediaCodec, MediaDatagram, MediaDatagramError, MediaDatagramKind};
 use cheenhub_contracts::video_presets::{
     BASE_CAMERA_VIDEO_PRESETS, BASE_SCREEN_SHARE_VIDEO_PRESETS, VideoPresetId,
 };
@@ -12,26 +12,48 @@ use super::infrastructure::VoicePresenceTargetKind;
 use super::media_policy::{VideoAdmission, VideoDropReason};
 use crate::state::AppState;
 
+#[cfg(test)]
+mod tests;
+
 const MEDIA_DATAGRAM_HEADER_LEN: usize = 64;
-const MEDIA_DATAGRAM_VOICE_KIND: u8 = 1;
-const MEDIA_DATAGRAM_OPUS_CODEC: u8 = 1;
 const MEDIA_DATAGRAM_SENDER_USER_ID_START: usize = 44;
 const MEDIA_DATAGRAM_SENDER_USER_ID_END: usize = 60;
 
-/// Заголовок voice/Opus датаграммы, разобранный без копирования payload.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct VoiceDatagramHeader {
+/// Заголовок wire-медиадатаграммы, разобранный без копирования payload.
+///
+/// Парсер проверяет сигнатуру, версию, значения kind/codec и объявленную длину.
+/// Дополнительные trailing bytes принимаются, как и в текущем owned decoder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MediaDatagramHeader {
+    /// Вид медиадатаграммы.
+    pub(crate) kind: MediaDatagramKind,
+    /// Кодек закодированной полезной нагрузки.
+    pub(crate) codec: MediaCodec,
+    /// Флаги wire-заголовка.
+    pub(crate) flags: u8,
+    /// Локальная для отправителя последовательность пакетов.
     pub(crate) sequence: u64,
+    /// Временная метка захвата или кодирования в микросекундах.
     pub(crate) timestamp_us: u64,
+    /// Длительность кадра в микросекундах.
     pub(crate) duration_us: u32,
+    /// Идентификатор целевой комнаты.
     pub(crate) room_id: Uuid,
+    /// Sender ID, полученный из недоверенного wire-заголовка.
+    pub(crate) sender_user_id: Uuid,
+    /// Объявленная заголовком длина payload.
     pub(crate) payload_len: usize,
     wire_len: usize,
 }
 
-impl VoiceDatagramHeader {
-    /// Разбирает voice/Opus wire-заголовок без копирования закодированного аудио.
-    pub(crate) fn decode(bytes: &[u8]) -> Result<Option<Self>, MediaDatagramError> {
+impl MediaDatagramHeader {
+    /// Разбирает один wire-заголовок без копирования payload.
+    ///
+    /// # Errors
+    ///
+    /// Возвращает ошибку для неверной сигнатуры, неподдерживаемой версии, kind,
+    /// codec или усечённой датаграммы.
+    pub(crate) fn decode(bytes: &[u8]) -> Result<Self, MediaDatagramError> {
         if bytes.len() < MEDIA_DATAGRAM_HEADER_LEN {
             return Err(MediaDatagramError::Truncated);
         }
@@ -41,9 +63,17 @@ impl VoiceDatagramHeader {
         if bytes[4] != 1 {
             return Err(MediaDatagramError::UnknownVersion(bytes[4]));
         }
-        if bytes[5] != MEDIA_DATAGRAM_VOICE_KIND || bytes[6] != MEDIA_DATAGRAM_OPUS_CODEC {
-            return Ok(None);
-        }
+        let kind = match bytes[5] {
+            1 => MediaDatagramKind::VoiceFrame,
+            2 => MediaDatagramKind::ScreenFrame,
+            3 => MediaDatagramKind::CameraFrame,
+            value => return Err(MediaDatagramError::UnknownKind(value)),
+        };
+        let codec = match bytes[6] {
+            1 => MediaCodec::Opus,
+            2 => MediaCodec::Vp9,
+            value => return Err(MediaDatagramError::UnknownCodec(value)),
+        };
 
         let payload_len = u32::from_be_bytes(copy_array(&bytes[60..64])) as usize;
         let wire_len = MEDIA_DATAGRAM_HEADER_LEN
@@ -53,14 +83,35 @@ impl VoiceDatagramHeader {
             return Err(MediaDatagramError::Truncated);
         }
 
-        Ok(Some(Self {
+        Ok(Self {
+            kind,
+            codec,
+            flags: bytes[7],
             sequence: u64::from_be_bytes(copy_array(&bytes[8..16])),
             timestamp_us: u64::from_be_bytes(copy_array(&bytes[16..24])),
             duration_us: u32::from_be_bytes(copy_array(&bytes[24..28])),
             room_id: Uuid::from_bytes(copy_array(&bytes[28..44])),
+            sender_user_id: Uuid::from_bytes(copy_array(&bytes[44..60])),
             payload_len,
             wire_len,
-        }))
+        })
+    }
+
+    /// Возвращает объявленный payload как slice исходного wire-буфера.
+    ///
+    /// # Errors
+    ///
+    /// Возвращает `Truncated`, если буфер короче объявленной датаграммы.
+    pub(crate) fn payload(self, bytes: &[u8]) -> Result<&[u8], MediaDatagramError> {
+        if bytes.len() < self.wire_len {
+            return Err(MediaDatagramError::Truncated);
+        }
+        Ok(&bytes[MEDIA_DATAGRAM_HEADER_LEN..self.wire_len])
+    }
+
+    /// Возвращает длину заголовка вместе с объявленным payload.
+    pub(crate) fn wire_len(self) -> usize {
+        self.wire_len
     }
 
     fn into_relay_bytes(
@@ -76,7 +127,7 @@ impl VoiceDatagramHeader {
             Ok(bytes) => bytes,
             Err(bytes) => BytesMut::from(bytes.as_ref()),
         };
-        bytes.truncate(self.wire_len);
+        bytes.truncate(self.wire_len());
         bytes[MEDIA_DATAGRAM_SENDER_USER_ID_START..MEDIA_DATAGRAM_SENDER_USER_ID_END]
             .copy_from_slice(sender_user_id.as_bytes());
         Ok(bytes.freeze())
@@ -95,8 +146,21 @@ pub(crate) async fn handle_voice_frame_bytes(
     session_id: Uuid,
     user_id: Uuid,
     bytes: Bytes,
-    header: VoiceDatagramHeader,
+    header: MediaDatagramHeader,
 ) {
+    let payload_bytes = match header.payload(&bytes) {
+        Ok(payload) => payload.len(),
+        Err(error) => {
+            debug!(
+                %session_id,
+                %user_id,
+                room_id = %header.room_id,
+                %error,
+                "dropping invalid voice datagram"
+            );
+            return;
+        }
+    };
     debug!(
         %session_id,
         %user_id,
@@ -105,7 +169,7 @@ pub(crate) async fn handle_voice_frame_bytes(
         sequence = header.sequence,
         timestamp_us = header.timestamp_us,
         duration_us = header.duration_us,
-        payload_bytes = header.payload_len,
+        payload_bytes,
         "received voice room media datagram"
     );
 

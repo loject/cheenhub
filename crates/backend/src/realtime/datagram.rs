@@ -52,8 +52,10 @@ async fn dispatch_webtransport_bytes_with_warnings(
     bytes: Bytes,
     last_slow_dispatch_warning_at: &mut Option<Instant>,
 ) {
-    match voice_chat::media::VoiceDatagramHeader::decode(&bytes) {
-        Ok(Some(header)) => {
+    match voice_chat::media::MediaDatagramHeader::decode(&bytes) {
+        Ok(header)
+            if header.kind == MediaDatagramKind::VoiceFrame && header.codec == MediaCodec::Opus =>
+        {
             let started_at = Instant::now();
             voice_chat::media::handle_voice_frame_bytes(state, session_id, user_id, bytes, header)
                 .await;
@@ -77,7 +79,7 @@ async fn dispatch_webtransport_bytes_with_warnings(
                 );
             }
         }
-        Ok(None) => match MediaDatagram::decode(&bytes) {
+        Ok(_) => match MediaDatagram::decode(&bytes) {
             Ok(datagram) => {
                 dispatch_with_warnings(
                     state,
