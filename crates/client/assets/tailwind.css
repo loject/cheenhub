@@ -2653,6 +2653,10 @@ html,
   height: 18px;
 }
 
+.h-\[22px\] {
+  height: 22px;
+}
+
 .h-\[500px\] {
   height: 500px;
 }
@@ -3137,6 +3141,10 @@ html,
 
 .max-w-\[calc\(100vw-1\.5rem\)\] {
   max-width: calc(100vw - 1.5rem);
+}
+
+.max-w-\[calc\(100vw-16px\)\] {
+  max-width: calc(100vw - 16px);
 }
 
 .max-w-\[min\(100\%\2c 42rem\)\] {
@@ -7453,6 +7461,15 @@ html,
 
   .application-update-progress-fill {
     transition: none;
+  }
+}
+
+/* На сенсорных экранах меню комнат доступно без наведения. */
+
+@media (hover: none) {
+  .server-rooms-sidebar .room-menu-actions {
+    display: flex;
+    opacity: 1;
   }
 }
 

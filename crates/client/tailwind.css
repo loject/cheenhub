@@ -2029,3 +2029,11 @@
   .application-update-progress-indeterminate { animation-duration: 4s; }
   .application-update-progress-fill { transition: none; }
 }
+
+/* На сенсорных экранах меню комнат доступно без наведения. */
+@media (hover: none) {
+    .server-rooms-sidebar .room-menu-actions {
+        display: flex;
+        opacity: 1;
+    }
+}

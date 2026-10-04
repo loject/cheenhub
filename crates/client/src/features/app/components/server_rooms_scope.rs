@@ -15,18 +15,17 @@ use crate::features::app::server_permissions::ServerPermissionsContext;
 use super::app_shell::{AppModal, ServerShellState, room_kind_attr};
 use super::app_sidebar_footer::AppSidebarFooter;
 use super::avatar::use_avatar_seed;
+use super::room_context_menu::RoomContextMenu;
 use super::room_delete_flow::render_room_delete_flow;
 use super::room_editor_modal::RoomEditorModal;
 use super::room_instance::RoomInstance;
-use super::room_list_item::RoomListItem;
+use super::room_menu_policy::{RoomMenuCommand, available_commands};
+use super::room_sidebar_list::{RoomSidebarAction, RoomSidebarList};
 use super::server_context_menu::{ServerContextMenu, ServerMenuAction};
 use super::server_menu_actions::{ServerMenuScope, apply_server_menu_action};
 use super::server_room_workspace_sync::synchronize_room_workspace;
-use super::server_rooms_action_error::ServerRoomsActionError;
 use super::server_rooms_delete::RoomSidebarContext;
 use super::server_rooms_empty_state::ServerRoomsEmptyState;
-use super::server_rooms_load_error::ServerRoomsLoadError;
-use super::server_rooms_loading::ServerRoomsLoading;
 use super::server_rooms_menu_trigger::ServerRoomsMenuTrigger;
 use super::server_rooms_save::apply_saved_room;
 use super::server_rooms_sidebar_styles as sidebar_styles;
@@ -57,6 +56,7 @@ pub(crate) fn ServerRoomsScope(
     let mut active_room_id = use_signal(|| None::<String>);
     let mut room_action_status = use_signal(String::new);
     let mut room_modal = use_signal(|| None::<RoomModal>);
+    let mut room_menu = use_signal(|| None::<(Option<String>, f64, f64)>);
     let mut is_server_menu_open = use_signal(|| false);
     let mut is_profile_menu_open = use_signal(|| false);
     let mut is_connection_status_open = use_signal(|| false);
@@ -201,6 +201,60 @@ pub(crate) fn ServerRoomsScope(
         }
     });
 
+    let room_action_server_id = server_id.clone();
+    let room_sidebar_action = use_callback(move |action| {
+        match action {
+            RoomSidebarAction::Select(room) => {
+                room_menu.set(None);
+                info!(
+                    server_id = %room_action_server_id,
+                    room_id = %room.id,
+                    room_kind = ?room.kind,
+                    "selected room workspace"
+                );
+                // Ошибка предыдущей операции относилась к другой комнате,
+                // поэтому сбрасываем её при навигации пользователя.
+                room_action_status.set(String::new());
+                active_room_id.set(Some(room.id.clone()));
+                let workspace = ServerWorkspace::Room(room.id.clone());
+                let mut next_mounted_workspaces = mounted_workspaces();
+                ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
+                mounted_workspaces.set(next_mounted_workspaces);
+                active_workspace.set(Some(workspace));
+                mobile_workspace_open.set(true);
+                if active {
+                    on_state_change.call((
+                        room_action_server_id.clone(),
+                        ServerShellState {
+                            chat_open: chat_open_for_room(&chat_open_by_room(), &room.id),
+                            room_kind: room_kind_attr(room.kind),
+                        },
+                    ));
+                    navigator.push(Route::AppServerRoom {
+                        server_id: room_action_server_id.clone(),
+                        room_id: room.id.clone(),
+                    });
+                }
+            }
+            RoomSidebarAction::Create => {
+                if can_manage_rooms && has_loaded_rooms {
+                    info!(server_id = %room_action_server_id, "opened room creation from sidebar");
+                    room_menu.set(None);
+                    room_modal.set(Some(RoomModal::Create));
+                }
+            }
+            RoomSidebarAction::OpenMenu { room_id, x, y } => {
+                if can_manage_rooms && has_loaded_rooms {
+                    info!(server_id = %room_action_server_id, ?room_id, "opened room context menu");
+                    is_server_menu_open.set(false);
+                    is_profile_menu_open.set(false);
+                    is_connection_status_open.set(false);
+                    room_menu.set(Some((room_id, x, y)));
+                }
+            }
+        }
+    });
+
     rsx! {
             if sidebar_overlay_open {
                 SidebarMenuDismissLayer { on_close: move |_| close_sidebar_overlay.call(()) }
@@ -246,118 +300,27 @@ pub(crate) fn ServerRoomsScope(
                     }
                 }
 
-                div { class: "min-h-0 flex-1 overflow-y-auto p-3",
-                    div { class: "mb-1.5 flex items-center justify-between px-1 text-[10px] font-medium uppercase tracking-[0.22em] text-zinc-600",
-                        span { class: room_section_title_class, "Комнаты" }
-                        if can_manage_rooms {
-                            button {
-                                r#type: "button",
-                                class: "rounded-md p-1 text-zinc-600 hover:bg-zinc-900 hover:text-zinc-300",
-                                "aria-label": "Создать комнату",
-                                onclick: move |_| room_modal.set(Some(RoomModal::Create)),
-                                svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
-                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 5v14m-7-7h14" }
-                                }
-                            }
+                RoomSidebarList {
+                    server_id: server_id.clone(),
+                    rooms: current_rooms.clone(),
+                    active_workspace: active_workspace(),
+                    can_manage_rooms,
+                    deleting_room_id: deleting_room_id(),
+                    settings_workspace_active,
+                    section_title_class: room_section_title_class,
+                    is_loading_rooms,
+                    load_error: initial_room_error.clone(),
+                    is_retrying_rooms,
+                    action_error: room_action_status(),
+                    on_retry: {
+                        let mut resource = room_load_resource;
+                        let id = server_id.clone();
+                        move |_| {
+                            info!(server_id = %id, "retrying server rooms load");
+                            resource.restart();
                         }
-                    }
-
-                    if is_loading_rooms {
-                        ServerRoomsLoading {}
-                    } else if let Some(error) = initial_room_error.clone() {
-                        ServerRoomsLoadError {
-                            message: error,
-                            is_retrying: is_retrying_rooms,
-                            on_retry: {
-                                let mut resource = room_load_resource;
-                                let retry_server_id = server_id.clone();
-                                move |_| {
-                                    info!(server_id = %retry_server_id, "retrying server rooms load");
-                                    resource.restart();
-                                }
-                            },
-                        }
-                    } else if current_rooms.is_empty() {
-                        div { class: "rounded-xl border border-zinc-800 bg-zinc-900/70 p-3",
-                            p { class: "text-[12px] font-medium text-zinc-100", "Комнат пока нет" }
-                            p { class: "mt-1 text-[11px] leading-5 text-zinc-500",
-                                if can_manage_rooms {
-                                    "Создай первую комнату для этого сервера."
-                                } else {
-                                    "Владелец сервера еще не создал комнаты."
-                                }
-                            }
-                            if can_manage_rooms {
-                                button {
-                                    r#type: "button",
-                                    class: "mt-3 flex h-9 w-full items-center justify-center rounded-xl bg-accent px-3 text-[12px] font-semibold text-white transition hover:bg-blue-400",
-                                    onclick: move |_| room_modal.set(Some(RoomModal::Create)),
-                                    "Создать комнату"
-                                }
-                            }
-                        }
-                    } else {
-                        div { class: "space-y-1",
-                            for room in current_rooms.iter().cloned() {
-                                RoomListItem {
-                                    key: "{room.id}",
-                                    room: room.clone(),
-                                    is_active: matches!(active_workspace(), Some(ServerWorkspace::Room(ref id)) if id == &room.id),
-                                    can_manage_rooms,
-                                    is_deleting: deleting_room_id().as_deref() == Some(room.id.as_str()),
-                                    voice_participants: voice.room_participants(&server_id, &room.id).unwrap_or_default(),
-                                    compact_when_settings_active: settings_workspace_active,
-                                    on_select: {
-                                        let room = room.clone();
-                                        let select_server_id = server_id.clone();
-                                        move |_| {
-                                            info!(
-                                                server_id = %select_server_id,
-                                                room_id = %room.id,
-                                                room_kind = ?room.kind,
-                                                "selected room workspace"
-                                            );
-                                            // Ошибка предыдущей операции относилась к другой комнате,
-                                            // поэтому сбрасываем её при навигации пользователя.
-                                            room_action_status.set(String::new());
-                                            active_room_id.set(Some(room.id.clone()));
-                                            let workspace = ServerWorkspace::Room(room.id.clone());
-                                            let mut next_mounted_workspaces = mounted_workspaces();
-                                            ensure_workspace_mounted(&mut next_mounted_workspaces, workspace.clone());
-                                            mounted_workspaces.set(next_mounted_workspaces);
-                                            active_workspace.set(Some(workspace));
-                                            mobile_workspace_open.set(true);
-                                            if active {
-                                                on_state_change.call((
-                                                    select_server_id.clone(),
-                                                    ServerShellState {
-                                                        chat_open: chat_open_for_room(&chat_open_by_room(), &room.id),
-                                                        room_kind: room_kind_attr(room.kind),
-                                                    },
-                                                ));
-                                                navigator.push(Route::AppServerRoom {
-                                                    server_id: select_server_id.clone(),
-                                                    room_id: room.id.clone(),
-                                                });
-                                            }
-                                        }
-                                    },
-                                    on_edit: {
-                                        let room = room.clone();
-                                        move |_| room_modal.set(Some(RoomModal::Edit(room.clone())))
-                                    },
-                                    on_delete: {
-                                        let room = room.clone();
-                                        move |_| pending_delete_room.set(Some(room.clone()))
-                                    },
-                                }
-                            }
-                        }
-                    }
-
-                    if !room_action_status().is_empty() {
-                        ServerRoomsActionError { message: room_action_status() }
-                    }
+                    },
+                    on_action: room_sidebar_action,
                 }
                 AppSidebarFooter {
                     realtime_label: server_name.clone(),
@@ -366,6 +329,47 @@ pub(crate) fn ServerRoomsScope(
                     on_open_user_settings,
                     is_profile_menu_open,
                     is_connection_status_open,
+                }
+            }
+            if let Some((target_id, x, y)) = room_menu() {
+                {
+                    let target = target_id.as_deref().and_then(|id| current_rooms.iter().find(|room| room.id == id).cloned());
+                    let commands = available_commands(
+                        can_manage_rooms,
+                        !has_loaded_rooms,
+                        target_id.is_some(),
+                        target.is_some(),
+                        target_id.is_some() && deleting_room_id() == target_id,
+                    );
+                    rsx! {
+                        if !commands.is_empty() {
+                            RoomContextMenu {
+                                key: "{target_id:?}",
+                                commands: commands.to_vec(),
+                                label: target.as_ref().map(|room| room.name.clone()).unwrap_or_else(|| "Комнаты".to_owned()),
+                                x, y,
+                                on_close: move |_| room_menu.set(None),
+                                on_command: move |command| {
+                                    room_menu.set(None);
+                                    match command {
+                                        RoomMenuCommand::Create => room_sidebar_action.call(RoomSidebarAction::Create),
+                                        RoomMenuCommand::Edit => {
+                                            if let Some(room) = target.clone() {
+                                                info!(room_id = %room.id, "opened room editor from context menu");
+                                                room_modal.set(Some(RoomModal::Edit(room)));
+                                            }
+                                        }
+                                        RoomMenuCommand::Delete => {
+                                            if let Some(room) = target.clone() {
+                                                info!(room_id = %room.id, "opened room deletion confirmation from context menu");
+                                                pending_delete_room.set(Some(room));
+                                            }
+                                        }
+                                    }
+                                },
+                            }
+                        }
+                    }
                 }
             }
             for workspace in mounted_workspaces() {

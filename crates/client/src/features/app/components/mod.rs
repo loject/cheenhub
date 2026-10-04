@@ -17,6 +17,7 @@ pub(crate) mod modal;
 pub(crate) mod own_invite_link_item;
 pub(crate) mod own_invite_links_section;
 pub(crate) mod profile_menu;
+mod room_context_menu;
 /// Диалог удаления комнаты сервера.
 pub(crate) mod room_delete_confirm;
 /// Запуск удаления комнаты по подтверждению пользователя.
@@ -25,6 +26,8 @@ pub(crate) mod room_editor_modal;
 pub(crate) mod room_header;
 pub(crate) mod room_instance;
 pub(crate) mod room_list_item;
+mod room_menu_policy;
+mod room_sidebar_list;
 mod room_write_access_field;
 pub(crate) mod server_avatar;
 pub(crate) mod server_context_menu;
