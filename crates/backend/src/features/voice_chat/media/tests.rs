@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use cheenhub_contracts::media::{MediaCodec, MediaDatagram, MediaDatagramError, MediaDatagramKind};
 use uuid::Uuid;
 
@@ -110,4 +111,41 @@ fn header_parser_rejects_buffer_shorter_than_declared_datagram() {
         MediaDatagramHeader::decode(&bytes),
         Err(MediaDatagramError::Truncated)
     );
+}
+
+#[test]
+fn relay_rewrites_only_sender_and_reuses_unique_bytes_for_opus() {
+    let datagram = encoded_datagram(MediaDatagramKind::VoiceFrame, MediaCodec::Opus);
+    let original = Bytes::from(datagram);
+    let original_ptr = original.as_ptr();
+    let authenticated_user_id = Uuid::new_v4();
+    let header = MediaDatagramHeader::decode(&original).expect("header decodes");
+
+    let relayed = header
+        .into_relay_bytes(original, authenticated_user_id)
+        .expect("relay buffer is prepared");
+
+    assert_eq!(relayed.as_ptr(), original_ptr);
+    assert_eq!(&relayed[44..60], authenticated_user_id.as_bytes());
+    assert_eq!(&relayed[64..], [1, 2, 3, 4]);
+}
+
+#[test]
+fn relay_falls_back_to_one_full_copy_for_shared_vp9_bytes() {
+    let original = Bytes::from(encoded_datagram(
+        MediaDatagramKind::ScreenFrame,
+        MediaCodec::Vp9,
+    ));
+    let shared = original.clone();
+    let forged_sender_id = original[44..60].to_vec();
+    let authenticated_user_id = Uuid::new_v4();
+    let header = MediaDatagramHeader::decode(&original).expect("header decodes");
+
+    let relayed = header
+        .into_relay_bytes(original, authenticated_user_id)
+        .expect("relay buffer is prepared");
+
+    assert_eq!(&shared[44..60], forged_sender_id);
+    assert_eq!(&relayed[44..60], authenticated_user_id.as_bytes());
+    assert_eq!(&relayed[64..], [1, 2, 3, 4]);
 }

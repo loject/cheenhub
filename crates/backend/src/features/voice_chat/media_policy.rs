@@ -12,6 +12,7 @@ use cheenhub_contracts::{
 use uuid::Uuid;
 
 use super::infrastructure::{InMemoryVoicePresenceStore, VoicePresence};
+use super::media::MediaDatagramHeader;
 use vp9::parse_key_frame_dimensions;
 
 mod vp9;
@@ -63,10 +64,52 @@ impl VideoPublicationTracker {
         allowed_presets: &[VideoPresetId],
         now: Instant,
     ) -> VideoAdmission {
+        self.inspect_frame_at(
+            VideoFrameView {
+                session_id,
+                kind: datagram.kind,
+                flags: datagram.flags,
+                sequence: datagram.sequence,
+                room_id: datagram.room_id,
+                payload: &datagram.payload,
+            },
+            allowed_presets,
+            now,
+        )
+    }
+
+    fn inspect_header_at(
+        &mut self,
+        session_id: Uuid,
+        header: &MediaDatagramHeader,
+        payload: &[u8],
+        allowed_presets: &[VideoPresetId],
+        now: Instant,
+    ) -> VideoAdmission {
+        self.inspect_frame_at(
+            VideoFrameView {
+                session_id,
+                kind: header.kind,
+                flags: header.flags,
+                sequence: header.sequence,
+                room_id: header.room_id,
+                payload,
+            },
+            allowed_presets,
+            now,
+        )
+    }
+
+    fn inspect_frame_at(
+        &mut self,
+        frame: VideoFrameView<'_>,
+        allowed_presets: &[VideoPresetId],
+        now: Instant,
+    ) -> VideoAdmission {
         let key = VideoPublicationKey {
-            session_id,
-            room_id: datagram.room_id,
-            kind: datagram.kind,
+            session_id: frame.session_id,
+            room_id: frame.room_id,
+            kind: frame.kind,
         };
         let publication = match self.publications.iter_mut().find(|entry| entry.key == key) {
             Some(publication) => publication,
@@ -78,28 +121,28 @@ impl VideoPublicationTracker {
             }
         };
 
-        let fragment = match frame_fragment(datagram) {
+        let fragment = match frame_fragment(frame.flags, frame.payload) {
             Ok(fragment) => fragment,
             Err(reason) => return VideoAdmission::Drop(reason),
         };
         if !fragment.is_first {
             return publication
-                .decision_for(datagram.sequence)
+                .decision_for(frame.sequence)
                 .unwrap_or(VideoAdmission::Drop(VideoDropReason::AwaitingFirstFragment));
         }
-        if let Some(decision) = publication.decision_for(datagram.sequence) {
+        if let Some(decision) = publication.decision_for(frame.sequence) {
             return decision;
         }
 
-        let is_key_frame = datagram.flags & MEDIA_DATAGRAM_FLAG_KEY_FRAME != 0;
+        let is_key_frame = frame.flags & MEDIA_DATAGRAM_FLAG_KEY_FRAME != 0;
         let decision = publication.inspect_frame(
-            datagram.sequence,
+            frame.sequence,
             is_key_frame,
             fragment.vp9_payload,
             allowed_presets,
             now,
         );
-        publication.remember(datagram.sequence, decision);
+        publication.remember(frame.sequence, decision);
         if decision == VideoAdmission::Forward {
             // Только что прошедший проверку кадр продлевает активность источника;
             // повторные и отклонённые пакеты возвращаются выше без обновления времени.
@@ -144,6 +187,16 @@ impl VideoPublicationTracker {
     }
 }
 
+/// Заимствованные поля видеокадра для проверки policy без создания датаграммы.
+struct VideoFrameView<'a> {
+    session_id: Uuid,
+    kind: MediaDatagramKind,
+    flags: u8,
+    sequence: u64,
+    room_id: Uuid,
+    payload: &'a [u8],
+}
+
 impl InMemoryVoicePresenceStore {
     pub(super) async fn inspect_video_datagram(
         &self,
@@ -155,6 +208,23 @@ impl InMemoryVoicePresenceStore {
             .lock()
             .await
             .inspect(session_id, datagram, allowed_presets)
+    }
+
+    /// Применяет video policy к payload из исходного WebTransport-буфера.
+    pub(super) async fn inspect_video_payload(
+        &self,
+        session_id: Uuid,
+        header: &MediaDatagramHeader,
+        payload: &[u8],
+        allowed_presets: &[VideoPresetId],
+    ) -> VideoAdmission {
+        self.video_publications.lock().await.inspect_header_at(
+            session_id,
+            header,
+            payload,
+            allowed_presets,
+            Instant::now(),
+        )
     }
 
     /// Убирает один видеоисточник по явному запросу остановки видеопотока.
@@ -302,24 +372,24 @@ struct FrameFragment<'a> {
     vp9_payload: &'a [u8],
 }
 
-fn frame_fragment(datagram: &MediaDatagram) -> Result<FrameFragment<'_>, VideoDropReason> {
-    if datagram.flags & MEDIA_DATAGRAM_FLAG_FRAGMENTED == 0 {
+fn frame_fragment(flags: u8, payload: &[u8]) -> Result<FrameFragment<'_>, VideoDropReason> {
+    if flags & MEDIA_DATAGRAM_FLAG_FRAGMENTED == 0 {
         return Ok(FrameFragment {
             is_first: true,
-            vp9_payload: &datagram.payload,
+            vp9_payload: payload,
         });
     }
-    if datagram.payload.len() < VIDEO_FRAGMENT_HEADER_LEN {
+    if payload.len() < VIDEO_FRAGMENT_HEADER_LEN {
         return Err(VideoDropReason::MalformedFragment);
     }
-    let fragment_index = u16::from_be_bytes([datagram.payload[4], datagram.payload[5]]);
-    let fragment_count = u16::from_be_bytes([datagram.payload[6], datagram.payload[7]]);
+    let fragment_index = u16::from_be_bytes([payload[4], payload[5]]);
+    let fragment_count = u16::from_be_bytes([payload[6], payload[7]]);
     if fragment_count == 0 || fragment_index >= fragment_count {
         return Err(VideoDropReason::MalformedFragment);
     }
     Ok(FrameFragment {
         is_first: fragment_index == 0,
-        vp9_payload: &datagram.payload[VIDEO_FRAGMENT_HEADER_LEN..],
+        vp9_payload: &payload[VIDEO_FRAGMENT_HEADER_LEN..],
     })
 }
 

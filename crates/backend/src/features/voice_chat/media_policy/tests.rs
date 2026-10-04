@@ -4,6 +4,7 @@ mod activity;
 pub(crate) mod support;
 
 use super::*;
+use crate::features::voice_chat::media::MediaDatagramHeader;
 use cheenhub_contracts::{
     media::{MediaCodec, MediaDatagram},
     video_presets::{BASE_CAMERA_VIDEO_PRESETS, BASE_SCREEN_SHARE_VIDEO_PRESETS},
@@ -43,6 +44,24 @@ fn camera_policy_rejects_1080p() {
             height: 1080,
         })
     );
+}
+
+#[test]
+fn video_policy_accepts_key_frame_from_borrowed_wire_payload() {
+    let mut tracker = VideoPublicationTracker::default();
+    let session_id = Uuid::new_v4();
+    let now = Instant::now();
+    let datagram = video_datagram(1, true, 1280, 720);
+    let wire = datagram.encode().expect("datagram encodes");
+    let header = MediaDatagramHeader::decode(&wire).expect("header decodes");
+    let payload = header.payload(&wire).expect("payload is borrowed");
+
+    assert_eq!(
+        tracker.inspect_header_at(session_id, &header, payload, BASE_CAMERA_VIDEO_PRESETS, now,),
+        VideoAdmission::Forward
+    );
+    assert_eq!(tracker.publications.len(), 1);
+    assert_eq!(tracker.publications[0].window_frames, 1);
 }
 
 #[test]

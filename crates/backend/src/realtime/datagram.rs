@@ -54,11 +54,18 @@ async fn dispatch_webtransport_bytes_with_warnings(
 ) {
     match voice_chat::media::MediaDatagramHeader::decode(&bytes) {
         Ok(header)
-            if header.kind == MediaDatagramKind::VoiceFrame && header.codec == MediaCodec::Opus =>
+            if matches!(
+                (header.kind, header.codec),
+                (MediaDatagramKind::VoiceFrame, MediaCodec::Opus)
+                    | (MediaDatagramKind::ScreenFrame, MediaCodec::Vp9)
+                    | (MediaDatagramKind::CameraFrame, MediaCodec::Vp9)
+            ) =>
         {
             let started_at = Instant::now();
-            voice_chat::media::handle_voice_frame_bytes(state, session_id, user_id, bytes, header)
-                .await;
+            voice_chat::media::handle_webtransport_frame_bytes(
+                state, session_id, user_id, bytes, header,
+            )
+            .await;
 
             let elapsed = started_at.elapsed();
             if elapsed >= SLOW_MEDIA_DISPATCH_WARN_AFTER
@@ -68,8 +75,8 @@ async fn dispatch_webtransport_bytes_with_warnings(
                     %session_id,
                     %user_id,
                     room_id = %header.room_id,
-                    kind = ?MediaDatagramKind::VoiceFrame,
-                    codec = ?MediaCodec::Opus,
+                    kind = ?header.kind,
+                    codec = ?header.codec,
                     sequence = header.sequence,
                     timestamp_us = header.timestamp_us,
                     duration_us = header.duration_us,
