@@ -1,9 +1,10 @@
 //! Общий реестр потоков realtime и вещания.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::Duration;
 
 use cheenhub_contracts::realtime::{RealtimeKind, RealtimeModule};
+use dashmap::DashMap;
 use futures_util::future::join_all;
 use serde::Serialize;
 use tokio::sync::{Mutex, watch};
@@ -68,7 +69,7 @@ impl DisconnectReason {
 #[derive(Default)]
 pub(crate) struct RealtimeHub {
     streams: Mutex<Vec<RealtimeStream>>,
-    sessions: Mutex<HashMap<Uuid, RealtimeSession>>,
+    sessions: DashMap<Uuid, RealtimeSession>,
     last_slow_datagram_fanout_warning_at: Mutex<Option<Instant>>,
 }
 
@@ -153,29 +154,27 @@ impl RealtimeHub {
         auth_session_id: Uuid,
         datagrams: DatagramSink,
     ) -> watch::Receiver<Option<DisconnectReason>> {
-        let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get(&session_id) {
-            return session.disconnect.subscribe();
-        }
-        let (disconnect, receiver) = watch::channel(None);
-        sessions.insert(
-            session_id,
-            RealtimeSession {
-                id: session_id,
-                user_id,
-                auth_session_id,
-                datagrams,
-                disconnect,
-            },
-        );
+        let receiver = match self.sessions.entry(session_id) {
+            dashmap::Entry::Occupied(session) => session.get().disconnect.subscribe(),
+            dashmap::Entry::Vacant(session) => {
+                let (disconnect, receiver) = watch::channel(None);
+                session.insert(RealtimeSession {
+                    id: session_id,
+                    user_id,
+                    auth_session_id,
+                    datagrams,
+                    disconnect,
+                });
+                receiver
+            }
+        };
         debug!(%session_id, %user_id, %auth_session_id, "registered realtime session");
         receiver
     }
 
     /// Удаляет аутентифицированную сессию WebTransport.
     pub(crate) async fn unregister_session(&self, session_id: Uuid) {
-        let mut sessions = self.sessions.lock().await;
-        sessions.remove(&session_id);
+        self.sessions.remove(&session_id);
         debug!(%session_id, "unregistered realtime session");
     }
 
@@ -223,10 +222,8 @@ impl RealtimeHub {
         reason: DisconnectReason,
         context: &'static str,
     ) -> usize {
-        let mut sessions = self.sessions.lock().await;
-        let before = sessions.len();
         let mut disconnected = 0;
-        sessions.retain(|_, session| {
+        self.sessions.retain(|_, session| {
             if !matches(session) {
                 return true;
             }
@@ -235,6 +232,7 @@ impl RealtimeHub {
             let _ = session.disconnect.send(Some(reason));
             false
         });
+        let remaining = self.sessions.len();
         if disconnected > 0 {
             info!(
                 %reason,
@@ -244,7 +242,7 @@ impl RealtimeHub {
         } else {
             debug!(%reason, "no realtime transports matched disconnect request");
         }
-        debug!(remaining_sessions = before - disconnected, %context, "realtime session registry updated after disconnect request");
+        debug!(remaining_sessions = remaining, removed_sessions = disconnected, %context, "realtime session registry updated after disconnect request");
         disconnected
     }
 
@@ -256,13 +254,10 @@ impl RealtimeHub {
     ) {
         let started_at = Instant::now();
         let payload_bytes = bytes.len();
-        let sessions = {
-            let sessions = self.sessions.lock().await;
-            session_ids
-                .iter()
-                .filter_map(|session_id| sessions.get(session_id).cloned())
-                .collect::<Vec<_>>()
-        };
+        let sessions = session_ids
+            .iter()
+            .filter_map(|session_id| self.sessions.get(session_id).map(|session| session.clone()))
+            .collect::<Vec<_>>();
         let recipient_count = sessions.len();
 
         // TODO: benchmark this hot path before adding bounded concurrency or task spawning.
@@ -483,3 +478,6 @@ async fn user_has_server_access(
         .await?
         .is_some())
 }
+
+#[cfg(test)]
+mod tests;

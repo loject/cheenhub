@@ -29,6 +29,7 @@ axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
 bytes = "1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
+dashmap = "6"
 cpal = "0.15.3"
 dioxus = { version = "=0.8.0-alpha.1", default-features = false }
 dioxus-sdk-storage = "0.7"

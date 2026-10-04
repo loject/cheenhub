@@ -19,6 +19,7 @@ base64.workspace = true
 bytes.workspace = true
 cheenhub_contracts = { path = "../contracts" }
 chrono.workspace = true
+dashmap.workspace = true
 dotenvy.workspace = true
 ed25519-dalek.workspace = true
 futures-util.workspace = true
