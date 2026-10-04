@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 
 use crate::features::landing::components::logo_icon::LogoIcon;
 
+use super::server_list_error::ServerListError;
 use super::server_rail_button::ServerRailButton;
 use crate::features::landing::components::download_dropdown::DownloadDropdown;
 
@@ -20,6 +21,8 @@ pub(crate) fn ServerRail(
     is_host_owner: bool,
     is_loading: bool,
     status: String,
+    /// Повторяет запрос списка серверов после ошибки загрузки.
+    on_retry_servers: EventHandler<()>,
     download_menu_open: Signal<bool>,
     on_select_server: EventHandler<String>,
     on_open_social: EventHandler<()>,
@@ -27,6 +30,7 @@ pub(crate) fn ServerRail(
     on_retry_host_access: EventHandler<()>,
     on_add_server: EventHandler<()>,
 ) -> Element {
+    let mut show_load_error = use_signal(|| false);
     let mut show_empty_server_hint = use_signal(|| true);
     let list_class = if !is_loading && servers.is_empty() {
         "space-y-2 overflow-visible pb-3"
@@ -47,7 +51,10 @@ pub(crate) fn ServerRail(
     rsx! {
         aside {
             class: rail_class,
-            onclick: move |_| download_menu_open.set(false),
+            onclick: move |_| {
+                download_menu_open.set(false);
+                show_load_error.set(false);
+            },
             button {
                 r#type: "button",
                 class: logo_class,
@@ -58,9 +65,9 @@ pub(crate) fn ServerRail(
             div { class: list_class,
                 if is_loading {
                     div { class: "flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900/60 text-[11px] font-semibold text-zinc-500",
-                        "..."
+                        "…"
                     }
-                } else if servers.is_empty() {
+                } else if servers.is_empty() && status.is_empty() {
                     div { class: "relative",
                         button {
                             r#type: "button",
@@ -101,8 +108,24 @@ pub(crate) fn ServerRail(
                 }
             }
             if !status.is_empty() {
-                p { class: "mb-2 rounded-xl border border-red-500/15 bg-red-500/10 px-2 py-1.5 text-center text-[10px] leading-4 text-red-200", "aria-label": "{status}",
-                    "!"
+                div { class: "relative mt-2",
+                    button {
+                        r#type: "button",
+                        class: "flex size-12 items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10 text-lg font-bold text-red-200 hover:bg-red-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400/70",
+                        "aria-label": "Не удалось загрузить серверы. Показать повторную попытку",
+                        "aria-expanded": show_load_error(),
+                        title: "Не удалось загрузить серверы",
+                        onclick: move |event| { event.stop_propagation(); show_load_error.set(!show_load_error()); },
+                        "!"
+                    }
+                    if show_load_error() {
+                        div {
+                            class: "absolute left-[calc(100%+12px)] top-0 z-[100] w-[min(280px,calc(100vw-100px))]",
+                            onclick: move |event| event.stop_propagation(),
+                            onkeydown: move |event| { if event.key() == Key::Escape { show_load_error.set(false); } },
+                            ServerListError { is_loading, on_retry: on_retry_servers }
+                        }
+                    }
                 }
             }
             div { class: "mt-auto border-t border-zinc-800/80 pt-3",

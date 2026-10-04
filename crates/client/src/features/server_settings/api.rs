@@ -97,3 +97,19 @@ pub(super) async fn update_voice_settings(
 
     Err(auth_api::read_error(response).await)
 }
+
+/// Удаляет сервер, принадлежащий текущему пользователю, вместе со всем содержимым.
+pub(super) async fn delete_server(server_id: String) -> Result<(), String> {
+    let access_token = auth_api::fresh_access_token().await?;
+    let response = auth_api::delete(&format!("/servers/{server_id}"))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if response.status().is_success() {
+        return Ok(());
+    }
+
+    Err(auth_api::read_error(response).await)
+}

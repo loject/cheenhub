@@ -1,6 +1,7 @@
 //! Server settings feature.
 
 mod api;
+mod deletion_modal;
 mod invite_list_item;
 mod invites_data;
 mod invites_section;

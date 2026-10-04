@@ -220,8 +220,6 @@ pub(crate) fn ServerRoomsScope(
                     }
                     if is_server_menu_open() {
                         ServerContextMenu {
-                            server_id: server.id.clone(),
-                            server_name: server_name.clone(),
                             is_owner,
                             can_open_settings: is_owner,
                             can_create_invite_links,
@@ -234,7 +232,6 @@ pub(crate) fn ServerRoomsScope(
                                     active_workspace,
                                     mobile_workspace_open,
                                     on_open_modal,
-                                    on_server_removed,
                                 };
                                 move |action: ServerMenuAction| {
                                     apply_server_menu_action(
@@ -405,6 +402,7 @@ pub(crate) fn ServerRoomsScope(
                     server: server.clone(),
                     active: active && matches!(active_workspace(), Some(ServerWorkspace::Settings)),
                     on_server_updated,
+                    on_server_deleted: on_server_removed,
                     on_close: {
                         let close_settings_server_id = server_id.clone();
                         move |_| {

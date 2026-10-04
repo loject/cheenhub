@@ -2721,6 +2721,10 @@ html,
   max-height: calc(100dvh - 2rem);
 }
 
+.max-h-\[calc\(100dvh-48px\)\] {
+  max-height: calc(100dvh - 48px);
+}
+
 .max-h-\[min\(720px\2c calc\(100vh-48px\)\)\] {
   max-height: min(720px,calc(100vh - 48px));
 }
@@ -2995,6 +2999,10 @@ html,
 
 .w-\[min\(260px\2c calc\(100\%_-_1\.5rem\)\)\] {
   width: min(260px,calc(100% - 1.5rem));
+}
+
+.w-\[min\(280px\2c calc\(100vw-100px\)\)\] {
+  width: min(280px,calc(100vw - 100px));
 }
 
 .w-\[min\(90\%\2c 360px\)\] {
@@ -3370,10 +3378,6 @@ html,
 
 .grid-cols-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.grid-cols-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .grid-cols-4 {
@@ -3935,10 +3939,6 @@ html,
   border-color: rgb(248 113 113 / 0.3);
 }
 
-.border-red-500\/15 {
-  border-color: rgb(239 68 68 / 0.15);
-}
-
 .border-red-500\/20 {
   border-color: rgb(239 68 68 / 0.2);
 }
@@ -4308,6 +4308,10 @@ html,
   background-color: rgb(248 113 113 / 0.1);
 }
 
+.bg-red-400\/5 {
+  background-color: rgb(248 113 113 / 0.05);
+}
+
 .bg-red-500 {
   --tw-bg-opacity: 1;
   background-color: rgb(239 68 68 / var(--tw-bg-opacity, 1));
@@ -4537,10 +4541,6 @@ html,
 
 .bg-zinc-950\/95 {
   background-color: rgb(9 9 11 / 0.95);
-}
-
-.bg-red-400\/5 {
-  background-color: rgb(248 113 113 / 0.05);
 }
 
 .bg-\[radial-gradient\(circle_at_center\2c rgba\(255\2c 255\2c 255\2c \.055\)\2c transparent_38\%\)\] {
@@ -6370,6 +6370,12 @@ html,
   transition-duration: 150ms;
 }
 
+.transition-\[background-color\2c border-color\2c transform\] {
+  transition-property: background-color,border-color,transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
 .transition-\[background-color\2c border-color\] {
   transition-property: background-color,border-color;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -6624,12 +6630,6 @@ html,
 
 .transition-transform {
   transition-property: transform;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 150ms;
-}
-
-.transition-\[background-color\2c border-color\2c transform\] {
-  transition-property: background-color,border-color,transform;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
@@ -8092,6 +8092,10 @@ html,
   outline-color: rgb(96 165 250 / 0.7);
 }
 
+.focus-visible\:outline-red-400\/70:focus-visible {
+  outline-color: rgb(248 113 113 / 0.7);
+}
+
 .focus-visible\:ring-2:focus-visible {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);
@@ -8997,6 +9001,10 @@ html,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .xl\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .xl\:grid-cols-4 {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -9011,10 +9019,6 @@ html,
 
   .xl\:grid-cols-\[320px_minmax\(0\2c 1fr\)\] {
     grid-template-columns: 320px minmax(0,1fr);
-  }
-
-  .xl\:grid-cols-3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .xl\:pb-0 {

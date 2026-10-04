@@ -24,8 +24,6 @@ pub(super) struct ServerMenuScope {
     pub(super) mobile_workspace_open: Signal<bool>,
     /// Сообщает оболочке приложения о запросе открыть модальное окно.
     pub(super) on_open_modal: EventHandler<AppModal>,
-    /// Сообщает оболочке, что сервер исчез из списка доступных.
-    pub(super) on_server_removed: EventHandler<String>,
 }
 
 /// Применяет действие меню к состоянию сайдбара и оболочки приложения.
@@ -44,7 +42,6 @@ pub(super) fn apply_server_menu_action(
         active_workspace,
         mobile_workspace_open,
         on_open_modal,
-        on_server_removed,
     } = context;
     is_menu_open.set(false);
 
@@ -70,8 +67,12 @@ pub(super) fn apply_server_menu_action(
                 server_name: invite_server_name,
             });
         }
-        ServerMenuAction::ServerLeft(server_id) | ServerMenuAction::ServerDeleted(server_id) => {
-            on_server_removed.call(server_id);
+        ServerMenuAction::LeaveServer => {
+            info!(server_id = %menu_server_id, "opened leave server confirmation");
+            on_open_modal.call(AppModal::LeaveServer {
+                server_id: menu_server_id,
+                server_name: invite_server_name,
+            });
         }
     }
 }

@@ -2,6 +2,7 @@
 
 pub(crate) mod add_server_modal;
 pub(crate) mod app_shell;
+mod app_shell_state;
 pub(crate) mod app_sidebar_footer;
 pub(crate) mod avatar;
 /// Полноэкранный просмотр изображений из чатов.
@@ -27,9 +28,9 @@ pub(crate) mod room_list_item;
 mod room_write_access_field;
 pub(crate) mod server_avatar;
 pub(crate) mod server_context_menu;
-/// Диалог подтверждения удаления сервера.
-mod server_delete_confirm;
 pub(crate) mod server_instance;
+mod server_leave_modal;
+mod server_list_error;
 /// Применение действий контекстного меню сервера.
 pub(crate) mod server_menu_actions;
 pub(crate) mod server_rail;
