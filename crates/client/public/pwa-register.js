@@ -5,6 +5,12 @@
   const DEFAULT_APP_VERSION = "dev";
   const OFFLINE_CHECK_PATH = "/manifest.webmanifest";
   const RETRY_DELAY_MS = 5000;
+  const ORIGIN_TIMEOUT_MS = 5000;
+  const STARTUP_GRACE_MS = 20000;
+  const STARTUP_RECOVERY_KEY = `cheenhub-startup-recovery:${window.location.pathname}`;
+  const startupStartedAt = Date.now();
+  let onlineVerification = null;
+  let reloadPending = false;
   let appVersion = DEFAULT_APP_VERSION;
   let registeredServiceWorkerUrl = "";
   let retryTimer = 0;
@@ -124,23 +130,56 @@
     }, RETRY_DELAY_MS);
   }
 
-  async function canReachOrigin() {
-    const url = `${OFFLINE_CHECK_PATH}?cheenhub-online-check=${Date.now()}`;
-    const response = await fetch(url, {
-      cache: "no-store",
-      credentials: "same-origin",
-      method: "GET",
-    });
-    return response.ok;
-  }
+  function recoverStartup(source) {
+    if (appHasRendered() || isOfflineShell() || reloadPending) {
+      return true;
+    }
+    if (Date.now() - startupStartedAt < STARTUP_GRACE_MS || document.visibilityState !== "visible") {
+      return false;
+    }
 
-  async function verifyOnline(source) {
-    if (!shouldUseOfflineExperience()) {
-      clearRetryTimer();
-      hideOffline();
+    try {
+      if (window.sessionStorage.getItem(STARTUP_RECOVERY_KEY)) {
+        log.warn("automatic startup recovery already attempted", { source });
+        return true;
+      }
+      window.sessionStorage.setItem(STARTUP_RECOVERY_KEY, "1");
+    } catch (error) {
+      log.warn("startup recovery skipped because its reload limit cannot be persisted", error);
       return true;
     }
 
+    reloadPending = true;
+    log.warn("recovering empty application after origin became reachable", { source });
+    window.location.reload();
+    return true;
+  }
+
+  async function canReachOrigin() {
+    const url = `${OFFLINE_CHECK_PATH}?cheenhub-online-check=${Date.now()}`;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), ORIGIN_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        cache: "no-store",
+        credentials: "same-origin",
+        method: "GET",
+        signal: controller.signal,
+      });
+      return response.ok;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
+  function verifyOnline(source) {
+    if (!onlineVerification) {
+      onlineVerification = checkOnline(source).finally(() => { onlineVerification = null; });
+    }
+    return onlineVerification;
+  }
+
+  async function checkOnline(source) {
     if (!navigator.onLine) {
       showOffline("Ожидаем сеть");
       scheduleRetry();
@@ -159,8 +198,11 @@
       log.info("origin is reachable", { source });
       window.dispatchEvent(new CustomEvent("cheenhub:pwa-online"));
 
-      if (isOfflineShell()) {
+      if (isOfflineShell() && !reloadPending) {
+        reloadPending = true;
         window.location.reload();
+      } else if (!recoverStartup(source)) {
+        scheduleRetry();
       }
 
       return true;
@@ -318,6 +360,14 @@
     const main = document.getElementById("main");
     if (main && "MutationObserver" in window) {
       const observer = new MutationObserver(() => {
+        if (appHasRendered() && !isOfflineShell()) {
+          clearRetryTimer();
+          try {
+            window.sessionStorage.removeItem(STARTUP_RECOVERY_KEY);
+          } catch (error) {
+            log.warn("failed to clear successful startup recovery marker", error);
+          }
+        }
         if (!navigator.onLine && !isOfflineShell() && appHasRendered()) {
           hideOffline();
           document.documentElement.dataset.pwaNetwork = "offline";
@@ -328,29 +378,21 @@
 
     window.addEventListener("offline", () => {
       log.info("browser reported offline");
-      if (shouldUseOfflineExperience()) {
-        showOffline("Ожидаем сеть");
-        scheduleRetry();
-      }
+      showOffline("Ожидаем сеть");
+      scheduleRetry();
     });
 
     window.addEventListener("online", () => {
       log.info("browser reported online");
-      if (shouldUseOfflineExperience()) {
-        verifyOnline("online-event");
-      }
+      verifyOnline("online-event");
     });
 
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "visible" || !shouldUseOfflineExperience()) {
+      if (document.visibilityState !== "visible") {
         return;
       }
 
-      if (!navigator.onLine) {
-        showOffline("Ожидаем сеть");
-      } else {
-        verifyOnline("visibilitychange");
-      }
+      verifyOnline("visibilitychange");
     });
 
     document.addEventListener("click", (event) => {
@@ -393,6 +435,9 @@
 
   bindOfflineEvents();
   bindInstallEvents();
+  if (!appHasRendered() && !isOfflineShell()) {
+    scheduleRetry();
+  }
 
   window.addEventListener("cheenhub:pwa-version", (event) => {
     appVersion = normalizeVersion(event.detail && event.detail.version);
@@ -406,9 +451,7 @@
 
   window.addEventListener("load", () => {
     refreshServiceWorkerRegistration("window-load");
-    if (shouldUseOfflineExperience()) {
-      verifyOnline("initial-load");
-    }
+    verifyOnline("initial-load");
     registrationPromise
       .then(() => cacheCurrentShell())
       .catch((error) => log.warn("pwa startup failed", error));
