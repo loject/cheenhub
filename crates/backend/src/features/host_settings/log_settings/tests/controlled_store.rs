@@ -7,7 +7,8 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::features::host_settings::domain::{
-    GmailOAuthState, HostEmailSettings, HostLogSettings, VoiceActivitySample,
+    GmailOAuthState, HostEmailSettings, HostLogSettings, HostOwner, RevokeHostOwnerOutcome,
+    VoiceActivitySample,
 };
 use crate::features::host_settings::infrastructure::HostSettingsStore;
 
@@ -39,6 +40,18 @@ impl ControlledStore {
 impl HostSettingsStore for ControlledStore {
     async fn is_host_owner(&self, user_id: Uuid) -> anyhow::Result<bool> {
         self.inner.is_host_owner(user_id).await
+    }
+
+    async fn load_host_owners(&self) -> anyhow::Result<Vec<HostOwner>> {
+        self.inner.load_host_owners().await
+    }
+
+    async fn grant_host_owner(&self, owner: HostOwner) -> anyhow::Result<()> {
+        self.inner.grant_host_owner(owner).await
+    }
+
+    async fn revoke_host_owner(&self, user_id: Uuid) -> anyhow::Result<RevokeHostOwnerOutcome> {
+        self.inner.revoke_host_owner(user_id).await
     }
 
     async fn load_email_settings(&self) -> anyhow::Result<HostEmailSettings> {

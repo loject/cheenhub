@@ -23,6 +23,14 @@ pub(crate) async fn delete_current_user(
             "Сначала передай владение своими серверами или удали их, затем повтори удаление аккаунта.".to_owned(),
         ));
     }
+    // Права владельца хоста удаляются каскадно вместе с аккаунтом, поэтому
+    // удаление последнего владельца оставило бы хост без доступа к настройкам.
+    if state.host_settings_store.is_host_owner(user.id).await? {
+        tracing::warn!(user_id = %user.id, "rejected account deletion for host owner");
+        return Err(AuthError::Conflict(
+            "Сначала сними с себя права владельца хоста: нужен хотя бы один владелец. Затем повтори удаление аккаунта.".to_owned(),
+        ));
+    }
 
     let now = Utc::now();
     let restore_until = now + Duration::days(30);

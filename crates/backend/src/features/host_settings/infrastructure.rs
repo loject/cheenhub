@@ -1,20 +1,41 @@
 //! Хранилище глобальных настроек хоста.
+//!
+//! Модуль объявляет границу хранения и PostgreSQL-реализацию. In-memory
+//! вариант для локальной разработки и тестов лежит в `in_memory`.
 
 pub(crate) mod entities;
-
-use std::sync::RwLock;
+mod in_memory;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set, TransactionTrait, sea_query::LockType,
+};
 use uuid::Uuid;
 
-use super::domain::{GmailOAuthState, HostEmailSettings, HostLogSettings, VoiceActivitySample};
+use super::domain::{
+    GmailOAuthState, HostEmailSettings, HostLogSettings, HostOwner, RevokeHostOwnerOutcome,
+    VoiceActivitySample,
+};
+
+pub(crate) use in_memory::InMemoryHostSettingsStore;
 
 /// Операции хранения настроек хоста.
 #[async_trait]
 pub(crate) trait HostSettingsStore: Send + Sync {
     async fn is_host_owner(&self, user_id: Uuid) -> anyhow::Result<bool>;
+    /// Возвращает всех владельцев хоста в хронологическом порядке выдачи прав.
+    async fn load_host_owners(&self) -> anyhow::Result<Vec<HostOwner>>;
+    /// Выдаёт права владельца хоста пользователю.
+    ///
+    /// Повторная выдача уже имеющихся прав обновляет время и автора выдачи,
+    /// но не создаёт вторую запись: пользователь остаётся одним владельцем.
+    async fn grant_host_owner(&self, owner: HostOwner) -> anyhow::Result<()>;
+    /// Атомарно отзывает права, сохраняя хотя бы одного владельца хоста.
+    ///
+    /// Отсутствие пользователя и отказ последнему владельцу не изменяют данные.
+    async fn revoke_host_owner(&self, user_id: Uuid) -> anyhow::Result<RevokeHostOwnerOutcome>;
     async fn load_email_settings(&self) -> anyhow::Result<HostEmailSettings>;
     /// Возвращает сохранённый минимальный уровень журнала.
     ///
@@ -78,6 +99,70 @@ impl HostSettingsStore for PostgresHostSettingsStore {
             .one(&self.database)
             .await?
             .is_some())
+    }
+
+    async fn load_host_owners(&self) -> anyhow::Result<Vec<HostOwner>> {
+        use entities::host_owners;
+        Ok(host_owners::Entity::find()
+            .order_by_asc(host_owners::Column::GrantedAt)
+            .order_by_asc(host_owners::Column::UserId)
+            .all(&self.database)
+            .await?
+            .into_iter()
+            .map(|model| HostOwner {
+                user_id: model.user_id,
+                granted_at: model.granted_at,
+                granted_by_user_id: model.granted_by_user_id,
+            })
+            .collect())
+    }
+
+    async fn grant_host_owner(&self, owner: HostOwner) -> anyhow::Result<()> {
+        use entities::host_owners;
+        use sea_orm::sea_query::OnConflict;
+
+        host_owners::Entity::insert(host_owners::ActiveModel {
+            user_id: Set(owner.user_id),
+            granted_at: Set(owner.granted_at),
+            granted_by_user_id: Set(owner.granted_by_user_id),
+        })
+        .on_conflict(
+            OnConflict::column(host_owners::Column::UserId)
+                .update_columns([
+                    host_owners::Column::GrantedAt,
+                    host_owners::Column::GrantedByUserId,
+                ])
+                .to_owned(),
+        )
+        .exec(&self.database)
+        .await?;
+        Ok(())
+    }
+
+    async fn revoke_host_owner(&self, user_id: Uuid) -> anyhow::Result<RevokeHostOwnerOutcome> {
+        use entities::host_owners;
+
+        let transaction = self.database.begin().await?;
+        // Одинаковый порядок блокировок предотвращает deadlock при взаимном
+        // отзыве. В READ COMMITTED строки, удалённые ожидавшей транзакцией,
+        // пропускаются после получения блокировки и не входят в число владельцев.
+        let owners = host_owners::Entity::find()
+            .order_by_asc(host_owners::Column::UserId)
+            .lock(LockType::Update)
+            .all(&transaction)
+            .await?;
+        let outcome = if !owners.iter().any(|owner| owner.user_id == user_id) {
+            RevokeHostOwnerOutcome::Missing
+        } else if owners.len() == 1 {
+            RevokeHostOwnerOutcome::LastOwner
+        } else {
+            host_owners::Entity::delete_by_id(user_id)
+                .exec(&transaction)
+                .await?;
+            RevokeHostOwnerOutcome::Revoked
+        };
+        transaction.commit().await?;
+        Ok(outcome)
     }
 
     async fn load_email_settings(&self) -> anyhow::Result<HostEmailSettings> {
@@ -269,6 +354,7 @@ impl HostSettingsStore for PostgresHostSettingsStore {
         Ok(usize::try_from(result.rows_affected)?)
     }
 }
+
 fn settings_from_model(
     model: entities::host_email_settings::Model,
 ) -> anyhow::Result<HostEmailSettings> {
@@ -291,128 +377,5 @@ fn settings_from_model(
     })
 }
 
-/// In-memory реализация для локальной разработки и тестов.
-#[derive(Default)]
-pub(crate) struct InMemoryHostSettingsStore {
-    settings: RwLock<HostEmailSettings>,
-    log_settings: RwLock<HostLogSettings>,
-    owners: RwLock<Vec<Uuid>>,
-    states: RwLock<Vec<(GmailOAuthState, Option<DateTime<Utc>>)>>,
-    pub(super) voice_activity: RwLock<Vec<VoiceActivitySample>>,
-}
-
-impl InMemoryHostSettingsStore {
-    #[cfg(test)]
-    pub(crate) fn with_owner(user_id: Uuid) -> Self {
-        Self {
-            owners: RwLock::new(vec![user_id]),
-            ..Self::default()
-        }
-    }
-}
-
-#[async_trait]
-impl HostSettingsStore for InMemoryHostSettingsStore {
-    async fn is_host_owner(&self, user_id: Uuid) -> anyhow::Result<bool> {
-        Ok(self
-            .owners
-            .read()
-            .expect("host owners lock")
-            .contains(&user_id))
-    }
-
-    async fn load_email_settings(&self) -> anyhow::Result<HostEmailSettings> {
-        Ok(self.settings.read().expect("host settings lock").clone())
-    }
-
-    async fn save_email_settings(
-        &self,
-        settings: HostEmailSettings,
-        _updated_by: Uuid,
-        _updated_at: DateTime<Utc>,
-    ) -> anyhow::Result<HostEmailSettings> {
-        *self.settings.write().expect("host settings lock") = settings.clone();
-        Ok(settings)
-    }
-
-    async fn load_log_settings(&self) -> anyhow::Result<HostLogSettings> {
-        Ok(self
-            .log_settings
-            .read()
-            .expect("host log settings lock")
-            .clone())
-    }
-
-    async fn save_log_settings(
-        &self,
-        settings: HostLogSettings,
-        _updated_by: Uuid,
-        updated_at: DateTime<Utc>,
-    ) -> anyhow::Result<HostLogSettings> {
-        let mut stored = settings;
-        stored.updated_at = Some(updated_at);
-        *self.log_settings.write().expect("host log settings lock") = stored.clone();
-        Ok(stored)
-    }
-
-    async fn insert_gmail_oauth_state(&self, state: GmailOAuthState) -> anyhow::Result<()> {
-        self.states
-            .write()
-            .expect("oauth states lock")
-            .push((state, None));
-        Ok(())
-    }
-
-    async fn consume_gmail_oauth_state(
-        &self,
-        state_hash: &str,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<Option<Uuid>> {
-        let mut states = self.states.write().expect("oauth states lock");
-        let Some((state, consumed_at)) = states.iter_mut().find(|(state, consumed_at)| {
-            state.state_hash == state_hash && consumed_at.is_none() && state.expires_at > now
-        }) else {
-            return Ok(None);
-        };
-        *consumed_at = Some(now);
-        Ok(Some(state.user_id))
-    }
-
-    async fn insert_voice_activity_sample(
-        &self,
-        sample: VoiceActivitySample,
-    ) -> anyhow::Result<()> {
-        self.voice_activity
-            .write()
-            .expect("voice activity lock")
-            .push(sample);
-        Ok(())
-    }
-
-    async fn load_voice_activity_samples(
-        &self,
-        since: DateTime<Utc>,
-        now: DateTime<Utc>,
-    ) -> anyhow::Result<Vec<VoiceActivitySample>> {
-        let samples = self.voice_activity.read().expect("voice activity lock");
-        let mut selected: Vec<VoiceActivitySample> = samples
-            .iter()
-            .copied()
-            .filter(|sample| sample.sampled_at > since && sample.sampled_at <= now)
-            .collect();
-        selected.sort_by_key(|sample| sample.sampled_at);
-        Ok(selected)
-    }
-
-    async fn delete_voice_activity_samples_before(
-        &self,
-        cutoff: DateTime<Utc>,
-    ) -> anyhow::Result<usize> {
-        let mut samples = self.voice_activity.write().expect("voice activity lock");
-        let before = samples.len();
-        samples.retain(|sample| sample.sampled_at >= cutoff);
-        Ok(before - samples.len())
-    }
-}
 #[cfg(test)]
 mod tests;

@@ -8,6 +8,7 @@ pub(crate) mod email_delivery;
 pub(crate) mod infrastructure;
 pub(crate) mod log_settings;
 pub(crate) mod metrics_monitor;
+pub(crate) mod owners;
 mod stats;
 mod transport;
 

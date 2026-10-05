@@ -1,10 +1,10 @@
 //! REST-клиент глобальных настроек хоста.
 
 use cheenhub_contracts::rest::{
-    GmailConnectionStartResponse, HostAccessResponse, HostEmailSettingsResponse,
-    HostLogSettingsResponse, HostMetricsResponse, HostStatsResponse,
-    HostVoiceActivityHistoryResponse, HostVoiceActivityResponse, UpdateHostEmailSettingsRequest,
-    UpdateHostLogSettingsRequest,
+    GmailConnectionStartResponse, GrantHostOwnerRequest, HostAccessResponse,
+    HostEmailSettingsResponse, HostLogSettingsResponse, HostMetricsResponse, HostOwnersResponse,
+    HostStatsResponse, HostVoiceActivityHistoryResponse, HostVoiceActivityResponse,
+    UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
 };
 use dioxus::prelude::{debug, info, warn};
 use reqwest::{Response, StatusCode};
@@ -64,6 +64,45 @@ pub(crate) async fn load_email_settings() -> Result<HostEmailSettingsResponse, H
         .await
         .map_err(HostSettingsApiError::Other)?;
     decode_settings(response).await
+}
+
+/// Загружает список пользователей с правами владельца хоста.
+pub(crate) async fn load_owners() -> Result<HostOwnersResponse, HostSettingsApiError> {
+    let response = authorized_get("/host-settings/owners")
+        .await
+        .map_err(HostSettingsApiError::Other)?;
+    decode_owners(response).await
+}
+
+/// Выдаёт права владельца хоста пользователю, указанному email или идентификатором.
+///
+/// Сервер возвращает обновлённый список владельцев, поэтому клиенту не нужно
+/// перезапрашивать его отдельным запросом.
+pub(crate) async fn grant_owner(user: String) -> Result<HostOwnersResponse, HostSettingsApiError> {
+    let response = authorized_post_json("/host-settings/owners", &GrantHostOwnerRequest { user })
+        .await
+        .map_err(HostSettingsApiError::Other)?;
+    decode_owners(response).await
+}
+
+/// Отзывает права владельца хоста у пользователя и возвращает оставшихся владельцев.
+pub(crate) async fn revoke_owner(
+    user_id: &str,
+) -> Result<HostOwnersResponse, HostSettingsApiError> {
+    let response = authorized_delete(&format!("/host-settings/owners/{user_id}"))
+        .await
+        .map_err(HostSettingsApiError::Other)?;
+    decode_owners(response).await
+}
+
+async fn decode_owners(response: Response) -> Result<HostOwnersResponse, HostSettingsApiError> {
+    if response.status().is_success() {
+        return response.json().await.map_err(|_| {
+            HostSettingsApiError::Other("Не удалось прочитать список владельцев.".to_owned())
+        });
+    }
+
+    Err(classify_error(response).await)
 }
 
 /// Загружает текущий минимальный уровень журнала сервера.
@@ -184,6 +223,52 @@ async fn authorized_post(path: &str) -> Result<Response, String> {
 
     let access_token = auth_api::refresh_access_token().await?;
     send_post(path, &access_token).await
+}
+
+async fn authorized_post_json<T: Serialize + ?Sized>(
+    path: &str,
+    body: &T,
+) -> Result<Response, String> {
+    let access_token = auth_api::fresh_access_token().await?;
+    let response = send_post_json(path, &access_token, body).await?;
+    if response.status() != StatusCode::UNAUTHORIZED {
+        return Ok(response);
+    }
+
+    let access_token = auth_api::refresh_access_token().await?;
+    send_post_json(path, &access_token, body).await
+}
+
+async fn send_post_json<T: Serialize + ?Sized>(
+    path: &str,
+    access_token: &str,
+    body: &T,
+) -> Result<Response, String> {
+    auth_api::post(path)
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .json(body)
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())
+}
+
+async fn authorized_delete(path: &str) -> Result<Response, String> {
+    let access_token = auth_api::fresh_access_token().await?;
+    let response = send_delete(path, &access_token).await?;
+    if response.status() != StatusCode::UNAUTHORIZED {
+        return Ok(response);
+    }
+
+    let access_token = auth_api::refresh_access_token().await?;
+    send_delete(path, &access_token).await
+}
+
+async fn send_delete(path: &str, access_token: &str) -> Result<Response, String> {
+    auth_api::delete(path)
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())
 }
 
 async fn send_get(path: &str, access_token: &str) -> Result<Response, String> {

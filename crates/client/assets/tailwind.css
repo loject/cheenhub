@@ -3183,6 +3183,10 @@ html,
   max-width: 20rem;
 }
 
+.max-w-\[640px\] {
+  max-width: 640px;
+}
+
 .flex-1 {
   flex: 1 1 0%;
 }
@@ -3404,6 +3408,10 @@ html,
   grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(120px,.6fr) 160px;
 }
 
+.grid-cols-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .flex-col {
   flex-direction: column;
 }
@@ -3616,6 +3624,10 @@ html,
 .divide-zinc-900 > :not([hidden]) ~ :not([hidden]) {
   --tw-divide-opacity: 1;
   border-color: rgb(24 24 27 / var(--tw-divide-opacity, 1));
+}
+
+.divide-zinc-800\/80 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgb(39 39 42 / 0.8);
 }
 
 .self-start {
@@ -4549,6 +4561,10 @@ html,
 
 .bg-zinc-950\/95 {
   background-color: rgb(9 9 11 / 0.95);
+}
+
+.bg-red-400\/15 {
+  background-color: rgb(248 113 113 / 0.15);
 }
 
 .bg-\[radial-gradient\(circle_at_center\2c rgba\(255\2c 255\2c 255\2c \.055\)\2c transparent_38\%\)\] {
@@ -7907,6 +7923,10 @@ html,
 
   .hover\:bg-zinc-950\/80:hover {
     background-color: rgb(9 9 11 / 0.8);
+  }
+
+  .hover\:bg-red-400\/25:hover {
+    background-color: rgb(248 113 113 / 0.25);
   }
 
   .hover\:text-blue-100:hover {

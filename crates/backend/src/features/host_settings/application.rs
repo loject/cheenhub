@@ -69,13 +69,26 @@ pub(super) async fn require_host_owner(
     let (user, _) = require_current_user(state, access_token)
         .await
         .map_err(map_auth_error)?;
-    if !state.host_settings_store.is_host_owner(user.id).await? {
-        tracing::warn!(user_id = %user.id, "rejected host settings access by non-owner");
+    require_host_owner_rights(state, user.id).await?;
+    Ok(user.id)
+}
+
+/// Проверяет актуальные права ранее авторизованного пользователя.
+///
+/// Долгоживущие потоки вызывают проверку перед отправкой данных, чтобы отзыв
+/// прав прекращал доступ и у уже подключённого владельца. Ошибка хранилища
+/// также запрещает отправку: прошлое успешное решение не используется как кеш.
+pub(super) async fn require_host_owner_rights(
+    state: &AppState,
+    user_id: Uuid,
+) -> Result<(), HostSettingsError> {
+    if !state.host_settings_store.is_host_owner(user_id).await? {
+        tracing::warn!(%user_id, "rejected host settings access by non-owner");
         return Err(HostSettingsError::Forbidden(
             "Настройки хоста доступны только владельцу хоста.".to_owned(),
         ));
     }
-    Ok(user.id)
+    Ok(())
 }
 
 /// Возвращает настройки почты с удалёнными секретами.

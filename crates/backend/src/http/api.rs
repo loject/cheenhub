@@ -26,6 +26,9 @@ pub(crate) async fn not_found() -> StatusCode {
     StatusCode::NOT_FOUND
 }
 
+#[cfg(test)]
+mod tests;
+
 /// Проверка готовности backend принимать новые соединения.
 ///
 /// Возвращает 200, пока процесс обслуживает трафик, и 503 после перехода в

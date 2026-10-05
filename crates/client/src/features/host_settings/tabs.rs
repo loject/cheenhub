@@ -4,10 +4,12 @@ use dioxus::prelude::*;
 
 use crate::Route;
 
+/// Разделы настроек хоста, доступные владельцу установки.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum HostSettingsTab {
     Dashboard,
     Settings,
+    Owners,
     Email,
     Logs,
 }
@@ -15,7 +17,7 @@ pub(super) enum HostSettingsTab {
 pub(super) fn host_settings_tabs(active: HostSettingsTab) -> Element {
     rsx! {
         nav {
-            class: "mt-5 grid max-w-[560px] grid-cols-4 gap-1 rounded-xl border border-zinc-800 bg-zinc-950/70 p-1",
+            class: "mt-5 grid max-w-[640px] grid-cols-5 gap-1 rounded-xl border border-zinc-800 bg-zinc-950/70 p-1",
             "aria-label": "Разделы настроек хоста",
             Link {
                 to: Route::AppHostSettings {},
@@ -26,6 +28,11 @@ pub(super) fn host_settings_tabs(active: HostSettingsTab) -> Element {
                 to: Route::AppHostSystemSettings {},
                 class: tab_class(active == HostSettingsTab::Settings),
                 "Настройки"
+            }
+            Link {
+                to: Route::AppHostOwners {},
+                class: tab_class(active == HostSettingsTab::Owners),
+                "Владельцы"
             }
             Link {
                 to: Route::AppHostEmailSettings { gmail: None, email: None },

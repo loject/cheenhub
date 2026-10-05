@@ -19,6 +19,49 @@ pub struct HostAccessResponse {
     pub is_host_owner: bool,
 }
 
+/// Один пользователь с глобальными правами владельца хоста.
+///
+/// Права владельца выдаются нескольким пользователям одновременно, поэтому
+/// список содержит всех, кому текущий владелец когда-либо выдал доступ.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostOwnerSummary {
+    /// Идентификатор пользователя-владельца.
+    pub user_id: String,
+    /// Публичный никнейм владельца на этом хосте.
+    pub nickname: String,
+    /// Email владельца; помогает отличить двух владельцев с похожими никами.
+    pub email: String,
+    /// URL аватара владельца или `None`, если аватар не задан.
+    pub avatar_url: Option<String>,
+    /// Время выдачи прав в RFC 3339.
+    pub granted_at: String,
+    /// Никнейм владельца, выдавшего эти права; `None` у первоначального владельца,
+    /// получившего права автоматически при регистрации.
+    pub granted_by_nickname: Option<String>,
+    /// Является ли текущий запроситель этим владельцем.
+    ///
+    /// Клиент использует признак, чтобы не предлагать отзыв прав у себя.
+    pub is_current_user: bool,
+}
+
+/// Список владельцев хоста в хронологическом порядке выдачи прав.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostOwnersResponse {
+    /// Все владельцы; старые права идут первыми.
+    pub owners: Vec<HostOwnerSummary>,
+}
+
+/// Запрос выдачи прав владельца хоста.
+///
+/// Пользователь указывается либо email, либо точным идентификатором: оба
+/// варианта равнозначны и нужны, потому что email знают только сам владелец
+/// и те, кому он этот адрес сообщил.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct GrantHostOwnerRequest {
+    /// Email или идентификатор пользователя, которому выдаются права.
+    pub user: String,
+}
+
 /// История нагрузки хоста, доступная владельцу установки.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct HostMetricsResponse {
