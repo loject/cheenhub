@@ -64,10 +64,15 @@ pub(crate) enum NotificationSound {
 
 impl NotificationSound {
     /// Возвращает индивидуальный множитель громкости уведомления.
+    ///
+    /// Базовый уровень всех уведомлений составляет половину от полной громкости,
+    /// поэтому сигналы потери и восстановления соединения дополнительно
+    /// приглушаются. Множитель применяется одинаково в native-микшере и в
+    /// browser `GainNode`, поэтому громкость совпадает на всех платформах.
     pub(crate) fn volume_multiplier(self) -> f32 {
         match self {
-            Self::ConnectionLost | Self::ConnectionRestored => 0.6,
-            _ => 1.0,
+            Self::ConnectionLost | Self::ConnectionRestored => 0.3,
+            _ => 0.5,
         }
     }
 

@@ -158,8 +158,10 @@ impl AudioPlaybackHandle {
         let gain = context.create_gain()?;
         source.set_buffer(Some(&loop_buffer));
         source.set_loop(true);
-        gain.gain()
-            .set_value(self.inner.borrow().output_gain as f32);
+        gain.gain().set_value(
+            self.inner.borrow().output_gain as f32
+                * NotificationSound::ConnectionSignalLoop.volume_multiplier(),
+        );
         source.connect_with_audio_node(&gain)?;
         gain.connect_with_audio_node(&context.destination())?;
         {
