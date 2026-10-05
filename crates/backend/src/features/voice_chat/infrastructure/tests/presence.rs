@@ -41,7 +41,6 @@ async fn room_presence_authorizes_only_joined_users() {
     assert!(
         store
             .room_presence_for_user(VoicePresenceTargetKind::Server, &room_id, &user_id)
-            .await
             .is_none()
     );
 
@@ -58,13 +57,63 @@ async fn room_presence_authorizes_only_joined_users() {
     assert!(
         store
             .room_presence_for_user(VoicePresenceTargetKind::Server, &room_id, &user_id)
-            .await
             .is_some()
     );
 }
 
 #[tokio::test]
-async fn media_recipients_exclude_sender_and_other_rooms() {
+async fn media_route_keeps_one_room_version_after_leave() {
+    let store = InMemoryVoicePresenceStore::default();
+    let room_id = Uuid::new_v4();
+    let server_id = Uuid::new_v4();
+    let leaving_stream_id = Uuid::new_v4();
+    let leaving_session_id = Uuid::new_v4();
+    let remaining_session_id = Uuid::new_v4();
+    let leaving_user_id = Uuid::new_v4();
+    let remaining_user_id = Uuid::new_v4();
+
+    store
+        .join(presence(
+            leaving_stream_id,
+            leaving_session_id,
+            server_id,
+            room_id,
+            leaving_user_id,
+        ))
+        .await;
+    store
+        .join(presence(
+            Uuid::new_v4(),
+            remaining_session_id,
+            server_id,
+            room_id,
+            remaining_user_id,
+        ))
+        .await;
+
+    let previous = store
+        .media_route(VoicePresenceTargetKind::Server, &room_id, &leaving_user_id)
+        .expect("joined room should have a recipient snapshot");
+    store.leave_realtime_stream(&leaving_stream_id).await;
+    let current = store
+        .media_route(
+            VoicePresenceTargetKind::Server,
+            &room_id,
+            &remaining_user_id,
+        )
+        .expect("remaining member should keep a recipient snapshot");
+
+    assert_eq!(
+        previous.recipients.as_ref(),
+        &[leaving_session_id, remaining_session_id]
+    );
+    assert_eq!(previous.presence.session_id, leaving_session_id);
+    assert_eq!(current.recipients.as_ref(), &[remaining_session_id]);
+    assert_eq!(current.presence.session_id, remaining_session_id);
+}
+
+#[tokio::test]
+async fn media_route_contains_only_its_room_sessions() {
     let store = InMemoryVoicePresenceStore::default();
     let server_id = Uuid::new_v4();
     let room_id = Uuid::new_v4();
@@ -72,6 +121,7 @@ async fn media_recipients_exclude_sender_and_other_rooms() {
     let sender_session_id = Uuid::new_v4();
     let recipient_session_id = Uuid::new_v4();
     let other_room_session_id = Uuid::new_v4();
+    let sender_user_id = Uuid::new_v4();
 
     store
         .join(presence(
@@ -79,7 +129,7 @@ async fn media_recipients_exclude_sender_and_other_rooms() {
             sender_session_id,
             server_id,
             room_id,
-            Uuid::new_v4(),
+            sender_user_id,
         ))
         .await;
     store
@@ -101,15 +151,48 @@ async fn media_recipients_exclude_sender_and_other_rooms() {
         ))
         .await;
 
-    let recipients = store
-        .media_recipient_sessions(
-            VoicePresenceTargetKind::Server,
-            &room_id,
-            &sender_session_id,
-        )
-        .await;
+    let route = store
+        .media_route(VoicePresenceTargetKind::Server, &room_id, &sender_user_id)
+        .expect("joined room should have a media route");
 
-    assert_eq!(recipients, vec![recipient_session_id]);
+    assert_eq!(
+        route.recipients.as_ref(),
+        &[sender_session_id, recipient_session_id]
+    );
+}
+
+#[tokio::test]
+async fn profile_update_replaces_only_presence_and_reuses_room_recipients() {
+    let store = InMemoryVoicePresenceStore::default();
+    let room_id = Uuid::new_v4();
+    let user_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4();
+
+    store
+        .join(presence(
+            Uuid::new_v4(),
+            session_id,
+            Uuid::new_v4(),
+            room_id,
+            user_id,
+        ))
+        .await;
+    let before = store
+        .media_route(VoicePresenceTargetKind::Server, &room_id, &user_id)
+        .expect("joined room should have a media route");
+    store
+        .update_user_nickname(&user_id, "updated_voice_user".to_owned())
+        .await;
+    let after = store
+        .media_route(VoicePresenceTargetKind::Server, &room_id, &user_id)
+        .expect("presence should remain after nickname update");
+
+    assert!(!std::sync::Arc::ptr_eq(&before.presence, &after.presence));
+    assert_eq!(after.presence.nickname, "updated_voice_user");
+    assert!(std::sync::Arc::ptr_eq(
+        &before.recipients,
+        &after.recipients
+    ));
 }
 
 #[tokio::test]
@@ -144,13 +227,11 @@ async fn replacing_user_presence_makes_old_session_stale() {
     assert!(
         store
             .room_presence_for_user(VoicePresenceTargetKind::Server, &first_room_id, &user_id)
-            .await
             .is_none()
     );
     assert_eq!(
         store
             .room_presence_for_user(VoicePresenceTargetKind::Server, &second_room_id, &user_id)
-            .await
             .expect("new presence should remain")
             .session_id,
         new_session_id

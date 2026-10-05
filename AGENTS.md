@@ -104,7 +104,7 @@
 - Keep layer boundaries concrete: transport must not contain business rules or SQL, application must orchestrate behavior without HTTP response types, and infrastructure must not decide user-facing API errors.
 - Do not introduce repository traits or service traits just to satisfy layering; use concrete modules/functions until multiple implementations are actually needed.
 - Do not use raw SQL when SeaORM entities, SeaQuery, migration DSL, or another structured database API can express the operation clearly; reserve raw SQL for database-specific queries that the structured APIs cannot represent cleanly, and keep it isolated in infrastructure or migrations.
-- In-memory infrastructure implementations are only for local testing and development; keep them maximally simple, deterministic, and free of production-style indexing, caching, cleanup jobs, or database emulation unless a test explicitly requires it.
+- In-memory infrastructure implementations for long-lived user data are only for local testing and development; keep them maximally simple, deterministic, and free of production-style indexing, caching, cleanup jobs, or database emulation unless a test explicitly requires it. This restriction does not apply to ephemeral runtime state such as active realtime room presence, where feature-scoped indexes or snapshots may be used when needed for hot-path performance.
 
 ## Backend Realtime
 

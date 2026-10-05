@@ -23,7 +23,7 @@ pub(crate) async fn stop_video_stream(
 ) -> Result<(), VoiceChatApplicationError> {
     let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
     let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
-    let Some(presence) = active_presence_for_user(state, &room_id, user_id).await else {
+    let Some(presence) = active_presence_for_user(state, &room_id, user_id) else {
         return Err(VoiceChatApplicationError::NotFound(
             "Пользователь не находится в этой голосовой комнате.".to_owned(),
         ));

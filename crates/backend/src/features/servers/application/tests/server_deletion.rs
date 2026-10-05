@@ -234,7 +234,6 @@ async fn deleting_server_removes_only_its_voice_presence() {
         state
             .voice_presence_store
             .room_presence_for_user(VoicePresenceTargetKind::Server, &room_id, &user_id,)
-            .await
             .is_none()
     );
     assert_eq!(

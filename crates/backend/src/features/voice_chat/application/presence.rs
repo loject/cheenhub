@@ -1,5 +1,6 @@
 //! Поиск активного голосового присутствия пользователя.
 
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::features::voice_chat::infrastructure::{VoicePresence, VoicePresenceTargetKind};
@@ -7,22 +8,28 @@ use crate::state::AppState;
 
 use super::{direct_calls, fanout::fanout_removed_rooms};
 
-pub(super) async fn active_presence_for_user(
+/// Ищет активное присутствие пользователя в комнате сервера или личного звонка.
+///
+/// Сначала проверяется серверная комната, затем цель личного звонка с тем же
+/// `room_id`. Возвращаемый `Arc` принадлежит неизменяемому снимку присутствия;
+/// `None` означает, что пользователь не найден ни в одной из этих целей.
+pub(super) fn active_presence_for_user(
     state: &AppState,
     room_id: &Uuid,
     user_id: &Uuid,
-) -> Option<VoicePresence> {
-    if let Some(presence) = state
-        .voice_presence_store
-        .room_presence_for_user(VoicePresenceTargetKind::Server, room_id, user_id)
-        .await
-    {
+) -> Option<Arc<VoicePresence>> {
+    if let Some(presence) = state.voice_presence_store.room_presence_for_user(
+        VoicePresenceTargetKind::Server,
+        room_id,
+        user_id,
+    ) {
         return Some(presence);
     }
-    state
-        .voice_presence_store
-        .room_presence_for_user(VoicePresenceTargetKind::DirectMessage, room_id, user_id)
-        .await
+    state.voice_presence_store.room_presence_for_user(
+        VoicePresenceTargetKind::DirectMessage,
+        room_id,
+        user_id,
+    )
 }
 
 /// Удаляет присутствие закрытого realtime-потока и завершает связанный личный звонок.

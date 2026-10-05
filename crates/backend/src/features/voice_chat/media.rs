@@ -15,7 +15,7 @@ mod relay;
 mod tests;
 
 pub(crate) use relay::{MediaDatagramHeader, handle_webtransport_frame_bytes};
-use relay::{active_presence_for_user, video_admission_allows_fanout};
+use relay::{active_media_route_for_user, video_admission_allows_fanout};
 
 /// Обрабатывает одну декодированную медиадатаграмму голоса.
 pub(crate) async fn handle_voice_frame(
@@ -87,7 +87,7 @@ async fn handle_room_media_frame(
         "received voice room media datagram"
     );
 
-    let Some(presence) = active_presence_for_user(state, &datagram.room_id, &user_id).await else {
+    let Some(route) = active_media_route_for_user(state, &datagram.room_id, &user_id) else {
         debug!(
             %session_id,
             %user_id,
@@ -97,6 +97,8 @@ async fn handle_room_media_frame(
         );
         return;
     };
+    let presence = route.presence;
+    let recipients = route.recipients;
     let is_presence_session = presence.session_id == session_id;
     let is_bound_microphone_uplink = if is_presence_session || !allow_microphone_uplink {
         false
@@ -141,15 +143,7 @@ async fn handle_room_media_frame(
     }
 
     datagram.sender_user_id = user_id;
-    let recipients = state
-        .voice_presence_store
-        .media_recipient_sessions(
-            presence.target_kind,
-            &datagram.room_id,
-            &presence.session_id,
-        )
-        .await;
-    if recipients.is_empty() {
+    if recipients.is_empty() || (recipients.len() == 1 && recipients[0] == presence.session_id) {
         return;
     }
 
@@ -169,6 +163,6 @@ async fn handle_room_media_frame(
     };
     state
         .realtime_hub
-        .fanout_datagram_to_sessions(&recipients, bytes)
+        .fanout_datagram_to_sessions_except(&recipients, presence.session_id, bytes)
         .await;
 }

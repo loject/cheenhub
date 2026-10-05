@@ -8,7 +8,7 @@ use cheenhub_contracts::video_presets::{
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use super::super::infrastructure::VoicePresenceTargetKind;
+use super::super::infrastructure::{MediaRouteSnapshot, VoicePresenceTargetKind};
 use super::super::media_policy::{VideoAdmission, VideoDropReason};
 use crate::state::AppState;
 
@@ -40,6 +40,7 @@ pub(crate) struct MediaDatagramHeader {
     pub(crate) sender_user_id: Uuid,
     /// Объявленная заголовком длина payload.
     pub(crate) payload_len: usize,
+    /// Полная длина датаграммы, объявленная wire-заголовком.
     wire_len: usize,
 }
 
@@ -199,7 +200,7 @@ pub(crate) async fn handle_webtransport_frame_bytes(
         "received voice room media datagram"
     );
 
-    let Some(presence) = active_presence_for_user(state, &header.room_id, &user_id).await else {
+    let Some(route) = active_media_route_for_user(state, &header.room_id, &user_id) else {
         debug!(
             %session_id,
             %user_id,
@@ -209,6 +210,8 @@ pub(crate) async fn handle_webtransport_frame_bytes(
         );
         return;
     };
+    let presence = route.presence;
+    let recipients = route.recipients;
 
     let is_presence_session = presence.session_id == session_id;
     let is_bound_microphone_uplink = if is_presence_session || !allow_microphone_uplink {
@@ -262,11 +265,7 @@ pub(crate) async fn handle_webtransport_frame_bytes(
         }
     }
 
-    let recipients = state
-        .voice_presence_store
-        .media_recipient_sessions(presence.target_kind, &header.room_id, &presence.session_id)
-        .await;
-    if recipients.is_empty() {
+    if recipients.is_empty() || (recipients.len() == 1 && recipients[0] == presence.session_id) {
         return;
     }
 
@@ -286,7 +285,7 @@ pub(crate) async fn handle_webtransport_frame_bytes(
     };
     state
         .realtime_hub
-        .fanout_datagram_to_sessions(&recipients, bytes)
+        .fanout_datagram_to_sessions_except(&recipients, presence.session_id, bytes)
         .await;
 }
 
@@ -350,21 +349,24 @@ pub(super) fn video_admission_allows_fanout(
     false
 }
 
-/// Ищет присутствие пользователя в одной из поддерживаемых целей.
-pub(super) async fn active_presence_for_user(
+/// Ищет media route с presence и recipients из одной версии room snapshot.
+///
+/// Сначала проверяется серверная комната, затем комната личного звонка с тем
+/// же идентификатором. `None` означает, что пользователь не состоит ни в одной
+/// из поддерживаемых целей.
+pub(super) fn active_media_route_for_user(
     state: &AppState,
     room_id: &Uuid,
     user_id: &Uuid,
-) -> Option<super::super::infrastructure::VoicePresence> {
-    if let Some(presence) = state
-        .voice_presence_store
-        .room_presence_for_user(VoicePresenceTargetKind::Server, room_id, user_id)
-        .await
-    {
-        return Some(presence);
-    }
+) -> Option<MediaRouteSnapshot> {
     state
         .voice_presence_store
-        .room_presence_for_user(VoicePresenceTargetKind::DirectMessage, room_id, user_id)
-        .await
+        .media_route(VoicePresenceTargetKind::Server, room_id, user_id)
+        .or_else(|| {
+            state.voice_presence_store.media_route(
+                VoicePresenceTargetKind::DirectMessage,
+                room_id,
+                user_id,
+            )
+        })
 }

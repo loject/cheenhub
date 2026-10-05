@@ -98,7 +98,6 @@ pub(super) async fn authorize_network_quality_publication_at(
     let presence = state
         .voice_presence_store
         .presence_for_stream(&realtime_stream_id, user_id)
-        .await
         .ok_or_else(|| {
             tracing::warn!(
                 user_id = %user_id,

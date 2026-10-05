@@ -25,7 +25,7 @@ pub(crate) async fn issue_microphone_uplink_grant(
     request: IssueMicrophoneUplinkGrant,
 ) -> Result<MicrophoneUplinkGrantIssued, VoiceChatApplicationError> {
     let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
-    let Some(presence) = active_presence_for_user(state, &room_id, user_id).await else {
+    let Some(presence) = active_presence_for_user(state, &room_id, user_id) else {
         warn!(%session_id, %user_id, %room_id, "отклонена выдача microphone uplink grant вне активной комнаты");
         return Err(VoiceChatApplicationError::Unauthorized(
             "Сначала войдите в голосовую комнату.".to_owned(),
@@ -94,7 +94,7 @@ pub(crate) async fn bind_microphone_uplink(
             VoiceChatApplicationError::Unauthorized(message.to_owned())
         })?;
 
-    let presence = active_presence_for_user(state, &binding.room_id, user_id).await;
+    let presence = active_presence_for_user(state, &binding.room_id, user_id);
     if presence.as_ref().map(|entry| entry.session_id) != Some(binding.presence_session_id) {
         warn!(
             %session_id,

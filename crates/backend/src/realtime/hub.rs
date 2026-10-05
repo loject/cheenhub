@@ -98,9 +98,9 @@ struct DatagramFanoutOutcome {
 /// Публичный идентификатор потока, используемый в политиках вещания на уровне функций.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RealtimeRecipient {
-    /// Stable realtime stream identifier.
+    /// Идентификатор надёжного realtime-потока.
     pub(crate) stream_id: Uuid,
-    /// Authenticated user that owns the stream.
+    /// Аутентифицированный пользователь — владелец потока.
     pub(crate) user_id: Uuid,
 }
 
@@ -246,17 +246,28 @@ impl RealtimeHub {
         disconnected
     }
 
-    /// Отправляет одну сырую датаграмму выбранным активным сессиям.
-    pub(crate) async fn fanout_datagram_to_sessions(
+    /// Отправляет сырую датаграмму активным сессиям из снимка, кроме источника.
+    ///
+    /// `session_ids` может быть immutable-снимком получателей комнаты;
+    /// `excluded_session_id` не получает собственную датаграмму отправителя.
+    /// Список сессий копируется до первого `await`, поэтому map guards не
+    /// переживают асинхронную отправку.
+    pub(crate) async fn fanout_datagram_to_sessions_except(
         &self,
         session_ids: &[Uuid],
+        excluded_session_id: Uuid,
         bytes: bytes::Bytes,
     ) {
         let started_at = Instant::now();
         let payload_bytes = bytes.len();
         let sessions = session_ids
             .iter()
-            .filter_map(|session_id| self.sessions.get(session_id).map(|session| session.clone()))
+            .filter(|session_id| **session_id != excluded_session_id)
+            .filter_map(|session_id| {
+                self.sessions
+                    .get(session_id)
+                    .map(|entry| entry.value().clone())
+            })
             .collect::<Vec<_>>();
         let recipient_count = sessions.len();
 

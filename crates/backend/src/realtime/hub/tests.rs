@@ -37,12 +37,53 @@ async fn datagram_fanout_sends_only_to_requested_sessions() {
     )
     .await;
 
-    hub.fanout_datagram_to_sessions(&[selected_session_id], Bytes::from_static(b"frame"))
-        .await;
+    hub.fanout_datagram_to_sessions_except(
+        &[selected_session_id],
+        Uuid::nil(),
+        Bytes::from_static(b"frame"),
+    )
+    .await;
 
     assert!(matches!(
         selected_receiver.try_recv(),
         Ok(WebSocketOutbound::Datagram(bytes)) if bytes == Bytes::from_static(b"frame")
     ));
     assert!(other_receiver.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn datagram_fanout_does_not_echo_to_the_sender() {
+    let hub = RealtimeHub::default();
+    let sender_session_id = Uuid::new_v4();
+    let recipient_session_id = Uuid::new_v4();
+    let (sender, mut sender_receiver) = tokio::sync::mpsc::channel(1);
+    let (recipient, mut recipient_receiver) = tokio::sync::mpsc::channel(1);
+
+    hub.register_session(
+        sender_session_id,
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        DatagramSink::websocket(sender),
+    )
+    .await;
+    hub.register_session(
+        recipient_session_id,
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        DatagramSink::websocket(recipient),
+    )
+    .await;
+
+    hub.fanout_datagram_to_sessions_except(
+        &[sender_session_id, recipient_session_id],
+        sender_session_id,
+        Bytes::from_static(b"frame"),
+    )
+    .await;
+
+    assert!(sender_receiver.try_recv().is_err());
+    assert!(matches!(
+        recipient_receiver.try_recv(),
+        Ok(WebSocketOutbound::Datagram(bytes)) if bytes == Bytes::from_static(b"frame")
+    ));
 }

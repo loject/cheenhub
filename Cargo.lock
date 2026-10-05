@@ -177,6 +177,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "1.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c049c0be4daef0b145cb3555416b3b8ef5b7888a38aea1a3a155801fe7b0810b"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "arg_enum_proc_macro"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1430,6 +1439,7 @@ name = "cheenhub_backend"
 version = "0.31.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "argon2",
  "async-trait",
  "aws-config",
