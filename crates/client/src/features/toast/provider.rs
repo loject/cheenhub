@@ -159,8 +159,21 @@ impl ToastHandle {
     }
 
     /// Показывает постоянное уведомление о доступном обновлении.
-    #[allow(dead_code)]
-    pub(crate) fn update_available(&self, toast: UpdateAvailableToast) {
+    pub(crate) fn update_available(&self, mut toast: UpdateAvailableToast) {
+        let mut toasts = self.toasts;
+        let mut current = toasts.peek().clone();
+        if let Some(existing) = current.iter_mut().find(|item| {
+            matches!(&item.payload, ToastPayload::UpdateAvailable(update)
+                if update.update_version == toast.update_version)
+                && !item.exiting
+        }) {
+            if let ToastPayload::UpdateAvailable(previous) = &existing.payload {
+                toast.selected_deferral_value = previous.selected_deferral_value.clone();
+            }
+            existing.payload = ToastPayload::UpdateAvailable(toast);
+            toasts.set(current);
+            return;
+        }
         self.push(
             ToastKind::UpdateAvailable,
             ToastPayload::UpdateAvailable(toast),
@@ -178,11 +191,11 @@ impl ToastHandle {
 
     fn push(&self, kind: ToastKind, payload: ToastPayload, protected_until_focused: bool) {
         let mut next_id = self.next_id;
-        let id = next_id() + 1;
+        let id = *next_id.peek() + 1;
         next_id.set(id);
 
         let mut toasts = self.toasts;
-        let mut next_toasts = toasts();
+        let mut next_toasts = toasts.peek().clone();
         if kind == ToastKind::UpdateAvailable {
             next_toasts.retain(|toast| toast.kind != ToastKind::UpdateAvailable);
         }
@@ -199,7 +212,7 @@ impl ToastHandle {
         while next_toasts.len() > MAX_TOASTS {
             let Some(index) = next_toasts
                 .iter()
-                .position(|toast| !toast.protected_until_focused)
+                .position(|toast| !toast.protected_until_focused && !toast.kind.persistent())
             else {
                 break;
             };
@@ -246,7 +259,7 @@ fn render_toast(toast: Toast, toasts: Signal<Vec<Toast>>, application_focused: b
             render_message_toast(toast, message, toasts, application_focused)
         }
         ToastPayload::UpdateAvailable(update) => {
-            render_update_available_toast(toast, update, toasts)
+            update_view::render_update_available_toast(toast, update, toasts)
         }
     }
 }
@@ -290,94 +303,6 @@ fn render_message_toast(
     }
 }
 
-fn render_update_available_toast(
-    toast: Toast,
-    update: UpdateAvailableToast,
-    mut toasts: Signal<Vec<Toast>>,
-) -> Element {
-    let on_install = update.on_install.clone();
-    let on_quick_dismiss = update.on_quick_dismiss.clone();
-    let on_defer = update.on_defer.clone();
-    let selected_deferral_value = update.selected_deferral_value.clone();
-
-    rsx! {
-        article {
-            key: "{toast.id}",
-            role: toast.kind.role(),
-            "aria-live": toast.kind.live_region(),
-            class: update_toast_class(toast.exiting),
-            div { class: "flex items-start gap-2.5 px-4 pb-3 pt-3.5",
-                div { class: "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center",
-                    span { class: "h-2 w-2 rounded-full {toast.kind.accent_class()} shadow-[0_0_12px_rgba(96,165,250,0.45)]" }
-                }
-                div { class: "min-w-0 flex-1 space-y-0.5",
-                    p { class: "text-[12px] font-semibold leading-4 text-zinc-100", "{toast.kind.label()}" }
-                    p { class: "break-words text-[13px] font-medium leading-5 text-zinc-300",
-                        "CheenHub {update.current_version} → {update.update_version}"
-                    }
-                    p { class: "text-[11px] leading-4 text-zinc-500",
-                        if let Some(title) = update.title.as_ref() {
-                            "{title}"
-                        } else {
-                            "На GitHub опубликован новый релиз."
-                        }
-                    }
-                }
-                button {
-                    r#type: "button",
-                    "aria-label": "Скрыть уведомление об обновлении на пять минут",
-                    class: "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[18px] leading-none text-zinc-500 transition hover:bg-white/5 hover:text-zinc-100",
-                    onclick: move |_| {
-                        (on_quick_dismiss.as_ref())();
-                        super::timer::begin_dismiss_toast(&mut toasts, toast.id);
-                    },
-                    "×"
-                }
-            }
-            div { class: "grid gap-2 border-t border-white/[0.06] bg-black/10 px-3 py-2.5",
-                button {
-                    r#type: "button",
-                    disabled: update.primary_disabled,
-                    class: update_primary_button_class(update.primary_disabled),
-                    onclick: move |_| (on_install.as_ref())(),
-                    "{update.primary_label}"
-                }
-                div { class: "grid grid-cols-[1fr_auto] gap-2",
-                    div { class: "relative min-w-0",
-                        select {
-                            value: "{update.selected_deferral_value}",
-                            class: "h-9 w-full appearance-none rounded-lg border border-white/10 bg-zinc-900/80 px-3 pr-8 text-[12px] font-medium text-zinc-200 outline-none transition hover:border-white/15 focus:border-blue-400/50 focus:ring-2 focus:ring-blue-400/10",
-                            style: "color-scheme: dark;",
-                            onchange: move |event| set_update_deferral_value(&mut toasts, toast.id, event.value()),
-                            for option in update.deferral_options.iter() {
-                                option {
-                                    value: "{option.value}",
-                                    selected: option.value == update.selected_deferral_value,
-                                    "{option.label}"
-                                }
-                            }
-                        }
-                        span {
-                            class: "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-zinc-500",
-                            "▼"
-                        }
-                    }
-                    button {
-                        r#type: "button",
-                        class: "flex h-9 items-center justify-center rounded-lg border border-white/10 bg-zinc-900/70 px-3 text-[12px] font-semibold text-zinc-300 transition hover:border-white/15 hover:bg-zinc-800/80 hover:text-zinc-100",
-                        onclick: move |_| {
-                            (on_defer.as_ref())(selected_deferral_value.clone());
-                            super::timer::begin_dismiss_toast(&mut toasts, toast.id);
-                        },
-                        "Позже"
-                    }
-                }
-            }
-
-        }
-    }
-}
-
 fn toast_class(exiting: bool) -> &'static str {
     if exiting {
         "toast-item toast-item-exiting pointer-events-auto flex min-h-14 w-full max-w-[calc(100vw-1.5rem)] items-start gap-3 overflow-hidden rounded-lg border border-white/10 bg-zinc-950/95 px-3 py-3 text-zinc-100 shadow-[0_18px_50px_rgba(0,0,0,0.38)] backdrop-blur sm:max-w-none"
@@ -386,31 +311,7 @@ fn toast_class(exiting: bool) -> &'static str {
     }
 }
 
-fn update_toast_class(exiting: bool) -> &'static str {
-    if exiting {
-        "toast-item toast-item-exiting pointer-events-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-zinc-950/95 text-zinc-100 shadow-[0_16px_40px_rgba(0,0,0,0.45)] ring-1 ring-black/20 backdrop-blur sm:max-w-none"
-    } else {
-        "toast-item pointer-events-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-white/[0.08] bg-zinc-950/95 text-zinc-100 shadow-[0_16px_40px_rgba(0,0,0,0.45)] ring-1 ring-black/20 backdrop-blur sm:max-w-none"
-    }
-}
+#[cfg(test)]
+mod tests;
 
-fn update_primary_button_class(disabled: bool) -> &'static str {
-    if disabled {
-        "flex h-9 cursor-not-allowed items-center justify-center rounded-lg border border-white/[0.06] bg-zinc-900/60 px-3 text-[12px] font-semibold text-zinc-600"
-    } else {
-        "flex h-9 items-center justify-center rounded-lg bg-blue-500 px-3 text-[12px] font-semibold text-white shadow-[0_6px_18px_rgba(59,130,246,0.16)] transition hover:bg-blue-400 active:translate-y-px"
-    }
-}
-
-fn set_update_deferral_value(toasts: &mut Signal<Vec<Toast>>, id: u64, value: String) {
-    let mut next_toasts = toasts();
-    let Some(toast) = next_toasts.iter_mut().find(|toast| toast.id == id) else {
-        return;
-    };
-    let ToastPayload::UpdateAvailable(update) = &mut toast.payload else {
-        return;
-    };
-
-    update.selected_deferral_value = value;
-    toasts.set(next_toasts);
-}
+mod update_view;

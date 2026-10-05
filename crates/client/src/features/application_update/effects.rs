@@ -25,7 +25,6 @@ pub(super) fn ApplicationUpdateEffects(children: Element) -> Element {
     let update_shutdown = use_application_update_shutdown();
     let mut auto_check_started = use_signal(|| false);
     let mut scheduled_deferral = use_signal(|| None::<(String, u64)>);
-    let mut shown_notification_version = use_signal(|| None::<String>);
     let mut reported_download_status = use_signal(|| None::<String>);
 
     use_effect(move || {
@@ -68,26 +67,12 @@ pub(super) fn ApplicationUpdateEffects(children: Element) -> Element {
 
     use_effect(move || {
         if !application_update_notifications_enabled() {
-            if shown_notification_version().is_some() {
-                shown_notification_version.set(None);
-            }
             return;
         }
-
         let Some(update) = handle.should_show_notification() else {
-            if shown_notification_version().is_some() {
-                shown_notification_version.set(None);
-            }
             return;
         };
-
         let download_status = handle.download_status();
-        let notification_key = update_notification_key(&update.version, &download_status);
-        if shown_notification_version().as_deref() == Some(notification_key.as_str()) {
-            return;
-        }
-
-        shown_notification_version.set(Some(notification_key));
         toast.update_available(update_available_toast(
             update,
             handle,
@@ -152,7 +137,6 @@ fn update_available_toast(
     let action_version = update.version.clone();
     let primary_state = primary_action_presentation(&update, &download_status);
     let download_handle = handle;
-    let download_toast = toast;
     let defer_toast = toast;
     let shutdown_after_update_start = update_shutdown;
     let quick_dismiss_handle = handle;
@@ -180,12 +164,10 @@ fn update_available_toast(
                 );
                 if primary_state.installs_downloaded {
                     if download_handle.install_downloaded_update() {
-                        download_toast.info(primary_state.requested_message);
                         shutdown_after_update_start.close_after_update_started();
                     }
                 } else {
                     download_handle.download_update();
-                    download_toast.info(primary_state.requested_message);
                 }
             },
             move || quick_dismiss_handle.dismiss_update_for_five_minutes(),
@@ -199,27 +181,5 @@ fn update_available_toast(
             },
         ),
     )
-}
-
-fn update_notification_key(version: &str, download_status: &UpdateDownloadStatus) -> String {
-    let phase = match download_status {
-        UpdateDownloadStatus::Installing { .. } => "installing",
-        UpdateDownloadStatus::Downloading {
-            version: download_version,
-            ..
-        } if download_version == version => "downloading",
-        UpdateDownloadStatus::Downloaded {
-            version: download_version,
-            ..
-        } if download_version == version => "downloaded",
-        UpdateDownloadStatus::OpeningExternal {
-            version: download_version,
-        } if download_version == version => "opening-external",
-        UpdateDownloadStatus::OpenedExternally {
-            version: download_version,
-        } if download_version == version => "opened-externally",
-        _ => "available",
-    };
-
-    format!("{version}:{phase}")
+    .with_progress(super::progress::toast_progress(download_status))
 }

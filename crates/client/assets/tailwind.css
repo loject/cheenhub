@@ -7412,19 +7412,6 @@ html,
 
 /* Индикация активного скачивания и установки обновления. */
 
-.application-update-progress-card {
-  position: fixed;
-  left: 1rem;
-  bottom: 1rem;
-  z-index: 70;
-  width: min(24rem, calc(100vw - 2rem));
-  padding: 1rem;
-  border: 1px solid rgb(96 165 250 / 0.3);
-  border-radius: 1rem;
-  background: #09090b;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.4);
-}
-
 .application-update-progress-track {
   height: 0.5rem;
   margin-top: 0.5rem;

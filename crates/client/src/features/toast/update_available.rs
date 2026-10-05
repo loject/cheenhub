@@ -7,6 +7,8 @@ pub(crate) struct UpdateAvailableToast {
     pub(super) current_version: String,
     pub(super) update_version: String,
     pub(super) title: Option<String>,
+    /// Текущий активный этап; отсутствует до загрузки и после её завершения.
+    pub(super) progress: Option<Box<UpdateToastProgress>>,
     pub(super) primary_label: String,
     pub(super) primary_disabled: bool,
     pub(super) deferral_options: Vec<UpdateToastDeferralOption>,
@@ -17,6 +19,12 @@ pub(crate) struct UpdateAvailableToast {
 }
 
 impl UpdateAvailableToast {
+    /// Добавляет текущий этап и прогресс обновления к уведомлению.
+    pub(crate) fn with_progress(mut self, progress: Option<UpdateToastProgress>) -> Self {
+        self.progress = progress.map(Box::new);
+        self
+    }
+
     /// Создает данные toast-уведомления о доступном обновлении.
     pub(crate) fn new(
         content: UpdateAvailableToastContent,
@@ -26,6 +34,7 @@ impl UpdateAvailableToast {
             current_version: content.current_version,
             update_version: content.update_version,
             title: content.title,
+            progress: None,
             primary_label: content.primary_label,
             primary_disabled: content.primary_disabled,
             deferral_options: content.deferral_options,
@@ -108,4 +117,15 @@ impl UpdateToastDeferralOption {
             label: label.into(),
         }
     }
+}
+
+/// Представление текущего этапа обновления внутри постоянного уведомления.
+#[derive(Clone)]
+pub(crate) struct UpdateToastProgress {
+    /// Название текущего этапа для пользователя.
+    pub(crate) title: String,
+    /// Объём, скорость загрузки или пояснение текущего этапа.
+    pub(crate) detail: String,
+    /// Процент выполнения от 0 до 100; `None` означает неизвестный объём работ.
+    pub(crate) percentage: Option<f64>,
 }

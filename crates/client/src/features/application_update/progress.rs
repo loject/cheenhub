@@ -1,14 +1,13 @@
-//! Видимый на всех экранах прогресс скачивания и установки обновления.
+//! Представление прогресса обновления для toast-уведомления.
 
-use dioxus::prelude::*;
+use super::UpdateDownloadStatus;
+use crate::features::toast::UpdateToastProgress;
 
-use super::{ApplicationUpdateHandle, UpdateDownloadStatus};
-
-/// Показывает ход текущего обновления независимо от открытого экрана.
-#[component]
-pub(super) fn ApplicationUpdateProgress() -> Element {
-    let handle = use_context::<ApplicationUpdateHandle>();
-    let (title, detail, percentage) = match handle.download_status() {
+/// Преобразует активный этап обновления в данные уведомления.
+///
+/// Для завершённых и неактивных операций возвращает `None`.
+pub(super) fn toast_progress(status: UpdateDownloadStatus) -> Option<UpdateToastProgress> {
+    let (title, detail, percentage) = match status {
         UpdateDownloadStatus::Downloading { version, progress } => {
             let percentage = progress
                 .total_bytes
@@ -43,35 +42,15 @@ pub(super) fn ApplicationUpdateProgress() -> Element {
                 "Подготавливаем установку. Подтвердите запрос системы, если он появится."
             }
             .to_owned(),
-            percentage.map(f64::from),
+            percentage.map(|value| f64::from(value.min(100))),
         ),
-        _ => return rsx! {},
+        _ => return None,
     };
-    let fill_class = if percentage.is_some() {
-        "application-update-progress-fill"
-    } else {
-        "application-update-progress-fill application-update-progress-indeterminate"
-    };
-    let style = format!("width: {}%;", percentage.unwrap_or(35.0));
-
-    rsx! {
-        aside { class: "application-update-progress-card", aria_label: "Ход обновления CheenHub",
-            div { class: "flex items-center justify-between gap-3 text-[12px] font-semibold text-blue-100",
-                span { "{title}" }
-                if let Some(percentage) = percentage { span { "{percentage:.0}%" } }
-            }
-            div {
-                class: "application-update-progress-track",
-                role: "progressbar",
-                aria_label: "{title}",
-                aria_valuemin: "0",
-                aria_valuemax: "100",
-                aria_valuenow: percentage.map(|value| format!("{value:.0}")),
-                div { class: fill_class, style }
-            }
-            p { class: "mt-2 text-[12px] leading-5 text-blue-100/75", "{detail}" }
-        }
-    }
+    Some(UpdateToastProgress {
+        title,
+        detail,
+        percentage,
+    })
 }
 
 fn format_bytes(bytes: u64) -> String {
@@ -86,3 +65,6 @@ fn format_bytes(bytes: u64) -> String {
         format!("{bytes} Б")
     }
 }
+
+#[cfg(test)]
+mod tests;
