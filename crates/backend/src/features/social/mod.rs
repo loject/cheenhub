@@ -23,7 +23,9 @@ pub(crate) use application::{
 pub(crate) use error::SocialError;
 
 #[cfg(test)]
-pub(crate) use application::{accept_friend_request, open_dm_conversation, send_friend_request};
+pub(crate) use application::{
+    accept_friend_request, open_dm_conversation, send_dm_message, send_friend_request,
+};
 
 /// Собирает маршруты друзей.
 pub(crate) fn friend_routes() -> Router<AppState> {

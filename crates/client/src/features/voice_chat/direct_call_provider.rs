@@ -28,7 +28,15 @@ pub(super) fn DirectCallProvider(children: Element) -> Element {
     let playback = use_context::<AudioPlaybackHandle>();
     let state = use_signal(|| DirectCallUiState::Idle);
     let busy = use_signal(|| false);
-    let direct_call = DirectCallHandle::new(state, busy, realtime.clone(), voice, current_user.id);
+    let owned_call_id = use_signal(|| None);
+    let direct_call = DirectCallHandle::new(
+        state,
+        busy,
+        owned_call_id,
+        realtime.clone(),
+        voice,
+        current_user.id,
+    );
     let context = direct_call.clone();
     let mut displayed_incoming_call = use_signal(|| None);
     let mut prompt_exiting = use_signal(|| false);

@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 
 use cheenhub_contracts::rest::{
-    DmConversationSummary, DmLastMessageSummary, DmMessageDeliveryStatus, DmMessageSummary,
-    FriendRequestStatus, FriendRequestSummary, FriendSummary, ListFriendRequestsResponse,
+    AuthUser, DmConversationSummary, DmImageAttachmentSummary, DmLastMessageSummary,
+    DmMessageDeliveryStatus, DmMessageSummary, FriendRequestStatus, FriendRequestSummary,
+    FriendSummary, ListFriendRequestsResponse,
 };
 use chrono::Utc;
 use uuid::Uuid;
@@ -105,11 +106,66 @@ pub(super) async fn conversation_summaries(
     current_user_id: &Uuid,
     conversations: Vec<DmConversation>,
 ) -> Result<Vec<DmConversationSummary>, SocialError> {
-    let mut summaries = Vec::new();
+    let friends = auth_users_by_id(
+        state,
+        conversations
+            .iter()
+            .map(|conversation| other_user_id(conversation, current_user_id)),
+    )
+    .await?;
+    let member_states = state
+        .social_store
+        .conversation_member_states_for_user(current_user_id)
+        .await
+        .map_err(SocialError::Internal)?
+        .into_iter()
+        .map(|state| (state.conversation_id, state))
+        .collect::<HashMap<_, _>>();
+
+    let mut summaries = Vec::with_capacity(conversations.len());
     for conversation in conversations {
-        summaries.push(conversation_summary(state, current_user_id, conversation).await?);
+        let friend_user_id = other_user_id(&conversation, current_user_id);
+        let friend = friends
+            .get(&friend_user_id)
+            .cloned()
+            .ok_or_else(|| SocialError::NotFound("Пользователь не найден.".to_owned()))?;
+        let member_state = member_states
+            .get(&conversation.id)
+            .cloned()
+            .unwrap_or_else(|| default_member_state(&conversation, current_user_id));
+        summaries.push(conversation_summary_from_parts(
+            friend,
+            conversation,
+            member_state,
+        ));
     }
     Ok(summaries)
+}
+
+/// Собирает сводку диалога из уже загруженных собеседника и read-state.
+///
+/// Вынесено отдельно от `conversation_summary`, чтобы пакетная и одиночная сборки
+/// гарантированно строили одинаковую структуру ответа.
+fn conversation_summary_from_parts(
+    friend: AuthUser,
+    conversation: DmConversation,
+    member_state: ConversationMemberState,
+) -> DmConversationSummary {
+    DmConversationSummary {
+        id: conversation.id.to_string(),
+        friend_user_id: friend.id,
+        friend_nickname: friend.nickname,
+        friend_avatar_url: friend.avatar_url,
+        unread_count: normalize_unread_count(member_state.unread_count),
+        last_read_message_id: member_state
+            .last_read_message_id
+            .map(|message_id| message_id.to_string()),
+        last_read_seq: member_state.last_read_seq,
+        last_read_at: member_state
+            .last_read_at
+            .map(|read_at| read_at.to_rfc3339()),
+        updated_at: conversation.updated_at.to_rfc3339(),
+    }
 }
 
 pub(super) async fn conversation_summary(
@@ -125,33 +181,73 @@ pub(super) async fn conversation_summary(
         .await
         .map_err(SocialError::Internal)?
         .unwrap_or_else(|| default_member_state(&conversation, current_user_id));
-    Ok(DmConversationSummary {
-        id: conversation.id.to_string(),
-        friend_user_id: friend.id,
-        friend_nickname: friend.nickname,
-        friend_avatar_url: friend.avatar_url,
-        unread_count: normalize_unread_count(member_state.unread_count),
-        last_read_message_id: member_state
-            .last_read_message_id
-            .map(|message_id| message_id.to_string()),
-        last_read_seq: member_state.last_read_seq,
-        last_read_at: member_state
-            .last_read_at
-            .map(|read_at| read_at.to_rfc3339()),
-        updated_at: conversation.updated_at.to_rfc3339(),
-    })
+    Ok(conversation_summary_from_parts(
+        friend,
+        conversation,
+        member_state,
+    ))
 }
 
+/// Загружает пользователей страницы одним обращением к хранилищу, индексируя по идентификатору.
+///
+/// Пагинация собирается по одному пользователю на элемент, поэтому построчный
+/// `ensure_user_exists` давал бы N+1 запросов на страницу.
+async fn auth_users_by_id(
+    state: &AppState,
+    user_ids: impl IntoIterator<Item = Uuid>,
+) -> Result<HashMap<Uuid, AuthUser>, SocialError> {
+    let user_ids = user_ids.into_iter().collect::<Vec<_>>();
+    if user_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let users = state
+        .auth_store
+        .find_users_by_ids(&user_ids)
+        .await
+        .map_err(SocialError::Internal)?;
+    Ok(users
+        .into_iter()
+        .map(|user| (user.id, auth_user(state, &user)))
+        .collect())
+}
+
+/// Собирает сводки страницы сообщений, загружая отправителей и вложения пачками.
+///
+/// Отправитель и картинка нужны для каждого сообщения, но почти всегда повторяются,
+/// поэтому один вызов на страницу заменяет два запроса на каждое сообщение.
 pub(super) async fn message_summaries(
     state: &AppState,
     current_user_id: &Uuid,
     recipient_last_read_seq: i64,
     messages: Vec<DmMessage>,
 ) -> Result<Vec<DmMessageSummary>, SocialError> {
-    let mut summaries = Vec::new();
+    let senders =
+        auth_users_by_id(state, messages.iter().map(|message| message.sender_user_id)).await?;
+    let images = super::application::attachment_summaries_by_conversation(
+        state,
+        &messages
+            .iter()
+            .map(|message| (message.conversation_id, message.image_id))
+            .collect::<Vec<_>>(),
+    )
+    .await?;
+
+    let mut summaries = Vec::with_capacity(messages.len());
     for message in messages {
-        summaries
-            .push(message_summary(state, current_user_id, recipient_last_read_seq, message).await?);
+        let sender = senders
+            .get(&message.sender_user_id)
+            .cloned()
+            .ok_or_else(|| SocialError::NotFound("Пользователь не найден.".to_owned()))?;
+        let image = message
+            .image_id
+            .and_then(|image_id| images.get(&(message.conversation_id, image_id)).cloned());
+        summaries.push(message_summary_from_parts(
+            sender,
+            image,
+            current_user_id,
+            recipient_last_read_seq,
+            message,
+        ));
     }
     Ok(summaries)
 }
@@ -169,7 +265,27 @@ pub(super) async fn message_summary(
     let image =
         super::application::attachment_summary(state, message.conversation_id, message.image_id)
             .await?;
-    Ok(DmMessageSummary {
+    Ok(message_summary_from_parts(
+        sender,
+        image,
+        current_user_id,
+        recipient_last_read_seq,
+        message,
+    ))
+}
+
+/// Собирает сводку сообщения из уже загруженных отправителя и вложения.
+///
+/// Вынесено отдельно от `message_summary`, чтобы пакетная и одиночная сборки
+/// гарантированно строили одинаковую структуру ответа.
+fn message_summary_from_parts(
+    sender: AuthUser,
+    image: Option<DmImageAttachmentSummary>,
+    current_user_id: &Uuid,
+    recipient_last_read_seq: i64,
+    message: DmMessage,
+) -> DmMessageSummary {
+    DmMessageSummary {
         id: message.id.to_string(),
         conversation_id: message.conversation_id.to_string(),
         seq: message.seq,
@@ -180,7 +296,7 @@ pub(super) async fn message_summary(
         body: message.body,
         image,
         created_at: message.created_at.to_rfc3339(),
-    })
+    }
 }
 
 pub(super) async fn load_user_conversation(

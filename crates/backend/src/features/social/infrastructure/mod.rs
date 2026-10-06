@@ -3,9 +3,13 @@
 mod entities;
 mod in_memory;
 mod in_memory_friend_list;
+mod in_memory_friendships;
+mod in_memory_message_counts;
 mod postgres;
 mod postgres_conversions;
 mod postgres_friend_list;
+mod postgres_friendships;
+mod postgres_message_counts;
 mod postgres_read_state;
 
 use async_trait::async_trait;
@@ -13,8 +17,8 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::features::social::domain::{
-    ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage, FriendListCursor,
-    FriendListEntry, Friendship, FriendshipStatus,
+    ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage,
+    DmMessagesPerMinute, FriendListCursor, FriendListEntry, Friendship, FriendshipStatus,
 };
 
 pub(crate) use in_memory::InMemorySocialStore;
@@ -60,6 +64,20 @@ pub(crate) trait SocialStore: Send + Sync {
 
     /// Находит запись дружбы по идентификатору.
     async fn friendship_by_id(&self, friendship_id: &Uuid) -> anyhow::Result<Option<Friendship>>;
+
+    /// Находит записи дружбы текущего пользователя сразу по набору собеседников.
+    ///
+    /// Нужен там, где для каждого элемента страницы проверяется отношение с одним
+    /// и тем же пользователем, например в поиске пользователей: построчный вызов
+    /// `friendship_between` превращает один HTTP-запрос в N+1 запросов.
+    ///
+    /// Собственник пары всегда первый, поэтому передавать нужно только идентификаторы
+    /// собеседников. Если собеседник передан повторно, вернется одна запись.
+    async fn friendships_with_user(
+        &self,
+        user_id: &Uuid,
+        other_user_ids: &[Uuid],
+    ) -> anyhow::Result<Vec<Friendship>>;
 
     /// Создает или переоткрывает заявку в друзья для пары пользователей.
     async fn upsert_friend_request(
@@ -136,6 +154,17 @@ pub(crate) trait SocialStore: Send + Sync {
         user_id: &Uuid,
     ) -> anyhow::Result<Option<ConversationMemberState>>;
 
+    /// Возвращает read-state пользователя по всем его диалогам одним обращением к хранилищу.
+    ///
+    /// Нужен для сборки списка диалогов: построчный вызов `conversation_member_state`
+    /// превращает один HTTP-запрос в N+1 запросов. Состояния диалогов, которых у
+    /// пользователя нет, в результате просто отсутствуют, поэтому вызывающая сторона
+    /// должна трактовать отсутствие как пустое состояние.
+    async fn conversation_member_states_for_user(
+        &self,
+        user_id: &Uuid,
+    ) -> anyhow::Result<Vec<ConversationMemberState>>;
+
     /// Возвращает суммарное количество непрочитанных личных сообщений пользователя.
     async fn total_unread_count(&self, user_id: &Uuid) -> anyhow::Result<i64>;
 
@@ -159,22 +188,19 @@ pub(crate) trait SocialStore: Send + Sync {
 
     /// Вставляет личное сообщение и обновляет время диалога.
     async fn insert_dm_message(&self, message: DmMessage) -> anyhow::Result<DmMessage>;
+
+    /// Считает все личные сообщения, включая мягко удалённые.
+    async fn count_dm_messages(&self) -> anyhow::Result<u64>;
+
+    /// Возвращает число личных сообщений по минутам в полуинтервале `(since, until]`.
+    ///
+    /// Минуты без сообщений в ответе отсутствуют. Границы задаются в UTC.
+    async fn count_dm_messages_per_minute(
+        &self,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<DmMessagesPerMinute>>;
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{normalize_unread_count, unread_count_after_read};
-
-    #[test]
-    fn unread_count_after_read_never_goes_below_zero() {
-        assert_eq!(unread_count_after_read(0, 77), 0);
-        assert_eq!(unread_count_after_read(-77, 1), 0);
-        assert_eq!(unread_count_after_read(5, 2), 3);
-    }
-
-    #[test]
-    fn normalize_unread_count_repairs_legacy_negative_values() {
-        assert_eq!(normalize_unread_count(-76), 0);
-        assert_eq!(normalize_unread_count(3), 3);
-    }
-}
+mod tests;

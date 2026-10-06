@@ -1,13 +1,16 @@
 //! Простое in-memory-хранилище текстового чата.
 
+use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::features::text_chat::domain::{ChatAttachment, NewChatAttachment, TextMessage};
+use crate::features::text_chat::domain::{
+    ChatAttachment, MessagesPerMinute, NewChatAttachment, TextMessage,
+};
 use crate::features::text_chat::infrastructure::{HISTORY_LIMIT, TextChatStore, TextMessagePage};
 
 /// In-memory-хранилище текстового чата для локального запуска и тестов.
@@ -140,6 +143,39 @@ impl TextChatStore for InMemoryTextChatStore {
         message.deleted_by_user_id = Some(*deleted_by_user_id);
 
         Ok(Some(message.clone()))
+    }
+
+    async fn count_text_messages(&self) -> anyhow::Result<u64> {
+        let messages = self.messages.lock().map_err(|_| poisoned())?;
+        Ok(messages.len() as u64)
+    }
+
+    async fn count_messages_per_minute(
+        &self,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<MessagesPerMinute>> {
+        let messages = self.messages.lock().map_err(|_| poisoned())?;
+        let mut per_minute: BTreeMap<i64, u64> = Default::default();
+
+        // Полуинтервал (since, until] совпадает с запросом истории сообщений,
+        // поэтому счётчик и график показывают одно и то же окно.
+        for message in messages
+            .iter()
+            .filter(|message| message.created_at > since && message.created_at <= until)
+        {
+            *per_minute
+                .entry(message.created_at.timestamp() - message.created_at.timestamp() % 60)
+                .or_default() += 1;
+        }
+
+        Ok(per_minute
+            .into_iter()
+            .map(|(minute, messages)| MessagesPerMinute {
+                minute: DateTime::from_timestamp(minute, 0).unwrap_or(since),
+                messages,
+            })
+            .collect())
     }
 }
 

@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::features::social::domain::{
     ConversationMemberState, ConversationReadCheckpoint, ConversationReadUpdate, DmConversation,
-    DmMessage, FriendListCursor, Friendship, FriendshipStatus, ordered_pair,
+    DmMessage, DmMessagesPerMinute, FriendListCursor, Friendship, FriendshipStatus, ordered_pair,
 };
 use crate::features::social::infrastructure::{
     DM_HISTORY_LIMIT, DmMessagePage, FriendListPage, SocialStore, normalize_unread_count,
@@ -33,24 +33,19 @@ impl SocialStore for InMemorySocialStore {
         left_user_id: &Uuid,
         right_user_id: &Uuid,
     ) -> anyhow::Result<Option<Friendship>> {
-        let (user_low_id, user_high_id) = ordered_pair(*left_user_id, *right_user_id);
-        Ok(self
-            .friendships
-            .lock()
-            .map_err(|_| poisoned())?
-            .iter()
-            .find(|row| row.user_low_id == user_low_id && row.user_high_id == user_high_id)
-            .cloned())
+        super::in_memory_friendships::friendship_between(self, left_user_id, right_user_id)
     }
 
     async fn friendship_by_id(&self, friendship_id: &Uuid) -> anyhow::Result<Option<Friendship>> {
-        Ok(self
-            .friendships
-            .lock()
-            .map_err(|_| poisoned())?
-            .iter()
-            .find(|row| row.id == *friendship_id)
-            .cloned())
+        super::in_memory_friendships::friendship_by_id(self, friendship_id)
+    }
+
+    async fn friendships_with_user(
+        &self,
+        user_id: &Uuid,
+        other_user_ids: &[Uuid],
+    ) -> anyhow::Result<Vec<Friendship>> {
+        super::in_memory_friendships::friendships_with_user(self, user_id, other_user_ids)
     }
 
     async fn upsert_friend_request(
@@ -59,31 +54,12 @@ impl SocialStore for InMemorySocialStore {
         recipient_user_id: &Uuid,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Friendship> {
-        let (user_low_id, user_high_id) = ordered_pair(*requester_user_id, *recipient_user_id);
-        let mut friendships = self.friendships.lock().map_err(|_| poisoned())?;
-        if let Some(row) = friendships
-            .iter_mut()
-            .find(|row| row.user_low_id == user_low_id && row.user_high_id == user_high_id)
-        {
-            row.requester_user_id = *requester_user_id;
-            row.recipient_user_id = *recipient_user_id;
-            row.status = FriendshipStatus::Pending;
-            row.updated_at = now;
-            return Ok(row.clone());
-        }
-
-        let friendship = Friendship {
-            id: Uuid::new_v4(),
-            requester_user_id: *requester_user_id,
-            recipient_user_id: *recipient_user_id,
-            user_low_id,
-            user_high_id,
-            status: FriendshipStatus::Pending,
-            created_at: now,
-            updated_at: now,
-        };
-        friendships.push(friendship.clone());
-        Ok(friendship)
+        super::in_memory_friendships::upsert_friend_request(
+            self,
+            requester_user_id,
+            recipient_user_id,
+            now,
+        )
     }
 
     async fn update_friendship_status(
@@ -92,13 +68,15 @@ impl SocialStore for InMemorySocialStore {
         status: FriendshipStatus,
         now: DateTime<Utc>,
     ) -> anyhow::Result<Option<Friendship>> {
-        let mut friendships = self.friendships.lock().map_err(|_| poisoned())?;
-        let Some(row) = friendships.iter_mut().find(|row| row.id == *friendship_id) else {
-            return Ok(None);
-        };
-        row.status = status;
-        row.updated_at = now;
-        Ok(Some(row.clone()))
+        super::in_memory_friendships::update_friendship_status(self, friendship_id, status, now)
+    }
+
+    async fn incoming_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>> {
+        super::in_memory_friendships::incoming_requests(self, user_id)
+    }
+
+    async fn outgoing_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>> {
+        super::in_memory_friendships::outgoing_requests(self, user_id)
     }
 
     async fn friend_list_page(
@@ -108,32 +86,6 @@ impl SocialStore for InMemorySocialStore {
         limit: usize,
     ) -> anyhow::Result<FriendListPage> {
         super::in_memory_friend_list::friend_list_page(self, user_id, cursor, limit)
-    }
-
-    async fn incoming_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>> {
-        Ok(self
-            .friendships
-            .lock()
-            .map_err(|_| poisoned())?
-            .iter()
-            .filter(|row| {
-                row.status == FriendshipStatus::Pending && row.recipient_user_id == *user_id
-            })
-            .cloned()
-            .collect())
-    }
-
-    async fn outgoing_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>> {
-        Ok(self
-            .friendships
-            .lock()
-            .map_err(|_| poisoned())?
-            .iter()
-            .filter(|row| {
-                row.status == FriendshipStatus::Pending && row.requester_user_id == *user_id
-            })
-            .cloned()
-            .collect())
     }
 
     async fn conversation_by_id(
@@ -266,6 +218,20 @@ impl SocialStore for InMemorySocialStore {
             .iter()
             .find(|row| row.conversation_id == *conversation_id && row.user_id == *user_id)
             .cloned())
+    }
+
+    async fn conversation_member_states_for_user(
+        &self,
+        user_id: &Uuid,
+    ) -> anyhow::Result<Vec<ConversationMemberState>> {
+        Ok(self
+            .member_states
+            .lock()
+            .map_err(|_| poisoned())?
+            .iter()
+            .filter(|row| row.user_id == *user_id)
+            .cloned()
+            .collect())
     }
 
     async fn total_unread_count(&self, user_id: &Uuid) -> anyhow::Result<i64> {
@@ -420,6 +386,18 @@ impl SocialStore for InMemorySocialStore {
             .map_err(|_| poisoned())?
             .push(message.clone());
         Ok(message)
+    }
+
+    async fn count_dm_messages(&self) -> anyhow::Result<u64> {
+        super::in_memory_message_counts::count_dm_messages(&self.messages)
+    }
+
+    async fn count_dm_messages_per_minute(
+        &self,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<DmMessagesPerMinute>> {
+        super::in_memory_message_counts::count_dm_messages_per_minute(self, since, until)
     }
 }
 

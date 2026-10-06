@@ -332,5 +332,4 @@ impl MicrophoneHandle {
 }
 
 #[cfg(test)]
-#[path = "provider_tests.rs"]
 mod tests;

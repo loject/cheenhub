@@ -1,21 +1,28 @@
 //! Realtime-адаптер друзей и личных сообщений.
 
+use anyhow::Context;
+
 use cheenhub_contracts::realtime::{
-    ConversationReadCheckpoint as ReadCheckpointPayload, DirectMessageCreated, RealtimeEnvelope,
-    RealtimeKind, RealtimeModule, RejectionCode, SocialChangeReason, SocialChanged, SocialKind,
-    SocialReady,
+    ConversationReadCheckpoint as ReadCheckpointPayload, DirectMessageCreated,
+    DirectMessageTypingSnapshotRequest, RealtimeEnvelope, RealtimeKind, RealtimeModule,
+    RejectionCode, SocialChangeReason, SocialChanged, SocialKind, SocialReady,
+    StartDirectMessageTyping, StopDirectMessageTyping,
 };
+use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
 
 use crate::features::social::domain::ConversationReadCheckpoint;
+use crate::features::typing::{self, TypingAuthorEntry, TypingTarget, send_typing_rejection};
 use crate::realtime::EnvelopeSink;
 use crate::realtime::protocol::{require_request_id, send_rejection, write_envelope};
 use crate::state::AppState;
 
 /// Обрабатывает realtime-сообщения social-модуля.
 pub(crate) async fn handle(
-    _state: &AppState,
+    state: &AppState,
+    user: &AuthUser,
     user_id: &Uuid,
+    realtime_stream_id: Uuid,
     send: &EnvelopeSink,
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<()> {
@@ -31,6 +38,62 @@ pub(crate) async fn handle(
                 SocialReady,
             )
             .await
+        }
+        RealtimeKind::Social(SocialKind::StartDirectMessageTyping) => {
+            let request_id = envelope.request_id;
+            let payload: StartDirectMessageTyping = decode_typing_payload(&envelope)?;
+            let conversation_id = match typing::parse_conversation_id(&payload.conversation_id) {
+                Ok(conversation_id) => conversation_id,
+                Err(error) => {
+                    return send_typing_rejection(send, request_id, error).await;
+                }
+            };
+            let entry = TypingAuthorEntry {
+                target: TypingTarget::direct_message(conversation_id),
+                user_id: *user_id,
+                nickname: user.nickname.clone(),
+                avatar_url: user.avatar_url.clone(),
+                realtime_stream_id,
+                refreshed_at: tokio::time::Instant::now(),
+            };
+            match typing::start_direct_message_typing(state, entry, conversation_id).await {
+                Ok(()) => Ok(()),
+                Err(error) => send_typing_rejection(send, request_id, error).await,
+            }
+        }
+        RealtimeKind::Social(SocialKind::StopDirectMessageTyping) => {
+            let request_id = envelope.request_id;
+            let payload: StopDirectMessageTyping = decode_typing_payload(&envelope)?;
+            let conversation_id = match typing::parse_conversation_id(&payload.conversation_id) {
+                Ok(conversation_id) => conversation_id,
+                Err(error) => {
+                    return send_typing_rejection(send, request_id, error).await;
+                }
+            };
+            let target = TypingTarget::direct_message(conversation_id);
+            match typing::stop_direct_message_typing(state, target, *user_id, realtime_stream_id)
+                .await
+            {
+                Ok(()) => Ok(()),
+                Err(error) => send_typing_rejection(send, request_id, error).await,
+            }
+        }
+        RealtimeKind::Social(SocialKind::DirectMessageTypingSnapshot) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: DirectMessageTypingSnapshotRequest = decode_typing_payload(&envelope)?;
+            match typing::direct_message_typing_snapshot(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::Social,
+                        RealtimeKind::Social(SocialKind::DirectMessageTypingSnapshot),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => send_typing_rejection(send, Some(request_id), error).await,
+            }
         }
         RealtimeKind::Social(_) => {
             send_rejection(
@@ -51,6 +114,17 @@ pub(crate) async fn handle(
             .await
         }
     }
+}
+
+/// Разбирает полезную нагрузку операции набора в личном диалоге.
+///
+/// Ошибка декодирования не является ошибкой доступа, поэтому отправляется как
+/// отказ формата, а не как отказ доступа к диалогу.
+fn decode_typing_payload<T: serde::de::DeserializeOwned>(
+    envelope: &RealtimeEnvelope,
+) -> Result<T, anyhow::Error> {
+    serde_json::from_value(envelope.payload.clone())
+        .context("failed to decode direct message typing payload")
 }
 
 /// Отправляет получателю точные данные нового личного сообщения.

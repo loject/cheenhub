@@ -35,21 +35,44 @@ pub(crate) enum DirectCallUiState {
     },
 }
 
-/// Контекст управления signaling личного звонка.
+/// Контекст команд и lifecycle личного звонка для текущего экземпляра клиента.
+///
+/// Передаётся через Dioxus context из `DirectCallProvider`: интерфейс вызывает команды,
+/// а провайдер передаёт события сервера и запускает восстановление после обрыва связи.
+/// Signaling выполняется через `realtime`, подключение звука — через `voice`.
+/// Клоны разделяют сигналы состояния; устройства одного аккаунта имеют разные сигналы.
 #[derive(Clone)]
 pub(crate) struct DirectCallHandle {
+    /// Локальное состояние интерфейса: ожидание, звонок или ошибка команды.
     state: Signal<DirectCallUiState>,
+    /// Признак выполняемой signaling-команды, блокирующий повторные действия интерфейса.
     busy: Signal<bool>,
+    /// ID звонка, успешно начатого или принятого этим экземпляром клиента.
+    ///
+    /// Только совпадение с этим ID разрешает автоматическое подключение звука по `Active`.
+    /// Сигнал переживает обрыв realtime, очищается при завершении звонка и не сохраняется на диск.
+    owned_call_id: Signal<Option<String>>,
+    /// Общий realtime-транспорт для запросов signaling и восстановления снимков звонков.
     realtime: RealtimeHandle,
+    /// Контекст подключения и отключения голосового медиа выбранного личного диалога.
     voice: VoiceConnectionHandle,
+    /// ID авторизованного пользователя для фильтрации событий и определения собеседника.
     current_user_id: String,
 }
 
 impl DirectCallHandle {
-    /// Создаёт контекст signaling личного звонка.
+    /// Связывает состояние провайдера с транспортом signaling и голосовым медиа.
+    ///
+    /// `state` хранит интерфейс звонка, `busy` — выполнение команды, `owned_call_id` —
+    /// локальное разрешение подключаться к звонку. Провайдер должен передавать одни и те же
+    /// сигналы при повторных рендерах, изначально `Idle`, `false` и `None` соответственно.
+    /// `realtime` отправляет команды серверу, `voice` управляет звуком, `current_user_id`
+    /// идентифицирует пользователя этого провайдера. Конструктор не подключается к серверу,
+    /// не подписывается на события и не начинает звонок.
     pub(super) fn new(
         state: Signal<DirectCallUiState>,
         busy: Signal<bool>,
+        owned_call_id: Signal<Option<String>>,
         realtime: RealtimeHandle,
         voice: VoiceConnectionHandle,
         current_user_id: String,
@@ -57,6 +80,7 @@ impl DirectCallHandle {
         Self {
             state,
             busy,
+            owned_call_id,
             realtime,
             voice,
             current_user_id,
@@ -192,7 +216,7 @@ impl DirectCallHandle {
         );
         spawn(async move {
             match direct_call_realtime::start(&realtime, conversation_id.clone()).await {
-                Ok(call) => handle.apply_snapshot(call),
+                Ok(call) => handle.apply_local_snapshot(call),
                 Err(error) => {
                     warn!(%error, %conversation_id, "failed to start direct call");
                     state.set(DirectCallUiState::Error {
@@ -331,14 +355,39 @@ impl DirectCallHandle {
         info!(%call_id, ?response, "responding to incoming direct call");
         spawn(async move {
             match direct_call_realtime::respond(&realtime, call_id.clone(), response).await {
-                Ok(call) => handle.apply_snapshot(call),
+                Ok(call) => {
+                    if response == DirectCallResponse::Accept {
+                        handle.apply_local_snapshot(call);
+                    } else {
+                        handle.apply_snapshot(call);
+                    }
+                }
                 Err(error) => handle.apply_action_error(call, error.to_string(), "respond"),
             }
             busy.set(false);
         });
     }
 
+    fn apply_local_snapshot(&self, call: DirectCallSnapshot) {
+        let mut owned_call_id = self.owned_call_id;
+        owned_call_id.set(Some(call.call_id.clone()));
+        self.apply_snapshot(call);
+    }
+
     fn apply_snapshot(&self, call: DirectCallSnapshot) {
+        if call.state == DirectCallState::Active
+            && self.owned_call_id.peek().as_deref() != Some(call.call_id.as_str())
+        {
+            info!(call_id = %call.call_id, "dismissed direct call active on another device");
+            if self
+                .current_call()
+                .is_none_or(|current| current.call_id == call.call_id)
+            {
+                let mut state = self.state;
+                state.set(DirectCallUiState::Idle);
+            }
+            return;
+        }
         info!(
             call_id = %call.call_id,
             conversation_id = %call.conversation_id,
@@ -369,6 +418,10 @@ impl DirectCallHandle {
                 }
             }
             DirectCallState::Ended => {
+                if self.owned_call_id.peek().as_deref() == Some(call.call_id.as_str()) {
+                    let mut owned_call_id = self.owned_call_id;
+                    owned_call_id.set(None);
+                }
                 if self
                     .voice
                     .state()
@@ -402,6 +455,10 @@ impl DirectCallHandle {
             %action,
             "direct call action failed"
         );
+        if self.current_call().as_ref() != Some(&call) {
+            debug!(call_id = %call.call_id, %action, "ignored stale direct call action failure");
+            return;
+        }
         let mut state = self.state;
         state.set(DirectCallUiState::Error {
             target: None,
@@ -425,3 +482,6 @@ impl DirectCallHandle {
         VoiceRoomTarget::direct_message(call.conversation_id.clone(), self.peer_nickname(call))
     }
 }
+
+#[cfg(test)]
+mod tests;

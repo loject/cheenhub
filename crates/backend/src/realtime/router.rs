@@ -4,7 +4,7 @@ use cheenhub_contracts::realtime::{RealtimeEnvelope, RealtimeModule, RejectionCo
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
 
-use crate::features::{servers, social, text_chat, voice_chat};
+use crate::features::{servers, social, text_chat, typing, voice_chat};
 use crate::state::AppState;
 
 use super::protocol::send_rejection;
@@ -25,9 +25,11 @@ pub(crate) async fn dispatch(
         RealtimeModule::Control => control::handle(state, send, envelope).await,
         RealtimeModule::Network => network::handle(state, send, envelope).await,
         RealtimeModule::Server => servers::realtime::handle(state, user_id, send, envelope).await,
-        RealtimeModule::Social => social::realtime::handle(state, user_id, send, envelope).await,
+        RealtimeModule::Social => {
+            social::realtime::handle(state, user, user_id, stream_id, send, envelope).await
+        }
         RealtimeModule::TextChat => {
-            text_chat::realtime::handle(state, user, user_id, send, envelope).await
+            text_chat::realtime::handle(state, user, user_id, stream_id, send, envelope).await
         }
         RealtimeModule::VoiceChat => {
             voice_chat::realtime::handle(
@@ -44,11 +46,12 @@ pub(crate) async fn cleanup_stream(state: &AppState, module: RealtimeModule, str
         RealtimeModule::VoiceChat => {
             voice_chat::application::disconnect_realtime_stream(state, stream_id).await;
         }
-        RealtimeModule::Control
-        | RealtimeModule::Network
-        | RealtimeModule::Server
-        | RealtimeModule::Social
-        | RealtimeModule::TextChat => {}
+        // Набор сообщения может идти и по потоку чата, и по потоку social,
+        // поэтому очистка одинакова для обоих модулей.
+        RealtimeModule::Social | RealtimeModule::TextChat => {
+            typing::disconnect_realtime_stream(state, stream_id).await;
+        }
+        RealtimeModule::Control | RealtimeModule::Network | RealtimeModule::Server => {}
     }
 }
 

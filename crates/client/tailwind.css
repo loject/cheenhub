@@ -31,6 +31,93 @@
     box-shadow: inset 0 0 0 1px rgb(96 165 250 / 0.35), 0 0 16px rgb(59 130 246 / 0.12);
 }
 
+/* Индикатор набора сообщения.
+   Строка появляется мягким подъемом, точки идут волной с задержкой друг на друга,
+   поэтому движение читается как «печатает...», а не как статичный текст. Появление
+   короткое намеренно: индикатор часто гаснет через 1-2 кадра при отправке
+   сообщения, и медленный уход дергал бы форму под редактором. */
+.typing-indicator {
+    animation: typing-indicator-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.typing-dots {
+    animation: typing-dots-in 280ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+}
+
+.typing-dot {
+    animation: typing-dot-wave 1.2s ease-in-out infinite;
+    transform-origin: center bottom;
+}
+
+.typing-dot:nth-child(2) {
+    animation-delay: 0.16s;
+}
+
+.typing-dot:nth-child(3) {
+    animation-delay: 0.32s;
+}
+
+@keyframes typing-indicator-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes typing-dots-in {
+    from {
+        opacity: 0;
+        transform: translateX(-4px) scale(0.7);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+}
+
+/* Точка сначала приподнимается с растяжением, затем опадает и сжимается: цикл
+   читается как живое движение, а не как простое мигание. */
+@keyframes typing-dot-wave {
+    0% {
+        opacity: 0.35;
+        transform: translateY(0) scale(0.86);
+    }
+
+    35% {
+        opacity: 1;
+        transform: translateY(-3px) scale(1);
+    }
+
+    70% {
+        opacity: 0.55;
+        transform: translateY(0) scale(0.94);
+    }
+
+    100% {
+        opacity: 0.35;
+        transform: translateY(0) scale(0.86);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .typing-indicator,
+    .typing-dots,
+    .typing-dot {
+        animation: none;
+    }
+
+    /* Точки остаются видимыми без движения, иначе индикатор выглядел бы пустым. */
+    .typing-dot {
+        opacity: 0.7;
+    }
+}
+
 @keyframes dm-unread-badge-in {
     from {
         opacity: 0;
@@ -1941,4 +2028,12 @@
 @media (prefers-reduced-motion: reduce) {
   .application-update-progress-indeterminate { animation-duration: 4s; }
   .application-update-progress-fill { transition: none; }
+}
+
+/* На сенсорных экранах меню комнат доступно без наведения. */
+@media (hover: none) {
+    .server-rooms-sidebar .room-menu-actions {
+        display: flex;
+        opacity: 1;
+    }
 }

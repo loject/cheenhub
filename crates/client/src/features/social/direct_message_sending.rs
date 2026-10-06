@@ -7,10 +7,12 @@ use futures_util::FutureExt;
 use super::api;
 use crate::features::message_composer::MessageOperations;
 use crate::features::message_composer::pending_attachment::PendingImageAttachment;
+use crate::features::typing::TypingNotifier;
 
 pub(super) fn use_direct_message_operations(
     conversation_id: String,
     on_sent: EventHandler<DmMessageSummary>,
+    typing: TypingNotifier,
 ) -> MessageOperations {
     let upload_conversation_id = conversation_id.clone();
     let upload = use_callback(move |image: PendingImageAttachment| {
@@ -41,5 +43,9 @@ pub(super) fn use_direct_message_operations(
         }
         .boxed_local()
     });
-    MessageOperations { upload, send }
+    MessageOperations {
+        upload,
+        send,
+        typing,
+    }
 }

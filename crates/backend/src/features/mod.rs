@@ -7,4 +7,5 @@ pub(crate) mod push_notifications;
 pub(crate) mod servers;
 pub(crate) mod social;
 pub(crate) mod text_chat;
+pub(crate) mod typing;
 pub(crate) mod voice_chat;

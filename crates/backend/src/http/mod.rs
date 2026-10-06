@@ -3,8 +3,11 @@
 mod api;
 mod trace;
 
-use axum::Router;
-use axum::http::{HeaderValue, Method, Uri, header, request::Parts};
+use axum::{
+    Router,
+    http::{HeaderValue, Method, Uri, header, request::Parts},
+    routing::get,
+};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     trace::TraceLayer,
@@ -17,6 +20,9 @@ pub(crate) fn router(state: AppState) -> Router {
     let cors = cors_layer(&state.cheenhub_client_base_url);
 
     Router::new()
+        // Служебный маршрут лежит вне /api, чтобы его нельзя было спутать с
+        // продуктовым API: он отвечает только о готовности процесса.
+        .route("/health", get(api::health))
         .nest("/api", api::router())
         .fallback(api::not_found)
         .with_state(state)

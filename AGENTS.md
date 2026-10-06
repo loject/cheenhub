@@ -8,7 +8,7 @@
 - Treat feature and layer boundaries as hard design constraints. Do not move state, contracts, or behavior across those boundaries for convenience unless the user explicitly approves the boundary violation after the tradeoff is stated.
 - Do not add repository/service traits, generic abstraction layers, macros, or domain entities before they solve a real problem.
 - Each file should have a current purpose: startup, config, telemetry, database, HTTP shell, contracts, migrations, UI feature, or styling.
-- If a file violates the project file-size limit, decompose it along real ownership and purpose boundaries. Do not satisfy the limit by moving unrelated fragments into arbitrary files, by creating helper modules with no coherent responsibility, or by relying on formatter/linter loopholes such as intentionally unwrapped long lines.
+- Production source files must not exceed 500 physical lines, including blank lines and comments. Files containing only tests and their helpers are exempt. If a file exceeds this limit, decompose it along real ownership and purpose boundaries. Do not satisfy the limit by moving unrelated fragments into arbitrary files, by creating helper modules with no coherent responsibility, or by relying on formatter/linter loopholes such as intentionally unwrapped long lines.
 - Do not add `#[allow(...)]`, `#![allow(...)]`, lower lint levels, or equivalent suppression merely to make warnings or Clippy pass. Remove unused code, correct visibility, or move platform-specific behavior behind the proper module boundary instead. A narrowly scoped suppression is allowed only for a demonstrated compiler/tooling limitation, requires explicit user approval, and must include an adjacent Russian comment explaining why it cannot be expressed safely in code.
 - Use GUID/UUID values for persistent identifiers; expose them at API boundaries as strings only when the wire format requires it.
 
@@ -23,7 +23,7 @@
 
 - Prefer local component state with Dioxus signals/events.
 - Prefer Dioxus-provided primitives over custom lifecycle state. For async data loading, use `use_resource` before adding manual `use_effect`/`spawn` guards such as `loaded_*` flags.
-- Do not introduce global state, shared state modules, or context providers unless several independent feature boundaries need the same state.
+- Do not introduce global state, shared state modules, or cross-feature context providers unless several independent feature boundaries need the same state. Feature-local context for contextual render metadata is allowed under the rule below.
 - Keep component props explicit and small.
 - Do not add props only to pass contextual render metadata through generic UI components. Prefer a narrow Dioxus context/provider for values such as current user identity, avatar seed/color, or feature-local ambient state when several UI components need the same value.
 - Keep Dioxus components isolated: a file must define exactly one `#[component]`. Helper functions are allowed, but additional components must live in separate files.
@@ -32,7 +32,7 @@
 - Avoid prop drilling multiple unrelated callbacks through UI-only components. When a child component represents a menu, toolbar, or command surface with several actions, prefer a small feature-local action enum and a single `EventHandler<Action>` prop.
 - Keep action enums local to the nearest feature or component boundary that owns the resulting state changes. Do not promote them to shared modules unless multiple feature boundaries use the same action contract.
 - UI components should receive the data they render and emit user intent or completed local command outcomes; parent scopes should decide how that intent changes state, opens modals, or switches views.
-- Use Dioxus context/providers only when the same state or commands are needed by several independent feature boundaries. Do not introduce context only to avoid passing one or two props within a single local component tree.
+- Use Dioxus context/providers for state or commands shared by several independent feature boundaries, or for contextual render metadata needed by several UI components within a feature. Keep feature-local providers scoped to the owning feature. Do not introduce context only to avoid passing one or two ordinary data or callback props within a single local component tree.
 - Do not use direct `web_sys`, `js_sys`, JavaScript snippets, or browser APIs without explicit approval; prefer Dioxus-provided APIs such as Dioxus storage/events.
 
 ## Client Styling
@@ -56,9 +56,24 @@
 
 - Every crate must include crate-level documentation.
 - Every public module, type, function, trait, enum, constant, and field must have `///` documentation when it is introduced.
+- Documentation must explain the purpose and contract of the API rather than merely restating its name. This also applies to `pub(crate)` APIs.
+- Start `///` with a brief description, then add a blank line before explaining relevant details: input and result semantics, units of measurement, constraints, edge cases, and interaction with calling code.
+- For types and enums, explain their role, where they are used, and the constraints they impose. Document the meaning of each enum variant and field unless it is clear from the overall description.
+- Use `//!` to explain the module responsibility, its main contracts, and the responsibility boundaries with neighboring modules.
+- Add `# Errors`, `# Panics`, and examples when the corresponding behavior exists and matters for correct API usage.
+- One-line documentation is acceptable only when it fully explains the contract. Do not add repetition, invented guarantees, or boilerplate paragraphs just to increase length.
 - Write new documentation comments (`//!`, `///`) and regular code comments in Russian. Keep protocol names, API names, environment variable names, type and field names unchanged; prefer established English technical terms when translation would make the meaning less precise.
 - Crates use `#![warn(missing_docs)]`; warnings are acceptable during early development, but new public API should not add missing-doc warnings.
 - Run `cargo fmt` and `cargo clippy --workspace --all-targets` before handing off only when the task changes Rust source, Cargo manifests, migrations, contracts, or other Rust-facing generated code. Do not run cargo commands for documentation-only, CSS-only, asset-only, or other non-Rust changes unless they are needed for the task.
+
+## Test Organization
+
+- Always place internal tests in a child `tests.rs`: use `foo/tests.rs` for both `foo.rs` and `foo/mod.rs`, declared with `#[cfg(test)] mod tests;`. Do not use inline test blocks, `foo_tests.rs`, or `#[path]`. Move independent groups into `tests/<behavior>.rs`, keeping module declarations in `tests.rs`; a single cohesive suite needs no scenario folder. Files containing only tests and their helpers have no line limit; split by responsibility, not file size.
+- Keep tests and their dependencies within the owning feature/layer: application tests cover use cases, infrastructure tests cover stores/external adapters, and transport tests cover the protocol; platform tests stay inside platform modules. Do not expand production API visibility for tests: child modules can access private APIs of ancestors. Reserve `crates/<crate>/tests/` for the external public contract; PostgreSQL tests may stay inside infrastructure.
+- Name scenario files and functions in English using `snake_case`; function names describe the action, relevant condition, and result, without `test_`, generic names, or a mandatory `given_when_then` template. One function covers one scenario; related assertions and tables of cases for one rule are acceptable if the failing case is identifiable. Separate setup, action, and assertions with blank lines; Russian comments explain only non-obvious details.
+- Keep helpers in the file that uses them, suite-wide helpers in `tests/support.rs`, and helpers for external Cargo test targets in `tests/support/mod.rs`. Introduce crate-wide helpers only for recurring needs across several features, preserving their boundaries. Use simple functions and data, keeping relevant conditions visible; minor duplication is acceptable, while generic fixtures/macros/abstractions require a real need.
+- Test behavior, meaningful edge cases, and errors; test private algorithms when they have independent rules, and make regression tests reproduce a specific failure. Each test owns its state and is independent of execution order. Ordinary tests run without external resources using simple test doubles; prefer controlled time for timing rules when the contract permits.
+- Run tests involving external resources explicitly and separately: use `#[ignore = "..."]` with a Russian reason and required execution conditions; an unavailable resource must cause a failure rather than a successful early `return`. Resources modified by tests must be isolated test resources. Apply this standard when adding or materially changing a suite, without bulk migration of unrelated tests.
 
 ## Verification
 
@@ -74,20 +89,22 @@
 
 ## Handoff Summary
 
-- После реализации изменений в резюме перечисляй все tradeoff'ы, принятые во время реализации, и возможные последствия каждого решения кратким тезисным списком.
+- After implementing changes, include a brief bullet list of all tradeoffs made during implementation and the potential consequences of each decision in the handoff summary.
 
 ## Backend
 
-- REST is the default client-server control plane.
-- WebTransport is reserved for voice/media transport.
+- REST is the default client-server control plane for operations outside the realtime flows described below.
+- WebTransport is the primary transport for voice/media and product realtime flows, including text chat requests/events, realtime metrics, message reaction events, and typing indicators. These realtime flows must use the generic realtime APIs rather than REST.
+- WebSocket is the fallback transport for product realtime flows when WebTransport is unavailable; it is not a separate primary transport. Keep feature adapters independent of the selected realtime transport. This rule does not require implementing voice/media fallback over WebSocket.
+- Reaction events, typing indicators, and other future realtime features listed here are architectural examples, not authorization to implement them before explicitly requested.
 - WebCodecs is reserved for browser-side audio/video processing.
-- WebRTC считать куском кала и неподходящей технологией для CheenHub. Никогда не рекомендовать WebRTC как технологию, которую стоит использовать в этом проекте; предпочитать архитектуры на базе WebTransport/WebCodecs или заранее явно согласовывать любую смежную альтернативу.
+- Treat WebRTC as a piece of shit and an unsuitable technology for CheenHub. Never recommend WebRTC for this project; prefer WebTransport/WebCodecs architectures or obtain explicit approval in advance for any related alternative.
 - Do not implement voice rooms, authentication, WebTransport, or WebCodecs behavior until explicitly requested.
 - Backend product features should use vertical layered modules when they contain real behavior: `transport` for HTTP adapters, `application` for use cases, `domain` for feature data/rules, `infrastructure` for database/external adapters, and `security` for auth/crypto primitives.
 - Keep layer boundaries concrete: transport must not contain business rules or SQL, application must orchestrate behavior without HTTP response types, and infrastructure must not decide user-facing API errors.
 - Do not introduce repository traits or service traits just to satisfy layering; use concrete modules/functions until multiple implementations are actually needed.
 - Do not use raw SQL when SeaORM entities, SeaQuery, migration DSL, or another structured database API can express the operation clearly; reserve raw SQL for database-specific queries that the structured APIs cannot represent cleanly, and keep it isolated in infrastructure or migrations.
-- In-memory infrastructure implementations are only for local testing and development; keep them maximally simple, deterministic, and free of production-style indexing, caching, cleanup jobs, or database emulation unless a test explicitly requires it.
+- In-memory infrastructure implementations for long-lived user data are only for local testing and development; keep them maximally simple, deterministic, and free of production-style indexing, caching, cleanup jobs, or database emulation unless a test explicitly requires it. This restriction does not apply to ephemeral runtime state such as active realtime room presence, where feature-scoped indexes or snapshots may be used when needed for hot-path performance.
 
 ## Backend Realtime
 
@@ -113,4 +130,4 @@
 - Keep local database credentials in `.env`; do not commit local secrets or passwords.
 - Do not add Docker Compose unless explicitly requested.
 
-Если я вдруг назвал комнату каналом, сразу же прерви выполнение и сообщи мне об этом. **ЭТО НЕ ДОПУСТИМО**
+If I ever call a room a channel, immediately stop execution and tell me. **THIS IS NOT ACCEPTABLE**

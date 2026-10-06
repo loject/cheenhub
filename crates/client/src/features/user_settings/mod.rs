@@ -14,5 +14,6 @@ mod sound_section;
 mod styles;
 mod system_section;
 mod update_section;
+mod user_id_field;
 
 pub(crate) use scope::UserSettingsScope;

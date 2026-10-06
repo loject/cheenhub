@@ -54,6 +54,7 @@ pub(super) fn state() -> AppState {
         direct_call_store: Arc::new(
             crate::features::voice_chat::infrastructure::InMemoryDirectCallStore::default(),
         ),
+        typing_store: Arc::new(crate::features::typing::InMemoryTypingStore::default()),
         realtime_hub: Arc::new(RealtimeHub::default()),
         auth_keys: AuthKeys::generate_for_tests(),
         access_token_lifetime_minutes: 15,

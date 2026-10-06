@@ -2,6 +2,7 @@
 
 mod entities;
 mod in_memory;
+mod in_memory_deletion;
 mod in_memory_invites;
 mod in_memory_members;
 mod in_memory_roles;
@@ -49,6 +50,9 @@ pub(crate) trait ServerStore: Send + Sync {
     /// Вставляет новый сервер для пользователя.
     async fn insert_server(&self, owner_user_id: &Uuid, name: String) -> anyhow::Result<Server>;
 
+    /// Считает все серверы хоста без ограничения по владельцу.
+    async fn count_servers(&self) -> anyhow::Result<u64>;
+
     /// Возвращает серверы, доступные пользователю.
     async fn list_servers(&self, user_id: &Uuid) -> anyhow::Result<Vec<ServerAccess>>;
 
@@ -82,6 +86,17 @@ pub(crate) trait ServerStore: Send + Sync {
         owner_user_id: &Uuid,
         audio_bitrate_bps: u32,
     ) -> anyhow::Result<Option<Server>>;
+
+    /// Удаляет сервер вместе со всеми связанными данными, если он принадлежит пользователю.
+    ///
+    /// Проверка владельца выполняется внутри запроса, поэтому удалить чужой сервер
+    /// невозможно даже при подделке идентификатора. Возвращает `true`, если сервер
+    /// действительно был удалён, и `false`, если сервера с таким владельцем нет.
+    async fn delete_owned_server(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+    ) -> anyhow::Result<bool>;
 
     /// Вставляет новое приглашение сервера.
     async fn insert_server_invite(
@@ -219,6 +234,9 @@ pub(crate) trait ServerStore: Send + Sync {
 
     /// Считает комнаты, принадлежащие серверу.
     async fn count_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<u32>;
+
+    /// Считает комнаты всех серверов хоста.
+    async fn count_all_rooms(&self) -> anyhow::Result<u64>;
 
     /// Возвращает роли сервера в порядке отображения.
     async fn list_server_roles(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRole>>;

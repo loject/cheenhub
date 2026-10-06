@@ -11,7 +11,7 @@ exclude = ["vendor/dioxus-sdk-storage"]
 resolver = "3"
 
 [workspace.package]
-version = "0.30.0"
+version = "0.32.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/loject/cheenhub"
@@ -19,6 +19,7 @@ rust-version = "1.97"
 
 [workspace.dependencies]
 anyhow = "1"
+arc-swap = "1"
 arboard = "3.6"
 argon2 = "0.5"
 async-trait = "0.1"
@@ -29,6 +30,7 @@ axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
 bytes = "1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
+dashmap = "6"
 cpal = "0.15.3"
 dioxus = { version = "=0.8.0-alpha.1", default-features = false }
 dioxus-sdk-storage = "0.7"
@@ -57,7 +59,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 time = "0.3"
-tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 tracing = "0.1"
@@ -75,3 +77,10 @@ x509-parser = "0.17"
 
 [patch.crates-io]
 dioxus-sdk-storage = { path = "vendor/dioxus-sdk-storage" }
+
+# Дефолтный debug = "full" раздувал target/*/debug/deps и бинарники в разы.
+# "line-tables-only" оставляет номера строк, поэтому backtrace в panic() и в
+# тестах остаются читаемыми, а полные отладочные данные не генерируются.
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"

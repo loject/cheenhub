@@ -2,10 +2,6 @@
 
 mod account_lifecycle;
 mod conversions;
-#[cfg(test)]
-mod deletion_tests;
-#[cfg(test)]
-mod desktop_oauth_postgres_tests;
 mod entities;
 mod in_memory;
 mod in_memory_deletion;
@@ -31,7 +27,7 @@ mod postgres_store;
 mod postgres_user;
 
 #[cfg(test)]
-mod desktop_oauth_tests;
+mod tests;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
@@ -203,6 +199,12 @@ pub(crate) trait AuthStore: OAuthStore + Send + Sync {
         legal_acceptance: RegistrationLegalAcceptance,
         now: DateTime<Utc>,
     ) -> Result<UserAccount, InsertUserError>;
+
+    /// Считает зарегистрированных пользователей без обезличенных аккаунтов.
+    ///
+    /// Аккаунт, удаление которого уже завершено, не учитывается: его данные
+    /// обезличены и пользователя фактически больше нет.
+    async fn count_registered_users(&self) -> anyhow::Result<u64>;
 
     /// Находит пользователя по нормализованному email.
     async fn find_user_by_email(

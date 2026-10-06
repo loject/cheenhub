@@ -17,6 +17,7 @@ use crate::features::auth::application as auth_application;
 use crate::state::AppState;
 
 use super::framing;
+use super::hub::DisconnectReason;
 use super::protocol::validate_envelope;
 use super::sink::{DatagramSink, EnvelopeSink};
 use super::{control, datagram, router};
@@ -150,14 +151,19 @@ pub(crate) async fn handle_session(
         };
         let (module_stream_slot, accepted) = tokio::select! {
             biased;
-            _ = disconnect.changed() => {
+            reason = disconnect.changed() => {
+                let reason = reason
+                    .ok()
+                    .and_then(|()| *disconnect.borrow())
+                    .unwrap_or(DisconnectReason::ServiceRestarting);
                 info!(
                     %session_id,
                     %user_id,
                     %auth_session_id,
-                    "closing realtime transport after auth session revocation"
+                    ?reason,
+                    "closing realtime transport after disconnect request"
                 );
-                session.close(4003, "auth session revoked");
+                session.close(reason.close_code(), reason.close_message());
                 state.realtime_hub.unregister_session(session_id).await;
                 return Ok(());
             }

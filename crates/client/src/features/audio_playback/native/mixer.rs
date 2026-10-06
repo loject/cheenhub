@@ -9,6 +9,63 @@ use dioxus::prelude::warn;
 pub(super) const SENDER_BACKLOG_WARN_SAMPLES: usize = 48_000;
 const SENDER_BACKLOG_DROP_SAMPLES: usize = 96_000;
 
+/// Уровень, ниже которого микшер пропускает сигнал без изменений.
+///
+/// Соответствует примерно -2 dBFS. Речь участников обычно не превышает его,
+/// поэтому при громкости 100% сигнал остаётся практически нетронутым.
+const SOFT_LIMIT_KNEE: f32 = 0.8;
+
+/// Нормализованная часть мягкого ограничителя для `t` из диапазона [0.0, 1.0].
+///
+/// Полином `t + t² - t³` выбран потому, что удовлетворяет всем условиям на
+/// границах: `f(0) = 0` и `f'(0) = 1` дают гладкое продолжение линейного
+/// участка без излома, а `f(1) = 1` и `f'(1) = 0` дают плавный подход к полной
+/// амплитуде без излома. Производная `f'(t) = (1 - t)(1 + 3t)` неотрицательна
+/// на [0, 1], поэтому громкость никогда не убывает.
+fn soft_limit_curve(t: f32) -> f32 {
+    t + t * t - t * t * t
+}
+
+/// Ограничивает итоговый sample мягким насыщением вместо жёсткой обрезки.
+///
+/// Микшер складывает samples нескольких отправителей и умножает сумму на общую
+/// громкость вывода. При настройках выше 100% сумма превышает диапазон
+/// [-1.0, 1.0], который обязателен для целочисленных PCM-форматов устройства.
+/// Жёсткий `clamp` срезал бы такие пики по горизонтали, давая щелчки и
+/// искажения вместо усиления. Здесь сигнал плавно подводится к полной
+/// амплитуде, поэтому тихие участки получают полное усиление настройки, а
+/// громкие пики насыщаются без обрезки.
+///
+/// Контракт функции:
+///
+/// - `|x| <= SOFT_LIMIT_KNEE` — сигнал возвращается без изменений, поэтому
+///   громкость 100% и ниже остаётся ровно такой, как задана настройкой;
+/// - `|x| = 1.0` — ровно полная амплитуда, без затухания;
+/// - `|x| > 1.0` — насыщение до `sign(x)`, необходимое для безопасной
+///   конвертации в целочисленный PCM;
+/// - нечисловые значения заменяются тишиной или знаком, чтобы один сбойный
+///   sample не заглушил поток и не дал мусор в PCM.
+fn soft_limit(sample: f32) -> f32 {
+    let magnitude = sample.abs();
+    if !magnitude.is_finite() {
+        return if magnitude.is_nan() {
+            0.0
+        } else {
+            sample.signum()
+        };
+    }
+    if magnitude <= SOFT_LIMIT_KNEE {
+        return sample;
+    }
+    if magnitude >= 1.0 {
+        return sample.signum();
+    }
+
+    let headroom = 1.0 - SOFT_LIMIT_KNEE;
+    let normalized = (magnitude - SOFT_LIMIT_KNEE) / headroom;
+    sample.signum() * (SOFT_LIMIT_KNEE + headroom * soft_limit_curve(normalized))
+}
+
 /// Разделяемый state микшера.
 pub(crate) type MixerHandle = Arc<Mutex<MixerState>>;
 
@@ -114,6 +171,8 @@ impl OutputResampler {
             self.next = mixer.next_sample();
             self.position -= 1.0;
         }
+        // Интерполяция двух уже ограниченных samples всегда лежит в [-1.0, 1.0],
+        // поэтому clamp здесь — только страховка от нечислового состояния.
         sample.clamp(-1.0, 1.0)
     }
 }
@@ -158,7 +217,7 @@ impl MixerState {
         for sender_id in finished_fades {
             self.senders.remove(&sender_id);
         }
-        mixed.clamp(-1.0, 1.0)
+        soft_limit(mixed)
     }
 }
 
@@ -203,6 +262,9 @@ pub(super) fn queue_sender_samples(
             "trimmed native audio output queue backlog"
         );
     }
+    // Decoded samples already lie in [-1.0, 1.0]; the clamp is only a safety net
+    // against a malformed decoder output. It must stay a clamp rather than a
+    // scale, because user gain above 100% is applied later in `next_sample`.
     sender
         .samples
         .extend(samples.into_iter().map(|sample| sample.clamp(-1.0, 1.0)));
@@ -334,88 +396,4 @@ pub(super) fn clear_voice_senders(mixer: &MixerHandle) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mixer_sums_senders_and_clamps_output() {
-        let mut mixer = MixerState {
-            senders: HashMap::from([
-                (
-                    "a".to_owned(),
-                    SenderMixerState {
-                        samples: VecDeque::from(vec![0.75]),
-                        gain: 1.0,
-                        loop_samples: None,
-                        loop_position: 0,
-                        loop_gain: None,
-                        fade_remaining_samples: None,
-                    },
-                ),
-                (
-                    "b".to_owned(),
-                    SenderMixerState {
-                        samples: VecDeque::from(vec![0.75]),
-                        gain: 1.0,
-                        loop_samples: None,
-                        loop_position: 0,
-                        loop_gain: None,
-                        fade_remaining_samples: None,
-                    },
-                ),
-            ]),
-            output_gain: 1.0,
-        };
-
-        assert_eq!(mixer.next_sample(), 1.0);
-    }
-
-    #[test]
-    fn resampler_preserves_source_samples_at_equal_rate() {
-        let mixer = new_mixer(1.0);
-        queue_sender_samples(&mixer, "sender", vec![0.25, 0.5, 0.75], 1.0, 1);
-        let mut mixer = mixer.lock().expect("mixer lock");
-        let mut resampler = OutputResampler::new(48_000, 48_000);
-
-        assert_eq!(resampler.next_sample(&mut mixer), 0.25);
-        assert_eq!(resampler.next_sample(&mut mixer), 0.5);
-        assert_eq!(resampler.next_sample(&mut mixer), 0.75);
-    }
-
-    #[test]
-    fn looped_sender_restarts_after_last_sample() {
-        let mixer = new_mixer(1.0);
-        queue_then_loop_sender_samples(&mixer, "signal", Vec::new(), vec![0.25, 0.5], 1.0, 1.0);
-        let mut mixer = mixer.lock().expect("mixer lock");
-
-        assert_eq!(mixer.next_sample(), 0.25);
-        assert_eq!(mixer.next_sample(), 0.5);
-        assert_eq!(mixer.next_sample(), 0.25);
-    }
-
-    #[test]
-    fn one_shot_finishes_before_loop_and_loop_fades_out() {
-        let mixer = new_mixer(1.0);
-        queue_then_loop_sender_samples(&mixer, "signal", vec![0.2, 0.4], vec![1.0], 1.0, 1.0);
-        fade_out_sender(&mixer, "signal", 2);
-        let mut state = mixer.lock().expect("mixer lock");
-        assert_eq!(state.next_sample(), 0.2);
-        assert_eq!(state.next_sample(), 0.4);
-        assert_eq!(state.next_sample(), 1.0);
-        assert_eq!(state.next_sample(), 0.5);
-        assert_eq!(state.next_sample(), 0.0);
-        assert!(!state.senders.contains_key("signal"));
-    }
-
-    #[test]
-    fn resampler_interpolates_when_output_rate_is_higher() {
-        let mixer = new_mixer(1.0);
-        queue_sender_samples(&mixer, "sender", vec![0.0, 1.0], 1.0, 1);
-        let mut mixer = mixer.lock().expect("mixer lock");
-        let mut resampler = OutputResampler::new(48_000, 96_000);
-
-        assert_eq!(resampler.next_sample(&mut mixer), 0.0);
-        assert_eq!(resampler.next_sample(&mut mixer), 0.5);
-        assert_eq!(resampler.next_sample(&mut mixer), 1.0);
-    }
-}
+mod tests;

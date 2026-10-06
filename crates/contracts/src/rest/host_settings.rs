@@ -19,6 +19,49 @@ pub struct HostAccessResponse {
     pub is_host_owner: bool,
 }
 
+/// Один пользователь с глобальными правами владельца хоста.
+///
+/// Права владельца выдаются нескольким пользователям одновременно, поэтому
+/// список содержит всех, кому текущий владелец когда-либо выдал доступ.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostOwnerSummary {
+    /// Идентификатор пользователя-владельца.
+    pub user_id: String,
+    /// Публичный никнейм владельца на этом хосте.
+    pub nickname: String,
+    /// Email владельца; помогает отличить двух владельцев с похожими никами.
+    pub email: String,
+    /// URL аватара владельца или `None`, если аватар не задан.
+    pub avatar_url: Option<String>,
+    /// Время выдачи прав в RFC 3339.
+    pub granted_at: String,
+    /// Никнейм владельца, выдавшего эти права; `None` у первоначального владельца,
+    /// получившего права автоматически при регистрации.
+    pub granted_by_nickname: Option<String>,
+    /// Является ли текущий запроситель этим владельцем.
+    ///
+    /// Клиент использует признак, чтобы не предлагать отзыв прав у себя.
+    pub is_current_user: bool,
+}
+
+/// Список владельцев хоста в хронологическом порядке выдачи прав.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostOwnersResponse {
+    /// Все владельцы; старые права идут первыми.
+    pub owners: Vec<HostOwnerSummary>,
+}
+
+/// Запрос выдачи прав владельца хоста.
+///
+/// Пользователь указывается либо email, либо точным идентификатором: оба
+/// варианта равнозначны и нужны, потому что email знают только сам владелец
+/// и те, кому он этот адрес сообщил.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct GrantHostOwnerRequest {
+    /// Email или идентификатор пользователя, которому выдаются права.
+    pub user: String,
+}
+
 /// История нагрузки хоста, доступная владельцу установки.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct HostMetricsResponse {
@@ -26,6 +69,76 @@ pub struct HostMetricsResponse {
     pub available: bool,
     /// Последние измерения в хронологическом порядке.
     pub samples: Vec<HostMetricsSample>,
+}
+
+/// Текущая активность голосового чата на хосте.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostVoiceActivityResponse {
+    /// Число активных голосовых подключений: комнаты и личные звонки вместе.
+    pub voice_connections: u32,
+    /// Число активных видеоисточников: камера и экран считаются отдельно.
+    pub video_sources: u32,
+}
+
+/// История активности голосового чата, доступная владельцу установки.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostVoiceActivityHistoryResponse {
+    /// Доступна ли история: при сбое базы данных текущая активность остаётся доступна.
+    pub available: bool,
+    /// Снимки в хронологическом порядке; пусто при недоступной истории.
+    pub samples: Vec<HostVoiceActivitySample>,
+}
+
+/// Один снимок активности голосового чата на хосте.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostVoiceActivitySample {
+    /// Время измерения в миллисекундах Unix.
+    pub sampled_at_unix_ms: i64,
+    /// Число активных голосовых подключений в момент измерения.
+    pub voice_connections: u32,
+    /// Число активных видеоисточников в момент измерения: камера и экран считаются раздельно.
+    pub video_sources: u32,
+}
+
+/// Сводная статистика CheenHub, доступная владельцу установки.
+///
+/// Значения отражают состояние на момент запроса и не меняются при сбое
+/// отдельного источника: любой сбой возвращается ошибкой, а не частичным ответом.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostStatsResponse {
+    /// Конец суточного окна сообщений в миллисекундах Unix по часам сервера.
+    ///
+    /// Клиент использует эту отметку для оси времени независимо от того,
+    /// когда было отправлено последнее сообщение.
+    pub messages_window_end_unix_ms: i64,
+    /// Число зарегистрированных пользователей без обезличенных аккаунтов.
+    pub users_total: u64,
+    /// Число серверов, созданных на хосте.
+    pub servers_total: u64,
+    /// Число комнат во всех серверах хоста.
+    pub rooms_total: u64,
+    /// Число сообщений, отправленных в комнатах, включая удалённые.
+    pub room_messages_total: u64,
+    /// Число личных сообщений, включая удалённые.
+    pub direct_messages_total: u64,
+    /// Сообщения комнат по минутам за последние сутки в хронологическом порядке.
+    ///
+    /// Хранятся только минуты с сообщениями; клиент сохраняет полное суточное
+    /// окно оси времени, используя [`Self::messages_window_end_unix_ms`].
+    pub room_messages_per_minute: Vec<HostMessagesPerMinuteSample>,
+    /// Личные сообщения по минутам за последние сутки в хронологическом порядке.
+    ///
+    /// Пустые минуты отсутствуют, как и в [`Self::room_messages_per_minute`].
+    pub direct_messages_per_minute: Vec<HostMessagesPerMinuteSample>,
+}
+
+/// Число сообщений, отправленных в одну минуту.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostMessagesPerMinuteSample {
+    /// Начало минуты в миллисекундах Unix, выровненное по границе минуты UTC.
+    pub minute_unix_ms: i64,
+    /// Число сообщений, созданных за эту минуту.
+    pub messages: u64,
 }
 
 /// Одно измерение нагрузки хоста.
@@ -180,6 +293,42 @@ pub struct HostLogEntry {
     pub fields: Vec<String>,
 }
 
+/// Минимальный уровень журналирования, доступный владельцу хоста.
+///
+/// Уровень задаётся строкой в нижнем регистре и совпадает с уровнями `tracing`.
+/// Значение соответствует фильтру всего процесса: записи ниже выбранного
+/// уровня не попадают ни в консоль, ни в оперативный журнал хоста.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostLogLevel {
+    /// Только ошибки.
+    Error,
+    /// Ошибки и предупреждения.
+    Warn,
+    /// Ошибки, предупреждения и обычные события.
+    Info,
+    /// Дополнительно диагностические сообщения.
+    Debug,
+    /// Полная трассировка внутренних вызовов.
+    Trace,
+}
+
+/// Настройка минимального уровня журнала хоста.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostLogSettingsResponse {
+    /// Выбранный уровень или `None`, если используется фильтр запуска сервера.
+    pub min_level: Option<HostLogLevel>,
+    /// Время последнего изменения в RFC 3339.
+    pub updated_at: Option<String>,
+}
+
+/// Изменение минимального уровня журнала владельцем хоста.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct UpdateHostLogSettingsRequest {
+    /// Новый уровень; `null` возвращает фильтр, заданный при запуске сервера.
+    pub min_level: Option<HostLogLevel>,
+}
+
 /// Сообщение realtime-потока журнала бэкенда.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -204,49 +353,4 @@ pub enum HostLogStreamMessage {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{EmailTransport, HostEmailSettingsResponse, HostMetricsSample};
-
-    #[test]
-    fn deserializes_metrics_sample_without_disk_field_from_old_proxy() {
-        let json = r#"{
-            "sampled_at_unix_ms": 1,
-            "cpu": {"system_percent": 1.0, "cheenhub_percent": 2.0, "database_percent": 3.0, "other_percent": 4.0, "logical_processors_percent": []},
-            "memory": {"total_bytes": 1, "used_bytes": 2, "cheenhub_bytes": 3, "database_bytes": 4, "other_bytes": 5},
-            "network": {"sent_bytes_per_second": 1.0, "received_bytes_per_second": 2.0, "sent_bytes_total": 3, "received_bytes_total": 4}
-        }"#;
-
-        let sample: HostMetricsSample =
-            serde_json::from_str(json).expect("old metrics sample deserializes");
-
-        assert!(sample.disk.is_none());
-    }
-
-    #[test]
-    fn email_settings_response_contains_only_secret_presence_flags() {
-        let response = HostEmailSettingsResponse {
-            transport: EmailTransport::GmailApi,
-            email_send_timeout_seconds: 10,
-            smtp_host: None,
-            smtp_port: 587,
-            smtp_username: None,
-            smtp_password_configured: true,
-            smtp_from_email: None,
-            gmail_client_id: Some("client-id".to_owned()),
-            gmail_client_id_from_environment: false,
-            gmail_client_secret_configured: true,
-            gmail_client_secret_from_environment: false,
-            gmail_connected: true,
-            gmail_from_email: Some("sender@example.com".to_owned()),
-            gmail_oauth_redirect_uri: "https://example.com/callback".to_owned(),
-        };
-        let json = serde_json::to_value(response).expect("response serializes");
-
-        assert!(json.get("smtp_password").is_none());
-        assert!(json.get("gmail_client_secret").is_none());
-        assert!(json.get("gmail_refresh_token").is_none());
-        assert_eq!(json["smtp_password_configured"], true);
-        assert_eq!(json["gmail_client_secret_configured"], true);
-        assert_eq!(json["gmail_connected"], true);
-    }
-}
+mod tests;

@@ -1,32 +1,51 @@
 //! REST-адаптер глобальных настроек хоста.
 
+#[cfg(test)]
+mod tests;
+
 use std::time::Duration;
 
 use axum::{
     Json, Router,
     extract::{
-        Query, State,
+        Path, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use cheenhub_contracts::rest::{
-    ApiError, GmailConnectionStartResponse, HostAccessResponse, HostEmailSettingsResponse,
-    HostLogStreamMessage, UpdateHostEmailSettingsRequest,
+    ApiError, GmailConnectionStartResponse, GrantHostOwnerRequest, HostAccessResponse,
+    HostEmailSettingsResponse, HostLogSettingsResponse, HostLogStreamMessage, HostOwnersResponse,
+    HostStatsResponse, HostVoiceActivityHistoryResponse, HostVoiceActivityResponse,
+    UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
 };
 use serde::Deserialize;
+use uuid::Uuid;
 
 use crate::state::AppState;
 
+use super::activity::{activity as activity_flow, activity_history as activity_history_flow};
 use super::application::{self, HostSettingsError};
+use super::log_settings::{self, settings as log_settings_flow};
+use super::owners;
+use super::stats::stats as stats_flow;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/access", get(access))
+        .route("/owners", get(list_owners).post(grant_owner))
+        .route("/owners/{user_id}", delete(revoke_owner))
         .route("/metrics", get(metrics))
+        .route("/stats", get(stats))
+        .route("/activity", get(activity))
+        .route("/activity/history", get(activity_history))
         .route("/logs/ws", get(logs_ws))
+        .route(
+            "/log-settings",
+            get(log_settings).patch(update_log_settings),
+        )
         .route("/email", get(email_settings).patch(update_email_settings))
         .route("/email/gmail/connect", post(start_gmail_connection))
         .route("/email/gmail/callback", get(gmail_callback))
@@ -72,21 +91,7 @@ async fn handle_logs_socket(state: AppState, mut socket: WebSocket) {
     let user_id = match application::require_host_owner(&state, &access_token).await {
         Ok(user_id) => user_id,
         Err(error) => {
-            let (message, retryable) = match error {
-                HostSettingsError::Forbidden(message) => (message, false),
-                HostSettingsError::Unauthorized(message) => (message, true),
-                HostSettingsError::BadRequest(message)
-                | HostSettingsError::Misconfigured(message) => (message, true),
-                HostSettingsError::Internal(_) => (
-                    "Не удалось проверить доступ к журналу сервера.".to_owned(),
-                    true,
-                ),
-            };
-            let _ = send_host_log_message(
-                &mut socket,
-                HostLogStreamMessage::Error { message, retryable },
-            )
-            .await;
+            let _ = send_host_log_message(&mut socket, log_access_error(error)).await;
             return;
         }
     };
@@ -99,11 +104,12 @@ async fn handle_logs_socket(state: AppState, mut socket: WebSocket) {
     let snapshot = state.host_logs.snapshot(HOST_LOG_SNAPSHOT_LIMIT);
     let mut last_sent_id = snapshot.last().map(|entry| entry.id).unwrap_or_default();
 
-    if !send_host_log_message(
-        &mut socket,
-        HostLogStreamMessage::Snapshot { entries: snapshot },
-    )
-    .await
+    if !verify_log_access(&state, user_id, &mut socket).await
+        || !send_host_log_message(
+            &mut socket,
+            HostLogStreamMessage::Snapshot { entries: snapshot },
+        )
+        .await
     {
         return;
     }
@@ -115,6 +121,9 @@ async fn handle_logs_socket(state: AppState, mut socket: WebSocket) {
     loop {
         tokio::select! {
             received = receiver.recv() => {
+                if !verify_log_access(&state, user_id, &mut socket).await {
+                    break;
+                }
                 match received {
                     Ok(entry) => {
                         if entry.id <= last_sent_id {
@@ -158,6 +167,9 @@ async fn handle_logs_socket(state: AppState, mut socket: WebSocket) {
                 }
             }
             _ = heartbeat.tick() => {
+                if !verify_log_access(&state, user_id, &mut socket).await {
+                    break;
+                }
                 if socket.send(Message::Ping(Default::default())).await.is_err() {
                     break;
                 }
@@ -166,6 +178,34 @@ async fn handle_logs_socket(state: AppState, mut socket: WebSocket) {
     }
 
     tracing::info!(%user_id, "closed host backend log stream");
+}
+
+async fn verify_log_access(state: &AppState, user_id: Uuid, socket: &mut WebSocket) -> bool {
+    match application::require_host_owner_rights(state, user_id).await {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(%user_id, "closing host log stream after access check failed");
+            let _ = send_host_log_message(socket, log_access_error(error)).await;
+            false
+        }
+    }
+}
+
+fn log_access_error(error: HostSettingsError) -> HostLogStreamMessage {
+    let (message, retryable) = match error {
+        HostSettingsError::Forbidden(message) => (message, false),
+        HostSettingsError::Unauthorized(message)
+        | HostSettingsError::BadRequest(message)
+        | HostSettingsError::Misconfigured(message) => (message, true),
+        HostSettingsError::Internal(error) => {
+            tracing::error!(%error, "host log stream access verification failed");
+            (
+                "Не удалось проверить доступ к журналу сервера.".to_owned(),
+                true,
+            )
+        }
+    };
+    HostLogStreamMessage::Error { message, retryable }
 }
 
 async fn receive_log_auth(socket: &mut WebSocket) -> Result<String, String> {
@@ -221,11 +261,96 @@ async fn metrics(
         .map(Json)
 }
 
+/// Возвращает сводную статистику CheenHub владельцу хоста.
+async fn stats(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<HostStatsResponse>, HostSettingsError> {
+    stats_flow(&state, bearer_token(&headers)?).await.map(Json)
+}
+
+/// Возвращает текущие голосовые подключения и видеоисточники.
+async fn activity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<HostVoiceActivityResponse>, HostSettingsError> {
+    activity_flow(&state, bearer_token(&headers)?)
+        .await
+        .map(Json)
+}
+
+/// Возвращает историю голосовых подключений за последние 24 часа.
+async fn activity_history(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ActivityHistoryQuery>,
+) -> Result<Json<HostVoiceActivityHistoryResponse>, HostSettingsError> {
+    activity_history_flow(&state, bearer_token(&headers)?, query.after_unix_ms)
+        .await
+        .map(Json)
+}
+
 async fn access(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<HostAccessResponse>, HostSettingsError> {
     application::access(&state, bearer_token(&headers)?)
+        .await
+        .map(Json)
+}
+
+/// Возвращает список пользователей с правами владельца хоста.
+async fn list_owners(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<HostOwnersResponse>, HostSettingsError> {
+    owners::list_owners(&state, bearer_token(&headers)?)
+        .await
+        .map(Json)
+}
+
+/// Выдаёт права владельца хоста указанному пользователю.
+async fn grant_owner(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<GrantHostOwnerRequest>,
+) -> Result<Json<HostOwnersResponse>, HostSettingsError> {
+    owners::grant_owner(&state, bearer_token(&headers)?, request)
+        .await
+        .map(Json)
+}
+
+/// Отзывает права владельца хоста у указанного пользователя.
+async fn revoke_owner(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+) -> Result<Json<HostOwnersResponse>, HostSettingsError> {
+    let user_id = Uuid::parse_str(&user_id).map_err(|_| {
+        HostSettingsError::BadRequest("Идентификатор пользователя указан неверно.".to_owned())
+    })?;
+    owners::revoke_owner(&state, bearer_token(&headers)?, user_id)
+        .await
+        .map(Json)
+}
+
+/// Возвращает текущий минимальный уровень журнала сервера.
+async fn log_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<HostLogSettingsResponse>, HostSettingsError> {
+    log_settings_flow(&state, bearer_token(&headers)?)
+        .await
+        .map(Json)
+}
+
+/// Применяет и сохраняет новый минимальный уровень журнала.
+async fn update_log_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateHostLogSettingsRequest>,
+) -> Result<Json<HostLogSettingsResponse>, HostSettingsError> {
+    log_settings::update_settings(&state, bearer_token(&headers)?, request)
         .await
         .map(Json)
 }
@@ -312,6 +437,12 @@ impl IntoResponse for HostSettingsError {
         )
             .into_response()
     }
+}
+
+/// Запрос только новых точек истории после указанного времени в миллисекундах Unix.
+#[derive(Deserialize)]
+struct ActivityHistoryQuery {
+    after_unix_ms: Option<i64>,
 }
 
 #[derive(Deserialize)]

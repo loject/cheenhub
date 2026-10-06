@@ -5,7 +5,7 @@ use cheenhub_contracts::rest::{
 };
 use chrono::{Duration, Utc};
 
-use super::{registered_user, reset_token_from_mailer, state, state_with_mailer};
+use super::support::{registered_user, reset_token_from_mailer, state, state_with_mailer};
 use crate::features::auth::application::{
     complete_google_oauth, confirm_password_reset, request_password_reset,
 };

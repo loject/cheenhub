@@ -145,6 +145,10 @@ impl AuthStore for InMemoryAuthStore {
         )
     }
 
+    async fn count_registered_users(&self) -> anyhow::Result<u64> {
+        super::in_memory_user::count_registered_users(&self.state)
+    }
+
     async fn find_user_by_email(
         &self,
         email_normalized: &str,

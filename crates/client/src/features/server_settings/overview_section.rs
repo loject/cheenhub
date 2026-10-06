@@ -12,6 +12,8 @@ use super::api;
 pub(crate) fn ServerOverviewSettingsSection(
     server: ServerSummary,
     on_server_updated: EventHandler<ServerSummary>,
+    /// Запрашивает удаление сервера у владельца состояния настроек.
+    on_delete_request: EventHandler<()>,
 ) -> Element {
     let mut name = use_signal(|| server.name.clone());
     let mut profile_status = use_signal(ProfileUpdateStatus::default);
@@ -220,6 +222,19 @@ pub(crate) fn ServerOverviewSettingsSection(
                     }
                 }
             }
+            if server.is_owner {
+                section { class: "rounded-[20px] border border-red-500/20 bg-red-500/5 p-5",
+                    h3 { class: "text-[16px] font-semibold text-zinc-100", "Удаление сервера" }
+                    p { class: "mt-2 text-[13px] leading-6 text-zinc-400", "Сервер и всё его содержимое будут удалены навсегда." }
+                    button {
+                        r#type: "button",
+                        class: "mt-4 h-10 rounded-xl border border-red-400/30 bg-red-500/10 px-4 text-sm font-semibold text-red-200 hover:bg-red-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400/70",
+                        onclick: move |_| on_delete_request.call(()),
+                        "Удалить сервер"
+                    }
+                }
+            }
+
         }
     }
 }

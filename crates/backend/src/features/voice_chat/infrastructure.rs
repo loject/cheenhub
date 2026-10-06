@@ -1,6 +1,8 @@
 //! Инфраструктура присутствия голосового чата.
 
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
+use std::sync::Arc;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Mutex;
@@ -11,11 +13,15 @@ use network_quality_rate_limit::NetworkQualityRateLimiter;
 
 mod direct_calls;
 mod network_quality_rate_limit;
+mod presence_index;
+mod presence_registry;
 mod uplink;
 
 pub(crate) use direct_calls::{
     DirectCall, DirectCallStoreError, DirectCallTransition, InMemoryDirectCallStore,
 };
+pub(crate) use presence_index::MediaRouteSnapshot;
+use presence_registry::PresenceRegistry;
 pub(crate) use uplink::{
     ConsumeMicrophoneUplinkGrantError, MicrophoneUplinkBinding, MicrophoneUplinkGrant,
 };
@@ -23,12 +29,18 @@ pub(crate) use uplink::{
 /// In-memory-хранилище голосового присутствия для активных потоков realtime-модуля.
 #[derive(Default)]
 pub(crate) struct InMemoryVoicePresenceStore {
-    entries: Mutex<Vec<VoicePresence>>,
+    /// Канонические записи присутствия и их read indexes.
+    presence: PresenceRegistry,
+    /// Одноразовые разрешения на подключение microphone uplink.
     microphone_uplink_grants: Mutex<Vec<MicrophoneUplinkGrant>>,
-    microphone_uplink_bindings: Mutex<Vec<MicrophoneUplinkBinding>>,
+    /// Активные привязки дополнительных microphone uplink-сессий.
+    microphone_uplink_bindings: Mutex<HashMap<Uuid, MicrophoneUplinkBinding>>,
+    /// Ограничитель частоты публикации network quality.
     network_quality_rate_limiter: Mutex<NetworkQualityRateLimiter>,
     #[cfg(test)]
+    /// Счётчик вызовов перечисления участников для проверок локальности чтения.
     room_participants_calls: AtomicUsize,
+    /// Состояние активных видеоисточников.
     pub(super) video_publications: Mutex<VideoPublicationTracker>,
 }
 
@@ -78,23 +90,7 @@ pub(crate) struct VoicePresenceTarget {
 impl InMemoryVoicePresenceStore {
     /// Заменяет присутствие одного пользователя или realtime-потока и возвращает удаленные записи.
     pub(crate) async fn join(&self, presence: VoicePresence) -> Vec<VoicePresence> {
-        let removed = {
-            let mut entries = self.entries.lock().await;
-            let mut removed = Vec::new();
-            let realtime_stream_id = presence.realtime_stream_id;
-            let user_id = presence.user_id;
-
-            entries.retain(|entry| {
-                let should_remove =
-                    entry.realtime_stream_id == realtime_stream_id || entry.user_id == user_id;
-                if should_remove {
-                    removed.push(entry.clone());
-                }
-                !should_remove
-            });
-            entries.push(presence);
-            removed
-        };
+        let removed = self.presence.join(presence).await;
         self.revoke_microphone_uplinks_for(&removed).await;
         self.clear_network_quality_rate_limits_for(&removed).await;
         self.clear_video_publications_for(&removed).await;
@@ -107,8 +103,12 @@ impl InMemoryVoicePresenceStore {
         &self,
         realtime_stream_id: &Uuid,
     ) -> Vec<VoicePresence> {
-        self.remove_presence(|entry| &entry.realtime_stream_id == realtime_stream_id)
-            .await
+        self.remove_presence(
+            self.presence
+                .leave_realtime_stream(realtime_stream_id)
+                .await,
+        )
+        .await
     }
 
     /// Удаляет присутствие для одного потока realtime-модуля в одной комнате.
@@ -119,13 +119,21 @@ impl InMemoryVoicePresenceStore {
         server_id: &Uuid,
         room_id: &Uuid,
     ) -> Vec<VoicePresence> {
-        self.remove_presence(|entry| {
-            &entry.realtime_stream_id == realtime_stream_id
-                && entry.target_kind == target_kind
-                && &entry.server_id == server_id
-                && &entry.room_id == room_id
-        })
+        self.remove_presence(
+            self.presence
+                .leave_room(realtime_stream_id, target_kind, server_id, room_id)
+                .await,
+        )
         .await
+    }
+
+    /// Удаляет голосовое присутствие только в комнатах указанного сервера.
+    ///
+    /// Личные звонки и присутствие на других серверах сохраняются; связанные
+    /// uplink-разрешения и состояние видеопубликаций очищаются вместе с presence.
+    pub(crate) async fn remove_server(&self, server_id: &Uuid) -> Vec<VoicePresence> {
+        self.remove_presence(self.presence.remove_server(server_id).await)
+            .await
     }
 
     /// Удаляет все записи присутствия одного пользователя в одной комнате (kick).
@@ -135,33 +143,15 @@ impl InMemoryVoicePresenceStore {
         server_id: &Uuid,
         room_id: &Uuid,
     ) -> Vec<VoicePresence> {
-        self.remove_presence(|entry| {
-            entry.target_kind == VoicePresenceTargetKind::Server
-                && &entry.user_id == user_id
-                && &entry.server_id == server_id
-                && &entry.room_id == room_id
-        })
+        self.remove_presence(
+            self.presence
+                .kick_user_from_room(user_id, server_id, room_id)
+                .await,
+        )
         .await
     }
 
-    async fn remove_presence(
-        &self,
-        should_remove: impl Fn(&VoicePresence) -> bool,
-    ) -> Vec<VoicePresence> {
-        let removed = {
-            let mut entries = self.entries.lock().await;
-            let mut removed = Vec::new();
-
-            entries.retain(|entry| {
-                if should_remove(entry) {
-                    removed.push(entry.clone());
-                    false
-                } else {
-                    true
-                }
-            });
-            removed
-        };
+    async fn remove_presence(&self, removed: Vec<VoicePresence>) -> Vec<VoicePresence> {
         self.revoke_microphone_uplinks_for(&removed).await;
         self.clear_network_quality_rate_limits_for(&removed).await;
         self.clear_video_publications_for(&removed).await;
@@ -185,20 +175,9 @@ impl InMemoryVoicePresenceStore {
     ) -> Vec<VoicePresence> {
         #[cfg(test)]
         self.room_participants_calls.fetch_add(1, Ordering::Relaxed);
-        let mut participants = self
-            .entries
-            .lock()
+        self.presence
+            .room_participants(target_kind, server_id, room_id)
             .await
-            .iter()
-            .filter(|entry| {
-                entry.target_kind == target_kind
-                    && &entry.server_id == server_id
-                    && &entry.room_id == room_id
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        participants.sort_by_key(|presence| presence.joined_at);
-        participants
     }
 
     /// Перечисляет активных участников одного сервера, сгруппированных по комнатам.
@@ -206,65 +185,38 @@ impl InMemoryVoicePresenceStore {
         &self,
         server_id: &Uuid,
     ) -> Vec<(Uuid, Vec<VoicePresence>)> {
-        let mut entries = self
-            .entries
-            .lock()
-            .await
-            .iter()
-            .filter(|entry| {
-                entry.target_kind == VoicePresenceTargetKind::Server
-                    && &entry.server_id == server_id
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        entries.sort_by_key(|presence| (presence.room_id, presence.joined_at));
-
-        let mut rooms = Vec::<(Uuid, Vec<VoicePresence>)>::new();
-        for presence in entries {
-            match rooms.last_mut() {
-                Some((room_id, participants)) if *room_id == presence.room_id => {
-                    participants.push(presence);
-                }
-                _ => rooms.push((presence.room_id, vec![presence])),
-            }
-        }
-
-        rooms
+        self.presence.server_room_participants(server_id).await
     }
 
     /// Возвращает активное присутствие одного пользователя в одной комнате.
-    pub(crate) async fn room_presence_for_user(
+    pub(crate) fn room_presence_for_user(
         &self,
         target_kind: VoicePresenceTargetKind,
         room_id: &Uuid,
         user_id: &Uuid,
-    ) -> Option<VoicePresence> {
-        self.entries
-            .lock()
-            .await
-            .iter()
-            .find(|entry| {
-                entry.target_kind == target_kind
-                    && &entry.room_id == room_id
-                    && &entry.user_id == user_id
-            })
-            .cloned()
+    ) -> Option<Arc<VoicePresence>> {
+        self.presence
+            .room_presence_for_user(target_kind, room_id, user_id)
+    }
+
+    /// Возвращает присутствие отправителя и получателей из одного снимка комнаты.
+    pub(crate) fn media_route(
+        &self,
+        target_kind: VoicePresenceTargetKind,
+        room_id: &Uuid,
+        user_id: &Uuid,
+    ) -> Option<MediaRouteSnapshot> {
+        self.presence.media_route(target_kind, room_id, user_id)
     }
 
     /// Возвращает присутствие, принадлежащее указанному realtime-потоку и пользователю.
-    pub(crate) async fn presence_for_stream(
+    pub(crate) fn presence_for_stream(
         &self,
         realtime_stream_id: &Uuid,
         user_id: &Uuid,
-    ) -> Option<VoicePresence> {
-        self.entries
-            .lock()
-            .await
-            .iter()
-            .find(|entry| {
-                &entry.realtime_stream_id == realtime_stream_id && &entry.user_id == user_id
-            })
-            .cloned()
+    ) -> Option<Arc<VoicePresence>> {
+        self.presence
+            .presence_for_stream(realtime_stream_id, user_id)
     }
 
     /// Обновляет никнейм в активных записях присутствия одного пользователя и возвращает затронутые идентификаторы комнат.
@@ -273,18 +225,7 @@ impl InMemoryVoicePresenceStore {
         user_id: &Uuid,
         nickname: String,
     ) -> Vec<VoicePresenceTarget> {
-        let mut entries = self.entries.lock().await;
-        let mut rooms = Vec::<VoicePresenceTarget>::new();
-
-        for entry in entries.iter_mut().filter(|entry| &entry.user_id == user_id) {
-            entry.nickname = nickname.clone();
-            let room = entry.target();
-            if !rooms.contains(&room) {
-                rooms.push(room);
-            }
-        }
-
-        rooms
+        self.presence.update_user_nickname(user_id, nickname).await
     }
 
     /// Обновляет URL аватара в активных записях присутствия одного пользователя и возвращает затронутые идентификаторы комнат.
@@ -293,38 +234,15 @@ impl InMemoryVoicePresenceStore {
         user_id: &Uuid,
         avatar_url: Option<String>,
     ) -> Vec<VoicePresenceTarget> {
-        let mut entries = self.entries.lock().await;
-        let mut rooms = Vec::<VoicePresenceTarget>::new();
-
-        for entry in entries.iter_mut().filter(|entry| &entry.user_id == user_id) {
-            entry.avatar_url = avatar_url.clone();
-            let room = entry.target();
-            if !rooms.contains(&room) {
-                rooms.push(room);
-            }
-        }
-
-        rooms
+        self.presence.update_user_avatar(user_id, avatar_url).await
     }
 
-    /// Перечисляет активных получателей медиа в одной комнате, исключая одну сессию отправителя.
-    pub(crate) async fn media_recipient_sessions(
-        &self,
-        target_kind: VoicePresenceTargetKind,
-        room_id: &Uuid,
-        sender_session_id: &Uuid,
-    ) -> Vec<Uuid> {
-        self.entries
-            .lock()
-            .await
-            .iter()
-            .filter(|entry| {
-                entry.target_kind == target_kind
-                    && &entry.room_id == room_id
-                    && &entry.session_id != sender_session_id
-            })
-            .map(|entry| entry.session_id)
-            .collect()
+    /// Возвращает число активных голосовых подключений без объединения по пользователю.
+    ///
+    /// Учитываются комнаты серверов и личные звонки. Отдельное подключение для
+    /// отправки микрофона присутствием не является и в счётчик не попадает.
+    pub(crate) async fn active_voice_connection_count(&self) -> usize {
+        self.presence.active_voice_connection_count().await
     }
 }
 
@@ -347,154 +265,4 @@ impl VoicePresenceTarget {
 }
 
 #[cfg(test)]
-mod tests {
-    use chrono::Utc;
-    use uuid::Uuid;
-
-    use super::{InMemoryVoicePresenceStore, VoicePresence, VoicePresenceTargetKind};
-
-    fn presence(
-        realtime_stream_id: Uuid,
-        session_id: Uuid,
-        server_id: Uuid,
-        room_id: Uuid,
-        user_id: Uuid,
-    ) -> VoicePresence {
-        VoicePresence {
-            realtime_stream_id,
-            session_id,
-            target_kind: VoicePresenceTargetKind::Server,
-            server_id,
-            room_id,
-            user_id,
-            nickname: "voice_user".to_owned(),
-            avatar_url: None,
-            joined_at: Utc::now(),
-        }
-    }
-
-    #[tokio::test]
-    async fn room_presence_authorizes_only_joined_users() {
-        let store = InMemoryVoicePresenceStore::default();
-        let room_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
-
-        assert!(
-            store
-                .room_presence_for_user(VoicePresenceTargetKind::Server, &room_id, &user_id)
-                .await
-                .is_none()
-        );
-
-        store
-            .join(presence(
-                Uuid::new_v4(),
-                Uuid::new_v4(),
-                Uuid::new_v4(),
-                room_id,
-                user_id,
-            ))
-            .await;
-
-        assert!(
-            store
-                .room_presence_for_user(VoicePresenceTargetKind::Server, &room_id, &user_id)
-                .await
-                .is_some()
-        );
-    }
-
-    #[tokio::test]
-    async fn media_recipients_exclude_sender_and_other_rooms() {
-        let store = InMemoryVoicePresenceStore::default();
-        let server_id = Uuid::new_v4();
-        let room_id = Uuid::new_v4();
-        let other_room_id = Uuid::new_v4();
-        let sender_session_id = Uuid::new_v4();
-        let recipient_session_id = Uuid::new_v4();
-        let other_room_session_id = Uuid::new_v4();
-
-        store
-            .join(presence(
-                Uuid::new_v4(),
-                sender_session_id,
-                server_id,
-                room_id,
-                Uuid::new_v4(),
-            ))
-            .await;
-        store
-            .join(presence(
-                Uuid::new_v4(),
-                recipient_session_id,
-                server_id,
-                room_id,
-                Uuid::new_v4(),
-            ))
-            .await;
-        store
-            .join(presence(
-                Uuid::new_v4(),
-                other_room_session_id,
-                server_id,
-                other_room_id,
-                Uuid::new_v4(),
-            ))
-            .await;
-
-        let recipients = store
-            .media_recipient_sessions(
-                VoicePresenceTargetKind::Server,
-                &room_id,
-                &sender_session_id,
-            )
-            .await;
-
-        assert_eq!(recipients, vec![recipient_session_id]);
-    }
-
-    #[tokio::test]
-    async fn replacing_user_presence_makes_old_session_stale() {
-        let store = InMemoryVoicePresenceStore::default();
-        let server_id = Uuid::new_v4();
-        let first_room_id = Uuid::new_v4();
-        let second_room_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
-        let old_session_id = Uuid::new_v4();
-        let new_session_id = Uuid::new_v4();
-
-        store
-            .join(presence(
-                Uuid::new_v4(),
-                old_session_id,
-                server_id,
-                first_room_id,
-                user_id,
-            ))
-            .await;
-        store
-            .join(presence(
-                Uuid::new_v4(),
-                new_session_id,
-                server_id,
-                second_room_id,
-                user_id,
-            ))
-            .await;
-
-        assert!(
-            store
-                .room_presence_for_user(VoicePresenceTargetKind::Server, &first_room_id, &user_id)
-                .await
-                .is_none()
-        );
-        assert_eq!(
-            store
-                .room_presence_for_user(VoicePresenceTargetKind::Server, &second_room_id, &user_id)
-                .await
-                .expect("new presence should remain")
-                .session_id,
-            new_session_id
-        );
-    }
-}
+mod tests;

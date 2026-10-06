@@ -69,13 +69,26 @@ pub(super) async fn require_host_owner(
     let (user, _) = require_current_user(state, access_token)
         .await
         .map_err(map_auth_error)?;
-    if !state.host_settings_store.is_host_owner(user.id).await? {
-        tracing::warn!(user_id = %user.id, "rejected host settings access by non-owner");
+    require_host_owner_rights(state, user.id).await?;
+    Ok(user.id)
+}
+
+/// Проверяет актуальные права ранее авторизованного пользователя.
+///
+/// Долгоживущие потоки вызывают проверку перед отправкой данных, чтобы отзыв
+/// прав прекращал доступ и у уже подключённого владельца. Ошибка хранилища
+/// также запрещает отправку: прошлое успешное решение не используется как кеш.
+pub(super) async fn require_host_owner_rights(
+    state: &AppState,
+    user_id: Uuid,
+) -> Result<(), HostSettingsError> {
+    if !state.host_settings_store.is_host_owner(user_id).await? {
+        tracing::warn!(%user_id, "rejected host settings access by non-owner");
         return Err(HostSettingsError::Forbidden(
             "Настройки хоста доступны только владельцу хоста.".to_owned(),
         ));
     }
-    Ok(user.id)
+    Ok(())
 }
 
 /// Возвращает настройки почты с удалёнными секретами.
@@ -453,41 +466,4 @@ struct GoogleProfile {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{non_empty, update_gmail_client_id, update_secret};
-
-    #[test]
-    fn blank_secret_keeps_existing_value_and_explicit_clear_removes_it() {
-        let mut value = Some("existing".to_owned());
-        update_secret(&mut value, Some("   ".to_owned()), false);
-        assert_eq!(value.as_deref(), Some("existing"));
-
-        update_secret(&mut value, Some("replacement".to_owned()), false);
-        assert_eq!(value.as_deref(), Some("replacement"));
-
-        update_secret(&mut value, None, true);
-        assert_eq!(value, None);
-    }
-
-    #[test]
-    fn blank_non_secret_is_an_explicit_clear() {
-        assert_eq!(non_empty("   ".to_owned()), None);
-        assert_eq!(non_empty(" host ".to_owned()).as_deref(), Some("host"));
-    }
-
-    #[test]
-    fn unchanged_environment_client_id_is_not_copied_into_database() {
-        let environment = "environment-id".to_owned();
-        let mut database = None;
-
-        update_gmail_client_id(&mut database, Some(environment.clone()), Some(&environment));
-        assert_eq!(database, None);
-
-        update_gmail_client_id(
-            &mut database,
-            Some("database-id".to_owned()),
-            Some(&environment),
-        );
-        assert_eq!(database.as_deref(), Some("database-id"));
-    }
-}
+mod tests;

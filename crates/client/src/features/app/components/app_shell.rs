@@ -8,17 +8,25 @@ use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::api;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
 use crate::features::host_settings::{
-    HostDashboardPage, HostEmailSettingsPage, HostLogsPage, api as host_settings_api,
+    HostDashboardPage, HostEmailSettingsPage, HostLogsPage, HostOwnersPage, HostSystemSettingsPage,
+    api as host_settings_api,
 };
 use crate::features::server_registry::use_server_registry;
 use crate::features::social::SocialPage;
 use crate::features::user_settings::UserSettingsScope;
 
 use super::add_server_modal::AddServerModal;
+/// Тип комнаты для атрибута раскладки.
+pub(crate) use super::app_shell_state::room_kind_attr;
+use super::app_shell_state::{
+    default_server_shell_state, saved_server_shell_state, upsert_server_shell_state,
+};
 use super::create_server_modal::CreateServerModal;
 use super::empty_servers_panel::EmptyServersPanel;
 use super::invite_link_modal::InviteLinkModal;
 use super::server_instance::ServerInstance;
+use super::server_leave_modal::ServerLeaveModal;
+use super::server_list_error::ServerListError;
 use super::server_rail::ServerRail;
 
 #[derive(Clone, PartialEq)]
@@ -49,6 +57,13 @@ pub(crate) struct ServerShellState {
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum AppModal {
+    /// Подтверждение выхода с указанного сервера.
+    LeaveServer {
+        /// Идентификатор сервера для команды выхода.
+        server_id: String,
+        /// Название сервера в подтверждении.
+        server_name: String,
+    },
     InviteLink {
         server_id: String,
         server_name: String,
@@ -63,11 +78,15 @@ pub(crate) fn AppShell() -> Element {
     let host_dashboard_active = matches!(route, Route::AppHostSettings {});
     let host_email_settings_active = matches!(route, Route::AppHostEmailSettings { .. });
     let host_logs_active = matches!(route, Route::AppHostLogs {});
-    let host_settings_active =
-        host_dashboard_active || host_email_settings_active || host_logs_active;
+    let host_system_settings_active = matches!(route, Route::AppHostSystemSettings {});
+    let host_owners_active = matches!(route, Route::AppHostOwners {});
+    let host_settings_active = host_dashboard_active
+        || host_system_settings_active
+        || host_owners_active
+        || host_email_settings_active
+        || host_logs_active;
     let workspace = AppWorkspaceRoute::from_route(&route).unwrap_or(AppWorkspaceRoute::Friends);
     let route_active_server_id = workspace.server_id().map(ToOwned::to_owned);
-    let selected_conversation_id = workspace.conversation_id().map(ToOwned::to_owned);
     let servers = use_server_registry();
     use_context_provider(move || servers);
     let mut active_server_id = use_signal(|| route_active_server_id.clone());
@@ -103,11 +122,16 @@ pub(crate) fn AppShell() -> Element {
     let active_room = use_context::<ActiveRoomContext>();
 
     // Синхронизируем активную комнату и активный DM-диалог с маршрутом.
-    let route_room_id = workspace.room_id().map(ToOwned::to_owned);
-    let route_conversation_id = workspace.conversation_id().map(ToOwned::to_owned);
+    // Маршрут читается внутри эффекта: иначе `use_effect` не подписывается на
+    // роутер, эффект выполняется один раз при монтировании, а активный диалог
+    // остаётся устаревшим. Из-за этого Android не подавляет уведомления
+    // открытого диалога и не снимает его при переходе из push.
+    let workspace_router = router();
     use_effect(move || {
-        active_room.set(route_room_id.clone());
-        active_room.set_conversation_id(route_conversation_id.clone());
+        let workspace = AppWorkspaceRoute::from_route(&workspace_router.current::<Route>())
+            .unwrap_or(AppWorkspaceRoute::Friends);
+        active_room.set(workspace.room_id().map(ToOwned::to_owned));
+        active_room.set_conversation_id(workspace.conversation_id().map(ToOwned::to_owned));
     });
 
     let route_active_server_id_for_sync = route_active_server_id.clone();
@@ -218,6 +242,35 @@ pub(crate) fn AppShell() -> Element {
         navigator.replace(Route::AppFriends {});
     });
 
+    let remove_server = use_callback(move |removed_server_id: String| {
+        info!(
+            server_id = %removed_server_id,
+            "server left the app server list"
+        );
+        servers.remove(&removed_server_id);
+
+        let mut next_states = shell_state_by_server();
+        next_states.retain(|(server_id, _)| server_id != &removed_server_id);
+        shell_state_by_server.set(next_states.clone());
+
+        let next_active_server_id = active_server_id()
+            .as_ref()
+            .filter(|server_id| server_id.as_str() != removed_server_id.as_str())
+            .cloned();
+        let next_shell_state = next_active_server_id
+            .as_deref()
+            .and_then(|server_id| saved_server_shell_state(&next_states, server_id))
+            .unwrap_or_else(default_server_shell_state);
+
+        shell_state.set(next_shell_state);
+        server_status.set(String::new());
+        if active_server_id().as_deref() == Some(removed_server_id.as_str()) {
+            active_server_id.set(None);
+            navigator.replace(Route::AppFriends {});
+        }
+        app_modal.set(None);
+    });
+
     rsx! {
         main {
             id: "app-shell",
@@ -234,6 +287,12 @@ pub(crate) fn AppShell() -> Element {
                 is_host_owner,
                 is_loading: is_loading_servers(),
                 status: server_status(),
+                on_retry_servers: move |_| {
+                    if !is_loading_servers() {
+                        info!("retrying available server list load");
+                        server_load_attempt.with_mut(|attempt| *attempt = attempt.saturating_add(1));
+                    }
+                },
                 download_menu_open,
                 on_select_server: move |server_id: String| {
                     info!(%server_id, "switching app shell to server workspace");
@@ -262,17 +321,34 @@ pub(crate) fn AppShell() -> Element {
             }
             if host_dashboard_active {
                 HostDashboardPage {}
+            } else if host_system_settings_active {
+                HostSystemSettingsPage {}
+            } else if host_owners_active {
+                HostOwnersPage {}
             } else if host_email_settings_active {
                 HostEmailSettingsPage {}
             } else if host_logs_active {
                 HostLogsPage {}
             } else if social_workspace_active {
                 SocialPage {
-                    selected_conversation_id,
                     on_open_user_settings: move |_| {
                         info!("opening user settings from social workspace");
                         is_user_settings_open.set(true);
                     },
+                }
+            }
+            if !host_settings_active && !social_workspace_active
+                && !server_status().is_empty() && servers.list().is_empty() {
+                section { class: "flex flex-1 items-center justify-center p-6",
+                    ServerListError {
+                        is_loading: is_loading_servers(),
+                        on_retry: move |_| {
+                            if !is_loading_servers() {
+                                info!("retrying server list from workspace error");
+                                server_load_attempt.with_mut(|attempt| *attempt = attempt.saturating_add(1));
+                            }
+                        },
+                    }
                 }
             }
             if !host_settings_active && !social_workspace_active && show_empty_servers {
@@ -301,30 +377,7 @@ pub(crate) fn AppShell() -> Element {
                             }
                         },
                         on_open_modal: move |modal: AppModal| app_modal.set(Some(modal)),
-                        on_left_server: move |left_server_id: String| {
-                            servers.remove(&left_server_id);
-
-                            let mut next_states = shell_state_by_server();
-                            next_states.retain(|(server_id, _)| server_id != &left_server_id);
-                            shell_state_by_server.set(next_states.clone());
-
-                            let next_active_server_id = active_server_id()
-                                .as_ref()
-                                .filter(|server_id| server_id.as_str() != left_server_id.as_str())
-                                .cloned();
-                            let next_shell_state = next_active_server_id
-                                .as_deref()
-                                .and_then(|server_id| {
-                                    saved_server_shell_state(&next_states, server_id)
-                                })
-                                .unwrap_or_else(default_server_shell_state);
-
-                            shell_state.set(next_shell_state);
-                            server_status.set(String::new());
-                            if active_server_id().as_deref() == Some(left_server_id.as_str()) {
-                                navigator.replace(Route::AppFriends {});
-                            }
-                        },
+                        on_server_removed: remove_server,
                         on_server_updated: move |server: ServerSummary| {
                             servers.upsert(server);
                             server_status.set(String::new());
@@ -374,6 +427,15 @@ pub(crate) fn AppShell() -> Element {
                     },
                 }
             }
+            if let Some(AppModal::LeaveServer { server_id, server_name }) = app_modal() {
+                ServerLeaveModal {
+                    key: "{server_id}",
+                    server_id,
+                    server_name,
+                    on_close: move |_| app_modal.set(None),
+                    on_left: move |id| remove_server.call(id),
+                }
+            }
             if let Some(AppModal::InviteLink { server_id, server_name }) = app_modal() {
                 InviteLinkModal {
                     server_id,
@@ -391,44 +453,4 @@ pub(crate) fn AppShell() -> Element {
             }
         }
     }
-}
-
-fn default_server_shell_state() -> ServerShellState {
-    ServerShellState {
-        chat_open: false,
-        room_kind: "text_and_voice",
-    }
-}
-
-pub(crate) fn room_kind_attr(kind: ServerRoomKind) -> &'static str {
-    match kind {
-        ServerRoomKind::Text => "text",
-        ServerRoomKind::Voice => "voice",
-        ServerRoomKind::TextAndVoice => "text_and_voice",
-    }
-}
-
-fn saved_server_shell_state(
-    states: &[(String, ServerShellState)],
-    server_id: &str,
-) -> Option<ServerShellState> {
-    states
-        .iter()
-        .find_map(|(saved_id, state)| (saved_id == server_id).then_some(*state))
-}
-
-fn upsert_server_shell_state(
-    states: &mut Vec<(String, ServerShellState)>,
-    server_id: String,
-    state: ServerShellState,
-) {
-    if let Some((_, saved_state)) = states
-        .iter_mut()
-        .find(|(saved_id, _)| saved_id == &server_id)
-    {
-        *saved_state = state;
-        return;
-    }
-
-    states.push((server_id, state));
 }

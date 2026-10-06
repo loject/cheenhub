@@ -13,12 +13,8 @@ pub(super) fn resolve_section(section: UserSettingsSection) -> UserSettingsSecti
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn native_keeps_system_settings_available() {
-        assert!(is_section_available(UserSettingsSection::System));
-        assert!(resolve_section(UserSettingsSection::System) == UserSettingsSection::System);
-    }
-}
+// Модуль подключается через `#[path = "platform/native.rs"]` из `platform.rs`, поэтому каталог
+// дочернего модуля вычисляется относительно `user_settings/`. Без явного пути компилятор ищет
+// `user_settings/tests.rs` вместо `user_settings/platform/native/tests.rs`.
+#[path = "native/tests.rs"]
+mod tests;

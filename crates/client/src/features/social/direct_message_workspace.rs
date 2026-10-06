@@ -12,6 +12,7 @@ use futures_util::StreamExt;
 use crate::features::app::components::workspace_split::{
     EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO, clamp_embedded_chat_height, finish_embedded_chat_resize,
 };
+use crate::features::app::current_user::CurrentUserContext;
 use crate::features::application_focus::ApplicationFocusContext;
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 use crate::features::runtime::sleep_ms;
@@ -24,6 +25,7 @@ use crate::features::voice_chat::{DirectCallHandle, VoiceConnectionHandle, Voice
 
 use super::direct_message_chat_platform;
 use super::direct_message_group::{DirectMessageGroup, prepare_direct_message_groups};
+use super::direct_message_scroll_button::DirectMessageScrollButton;
 use super::direct_message_sending::use_direct_message_operations;
 use super::direct_message_state::DirectMessageState;
 use super::direct_message_voice_surface::DirectMessageVoiceSurface;
@@ -45,6 +47,7 @@ pub(crate) fn DirectMessageWorkspace(
     let voice = use_context::<VoiceConnectionHandle>();
     let direct_call = use_context::<DirectCallHandle>();
     let realtime = use_context::<RealtimeHandle>();
+    let current_user = use_context::<CurrentUserContext>().require_user();
     let application_focus = use_context::<ApplicationFocusContext>();
     let messages = use_signal(Vec::<DmMessageSummary>::new);
     let appearing_message_ids = use_signal(Vec::<String>::new);
@@ -72,13 +75,22 @@ pub(crate) fn DirectMessageWorkspace(
         pending_scroll,
     };
     let compose_state = use_message_compose_state();
+    let direct_message_typing = super::direct_message_typing::use_direct_message_typing(
+        &realtime,
+        conversation.id.clone(),
+        current_user.id.clone(),
+    );
     let on_sent = use_callback(move |message: DmMessageSummary| {
         if push_message_with_motion(messages, appearing_message_ids, message) {
             pending_scroll.set(Some(ScrollCommand::Bottom));
         }
         on_overview_changed.call(());
     });
-    let compose_operations = use_direct_message_operations(conversation.id.clone(), on_sent);
+    let compose_operations = use_direct_message_operations(
+        conversation.id.clone(),
+        on_sent,
+        direct_message_typing.notifier,
+    );
     let mut embedded_chat_height_px = use_signal(|| None::<f64>);
     let mut embedded_chat_resize_origin = use_signal(|| None::<(f64, f64, f64)>);
     let mut content_split_element = use_signal(|| None::<Rc<MountedData>>);
@@ -458,26 +470,17 @@ pub(crate) fn DirectMessageWorkspace(
                             }
                         }
                         div { class: "relative",
-                            if !is_near_bottom() && has_messages {
-                                div { class: "pointer-events-none absolute bottom-3 right-4 z-20",
-                                    button {
-                                        r#type: "button",
-                                        class: "group pointer-events-auto relative flex h-10 w-10 items-center justify-center rounded-full bg-zinc-900/95 text-blue-200 shadow-[0_8px_22px_rgba(0,0,0,0.35),0_0_0_1px_rgba(255,255,255,0.08)] transition-[background-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:bg-zinc-800 hover:text-blue-100 active:scale-[0.96]",
-                                        "aria-label": "Перейти к последнему сообщению",
-                                        onclick: move |_| pending_scroll.set(Some(ScrollCommand::SmoothBottom)),
-                                        span { class: "pointer-events-none absolute bottom-[calc(100%+8px)] right-0 whitespace-nowrap rounded-lg border border-zinc-800 bg-zinc-950/95 px-2 py-1 text-[11px] font-medium text-zinc-300 opacity-0 shadow-[0_8px_22px_rgba(0,0,0,0.35)] transition-[opacity,transform] duration-150 group-hover:opacity-100",
-                                            "К последнему сообщению"
-                                        }
-                                        svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
-                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 5v14m0 0 6-6m-6 6-6-6" }
-                                        }
-                                    }
-                                }
+                            DirectMessageScrollButton {
+                                visible: !is_near_bottom() && has_messages,
+                                on_scroll_to_bottom: move |_| pending_scroll.set(Some(
+                                    super::direct_message_scroll_button::scroll_to_bottom(),
+                                )),
                             }
                         }
                         if !status().is_empty() {
                             p { class: "mx-auto w-full max-w-5xl px-6 pb-2 text-[11px] leading-4 text-red-200", "{status()}" }
                         }
+                        {direct_message_typing.indicator()}
                         MessageComposer {
                             state: compose_state,
                             operations: compose_operations,

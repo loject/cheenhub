@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use bytes::Bytes;
 use cheenhub_contracts::media::{MediaCodec, MediaDatagram, MediaDatagramKind};
 use tokio::time::Instant;
 use tracing::{debug, warn};
@@ -32,29 +33,90 @@ pub(crate) fn spawn_reader(state: AppState, session_id: Uuid, user_id: Uuid, ses
                 }
             };
 
-            match MediaDatagram::decode(&bytes) {
-                Ok(datagram) => {
-                    dispatch_with_warnings(
-                        &state,
-                        session_id,
-                        user_id,
-                        datagram,
-                        &mut last_slow_dispatch_warning_at,
-                    )
-                    .await;
-                }
-                Err(error) => {
-                    debug!(
-                        %session_id,
-                        %user_id,
-                        %error,
-                        bytes = bytes.len(),
-                        "dropping invalid media datagram"
-                    );
-                }
-            }
+            dispatch_webtransport_bytes_with_warnings(
+                &state,
+                session_id,
+                user_id,
+                bytes,
+                &mut last_slow_dispatch_warning_at,
+            )
+            .await;
         }
     });
+}
+
+async fn dispatch_webtransport_bytes_with_warnings(
+    state: &AppState,
+    session_id: Uuid,
+    user_id: Uuid,
+    bytes: Bytes,
+    last_slow_dispatch_warning_at: &mut Option<Instant>,
+) {
+    match voice_chat::media::MediaDatagramHeader::decode(&bytes) {
+        Ok(header)
+            if matches!(
+                (header.kind, header.codec),
+                (MediaDatagramKind::VoiceFrame, MediaCodec::Opus)
+                    | (MediaDatagramKind::ScreenFrame, MediaCodec::Vp9)
+                    | (MediaDatagramKind::CameraFrame, MediaCodec::Vp9)
+            ) =>
+        {
+            let started_at = Instant::now();
+            voice_chat::media::handle_webtransport_frame_bytes(
+                state, session_id, user_id, bytes, header,
+            )
+            .await;
+
+            let elapsed = started_at.elapsed();
+            if elapsed >= SLOW_MEDIA_DISPATCH_WARN_AFTER
+                && should_emit_slow_media_warning(last_slow_dispatch_warning_at, started_at)
+            {
+                warn!(
+                    %session_id,
+                    %user_id,
+                    room_id = %header.room_id,
+                    kind = ?header.kind,
+                    codec = ?header.codec,
+                    sequence = header.sequence,
+                    timestamp_us = header.timestamp_us,
+                    duration_us = header.duration_us,
+                    payload_bytes = header.payload_len,
+                    elapsed_ms = elapsed.as_millis(),
+                    "slow realtime media datagram dispatch"
+                );
+            }
+        }
+        Ok(_) => match MediaDatagram::decode(&bytes) {
+            Ok(datagram) => {
+                dispatch_with_warnings(
+                    state,
+                    session_id,
+                    user_id,
+                    datagram,
+                    last_slow_dispatch_warning_at,
+                )
+                .await;
+            }
+            Err(error) => {
+                debug!(
+                    %session_id,
+                    %user_id,
+                    %error,
+                    bytes = bytes.len(),
+                    "dropping invalid media datagram"
+                );
+            }
+        },
+        Err(error) => {
+            debug!(
+                %session_id,
+                %user_id,
+                %error,
+                bytes = bytes.len(),
+                "dropping invalid media datagram"
+            );
+        }
+    }
 }
 
 /// Обрабатывает датаграмму и предупреждает о задержках в горячем media path.

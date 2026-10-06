@@ -1,5 +1,7 @@
 //! Изображения личных сообщений.
 
+use std::collections::HashMap;
+
 use axum::body::Bytes;
 use cheenhub_contracts::rest::{DmImageAttachmentSummary, UploadDmImageResponse};
 use image::GenericImageView;
@@ -90,6 +92,52 @@ pub(crate) async fn attachment_summary(
         .map_err(SocialError::Internal)?
         .filter(|image| image.kind == dm_image_kind(conversation_id))
         .map(|image| summary_stored(&image)))
+}
+
+/// Загружает сводки вложений страницы одним обращением к хранилищу.
+///
+/// На входе пары `(conversation_id, image_id)` для всех сообщений страницы, где
+/// `image_id` может быть `None` у сообщений без картинки. На выходе только реально
+/// найденные вложения нужного диалога, индексированные той же парой, поэтому
+/// отсутствие в результате означает «вложения нет» и не требует отдельной проверки.
+///
+/// Принадлежность проверяется по `kind`, как в `attachment_summary`: вложение из
+/// другого диалога не должно попадать в выдачу, даже если идентификатор известен.
+pub(crate) async fn attachment_summaries_by_conversation(
+    state: &AppState,
+    attachments: &[(Uuid, Option<Uuid>)],
+) -> Result<HashMap<(Uuid, Uuid), DmImageAttachmentSummary>, SocialError> {
+    let image_ids = attachments
+        .iter()
+        .filter_map(|(_, image_id)| *image_id)
+        .collect::<Vec<_>>();
+    if image_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let images = state
+        .image_store
+        .find_images_by_ids(&image_ids)
+        .await
+        .map_err(SocialError::Internal)?;
+    let images = images
+        .into_iter()
+        .map(|image| (image.id, image))
+        .collect::<HashMap<_, _>>();
+
+    let mut summaries = HashMap::new();
+    for (conversation_id, image_id) in attachments {
+        let Some(image_id) = image_id else {
+            continue;
+        };
+        let Some(image) = images.get(image_id) else {
+            continue;
+        };
+        if image.kind != dm_image_kind(*conversation_id) {
+            continue;
+        }
+        summaries.insert((*conversation_id, *image_id), summary_stored(image));
+    }
+    Ok(summaries)
 }
 
 pub(super) async fn validate_attachment_owner(
@@ -195,19 +243,4 @@ fn summary_stored(image: &StoredImage) -> DmImageAttachmentSummary {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::dm_image_kind;
-    use uuid::Uuid;
-
-    #[test]
-    fn image_kind_is_scoped_to_one_direct_conversation() {
-        let first_conversation_id = Uuid::new_v4();
-        let second_conversation_id = Uuid::new_v4();
-
-        assert_ne!(
-            dm_image_kind(first_conversation_id),
-            dm_image_kind(second_conversation_id)
-        );
-        assert!(dm_image_kind(first_conversation_id).ends_with(&first_conversation_id.to_string()));
-    }
-}
+mod tests;

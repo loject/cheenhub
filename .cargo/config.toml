@@ -1,3 +1,9 @@
+# Инкрементальная компиляция выключена намеренно: кэш в target/*/debug/incremental
+# разрастался до 38 ГБ и никогда не чистился. Пересборка зависимостей от этого
+# не зависела — она определяется fingerprint'ами cargo, а не incremental.
+[build]
+incremental = false
+
 [target.wasm32-unknown-unknown]
 rustflags = ["--cfg=web_sys_unstable_apis"]
 

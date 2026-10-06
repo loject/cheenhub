@@ -52,6 +52,10 @@ impl ServerStore for PostgresServerStore {
         Ok(model.into())
     }
 
+    async fn count_servers(&self) -> anyhow::Result<u64> {
+        Ok(servers::Entity::find().count(&self.database).await?)
+    }
+
     async fn list_servers(&self, user_id: &Uuid) -> anyhow::Result<Vec<ServerAccess>> {
         let mut result: Vec<ServerAccess> = servers::Entity::find()
             .filter(servers::Column::OwnerUserId.eq(*user_id))
@@ -168,6 +172,21 @@ impl ServerStore for PostgresServerStore {
         server.updated_at = Set(Utc::now());
 
         Ok(Some(server.update(&self.database).await?.into()))
+    }
+
+    async fn delete_owned_server(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+    ) -> anyhow::Result<bool> {
+        // Комнаты, сообщения, участники, приглашения и роли удаляются каскадом по внешним ключам.
+        let result = servers::Entity::delete_many()
+            .filter(servers::Column::Id.eq(*server_id))
+            .filter(servers::Column::OwnerUserId.eq(*owner_user_id))
+            .exec(&self.database)
+            .await?;
+
+        Ok(result.rows_affected > 0)
     }
 
     async fn insert_server_invite(
@@ -415,6 +434,10 @@ impl ServerStore for PostgresServerStore {
 
     async fn count_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<u32> {
         postgres_rooms::count_server_rooms(&self.database, server_id).await
+    }
+
+    async fn count_all_rooms(&self) -> anyhow::Result<u64> {
+        postgres_rooms::count_all_rooms(&self.database).await
     }
 
     async fn list_server_roles(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRole>> {

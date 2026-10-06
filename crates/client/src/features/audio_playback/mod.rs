@@ -4,7 +4,9 @@ mod backend;
 mod device_preferences;
 mod native;
 mod output_devices;
+mod playout_timing;
 mod storage;
+mod time_scale;
 #[cfg(all(
     not(target_arch = "wasm32"),
     not(any(

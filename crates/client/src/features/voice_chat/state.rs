@@ -70,6 +70,8 @@ pub(crate) struct VoiceConnectionHandle {
     pub(crate) kicked_from_room: Signal<Option<String>>,
     speaking_users: Signal<Vec<SpeakingUserActivity>>,
     room_snapshots: Signal<Vec<VoiceRoomParticipants>>,
+    /// Комната, в которой пользователь был до последнего обрыва realtime.
+    remembered_room: Signal<Option<VoiceRoomTarget>>,
     speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
     /// Поколение текущей операции join; ответы старых операций игнорируются.
     join_generation: Rc<Cell<u64>>,
@@ -88,6 +90,8 @@ pub(super) struct VoiceConnectionParts {
     pub(super) speaking_users: Signal<Vec<SpeakingUserActivity>>,
     /// Кэш снимков участников комнат.
     pub(super) room_snapshots: Signal<Vec<VoiceRoomParticipants>>,
+    /// Комната, в которой пользователь был до последнего обрыва realtime.
+    pub(super) remembered_room: Signal<Option<VoiceRoomTarget>>,
     /// Поколения таймеров активности речи.
     pub(super) speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
     /// Счётчик поколений join-операций для отброса устаревших ответов.
@@ -108,6 +112,7 @@ impl VoiceConnectionHandle {
             kicked_from_room: parts.kicked_from_room,
             speaking_users: parts.speaking_users,
             room_snapshots: parts.room_snapshots,
+            remembered_room: parts.remembered_room,
             speaking_generations: parts.speaking_generations,
             join_generation: parts.join_generation,
             realtime: parts.realtime,
@@ -146,7 +151,25 @@ impl VoiceConnectionHandle {
         );
     }
 
-    /// Clears all remote speaking indicators.
+    /// Запоминает комнату, в которой пользователь был до обрыва realtime.
+    ///
+    /// Значение используется восстановлением после переподключения, поэтому
+    /// оно не должно зависеть от текущего состояния соединения.
+    pub(crate) fn remember_room(&mut self, target: VoiceRoomTarget) {
+        let mut remembered_room = self.remembered_room;
+        remembered_room.set(Some(target));
+    }
+
+    /// Забирает цель восстановления, очищая её перед повторным входом.
+    ///
+    /// Каждая цель используется один раз; ручной выход также забирает её,
+    /// чтобы последующее переподключение не вернуло пользователя в старую комнату.
+    pub(super) fn take_remembered_room(&self) -> Option<VoiceRoomTarget> {
+        let mut remembered_room = self.remembered_room;
+        remembered_room.write().take()
+    }
+
+    /// Очищает все удалённые speaking-индикаторы.
     pub(crate) fn clear_speaking_users(&self) {
         speaking::clear_speaking_users(self.speaking_users, self.speaking_generations.clone());
     }
@@ -252,6 +275,10 @@ impl VoiceConnectionHandle {
 
     /// Leaves the active voice room.
     pub(crate) fn leave(&self) {
+        if let Some(target) = self.take_remembered_room() {
+            info!(server_id = %target.server_id, room_id = %target.room_id,
+                "cancelled voice room recovery on manual leave");
+        }
         // Инвалидируем текущую join-операцию, чтобы ответ отменённого входа
         // не мог примениться после leave.
         self.next_join_generation();
@@ -379,5 +406,4 @@ impl VoiceConnectionHandle {
 }
 
 #[cfg(test)]
-#[path = "state_tests.rs"]
 mod tests;

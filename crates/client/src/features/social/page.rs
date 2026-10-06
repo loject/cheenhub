@@ -12,6 +12,7 @@ use crate::features::app::components::app_sidebar_footer::AppSidebarFooter;
 use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::components::sidebar_menu_dismiss_layer::SidebarMenuDismissLayer;
 use crate::features::app::current_user::CurrentUserContext;
+use crate::features::app::workspace_route::AppWorkspaceRoute;
 use crate::features::realtime::RealtimeHandle;
 use crate::features::voice_chat::{DirectCallHeader, VoiceConnectionHandle};
 
@@ -28,10 +29,7 @@ use super::voice_target::direct_message_voice_target;
 
 /// Рендерит рабочую область друзей и личных сообщений.
 #[component]
-pub(crate) fn SocialPage(
-    selected_conversation_id: Option<String>,
-    on_open_user_settings: EventHandler<()>,
-) -> Element {
+pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
     let current_user = use_context::<CurrentUserContext>().require_user();
     let navigator = use_navigator();
     let realtime = use_context::<RealtimeHandle>();
@@ -101,9 +99,17 @@ pub(crate) fn SocialPage(
         });
     });
 
-    let routed_conversation_id = selected_conversation_id.clone();
+    // Маршрут читается именно внутри эффекта: `RouterContext::current`
+    // подписывает реактивный контекст эффекта, поэтому смена маршрута
+    // (push-уведомление, восстановление рабочей области) снова выбирает диалог.
+    // Обычный клон пропса не является реактивным источником и эффект
+    // выполнился бы только один раз при монтировании.
+    let router = router();
     use_effect(move || {
-        let Some(conversation_id) = routed_conversation_id.clone() else {
+        let route = router.current::<Route>();
+        let Some(conversation_id) = AppWorkspaceRoute::from_route(&route)
+            .and_then(|workspace| workspace.conversation_id().map(ToOwned::to_owned))
+        else {
             if selected_conversation().is_some() {
                 debug!("clearing selected direct message after opening friends route");
                 selected_conversation.set(None);

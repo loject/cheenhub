@@ -14,7 +14,7 @@ const REFRESH_WAIT_ERROR_MESSAGE: &str =
 pub(crate) enum SessionEndReason {
     /// Сохранённые токены отсутствуют, например после выхода в другой вкладке.
     TokensMissing,
-    /// Сохранённый access JWT повреждён или имеет неподдерживаемый формат.
+    /// Сохранённый access JWT повреждён, а refresh-токен не позволил получить валидную замену.
     InvalidAccessToken,
     /// Сервер подтвердил, что refresh-токен неизвестен, истёк или относится к завершённой сессии.
     RefreshTokenInvalidOrExpired,
@@ -45,7 +45,7 @@ impl SessionEnd {
 /// Классифицированная ошибка обновления auth-сессии.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum RefreshError {
-    /// Временная ошибка; сохранённые токены нельзя удалять.
+    /// Временная ошибка; токены нельзя удалять, а уже ротированную пару нужно сохранить.
     Retryable(String),
     /// Сервер или локальная проверка подтвердили завершение сессии.
     SessionEnded {
@@ -126,13 +126,84 @@ pub(crate) async fn refresh_access_token_classified() -> Result<String, RefreshE
         }
     };
 
-    jwt::verify(&response.access_token).map_err(|error| {
-        warn!(%error, "auth refresh returned an invalid access token");
-        RefreshError::Retryable("Не удалось проверить ответ сервера.".to_owned())
-    })?;
-    storage::save(&response.access_token, &response.refresh_token);
+    apply_refresh_tokens(
+        &response.access_token,
+        &response.refresh_token,
+        jwt::verify(&response.access_token).map(|_| ()),
+        storage::save,
+        storage::clear,
+    )
+}
+
+fn apply_refresh_tokens(
+    access_token: &str,
+    refresh_token: &str,
+    verification: Result<(), jwt::JwtVerifyError>,
+    save: impl FnOnce(&str, &str),
+    clear: impl FnOnce(),
+) -> Result<String, RefreshError> {
+    // Expired возвращается только после проверки подписи и claims: это подлинный ответ,
+    // даже если часы устройства опережают сервер. Сохраняем уже ротированную пару до повтора.
+    if verification == Err(jwt::JwtVerifyError::Expired) {
+        save(access_token, refresh_token);
+        warn!(
+            "auth refresh returned a locally expired access token; preserved rotated tokens for retry"
+        );
+        return Err(RefreshError::Retryable(
+            "Не удалось обновить сессию. Проверь дату и время на устройстве.".to_owned(),
+        ));
+    }
+
+    // Неверную подпись или формат нельзя принимать; прежний refresh-токен уже потреблён.
+    if let Err(error) = verification {
+        warn!(%error, "auth refresh returned an access token that failed local verification");
+        clear();
+        return Err(RefreshError::SessionEnded {
+            reason: SessionEndReason::InvalidAccessToken,
+            message: "Не удалось обновить сессию на этом устройстве. Войди снова.".to_owned(),
+        });
+    }
+    save(access_token, refresh_token);
     info!("refreshed auth tokens");
-    Ok(response.access_token)
+    Ok(access_token.to_owned())
+}
+
+/// Действие фонового цикла сессии после того, как сохранённый access JWT не прошёл локальную проверку.
+///
+/// Вызывается, когда `jwt::verify` отверг сохранённый access token: битый формат, чужая подпись,
+/// несовпадение `kid` или недоступный встроенный публичный ключ.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AccessTokenRecovery {
+    /// Сервер выдал новый access token, который проходит локальную проверку: сессия живёт дальше.
+    Recovered,
+    /// Обновление не удалось по временной причине, попытку нужно повторить позже.
+    ///
+    /// Временный сбой сети или сервера сохраняет прежнюю пару; локальное истечение срока
+    /// нового JWT сохраняет ротированную пару. Ни один из этих случаев не завершает сессию.
+    RetryLater(String),
+    /// Сервер подтвердил завершение сессии, сохранённые токены уже удалены.
+    SessionEnded(SessionEnd),
+}
+
+/// Пытается заменить access JWT, не прошедший локальную проверку, новым access token с сервера.
+///
+/// Локальная ошибка проверки сама по себе не означает, что сессия мертва: повреждённым может быть
+/// только access token, а refresh-токен остаётся действительным. Поэтому сначала выполняется
+/// обычный запрос `/auth/refresh`, и разлогин происходит только когда сервер подтверждает, что
+/// refresh-токен тоже недействителен.
+pub(crate) async fn recover_invalid_access_token() -> AccessTokenRecovery {
+    classify_recovery(refresh_access_token_classified().await)
+}
+
+/// Преобразует результат обновления токенов в решение фонового цикла сессии.
+fn classify_recovery(result: Result<String, RefreshError>) -> AccessTokenRecovery {
+    match result {
+        Ok(_) => AccessTokenRecovery::Recovered,
+        Err(RefreshError::Retryable(message)) => AccessTokenRecovery::RetryLater(message),
+        Err(RefreshError::SessionEnded { reason, message }) => {
+            AccessTokenRecovery::SessionEnded(SessionEnd::new(reason, message))
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -228,64 +299,4 @@ async fn post_refresh_json(refresh_token: &str) -> Result<AuthResponse, RefreshF
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{RefreshError, RefreshFailure, SessionEndReason};
-    use reqwest::StatusCode;
-
-    #[test]
-    fn transient_refresh_failures_keep_session_retryable() {
-        for failure in [
-            RefreshFailure::network(),
-            RefreshFailure::invalid_response(Some(StatusCode::UNAUTHORIZED)),
-            server_failure(StatusCode::TOO_MANY_REQUESTS),
-            server_failure(StatusCode::SERVICE_UNAVAILABLE),
-            RefreshFailure {
-                status: Some(StatusCode::CONFLICT),
-                code: Some("refresh_rotation_in_progress".to_owned()),
-                message: "concurrent".to_owned(),
-                network: false,
-            },
-        ] {
-            assert!(matches!(failure.classify(), RefreshError::Retryable(_)));
-        }
-    }
-
-    #[test]
-    fn confirmed_refresh_rejections_preserve_exact_reason() {
-        let invalid = rejected("refresh_token_invalid_or_expired").classify();
-        let reused = rejected("refresh_token_reused").classify();
-
-        assert!(matches!(
-            invalid,
-            RefreshError::SessionEnded {
-                reason: SessionEndReason::RefreshTokenInvalidOrExpired,
-                ..
-            }
-        ));
-        assert!(matches!(
-            reused,
-            RefreshError::SessionEnded {
-                reason: SessionEndReason::RefreshTokenReused,
-                ..
-            }
-        ));
-    }
-
-    fn server_failure(status: StatusCode) -> RefreshFailure {
-        RefreshFailure {
-            status: Some(status),
-            code: Some("internal_error".to_owned()),
-            message: "temporary".to_owned(),
-            network: false,
-        }
-    }
-
-    fn rejected(code: &str) -> RefreshFailure {
-        RefreshFailure {
-            status: Some(StatusCode::UNAUTHORIZED),
-            code: Some(code.to_owned()),
-            message: "rejected".to_owned(),
-            network: false,
-        }
-    }
-}
+mod tests;

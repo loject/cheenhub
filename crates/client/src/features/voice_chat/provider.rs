@@ -14,7 +14,7 @@ use crate::features::audio_playback::{
 use crate::features::camera::{CameraHandle, CameraStatus};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::network::NetworkQualityHandle;
-use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
+use crate::features::realtime::RealtimeHandle;
 use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 
 use super::direct_call_provider::DirectCallProvider;
@@ -30,10 +30,12 @@ use super::notification_sounds::{
 };
 use super::realtime;
 use super::state::{
-    VoiceConnectionHandle, VoiceConnectionParts, VoiceConnectionState, VoiceRoomTargetKind,
+    VoiceConnectionHandle, VoiceConnectionParts, VoiceConnectionState, VoiceRoomTarget,
+    VoiceRoomTargetKind,
 };
 use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
 use super::voice_call_platform::{self, VoiceAudioFocusEvent};
+use super::voice_recovery;
 
 /// Предоставляет состояние голосового соединения аутентифицированным компонентам приложения.
 /// TODO: review, выглядит сложно и как куча бойлерплейта
@@ -52,6 +54,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let kicked_from_room = use_signal(|| None::<String>);
     let speaking_users = use_signal(Vec::new);
     let room_snapshots = use_signal(Vec::new);
+    let remembered_room = use_signal(|| None::<VoiceRoomTarget>);
     let speaking_generations = use_hook(|| Rc::new(RefCell::new(HashMap::<String, u64>::new())));
     let join_generation = use_hook(|| Rc::new(Cell::<u64>::new(0)));
     let participant_video_streams = use_signal(Vec::new);
@@ -84,6 +87,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         kicked_from_room,
         speaking_users,
         room_snapshots,
+        remembered_room,
         speaking_generations,
         join_generation,
         realtime: realtime.clone(),
@@ -98,6 +102,8 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         realtime.clone(),
         network_quality,
     );
+
+    voice_call_platform::use_background_realtime_activity(state, realtime.clone());
 
     let snapshot_realtime = realtime.clone();
     let snapshot_handle = handle.clone();
@@ -250,32 +256,14 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             }
         })
     });
-    let status_realtime = realtime.clone();
-    let status_playback = playback.clone();
-    let status_handle = handle.clone();
-    let status_participant_video = participant_video.clone();
-    let status_connection_sounds = connection_notification_sounds.clone();
-    use_hook(move || {
-        spawn(async move {
-            let mut statuses = status_realtime.subscribe_connection_status();
-            while let Some(status) = statuses.next().await {
-                let connected = matches!(status, RealtimeConnectionStatus::Connected(_));
-                let voice_chat_active = status_handle.state().active_target().is_some();
-                if matches!(status, RealtimeConnectionStatus::Disconnected) {
-                    let mut state = state;
-                    state.set(VoiceConnectionState::Disconnected);
-                    status_handle.clear_speaking_users();
-                    status_participant_video.clear();
-                    status_playback.stop_all();
-                }
-                status_connection_sounds.borrow_mut().record(
-                    connected,
-                    voice_chat_active,
-                    &status_playback,
-                );
-            }
-        })
-    });
+    voice_recovery::use_voice_recovery(
+        handle.clone(),
+        realtime.clone(),
+        state,
+        playback.clone(),
+        participant_video.clone(),
+        connection_notification_sounds.clone(),
+    );
     let camera_sound_playback = playback.clone();
     let camera_sound_handle = camera.clone();
     let camera_sound_state = camera_notification_sounds.clone();

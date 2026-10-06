@@ -2,6 +2,7 @@
 
 pub(crate) mod add_server_modal;
 pub(crate) mod app_shell;
+mod app_shell_state;
 pub(crate) mod app_sidebar_footer;
 pub(crate) mod avatar;
 /// Полноэкранный просмотр изображений из чатов.
@@ -16,23 +17,36 @@ pub(crate) mod modal;
 pub(crate) mod own_invite_link_item;
 pub(crate) mod own_invite_links_section;
 pub(crate) mod profile_menu;
+mod room_context_menu;
+/// Диалог удаления комнаты сервера.
+pub(crate) mod room_delete_confirm;
+/// Запуск удаления комнаты по подтверждению пользователя.
+pub(crate) mod room_delete_flow;
 pub(crate) mod room_editor_modal;
 pub(crate) mod room_header;
 pub(crate) mod room_instance;
 pub(crate) mod room_list_item;
+mod room_menu_policy;
+mod room_sidebar_list;
 mod room_write_access_field;
 pub(crate) mod server_avatar;
 pub(crate) mod server_context_menu;
 pub(crate) mod server_instance;
+mod server_leave_modal;
+mod server_list_error;
+/// Применение действий контекстного меню сервера.
+pub(crate) mod server_menu_actions;
 pub(crate) mod server_rail;
 pub(crate) mod server_rail_button;
 pub(crate) mod server_realtime_status;
 mod server_room_workspace_sync;
 mod server_rooms_action_error;
+mod server_rooms_delete;
 mod server_rooms_empty_state;
 mod server_rooms_load_error;
 mod server_rooms_loading;
 pub(crate) mod server_rooms_menu_trigger;
+mod server_rooms_save;
 pub(crate) mod server_rooms_scope;
 mod server_rooms_sidebar_styles;
 mod server_rooms_state;

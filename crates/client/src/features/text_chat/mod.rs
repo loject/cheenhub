@@ -3,6 +3,8 @@
 mod compose;
 mod history;
 mod history_loading_state;
+mod history_refresh;
+mod history_status;
 mod history_viewport;
 mod image_attachment;
 mod message_date;
@@ -14,6 +16,8 @@ mod panel;
 pub(crate) mod read_only_notice;
 pub(crate) mod realtime;
 mod scroll;
+mod scroll_anchor;
+mod scroll_anchor_runtime;
 mod surface;
 mod virtual_list;
 

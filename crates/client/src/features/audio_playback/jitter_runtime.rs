@@ -29,6 +29,7 @@ impl AudioPlaybackHandle {
 
         let sender_user_id = frame.sender_user_id.clone();
         let sequence = frame.sequence;
+        let duration_us = frame.duration_us;
         let outcome = {
             let mut inner = self.inner.borrow_mut();
             if inner.muted {
@@ -112,6 +113,11 @@ impl AudioPlaybackHandle {
             }
         }
 
+        if let Some(sender) = self.inner.borrow().senders.get(&sender_user_id) {
+            sender
+                .pause
+                .postpone(jitter_now_us(), duration_us, target_delay_us);
+        }
         self.ensure_jitter_drain(sender_user_id);
     }
 
@@ -230,7 +236,7 @@ fn should_warn_jitter(inner: &mut AudioPlaybackInner, sender_user_id: &str, now_
     )
 }
 
-fn jitter_now_us() -> u64 {
+pub(super) fn jitter_now_us() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_micros().min(u128::from(u64::MAX)) as u64)

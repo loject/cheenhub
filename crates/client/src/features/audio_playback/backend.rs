@@ -1,5 +1,13 @@
 //! Общие контракты audio playback.
 
+/// Возвращает целевую глубину буфера воспроизведения в секундах.
+///
+/// Возвращает настройку jitter buffer в секундах. PCM-планировщик может дополнительно
+/// учитывать минимальный запас своей платформы.
+pub(crate) fn target_playout_depth_seconds(jitter_buffer_us: u32) -> f64 {
+    f64::from(jitter_buffer_us) / 1_000_000.0
+}
+
 /// Кодек закодированного воспроизведения.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlaybackCodec {
@@ -56,10 +64,15 @@ pub(crate) enum NotificationSound {
 
 impl NotificationSound {
     /// Возвращает индивидуальный множитель громкости уведомления.
+    ///
+    /// Базовый уровень всех уведомлений составляет половину от полной громкости,
+    /// поэтому сигналы потери и восстановления соединения дополнительно
+    /// приглушаются. Множитель применяется одинаково в native-микшере и в
+    /// browser `GainNode`, поэтому громкость совпадает на всех платформах.
     pub(crate) fn volume_multiplier(self) -> f32 {
         match self {
-            Self::ConnectionLost | Self::ConnectionRestored => 0.6,
-            _ => 1.0,
+            Self::ConnectionLost | Self::ConnectionRestored => 0.3,
+            _ => 0.5,
         }
     }
 
@@ -99,3 +112,6 @@ impl NotificationSound {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

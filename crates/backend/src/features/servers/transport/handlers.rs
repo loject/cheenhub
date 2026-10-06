@@ -52,6 +52,17 @@ pub(crate) async fn update(
         .map(Json)
 }
 
+/// Удаляет сервер, принадлежащий текущему пользователю, вместе со всем содержимым.
+pub(crate) async fn delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+) -> Result<StatusCode, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::delete(&state, token, server_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Обновляет аватар сервера, принадлежащего текущему пользователю.
 pub(crate) async fn update_avatar(
     State(state): State<AppState>,

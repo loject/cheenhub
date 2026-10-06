@@ -2,7 +2,7 @@
 
 use cheenhub_contracts::rest::RegisterRequest;
 
-use super::state;
+use super::support::state;
 use crate::features::auth::application::register;
 use crate::features::auth::error::AuthError;
 

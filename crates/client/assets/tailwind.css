@@ -579,6 +579,40 @@ html,
   background: transparent;
 }
 
+.container {
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .container {
+    max-width: 640px;
+  }
+}
+
+@media (min-width: 768px) {
+  .container {
+    max-width: 768px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container {
+    max-width: 1024px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .container {
+    max-width: 1280px;
+  }
+}
+
+@media (min-width: 1536px) {
+  .container {
+    max-width: 1536px;
+  }
+}
+
 #app-shell {
   box-sizing: border-box;
   height: 100dvh;
@@ -1919,6 +1953,10 @@ html,
   pointer-events: auto;
 }
 
+.\!visible {
+  visibility: visible !important;
+}
+
 .visible {
   visibility: visible;
 }
@@ -2446,6 +2484,11 @@ html,
   height: 0.5rem;
 }
 
+.size-2\.5 {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
 .size-3 {
   width: 0.75rem;
   height: 0.75rem;
@@ -2481,8 +2524,17 @@ html,
   height: 2.25rem;
 }
 
+.size-\[3px\] {
+  width: 3px;
+  height: 3px;
+}
+
 .h-0 {
   height: 0px;
+}
+
+.h-0\.5 {
+  height: 0.125rem;
 }
 
 .h-1 {
@@ -2557,6 +2609,10 @@ html,
   height: 1.25rem;
 }
 
+.h-56 {
+  height: 14rem;
+}
+
 .h-6 {
   height: 1.5rem;
 }
@@ -2595,6 +2651,10 @@ html,
 
 .h-\[18px\] {
   height: 18px;
+}
+
+.h-\[22px\] {
+  height: 22px;
 }
 
 .h-\[500px\] {
@@ -2663,6 +2723,10 @@ html,
 
 .max-h-\[calc\(100dvh-2rem\)\] {
   max-height: calc(100dvh - 2rem);
+}
+
+.max-h-\[calc\(100dvh-48px\)\] {
+  max-height: calc(100dvh - 48px);
 }
 
 .max-h-\[min\(720px\2c calc\(100vh-48px\)\)\] {
@@ -2941,6 +3005,10 @@ html,
   width: min(260px,calc(100% - 1.5rem));
 }
 
+.w-\[min\(280px\2c calc\(100vw-100px\)\)\] {
+  width: min(280px,calc(100vw - 100px));
+}
+
 .w-\[min\(90\%\2c 360px\)\] {
   width: min(90%,360px);
 }
@@ -3067,8 +3135,16 @@ html,
   max-width: 920px;
 }
 
+.max-w-\[calc\(100\%-1\.5rem\)\] {
+  max-width: calc(100% - 1.5rem);
+}
+
 .max-w-\[calc\(100vw-1\.5rem\)\] {
   max-width: calc(100vw - 1.5rem);
+}
+
+.max-w-\[calc\(100vw-16px\)\] {
+  max-width: calc(100vw - 16px);
 }
 
 .max-w-\[min\(100\%\2c 42rem\)\] {
@@ -3105,6 +3181,10 @@ html,
 
 .max-w-xs {
   max-width: 20rem;
+}
+
+.max-w-\[640px\] {
+  max-width: 640px;
 }
 
 .flex-1 {
@@ -3312,10 +3392,6 @@ html,
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.grid-cols-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
 .grid-cols-4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -3338,6 +3414,10 @@ html,
 
 .grid-rows-\[1fr\] {
   grid-template-rows: 1fr;
+}
+
+.grid-cols-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .flex-col {
@@ -3438,6 +3518,10 @@ html,
 
 .gap-8 {
   gap: 2rem;
+}
+
+.gap-\[3px\] {
+  gap: 3px;
 }
 
 .gap-x-2 {
@@ -3548,6 +3632,10 @@ html,
 .divide-zinc-900 > :not([hidden]) ~ :not([hidden]) {
   --tw-divide-opacity: 1;
   border-color: rgb(24 24 27 / var(--tw-divide-opacity, 1));
+}
+
+.divide-zinc-800\/80 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgb(39 39 42 / 0.8);
 }
 
 .self-start {
@@ -3715,6 +3803,10 @@ html,
   border-top-width: 1px;
 }
 
+.border-t-2 {
+  border-top-width: 2px;
+}
+
 .border-dashed {
   border-style: dashed;
 }
@@ -3871,8 +3963,8 @@ html,
   border-color: rgb(248 113 113 / 0.25);
 }
 
-.border-red-500\/15 {
-  border-color: rgb(239 68 68 / 0.15);
+.border-red-400\/30 {
+  border-color: rgb(248 113 113 / 0.3);
 }
 
 .border-red-500\/20 {
@@ -4009,6 +4101,11 @@ html,
   border-top-color: rgb(125 211 252 / var(--tw-border-opacity, 1));
 }
 
+.border-t-violet-300 {
+  --tw-border-opacity: 1;
+  border-top-color: rgb(196 181 253 / var(--tw-border-opacity, 1));
+}
+
 .border-t-white {
   --tw-border-opacity: 1;
   border-top-color: rgb(255 255 255 / var(--tw-border-opacity, 1));
@@ -4143,6 +4240,11 @@ html,
   background-color: rgb(219 234 254 / var(--tw-bg-opacity, 1));
 }
 
+.bg-blue-300 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(147 197 253 / var(--tw-bg-opacity, 1));
+}
+
 .bg-blue-400 {
   --tw-bg-opacity: 1;
   background-color: rgb(96 165 250 / var(--tw-bg-opacity, 1));
@@ -4234,6 +4336,10 @@ html,
   background-color: rgb(248 113 113 / 0.1);
 }
 
+.bg-red-400\/5 {
+  background-color: rgb(248 113 113 / 0.05);
+}
+
 .bg-red-500 {
   --tw-bg-opacity: 1;
   background-color: rgb(239 68 68 / var(--tw-bg-opacity, 1));
@@ -4285,6 +4391,11 @@ html,
 
 .bg-rose-950\/40 {
   background-color: rgb(76 5 25 / 0.4);
+}
+
+.bg-sky-300 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(125 211 252 / var(--tw-bg-opacity, 1));
 }
 
 .bg-sky-500\/15 {
@@ -4412,6 +4523,10 @@ html,
   background-color: rgb(9 9 11 / 0.35);
 }
 
+.bg-zinc-950\/40 {
+  background-color: rgb(9 9 11 / 0.4);
+}
+
 .bg-zinc-950\/45 {
   background-color: rgb(9 9 11 / 0.45);
 }
@@ -4454,6 +4569,10 @@ html,
 
 .bg-zinc-950\/95 {
   background-color: rgb(9 9 11 / 0.95);
+}
+
+.bg-red-400\/15 {
+  background-color: rgb(248 113 113 / 0.15);
 }
 
 .bg-\[radial-gradient\(circle_at_center\2c rgba\(255\2c 255\2c 255\2c \.055\)\2c transparent_38\%\)\] {
@@ -4731,6 +4850,10 @@ html,
   padding-bottom: 0.25rem;
 }
 
+.pb-1\.5 {
+  padding-bottom: 0.375rem;
+}
+
 .pb-10 {
   padding-bottom: 2.5rem;
 }
@@ -4821,6 +4944,10 @@ html,
 
 .pt-1 {
   padding-top: 0.25rem;
+}
+
+.pt-1\.5 {
+  padding-top: 0.375rem;
 }
 
 .pt-2 {
@@ -5243,6 +5370,10 @@ html,
   color: rgb(254 226 226 / 0.75);
 }
 
+.text-red-100\/80 {
+  color: rgb(254 226 226 / 0.8);
+}
+
 .text-red-200 {
   --tw-text-opacity: 1;
   color: rgb(254 202 202 / var(--tw-text-opacity, 1));
@@ -5295,6 +5426,11 @@ html,
 .text-sky-100 {
   --tw-text-opacity: 1;
   color: rgb(224 242 254 / var(--tw-text-opacity, 1));
+}
+
+.text-sky-300 {
+  --tw-text-opacity: 1;
+  color: rgb(125 211 252 / var(--tw-text-opacity, 1));
 }
 
 .text-violet-300 {
@@ -5995,6 +6131,12 @@ html,
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
+.shadow-\[0_4px_20px_rgba\(0\2c 0\2c 0\2c 0\.3\)\] {
+  --tw-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  --tw-shadow-colored: 0 4px 20px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
 .shadow-\[0_6px_18px_rgba\(59\2c 130\2c 246\2c 0\.16\)\] {
   --tw-shadow: 0 6px 18px rgba(59,130,246,0.16);
   --tw-shadow-colored: 0 6px 18px var(--tw-shadow-color);
@@ -6274,6 +6416,12 @@ html,
   transition-duration: 150ms;
 }
 
+.transition-\[background-color\2c border-color\2c transform\] {
+  transition-property: background-color,border-color,transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
 .transition-\[background-color\2c border-color\] {
   transition-property: background-color,border-color;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -6336,6 +6484,12 @@ html,
 
 .transition-\[background-color\2c transform\2c opacity\] {
   transition-property: background-color,transform,opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.transition-\[background-color\2c transform\] {
+  transition-property: background-color,transform;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
@@ -6625,6 +6779,96 @@ html,
   color: #bfdbfe;
   background-color: rgb(59 130 246 / 0.18);
   box-shadow: inset 0 0 0 1px rgb(96 165 250 / 0.35), 0 0 16px rgb(59 130 246 / 0.12);
+}
+
+/* Индикатор набора сообщения.
+   Строка появляется мягким подъемом, точки идут волной с задержкой друг на друга,
+   поэтому движение читается как «печатает...», а не как статичный текст. Появление
+   короткое намеренно: индикатор часто гаснет через 1-2 кадра при отправке
+   сообщения, и медленный уход дергал бы форму под редактором. */
+
+.typing-indicator {
+  animation: typing-indicator-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.typing-dots {
+  animation: typing-dots-in 280ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+}
+
+.typing-dot {
+  animation: typing-dot-wave 1.2s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes typing-indicator-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes typing-dots-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px) scale(0.7);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* Точка сначала приподнимается с растяжением, затем опадает и сжимается: цикл
+   читается как живое движение, а не как простое мигание. */
+
+@keyframes typing-dot-wave {
+  0% {
+    opacity: 0.35;
+    transform: translateY(0) scale(0.86);
+  }
+
+  35% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1);
+  }
+
+  70% {
+    opacity: 0.55;
+    transform: translateY(0) scale(0.94);
+  }
+
+  100% {
+    opacity: 0.35;
+    transform: translateY(0) scale(0.86);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-indicator,
+    .typing-dots,
+    .typing-dot {
+    animation: none;
+  }
+
+  /* Точки остаются видимыми без движения, иначе индикатор выглядел бы пустым. */
+
+  .typing-dot {
+    opacity: 0.7;
+  }
 }
 
 @keyframes dm-unread-badge-in {
@@ -7212,19 +7456,6 @@ html,
 
 /* Индикация активного скачивания и установки обновления. */
 
-.application-update-progress-card {
-  position: fixed;
-  left: 1rem;
-  bottom: 1rem;
-  z-index: 70;
-  width: min(24rem, calc(100vw - 2rem));
-  padding: 1rem;
-  border: 1px solid rgb(96 165 250 / 0.3);
-  border-radius: 1rem;
-  background: #09090b;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.4);
-}
-
 .application-update-progress-track {
   height: 0.5rem;
   margin-top: 0.5rem;
@@ -7261,6 +7492,15 @@ html,
 
   .application-update-progress-fill {
     transition: none;
+  }
+}
+
+/* На сенсорных экранах меню комнат доступно без наведения. */
+
+@media (hover: none) {
+  .server-rooms-sidebar .room-menu-actions {
+    display: flex;
+    opacity: 1;
   }
 }
 
@@ -7713,6 +7953,10 @@ html,
     background-color: rgb(9 9 11 / 0.8);
   }
 
+  .hover\:bg-red-400\/25:hover {
+    background-color: rgb(248 113 113 / 0.25);
+  }
+
   .hover\:text-blue-100:hover {
     --tw-text-opacity: 1;
     color: rgb(219 234 254 / var(--tw-text-opacity, 1));
@@ -7900,6 +8144,10 @@ html,
   outline-color: rgb(96 165 250 / 0.7);
 }
 
+.focus-visible\:outline-red-400\/70:focus-visible {
+  outline-color: rgb(248 113 113 / 0.7);
+}
+
 .focus-visible\:ring-2:focus-visible {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);
@@ -7984,6 +8232,12 @@ html,
 .active\:scale-\[0\.97\]:active {
   --tw-scale-x: 0.97;
   --tw-scale-y: 0.97;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
+.active\:scale-\[0\.98\]:active {
+  --tw-scale-x: 0.98;
+  --tw-scale-y: 0.98;
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 
@@ -8159,6 +8413,10 @@ html,
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .motion-reduce\:animate-none {
+    animation: none;
+  }
+
   .motion-reduce\:transition-none {
     transition-property: none;
   }
@@ -8247,6 +8505,10 @@ html,
 }
 
 @media (max-width: 900px) {
+  .max-\[900px\]\:flex {
+    display: flex;
+  }
+
   .max-\[900px\]\:gap-3 {
     gap: 0.75rem;
   }
@@ -8257,6 +8519,10 @@ html,
 
   .max-\[900px\]\:pt-4 {
     padding-top: 1rem;
+  }
+
+  .max-\[900px\]\:opacity-100 {
+    opacity: 1;
   }
 }
 
@@ -8785,6 +9051,10 @@ html,
 @media (min-width: 1280px) {
   .xl\:grid-cols-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .xl\:grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .xl\:grid-cols-4 {

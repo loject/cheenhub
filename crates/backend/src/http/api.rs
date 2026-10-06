@@ -25,3 +25,20 @@ pub(crate) fn router() -> Router<AppState> {
 pub(crate) async fn not_found() -> StatusCode {
     StatusCode::NOT_FOUND
 }
+
+#[cfg(test)]
+mod tests;
+
+/// Проверка готовности backend принимать новые соединения.
+///
+/// Возвращает 200, пока процесс обслуживает трафик, и 503 после перехода в
+/// фазу завершения. Docker Compose и внешний балансировщик используют этот
+/// маршрут, чтобы не отправлять новые подключения в завершающийся процесс.
+pub(crate) async fn health() -> StatusCode {
+    let lifecycle = crate::lifecycle::lifecycle();
+    if lifecycle.is_draining() {
+        return StatusCode::SERVICE_UNAVAILABLE;
+    }
+
+    StatusCode::OK
+}

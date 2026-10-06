@@ -6,7 +6,7 @@ use std::rc::Rc;
 use dioxus::prelude::{debug, warn};
 use js_sys::{Float32Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
-use web_sys::{AudioBufferSourceNode, AudioContext, GainNode};
+use web_sys::{AudioContext, GainNode};
 use web_time::Instant;
 
 use super::AudioPlaybackInner;
@@ -15,22 +15,43 @@ use super::browser_diagnostics::{
     DecodeOutputTiming, ScheduleAudioTiming, diagnostics_enabled, elapsed_us_since,
 };
 use super::browser_helpers::{js_error_message, set_property};
+use super::playback_schedule::{schedule_pcm, should_warn_playback_schedule};
 use crate::features::audio_playback::backend::VoiceFrame;
+use crate::features::audio_playback::playout_timing::{
+    PlaybackPause, scheduled_target_depth_seconds,
+};
+use crate::features::audio_playback::time_scale::{self, VoiceTimeCompressor};
 
-const INITIAL_PLAYBACK_BUFFER_SECONDS: f64 = 0.03;
-const CONTINUOUS_PLAYBACK_MARGIN_SECONDS: f64 = 0.02;
-const PLAYBACK_SCHEDULE_WARNING_INTERVAL_SECONDS: f64 = 5.0;
-
-pub(super) struct ScheduledAudioSource {
-    pub(super) source: AudioBufferSourceNode,
-    pub(super) end_time: f64,
-}
+/// Порог, выше которого коэффициент сжатия считается отличным от единицы.
+const COMPRESSED_RATE_THRESHOLD: f64 = 1.0 + 1.0e-4;
 
 pub(super) struct SenderPlayback {
     pub(super) decoder: AudioDecoder,
     pub(super) gain_node: GainNode,
+    /// Компрессоры времени по каналам: сжимают звук, когда буфер отстаёт от сети.
+    /// Отменяемое ожидание доигрывания хвоста текущего отправителя.
+    pub(super) pause: PlaybackPause,
+    pub(super) time_compressors: RefCell<Vec<Rc<RefCell<VoiceTimeCompressor>>>>,
     _output_closure: Closure<dyn FnMut(AudioData)>,
     _error_closure: Closure<dyn FnMut(JsValue)>,
+}
+
+impl SenderPlayback {
+    /// Возвращает компрессор времени для канала, создавая его при первом обращении.
+    pub(super) fn time_compressor(
+        &self,
+        channel: usize,
+        sample_rate_hz: u32,
+    ) -> Rc<RefCell<VoiceTimeCompressor>> {
+        let mut compressors = self.time_compressors.borrow_mut();
+        while compressors.len() <= channel {
+            compressors.push(Rc::new(RefCell::new(VoiceTimeCompressor::new(
+                sample_rate_hz,
+            ))));
+        }
+
+        compressors[channel].clone()
+    }
 }
 
 pub(super) fn create_sender_playback(
@@ -111,6 +132,8 @@ pub(super) fn create_sender_playback(
     Ok(SenderPlayback {
         decoder,
         gain_node,
+        time_compressors: RefCell::new(Vec::new()),
+        pause: PlaybackPause::default(),
         _output_closure: output_closure,
         _error_closure: error_closure,
     })
@@ -160,145 +183,128 @@ fn schedule_audio_data(
     }
     let channels = audio.number_of_channels().max(1);
     let sample_rate = audio.sample_rate().max(1.0) as f32;
-    let create_buffer_started_at = record_diagnostics.then(Instant::now);
-    let buffer = context.create_buffer(channels, frames, sample_rate)?;
-    let create_buffer_elapsed_us = elapsed_us_since(&create_buffer_started_at);
+    let compression_now = context.current_time();
+    let time_compressors = inner
+        .borrow()
+        .senders
+        .get(sender_user_id)
+        .map(|sender| {
+            (0..channels)
+                .map(|channel| sender.time_compressor(channel as usize, sample_rate as u32))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let (applied_rate, pending_content_seconds) = time_compressors
+        .first()
+        .map(|compressor| {
+            let compressor = compressor.borrow();
+            (
+                compressor.rate(),
+                compressor.pending_content_samples() as f64 / f64::from(sample_rate),
+            )
+        })
+        .unwrap_or((1.0, 0.0));
+    let compression_rate = catch_up_rate(
+        &inner.borrow(),
+        sender_user_id,
+        compression_now,
+        applied_rate,
+        pending_content_seconds,
+    );
+    let compressing = compression_rate > COMPRESSED_RATE_THRESHOLD;
+    if let Some(first_compressor) = time_compressors.first() {
+        let mut compressor = first_compressor.borrow_mut();
+        let was_compressing = compressor.rate() > COMPRESSED_RATE_THRESHOLD;
+        compressor.set_rate(compression_rate);
+        for compressor in time_compressors.iter().skip(1) {
+            compressor.borrow_mut().set_rate(compression_rate);
+        }
+        if was_compressing != compressing {
+            let depth_ms = playout_depth_ms(&inner.borrow(), sender_user_id, compression_now);
+            debug!(
+                %sender_user_id,
+                compression_rate,
+                playout_depth_ms = depth_ms,
+                "inbound voice playback buffer catch-up state changed"
+            );
+        }
+    }
+    if compressing
+        && should_warn_playback_schedule(&mut inner.borrow_mut(), sender_user_id, compression_now)
+    {
+        warn!(
+            %sender_user_id,
+            compression_rate,
+            playout_depth_ms = playout_depth_ms(&inner.borrow(), sender_user_id, compression_now),
+            "inbound voice playback buffer is catching up"
+        );
+    }
 
     let mut copy_to_elapsed_us = 0_u128;
-    let mut copy_channel_elapsed_us = 0_u128;
+    let mut planes: Vec<Vec<f32>> = Vec::with_capacity(channels as usize);
     for channel in 0..channels {
         let samples = Float32Array::new_with_length(frames);
         let copy_to_started_at = record_diagnostics.then(Instant::now);
         audio.copy_to(&samples, &copy_options(channel))?;
         copy_to_elapsed_us =
             copy_to_elapsed_us.saturating_add(elapsed_us_since(&copy_to_started_at));
-        let copy_channel_started_at = record_diagnostics.then(Instant::now);
-        buffer.copy_to_channel_with_f32_array(&samples, channel as i32)?;
-        copy_channel_elapsed_us =
-            copy_channel_elapsed_us.saturating_add(elapsed_us_since(&copy_channel_started_at));
+        let plane = samples.to_vec();
+        let plane = match time_compressors.get(channel as usize) {
+            Some(compressor) => compressor.borrow_mut().process(&plane),
+            None => plane,
+        };
+        planes.push(plane);
     }
-
-    let source_setup_started_at = record_diagnostics.then(Instant::now);
-    let source = context.create_buffer_source()?;
-    source.set_buffer(Some(&buffer));
-    let gain_node = inner
-        .borrow()
-        .senders
-        .get(sender_user_id)
-        .map(|s| s.gain_node.clone());
-    match gain_node {
-        Some(gain) => source.connect_with_audio_node(&gain)?,
-        None => source.connect_with_audio_node(&context.destination())?,
-    };
-    let source_setup_elapsed_us = elapsed_us_since(&source_setup_started_at);
-
-    let schedule_state_started_at = record_diagnostics.then(Instant::now);
-    let now = context.current_time();
-    let mut inner = inner.borrow_mut();
-    let previous_until = inner.scheduled_until.get(sender_user_id).copied();
-    let mut underrun_ms = None;
-    let mut inserted_gap_ms = None;
-    let mut low_headroom_ms = None;
-    let start_at = match previous_until {
-        Some(previous_until) if previous_until > now => {
-            let start_at = previous_until.max(now + CONTINUOUS_PLAYBACK_MARGIN_SECONDS);
-            if start_at > previous_until {
-                low_headroom_ms = Some((previous_until - now) * 1000.0);
-                inserted_gap_ms = Some((start_at - previous_until) * 1000.0);
-            }
-            start_at
-        }
-        Some(previous_until) => {
-            underrun_ms = Some((now - previous_until) * 1000.0);
-            debug!(
-                %sender_user_id,
-                buffer_ms = INITIAL_PLAYBACK_BUFFER_SECONDS * 1000.0,
-                "priming inbound voice playback buffer"
-            );
-            now + INITIAL_PLAYBACK_BUFFER_SECONDS
-        }
-        None => {
-            debug!(
-                %sender_user_id,
-                buffer_ms = INITIAL_PLAYBACK_BUFFER_SECONDS * 1000.0,
-                "priming inbound voice playback buffer"
-            );
-            now + INITIAL_PLAYBACK_BUFFER_SECONDS
-        }
-    };
-    if let Some(underrun_ms) = underrun_ms {
-        if should_warn_playback_schedule(&mut inner, sender_user_id, now) {
-            warn!(
-                %sender_user_id,
-                underrun_ms,
-                buffer_ms = INITIAL_PLAYBACK_BUFFER_SECONDS * 1000.0,
-                "inbound voice playback underrun"
-            );
-        }
-    } else if let (Some(low_headroom_ms), Some(inserted_gap_ms)) =
-        (low_headroom_ms, inserted_gap_ms)
-        && should_warn_playback_schedule(&mut inner, sender_user_id, now)
-    {
-        warn!(
-            %sender_user_id,
-            low_headroom_ms,
-            inserted_gap_ms,
-            margin_ms = CONTINUOUS_PLAYBACK_MARGIN_SECONDS * 1000.0,
-            "inbound voice playback schedule headroom is low"
-        );
+    super::web_pause::arm_playback_pause(
+        context,
+        inner,
+        sender_user_id,
+        (f64::from(frames) / f64::from(sample_rate) * 1_000_000.0).round() as u32,
+        sample_rate,
+    );
+    let mut timing = schedule_pcm(
+        context,
+        inner,
+        sender_user_id,
+        &planes,
+        sample_rate,
+        record_diagnostics,
+    )?;
+    if let Some(timing) = timing.as_mut() {
+        timing.frames = frames;
+        timing.copy_to_elapsed_us = copy_to_elapsed_us;
+        timing.total_elapsed_us = elapsed_us_since(&started_at);
     }
-    let duration = f64::from(frames) / f64::from(sample_rate);
-    let end_time = start_at + duration;
-    inner
-        .scheduled_until
-        .insert(sender_user_id.to_owned(), end_time);
-    let source_start_started_at = record_diagnostics.then(Instant::now);
-    source.start_with_when(start_at)?;
-    let source_start_elapsed_us = elapsed_us_since(&source_start_started_at);
-    let sources = inner
-        .scheduled_sources
-        .entry(sender_user_id.to_owned())
-        .or_default();
-    sources.retain(|source| source.end_time > now);
-    sources.push(ScheduledAudioSource { source, end_time });
-    let schedule_state_elapsed_us = elapsed_us_since(&schedule_state_started_at);
-
-    if !record_diagnostics {
-        return Ok(None);
-    }
-
-    Ok(Some(ScheduleAudioTiming {
-        frames,
-        channels,
-        total_elapsed_us: elapsed_us_since(&started_at),
-        create_buffer_elapsed_us,
-        copy_to_elapsed_us,
-        copy_channel_elapsed_us,
-        source_setup_elapsed_us,
-        source_start_elapsed_us,
-        schedule_state_elapsed_us,
-        scheduled_sources: sources.len(),
-    }))
+    Ok(timing)
 }
 
-fn should_warn_playback_schedule(
-    inner: &mut AudioPlaybackInner,
+/// Возвращает глубину запланированного буфера воспроизведения отправителя в миллисекундах.
+fn playout_depth_ms(inner: &AudioPlaybackInner, sender_user_id: &str, now: f64) -> f64 {
+    inner
+        .scheduled_until
+        .get(sender_user_id)
+        .map_or(0.0, |scheduled_until| (scheduled_until - now) * 1000.0)
+}
+
+/// Возвращает коэффициент сжатия времени по избытку буфера воспроизведения.
+///
+/// Отставание считается в единицах исходного контента: уже запланированные буферы
+/// хранят сжатый звук, поэтому их глубина умножается на применённый коэффициент, и
+/// к ней добавляется контент, ещё не выведенный компрессором.
+fn catch_up_rate(
+    inner: &AudioPlaybackInner,
     sender_user_id: &str,
     now: f64,
-) -> bool {
-    let last_warning_at = inner
-        .playback_schedule_warning_at
-        .get(sender_user_id)
-        .copied()
-        .unwrap_or(f64::NEG_INFINITY);
-    if now - last_warning_at < PLAYBACK_SCHEDULE_WARNING_INTERVAL_SECONDS {
-        return false;
-    }
+    applied_rate: f64,
+    pending_content_seconds: f64,
+) -> f64 {
+    let Some(scheduled_until) = inner.scheduled_until.get(sender_user_id) else {
+        return 1.0;
+    };
 
-    inner
-        .playback_schedule_warning_at
-        .insert(sender_user_id.to_owned(), now);
-    true
+    let buffered_content = (*scheduled_until - now) * applied_rate + pending_content_seconds;
+    let target_depth = scheduled_target_depth_seconds(inner.jitter_buffer_us);
+    time_scale::catch_up_rate(buffered_content - target_depth)
 }
 
 fn copy_options(plane_index: u32) -> JsValue {

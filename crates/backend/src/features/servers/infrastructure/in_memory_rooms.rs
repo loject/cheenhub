@@ -109,6 +109,13 @@ pub(super) fn delete_server_room(
     Ok(())
 }
 
+/// Считает комнаты всех серверов в локальном хранилище.
+pub(super) fn count_all_rooms(state: &Mutex<InMemoryState>) -> anyhow::Result<u64> {
+    let state = state.lock().map_err(|_| poisoned())?;
+
+    Ok(state.rooms.len() as u64)
+}
+
 pub(super) fn count_server_rooms(
     state: &Mutex<InMemoryState>,
     server_id: &Uuid,

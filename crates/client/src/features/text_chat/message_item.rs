@@ -9,12 +9,15 @@ use crate::features::app::current_user::CurrentUserContext;
 #[component]
 pub(crate) fn ChatMessageItem(
     message: TextChatMessage,
+    #[props(default)] anchor_elements: Option<super::scroll_anchor_runtime::AnchorElements>,
     animate: bool,
     removing: bool,
     can_delete_messages: bool,
     on_delete: EventHandler<String>,
     children: Element,
 ) -> Element {
+    let register_anchor =
+        super::scroll_anchor_runtime::use_message_anchor(message.id.clone(), anchor_elements);
     let current_user = use_context::<CurrentUserContext>().require_user();
     let is_own = message.author_user_id == current_user.id;
     let can_delete = is_own || can_delete_messages;
@@ -42,6 +45,7 @@ pub(crate) fn ChatMessageItem(
     rsx! {
         div {
             class: row_class,
+            onmounted: move |event| register_anchor.call(event.data.clone()),
             oncontextmenu: move |event| {
                 if !can_delete {
                     return;

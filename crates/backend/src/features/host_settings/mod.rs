@@ -1,10 +1,15 @@
 //! Глобальные настройки экземпляра CheenHub и права владельцев хоста.
 
+pub(crate) mod activity;
+pub(crate) mod activity_monitor;
 pub(crate) mod application;
 pub(crate) mod domain;
 pub(crate) mod email_delivery;
 pub(crate) mod infrastructure;
+pub(crate) mod log_settings;
 pub(crate) mod metrics_monitor;
+pub(crate) mod owners;
+mod stats;
 mod transport;
 
 use axum::Router;

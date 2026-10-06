@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 const BOTTOM_SCROLL_THRESHOLD: f64 = 24.0;
 const OLDER_PAGE_SCROLL_THRESHOLD: f64 = 48.0;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, PartialEq)]
 pub(crate) enum ScrollCommand {
     /// Мгновенно прокручивает список к последнему сообщению.
     Bottom,
@@ -16,6 +16,10 @@ pub(crate) enum ScrollCommand {
     SmoothBottom,
     /// Сохраняет видимую позицию после добавления сообщений выше текущего окна.
     Preserve { offset_y: f64, height: f64 },
+    /// Восстанавливает сообщение и смещение внутри него после обновления истории.
+    Restore {
+        anchor: super::scroll_anchor::ScrollAnchor,
+    },
 }
 
 pub(super) async fn update_scroll_state(
@@ -88,6 +92,9 @@ pub(crate) async fn apply_scroll_command(element: Rc<MountedData>, command: Scro
                 )
                 .await;
         }
+        ScrollCommand::Restore { .. } => {
+            // Якорь применяется реестром сообщений после монтирования целевой группы.
+        }
         ScrollCommand::Preserve { offset_y, height } => {
             let Ok(scroll_size) = element.get_scroll_size().await else {
                 return;
@@ -121,42 +128,4 @@ fn preserved_scroll_offset(offset_y: f64, previous_height: f64, next_height: f64
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn older_history_loads_only_at_the_top_in_an_idle_ready_list() {
-        assert!(should_load_older(
-            OLDER_PAGE_SCROLL_THRESHOLD,
-            true,
-            false,
-            false
-        ));
-        assert!(!should_load_older(
-            OLDER_PAGE_SCROLL_THRESHOLD + 0.1,
-            true,
-            false,
-            false
-        ));
-        assert!(!should_load_older(0.0, false, false, false));
-        assert!(!should_load_older(0.0, true, true, false));
-        assert!(!should_load_older(0.0, true, false, true));
-    }
-
-    #[test]
-    fn bottom_detection_includes_the_existing_threshold() {
-        assert!(is_offset_near_bottom(476.0, 1_000.0, 500.0));
-        assert!(!is_offset_near_bottom(475.9, 1_000.0, 500.0));
-        assert!(is_offset_near_bottom(0.0, 300.0, 500.0));
-    }
-
-    #[test]
-    fn preserving_scroll_adds_content_growth_above_the_viewport() {
-        assert_eq!(preserved_scroll_offset(20.0, 1_000.0, 1_450.0), 470.0);
-    }
-
-    #[test]
-    fn preserving_scroll_never_returns_a_negative_offset() {
-        assert_eq!(preserved_scroll_offset(20.0, 1_000.0, 500.0), 0.0);
-    }
-}
+mod tests;

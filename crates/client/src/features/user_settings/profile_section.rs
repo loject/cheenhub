@@ -10,6 +10,7 @@ use crate::features::auth::{DesktopGoogleButton, desktop_oauth};
 use cheenhub_contracts::rest::OAuthFlow;
 
 use super::styles::{input_class, primary_button_class};
+use super::user_id_field::UserIdField;
 
 /// Renders profile and account controls.
 #[component]
@@ -151,6 +152,7 @@ pub(crate) fn ProfileSettingsSection() -> Element {
                                 class: input_class(),
                             }
                         }
+                        UserIdField { user_id: current_user.id.clone() }
                     }
                 }
             }

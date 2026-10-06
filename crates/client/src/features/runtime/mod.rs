@@ -2,6 +2,7 @@
 
 #[cfg(target_os = "android")]
 pub(crate) mod android;
+pub(crate) mod lifecycle;
 mod native;
 mod unsupported;
 mod web;

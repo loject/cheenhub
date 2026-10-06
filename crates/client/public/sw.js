@@ -3,6 +3,7 @@ const CACHE_VERSION =
 const SHELL_CACHE = `cheenhub-pwa-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `cheenhub-pwa-runtime-${CACHE_VERSION}`;
 const CACHE_NAMES = new Set([SHELL_CACHE, RUNTIME_CACHE]);
+const NETWORK_TIMEOUT_MS = 10000;
 const CORE_ASSETS = [
   "/",
   "/index.html",
@@ -127,17 +128,93 @@ function isLandingNavigation(url) {
   return url.pathname === "/" || url.pathname === "/index.html";
 }
 
+async function fetchWithDeadline(request, cacheResponse) {
+  const controller = new AbortController();
+  let timer;
+  let reader;
+  let response;
+  let cacheable;
+  let failure;
+  let rejectDeadline;
+  const deadline = new Promise((_, reject) => { rejectDeadline = reject; });
+  const fail = (error) => {
+    if (failure) return;
+    failure = error;
+    clearTimeout(timer);
+    rejectDeadline(error);
+    controller.abort(error);
+    if (reader) void reader.cancel(error).catch(() => {});
+    if (response?.body) void response.body.cancel(error).catch(() => {});
+    if (cacheable?.body) void cacheable.body.cancel(error).catch(() => {});
+  };
+  const startDeadline = (phase) => {
+    timer = setTimeout(() => {
+      logWarn("network request timed out", {
+        path: new URL(request.url).pathname,
+        phase,
+        timeoutMs: NETWORK_TIMEOUT_MS,
+      });
+      fail(new Error("network request timed out"));
+    }, NETWORK_TIMEOUT_MS);
+  };
+  const abortRequest = () => fail(request.signal.reason || new Error("request aborted"));
+  request.signal.addEventListener("abort", abortRequest, { once: true });
+  if (request.signal.aborted) abortRequest();
+
+  try {
+    return await Promise.race([
+      (async () => {
+        if (failure) throw failure;
+        startDeadline("headers");
+        response = await fetch(request, { signal: controller.signal });
+        clearTimeout(timer);
+        if (failure) throw failure;
+        if (response.ok) {
+          cacheable = response.clone();
+          // CacheStorage получает настоящий clone с URL редиректа и type.
+          // Отдельная ветка наблюдает прогресс и сразу отбрасывает чанки:
+          // она не собирает дополнительный полный body в arrayBuffer.
+          const monitor = (async () => {
+            if (!response.body) return;
+            reader = response.clone().body.getReader();
+            try {
+              while (true) {
+                if (failure) throw failure;
+                startDeadline("body");
+                const { done } = await reader.read();
+                clearTimeout(timer);
+                if (failure) throw failure;
+                if (done) return;
+              }
+            } finally {
+              reader.releaseLock();
+              reader = undefined;
+            }
+          })();
+          await Promise.all([monitor, cacheResponse(cacheable)]);
+        }
+        return response;
+      })(),
+      deadline,
+    ]);
+  } catch (error) {
+    fail(error);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    request.signal.removeEventListener("abort", abortRequest);
+  }
+}
+
 async function networkFirstNavigation(request) {
   const cache = await caches.open(SHELL_CACHE);
   const url = new URL(request.url);
 
   try {
-    const response = await fetch(request);
-    if (response.ok) {
+    return await fetchWithDeadline(request, async (response) => {
       await cache.put(request, response.clone());
-      await cache.put("/", response.clone());
-    }
-    return response;
+      await cache.put("/", response);
+    });
   } catch (error) {
     const cachedRequest = await cache.match(request);
     if (cachedRequest) {
@@ -177,22 +254,18 @@ async function cacheFirstAsset(request) {
     return cached;
   }
 
-  const response = await fetch(request);
-  if (response.ok) {
+  return fetchWithDeadline(request, async (response) => {
     const cache = await caches.open(RUNTIME_CACHE);
-    await cache.put(request, response.clone());
-  }
-  return response;
+    await cache.put(request, response);
+  });
 }
 
 async function networkWithRuntimeFallback(request) {
   try {
-    const response = await fetch(request);
-    if (response.ok) {
+    return await fetchWithDeadline(request, async (response) => {
       const cache = await caches.open(RUNTIME_CACHE);
-      await cache.put(request, response.clone());
-    }
-    return response;
+      await cache.put(request, response);
+    });
   } catch (_error) {
     const cached = await caches.match(request);
     if (cached) {

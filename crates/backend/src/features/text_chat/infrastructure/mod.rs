@@ -6,9 +6,15 @@ mod object_storage;
 mod postgres;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::features::text_chat::domain::{ChatAttachment, NewChatAttachment, TextMessage};
+use crate::features::text_chat::domain::{
+    ChatAttachment, MessagesPerMinute, NewChatAttachment, TextMessage,
+};
+
+#[cfg(test)]
+mod tests;
 
 pub(crate) use in_memory::InMemoryTextChatStore;
 #[cfg(test)]
@@ -73,4 +79,17 @@ pub(crate) trait TextChatStore: Send + Sync {
         deleted_by_user_id: &Uuid,
         require_authorship: bool,
     ) -> anyhow::Result<Option<TextMessage>>;
+
+    /// Считает все текстовые сообщения комнат, включая мягко удалённые.
+    async fn count_text_messages(&self) -> anyhow::Result<u64>;
+
+    /// Возвращает число сообщений по минутам в полуинтервале `(since, until]`.
+    ///
+    /// Минуты без сообщений в ответе отсутствуют, поэтому вызывающий код
+    /// достраивает временную шкалу сам. Границы задаются в UTC.
+    async fn count_messages_per_minute(
+        &self,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<MessagesPerMinute>>;
 }

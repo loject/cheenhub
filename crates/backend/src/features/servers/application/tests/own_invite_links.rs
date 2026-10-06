@@ -259,7 +259,6 @@ async fn inactive_links_do_not_consume_the_limit() {
     );
 }
 
-#[path = "own_invite_links/deletion.rs"]
 mod deletion;
 
 /// Возвращает все приглашения сервера напрямую из хранилища.

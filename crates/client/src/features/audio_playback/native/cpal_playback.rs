@@ -5,6 +5,7 @@ mod jitter_buffer;
 mod jitter_runtime;
 pub(super) mod mixer;
 mod notification_sounds;
+mod pause_runtime;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -20,7 +21,9 @@ use self::mixer::{
 };
 use super::platform_engine::{NativePlaybackEngine, create_engine};
 use crate::features::audio_playback::output_devices::AudioOutputDevice;
+use crate::features::audio_playback::playout_timing::PlaybackPause;
 use crate::features::audio_playback::storage;
+use crate::features::audio_playback::time_scale::VoiceTimeCompressor;
 
 const AUDIO_SAMPLE_RATE_HZ: u32 = 48_000;
 
@@ -39,6 +42,8 @@ struct AudioPlaybackInner {
     muted: bool,
     engine: Option<NativePlaybackEngine>,
     decoders: HashMap<String, Decoder>,
+    time_compressors: HashMap<String, VoiceTimeCompressor>,
+    playback_pauses: HashMap<String, PlaybackPause>,
     jitter_buffers: HashMap<String, JitterBuffer>,
     jitter_drainers: HashMap<String, u64>,
     next_jitter_drainer_generation: u64,
@@ -190,6 +195,10 @@ impl AudioPlaybackHandle {
         let mixer = {
             let mut inner = self.inner.borrow_mut();
             inner.decoders.remove(sender_user_id);
+            inner.time_compressors.remove(sender_user_id);
+            if let Some(pause) = inner.playback_pauses.remove(sender_user_id) {
+                pause.cancel();
+            }
             inner.jitter_buffers.remove(sender_user_id);
             inner.jitter_warning_at_ms.remove(sender_user_id);
             inner.decoder_warning_at_ms.remove(sender_user_id);
@@ -205,6 +214,10 @@ impl AudioPlaybackHandle {
         let mixer = {
             let mut inner = self.inner.borrow_mut();
             inner.decoders.clear();
+            inner.time_compressors.clear();
+            for pause in inner.playback_pauses.drain().map(|(_, pause)| pause) {
+                pause.cancel();
+            }
             inner.jitter_buffers.clear();
             inner.jitter_drainers.clear();
             inner.jitter_warning_at_ms.clear();
@@ -222,6 +235,10 @@ impl AudioPlaybackHandle {
         let mixer = {
             let mut inner = self.inner.borrow_mut();
             inner.decoders.clear();
+            inner.time_compressors.clear();
+            for pause in inner.playback_pauses.drain().map(|(_, pause)| pause) {
+                pause.cancel();
+            }
             inner.jitter_buffers.clear();
             inner.jitter_drainers.clear();
             inner.jitter_warning_at_ms.clear();
@@ -307,6 +324,8 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             muted: false,
             engine: None,
             decoders: HashMap::new(),
+            time_compressors: HashMap::new(),
+            playback_pauses: HashMap::new(),
             jitter_buffers: HashMap::new(),
             jitter_drainers: HashMap::new(),
             next_jitter_drainer_generation: 0,

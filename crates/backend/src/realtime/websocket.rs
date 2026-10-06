@@ -6,7 +6,7 @@ use anyhow::{Context, anyhow};
 use axum::{
     extract::{
         State,
-        ws::{Message, WebSocket, WebSocketUpgrade},
+        ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
 };
@@ -21,6 +21,7 @@ use uuid::Uuid;
 use crate::features::auth::application as auth_application;
 use crate::state::AppState;
 
+use super::hub::DisconnectReason;
 use super::protocol::validate_envelope;
 use super::sink::{DatagramSink, EnvelopeSink, WebSocketOutbound};
 use super::{control, datagram, router};
@@ -33,12 +34,28 @@ pub(crate) async fn upgrade(
     State(state): State<AppState>,
     upgrade: WebSocketUpgrade,
 ) -> impl IntoResponse {
+    if crate::lifecycle::lifecycle().is_draining() {
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
     let session_id = Uuid::new_v4();
     info!(%session_id, "received WebSocket realtime fallback request");
-    upgrade.on_upgrade(move |socket| handle_socket(state, session_id, socket))
+    upgrade
+        .on_upgrade(move |socket| handle_socket(state, session_id, socket))
+        .into_response()
 }
 
 async fn handle_socket(state: AppState, session_id: Uuid, socket: WebSocket) {
+    let lifecycle = crate::lifecycle::lifecycle();
+    let Some(_session_guard) = lifecycle.track_realtime_session() else {
+        let mut socket = socket;
+        let _ = socket
+            .send(Message::Close(Some(CloseFrame {
+                code: super::SERVICE_RESTARTING_CLOSE_CODE as u16,
+                reason: DisconnectReason::ServiceRestarting.close_message().into(),
+            })))
+            .await;
+        return;
+    };
     let (mut socket_sender, mut socket_receiver) = socket.split();
     let (outbound_sender, mut outbound_receiver) = mpsc::channel(OUTBOUND_QUEUE_CAPACITY);
     let envelope_sink = EnvelopeSink::websocket(outbound_sender.clone());
@@ -58,6 +75,16 @@ async fn handle_socket(state: AppState, session_id: Uuid, socket: WebSocket) {
                     }
                 },
                 WebSocketOutbound::Datagram(bytes) => Message::Binary(bytes),
+                WebSocketOutbound::Close { code, reason } => {
+                    // Close-кадр отправляем последним действием писателя, поэтому
+                    // он всегда обрывает очередь и закрывает сокет.
+                    let close = CloseFrame {
+                        code: u16::try_from(code).unwrap_or(u16::MAX),
+                        reason: reason.into(),
+                    };
+                    let _ = socket_sender.send(Message::Close(Some(close))).await;
+                    break;
+                }
             };
 
             if let Err(error) = socket_sender.send(message).await {
@@ -80,7 +107,15 @@ async fn handle_socket(state: AppState, session_id: Uuid, socket: WebSocket) {
                 .ok_or_else(|| anyhow!("websocket closed before authentication"))?;
             control::authenticate_session(&state, &envelope_sink, envelope).await
         };
-        let user = match timeout(AUTHENTICATION_TIMEOUT, authentication).await {
+        let authentication_result = tokio::select! {
+            biased;
+            _ = lifecycle.wait_for_draining() => {
+                queue_disconnect_close(&outbound_sender, DisconnectReason::ServiceRestarting).await;
+                return Ok(());
+            }
+            result = timeout(AUTHENTICATION_TIMEOUT, authentication) => result,
+        };
+        let user = match authentication_result {
             Ok(result) => result?,
             Err(_) => {
                 warn!(
@@ -125,13 +160,25 @@ async fn handle_socket(state: AppState, session_id: Uuid, socket: WebSocket) {
         loop {
             let message = tokio::select! {
                 biased;
-                _ = disconnect.changed() => {
+                _ = lifecycle.wait_for_draining() => {
+                    queue_disconnect_close(&outbound_sender, DisconnectReason::ServiceRestarting).await;
+                    break;
+                }
+                reason = disconnect.changed() => {
+                    let reason = reason
+                        .ok()
+                        .and_then(|()| *disconnect.borrow())
+                        .unwrap_or(DisconnectReason::ServiceRestarting);
                     info!(
                         %session_id,
                         %user_id,
                         %auth_session_id,
-                        "closing WebSocket realtime transport after auth session revocation"
+                        ?reason,
+                        "closing WebSocket realtime transport after disconnect request"
                     );
+                    // Close-кадр уходит через писателя: если очередь закрыта,
+                    // соединение завершится вместе с сокетом.
+                    queue_disconnect_close(&outbound_sender, reason).await;
                     break;
                 }
                 message = socket_receiver.next() => message,
@@ -288,3 +335,23 @@ async fn cleanup_streams(
         );
     }
 }
+
+// Закрытие проходит через ту же очередь, что и обычные данные сокета.
+async fn queue_disconnect_close(
+    sender: &mpsc::Sender<WebSocketOutbound>,
+    reason: DisconnectReason,
+) {
+    if sender
+        .send(WebSocketOutbound::Close {
+            code: reason.close_code(),
+            reason: reason.close_message(),
+        })
+        .await
+        .is_err()
+    {
+        debug!(%reason, "WebSocket writer closed before disconnect could be queued");
+    }
+}
+
+#[cfg(test)]
+mod tests;

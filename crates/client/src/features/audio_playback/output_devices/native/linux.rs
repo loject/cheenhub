@@ -135,5 +135,8 @@ fn disambiguate(mut devices: Vec<AudioOutputDevice>) -> Vec<AudioOutputDevice> {
 }
 
 #[cfg(test)]
-#[path = "linux_tests.rs"]
+// Модуль подключается через `#[path = "native/linux.rs"]` из `output_devices/native.rs`, поэтому
+// каталог дочернего модуля вычисляется относительно `output_devices/`. Без явного пути компилятор
+// ищет `output_devices/tests.rs` вместо `output_devices/native/linux/tests.rs`.
+#[path = "linux/tests.rs"]
 mod tests;

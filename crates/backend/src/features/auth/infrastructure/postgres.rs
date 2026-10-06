@@ -141,6 +141,10 @@ impl AuthStore for PostgresAuthStore {
         .await
     }
 
+    async fn count_registered_users(&self) -> anyhow::Result<u64> {
+        user::count_registered_users(&self.database).await
+    }
+
     async fn find_user_by_email(
         &self,
         email_normalized: &str,

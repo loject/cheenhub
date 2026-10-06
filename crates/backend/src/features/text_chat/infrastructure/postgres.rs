@@ -1,15 +1,18 @@
 //! Postgres-backed text chat storage.
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::features::text_chat::domain::{ChatAttachment, NewChatAttachment, TextMessage};
+use crate::features::text_chat::domain::{
+    ChatAttachment, MessagesPerMinute, NewChatAttachment, TextMessage,
+};
 use crate::features::text_chat::infrastructure::entities::{text_chat_attachments, text_messages};
 use crate::features::text_chat::infrastructure::{HISTORY_LIMIT, TextChatStore, TextMessagePage};
 
@@ -179,6 +182,40 @@ impl TextChatStore for PostgresTextChatStore {
         let updated = active.update(&self.database).await?;
 
         Ok(Some(updated.into()))
+    }
+
+    async fn count_text_messages(&self) -> anyhow::Result<u64> {
+        Ok(text_messages::Entity::find().count(&self.database).await?)
+    }
+
+    async fn count_messages_per_minute(
+        &self,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<MessagesPerMinute>> {
+        // Агрегация по усечённой минуте выполняется в PostgreSQL: за сутки в
+        // приложение попадает не больше 1440 строк вместо всех сообщений окна.
+        let minute =
+            Expr::cust_with_exprs(r#"date_trunc('minute', "text_messages"."created_at")"#, []);
+        let rows = text_messages::Entity::find()
+            .select_only()
+            .column_as(minute.clone(), "minute")
+            .column_as(text_messages::Column::Id.count(), "messages")
+            .filter(text_messages::Column::CreatedAt.gt(since))
+            .filter(text_messages::Column::CreatedAt.lte(until))
+            .group_by(minute.clone())
+            .order_by_asc(minute)
+            .into_tuple::<(DateTime<Utc>, i64)>()
+            .all(&self.database)
+            .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(minute, messages)| MessagesPerMinute {
+                minute,
+                messages: u64::try_from(messages).unwrap_or_default(),
+            })
+            .collect())
     }
 }
 

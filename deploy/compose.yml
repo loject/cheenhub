@@ -55,6 +55,17 @@ services:
         condition: service_completed_successfully
       metrics-proxy:
         condition: service_started
+    # Процесс завершается по SIGTERM: сначала перестаёт принимать новые
+    # соединения, затем дорабатывает активные запросы. Окно должно быть больше
+    # времени, которое занимает in-flight запрос и закрытие голосовых сессий.
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # Старт контейнера включает миграции, TLS и подключение к Postgres.
+      start_period: 40s
     networks:
       - default
       - host-metrics

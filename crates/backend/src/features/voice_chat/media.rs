@@ -8,9 +8,14 @@ use cheenhub_contracts::video_presets::{
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-use super::infrastructure::VoicePresenceTargetKind;
-use super::media_policy::{VideoAdmission, VideoDropReason};
 use crate::state::AppState;
+
+mod relay;
+#[cfg(test)]
+mod tests;
+
+pub(crate) use relay::{MediaDatagramHeader, handle_webtransport_frame_bytes};
+use relay::{active_media_route_for_user, video_admission_allows_fanout};
 
 /// Обрабатывает одну декодированную медиадатаграмму голоса.
 pub(crate) async fn handle_voice_frame(
@@ -82,7 +87,7 @@ async fn handle_room_media_frame(
         "received voice room media datagram"
     );
 
-    let Some(presence) = active_presence_for_user(state, &datagram.room_id, &user_id).await else {
+    let Some(route) = active_media_route_for_user(state, &datagram.room_id, &user_id) else {
         debug!(
             %session_id,
             %user_id,
@@ -92,9 +97,13 @@ async fn handle_room_media_frame(
         );
         return;
     };
+    let presence = route.presence;
+    let recipients = route.recipients;
     let is_presence_session = presence.session_id == session_id;
-    let is_bound_microphone_uplink = allow_microphone_uplink
-        && state
+    let is_bound_microphone_uplink = if is_presence_session || !allow_microphone_uplink {
+        false
+    } else {
+        state
             .voice_presence_store
             .microphone_uplink_is_bound(
                 &session_id,
@@ -102,7 +111,8 @@ async fn handle_room_media_frame(
                 &datagram.room_id,
                 &presence.session_id,
             )
-            .await;
+            .await
+    };
     if !is_presence_session && !is_bound_microphone_uplink {
         debug!(
             %session_id,
@@ -118,7 +128,7 @@ async fn handle_room_media_frame(
     if let Some(allowed_video_presets) = allowed_video_presets {
         let admission = state
             .voice_presence_store
-            .inspect_video_datagram(session_id, user_id, &datagram, allowed_video_presets)
+            .inspect_video_datagram(session_id, &datagram, allowed_video_presets)
             .await;
         if !video_admission_allows_fanout(
             admission,
@@ -133,15 +143,7 @@ async fn handle_room_media_frame(
     }
 
     datagram.sender_user_id = user_id;
-    let recipients = state
-        .voice_presence_store
-        .media_recipient_sessions(
-            presence.target_kind,
-            &datagram.room_id,
-            &presence.session_id,
-        )
-        .await;
-    if recipients.is_empty() {
+    if recipients.is_empty() || (recipients.len() == 1 && recipients[0] == presence.session_id) {
         return;
     }
 
@@ -161,83 +163,6 @@ async fn handle_room_media_frame(
     };
     state
         .realtime_hub
-        .fanout_datagram_to_sessions(&recipients, bytes)
+        .fanout_datagram_to_sessions_except(&recipients, presence.session_id, bytes)
         .await;
-}
-
-fn video_admission_allows_fanout(
-    admission: VideoAdmission,
-    session_id: Uuid,
-    user_id: Uuid,
-    room_id: Uuid,
-    media_kind: &'static str,
-    sequence: u64,
-) -> bool {
-    let VideoAdmission::Drop(reason) = admission else {
-        return true;
-    };
-    match reason {
-        VideoDropReason::UnsupportedResolution { width, height } => warn!(
-            %session_id,
-            %user_id,
-            %room_id,
-            media_kind,
-            sequence,
-            width,
-            height,
-            "blocked video publication with unsupported resolution"
-        ),
-        VideoDropReason::FpsLimitExceeded {
-            max_fps,
-            observed_frames,
-        } => warn!(
-            %session_id,
-            %user_id,
-            %room_id,
-            media_kind,
-            sequence,
-            max_fps,
-            observed_frames,
-            "blocked video publication after sustained FPS limit violation"
-        ),
-        VideoDropReason::InvalidVp9KeyFrame | VideoDropReason::MalformedFragment => warn!(
-            %session_id,
-            %user_id,
-            %room_id,
-            media_kind,
-            sequence,
-            reason = ?reason,
-            "blocked malformed video publication datagram"
-        ),
-        VideoDropReason::AwaitingFirstFragment
-        | VideoDropReason::AwaitingKeyFrame
-        | VideoDropReason::FpsBlockActive => debug!(
-            %session_id,
-            %user_id,
-            %room_id,
-            media_kind,
-            sequence,
-            reason = ?reason,
-            "dropping video datagram while publication is blocked"
-        ),
-    }
-    false
-}
-
-async fn active_presence_for_user(
-    state: &AppState,
-    room_id: &Uuid,
-    user_id: &Uuid,
-) -> Option<super::infrastructure::VoicePresence> {
-    if let Some(presence) = state
-        .voice_presence_store
-        .room_presence_for_user(VoicePresenceTargetKind::Server, room_id, user_id)
-        .await
-    {
-        return Some(presence);
-    }
-    state
-        .voice_presence_store
-        .room_presence_for_user(VoicePresenceTargetKind::DirectMessage, room_id, user_id)
-        .await
 }

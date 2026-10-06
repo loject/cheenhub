@@ -2,7 +2,9 @@
 
 use dioxus::prelude::*;
 
-use crate::features::auth::refresh::{RefreshError, SessionEnd, SessionEndReason};
+use crate::features::auth::refresh::{
+    AccessTokenRecovery, RefreshError, SessionEnd, SessionEndReason, recover_invalid_access_token,
+};
 use crate::features::auth::{jwt, storage};
 use crate::features::runtime::sleep_ms;
 
@@ -23,13 +25,27 @@ pub(crate) fn TokenRefresher(on_session_expired: EventHandler<SessionEnd>) -> El
                 let seconds = match jwt::seconds_until_refresh(&access_token) {
                     Ok(seconds) => seconds,
                     Err(error) => {
-                        warn!(%error, "stored access token is invalid; ending client session");
-                        storage::clear();
-                        on_session_expired.call(SessionEnd::new(
-                            SessionEndReason::InvalidAccessToken,
-                            "Данные сессии повреждены. Войди снова.",
-                        ));
-                        break;
+                        warn!(%error, "stored access token is invalid; trying to recover it with the refresh token");
+                        match recover_invalid_access_token().await {
+                            AccessTokenRecovery::Recovered => {
+                                info!("replaced an invalid access token using the refresh token");
+                                continue;
+                            }
+                            AccessTokenRecovery::RetryLater(message) => {
+                                warn!(%message, "access token recovery deferred");
+                                sleep_ms(5_000).await;
+                                continue;
+                            }
+                            AccessTokenRecovery::SessionEnded(session_end) => {
+                                warn!(
+                                    reason = ?session_end.reason,
+                                    %session_end.message,
+                                    "access token recovery confirmed the session is no longer valid"
+                                );
+                                on_session_expired.call(session_end);
+                                break;
+                            }
+                        }
                     }
                 };
 

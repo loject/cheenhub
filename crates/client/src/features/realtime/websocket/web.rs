@@ -5,6 +5,7 @@ use bytes::Bytes;
 use dioxus::prelude::{info, warn};
 use futures_channel::{mpsc, oneshot};
 use futures_util::StreamExt;
+use futures_util::future::{AbortRegistration, Abortable};
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use web_sys::{BinaryType, Event, MessageEvent, WebSocket};
@@ -18,8 +19,23 @@ pub(in crate::features::realtime) struct WebSocketWriter {
     websocket: WebSocket,
 }
 
+impl Drop for WebSocketWriter {
+    fn drop(&mut self) {
+        let _ = self.websocket.close();
+    }
+}
+
 pub(in crate::features::realtime) struct WebSocketReader {
     websocket: WebSocket,
+}
+
+impl Drop for WebSocketReader {
+    fn drop(&mut self) {
+        self.websocket.set_onmessage(None);
+        self.websocket.set_onerror(None);
+        self.websocket.set_onclose(None);
+        let _ = self.websocket.close();
+    }
 }
 
 pub(in crate::features::realtime) async fn split(
@@ -45,55 +61,66 @@ pub(in crate::features::realtime) async fn split(
 pub(in crate::features::realtime) fn spawn_writer(
     url: String,
     generation: u64,
-    writer: WebSocketWriter,
+    writer: (WebSocketWriter, AbortRegistration),
     mut outbound: mpsc::UnboundedReceiver<WebSocketOutbound>,
     realtime: Option<RealtimeHandle>,
 ) {
+    let (writer, cancellation) = writer;
     spawn_task(async move {
-        while let Some(message) = outbound.next().await {
-            let result = match message {
-                WebSocketOutbound::Envelope(envelope) => match serde_json::to_string(&envelope) {
-                    Ok(json) => writer.websocket.send_with_str(&json),
-                    Err(error) => {
+        let _ = Abortable::new(
+            async move {
+                while let Some(message) = outbound.next().await {
+                    let result = match message {
+                        WebSocketOutbound::Envelope(envelope) => {
+                            match serde_json::to_string(&envelope) {
+                                Ok(json) => writer.websocket.send_with_str(&json),
+                                Err(error) => {
+                                    warn!(
+                                        %url,
+                                        %generation,
+                                        %error,
+                                        "failed to encode WebSocket realtime envelope"
+                                    );
+                                    continue;
+                                }
+                            }
+                        }
+                        WebSocketOutbound::Datagram(bytes) => {
+                            writer.websocket.send_with_u8_array(bytes.as_ref())
+                        }
+                    };
+
+                    if let Err(error) = result {
                         warn!(
                             %url,
                             %generation,
-                            %error,
-                            "failed to encode WebSocket realtime envelope"
+                            error = %js_error_message(error),
+                            "WebSocket realtime fallback write failed"
                         );
-                        continue;
+                        let _ = writer.websocket.close();
+                        if let Some(realtime) = &realtime {
+                            realtime.clear_generation(generation).await;
+                        }
+                        break;
                     }
-                },
-                WebSocketOutbound::Datagram(bytes) => {
-                    writer.websocket.send_with_u8_array(bytes.as_ref())
                 }
-            };
-
-            if let Err(error) = result {
-                warn!(
-                    %url,
-                    %generation,
-                    error = %js_error_message(error),
-                    "WebSocket realtime fallback write failed"
-                );
                 let _ = writer.websocket.close();
-                if let Some(realtime) = &realtime {
-                    realtime.clear_generation(generation).await;
-                }
-                break;
-            }
-        }
+            },
+            cancellation,
+        )
+        .await;
     });
 }
 
 pub(in crate::features::realtime) fn spawn_reader(
     url: String,
     generation: u64,
-    reader: WebSocketReader,
+    reader: (WebSocketReader, AbortRegistration),
     inbound: mpsc::UnboundedSender<cheenhub_contracts::realtime::RealtimeEnvelope>,
     datagram_listeners: DatagramListeners,
     realtime: RealtimeHandle,
 ) {
+    let (reader, cancellation) = reader;
     let message_url = url.clone();
     let message_websocket = reader.websocket.clone();
     let message_closure = Closure::wrap(Box::new(move |event: MessageEvent| {
@@ -146,13 +173,19 @@ pub(in crate::features::realtime) fn spawn_reader(
         .set_onclose(Some(close_closure.as_ref().unchecked_ref()));
 
     spawn_task(async move {
-        let _message_closure = message_closure;
-        let _error_closure = error_closure;
-        let _close_closure = close_closure;
-        let _websocket = reader.websocket;
-        let _ = close_receiver.await;
-        info!(%url, %generation, "WebSocket realtime fallback session closed");
-        realtime.clear_generation(generation).await;
+        let _ = Abortable::new(
+            async move {
+                let _message_closure = message_closure;
+                let _error_closure = error_closure;
+                let _close_closure = close_closure;
+                let _reader = reader;
+                let _ = close_receiver.await;
+                info!(%url, %generation, "WebSocket realtime fallback session closed");
+                realtime.clear_generation(generation).await;
+            },
+            cancellation,
+        )
+        .await;
     });
 }
 

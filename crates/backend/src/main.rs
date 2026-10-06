@@ -5,6 +5,7 @@ mod config;
 mod db;
 mod features;
 mod http;
+mod lifecycle;
 mod realtime;
 mod state;
 mod telemetry;
@@ -205,6 +206,7 @@ async fn main() -> anyhow::Result<()> {
         direct_call_store: Arc::new(
             features::voice_chat::infrastructure::InMemoryDirectCallStore::default(),
         ),
+        typing_store: Arc::new(features::typing::InMemoryTypingStore::default()),
         realtime_hub: Arc::new(realtime::hub::RealtimeHub::default()),
         auth_keys,
         access_token_lifetime_minutes: config.access_token_lifetime_minutes,
@@ -220,35 +222,51 @@ async fn main() -> anyhow::Result<()> {
         password_reset_token_lifetime_minutes: config.password_reset_token_lifetime_minutes,
     };
     let app = http::router(state.clone());
+    features::host_settings::log_settings::restore(&state).await;
+    let host_activity_monitor = Arc::new(
+        features::host_settings::activity_monitor::HostActivityMonitor::new(state.clone()),
+    );
     tokio::spawn(features::auth::application::run_account_deletion_worker(
         state.clone(),
     ));
+    features::typing::spawn_expiry_sweeper(state.clone()).await;
     if push_notifications.worker_enabled() {
         tokio::spawn(push_notifications.run_delivery_worker());
     }
     tokio::spawn(host_metrics.run());
+    tokio::spawn(host_activity_monitor.run());
+    let lifecycle = lifecycle::lifecycle();
+    tokio::spawn(async move {
+        lifecycle::wait_for_shutdown_signal().await;
+        lifecycle.begin_draining();
+    });
+
+    let realtime_state = state.clone();
     let realtime_address = address;
     let realtime_server = realtime::bind(
         realtime_address,
         &realtime_tls.cert_path,
         &realtime_tls.key_path,
     )?;
-    tokio::spawn(async move {
-        if let Err(error) = realtime::serve(
-            state,
+    let realtime_task = tokio::spawn(async move {
+        realtime::serve(
+            realtime_state,
             realtime_address,
             realtime_server,
             realtime_tls,
             config.webtransport_tls_reload_interval_seconds,
         )
         .await
-        {
-            tracing::error!(%error, "webtransport realtime listener stopped");
-        }
     });
 
     info!(%address, "backend listening");
-    axum::serve(listener, app)
+    let http_result = axum::serve(listener, app)
+        .with_graceful_shutdown(lifecycle.wait_for_draining())
         .await
-        .context("backend server stopped with an error")
+        .context("backend server stopped with an error");
+    // Ошибка HTTP также завершает realtime до уничтожения runtime.
+    lifecycle.begin_draining();
+    let realtime_result = lifecycle::finish_realtime(realtime_task).await;
+    http_result?;
+    realtime_result
 }

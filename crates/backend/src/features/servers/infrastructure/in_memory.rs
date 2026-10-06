@@ -19,7 +19,7 @@ pub(crate) struct InMemoryServerStore {
 
 #[derive(Default)]
 pub(super) struct InMemoryState {
-    servers: Vec<Server>,
+    pub(super) servers: Vec<Server>,
     pub(super) invites: Vec<ServerInvite>,
     pub(super) members: Vec<ServerMember>,
     pub(super) exclusions: Vec<ServerMemberExclusion>,
@@ -47,6 +47,11 @@ impl ServerStore for InMemoryServerStore {
 
         state.servers.push(server.clone());
         Ok(server)
+    }
+
+    async fn count_servers(&self) -> anyhow::Result<u64> {
+        let state = self.state.lock().map_err(|_| poisoned())?;
+        Ok(state.servers.len() as u64)
     }
 
     async fn list_servers(&self, user_id: &Uuid) -> anyhow::Result<Vec<ServerAccess>> {
@@ -154,6 +159,20 @@ impl ServerStore for InMemoryServerStore {
         server.audio_bitrate_bps = audio_bitrate_bps;
         server.updated_at = Utc::now();
         Ok(Some(server.clone()))
+    }
+
+    async fn delete_owned_server(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+    ) -> anyhow::Result<bool> {
+        let mut state = self.state.lock().map_err(|_| poisoned())?;
+
+        Ok(super::in_memory_deletion::delete_owned_server(
+            &mut state,
+            server_id,
+            owner_user_id,
+        ))
     }
 
     async fn insert_server_invite(
@@ -383,6 +402,10 @@ impl ServerStore for InMemoryServerStore {
 
     async fn count_server_rooms(&self, server_id: &Uuid) -> anyhow::Result<u32> {
         super::in_memory_rooms::count_server_rooms(&self.state, server_id)
+    }
+
+    async fn count_all_rooms(&self) -> anyhow::Result<u64> {
+        super::in_memory_rooms::count_all_rooms(&self.state)
     }
 
     async fn list_server_roles(&self, server_id: &Uuid) -> anyhow::Result<Vec<ServerRole>> {

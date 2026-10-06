@@ -75,6 +75,7 @@ class MainActivity : WryActivity() {
 
     override fun onStart() {
         super.onStart()
+        nativeOnCheenHubVisibilityChanged(true)
         CheenHubPushStore.setAppForeground(this, true)
     }
 
@@ -84,6 +85,7 @@ class MainActivity : WryActivity() {
     }
 
     override fun onStop() {
+        nativeOnCheenHubVisibilityChanged(false)
         CheenHubPushStore.setAppForeground(this, false)
         super.onStop()
     }
@@ -799,6 +801,8 @@ class MainActivity : WryActivity() {
         callId: String,
         action: Int,
     )
+
+    private external fun nativeOnCheenHubVisibilityChanged(visible: Boolean)
 
     private external fun nativeOnCheenHubVoiceAudioFocusChanged(focusChange: Int)
 

@@ -16,7 +16,8 @@ use super::messages::prepend_messages;
 use super::realtime;
 use super::scroll::{ScrollCommand, capture_scroll_position};
 
-const INITIAL_HISTORY_TIMEOUT: Duration = Duration::from_secs(12);
+/// Общий предел ожидания начальной истории и восстановления загруженного диапазона.
+pub(super) const INITIAL_HISTORY_TIMEOUT: Duration = Duration::from_secs(12);
 
 #[derive(Clone)]
 pub(super) struct HistoryTarget {
@@ -35,57 +36,69 @@ pub(super) struct HistoryState {
     pub(super) older_loading: Signal<bool>,
     pub(super) older_error: Signal<Option<String>>,
     pub(super) list_element: Signal<Option<Rc<MountedData>>>,
+    /// Признак чтения последних сообщений для сохранения прокрутки при reconnect.
+    pub(super) is_near_bottom: Signal<bool>,
     pub(super) pending_scroll: Signal<Option<ScrollCommand>>,
+    /// Реестр смонтированных сообщений текущего списка.
+    pub(super) anchor_elements: super::scroll_anchor_runtime::AnchorElements,
 }
 
-pub(super) fn load_initial_history(target: HistoryTarget, mut state: HistoryState) {
+pub(super) fn load_initial_history(target: HistoryTarget, state: HistoryState) {
+    spawn(async move {
+        if (state.messages)().is_empty() {
+            load_initial_history_async(target, state).await;
+        } else {
+            super::history_refresh::refresh_history(target, state).await;
+        }
+    });
+}
+
+async fn load_initial_history_async(target: HistoryTarget, mut state: HistoryState) {
     state.initial_loading.set(true);
     state.history_error.set(None);
-    spawn(async move {
-        let server_id = target.server_id;
-        let room_id = target.room_id;
-        let history_request =
-            realtime::load_room_history(&target.realtime, server_id.clone(), room_id.clone(), None)
-                .boxed_local();
-        let timeout = sleep_duration(INITIAL_HISTORY_TIMEOUT).boxed_local();
+    let server_id = target.server_id;
+    let room_id = target.room_id;
+    let history_request =
+        realtime::load_room_history(&target.realtime, server_id.clone(), room_id.clone(), None)
+            .boxed_local();
+    let timeout = sleep_duration(INITIAL_HISTORY_TIMEOUT).boxed_local();
 
-        match select(history_request, timeout).await {
-            Either::Left((Ok(history), _)) => {
-                info!(
-                    server_id = %server_id,
-                    room_id = %room_id,
-                    messages = history.messages.len(),
-                    has_more = history.has_more,
-                    "loaded initial text chat history"
-                );
-                state.messages.set(history.messages);
-                state.appearing_message_ids.set(Vec::new());
-                state.has_more.set(history.has_more);
-                state.pending_scroll.set(Some(ScrollCommand::Bottom));
-            }
-            Either::Left((Err(error), _)) => {
-                warn!(
-                    %error,
-                    server_id = %server_id,
-                    room_id = %room_id,
-                    "failed to load initial text chat history"
-                );
-                state.history_error.set(Some(error.to_string()));
-            }
-            Either::Right(((), _)) => {
-                warn!(
-                    server_id = %server_id,
-                    room_id = %room_id,
-                    timeout_ms = INITIAL_HISTORY_TIMEOUT.as_millis(),
-                    "initial text chat history load timed out"
-                );
-                state.history_error.set(Some(
-                    "История сообщений не загрузилась вовремя. Попробуй ещё раз.".to_owned(),
-                ));
-            }
+    match select(history_request, timeout).await {
+        Either::Left((Ok(history), _)) => {
+            info!(
+                server_id = %server_id,
+                room_id = %room_id,
+                messages = history.messages.len(),
+                has_more = history.has_more,
+                "loaded initial text chat history"
+            );
+            state.messages.set(history.messages);
+            state.appearing_message_ids.set(Vec::new());
+            state.has_more.set(history.has_more);
+            state.pending_scroll.set(Some(ScrollCommand::Bottom));
         }
-        state.initial_loading.set(false);
-    });
+        Either::Left((Err(error), _)) => {
+            warn!(
+                %error,
+                server_id = %server_id,
+                room_id = %room_id,
+                "failed to load initial text chat history"
+            );
+            state.history_error.set(Some(error.to_string()));
+        }
+        Either::Right(((), _)) => {
+            warn!(
+                server_id = %server_id,
+                room_id = %room_id,
+                timeout_ms = INITIAL_HISTORY_TIMEOUT.as_millis(),
+                "initial text chat history load timed out"
+            );
+            state.history_error.set(Some(
+                "История сообщений не загрузилась вовремя. Попробуй ещё раз.".to_owned(),
+            ));
+        }
+    }
+    state.initial_loading.set(false);
 }
 
 pub(super) fn load_initial_history_when_connected(target: HistoryTarget, mut state: HistoryState) {
@@ -102,8 +115,12 @@ pub(super) fn load_initial_history_when_connected(target: HistoryTarget, mut sta
                         room_id = %target.room_id,
                         "loading initial text chat history after realtime connected"
                     );
-                    load_initial_history(target, state);
-                    return;
+                    if (state.messages)().is_empty() {
+                        load_initial_history_async(target.clone(), state).await;
+                    } else {
+                        super::history_refresh::refresh_history(target.clone(), state).await;
+                    }
+                    logged_wait = false;
                 }
                 RealtimeConnectionStatus::ConnectingWebTransport
                 | RealtimeConnectionStatus::ConnectingWebSocketFallback

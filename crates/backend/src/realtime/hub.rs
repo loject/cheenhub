@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use cheenhub_contracts::realtime::{RealtimeKind, RealtimeModule};
+use dashmap::DashMap;
 use futures_util::future::join_all;
 use serde::Serialize;
 use tokio::sync::{Mutex, watch};
@@ -13,17 +14,62 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
+use super::SERVICE_RESTARTING_CLOSE_CODE;
 use super::protocol;
 use super::sink::{DatagramSink, EnvelopeSink};
 
 const SLOW_DATAGRAM_FANOUT_WARN_AFTER: Duration = Duration::from_millis(40);
 const SLOW_DATAGRAM_FANOUT_WARNING_INTERVAL: Duration = Duration::from_secs(5);
 
+/// Причина, по которой backend закрывает активный realtime-транспорт.
+///
+/// Причина определяет код закрытия, который видит клиент: отзыв auth-сессии —
+/// это потеря доступа, а плановый рестарт — временная недоступность сервера,
+/// после которой клиент должен переподключиться сразу.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DisconnectReason {
+    /// Связанная с транспортом auth-сессия была отозвана.
+    AuthSessionRevoked,
+    /// Процесс переходит в фазу завершения.
+    ServiceRestarting,
+}
+
+impl std::fmt::Display for DisconnectReason {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            Self::AuthSessionRevoked => "auth_session_revoked",
+            Self::ServiceRestarting => "service_restarting",
+        };
+        formatter.write_str(label)
+    }
+}
+
+impl DisconnectReason {
+    /// Возвращает код закрытия транспорта для этой причины.
+    ///
+    /// Для отзыва сессии используется 4003 из диапазона WebTransport, для
+    /// планового рестарта — 1013 (try again later) по RFC 6455.
+    pub(crate) fn close_code(self) -> u32 {
+        match self {
+            Self::AuthSessionRevoked => 4003,
+            Self::ServiceRestarting => SERVICE_RESTARTING_CLOSE_CODE,
+        }
+    }
+
+    /// Возвращает текст причины, который получает клиент при закрытии.
+    pub(crate) fn close_message(self) -> &'static str {
+        match self {
+            Self::AuthSessionRevoked => "auth session revoked",
+            Self::ServiceRestarting => "backend is shutting down",
+        }
+    }
+}
+
 /// Общий реестр активных потоков realtime, привязанных к модулям.
 #[derive(Default)]
 pub(crate) struct RealtimeHub {
     streams: Mutex<Vec<RealtimeStream>>,
-    sessions: Mutex<Vec<RealtimeSession>>,
+    sessions: DashMap<Uuid, RealtimeSession>,
     last_slow_datagram_fanout_warning_at: Mutex<Option<Instant>>,
 }
 
@@ -41,7 +87,7 @@ struct RealtimeSession {
     user_id: Uuid,
     auth_session_id: Uuid,
     datagrams: DatagramSink,
-    disconnect: watch::Sender<bool>,
+    disconnect: watch::Sender<Option<DisconnectReason>>,
 }
 
 struct DatagramFanoutOutcome {
@@ -52,9 +98,9 @@ struct DatagramFanoutOutcome {
 /// Публичный идентификатор потока, используемый в политиках вещания на уровне функций.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RealtimeRecipient {
-    /// Stable realtime stream identifier.
+    /// Идентификатор надёжного realtime-потока.
     pub(crate) stream_id: Uuid,
-    /// Authenticated user that owns the stream.
+    /// Аутентифицированный пользователь — владелец потока.
     pub(crate) user_id: Uuid,
 }
 
@@ -65,7 +111,7 @@ impl RealtimeHub {
         &self,
         user_id: Uuid,
         auth_session_id: Uuid,
-    ) -> watch::Receiver<bool> {
+    ) -> watch::Receiver<Option<DisconnectReason>> {
         let (outbound, _receiver) = tokio::sync::mpsc::channel(1);
         self.register_session(
             Uuid::new_v4(),
@@ -100,102 +146,128 @@ impl RealtimeHub {
     /// Регистрирует аутентифицированную realtime-сессию для вещания датаграмм.
     ///
     /// Возвращает сигнал, который транспорт обязан обработать завершением
-    /// соединения после отзыва связанной auth-сессии.
+    /// соединения после отзыва связанной auth-сессии или остановки процесса.
     pub(crate) async fn register_session(
         &self,
         session_id: Uuid,
         user_id: Uuid,
         auth_session_id: Uuid,
         datagrams: DatagramSink,
-    ) -> watch::Receiver<bool> {
-        let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.iter().find(|session| session.id == session_id) {
-            return session.disconnect.subscribe();
-        }
-        let (disconnect, receiver) = watch::channel(false);
-        sessions.push(RealtimeSession {
-            id: session_id,
-            user_id,
-            auth_session_id,
-            datagrams,
-            disconnect,
-        });
+    ) -> watch::Receiver<Option<DisconnectReason>> {
+        let receiver = match self.sessions.entry(session_id) {
+            dashmap::Entry::Occupied(session) => session.get().disconnect.subscribe(),
+            dashmap::Entry::Vacant(session) => {
+                let (disconnect, receiver) = watch::channel(None);
+                session.insert(RealtimeSession {
+                    id: session_id,
+                    user_id,
+                    auth_session_id,
+                    datagrams,
+                    disconnect,
+                });
+                receiver
+            }
+        };
         debug!(%session_id, %user_id, %auth_session_id, "registered realtime session");
         receiver
     }
 
     /// Удаляет аутентифицированную сессию WebTransport.
     pub(crate) async fn unregister_session(&self, session_id: Uuid) {
-        let mut sessions = self.sessions.lock().await;
-        sessions.retain(|session| session.id != session_id);
+        self.sessions.remove(&session_id);
         debug!(%session_id, "unregistered realtime session");
     }
 
     /// Завершает все realtime-транспорты, связанные с одной auth-сессией.
     pub(crate) async fn disconnect_auth_session(&self, auth_session_id: &Uuid) -> usize {
-        let mut sessions = self.sessions.lock().await;
-        let mut disconnected = 0;
-        sessions.retain(|session| {
-            if session.auth_session_id != *auth_session_id {
-                return true;
-            }
-
-            disconnected += 1;
-            let _ = session.disconnect.send(true);
-            false
-        });
-        if disconnected > 0 {
-            info!(
-                %auth_session_id,
-                realtime_session_count = disconnected,
-                "disconnecting realtime transports for revoked auth session"
-            );
-        } else {
-            debug!(%auth_session_id, "revoked auth session has no active realtime transports");
-        }
-        disconnected
+        self.disconnect_matching(
+            |session| session.auth_session_id == *auth_session_id,
+            DisconnectReason::AuthSessionRevoked,
+            "revoked auth session",
+        )
+        .await
     }
 
     /// Завершает все realtime-транспорты активных auth-сессий пользователя.
     pub(crate) async fn disconnect_user_sessions(&self, user_id: &Uuid) -> usize {
-        let mut sessions = self.sessions.lock().await;
+        self.disconnect_matching(
+            |session| session.user_id == *user_id,
+            DisconnectReason::AuthSessionRevoked,
+            "revoked user sessions",
+        )
+        .await
+    }
+
+    /// Завершает все активные realtime-транспорты при остановке процесса.
+    ///
+    /// Вызывается при переходе в фазу завершения, чтобы клиенты узнали о
+    /// плановом рестарте по коду закрытия и сразу переподключились, не дожидаясь
+    /// истечения ping-таймаута. Возвращает количество закрытых транспортов.
+    pub(crate) async fn disconnect_all_sessions(&self) -> usize {
+        self.disconnect_matching(
+            |_| true,
+            DisconnectReason::ServiceRestarting,
+            "process exit",
+        )
+        .await
+    }
+
+    /// Закрывает транспорты, отобранные фильтром, одной причиной.
+    ///
+    /// Сессии удаляются из реестра сразу, чтобы fanout больше не пытался писать
+    /// в закрываемые транспорты.
+    async fn disconnect_matching(
+        &self,
+        matches: impl Fn(&RealtimeSession) -> bool,
+        reason: DisconnectReason,
+        context: &'static str,
+    ) -> usize {
         let mut disconnected = 0;
-        sessions.retain(|session| {
-            if session.user_id != *user_id {
+        self.sessions.retain(|_, session| {
+            if !matches(session) {
                 return true;
             }
 
             disconnected += 1;
-            let _ = session.disconnect.send(true);
+            let _ = session.disconnect.send(Some(reason));
             false
         });
+        let remaining = self.sessions.len();
         if disconnected > 0 {
             info!(
-                %user_id,
+                %reason,
                 realtime_session_count = disconnected,
-                "disconnecting realtime transports for revoked user sessions"
+                "disconnected realtime transports"
             );
         } else {
-            debug!(%user_id, "user has no active realtime transports to disconnect");
+            debug!(%reason, "no realtime transports matched disconnect request");
         }
+        debug!(remaining_sessions = remaining, removed_sessions = disconnected, %context, "realtime session registry updated after disconnect request");
         disconnected
     }
 
-    /// Отправляет одну сырую датаграмму выбранным активным сессиям.
-    pub(crate) async fn fanout_datagram_to_sessions(
+    /// Отправляет сырую датаграмму активным сессиям из снимка, кроме источника.
+    ///
+    /// `session_ids` может быть immutable-снимком получателей комнаты;
+    /// `excluded_session_id` не получает собственную датаграмму отправителя.
+    /// Список сессий копируется до первого `await`, поэтому map guards не
+    /// переживают асинхронную отправку.
+    pub(crate) async fn fanout_datagram_to_sessions_except(
         &self,
         session_ids: &[Uuid],
+        excluded_session_id: Uuid,
         bytes: bytes::Bytes,
     ) {
         let started_at = Instant::now();
         let payload_bytes = bytes.len();
-        let sessions = self
-            .sessions
-            .lock()
-            .await
+        let sessions = session_ids
             .iter()
-            .filter(|session| session_ids.contains(&session.id))
-            .cloned()
+            .filter(|session_id| **session_id != excluded_session_id)
+            .filter_map(|session_id| {
+                self.sessions
+                    .get(session_id)
+                    .map(|entry| entry.value().clone())
+            })
             .collect::<Vec<_>>();
         let recipient_count = sessions.len();
 
@@ -417,3 +489,6 @@ async fn user_has_server_access(
         .await?
         .is_some())
 }
+
+#[cfg(test)]
+mod tests;

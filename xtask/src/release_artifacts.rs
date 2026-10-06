@@ -239,7 +239,7 @@ fn ensure_github_release_exists(release_tag: &str) -> XtaskResult<()> {
         return Ok(());
     }
 
-    let notes = "Release artifacts are attached incrementally as GitHub Actions jobs finish.";
+    let notes = "Новый релиз.";
     let output = command_output(
         Command::new("gh")
             .args(["release", "create", release_tag])

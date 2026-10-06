@@ -192,6 +192,11 @@ pub(super) async fn delete_server_room(
     Ok(())
 }
 
+/// Считает комнаты всех серверов в PostgreSQL.
+pub(super) async fn count_all_rooms(database: &DatabaseConnection) -> anyhow::Result<u64> {
+    Ok(server_rooms::Entity::find().count(database).await?)
+}
+
 pub(super) async fn count_server_rooms(
     database: &DatabaseConnection,
     server_id: &Uuid,

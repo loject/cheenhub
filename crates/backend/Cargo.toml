@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+arc-swap.workspace = true
 argon2.workspace = true
 async-trait.workspace = true
 aws-config.workspace = true
@@ -19,6 +20,7 @@ base64.workspace = true
 bytes.workspace = true
 cheenhub_contracts = { path = "../contracts" }
 chrono.workspace = true
+dashmap.workspace = true
 dotenvy.workspace = true
 ed25519-dalek.workspace = true
 futures-util.workspace = true
@@ -47,3 +49,6 @@ uuid.workspace = true
 web-transport.workspace = true
 web-transport-quinn.workspace = true
 x509-parser.workspace = true
+
+[dev-dependencies]
+tokio-tungstenite.workspace = true

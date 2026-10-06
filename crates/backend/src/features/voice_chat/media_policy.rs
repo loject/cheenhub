@@ -12,6 +12,7 @@ use cheenhub_contracts::{
 use uuid::Uuid;
 
 use super::infrastructure::{InMemoryVoicePresenceStore, VoicePresence};
+use super::media::MediaDatagramHeader;
 use vp9::parse_key_frame_dimensions;
 
 mod vp9;
@@ -21,6 +22,8 @@ const FPS_MEASUREMENT_WINDOW: Duration = Duration::from_secs(1);
 const FPS_BLOCK_DURATION: Duration = Duration::from_secs(1);
 const FPS_JITTER_ALLOWANCE: u32 = 2;
 const RECENT_SEQUENCE_LIMIT: usize = 128;
+/// Окно, в течение которого видеоисточник считается активным после последнего допустимого кадра.
+const VIDEO_ACTIVITY_WINDOW: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum VideoAdmission {
@@ -48,32 +51,65 @@ impl VideoPublicationTracker {
     pub(super) fn inspect(
         &mut self,
         session_id: Uuid,
-        user_id: Uuid,
         datagram: &MediaDatagram,
         allowed_presets: &[VideoPresetId],
     ) -> VideoAdmission {
-        self.inspect_at(
-            session_id,
-            user_id,
-            datagram,
-            allowed_presets,
-            Instant::now(),
-        )
+        self.inspect_at(session_id, datagram, allowed_presets, Instant::now())
     }
 
     fn inspect_at(
         &mut self,
         session_id: Uuid,
-        user_id: Uuid,
         datagram: &MediaDatagram,
         allowed_presets: &[VideoPresetId],
         now: Instant,
     ) -> VideoAdmission {
+        self.inspect_frame_at(
+            VideoFrameView {
+                session_id,
+                kind: datagram.kind,
+                flags: datagram.flags,
+                sequence: datagram.sequence,
+                room_id: datagram.room_id,
+                payload: &datagram.payload,
+            },
+            allowed_presets,
+            now,
+        )
+    }
+
+    fn inspect_header_at(
+        &mut self,
+        session_id: Uuid,
+        header: &MediaDatagramHeader,
+        payload: &[u8],
+        allowed_presets: &[VideoPresetId],
+        now: Instant,
+    ) -> VideoAdmission {
+        self.inspect_frame_at(
+            VideoFrameView {
+                session_id,
+                kind: header.kind,
+                flags: header.flags,
+                sequence: header.sequence,
+                room_id: header.room_id,
+                payload,
+            },
+            allowed_presets,
+            now,
+        )
+    }
+
+    fn inspect_frame_at(
+        &mut self,
+        frame: VideoFrameView<'_>,
+        allowed_presets: &[VideoPresetId],
+        now: Instant,
+    ) -> VideoAdmission {
         let key = VideoPublicationKey {
-            session_id,
-            user_id,
-            room_id: datagram.room_id,
-            kind: datagram.kind,
+            session_id: frame.session_id,
+            room_id: frame.room_id,
+            kind: frame.kind,
         };
         let publication = match self.publications.iter_mut().find(|entry| entry.key == key) {
             Some(publication) => publication,
@@ -85,28 +121,33 @@ impl VideoPublicationTracker {
             }
         };
 
-        let fragment = match frame_fragment(datagram) {
+        let fragment = match frame_fragment(frame.flags, frame.payload) {
             Ok(fragment) => fragment,
             Err(reason) => return VideoAdmission::Drop(reason),
         };
         if !fragment.is_first {
             return publication
-                .decision_for(datagram.sequence)
+                .decision_for(frame.sequence)
                 .unwrap_or(VideoAdmission::Drop(VideoDropReason::AwaitingFirstFragment));
         }
-        if let Some(decision) = publication.decision_for(datagram.sequence) {
+        if let Some(decision) = publication.decision_for(frame.sequence) {
             return decision;
         }
 
-        let is_key_frame = datagram.flags & MEDIA_DATAGRAM_FLAG_KEY_FRAME != 0;
+        let is_key_frame = frame.flags & MEDIA_DATAGRAM_FLAG_KEY_FRAME != 0;
         let decision = publication.inspect_frame(
-            datagram.sequence,
+            frame.sequence,
             is_key_frame,
             fragment.vp9_payload,
             allowed_presets,
             now,
         );
-        publication.remember(datagram.sequence, decision);
+        publication.remember(frame.sequence, decision);
+        if decision == VideoAdmission::Forward {
+            // Только что прошедший проверку кадр продлевает активность источника;
+            // повторные и отклонённые пакеты возвращаются выше без обновления времени.
+            publication.last_forward_at = Some(now);
+        }
         decision
     }
 
@@ -114,32 +155,104 @@ impl VideoPublicationTracker {
         self.publications.retain(|publication| {
             !removed.iter().any(|presence| {
                 publication.key.session_id == presence.session_id
-                    && publication.key.user_id == presence.user_id
                     && publication.key.room_id == presence.room_id
             })
         });
     }
+
+    /// Убирает один источник по явной остановке видеопотока владельцем сессии.
+    pub(super) fn remove_source(
+        &mut self,
+        session_id: Uuid,
+        room_id: Uuid,
+        kind: MediaDatagramKind,
+    ) {
+        self.publications.retain(|publication| {
+            !(publication.key.session_id == session_id
+                && publication.key.room_id == room_id
+                && publication.key.kind == kind)
+        });
+    }
+
+    /// Считает источники, от которых недавно пришёл допустимый кадр.
+    pub(super) fn active_source_count(&self, now: Instant) -> usize {
+        self.publications
+            .iter()
+            .filter(|publication| {
+                publication
+                    .last_forward_at
+                    .is_some_and(|last| now.saturating_duration_since(last) < VIDEO_ACTIVITY_WINDOW)
+            })
+            .count()
+    }
+}
+
+/// Заимствованные поля видеокадра для проверки policy без создания датаграммы.
+struct VideoFrameView<'a> {
+    session_id: Uuid,
+    kind: MediaDatagramKind,
+    flags: u8,
+    sequence: u64,
+    room_id: Uuid,
+    payload: &'a [u8],
 }
 
 impl InMemoryVoicePresenceStore {
     pub(super) async fn inspect_video_datagram(
         &self,
         session_id: Uuid,
-        user_id: Uuid,
         datagram: &MediaDatagram,
         allowed_presets: &[VideoPresetId],
     ) -> VideoAdmission {
         self.video_publications
             .lock()
             .await
-            .inspect(session_id, user_id, datagram, allowed_presets)
+            .inspect(session_id, datagram, allowed_presets)
+    }
+
+    /// Применяет video policy к payload из исходного WebTransport-буфера.
+    pub(super) async fn inspect_video_payload(
+        &self,
+        session_id: Uuid,
+        header: &MediaDatagramHeader,
+        payload: &[u8],
+        allowed_presets: &[VideoPresetId],
+    ) -> VideoAdmission {
+        self.video_publications.lock().await.inspect_header_at(
+            session_id,
+            header,
+            payload,
+            allowed_presets,
+            Instant::now(),
+        )
+    }
+
+    /// Убирает один видеоисточник по явному запросу остановки видеопотока.
+    pub(super) async fn remove_video_source(
+        &self,
+        session_id: Uuid,
+        room_id: Uuid,
+        kind: MediaDatagramKind,
+    ) {
+        self.video_publications
+            .lock()
+            .await
+            .remove_source(session_id, room_id, kind);
+    }
+
+    /// Возвращает число активных видеоисточников по времени последнего допустимого кадра.
+    pub(super) async fn active_video_source_count(&self) -> usize {
+        self.video_publications
+            .lock()
+            .await
+            .active_source_count(Instant::now())
     }
 }
 
+/// Ключ одного видеоисточника: камера и экран сессии учитываются раздельно.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct VideoPublicationKey {
     session_id: Uuid,
-    user_id: Uuid,
     room_id: Uuid,
     kind: MediaDatagramKind,
 }
@@ -151,6 +264,7 @@ struct VideoPublication {
     window_frames: u32,
     blocked_until: Option<Instant>,
     recent_decisions: Vec<(u64, VideoAdmission)>,
+    last_forward_at: Option<Instant>,
 }
 
 impl VideoPublication {
@@ -162,6 +276,7 @@ impl VideoPublication {
             window_frames: 0,
             blocked_until: None,
             recent_decisions: Vec::new(),
+            last_forward_at: None,
         }
     }
 
@@ -257,24 +372,24 @@ struct FrameFragment<'a> {
     vp9_payload: &'a [u8],
 }
 
-fn frame_fragment(datagram: &MediaDatagram) -> Result<FrameFragment<'_>, VideoDropReason> {
-    if datagram.flags & MEDIA_DATAGRAM_FLAG_FRAGMENTED == 0 {
+fn frame_fragment(flags: u8, payload: &[u8]) -> Result<FrameFragment<'_>, VideoDropReason> {
+    if flags & MEDIA_DATAGRAM_FLAG_FRAGMENTED == 0 {
         return Ok(FrameFragment {
             is_first: true,
-            vp9_payload: &datagram.payload,
+            vp9_payload: payload,
         });
     }
-    if datagram.payload.len() < VIDEO_FRAGMENT_HEADER_LEN {
+    if payload.len() < VIDEO_FRAGMENT_HEADER_LEN {
         return Err(VideoDropReason::MalformedFragment);
     }
-    let fragment_index = u16::from_be_bytes([datagram.payload[4], datagram.payload[5]]);
-    let fragment_count = u16::from_be_bytes([datagram.payload[6], datagram.payload[7]]);
+    let fragment_index = u16::from_be_bytes([payload[4], payload[5]]);
+    let fragment_count = u16::from_be_bytes([payload[6], payload[7]]);
     if fragment_count == 0 || fragment_index >= fragment_count {
         return Err(VideoDropReason::MalformedFragment);
     }
     Ok(FrameFragment {
         is_first: fragment_index == 0,
-        vp9_payload: &datagram.payload[VIDEO_FRAGMENT_HEADER_LEN..],
+        vp9_payload: &payload[VIDEO_FRAGMENT_HEADER_LEN..],
     })
 }
 
@@ -287,211 +402,4 @@ fn source_for_kind(kind: MediaDatagramKind) -> Option<VideoStreamSource> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use cheenhub_contracts::{
-        media::{MediaCodec, MediaDatagram},
-        video_presets::{BASE_CAMERA_VIDEO_PRESETS, BASE_SCREEN_SHARE_VIDEO_PRESETS},
-    };
-
-    #[test]
-    fn screen_policy_accepts_both_base_resolutions() {
-        for (sequence, width, height) in [(1, 1280, 720), (2, 1920, 1080)] {
-            let mut tracker = VideoPublicationTracker::default();
-            let mut datagram = video_datagram(sequence, true, width, height);
-            datagram.kind = MediaDatagramKind::ScreenFrame;
-            assert_eq!(
-                tracker.inspect_at(
-                    Uuid::new_v4(),
-                    Uuid::new_v4(),
-                    &datagram,
-                    BASE_SCREEN_SHARE_VIDEO_PRESETS,
-                    Instant::now(),
-                ),
-                VideoAdmission::Forward
-            );
-        }
-    }
-
-    #[test]
-    fn camera_policy_rejects_1080p() {
-        let mut tracker = VideoPublicationTracker::default();
-        let datagram = video_datagram(1, true, 1920, 1080);
-        assert_eq!(
-            tracker.inspect_at(
-                Uuid::new_v4(),
-                Uuid::new_v4(),
-                &datagram,
-                BASE_CAMERA_VIDEO_PRESETS,
-                Instant::now(),
-            ),
-            VideoAdmission::Drop(VideoDropReason::UnsupportedResolution {
-                width: 1920,
-                height: 1080,
-            })
-        );
-    }
-
-    #[test]
-    fn fragmented_frame_is_counted_once() {
-        let mut tracker = VideoPublicationTracker::default();
-        let session_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
-        let now = Instant::now();
-        let first = fragmented(video_datagram(1, true, 1280, 720), 0, 2);
-        let mut second = fragmented(video_datagram(1, true, 1280, 720), 1, 2);
-        second.room_id = first.room_id;
-        assert_eq!(
-            tracker.inspect_at(session_id, user_id, &first, BASE_CAMERA_VIDEO_PRESETS, now),
-            VideoAdmission::Forward
-        );
-        assert_eq!(
-            tracker.inspect_at(session_id, user_id, &second, BASE_CAMERA_VIDEO_PRESETS, now),
-            VideoAdmission::Forward
-        );
-        assert_eq!(tracker.publications[0].window_frames, 1);
-    }
-
-    #[test]
-    fn sustained_fps_violation_blocks_until_later_key_frame() {
-        let mut tracker = VideoPublicationTracker::default();
-        let session_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
-        let started = Instant::now();
-        let key = video_datagram(1, true, 1280, 720);
-        let room_id = key.room_id;
-        assert_eq!(
-            tracker.inspect_at(
-                session_id,
-                user_id,
-                &key,
-                BASE_CAMERA_VIDEO_PRESETS,
-                started
-            ),
-            VideoAdmission::Forward
-        );
-        for sequence in 2..=26 {
-            let mut frame = video_datagram(sequence, false, 0, 0);
-            frame.room_id = room_id;
-            assert_eq!(
-                tracker.inspect_at(
-                    session_id,
-                    user_id,
-                    &frame,
-                    BASE_CAMERA_VIDEO_PRESETS,
-                    started + Duration::from_millis(sequence * 30),
-                ),
-                VideoAdmission::Forward
-            );
-        }
-        let mut violating = video_datagram(27, false, 0, 0);
-        violating.room_id = room_id;
-        assert!(matches!(
-            tracker.inspect_at(
-                session_id,
-                user_id,
-                &violating,
-                BASE_CAMERA_VIDEO_PRESETS,
-                started + Duration::from_millis(1_010),
-            ),
-            VideoAdmission::Drop(VideoDropReason::FpsLimitExceeded { .. })
-        ));
-        let mut early_key = video_datagram(28, true, 1280, 720);
-        early_key.room_id = room_id;
-        assert_eq!(
-            tracker.inspect_at(
-                session_id,
-                user_id,
-                &early_key,
-                BASE_CAMERA_VIDEO_PRESETS,
-                started + Duration::from_millis(1_500),
-            ),
-            VideoAdmission::Drop(VideoDropReason::FpsBlockActive)
-        );
-        let mut later_key = video_datagram(29, true, 1280, 720);
-        later_key.room_id = room_id;
-        assert_eq!(
-            tracker.inspect_at(
-                session_id,
-                user_id,
-                &later_key,
-                BASE_CAMERA_VIDEO_PRESETS,
-                started + Duration::from_millis(2_100),
-            ),
-            VideoAdmission::Forward
-        );
-    }
-
-    fn video_datagram(sequence: u64, key_frame: bool, width: u32, height: u32) -> MediaDatagram {
-        MediaDatagram {
-            kind: MediaDatagramKind::CameraFrame,
-            codec: MediaCodec::Vp9,
-            flags: if key_frame {
-                MEDIA_DATAGRAM_FLAG_KEY_FRAME
-            } else {
-                0
-            },
-            sequence,
-            timestamp_us: 0,
-            duration_us: 0,
-            room_id: Uuid::new_v4(),
-            sender_user_id: Uuid::nil(),
-            payload: if key_frame {
-                vp9_key_frame(width, height)
-            } else {
-                Vec::new()
-            },
-        }
-    }
-
-    fn fragmented(mut datagram: MediaDatagram, index: u16, count: u16) -> MediaDatagram {
-        let bytes = std::mem::take(&mut datagram.payload);
-        datagram.flags |= MEDIA_DATAGRAM_FLAG_FRAGMENTED;
-        datagram.payload = Vec::new();
-        datagram
-            .payload
-            .extend_from_slice(&(bytes.len() as u32).to_be_bytes());
-        datagram.payload.extend_from_slice(&index.to_be_bytes());
-        datagram.payload.extend_from_slice(&count.to_be_bytes());
-        datagram.payload.extend_from_slice(&bytes);
-        datagram
-    }
-
-    fn vp9_key_frame(width: u32, height: u32) -> Vec<u8> {
-        let mut writer = BitWriter::default();
-        writer.write(0b10, 2);
-        writer.write(0, 1);
-        writer.write(0, 1);
-        writer.write(0, 1);
-        writer.write(0, 1);
-        writer.write(1, 1);
-        writer.write(0, 1);
-        writer.write(0x49_83_42, 24);
-        writer.write(1, 3);
-        writer.write(0, 1);
-        writer.write(width - 1, 16);
-        writer.write(height - 1, 16);
-        writer.bytes
-    }
-
-    #[derive(Default)]
-    struct BitWriter {
-        bytes: Vec<u8>,
-        bit_offset: usize,
-    }
-
-    impl BitWriter {
-        fn write(&mut self, value: u32, count: usize) {
-            for bit_index in (0..count).rev() {
-                if self.bit_offset.is_multiple_of(8) {
-                    self.bytes.push(0);
-                }
-                let bit = ((value >> bit_index) & 1) as u8;
-                let byte_index = self.bit_offset / 8;
-                let shift = 7 - self.bit_offset % 8;
-                self.bytes[byte_index] |= bit << shift;
-                self.bit_offset += 1;
-            }
-        }
-    }
-}
+pub(crate) mod tests;

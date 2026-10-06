@@ -8,22 +8,27 @@ use dioxus::prelude::*;
 use futures_util::StreamExt;
 
 use crate::features::app::components::app_shell::ActiveRoom;
+use crate::features::app::current_user::CurrentUserContext;
 use crate::features::message_composer::{MessageComposeState, MessageComposer};
 use crate::features::realtime::RealtimeHandle;
 use crate::features::runtime::sleep_duration;
 use crate::features::server_registry::ServerRegistry;
+use crate::features::typing::{
+    TypingIndicator, TypingTarget, TypingTransport, use_typing_notifier, use_typing_participants,
+};
 
 use super::compose::use_room_message_operations;
 use super::history::{
     HistoryState, HistoryTarget, load_initial_history, load_initial_history_when_connected,
     load_older_history,
 };
+use super::history_status::ChatHistoryStatus;
 use super::messages::{append_message, remove_message};
 use super::realtime::{self, TextChatEvent};
-use super::scroll::{ScrollCommand, apply_scroll_command, update_scroll_state};
+use super::scroll::{ScrollCommand, update_scroll_state};
 use super::{
-    CHAT_CONTENT_CLASS, ChatHistoryLoadingState, ChatMessageDateDivider, ChatMessageGroup,
-    VirtualChatLayout, VirtualChatRow, prepare_text_chat_groups, use_history_overflow,
+    CHAT_CONTENT_CLASS, ChatMessageDateDivider, ChatMessageGroup, VirtualChatLayout,
+    VirtualChatRow, prepare_text_chat_groups, use_history_overflow,
 };
 
 /// Рендерит панель realtime-текстового чата для одной комнаты.
@@ -31,6 +36,7 @@ use super::{
 pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) -> Element {
     let realtime = use_context::<RealtimeHandle>();
     let permissions = use_context::<ServerRegistry>().permissions(&server_id);
+    let current_user = use_context::<CurrentUserContext>().require_user();
     let room_compose_state = use_context::<MessageComposeState>();
     let mut messages = use_signal(Vec::<TextChatMessage>::new);
     let mut appearing_message_ids = use_signal(Vec::<String>::new);
@@ -45,6 +51,12 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let (history_overflowing, measure_history) = use_history_overflow(list_element);
     let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
     let virtual_layout = use_signal(VirtualChatLayout::default);
+    let anchor_elements = super::scroll_anchor_runtime::use_anchor_elements(
+        list_element,
+        pending_scroll,
+        messages,
+        virtual_layout,
+    );
     let event_room_id = room.id.clone();
     let history_server_id = server_id.clone();
     let history_room_id = room.id.clone();
@@ -78,6 +90,8 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         older_error,
         list_element,
         pending_scroll,
+        is_near_bottom,
+        anchor_elements,
     };
     let placeholder_prefix = if compact { "&" } else { "#" };
     let list_class = if compact {
@@ -135,21 +149,14 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         });
     });
 
-    use_effect(move || {
-        let _message_count = messages.len();
-        let Some(command) = pending_scroll() else {
-            return;
-        };
-        pending_scroll.set(None);
-        let Some(element) = list_element.cloned() else {
-            return;
-        };
-
-        spawn(async move {
-            apply_scroll_command(element, command).await;
-        });
-    });
-
+    let typing_target = TypingTarget::Room {
+        server_id: server_id.clone(),
+        room_id: room.id.clone(),
+    };
+    let typing_transport = TypingTransport::new(realtime.clone(), typing_target.clone());
+    let typing = use_typing_notifier(typing_transport);
+    let typing_participants =
+        use_typing_participants(&realtime, typing_target, current_user.id.clone());
     let operations = use_room_message_operations(
         realtime.clone(),
         send_server_id,
@@ -157,6 +164,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         messages,
         appearing_message_ids,
         pending_scroll,
+        typing,
     );
     let load_older = use_callback(move |_| {
         load_older_history(older_target.clone(), history_state);
@@ -175,8 +183,14 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
             removing_message_ids.write().retain(|id| id != &message_id);
         });
     });
+    let retry_target = HistoryTarget {
+        realtime: realtime.clone(),
+        server_id: server_id.clone(),
+        room_id: room.id.clone(),
+    };
+
     rsx! {
-        div { class: "flex h-full min-h-0 min-w-0 w-full flex-col bg-[#08090b]",
+        div { class: "relative flex h-full min-h-0 min-w-0 w-full flex-col bg-[#08090b]",
             div {
                 class: list_class,
                 onmounted: move |event| {
@@ -184,6 +198,10 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                     measure_history.call(());
                 },
                 onresize: move |_| measure_history.call(()),
+                onwheel: move |_| anchor_elements.interacted(),
+                ontouchmove: move |_| anchor_elements.interacted(),
+                onpointerdown: move |_| anchor_elements.interacted(),
+                onkeydown: move |_| anchor_elements.interacted(),
                 onscroll: move |_| {
                     if let Some(element) = list_element.cloned() {
                         spawn(async move {
@@ -216,29 +234,11 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             }
                         }
                     }
-                    if initial_loading() && !has_messages {
-                        ChatHistoryLoadingState {}
-                    } else if let Some(error) = history_error() {
-                        div { class: "mx-auto max-w-md rounded-[18px] bg-red-500/[0.08] px-6 py-5 text-center text-[12px] leading-5 text-red-200 shadow-[0_0_0_1px_rgba(248,113,113,0.16)]",
-                            p { class: "font-semibold text-red-100", "Не удалось загрузить сообщения" }
-                            p { "{error}" }
-                            button {
-                                r#type: "button",
-                                class: "mt-3 min-h-10 rounded-xl bg-red-400/10 px-4 text-[12px] font-medium text-red-100 transition-[background-color,color,transform] duration-150 hover:bg-red-400/15 hover:text-white active:scale-[0.96]",
-                                onclick: move |_| {
-                                    load_initial_history(
-                                        HistoryTarget {
-                                            realtime: realtime.clone(),
-                                            server_id: server_id.clone(),
-                                            room_id: room.id.clone(),
-                                        },
-                                        history_state,
-                                    );
-                                },
-                                "Повторить"
-                            }
-                        }
-                    } else if !has_messages {
+                    ChatHistoryStatus {
+                        loading: initial_loading(), error: history_error(), has_messages,
+                        on_retry: move |_| load_initial_history(retry_target.clone(), history_state),
+                    }
+                    if !has_messages && !initial_loading() && history_error().is_none() {
                         div { class: "mx-auto flex max-w-md flex-col items-center px-6 py-12 text-center",
                             div { class: "mb-4 flex h-12 w-12 items-center justify-center rounded-[16px] bg-blue-500/10 text-[24px] font-light text-blue-400 shadow-[0_0_0_1px_rgba(96,165,250,0.16)]", "#" }
                             p { class: "text-[15px] font-semibold tracking-[-0.02em] text-zinc-100", "Здесь начнётся разговор" }
@@ -246,7 +246,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                                 "Напиши первое сообщение в этой комнате."
                             }
                         }
-                    } else {
+                    } else if has_messages {
                         for (group_index, (group_key, date_label, estimated_height, group)) in message_groups.iter().cloned().enumerate() {
                             div { key: "{group_key}", class: "contents",
                                 if let Some(label) = date_label {
@@ -254,11 +254,13 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                                 }
                                 VirtualChatRow {
                                     row_id: group_key.clone(),
-                                    active: rendered_group_range.contains(&group_index),
+                                    active: rendered_group_range.contains(&group_index)
+                                        || super::scroll_anchor_runtime::targets_group(pending_scroll(), &group),
                                     estimated_height,
                                     layout: virtual_layout,
                                     ChatMessageGroup {
                                         messages: group,
+                                        anchor_elements: Some(anchor_elements),
                                         appearing_message_ids: appearing_message_ids_list.clone(),
                                         removing_message_ids: removing_message_ids_list.clone(),
                                         can_delete_messages: permissions.can_delete_messages,
@@ -290,6 +292,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 }
                 }
             }
+            TypingIndicator { typers: typing_participants() }
             if !room.can_write {
                 div { class: "shrink-0 px-3 pb-3 pt-2",
                     {super::read_only_notice::read_only_notice()}

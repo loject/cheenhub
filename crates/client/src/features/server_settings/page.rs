@@ -74,6 +74,8 @@ pub(crate) fn ServerSettingsPage(
     on_select_section: EventHandler<ServerSettingsSection>,
     on_server_updated: EventHandler<ServerSummary>,
     on_close: EventHandler<()>,
+    /// Запрашивает подтверждение удаления у scope настроек.
+    on_delete_request: EventHandler<()>,
 ) -> Element {
     let section_label = settings_section_label(active_section);
     let section_description = settings_section_description(active_section);
@@ -126,6 +128,7 @@ pub(crate) fn ServerSettingsPage(
                             ServerOverviewSettingsSection {
                                 server: server.clone(),
                                 on_server_updated,
+                                on_delete_request,
                             }
                         },
                         ServerSettingsSection::Invites => rsx! {

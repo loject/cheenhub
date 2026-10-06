@@ -12,11 +12,11 @@ pub(super) fn RoomListItem(
     room: ServerRoomSummary,
     is_active: bool,
     can_manage_rooms: bool,
+    is_deleting: bool,
     voice_participants: Vec<VoiceRoomParticipant>,
     compact_when_settings_active: bool,
     on_select: EventHandler<()>,
-    on_edit: EventHandler<()>,
-    on_delete: EventHandler<()>,
+    on_menu: EventHandler<(f64, f64)>,
 ) -> Element {
     let room_name_class = room_name_class(compact_when_settings_active);
     let room_actions_class = room_actions_class(compact_when_settings_active);
@@ -33,6 +33,13 @@ pub(super) fn RoomListItem(
 
     rsx! {
         div {
+            oncontextmenu: move |event| {
+                event.stop_propagation();
+                if !can_manage_rooms || is_deleting { return; }
+                event.prevent_default();
+                let point = event.client_coordinates();
+                on_menu.call((point.x, point.y));
+            },
             "data-active": if is_active { "true" } else { "false" },
             class: "group relative flex w-full items-center justify-between rounded-lg border border-transparent px-2.5 py-2 text-left text-zinc-400 transition-[background,border-color,color,transform,opacity] duration-150 hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-100 data-[active=true]:border-accent/25 data-[active=true]:bg-accent/10 data-[active=true]:text-zinc-100",
             button {
@@ -45,7 +52,10 @@ pub(super) fn RoomListItem(
             }
             if show_voice_participants {
                 div { class: "group/voice-tooltip relative ml-2 flex shrink-0 items-center",
-                    div { class: "flex items-center -space-x-1",
+                    button {
+                        r#type: "button",
+                        class: "flex items-center -space-x-1 rounded-full",
+                        "aria-label": "Показать участников голосовой комнаты",
                         for participant in visible_voice_participants {
                             UserAvatar {
                                 key: "{participant.user_id}",
@@ -87,24 +97,27 @@ pub(super) fn RoomListItem(
             if can_manage_rooms {
                 span { class: room_actions_class,
                     button {
-                        r#type: "button",
-                        class: "rounded-md p-1 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-200",
-                        "aria-label": "Изменить комнату {room.name}",
-                        onclick: move |_| on_edit(()),
-                        svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" }
-                        }
-                    }
-                    button {
-                        r#type: "button",
-                        class: "rounded-md p-1 text-zinc-600 hover:bg-red-500/10 hover:text-red-200",
-                        "aria-label": "Удалить комнату {room.name}",
-                        onclick: move |_| on_delete(()),
-                        svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673A2.25 2.25 0 0 1 15.916 21H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" }
+                        r#type: "button", disabled: is_deleting,
+                        class: "relative flex h-[22px] w-12 shrink-0 items-center justify-center rounded-md p-1 text-zinc-600 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent",
+                        "aria-label": "Управление комнатой {room.name}",
+                        "aria-haspopup": "menu",
+                        onclick: move |event| {
+                            event.stop_propagation();
+                            let point = event.client_coordinates();
+                            on_menu.call(if point.x == 0.0 && point.y == 0.0 { (90.0, 120.0) } else { (point.x, point.y) });
+                        },
+                        if is_deleting {
+                            span { class: "size-4 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200", "aria-hidden": "true" }
+                        } else {
+                            svg { class: "h-3.5 w-3.5", fill: "currentColor", view_box: "0 0 24 24", "aria-hidden": "true",
+                                circle { cx: "5", cy: "12", r: "2" }
+                                circle { cx: "12", cy: "12", r: "2" }
+                                circle { cx: "19", cy: "12", r: "2" }
+                            }
                         }
                     }
                 }
+
             }
         }
     }
@@ -120,8 +133,8 @@ fn room_name_class(compact_when_settings_active: bool) -> &'static str {
 
 fn room_actions_class(compact_when_settings_active: bool) -> &'static str {
     if compact_when_settings_active {
-        "ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 max-[1440px]:hidden max-[1440px]:group-hover/rooms:flex max-[1440px]:group-focus-within/rooms:flex"
+        "room-menu-actions ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 max-[1440px]:hidden max-[1440px]:group-hover/rooms:flex max-[1440px]:group-focus-within/rooms:flex max-[900px]:flex max-[900px]:opacity-100"
     } else {
-        "ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100"
+        "room-menu-actions ml-2 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 max-[900px]:opacity-100"
     }
 }

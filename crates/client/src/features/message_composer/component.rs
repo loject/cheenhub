@@ -12,6 +12,7 @@ use super::pending_attachment::{
 use super::sending::submit_message;
 use super::{MAX_IMAGE_BYTES, MessageComposeState, MessageOperations, clipboard};
 use crate::features::image_picker::{ImagePickerButton, ImagePickerOutcome, PickedImage};
+use crate::features::typing::{TypingIntent, TypingNotifier};
 
 /// Рендерит одну форму сообщения; состояние принадлежит keyed-диалогу владельца.
 #[component]
@@ -33,8 +34,12 @@ pub(crate) fn MessageComposer(
     let component_current = use_hook(|| Rc::new(Cell::new(true)));
     use_drop({
         let component_current = component_current.clone();
+        let typing = operations.typing;
         move || {
             component_current.set(false);
+            // Набор снимается при размонтировании формы: переключение комнаты или
+            // диалога не должно оставлять у собеседников «зависший» индикатор.
+            typing.notify(TypingIntent::Stopped);
             for mut active in [state.is_selecting_image, state.is_reading_clipboard] {
                 if let Ok(mut value) = active.try_write() {
                     *value = false;
@@ -59,6 +64,7 @@ pub(crate) fn MessageComposer(
         restore_input_focus(input_element, refocus_requested(), complete_current.clone());
     });
     let submit = use_callback(move |_| {
+        operations.typing.notify(TypingIntent::Stopped);
         if can_send_message(
             &(state.draft)(),
             (state.pending_attachment)().is_some(),
@@ -141,7 +147,11 @@ pub(crate) fn MessageComposer(
                         style: "field-sizing: content;",
                         class: "max-h-80 min-h-10 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-[13px] leading-5 text-zinc-100 outline-none placeholder:text-zinc-600",
                         onmounted: move |event| input_element.set(Some(event.data.clone())),
-                        oninput: move |event| state.draft.set(event.value()),
+                        oninput: move |event| {
+                            let value = event.value();
+                            notify_typing(&operations.typing, &value);
+                            state.draft.set(value);
+                        },
                         onblur: move |_| refocus_requested.set(false),
                         onpaste: move |event| {
                             if !(state.is_sending)() && !(state.is_selecting_image)()
@@ -215,6 +225,19 @@ pub(crate) fn MessageComposer(
             }
         }
     }
+}
+
+/// Сообщает чату о начале или завершении набора по содержимому черновика.
+///
+/// Пустой черновик означает, что пользователь удалил текст и больше не печатает,
+/// поэтому индикатор у собеседников должен погаснуть сразу, а не по таймауту.
+fn notify_typing(typing: &TypingNotifier, draft: &str) {
+    let intent = if draft.trim().is_empty() {
+        TypingIntent::Stopped
+    } else {
+        TypingIntent::Started
+    };
+    typing.notify(intent);
 }
 
 fn restore_input_focus(

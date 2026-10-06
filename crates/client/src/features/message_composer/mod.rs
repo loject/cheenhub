@@ -18,4 +18,4 @@ pub(crate) use state::{MessageComposeState, use_message_compose_state};
 pub(crate) const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 
 #[cfg(test)]
-mod sending_lifecycle_tests;
+mod tests;

@@ -21,6 +21,7 @@ use self::support::{
 };
 
 mod accept_invite;
+mod deletion;
 mod invite_settings;
 mod members_settings;
 mod own_invites;
@@ -30,6 +31,7 @@ mod support;
 mod voice_settings;
 
 pub(crate) use accept_invite::accept_invite;
+pub(crate) use deletion::delete;
 pub(crate) use invite_settings::{
     kick_server_invite_member, list_server_invites, revoke_server_invite,
 };

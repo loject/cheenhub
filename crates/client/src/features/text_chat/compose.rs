@@ -7,6 +7,7 @@ use super::{messages::append_message, realtime, scroll::ScrollCommand};
 use crate::features::message_composer::MessageOperations;
 use crate::features::message_composer::pending_attachment::PendingImageAttachment;
 use crate::features::realtime::RealtimeHandle;
+use crate::features::typing::TypingNotifier;
 use cheenhub_contracts::realtime::TextChatMessage;
 
 pub(super) fn use_room_message_operations(
@@ -16,6 +17,7 @@ pub(super) fn use_room_message_operations(
     mut messages: Signal<Vec<TextChatMessage>>,
     mut appearing_message_ids: Signal<Vec<String>>,
     mut pending_scroll: Signal<Option<ScrollCommand>>,
+    typing: TypingNotifier,
 ) -> MessageOperations {
     let upload_realtime = realtime.clone();
     let upload_server_id = server_id.clone();
@@ -66,5 +68,9 @@ pub(super) fn use_room_message_operations(
         }
         .boxed_local()
     });
-    MessageOperations { upload, send }
+    MessageOperations {
+        upload,
+        send,
+        typing,
+    }
 }

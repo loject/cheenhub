@@ -6,6 +6,64 @@ use uuid::Uuid;
 /// Фиксированный идентификатор единственной строки настроек почты.
 pub(crate) const EMAIL_SETTINGS_ID: Uuid = Uuid::nil();
 
+/// Фиксированный идентификатор единственной строки настроек журнала.
+pub(crate) const LOG_SETTINGS_ID: Uuid = Uuid::nil();
+
+/// Минимальный уровень журналирования процесса хоста.
+///
+/// Уровень применяется ко всем модулям бэкенда сразу, поэтому не зависит от
+/// отдельных директив фильтра: выбор владельца заменяет фильтр целиком.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LogLevel {
+    /// Только ошибки.
+    Error,
+    /// Ошибки и предупреждения.
+    Warn,
+    /// Ошибки, предупреждения и обычные события.
+    Info,
+    /// Дополнительно диагностические сообщения.
+    Debug,
+    /// Полная трассировка внутренних вызовов.
+    Trace,
+}
+
+impl LogLevel {
+    /// Возвращает строковое значение для БД и контракта REST.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warn => "warn",
+            Self::Info => "info",
+            Self::Debug => "debug",
+            Self::Trace => "trace",
+        }
+    }
+
+    /// Разбирает значение из БД.
+    pub(crate) fn parse(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "error" => Ok(Self::Error),
+            "warn" => Ok(Self::Warn),
+            "info" => Ok(Self::Info),
+            "debug" => Ok(Self::Debug),
+            "trace" => Ok(Self::Trace),
+            _ => anyhow::bail!("unknown host log level: {value}"),
+        }
+    }
+}
+
+/// Настройка журналирования с отметкой последнего изменения.
+///
+/// Отсутствие уровня означает, что владелец вернул сервер к фильтру,
+/// заданному переменной окружения при запуске процесса.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct HostLogSettings {
+    /// Выбранный минимальный уровень или `None` для фильтра запуска.
+    pub(crate) min_level: Option<LogLevel>,
+    /// Время последнего изменения настройки.
+    pub(crate) updated_at: Option<DateTime<Utc>>,
+}
+
 /// Транспорт исходящих писем.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum EmailTransport {
@@ -83,6 +141,23 @@ impl HostEmailSettings {
     }
 }
 
+/// Одно измерение активности голосового чата, сохранённое в базе хоста.
+///
+/// Снимок хранит оба показателя: число голосовых подключений и число активных
+/// видеоисточников. Нулевые значения сохраняются как есть, чтобы график за сутки
+/// показывал и периоды полной тишины.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct VoiceActivitySample {
+    /// Уникальный идентификатор измерения.
+    pub(crate) id: Uuid,
+    /// Время измерения на сервере в UTC.
+    pub(crate) sampled_at: DateTime<Utc>,
+    /// Число активных голосовых подключений.
+    pub(crate) voice_connections: u32,
+    /// Число активных видеоисточников: камера и экран считаются раздельно.
+    pub(crate) video_sources: u32,
+}
+
 /// Одноразовое состояние подключения Gmail.
 pub(crate) struct GmailOAuthState {
     pub(crate) id: Uuid,
@@ -92,26 +167,34 @@ pub(crate) struct GmailOAuthState {
     pub(crate) expires_at: DateTime<Utc>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::HostEmailSettings;
-
-    #[test]
-    fn database_gmail_credentials_override_environment_fallback() {
-        let settings = HostEmailSettings {
-            gmail_client_id: Some("database-id".to_owned()),
-            gmail_client_secret: None,
-            ..HostEmailSettings::default()
-        }
-        .with_gmail_oauth_fallback(
-            Some("environment-id".to_owned()),
-            Some("environment-secret".to_owned()),
-        );
-
-        assert_eq!(settings.gmail_client_id.as_deref(), Some("database-id"));
-        assert_eq!(
-            settings.gmail_client_secret.as_deref(),
-            Some("environment-secret")
-        );
-    }
+/// Запись о выданных правах владельца хоста.
+///
+/// Права могут быть у нескольких пользователей одновременно, поэтому запись
+/// хранит не только владельца, но и того, кто выдал права, и когда.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct HostOwner {
+    /// Пользователь, получивший глобальные права владельца хоста.
+    pub(crate) user_id: Uuid,
+    /// Время выдачи прав.
+    pub(crate) granted_at: DateTime<Utc>,
+    /// Владелец, выдавший права; `None` у первоначального владельца,
+    /// зарегистрировавшегося раньше остальных на этом хосте.
+    pub(crate) granted_by_user_id: Option<Uuid>,
 }
+
+/// Результат атомарного отзыва прав владельца хоста.
+///
+/// Хранилище проверяет наличие пользователя и последнего владельца в той же
+/// критической секции, где удаляет права, чтобы конкурентный отзыв был безопасен.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RevokeHostOwnerOutcome {
+    /// Права существующего владельца отозваны.
+    Revoked,
+    /// Пользователь уже не является владельцем; состояние не изменено.
+    Missing,
+    /// Отзыв оставил бы хост без владельца; состояние не изменено.
+    LastOwner,
+}
+
+#[cfg(test)]
+mod tests;

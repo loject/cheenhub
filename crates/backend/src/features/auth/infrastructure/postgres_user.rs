@@ -2,8 +2,8 @@
 
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -105,6 +105,14 @@ fn escape_like_pattern(value: &str) -> String {
         }
         escaped
     })
+}
+
+/// Считает зарегистрированных пользователей без обезличенных аккаунтов.
+pub(super) async fn count_registered_users(database: &DatabaseConnection) -> anyhow::Result<u64> {
+    Ok(users::Entity::find()
+        .filter(users::Column::DeletionFinalizedAt.is_null())
+        .count(database)
+        .await?)
 }
 
 /// Находит пользователя по нормализованному email.

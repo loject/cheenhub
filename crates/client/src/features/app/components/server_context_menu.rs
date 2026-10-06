@@ -2,8 +2,6 @@
 
 use dioxus::prelude::*;
 
-use crate::features::app::api;
-
 /// Действия, отправляемые контекстным меню сервера.
 #[derive(Clone, PartialEq)]
 pub(crate) enum ServerMenuAction {
@@ -11,27 +9,19 @@ pub(crate) enum ServerMenuAction {
     OpenSettings,
     /// Open the server invite flow.
     CreateInvite,
-    /// The current user left the server.
-    LeftServer(String),
+    /// Запрашивает подтверждение выхода с сервера.
+    LeaveServer,
 }
 
 /// Рендерит действия уровня сервера.
 #[component]
 pub(crate) fn ServerContextMenu(
-    server_id: String,
     is_owner: bool,
     can_open_settings: bool,
     can_create_invite_links: bool,
     on_action: EventHandler<ServerMenuAction>,
 ) -> Element {
-    let mut is_leaving = use_signal(|| false);
-    let mut leave_status = use_signal(String::new);
     let has_server_actions = can_open_settings || can_create_invite_links;
-    let leave_button_class = if is_leaving() {
-        "flex w-full cursor-wait items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300/60 opacity-80"
-    } else {
-        "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300 transition-[background,border-color,color,transform,opacity] duration-150 hover:bg-red-500/10 hover:text-red-200"
-    };
 
     rsx! {
         div {
@@ -86,39 +76,9 @@ pub(crate) fn ServerContextMenu(
             } else {
                 button {
                     r#type: "button",
-                    disabled: is_leaving(),
-                    class: leave_button_class,
-                    onclick: move |_| {
-                        if is_leaving() {
-                            return;
-                        }
-
-                        leave_status.set(String::new());
-                        is_leaving.set(true);
-                        let request_server_id = server_id.clone();
-                        spawn(async move {
-                            match api::leave_server(request_server_id.clone()).await {
-                                Ok(()) => {
-                                    on_action.call(ServerMenuAction::LeftServer(request_server_id));
-                                }
-                                Err(error) => {
-                                    leave_status.set(error);
-                                    is_leaving.set(false);
-                                }
-                            }
-                        });
-                    },
-                    svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" }
-                    }
-                    if is_leaving() {
-                        "Выходим..."
-                    } else {
-                        "Выйти с сервера"
-                    }
-                }
-                if !leave_status().is_empty() {
-                    p { class: "px-3 pb-2 pt-1 text-[11px] leading-4 text-red-200", "{leave_status}" }
+                    class: "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300 hover:bg-red-500/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent",
+                    onclick: move |_| on_action.call(ServerMenuAction::LeaveServer),
+                    "Выйти с сервера"
                 }
             }
         }
