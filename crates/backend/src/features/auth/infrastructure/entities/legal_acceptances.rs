@@ -13,8 +13,8 @@ pub struct Model {
     pub user_id: Uuid,
     /// Стабильный вид подтверждённого документа.
     pub document_kind: String,
-    /// Версия документа на момент подтверждения.
-    pub document_version: String,
+    /// Версия документа на момент подтверждения; `None` означает legacy-дату соглашения без известной версии.
+    pub document_version: Option<String>,
     /// Регистрационный поток, в котором получено подтверждение.
     pub acceptance_source: String,
     /// Время получения подтверждения.

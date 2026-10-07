@@ -23,9 +23,6 @@ pub struct Model {
     pub registered_at: DateTimeUtc,
     /// Last successful nickname update timestamp.
     pub nickname_updated_at: DateTimeUtc,
-    /// Время исходного подтверждения правил из базовой схемы.
-    /// Версии документов фиксируются отдельно в `legal_acceptances`.
-    pub accepted_terms_at: DateTimeUtc,
     /// Время запроса удаления аккаунта.
     pub deletion_requested_at: Option<DateTimeUtc>,
     /// Исключительная граница срока восстановления аккаунта.
