@@ -10,8 +10,8 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use super::super::domain::{
-    GmailOAuthState, HostEmailSettings, HostLogSettings, HostOwner, RevokeHostOwnerOutcome,
-    VoiceActivitySample,
+    GmailOAuthState, HostEmailSettings, HostLogSettings, HostOwner, HostRegistrationSettings,
+    RevokeHostOwnerOutcome, VoiceActivitySample,
 };
 use super::HostSettingsStore;
 
@@ -20,6 +20,7 @@ use super::HostSettingsStore;
 pub(crate) struct InMemoryHostSettingsStore {
     settings: RwLock<HostEmailSettings>,
     log_settings: RwLock<HostLogSettings>,
+    registration_settings: RwLock<HostRegistrationSettings>,
     owners: RwLock<Vec<HostOwner>>,
     states: RwLock<Vec<(GmailOAuthState, Option<DateTime<Utc>>)>>,
     pub(super) voice_activity: RwLock<Vec<VoiceActivitySample>>,
@@ -110,6 +111,26 @@ impl HostSettingsStore for InMemoryHostSettingsStore {
         stored.updated_at = Some(updated_at);
         *self.log_settings.write().expect("host log settings lock") = stored.clone();
         Ok(stored)
+    }
+
+    async fn load_registration_settings(&self) -> anyhow::Result<HostRegistrationSettings> {
+        Ok(*self
+            .registration_settings
+            .read()
+            .expect("host registration settings lock"))
+    }
+
+    async fn save_registration_settings(
+        &self,
+        settings: HostRegistrationSettings,
+        _updated_by: Uuid,
+        _updated_at: DateTime<Utc>,
+    ) -> anyhow::Result<HostRegistrationSettings> {
+        *self
+            .registration_settings
+            .write()
+            .expect("host registration settings lock") = settings;
+        Ok(settings)
     }
 
     async fn insert_gmail_oauth_state(&self, state: GmailOAuthState) -> anyhow::Result<()> {

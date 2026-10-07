@@ -15,8 +15,8 @@ use sea_orm::{
 use uuid::Uuid;
 
 use super::domain::{
-    GmailOAuthState, HostEmailSettings, HostLogSettings, HostOwner, RevokeHostOwnerOutcome,
-    VoiceActivitySample,
+    GmailOAuthState, HostEmailSettings, HostLogSettings, HostOwner, HostRegistrationSettings,
+    RevokeHostOwnerOutcome, VoiceActivitySample,
 };
 
 pub(crate) use in_memory::InMemoryHostSettingsStore;
@@ -50,6 +50,18 @@ pub(crate) trait HostSettingsStore: Send + Sync {
         updated_by: Uuid,
         updated_at: DateTime<Utc>,
     ) -> anyhow::Result<HostLogSettings>;
+    /// Возвращает доступность регистрации, используя разрешающие значения до первой записи.
+    async fn load_registration_settings(&self) -> anyhow::Result<HostRegistrationSettings>;
+    /// Сохраняет доступность создания аккаунтов и автора изменения.
+    ///
+    /// Первая запись и обновление атомарны: параллельные сохранения не создают
+    /// конфликт singleton-ключа. Последняя запись заменяет оба переключателя и аудит.
+    async fn save_registration_settings(
+        &self,
+        settings: HostRegistrationSettings,
+        updated_by: Uuid,
+        updated_at: DateTime<Utc>,
+    ) -> anyhow::Result<HostRegistrationSettings>;
     async fn save_email_settings(
         &self,
         settings: HostEmailSettings,
@@ -255,6 +267,61 @@ impl HostSettingsStore for PostgresHostSettingsStore {
             min_level: settings.min_level,
             updated_at: Some(updated_at),
         })
+    }
+
+    async fn load_registration_settings(&self) -> anyhow::Result<HostRegistrationSettings> {
+        use entities::host_registration_settings;
+        let Some(model) =
+            host_registration_settings::Entity::find_by_id(super::domain::REGISTRATION_SETTINGS_ID)
+                .one(&self.database)
+                .await?
+        else {
+            return Ok(HostRegistrationSettings::default());
+        };
+        Ok(HostRegistrationSettings {
+            registration_enabled: model.registration_enabled,
+            email_password_registration_enabled: model.email_password_registration_enabled,
+        })
+    }
+
+    async fn save_registration_settings(
+        &self,
+        settings: HostRegistrationSettings,
+        updated_by: Uuid,
+        updated_at: DateTime<Utc>,
+    ) -> anyhow::Result<HostRegistrationSettings> {
+        use entities::host_registration_settings;
+        use sea_orm::sea_query::OnConflict;
+
+        let active = host_registration_settings::ActiveModel {
+            id: Set(super::domain::REGISTRATION_SETTINGS_ID),
+            registration_enabled: Set(settings.registration_enabled),
+            email_password_registration_enabled: Set(settings.email_password_registration_enabled),
+            updated_at: Set(updated_at),
+            updated_by_user_id: Set(Some(updated_by)),
+        };
+        host_registration_settings::Entity::insert(active)
+            .on_conflict(
+                OnConflict::column(host_registration_settings::Column::Id)
+                    .update_columns([
+                        host_registration_settings::Column::RegistrationEnabled,
+                        host_registration_settings::Column::EmailPasswordRegistrationEnabled,
+                        host_registration_settings::Column::UpdatedAt,
+                        host_registration_settings::Column::UpdatedByUserId,
+                    ])
+                    .to_owned(),
+            )
+            .exec(&self.database)
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    %updated_by,
+                    %error,
+                    "failed to persist host registration settings"
+                );
+                error
+            })?;
+        Ok(settings)
     }
 
     async fn insert_gmail_oauth_state(&self, state: GmailOAuthState) -> anyhow::Result<()> {

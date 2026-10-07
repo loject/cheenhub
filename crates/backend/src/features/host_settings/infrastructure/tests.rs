@@ -3,3 +3,4 @@
 mod store;
 
 mod owners;
+mod registration_settings;

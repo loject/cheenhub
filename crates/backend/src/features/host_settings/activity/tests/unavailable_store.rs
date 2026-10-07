@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::features::host_settings::domain::{
-    GmailOAuthState, HostEmailSettings, HostLogSettings, HostOwner, RevokeHostOwnerOutcome,
-    VoiceActivitySample,
+    GmailOAuthState, HostEmailSettings, HostLogSettings, HostOwner, HostRegistrationSettings,
+    RevokeHostOwnerOutcome, VoiceActivitySample,
 };
 use crate::features::host_settings::infrastructure::HostSettingsStore;
 
@@ -69,6 +69,21 @@ impl HostSettingsStore for UnavailableHostSettingsStore {
     ) -> anyhow::Result<HostLogSettings> {
         self.inner
             .save_log_settings(settings, updated_by, updated_at)
+            .await
+    }
+
+    async fn load_registration_settings(&self) -> anyhow::Result<HostRegistrationSettings> {
+        self.inner.load_registration_settings().await
+    }
+
+    async fn save_registration_settings(
+        &self,
+        settings: HostRegistrationSettings,
+        updated_by: Uuid,
+        updated_at: DateTime<Utc>,
+    ) -> anyhow::Result<HostRegistrationSettings> {
+        self.inner
+            .save_registration_settings(settings, updated_by, updated_at)
             .await
     }
 

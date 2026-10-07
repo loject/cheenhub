@@ -10,6 +10,7 @@ use dioxus::prelude::*;
 
 use super::super::api;
 use super::super::tabs::{HostSettingsTab, host_settings_tabs};
+use super::registration_panel::HostRegistrationSettingsPanel;
 use super::{content_class, header_block, page_class};
 
 /// Уровни журнала от наименее подробного к самому подробному.
@@ -66,6 +67,7 @@ pub(super) fn HostLogSettingsForm(settings: HostLogSettingsResponse) -> Element 
                 {header_block()}
                 {host_settings_tabs(HostSettingsTab::Settings)}
                 {level_card(&saved_settings(), saved_settings, selected, save_state, error, changed, saving)}
+                HostRegistrationSettingsPanel {}
             }
         }
     }

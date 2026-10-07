@@ -128,6 +128,34 @@ pub(crate) mod host_log_settings {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+/// Singleton-сущность доступности регистрации на хосте.
+pub(crate) mod host_registration_settings {
+    use sea_orm::entity::prelude::*;
+
+    /// Единственная строка настроек создания аккаунтов.
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "host_registration_settings")]
+    pub struct Model {
+        /// Фиксированный нулевой UUID singleton-записи.
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        /// Разрешено ли создавать новые аккаунты любым способом.
+        pub registration_enabled: bool,
+        /// Разрешена ли регистрация по email и паролю.
+        pub email_password_registration_enabled: bool,
+        /// Время последнего обновления настройки.
+        pub updated_at: DateTimeUtc,
+        /// Пользователь, последним обновивший настройку.
+        pub updated_by_user_id: Option<Uuid>,
+    }
+
+    /// Связи настроек регистрации не используются напрямую.
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 /// Сущность снимка активности голосового чата хоста.
 pub(crate) mod host_voice_activity_samples {
     use sea_orm::entity::prelude::*;

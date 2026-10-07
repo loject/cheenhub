@@ -2,8 +2,7 @@
 
 use cheenhub_contracts::rest::{
     AuthResponse, AuthUser, ChangeCurrentUserPasswordRequest, LoginRequest, LogoutRequest,
-    PasswordResetConfirmRequest, PasswordResetRequest, RefreshRequest, RegisterRequest,
-    UpdateCurrentUserRequest,
+    PasswordResetConfirmRequest, PasswordResetRequest, RefreshRequest, UpdateCurrentUserRequest,
 };
 use chrono::{Duration, Utc};
 
@@ -29,6 +28,7 @@ mod oauth;
 mod oauth_cleanup;
 mod oauth_flow;
 mod refresh;
+mod registration;
 mod sessions;
 
 const NICKNAME_CHANGE_COOLDOWN_DAYS: i64 = 7;
@@ -45,51 +45,13 @@ pub(crate) use linked_accounts::{linked_accounts, unlink_google};
 pub(crate) use oauth::{complete_google_oauth, register_with_google_oauth};
 pub(crate) use oauth_cleanup::run_desktop_oauth_cleanup;
 pub(crate) use oauth_flow::{GoogleCallbackOutcome, google_oauth_callback, start_google_oauth};
+#[cfg(test)]
+pub(crate) use registration::register;
+pub(crate) use registration::register_with_user_agent;
 pub(crate) use sessions::{
     active_sessions_with_user_agent, auth_session_is_active, revoke_current_user_session,
     revoke_current_user_sessions,
 };
-
-/// Регистрирует пользователя и создает аутентифицированную сессию.
-#[cfg(test)]
-pub(crate) async fn register(
-    state: &AppState,
-    request: RegisterRequest,
-) -> Result<AuthResponse, AuthError> {
-    register_with_user_agent(state, request, None).await
-}
-
-/// Регистрирует пользователя и записывает метаданные User-Agent запроса, если они присутствуют.
-pub(crate) async fn register_with_user_agent(
-    state: &AppState,
-    request: RegisterRequest,
-    user_agent: Option<String>,
-) -> Result<AuthResponse, AuthError> {
-    legal::validate_registration_acceptance(
-        request.accepts_terms,
-        request.accepts_personal_data,
-        "password",
-    )?;
-    let valid = validation::register(request.nickname, request.email, request.password)
-        .map_err(|message| AuthError::BadRequest(message.to_owned()))?;
-    let password_hash = password::hash_password(&valid.password)?;
-    let now = Utc::now();
-    let user = state
-        .auth_store
-        .insert_user(
-            valid.nickname,
-            valid.email,
-            valid.email_normalized,
-            Some(password_hash),
-            legal::current_acceptance("password"),
-            now,
-        )
-        .await
-        .map_err(map_insert_user_error)?;
-    legal::log_recorded(&user.id, "password");
-
-    create_auth_response(state, &user, user_agent.as_deref()).await
-}
 
 /// Вход пользователя и создание аутентифицированной сессии.
 #[cfg(test)]

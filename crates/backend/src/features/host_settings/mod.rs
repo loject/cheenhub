@@ -9,6 +9,7 @@ pub(crate) mod infrastructure;
 pub(crate) mod log_settings;
 pub(crate) mod metrics_monitor;
 pub(crate) mod owners;
+pub(crate) mod registration_settings;
 mod stats;
 mod transport;
 

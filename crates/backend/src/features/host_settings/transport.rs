@@ -18,8 +18,9 @@ use axum::{
 use cheenhub_contracts::rest::{
     ApiError, GmailConnectionStartResponse, GrantHostOwnerRequest, HostAccessResponse,
     HostEmailSettingsResponse, HostLogSettingsResponse, HostLogStreamMessage, HostOwnersResponse,
-    HostStatsResponse, HostVoiceActivityHistoryResponse, HostVoiceActivityResponse,
-    UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
+    HostRegistrationSettingsResponse, HostStatsResponse, HostVoiceActivityHistoryResponse,
+    HostVoiceActivityResponse, UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
+    UpdateHostRegistrationSettingsRequest,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -30,6 +31,7 @@ use super::activity::{activity as activity_flow, activity_history as activity_hi
 use super::application::{self, HostSettingsError};
 use super::log_settings::{self, settings as log_settings_flow};
 use super::owners;
+use super::registration_settings;
 use super::stats::stats as stats_flow;
 
 pub(crate) fn routes() -> Router<AppState> {
@@ -45,6 +47,10 @@ pub(crate) fn routes() -> Router<AppState> {
         .route(
             "/log-settings",
             get(log_settings).patch(update_log_settings),
+        )
+        .route(
+            "/registration-settings",
+            get(registration_settings).patch(update_registration_settings),
         )
         .route("/email", get(email_settings).patch(update_email_settings))
         .route("/email/gmail/connect", post(start_gmail_connection))
@@ -351,6 +357,25 @@ async fn update_log_settings(
     Json(request): Json<UpdateHostLogSettingsRequest>,
 ) -> Result<Json<HostLogSettingsResponse>, HostSettingsError> {
     log_settings::update_settings(&state, bearer_token(&headers)?, request)
+        .await
+        .map(Json)
+}
+
+async fn registration_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<HostRegistrationSettingsResponse>, HostSettingsError> {
+    registration_settings::settings(&state, bearer_token(&headers)?)
+        .await
+        .map(Json)
+}
+
+async fn update_registration_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateHostRegistrationSettingsRequest>,
+) -> Result<Json<HostRegistrationSettingsResponse>, HostSettingsError> {
+    registration_settings::update_settings(&state, bearer_token(&headers)?, request)
         .await
         .map(Json)
 }

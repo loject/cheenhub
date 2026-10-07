@@ -9,6 +9,9 @@ pub(crate) const EMAIL_SETTINGS_ID: Uuid = Uuid::nil();
 /// Фиксированный идентификатор единственной строки настроек журнала.
 pub(crate) const LOG_SETTINGS_ID: Uuid = Uuid::nil();
 
+/// Фиксированный идентификатор единственной строки настроек регистрации.
+pub(crate) const REGISTRATION_SETTINGS_ID: Uuid = Uuid::nil();
+
 /// Минимальный уровень журналирования процесса хоста.
 ///
 /// Уровень применяется ко всем модулям бэкенда сразу, поэтому не зависит от
@@ -62,6 +65,24 @@ pub(crate) struct HostLogSettings {
     pub(crate) min_level: Option<LogLevel>,
     /// Время последнего изменения настройки.
     pub(crate) updated_at: Option<DateTime<Utc>>,
+}
+
+/// Доступность создания аккаунтов на хосте.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct HostRegistrationSettings {
+    /// Разрешено ли создавать новые аккаунты любым способом.
+    pub(crate) registration_enabled: bool,
+    /// Разрешена ли регистрация по email и паролю.
+    pub(crate) email_password_registration_enabled: bool,
+}
+
+impl Default for HostRegistrationSettings {
+    fn default() -> Self {
+        Self {
+            registration_enabled: true,
+            email_password_registration_enabled: true,
+        }
+    }
 }
 
 /// Транспорт исходящих писем.

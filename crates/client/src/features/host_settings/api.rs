@@ -3,8 +3,9 @@
 use cheenhub_contracts::rest::{
     GmailConnectionStartResponse, GrantHostOwnerRequest, HostAccessResponse,
     HostEmailSettingsResponse, HostLogSettingsResponse, HostMetricsResponse, HostOwnersResponse,
-    HostStatsResponse, HostVoiceActivityHistoryResponse, HostVoiceActivityResponse,
-    UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
+    HostRegistrationSettingsResponse, HostStatsResponse, HostVoiceActivityHistoryResponse,
+    HostVoiceActivityResponse, UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
+    UpdateHostRegistrationSettingsRequest,
 };
 use dioxus::prelude::{debug, info, warn};
 use reqwest::{Response, StatusCode};
@@ -128,6 +129,35 @@ pub(crate) async fn update_log_settings(
     if response.status().is_success() {
         return response.json().await.map_err(|_| {
             HostSettingsApiError::Other("Не удалось сохранить настройки журнала.".to_owned())
+        });
+    }
+    Err(classify_error(response).await)
+}
+
+/// Загружает правила регистрации пользователей на хосте.
+pub(crate) async fn load_registration_settings()
+-> Result<HostRegistrationSettingsResponse, HostSettingsApiError> {
+    let response = authorized_get("/host-settings/registration-settings")
+        .await
+        .map_err(HostSettingsApiError::Other)?;
+    if response.status().is_success() {
+        return response.json().await.map_err(|_| {
+            HostSettingsApiError::Other("Не удалось прочитать настройки регистрации.".to_owned())
+        });
+    }
+    Err(classify_error(response).await)
+}
+
+/// Сохраняет доступные способы регистрации на хосте.
+pub(crate) async fn update_registration_settings(
+    request: UpdateHostRegistrationSettingsRequest,
+) -> Result<HostRegistrationSettingsResponse, HostSettingsApiError> {
+    let response = authorized_patch("/host-settings/registration-settings", &request)
+        .await
+        .map_err(HostSettingsApiError::Other)?;
+    if response.status().is_success() {
+        return response.json().await.map_err(|_| {
+            HostSettingsApiError::Other("Не удалось сохранить настройки регистрации.".to_owned())
         });
     }
     Err(classify_error(response).await)

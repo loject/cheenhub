@@ -9,6 +9,7 @@ use std::{sync::OnceLock, time::Duration};
 
 use anyhow::Context;
 
+#[cfg(unix)]
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
 use tracing::{info, warn};
@@ -145,34 +146,43 @@ pub(crate) fn lifecycle() -> &'static Lifecycle {
 
 /// Ожидает сигнал остановки процесса от операционной системы.
 ///
-/// Docker и systemd отправляют `SIGTERM`; `SIGINT` остаётся для ручной
-/// остановки во время разработки. Если прослушивание `SIGTERM` недоступно,
-/// ожидание переходит на `SIGINT`, чтобы процесс всё равно завершался штатно.
+/// На Unix Docker и systemd отправляют `SIGTERM`, а `SIGINT` используется для
+/// ручной остановки во время разработки. На остальных платформах ожидание
+/// использует доступный Tokio сигнал Ctrl+C.
 pub(crate) async fn wait_for_shutdown_signal() {
-    let terminate = match signal(SignalKind::terminate()) {
-        Ok(terminate) => terminate,
-        Err(error) => {
-            warn!(
-                %error,
-                "failed to listen for terminate signal; falling back to interrupt signal"
-            );
-            if let Err(error) = tokio::signal::ctrl_c().await {
-                warn!(%error, "failed to listen for interrupt signal");
+    #[cfg(unix)]
+    {
+        let terminate = match signal(SignalKind::terminate()) {
+            Ok(terminate) => terminate,
+            Err(error) => {
+                warn!(
+                    %error,
+                    "failed to listen for terminate signal; falling back to interrupt signal"
+                );
+                if let Err(error) = tokio::signal::ctrl_c().await {
+                    warn!(%error, "failed to listen for interrupt signal");
+                }
+                return;
             }
-            return;
-        }
-    };
+        };
 
-    let mut terminate = terminate;
-    tokio::select! {
-        result = tokio::signal::ctrl_c() => match result {
-            Ok(()) => info!("received interrupt signal; shutting down"),
-            Err(error) => warn!(%error, "failed to listen for interrupt signal"),
-        },
-        signal = terminate.recv() => match signal {
-            Some(()) => info!("received terminate signal; shutting down"),
-            None => warn!("terminate signal stream ended; shutting down"),
-        },
+        let mut terminate = terminate;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => match result {
+                Ok(()) => info!("received interrupt signal; shutting down"),
+                Err(error) => warn!(%error, "failed to listen for interrupt signal"),
+            },
+            signal = terminate.recv() => match signal {
+                Some(()) => info!("received terminate signal; shutting down"),
+                None => warn!("terminate signal stream ended; shutting down"),
+            },
+        }
+    }
+
+    #[cfg(not(unix))]
+    match tokio::signal::ctrl_c().await {
+        Ok(()) => info!("received interrupt signal; shutting down"),
+        Err(error) => warn!(%error, "failed to listen for interrupt signal"),
     }
 }
 

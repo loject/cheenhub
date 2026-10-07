@@ -111,6 +111,15 @@ pub(crate) async fn register_with_google_oauth(
     request: OAuthRegistrationRequest,
     user_agent: Option<String>,
 ) -> Result<AuthResponse, AuthError> {
+    if !crate::features::host_settings::registration_settings::oauth_registration_enabled(state)
+        .await
+        .map_err(AuthError::Internal)?
+    {
+        warn!("rejected Google registration because host settings disable registration");
+        return Err(AuthError::BadRequest(
+            "Регистрация новых пользователей сейчас недоступна.".to_owned(),
+        ));
+    }
     legal::validate_registration_acceptance(
         request.accepts_terms,
         request.accepts_personal_data,
@@ -261,6 +270,15 @@ pub(super) async fn create_google_handoff(
                 if let Some(user_id) = user_id {
                     (HANDOFF_AUTHENTICATED.to_owned(), Some(user_id), None)
                 } else {
+                    if !crate::features::host_settings::registration_settings::oauth_registration_enabled(state)
+                        .await
+                        .map_err(AuthError::Internal)?
+                    {
+                        warn!("rejected Google account creation because host settings disable registration");
+                        return Err(AuthError::BadRequest(
+                            "Регистрация новых пользователей сейчас недоступна.".to_owned(),
+                        ));
+                    }
                     let intent = state
                         .auth_store
                         .insert_oauth_registration_intent(

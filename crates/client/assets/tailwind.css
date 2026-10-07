@@ -3119,12 +3119,12 @@ html,
   max-width: 520px;
 }
 
-.max-w-\[560px\] {
-  max-width: 560px;
-}
-
 .max-w-\[60vw\] {
   max-width: 60vw;
+}
+
+.max-w-\[640px\] {
+  max-width: 640px;
 }
 
 .max-w-\[65vw\] {
@@ -3181,10 +3181,6 @@ html,
 
 .max-w-xs {
   max-width: 20rem;
-}
-
-.max-w-\[640px\] {
-  max-width: 640px;
 }
 
 .flex-1 {
@@ -3396,6 +3392,10 @@ html,
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.grid-cols-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .grid-cols-8 {
   grid-template-columns: repeat(8, minmax(0, 1fr));
 }
@@ -3414,10 +3414,6 @@ html,
 
 .grid-rows-\[1fr\] {
   grid-template-rows: 1fr;
-}
-
-.grid-cols-5 {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .flex-col {
@@ -3629,13 +3625,13 @@ html,
   border-color: rgb(39 39 42 / 0.5);
 }
 
+.divide-zinc-800\/80 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgb(39 39 42 / 0.8);
+}
+
 .divide-zinc-900 > :not([hidden]) ~ :not([hidden]) {
   --tw-divide-opacity: 1;
   border-color: rgb(24 24 27 / var(--tw-divide-opacity, 1));
-}
-
-.divide-zinc-800\/80 > :not([hidden]) ~ :not([hidden]) {
-  border-color: rgb(39 39 42 / 0.8);
 }
 
 .self-start {
@@ -4336,6 +4332,10 @@ html,
   background-color: rgb(248 113 113 / 0.1);
 }
 
+.bg-red-400\/15 {
+  background-color: rgb(248 113 113 / 0.15);
+}
+
 .bg-red-400\/5 {
   background-color: rgb(248 113 113 / 0.05);
 }
@@ -4569,10 +4569,6 @@ html,
 
 .bg-zinc-950\/95 {
   background-color: rgb(9 9 11 / 0.95);
-}
-
-.bg-red-400\/15 {
-  background-color: rgb(248 113 113 / 0.15);
 }
 
 .bg-\[radial-gradient\(circle_at_center\2c rgba\(255\2c 255\2c 255\2c \.055\)\2c transparent_38\%\)\] {
@@ -4846,6 +4842,10 @@ html,
   padding-bottom: 2rem;
 }
 
+.pb-0\.5 {
+  padding-bottom: 0.125rem;
+}
+
 .pb-1 {
   padding-bottom: 0.25rem;
 }
@@ -4976,10 +4976,6 @@ html,
 
 .pt-6 {
   padding-top: 1.5rem;
-}
-
-.pb-0\.5 {
-  padding-bottom: 0.125rem;
 }
 
 .text-left {
@@ -6246,6 +6242,10 @@ html,
   box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
 }
 
+.ring-accent\/60 {
+  --tw-ring-color: rgb(59 130 246 / 0.6);
+}
+
 .ring-black\/20 {
   --tw-ring-color: rgb(0 0 0 / 0.2);
 }
@@ -6253,10 +6253,6 @@ html,
 .ring-zinc-800 {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(39 39 42 / var(--tw-ring-opacity, 1));
-}
-
-.ring-accent\/60 {
-  --tw-ring-color: rgb(59 130 246 / 0.6);
 }
 
 .blur-0 {
@@ -6542,6 +6538,12 @@ html,
   transition-duration: 150ms;
 }
 
+.transition-\[grid-template-rows\2c opacity\] {
+  transition-property: grid-template-rows,opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
 .transition-\[height\2c opacity\2c transform\2c border-color\] {
   transition-property: height,opacity,transform,border-color;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -6676,12 +6678,6 @@ html,
 
 .transition-transform {
   transition-property: transform;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 150ms;
-}
-
-.transition-\[grid-template-rows\2c opacity\] {
-  transition-property: grid-template-rows,opacity;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
@@ -7456,6 +7452,19 @@ html,
 
 /* Индикация активного скачивания и установки обновления. */
 
+.application-update-progress-card {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 70;
+  width: min(24rem, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid rgb(96 165 250 / 0.3);
+  border-radius: 1rem;
+  background: #09090b;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.4);
+}
+
 .application-update-progress-track {
   height: 0.5rem;
   margin-top: 0.5rem;
@@ -7882,6 +7891,10 @@ html,
     background-color: rgb(248 113 113 / 0.15);
   }
 
+  .hover\:bg-red-400\/25:hover {
+    background-color: rgb(248 113 113 / 0.25);
+  }
+
   .hover\:bg-red-500\/10:hover {
     background-color: rgb(239 68 68 / 0.1);
   }
@@ -7951,10 +7964,6 @@ html,
 
   .hover\:bg-zinc-950\/80:hover {
     background-color: rgb(9 9 11 / 0.8);
-  }
-
-  .hover\:bg-red-400\/25:hover {
-    background-color: rgb(248 113 113 / 0.25);
   }
 
   .hover\:text-blue-100:hover {

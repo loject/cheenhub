@@ -26,9 +26,10 @@ pub use host_settings::{
     HostCpuMetrics, HostDiskMetrics, HostEmailSettingsResponse, HostLogEntry, HostLogLevel,
     HostLogSettingsResponse, HostLogStreamMessage, HostMemoryMetrics, HostMessagesPerMinuteSample,
     HostMetricsResponse, HostMetricsSample, HostNetworkMetrics, HostOwnerSummary,
-    HostOwnersResponse, HostStatsResponse, HostVoiceActivityHistoryResponse,
-    HostVoiceActivityResponse, HostVoiceActivitySample, UpdateHostEmailSettingsRequest,
-    UpdateHostLogSettingsRequest,
+    HostOwnersResponse, HostRegistrationSettingsResponse, HostStatsResponse,
+    HostVoiceActivityHistoryResponse, HostVoiceActivityResponse, HostVoiceActivitySample,
+    UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
+    UpdateHostRegistrationSettingsRequest,
 };
 pub use push_notifications::{PushPlatform, UpsertPushInstallationRequest};
 pub use servers::{

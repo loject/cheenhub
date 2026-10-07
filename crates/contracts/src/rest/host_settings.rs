@@ -329,6 +329,24 @@ pub struct UpdateHostLogSettingsRequest {
     pub min_level: Option<HostLogLevel>,
 }
 
+/// Настройки регистрации пользователей на хосте.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HostRegistrationSettingsResponse {
+    /// Разрешено ли создавать новые учётные записи любым способом.
+    pub registration_enabled: bool,
+    /// Разрешено ли регистрироваться по email и паролю.
+    pub email_password_registration_enabled: bool,
+}
+
+/// Изменения доступных способов регистрации.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct UpdateHostRegistrationSettingsRequest {
+    /// Разрешить или запретить создание новых учётных записей.
+    pub registration_enabled: bool,
+    /// Разрешить или запретить регистрацию по email и паролю.
+    pub email_password_registration_enabled: bool,
+}
+
 /// Сообщение realtime-потока журнала бэкенда.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

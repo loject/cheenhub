@@ -8,6 +8,8 @@ use dioxus::prelude::*;
 
 use super::api;
 
+mod registration_form;
+mod registration_panel;
 mod settings_form;
 use settings_form::HostLogSettingsForm;
 
@@ -73,7 +75,7 @@ fn header_block() -> Element {
             p { class: "text-[11px] font-medium uppercase tracking-[0.20em] text-zinc-600", "Настройки хоста" }
             h1 { class: "mt-1 text-balance text-[22px] font-semibold tracking-[-0.04em] text-zinc-50", "Системные настройки" }
             p { class: "mt-1.5 max-w-2xl text-pretty text-[13px] leading-5 text-zinc-500",
-                "Управляй тем, насколько подробно CheenHub записывает работу сервера."
+                "Управляй журналом сервера и доступностью регистрации пользователей."
             }
         }
     }
