@@ -24,6 +24,15 @@ pub(crate) fn create_server(name: String) -> Result<ValidCreateServer, &'static 
     Ok(ValidCreateServer { name })
 }
 
+/// Проверяет отображаемое имя системной учётной записи без обрезания по длине имени сервера.
+pub(crate) fn system_account_nickname(name: String) -> Result<String, &'static str> {
+    let name = name.trim().to_owned();
+    if !(1..=48).contains(&name.chars().count()) {
+        return Err("Имя системного автора должно быть длиной от 1 до 48 символов.");
+    }
+    Ok(name)
+}
+
 /// Нормализованный ввод для комнаты сервера.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ValidServerRoom {

@@ -25,6 +25,7 @@ mod postgres_profile;
 mod postgres_refresh;
 mod postgres_store;
 mod postgres_user;
+pub(crate) mod system_account;
 
 #[cfg(test)]
 mod tests;

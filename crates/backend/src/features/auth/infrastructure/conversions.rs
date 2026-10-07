@@ -12,7 +12,7 @@ impl From<users::Model> for UserAccount {
         Self {
             id: row.id,
             nickname: row.nickname,
-            email: row.email,
+            email: row.email.unwrap_or_default(),
             password_hash: row.password_hash,
             avatar_image_id: row.avatar_image_id,
             registered_at: row.registered_at,

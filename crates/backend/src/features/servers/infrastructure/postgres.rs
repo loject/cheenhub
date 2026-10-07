@@ -5,17 +5,17 @@ use cheenhub_contracts::rest::ServerRoomKind;
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    PaginatorTrait, QueryFilter, QueryOrder, Set,
+    PaginatorTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 
 use uuid::Uuid;
 
 use crate::features::servers::domain::{
     Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
-    ServerRole, ServerRoom, ServerRoomWriteAccess,
+    ServerRole, ServerRoom, ServerRoomWriteAccess, ServerSystemAccount,
 };
 use crate::features::servers::infrastructure::entities::{
-    server_invite_uses, server_invites, server_members, servers,
+    server_invite_uses, server_invites, servers,
 };
 use crate::features::servers::infrastructure::postgres_roles;
 use crate::features::servers::infrastructure::postgres_rooms;
@@ -37,6 +37,7 @@ impl PostgresServerStore {
 impl ServerStore for PostgresServerStore {
     async fn insert_server(&self, owner_user_id: &Uuid, name: String) -> anyhow::Result<Server> {
         let now = Utc::now();
+        let transaction = self.database.begin().await?;
         let model = servers::ActiveModel {
             id: Set(Uuid::new_v4()),
             owner_user_id: Set(*owner_user_id),
@@ -46,8 +47,18 @@ impl ServerStore for PostgresServerStore {
             created_at: Set(now),
             updated_at: Set(now),
         }
-        .insert(&self.database)
+        .insert(&transaction)
         .await?;
+
+        crate::features::auth::infrastructure::system_account::insert(
+            &transaction,
+            model.id,
+            model.name.clone(),
+            model.avatar_image_id,
+            now,
+        )
+        .await?;
+        transaction.commit().await?;
 
         Ok(model.into())
     }
@@ -57,45 +68,7 @@ impl ServerStore for PostgresServerStore {
     }
 
     async fn list_servers(&self, user_id: &Uuid) -> anyhow::Result<Vec<ServerAccess>> {
-        let mut result: Vec<ServerAccess> = servers::Entity::find()
-            .filter(servers::Column::OwnerUserId.eq(*user_id))
-            .all(&self.database)
-            .await?
-            .into_iter()
-            .map(|row| ServerAccess {
-                server: row.into(),
-                is_member: true,
-            })
-            .collect();
-
-        let member_rows = server_members::Entity::find()
-            .filter(server_members::Column::UserId.eq(*user_id))
-            .filter(server_members::Column::LeftAt.is_null())
-            .all(&self.database)
-            .await?;
-        let joined_server_ids = member_rows
-            .into_iter()
-            .map(|member| member.server_id)
-            .filter(|server_id| !result.iter().any(|access| access.server.id == *server_id))
-            .collect::<Vec<_>>();
-
-        if joined_server_ids.is_empty() {
-            return Ok(result);
-        }
-
-        result.extend(
-            servers::Entity::find()
-                .filter(servers::Column::Id.is_in(joined_server_ids))
-                .all(&self.database)
-                .await?
-                .into_iter()
-                .map(|row| ServerAccess {
-                    server: row.into(),
-                    is_member: true,
-                }),
-        );
-
-        Ok(result)
+        super::postgres_system_accounts::list_servers(&self.database, user_id).await
     }
 
     async fn find_owned_server(
@@ -132,25 +105,49 @@ impl ServerStore for PostgresServerStore {
         Ok(Some(server.update(&self.database).await?.into()))
     }
 
+    async fn find_server_system_account(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerSystemAccount>> {
+        super::postgres_system_accounts::find_owned(&self.database, server_id, owner_user_id).await
+    }
+
+    async fn update_server_system_account_nickname(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        nickname: String,
+    ) -> anyhow::Result<Option<ServerSystemAccount>> {
+        super::postgres_system_accounts::update_nickname(
+            &self.database,
+            server_id,
+            owner_user_id,
+            nickname,
+        )
+        .await
+    }
+
+    async fn find_system_account_for_server(
+        &self,
+        server_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerSystemAccount>> {
+        super::postgres_system_accounts::find_for_server(&self.database, server_id).await
+    }
+
     async fn update_server_avatar_image_id(
         &self,
         server_id: &Uuid,
         owner_user_id: &Uuid,
         avatar_image_id: Uuid,
     ) -> anyhow::Result<Option<Server>> {
-        let Some(server) = servers::Entity::find()
-            .filter(servers::Column::Id.eq(*server_id))
-            .filter(servers::Column::OwnerUserId.eq(*owner_user_id))
-            .one(&self.database)
-            .await?
-        else {
-            return Ok(None);
-        };
-        let mut server = server.into_active_model();
-        server.avatar_image_id = Set(Some(avatar_image_id));
-        server.updated_at = Set(Utc::now());
-
-        Ok(Some(server.update(&self.database).await?.into()))
+        super::postgres_system_accounts::update_server_avatar(
+            &self.database,
+            server_id,
+            owner_user_id,
+            avatar_image_id,
+        )
+        .await
     }
 
     async fn update_server_audio_bitrate(
@@ -180,13 +177,24 @@ impl ServerStore for PostgresServerStore {
         owner_user_id: &Uuid,
     ) -> anyhow::Result<bool> {
         // Комнаты, сообщения, участники, приглашения и роли удаляются каскадом по внешним ключам.
+        let transaction = self.database.begin().await?;
         let result = servers::Entity::delete_many()
             .filter(servers::Column::Id.eq(*server_id))
             .filter(servers::Column::OwnerUserId.eq(*owner_user_id))
-            .exec(&self.database)
+            .exec(&transaction)
             .await?;
 
-        Ok(result.rows_affected > 0)
+        if result.rows_affected == 0 {
+            return Ok(false);
+        }
+        if !crate::features::auth::infrastructure::system_account::delete(&transaction, *server_id)
+            .await?
+        {
+            anyhow::bail!("deleted server {server_id} had no system account");
+        }
+        transaction.commit().await?;
+
+        Ok(true)
     }
 
     async fn insert_server_invite(

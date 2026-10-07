@@ -40,6 +40,7 @@ mod m20261010_000036_create_host_voice_activity_samples;
 mod m20261015_000037_create_host_log_settings;
 mod m20261016_000038_create_host_registration_settings;
 mod m20261017_000039_move_legacy_legal_acceptance;
+mod m20261018_000040_add_user_kind_and_system_accounts;
 #[cfg(test)]
 mod tests;
 
@@ -91,6 +92,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261015_000037_create_host_log_settings::Migration),
             Box::new(m20261016_000038_create_host_registration_settings::Migration),
             Box::new(m20261017_000039_move_legacy_legal_acceptance::Migration),
+            Box::new(m20261018_000040_add_user_kind_and_system_accounts::Migration),
         ]
     }
 }

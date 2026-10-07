@@ -11,9 +11,9 @@ use cheenhub_contracts::rest::{
     AcceptServerInviteResponse, ApiError, CreateServerInviteRequest, CreateServerInviteResponse,
     CreateServerRequest, CreateServerResponse, CreateServerRoomRequest, CreateServerRoomResponse,
     DeleteServerInviteResponse, ListServerRoomsResponse, ListServersResponse,
-    ServerInviteInfoResponse, ServerInviteLinksResponse, ServerVoiceSettings,
-    UpdateServerAvatarResponse, UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest,
-    UpdateServerRoomResponse,
+    ServerInviteInfoResponse, ServerInviteLinksResponse, ServerSystemAccountResponse,
+    ServerVoiceSettings, UpdateServerAvatarResponse, UpdateServerRequest, UpdateServerResponse,
+    UpdateServerRoomRequest, UpdateServerRoomResponse, UpdateServerSystemAccountRequest,
 };
 
 use crate::features::servers::application;
@@ -48,6 +48,31 @@ pub(crate) async fn update(
 ) -> Result<Json<UpdateServerResponse>, ServerError> {
     let token = bearer_token(&headers)?;
     application::update(&state, token, server_id, request)
+        .await
+        .map(Json)
+}
+
+/// Возвращает системное имя автора в настройках сервера.
+pub(crate) async fn get_system_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+) -> Result<Json<ServerSystemAccountResponse>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::get_system_account(&state, token, server_id)
+        .await
+        .map(Json)
+}
+
+/// Обновляет системное имя автора в настройках сервера.
+pub(crate) async fn update_system_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(server_id): Path<String>,
+    Json(request): Json<UpdateServerSystemAccountRequest>,
+) -> Result<Json<ServerSystemAccountResponse>, ServerError> {
+    let token = bearer_token(&headers)?;
+    application::update_system_account(&state, token, server_id, request)
         .await
         .map(Json)
 }

@@ -33,6 +33,11 @@ pub(crate) fn routes() -> Router<AppState> {
             put(transport::handlers::update_avatar),
         )
         .route(
+            "/{server_id}/system-account",
+            get(transport::handlers::get_system_account)
+                .put(transport::handlers::update_system_account),
+        )
+        .route(
             "/{server_id}/invites",
             get(transport::handlers::list_own_invites).post(transport::handlers::create_invite),
         )

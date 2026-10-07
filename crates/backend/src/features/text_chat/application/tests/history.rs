@@ -1,5 +1,7 @@
 use cheenhub_contracts::realtime::LoadRoomHistory;
-use cheenhub_contracts::rest::ServerRoomKind;
+use cheenhub_contracts::rest::{
+    CreateServerRequest, ServerRoomKind, UpdateServerSystemAccountRequest,
+};
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
@@ -183,4 +185,80 @@ async fn foreign_history_cursor_is_rejected() {
     .expect_err("foreign cursor should fail");
 
     assert!(matches!(error, TextChatApplicationError::BadRequest(_)));
+}
+
+#[tokio::test]
+async fn server_system_author_uses_configured_name_and_server_avatar_in_history() {
+    let state = state();
+    let auth = registered_user(&state, "system_history_owner", "system-history@example.com").await;
+    let owner_id = Uuid::parse_str(&auth.user.id).expect("owner id should be uuid");
+    let created = crate::features::servers::application::create(
+        &state,
+        &auth.access_token,
+        CreateServerRequest {
+            name: "system_history_server".to_owned(),
+        },
+    )
+    .await
+    .expect("server bootstrap should create its system account");
+    let server_id = Uuid::parse_str(&created.server.id).expect("server id should be uuid");
+    let rooms = state
+        .server_store
+        .list_server_rooms(&server_id)
+        .await
+        .expect("created server rooms should load");
+    let room = rooms.first().expect("server should have its initial room");
+    let system_avatar_id = Uuid::new_v4();
+
+    crate::features::servers::application::update_system_account(
+        &state,
+        &auth.access_token,
+        created.server.id.clone(),
+        UpdateServerSystemAccountRequest {
+            nickname: "Системный автор".to_owned(),
+        },
+    )
+    .await
+    .expect("owner should update the system author name");
+    state
+        .server_store
+        .update_server_avatar_image_id(&server_id, &owner_id, system_avatar_id)
+        .await
+        .expect("server avatar and system account avatar should update");
+    state
+        .text_chat_store
+        .insert_text_message(TextMessage {
+            id: Uuid::new_v4(),
+            server_id,
+            room_id: room.id,
+            author_user_id: server_id,
+            author_nickname: "Системный автор".to_owned(),
+            body: "Account rendering".to_owned(),
+            attachments: Vec::new(),
+            created_at: Utc::now(),
+            deleted_at: None,
+            deleted_by_user_id: None,
+        })
+        .await
+        .expect("system-authored history row should persist");
+
+    let history = load_room_history(
+        &state,
+        &owner_id,
+        LoadRoomHistory {
+            server_id: created.server.id,
+            room_id: room.id.to_string(),
+            before_message_id: None,
+        },
+    )
+    .await
+    .expect("server owner should load system-authored history");
+
+    assert_eq!(history.messages.len(), 1);
+    assert_eq!(history.messages[0].author_user_id, server_id.to_string());
+    assert_eq!(history.messages[0].author_nickname, "Системный автор");
+    assert_eq!(
+        history.messages[0].author_avatar_url.as_deref(),
+        Some(format!("http://localhost/api/images/{system_avatar_id}").as_str())
+    );
 }

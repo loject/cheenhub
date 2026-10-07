@@ -37,6 +37,7 @@ pub(super) async fn insert_password_reset_token(
 ) -> anyhow::Result<()> {
     let transaction = database.begin().await?;
     users::Entity::find_by_id(*user_id)
+        .filter(users::Column::Kind.eq("user"))
         .lock(LockType::Update)
         .one(&transaction)
         .await?
@@ -104,6 +105,7 @@ pub(super) async fn complete_password_reset(
     };
     let user_id = token.user_id;
     users::Entity::find_by_id(user_id)
+        .filter(users::Column::Kind.eq("user"))
         .lock(LockType::Update)
         .one(&transaction)
         .await?
@@ -138,6 +140,7 @@ pub(super) async fn complete_password_reset(
             sea_orm::sea_query::Expr::value(now),
         )
         .filter(users::Column::Id.eq(user_id))
+        .filter(users::Column::Kind.eq("user"))
         .exec(&transaction)
         .await?;
     sessions::Entity::update_many()

@@ -38,8 +38,9 @@ pub use servers::{
     DeleteServerInviteResponse, ListServerRoomsResponse, ListServersResponse,
     ServerInviteInfoResponse, ServerInviteLinksResponse, ServerInviteSummary, ServerOwnInviteLink,
     ServerRoomKind, ServerRoomSummary, ServerRoomWriteAccess, ServerRoomWriteAccessMode,
-    ServerSummary, ServerVoiceSettings, UpdateServerAvatarResponse, UpdateServerRequest,
-    UpdateServerResponse, UpdateServerRoomRequest, UpdateServerRoomResponse,
+    ServerSummary, ServerSystemAccountResponse, ServerVoiceSettings, UpdateServerAvatarResponse,
+    UpdateServerRequest, UpdateServerResponse, UpdateServerRoomRequest, UpdateServerRoomResponse,
+    UpdateServerSystemAccountRequest,
 };
 pub use social::{
     DmConversationSummary, DmImageAttachmentSummary, DmLastMessageSummary, DmMessageDeliveryStatus,

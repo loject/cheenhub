@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::features::servers::domain::{
     Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
-    ServerRole, ServerRoom, ServerRoomWriteAccess,
+    ServerRole, ServerRoom, ServerRoomWriteAccess, ServerSystemAccount,
 };
 use crate::features::servers::infrastructure::{AcceptInviteOutcome, ServerStore};
 /// In-memory-хранилище серверов для локального запуска и тестов.
@@ -20,6 +20,7 @@ pub(crate) struct InMemoryServerStore {
 #[derive(Default)]
 pub(super) struct InMemoryState {
     pub(super) servers: Vec<Server>,
+    pub(super) system_accounts: Vec<ServerSystemAccount>,
     pub(super) invites: Vec<ServerInvite>,
     pub(super) members: Vec<ServerMember>,
     pub(super) exclusions: Vec<ServerMemberExclusion>,
@@ -45,6 +46,11 @@ impl ServerStore for InMemoryServerStore {
             updated_at: now,
         };
 
+        state.system_accounts.push(ServerSystemAccount {
+            id: server.id,
+            nickname: server.name.clone(),
+            avatar_image_id: server.avatar_image_id,
+        });
         state.servers.push(server.clone());
         Ok(server)
     }
@@ -55,37 +61,7 @@ impl ServerStore for InMemoryServerStore {
     }
 
     async fn list_servers(&self, user_id: &Uuid) -> anyhow::Result<Vec<ServerAccess>> {
-        let state = self.state.lock().map_err(|_| poisoned())?;
-        let mut result = state
-            .servers
-            .iter()
-            .filter(|server| server.owner_user_id == *user_id)
-            .cloned()
-            .map(|server| ServerAccess {
-                server,
-                is_member: true,
-            })
-            .collect::<Vec<_>>();
-
-        let joined_server_ids = state
-            .members
-            .iter()
-            .filter(|member| member.user_id == *user_id && member.left_at.is_none())
-            .map(|member| member.server_id)
-            .filter(|server_id| !result.iter().any(|access| access.server.id == *server_id))
-            .collect::<Vec<_>>();
-        result.extend(
-            state
-                .servers
-                .iter()
-                .filter(|server| joined_server_ids.contains(&server.id))
-                .cloned()
-                .map(|server| ServerAccess {
-                    server,
-                    is_member: true,
-                }),
-        );
-        Ok(result)
+        super::in_memory_system_accounts::list_servers(&self.state, user_id)
     }
 
     async fn find_owned_server(
@@ -121,24 +97,47 @@ impl ServerStore for InMemoryServerStore {
         Ok(Some(server.clone()))
     }
 
+    async fn find_server_system_account(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerSystemAccount>> {
+        super::in_memory_system_accounts::find_owned(&self.state, server_id, owner_user_id)
+    }
+
+    async fn find_system_account_for_server(
+        &self,
+        server_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerSystemAccount>> {
+        super::in_memory_system_accounts::find_for_server(&self.state, server_id)
+    }
+
+    async fn update_server_system_account_nickname(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        nickname: String,
+    ) -> anyhow::Result<Option<ServerSystemAccount>> {
+        super::in_memory_system_accounts::update_nickname(
+            &self.state,
+            server_id,
+            owner_user_id,
+            nickname,
+        )
+    }
+
     async fn update_server_avatar_image_id(
         &self,
         server_id: &Uuid,
         owner_user_id: &Uuid,
         avatar_image_id: Uuid,
     ) -> anyhow::Result<Option<Server>> {
-        let mut state = self.state.lock().map_err(|_| poisoned())?;
-        let Some(server) = state
-            .servers
-            .iter_mut()
-            .find(|server| server.id == *server_id && server.owner_user_id == *owner_user_id)
-        else {
-            return Ok(None);
-        };
-
-        server.avatar_image_id = Some(avatar_image_id);
-        server.updated_at = Utc::now();
-        Ok(Some(server.clone()))
+        super::in_memory_system_accounts::update_avatar(
+            &self.state,
+            server_id,
+            owner_user_id,
+            avatar_image_id,
+        )
     }
 
     async fn update_server_audio_bitrate(
@@ -168,11 +167,14 @@ impl ServerStore for InMemoryServerStore {
     ) -> anyhow::Result<bool> {
         let mut state = self.state.lock().map_err(|_| poisoned())?;
 
-        Ok(super::in_memory_deletion::delete_owned_server(
-            &mut state,
-            server_id,
-            owner_user_id,
-        ))
+        let deleted =
+            super::in_memory_deletion::delete_owned_server(&mut state, server_id, owner_user_id);
+        if deleted {
+            state
+                .system_accounts
+                .retain(|account| account.id != *server_id);
+        }
+        Ok(deleted)
     }
 
     async fn insert_server_invite(

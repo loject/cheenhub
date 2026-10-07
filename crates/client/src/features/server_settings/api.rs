@@ -1,11 +1,56 @@
 //! Server settings REST client helpers.
 
 use cheenhub_contracts::rest::{
-    ServerSummary, ServerVoiceSettings, UpdateServerAvatarResponse, UpdateServerRequest,
-    UpdateServerResponse,
+    ServerSummary, ServerSystemAccountResponse, ServerVoiceSettings, UpdateServerAvatarResponse,
+    UpdateServerRequest, UpdateServerResponse, UpdateServerSystemAccountRequest,
 };
 
 use crate::features::auth::api as auth_api;
+
+/// Loads the server system-account profile.
+pub(super) async fn get_system_account(server_id: String) -> Result<String, String> {
+    let access_token = auth_api::fresh_access_token().await?;
+    let response = auth_api::get(&format!("/servers/{server_id}/system-account"))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if response.status().is_success() {
+        return response
+            .json::<ServerSystemAccountResponse>()
+            .await
+            .map(|profile| profile.nickname)
+            .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned());
+    }
+
+    Err(auth_api::read_error(response).await)
+}
+
+/// Saves the server system-account display name.
+pub(super) async fn update_system_account(
+    server_id: String,
+    nickname: String,
+) -> Result<String, String> {
+    let access_token = auth_api::fresh_access_token().await?;
+    let request = UpdateServerSystemAccountRequest { nickname };
+    let response = auth_api::put(&format!("/servers/{server_id}/system-account"))
+        .header("Authorization", &format!("Bearer {access_token}"))
+        .json(&request)
+        .send()
+        .await
+        .map_err(|_| "Не удалось связаться с сервером.".to_owned())?;
+
+    if response.status().is_success() {
+        return response
+            .json::<ServerSystemAccountResponse>()
+            .await
+            .map(|profile| profile.nickname)
+            .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned());
+    }
+
+    Err(auth_api::read_error(response).await)
+}
 
 /// Updates a server profile.
 pub(super) async fn update_server(

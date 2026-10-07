@@ -7,12 +7,14 @@ mod in_memory_invites;
 mod in_memory_members;
 mod in_memory_roles;
 mod in_memory_rooms;
+mod in_memory_system_accounts;
 mod postgres;
 mod postgres_conversions;
 mod postgres_invites;
 mod postgres_members;
 mod postgres_roles;
 mod postgres_rooms;
+mod postgres_system_accounts;
 
 use async_trait::async_trait;
 use cheenhub_contracts::rest::ServerRoomKind;
@@ -21,7 +23,7 @@ use uuid::Uuid;
 
 use crate::features::servers::domain::{
     Server, ServerAccess, ServerInvite, ServerInviteUse, ServerMember, ServerMemberExclusion,
-    ServerRole, ServerRoom, ServerRoomWriteAccess,
+    ServerRole, ServerRoom, ServerRoomWriteAccess, ServerSystemAccount,
 };
 
 pub(crate) use in_memory::InMemoryServerStore;
@@ -47,7 +49,7 @@ pub(crate) enum AcceptInviteOutcome {
 /// Граница хранилища серверов.
 #[async_trait]
 pub(crate) trait ServerStore: Send + Sync {
-    /// Вставляет новый сервер для пользователя.
+    /// Атомарно вставляет сервер и системный аккаунт с совпадающим UUID.
     async fn insert_server(&self, owner_user_id: &Uuid, name: String) -> anyhow::Result<Server>;
 
     /// Считает все серверы хоста без ограничения по владельцу.
@@ -70,6 +72,27 @@ pub(crate) trait ServerStore: Send + Sync {
         owner_user_id: &Uuid,
         name: String,
     ) -> anyhow::Result<Option<Server>>;
+
+    /// Возвращает системный профиль сервера для его владельца.
+    async fn find_server_system_account(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerSystemAccount>>;
+
+    /// Возвращает системный профиль по UUID сервера после проверки доступа в вызывающем use case.
+    async fn find_system_account_for_server(
+        &self,
+        server_id: &Uuid,
+    ) -> anyhow::Result<Option<ServerSystemAccount>>;
+
+    /// Обновляет отображаемое имя системного аккаунта, не затрагивая название сервера.
+    async fn update_server_system_account_nickname(
+        &self,
+        server_id: &Uuid,
+        owner_user_id: &Uuid,
+        nickname: String,
+    ) -> anyhow::Result<Option<ServerSystemAccount>>;
 
     /// Обновляет изображение аватара сервера, принадлежащего пользователю.
     async fn update_server_avatar_image_id(

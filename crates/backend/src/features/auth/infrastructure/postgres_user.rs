@@ -27,8 +27,9 @@ pub(super) async fn insert_user(
     let model = users::ActiveModel {
         id: Set(user_id),
         nickname: Set(nickname),
-        email: Set(email),
-        email_normalized: Set(email_normalized),
+        kind: Set("user".to_owned()),
+        email: Set(Some(email)),
+        email_normalized: Set(Some(email_normalized)),
         password_hash: Set(password_hash),
         avatar_image_id: Set(None),
         registered_at: Set(now),
@@ -83,10 +84,13 @@ pub(super) async fn insert_user(
 /// Сопоставляет ошибки вставки в базу с конфликтами полей пользователя.
 pub(super) fn map_insert_user_error(error: sea_orm::DbErr) -> InsertUserError {
     let message = error.to_string();
-    if message.contains("users_nickname_key") {
+    if message.contains("idx_users_user_nickname_unique") || message.contains("users_nickname_key")
+    {
         return InsertUserError::Conflict(UserConflict::Nickname);
     }
-    if message.contains("users_email_normalized_key") {
+    if message.contains("idx_users_user_email_normalized_unique")
+        || message.contains("users_email_normalized_key")
+    {
         return InsertUserError::Conflict(UserConflict::Email);
     }
 
@@ -110,6 +114,7 @@ fn escape_like_pattern(value: &str) -> String {
 pub(super) async fn count_registered_users(database: &DatabaseConnection) -> anyhow::Result<u64> {
     Ok(users::Entity::find()
         .filter(users::Column::DeletionFinalizedAt.is_null())
+        .filter(users::Column::Kind.eq("user"))
         .count(database)
         .await?)
 }
@@ -121,6 +126,7 @@ pub(super) async fn find_user_by_email(
 ) -> anyhow::Result<Option<UserAccount>> {
     Ok(users::Entity::find()
         .filter(users::Column::EmailNormalized.eq(email_normalized))
+        .filter(users::Column::Kind.eq("user"))
         .one(database)
         .await?
         .map(Into::into))
@@ -132,6 +138,7 @@ pub(super) async fn find_user_by_id(
     user_id: &Uuid,
 ) -> anyhow::Result<Option<UserAccount>> {
     Ok(users::Entity::find_by_id(*user_id)
+        .filter(users::Column::Kind.eq("user"))
         .one(database)
         .await?
         .map(|mut user| {
@@ -153,6 +160,7 @@ pub(super) async fn find_users_by_ids(
     }
     Ok(users::Entity::find()
         .filter(users::Column::Id.is_in(user_ids.iter().copied()))
+        .filter(users::Column::Kind.eq("user"))
         .all(database)
         .await?
         .into_iter()
@@ -175,6 +183,7 @@ pub(super) async fn search_users_by_nickname(
     let pattern = format!("%{}%", escape_like_pattern(query));
     Ok(users::Entity::find()
         .filter(users::Column::Nickname.like(pattern))
+        .filter(users::Column::Kind.eq("user"))
         .filter(super::postgres_deletion::active_users_filter())
         .order_by_asc(users::Column::Nickname)
         .limit(limit)
@@ -196,6 +205,7 @@ pub(super) async fn avatar_image_ids_by_user_ids(
 
     Ok(users::Entity::find()
         .filter(users::Column::Id.is_in(user_ids.iter().copied()))
+        .filter(users::Column::Kind.eq("user"))
         .filter(super::postgres_deletion::active_users_filter())
         .all(database)
         .await?

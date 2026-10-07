@@ -58,6 +58,20 @@ pub struct UpdateServerAvatarResponse {
     pub server: ServerSummary,
 }
 
+/// Имя системной учётной записи сервера для настроек.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerSystemAccountResponse {
+    /// Отображаемое имя автора системных сообщений.
+    pub nickname: String,
+}
+
+/// Тело запроса для изменения имени системной учётной записи.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateServerSystemAccountRequest {
+    /// Имя автора системных сообщений длиной от одного до 48 символов.
+    pub nickname: String,
+}
+
 /// Тип комнаты сервера, поддерживаемый MVP.
 /// TODO: это не должен быть REST, а должен быть realtime
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

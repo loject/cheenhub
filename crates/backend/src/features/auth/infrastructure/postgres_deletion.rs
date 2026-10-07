@@ -14,6 +14,7 @@ pub(super) async fn account_deletion<C: ConnectionTrait>(
     user_id: &Uuid,
 ) -> anyhow::Result<Option<AccountDeletion>> {
     Ok(users::Entity::find_by_id(*user_id)
+        .filter(users::Column::Kind.eq("user"))
         .select_only()
         .columns([
             users::Column::DeletionRequestedAt,
@@ -35,6 +36,7 @@ pub(super) async fn lock_active_user<C: ConnectionTrait>(
     user_id: &Uuid,
 ) -> anyhow::Result<bool> {
     Ok(users::Entity::find_by_id(*user_id)
+        .filter(users::Column::Kind.eq("user"))
         .lock(LockType::Update)
         .one(db)
         .await?
@@ -64,6 +66,7 @@ pub(super) async fn begin_account_deletion(
             Expr::value(None::<DateTime<Utc>>),
         )
         .filter(users::Column::Id.eq(*user_id))
+        .filter(users::Column::Kind.eq("user"))
         .exec(&tx)
         .await?;
     sessions::Entity::update_many()
@@ -89,6 +92,7 @@ pub(super) async fn restore_account(
     let tx = db.begin().await?;
     let Some(row) = users::Entity::find()
         .filter(users::Column::DeletionTokenHash.eq(token_hash))
+        .filter(users::Column::Kind.eq("user"))
         .one(&tx)
         .await?
     else {
@@ -118,6 +122,7 @@ pub(super) async fn restore_account(
             Expr::value(None::<DateTime<Utc>>),
         )
         .filter(users::Column::Id.eq(row.id))
+        .filter(users::Column::Kind.eq("user"))
         .filter(users::Column::DeletionTokenHash.eq(token_hash))
         .filter(users::Column::DeletionRestoreUntil.gt(now))
         .filter(users::Column::DeletionFinalizedAt.is_null())
@@ -130,7 +135,7 @@ pub(super) async fn restore_account(
     Ok(restored.rows_affected == 1)
 }
 
-/// Исключает tombstone из публичного поиска и выдачи аватаров.
+/// Ограничивает публичную выдачу активными обычными пользователями.
 pub(super) fn active_users_filter() -> sea_orm::sea_query::SimpleExpr {
     users::Column::DeletionRequestedAt.is_null()
 }

@@ -85,6 +85,7 @@ pub(super) async fn find_active_refresh(
         return Ok(None);
     };
     let Some(user) = users::Entity::find_by_id(session.user_id)
+        .filter(users::Column::Kind.eq("user"))
         .one(database)
         .await?
     else {

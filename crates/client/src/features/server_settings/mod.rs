@@ -17,6 +17,7 @@ mod role_save_bar;
 mod roles_data;
 mod roles_section;
 mod scope;
+mod system_account_section;
 mod voice_video_section;
 
 pub(crate) use scope::ServerSettingsScope;

@@ -54,6 +54,17 @@ pub(crate) struct ServerAccess {
     pub(crate) is_member: bool,
 }
 
+/// Системный автор, который отображается в контексте одного сервера.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ServerSystemAccount {
+    /// Совпадает с UUID сервера и системной строки `users`.
+    pub(crate) id: Uuid,
+    /// Отображаемое имя, редактируемое в настройках сервера.
+    pub(crate) nickname: String,
+    /// Изображение аватара сервера.
+    pub(crate) avatar_image_id: Option<Uuid>,
+}
+
 /// Настройка доступа к записи в комнату сервера.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ServerRoomWriteAccess {

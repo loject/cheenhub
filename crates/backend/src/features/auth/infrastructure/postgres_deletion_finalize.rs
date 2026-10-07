@@ -15,6 +15,7 @@ pub(super) async fn finalize_expired_account_deletions(
     now: DateTime<Utc>,
 ) -> anyhow::Result<u64> {
     let pending = users::Entity::find()
+        .filter(users::Column::Kind.eq("user"))
         .filter(users::Column::DeletionRequestedAt.is_not_null())
         .filter(users::Column::DeletionRestoreUntil.lte(now))
         .filter(users::Column::DeletionFinalizedAt.is_null())
@@ -24,6 +25,7 @@ pub(super) async fn finalize_expired_account_deletions(
     for pending in pending {
         let tx = db.begin().await?;
         let Some(user) = users::Entity::find_by_id(pending.id)
+            .filter(users::Column::Kind.eq("user"))
             .lock(LockType::Update)
             .one(&tx)
             .await?
@@ -43,8 +45,9 @@ pub(super) async fn finalize_expired_account_deletions(
             "deleted:{}",
             URL_SAFE_NO_PAD.encode(pending.id.as_bytes())
         ));
-        user.email = Set(format!("deleted:{}", pending.id));
-        user.email_normalized = user.email.clone();
+        let anonymized_email = format!("deleted:{}", pending.id);
+        user.email = Set(Some(anonymized_email.clone()));
+        user.email_normalized = Set(Some(anonymized_email));
         user.password_hash = Set(None);
         user.avatar_image_id = Set(None);
         user.updated_at = Set(now);

@@ -49,12 +49,34 @@ pub(crate) async fn load_room_history(
             }
         })?;
 
-    let avatar_urls = image_application::avatar_urls_by_user_ids(
+    let mut avatar_urls = image_application::avatar_urls_by_user_ids(
         state,
         page.messages.iter().map(|message| message.author_user_id),
     )
     .await
     .map_err(TextChatApplicationError::Internal)?;
+
+    if page
+        .messages
+        .iter()
+        .any(|message| message.author_user_id == server_id)
+    {
+        match state
+            .server_store
+            .find_system_account_for_server(&server_id)
+            .await
+            .map_err(TextChatApplicationError::Internal)?
+        {
+            Some(account) => {
+                if let Some(image_id) = account.avatar_image_id {
+                    avatar_urls.insert(account.id, image_application::avatar_url(state, &image_id));
+                }
+            }
+            None => {
+                tracing::warn!(server_id = %server_id, "text history contains a system author without a system account")
+            }
+        }
+    }
 
     let deleted_authors = history_authors::deleted_authors(state, &page.messages).await?;
 

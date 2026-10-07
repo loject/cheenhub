@@ -28,6 +28,7 @@ mod own_invites;
 mod profile;
 mod role_settings;
 mod support;
+mod system_account_settings;
 mod voice_settings;
 
 pub(crate) use accept_invite::accept_invite;
@@ -41,6 +42,7 @@ pub(crate) use members_settings::{
 pub(crate) use own_invites::{create_invite, delete_own_invite, list_own_invite_links};
 pub(crate) use profile::{update, update_avatar};
 pub(crate) use role_settings::{list_server_roles, save_server_roles};
+pub(crate) use system_account_settings::{get_system_account, update_system_account};
 pub(crate) use voice_settings::{get_voice_settings, update_voice_settings};
 
 /// Создает сервер, принадлежащий текущему пользователю.

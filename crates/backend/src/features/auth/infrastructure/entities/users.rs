@@ -6,22 +6,24 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "users")]
 pub struct Model {
-    /// Stable user identifier.
+    /// Стабильный идентификатор пользователя.
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    /// Public nickname shown to other users.
+    /// Публичное имя, показываемое другим пользователям.
     pub nickname: String,
-    /// Email address used for login.
-    pub email: String,
-    /// Normalized email used for lookup and uniqueness.
-    pub email_normalized: String,
-    /// Stored Argon2 password hash.
+    /// Категория аккаунта, определяющая доступные учётные данные и публичные операции.
+    pub kind: String,
+    /// Адрес для входа; отсутствует у видов учётных записей без входа.
+    pub email: Option<String>,
+    /// Нормализованный адрес для поиска и уникальности; отсутствует у видов без входа.
+    pub email_normalized: Option<String>,
+    /// Сохранённый хеш пароля Argon2.
     pub password_hash: Option<String>,
-    /// Current avatar image identifier.
+    /// Идентификатор текущего изображения аватара.
     pub avatar_image_id: Option<Uuid>,
-    /// Account registration timestamp.
+    /// Время регистрации учётной записи.
     pub registered_at: DateTimeUtc,
-    /// Last successful nickname update timestamp.
+    /// Время последнего успешного изменения имени.
     pub nickname_updated_at: DateTimeUtc,
     /// Время запроса удаления аккаунта.
     pub deletion_requested_at: Option<DateTimeUtc>,

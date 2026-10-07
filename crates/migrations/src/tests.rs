@@ -19,6 +19,20 @@ fn migration_registry_contains_legacy_legal_acceptance_move() {
     );
 }
 
+#[test]
+fn migration_registry_contains_server_system_account_bootstrap() {
+    let migration_names = Migrator::migrations()
+        .iter()
+        .map(|migration| migration.name().to_owned())
+        .collect::<Vec<_>>();
+
+    assert!(
+        migration_names
+            .iter()
+            .any(|name| { name == "m20261018_000040_add_user_kind_and_system_accounts" })
+    );
+}
+
 #[tokio::test]
 #[ignore = "Нужна отдельная пустая PostgreSQL-база cheenhub_legal_migration_test и CHEENHUB_LEGAL_MIGRATION_TEST_DATABASE_URL"]
 async fn migration_preserves_legacy_acceptance_timestamps() {
@@ -135,6 +149,135 @@ async fn migration_preserves_legacy_acceptance_timestamps() {
         accepted_terms_at(&database, no_acceptance_user).await,
         legacy_at
     );
+}
+
+#[tokio::test]
+#[ignore = "Нужна отдельная пустая PostgreSQL-база cheenhub_user_kind_migration_test и CHEENHUB_USER_KIND_MIGRATION_TEST_DATABASE_URL"]
+async fn migration_backfills_non_login_system_accounts_for_existing_servers() {
+    let database_url = std::env::var("CHEENHUB_USER_KIND_MIGRATION_TEST_DATABASE_URL")
+        .expect("CHEENHUB_USER_KIND_MIGRATION_TEST_DATABASE_URL должен указывать на отдельную тестовую базу");
+    let database = Database::connect(&database_url)
+        .await
+        .expect("тестовая PostgreSQL-база должна быть доступна");
+    let database_name = database
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT current_database() AS name".to_owned(),
+        ))
+        .await
+        .expect("имя тестовой базы должно читаться")
+        .expect("PostgreSQL должен вернуть имя тестовой базы")
+        .try_get::<String>("", "name")
+        .expect("имя тестовой базы должно быть строкой");
+
+    assert_eq!(database_name, "cheenhub_user_kind_migration_test");
+    Migrator::fresh(&database)
+        .await
+        .expect("изолированная тестовая база должна очиститься");
+    Migrator::up(&database, Some(39))
+        .await
+        .expect("миграции до добавления типов пользователей должны примениться");
+
+    let owner_id = Uuid::new_v4();
+    let server_ids = [Uuid::new_v4(), Uuid::new_v4()];
+    let server_name = "s".repeat(48);
+    insert_legacy_owner(&database, owner_id).await;
+    for server_id in server_ids {
+        insert_legacy_server(&database, server_id, owner_id, &server_name).await;
+    }
+
+    Migrator::up(&database, Some(1))
+        .await
+        .expect("миграция типов и системных аккаунтов должна примениться");
+
+    for server_id in server_ids {
+        let system_row = database
+            .query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT kind, nickname, email, email_normalized, password_hash FROM users WHERE id = $1",
+                [server_id.into()],
+            ))
+            .await
+            .expect("системная строка должна читаться")
+            .expect("для каждого сервера должна существовать системная строка");
+        assert_eq!(system_row.try_get::<String>("", "kind").unwrap(), "system");
+        assert_eq!(
+            system_row.try_get::<String>("", "nickname").unwrap(),
+            server_name
+        );
+        assert_eq!(
+            system_row.try_get::<Option<String>>("", "email").unwrap(),
+            None
+        );
+        assert_eq!(
+            system_row
+                .try_get::<Option<String>>("", "email_normalized")
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            system_row
+                .try_get::<Option<String>>("", "password_hash")
+                .unwrap(),
+            None
+        );
+    }
+
+    database
+        .execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO users (id, nickname, kind, email, email_normalized, password_hash, registered_at, nickname_updated_at, updated_at) VALUES ($1, $2, 'user', $3, $4, NULL, NOW(), NOW(), NOW())",
+            [
+                Uuid::new_v4().into(),
+                server_name.clone().into(),
+                "same-name@example.test".into(),
+                "same-name@example.test".into(),
+            ],
+        ))
+        .await
+        .expect("обычный пользователь может иметь тот же nickname, что и системные аккаунты");
+
+    Migrator::down(&database, Some(1))
+        .await
+        .expect("откат должен удалить созданные миграцией системные аккаунты");
+    for server_id in server_ids {
+        let row = database
+            .query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT id FROM users WHERE id = $1",
+                [server_id.into()],
+            ))
+            .await
+            .expect("схема users должна читаться");
+        assert!(row.is_none());
+    }
+}
+
+async fn insert_legacy_owner(database: &sea_orm::DatabaseConnection, owner_id: Uuid) {
+    database
+        .execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO users (id, nickname, email, email_normalized, password_hash, registered_at, nickname_updated_at, updated_at) VALUES ($1, 'migration_owner', 'migration-owner@example.test', 'migration-owner@example.test', 'test-hash', NOW(), NOW(), NOW())",
+            [owner_id.into()],
+        ))
+        .await
+        .expect("обычный владелец должен создаться до новой миграции");
+}
+
+async fn insert_legacy_server(
+    database: &sea_orm::DatabaseConnection,
+    server_id: Uuid,
+    owner_id: Uuid,
+    name: &str,
+) {
+    database
+        .execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO servers (id, owner_user_id, name, avatar_image_id, audio_bitrate_bps, created_at, updated_at) VALUES ($1, $2, $3, NULL, 64000, NOW(), NOW())",
+            [server_id.into(), owner_id.into(), name.to_owned().into()],
+        ))
+        .await
+        .expect("сервер должен создаться до новой миграции");
 }
 
 async fn insert_user(

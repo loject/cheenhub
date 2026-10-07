@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 use crate::features::app::components::server_avatar::ServerAvatar;
 
 use super::api;
+use super::system_account_section::ServerSystemAccountSettingsSection;
 
 /// Рендерит настройки имени и иконки сервера.
 #[component]
@@ -221,6 +222,10 @@ pub(crate) fn ServerOverviewSettingsSection(
                         }
                     }
                 }
+            }
+            ServerSystemAccountSettingsSection {
+                server_id: server.id.clone(),
+                is_owner: server.is_owner,
             }
             if server.is_owner {
                 section { class: "rounded-[20px] border border-red-500/20 bg-red-500/5 p-5",

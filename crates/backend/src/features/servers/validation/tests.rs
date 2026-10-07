@@ -28,6 +28,19 @@ fn rejects_long_server_name() {
 }
 
 #[test]
+fn trims_system_account_name_and_accepts_server_name_limit() {
+    let nickname = super::system_account_nickname(format!(" {} ", "я".repeat(48)))
+        .expect("system account should accept a 48-character Unicode name");
+
+    assert_eq!(nickname, "я".repeat(48));
+}
+
+#[test]
+fn rejects_empty_system_account_name() {
+    assert!(super::system_account_nickname("   ".to_owned()).is_err());
+}
+
+#[test]
 fn trims_valid_room_name() {
     let valid = super::server_room("  x  ".to_owned(), ServerRoomWriteAccess::default())
         .expect("room name should be valid");

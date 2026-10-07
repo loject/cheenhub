@@ -33,6 +33,7 @@ pub(super) async fn update_user_nickname(
         return Ok(None);
     }
     let Some(user) = users::Entity::find_by_id(*user_id)
+        .filter(users::Column::Kind.eq("user"))
         .one(&transaction)
         .await
         .map_err(UpdateUserNicknameError::Database)?
@@ -55,6 +56,7 @@ pub(super) async fn update_user_nickname(
             sea_orm::sea_query::Expr::value(now),
         )
         .filter(users::Column::Id.eq(*user_id))
+        .filter(users::Column::Kind.eq("user"))
         .filter(users::Column::NicknameUpdatedAt.lte(cooldown_cutoff))
         .exec(&transaction)
         .await
@@ -75,6 +77,7 @@ pub(super) async fn update_user_nickname(
             .map_err(UpdateUserNicknameError::Database)?;
         }
         let user = users::Entity::find_by_id(*user_id)
+            .filter(users::Column::Kind.eq("user"))
             .one(&transaction)
             .await
             .map_err(UpdateUserNicknameError::Database)?
@@ -118,6 +121,7 @@ pub(super) async fn change_user_password(
             sea_orm::sea_query::Expr::value(now),
         )
         .filter(users::Column::Id.eq(*user_id))
+        .filter(users::Column::Kind.eq("user"))
         .exec(&transaction)
         .await?;
 
@@ -136,7 +140,8 @@ pub(super) async fn change_user_password(
 
 fn map_update_user_nickname_error(error: sea_orm::DbErr) -> UpdateUserNicknameError {
     let message = error.to_string();
-    if message.contains("users_nickname_key") {
+    if message.contains("idx_users_user_nickname_unique") || message.contains("users_nickname_key")
+    {
         return UpdateUserNicknameError::Conflict(UserConflict::Nickname);
     }
 
@@ -155,6 +160,7 @@ pub(super) async fn update_user_avatar_image_id(
         return Ok(None);
     }
     let Some(user) = users::Entity::find_by_id(*user_id)
+        .filter(users::Column::Kind.eq("user"))
         .one(&transaction)
         .await?
     else {
