@@ -14,7 +14,7 @@ short_description = "CheenHub voice chat"
 long_description = "CheenHub desktop and mobile client."
 
 [web.app]
-title = "CheenHub — голосовой чат для геймеров"
+title = "CheenHub (Чинхаб) — бесплатный голосовой чат для игр и общения с друзьями"
 
 [windows]
 identifier = "ru.cheenhub"
