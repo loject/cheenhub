@@ -15,7 +15,7 @@ use super::super::backend::{
 };
 use super::super::vad::{VoiceActivityDetector, rms_level};
 
-const OPUS_FRAME_DURATION_US: u32 = 20_000;
+const OPUS_FRAME_DURATION_US: u32 = 10_000;
 const MAX_OPUS_PACKET_BYTES: usize = 4_000;
 
 pub(super) fn spawn_encoder_worker(

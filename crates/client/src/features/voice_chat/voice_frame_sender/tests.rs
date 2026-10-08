@@ -35,8 +35,8 @@ fn pending_voice_frame_resets_drop_summary_after_take() {
 fn frame(sequence: u64) -> EncodedMicrophoneFrame {
     EncodedMicrophoneFrame {
         sequence,
-        timestamp_us: sequence * 20_000,
-        duration_us: 20_000,
+        timestamp_us: sequence * 10_000,
+        duration_us: 10_000,
         codec: MicrophoneCodec::Opus,
         sample_rate_hz: 48_000,
         channels: 1,

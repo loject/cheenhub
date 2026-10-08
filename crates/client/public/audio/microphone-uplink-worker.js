@@ -153,7 +153,7 @@ function encoderConfig(sampleRateHz, channels, bitrateBps) {
       useinbandfec: true,
       usedtx: true,
       application: "voip",
-      frameDuration: 20_000,
+      frameDuration: 10_000,
     },
   };
 }

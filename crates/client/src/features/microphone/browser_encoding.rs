@@ -174,8 +174,7 @@ pub(super) fn encoder_config(sample_rate_hz: u32, channels: u8, bitrate_bps: u32
     // - packetlossperc: подсказка кодеку, сколько избыточности FEC закладывать.
     // - usedtx: во время тишины кодер почти не шлёт данные — экономит трафик; у нас
     //   уже есть собственный VAD, так что паузы безопасны.
-    // - application=voip и frameDuration=20мс — профиль и размер кадра для речи
-    //   (20мс снижает накладные расходы пакетов; это же значение по умолчанию).
+    // - application=voip и frameDuration=10мс — профиль и размер кадра для речи.
     //
     // Неизвестные ключи браузер игнорирует при нормализации конфигурации, поэтому
     // на старых движках это безопасно — FEC просто не включится.
@@ -198,7 +197,7 @@ pub(super) fn encoder_config(sample_rate_hz: u32, channels: u8, bitrate_bps: u32
     let _ = Reflect::set(
         &opus,
         &JsValue::from_str("frameDuration"),
-        &JsValue::from_f64(20_000.0),
+        &JsValue::from_f64(10_000.0),
     );
     let _ = Reflect::set(
         &opus,
