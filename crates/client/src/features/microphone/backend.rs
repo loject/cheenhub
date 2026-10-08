@@ -13,6 +13,8 @@ pub(crate) type MicrophoneLevelCallback = Rc<dyn Fn(MicrophoneLevel)>;
 
 /// Callback invoked when an active backend fails after startup.
 pub(crate) type MicrophoneErrorCallback = Rc<dyn Fn(MicrophoneError)>;
+/// Callback for recoverable processing degradation while capture remains active.
+pub(crate) type MicrophoneWarningCallback = Rc<dyn Fn(&'static str)>;
 
 /// Настройки отдельного low-latency uplink вне UI runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +51,7 @@ pub(crate) enum MicrophoneActivationMode {
 }
 
 /// Microphone capture and encoding configuration.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub(crate) struct MicrophoneConfig {
     /// Preferred encoded codec.
     pub(crate) codec: MicrophoneCodec,
@@ -71,6 +73,11 @@ pub(crate) struct MicrophoneConfig {
     pub(crate) device_id: Option<String>,
     /// Linear input gain applied before voice activation and encoding.
     pub(crate) input_gain: f32,
+    /// Whether Windows worker DSP is enabled for this capture.
+    pub(crate) denoise_enabled: bool,
+    /// Worker-owned runtime switch sampled at frame boundaries. A failed DSP clears this without
+    /// changing the persisted user preference.
+    pub(crate) denoise_enabled_live: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Default for MicrophoneConfig {
@@ -86,6 +93,8 @@ impl Default for MicrophoneConfig {
             vad_release_delay_us: 250_000,
             device_id: None,
             input_gain: 1.0,
+            denoise_enabled: false,
+            denoise_enabled_live: None,
         }
     }
 }
@@ -100,6 +109,8 @@ pub(crate) struct MicrophoneCallbacks {
     pub(crate) on_level: MicrophoneLevelCallback,
     /// Ошибка уже запущенной capture/uplink-сессии.
     pub(crate) on_error: MicrophoneErrorCallback,
+    /// Recoverable DSP warnings that must not change capture status.
+    pub(crate) on_warning: MicrophoneWarningCallback,
     /// Отдельный uplink, который browser backend должен запустить вместо on_frame path.
     pub(crate) uplink: Option<MicrophoneUplinkConfig>,
 }

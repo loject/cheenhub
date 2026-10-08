@@ -12,6 +12,7 @@ publisher = "CheenHub"
 icon = ["../../icons/icon.ico"]
 short_description = "CheenHub voice chat"
 long_description = "CheenHub desktop and mobile client."
+resources = ["crates/client/THIRD_PARTY_NOTICES"]
 
 [web.app]
 title = "CheenHub (Чинхаб) — бесплатный голосовой чат для игр и общения с друзьями"

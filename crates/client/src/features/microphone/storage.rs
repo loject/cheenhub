@@ -11,6 +11,8 @@ use super::device_preferences::{
 const INPUT_VOLUME_PERCENT_KEY: &str = "cheenhub.microphone.input_volume_percent";
 const ACTIVATION_MODE_KEY: &str = "cheenhub.microphone.activation_mode";
 const VAD_THRESHOLD_PERCENT_KEY: &str = "cheenhub.microphone.vad_threshold_percent";
+const DENOISE_MODE_KEY: &str = "cheenhub.microphone.denoise_mode";
+const DENOISE_ENABLED_KEY: &str = "cheenhub.microphone.denoise_enabled";
 const DEFAULT_INPUT_VOLUME_PERCENT: u32 = 100;
 const DEFAULT_VAD_THRESHOLD_PERCENT: u32 = 20;
 
@@ -122,6 +124,26 @@ pub(crate) fn save_vad_threshold_percent(threshold_percent: u32) {
         threshold = threshold_percent,
         "saved microphone vad threshold preference"
     );
+}
+
+/// Загружает алгоритм, сохраняя выбор из прежнего переключателя.
+pub(crate) fn load_denoise_mode() -> super::denoise::DenoiseMode {
+    let mode = match get::<LocalStorage>(DENOISE_MODE_KEY) {
+        Some(value) => super::denoise::DenoiseMode::from_value(&value),
+        None if get::<LocalStorage>(DENOISE_ENABLED_KEY).as_deref() == Some("true") => {
+            super::denoise::DenoiseMode::Rnnoise
+        }
+        None => super::denoise::DenoiseMode::Off,
+    };
+    info!(?mode, "loaded microphone noise suppression mode");
+    mode
+}
+
+/// Сохраняет выбранный алгоритм и удаляет прежнюю настройку переключателя.
+pub(crate) fn save_denoise_mode(mode: super::denoise::DenoiseMode) {
+    set::<LocalStorage>(DENOISE_MODE_KEY, mode.value());
+    remove::<LocalStorage>(DENOISE_ENABLED_KEY);
+    info!(?mode, "saved microphone noise suppression mode");
 }
 
 fn clamp_volume_percent(volume_percent: u32) -> u32 {

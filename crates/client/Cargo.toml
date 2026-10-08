@@ -81,6 +81,7 @@ windows = [
     "dep:windows",
     "dep:windows-sys",
     "dep:libvpx-native-sys",
+    "dep:nnnoiseless",
 ]
 # Linux-реализация desktop-клиента: PulseAudio API для ввода/вывода и Opus для голоса.
 linux = ["dep:libpulse-binding", "dep:opus"]
@@ -118,6 +119,7 @@ js-sys = { workspace = true, optional = true }
 jni = { version = "0.21", optional = true }
 ndk-context = { version = "0.1", optional = true }
 opus = { workspace = true, optional = true }
+nnnoiseless = { version = "=0.5.2", default-features = false, optional = true }
 reqwest = { workspace = true, optional = true }
 rustls = { workspace = true, features = ["aws-lc-rs"], optional = true }
 serde = { workspace = true, optional = true }

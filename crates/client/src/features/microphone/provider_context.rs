@@ -12,6 +12,7 @@ use super::native::default_backend;
 use super::provider::{ActiveCapture, MicrophoneHandle};
 use super::provider_runtime::{MicrophoneRuntime, default_level, run_microphone_runtime};
 use super::storage;
+use crate::features::toast::ToastHandle;
 
 /// Provides microphone capture state to authenticated app components.
 #[component]
@@ -35,11 +36,17 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let input_volume_percent = use_signal(storage::load_input_volume_percent);
     let activation_mode = use_signal(storage::load_activation_mode);
     let vad_threshold_percent = use_signal(storage::load_vad_threshold_percent);
+    let stored_denoise = storage::load_denoise_mode();
+    let denoise_mode = use_signal(move || stored_denoise);
+    let denoise_runtime = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+        stored_denoise == super::denoise::DenoiseMode::Rnnoise,
+    ));
     let active_capture = use_signal(|| ActiveCapture::None);
     let active_on_frame = use_signal(|| None::<MicrophoneFrameCallback>);
     let active_uplink = use_signal(|| None::<MicrophoneUplinkConfig>);
     let target_bitrate_bps = use_signal(|| MicrophoneConfig::default().bitrate_bps);
     let backend = default_backend();
+    let toast = use_context::<ToastHandle>();
     let runtime = MicrophoneRuntime {
         backend,
         status,
@@ -51,6 +58,9 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         input_volume_percent,
         activation_mode,
         vad_threshold_percent,
+        denoise_mode,
+        denoise_runtime: denoise_runtime.clone(),
+        toast,
         active_capture,
         active_on_frame,
         active_uplink,
@@ -68,6 +78,8 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         input_volume_percent,
         activation_mode,
         vad_threshold_percent,
+        denoise_mode,
+        denoise_runtime: denoise_runtime.clone(),
         active_capture,
         active_on_frame,
         active_uplink,

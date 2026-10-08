@@ -1,6 +1,5 @@
 //! Microphone provider runtime helpers.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
@@ -8,14 +7,15 @@ use futures_channel::mpsc;
 use futures_util::StreamExt;
 
 use super::backend::{
-    EncodedMicrophoneFrame, MicrophoneBackend, MicrophoneConfig, MicrophoneError,
-    MicrophoneFrameCallback, MicrophoneLevel, MicrophoneSession, MicrophoneStatus,
-    MicrophoneUplinkConfig,
+    MicrophoneBackend, MicrophoneConfig, MicrophoneFrameCallback, MicrophoneLevel,
+    MicrophoneSession, MicrophoneStatus, MicrophoneUplinkConfig,
 };
 use super::provider::{ActiveCapture, MicrophoneCommand};
 use super::storage;
+use crate::features::toast::ToastHandle;
 
-const MICROPHONE_LEVEL_UPDATE_INTERVAL_US: u64 = 33_000;
+mod events;
+pub(super) use events::{microphone_callbacks, status_from_error};
 
 #[derive(Clone)]
 pub(super) struct MicrophoneRuntime {
@@ -29,10 +29,13 @@ pub(super) struct MicrophoneRuntime {
     pub(super) input_volume_percent: Signal<u32>,
     pub(super) activation_mode: Signal<super::backend::MicrophoneActivationMode>,
     pub(super) vad_threshold_percent: Signal<u32>,
+    pub(super) denoise_mode: Signal<super::denoise::DenoiseMode>,
+    pub(super) denoise_runtime: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub(super) active_capture: Signal<ActiveCapture>,
     pub(super) active_on_frame: Signal<Option<MicrophoneFrameCallback>>,
     pub(super) active_uplink: Signal<Option<MicrophoneUplinkConfig>>,
     pub(super) target_bitrate_bps: Signal<u32>,
+    pub(super) toast: ToastHandle,
 }
 
 pub(super) async fn run_microphone_runtime(
@@ -116,6 +119,7 @@ fn start_capture(
             runtime.level_active,
             runtime.status,
             uplink.clone(),
+            runtime.toast,
         );
         match runtime.backend.start(config, callbacks).await {
             Ok(next_session) => {
@@ -188,6 +192,7 @@ fn restart_capture(
             runtime.level_active,
             runtime.status,
             uplink.clone(),
+            runtime.toast,
         );
         match runtime.backend.start(config, callbacks).await {
             Ok(next_session) => {
@@ -318,6 +323,8 @@ fn capture_config(runtime: &MicrophoneRuntime) -> MicrophoneConfig {
     MicrophoneConfig {
         device_id: runtime.selected_input_device_id.peek().clone(),
         input_gain: gain_from_percent(*runtime.input_volume_percent.peek()),
+        denoise_enabled: *runtime.denoise_mode.peek() == super::denoise::DenoiseMode::Rnnoise,
+        denoise_enabled_live: Some(runtime.denoise_runtime.clone()),
         activation_mode: *runtime.activation_mode.peek(),
         vad_threshold: threshold_from_percent(*runtime.vad_threshold_percent.peek()),
         bitrate_bps: *runtime.target_bitrate_bps.peek(),
@@ -340,83 +347,6 @@ fn operation_is_current(runtime: &MicrophoneRuntime, expected: u64) -> bool {
 pub(super) fn stop_session_immediately(session: Option<&Rc<dyn MicrophoneSession>>) {
     if let Some(session) = session {
         session.stop_immediately();
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct LevelEmissionState {
-    timestamp_us: u64,
-    active: bool,
-}
-
-pub(super) fn microphone_callbacks(
-    on_frame: MicrophoneFrameCallback,
-    level: Signal<MicrophoneLevel>,
-    level_active: Signal<bool>,
-    status: Signal<MicrophoneStatus>,
-    uplink: Option<MicrophoneUplinkConfig>,
-) -> super::backend::MicrophoneCallbacks {
-    let (events, receiver) = mpsc::unbounded();
-    spawn_microphone_callback_relay(receiver, on_frame, level, level_active, status);
-
-    let frame_events = events.clone();
-    let error_events = events.clone();
-    super::backend::MicrophoneCallbacks {
-        on_frame: Rc::new(move |frame| {
-            let _ = frame_events.unbounded_send(MicrophoneCallbackEvent::Frame(frame));
-        }),
-        on_level: Rc::new(move |next_level| {
-            let _ = events.unbounded_send(MicrophoneCallbackEvent::Level(next_level));
-        }),
-        on_error: Rc::new(move |error| {
-            let _ = error_events.unbounded_send(MicrophoneCallbackEvent::Error(error));
-        }),
-        uplink,
-    }
-}
-
-fn spawn_microphone_callback_relay(
-    mut receiver: mpsc::UnboundedReceiver<MicrophoneCallbackEvent>,
-    on_frame: MicrophoneFrameCallback,
-    mut level: Signal<MicrophoneLevel>,
-    mut level_active: Signal<bool>,
-    mut status: Signal<MicrophoneStatus>,
-) {
-    spawn(async move {
-        let emission = Rc::new(RefCell::new(None::<LevelEmissionState>));
-        while let Some(event) = receiver.next().await {
-            match event {
-                MicrophoneCallbackEvent::Frame(frame) => on_frame(frame),
-                MicrophoneCallbackEvent::Level(next_level) => {
-                    if should_emit_level(&emission, next_level) {
-                        if *level_active.peek() != next_level.active {
-                            level_active.set(next_level.active);
-                        }
-                        level.set(next_level);
-                    }
-                }
-                MicrophoneCallbackEvent::Error(error) => {
-                    warn!(%error, "active microphone backend failed");
-                    status.set(status_from_error(error));
-                    reset_level(&mut level, &mut level_active);
-                }
-            }
-        }
-        debug!("microphone callback relay stopped");
-    });
-}
-
-enum MicrophoneCallbackEvent {
-    Frame(EncodedMicrophoneFrame),
-    Level(MicrophoneLevel),
-    Error(MicrophoneError),
-}
-
-pub(super) fn status_from_error(error: MicrophoneError) -> MicrophoneStatus {
-    if error.is_permission_denied() {
-        MicrophoneStatus::PermissionDenied
-    } else {
-        MicrophoneStatus::Error(error.to_string())
     }
 }
 
@@ -467,34 +397,4 @@ pub(super) fn persist_input_device(device_id: Option<&str>, label: Option<&str>)
             );
         }
     }
-}
-
-fn should_emit_level(
-    emission: &Rc<RefCell<Option<LevelEmissionState>>>,
-    next_level: MicrophoneLevel,
-) -> bool {
-    let mut emission = emission.borrow_mut();
-    let Some(previous) = *emission else {
-        *emission = Some(LevelEmissionState {
-            timestamp_us: next_level.timestamp_us,
-            active: next_level.active,
-        });
-        return true;
-    };
-
-    let active_changed = previous.active != next_level.active;
-    let interval_elapsed = next_level.timestamp_us > previous.timestamp_us
-        && next_level
-            .timestamp_us
-            .saturating_sub(previous.timestamp_us)
-            >= MICROPHONE_LEVEL_UPDATE_INTERVAL_US;
-    if !active_changed && !interval_elapsed {
-        return false;
-    }
-
-    *emission = Some(LevelEmissionState {
-        timestamp_us: next_level.timestamp_us,
-        active: next_level.active,
-    });
-    true
 }

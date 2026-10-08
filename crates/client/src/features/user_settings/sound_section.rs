@@ -119,6 +119,8 @@ pub(crate) fn SoundSettingsSection() -> Element {
     let mic_always_active = mic.clone();
     let mic_voice_activation = mic.clone();
     let mic_threshold_change = mic.clone();
+    let denoise_mode = mic.denoise_mode();
+    let denoise_change = mic.clone();
 
     rsx! {
         div { class: "rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4",
@@ -142,6 +144,20 @@ pub(crate) fn SoundSettingsSection() -> Element {
                         )}
                     }
                     {volume_slider("Громкость микрофона", input_volume, move |value| mic_volume_change.set_input_volume_percent(value))}
+                    if crate::features::microphone::denoise::available() {
+                        label { class: "block",
+                            span { class: "mb-2 block text-[13px] font-medium text-zinc-300", "Подавление фонового шума" }
+                            select {
+                                class: super::styles::select_class(),
+                                value: denoise_mode.value(),
+                                onchange: move |event| denoise_change.set_denoise_mode(
+                                    crate::features::microphone::denoise::DenoiseMode::from_value(&event.value())
+                                ),
+                                option { value: "off", selected: denoise_mode == crate::features::microphone::denoise::DenoiseMode::Off, "Нет" }
+                                option { value: "rnnoise", selected: denoise_mode == crate::features::microphone::denoise::DenoiseMode::Rnnoise, "RNNoise" }
+                            }
+                        }
+                    }
                     {microphone_capture_notice(&microphone_status)}
                 }
 

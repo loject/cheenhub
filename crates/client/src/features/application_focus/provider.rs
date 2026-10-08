@@ -13,6 +13,12 @@ pub(crate) struct ApplicationFocusContext {
 }
 
 impl ApplicationFocusContext {
+    /// Создаёт контекст фокуса для проверки toast-контекста в unit-тестах.
+    #[cfg(test)]
+    pub(crate) fn new(focused: Signal<bool>) -> Self {
+        Self { focused }
+    }
+
     /// Возвращает, находится ли приложение в фокусе.
     pub(crate) fn is_focused(&self) -> bool {
         (self.focused)()

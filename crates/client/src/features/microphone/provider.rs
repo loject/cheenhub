@@ -10,6 +10,7 @@ use super::backend::{
     MicrophoneUplinkConfig,
 };
 use super::provider_runtime::next_generation;
+use super::storage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ActiveCapture {
@@ -55,6 +56,8 @@ pub(crate) struct MicrophoneHandle {
     pub(super) input_volume_percent: Signal<u32>,
     pub(super) activation_mode: Signal<MicrophoneActivationMode>,
     pub(super) vad_threshold_percent: Signal<u32>,
+    pub(super) denoise_mode: Signal<super::denoise::DenoiseMode>,
+    pub(super) denoise_runtime: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub(super) active_capture: Signal<ActiveCapture>,
     /// Last on_frame callback used to start/restart capture.
     /// Kept so that device changes during an active session can trigger a restart.
@@ -242,6 +245,31 @@ impl MicrophoneHandle {
         (self.status)()
     }
 
+    /// Возвращает выбранный алгоритм подавления фонового шума.
+    pub(crate) fn denoise_mode(&self) -> super::denoise::DenoiseMode {
+        (self.denoise_mode)()
+    }
+
+    /// Обновляет настройку подавления шума без перезапуска capture-сессии.
+    pub(crate) fn set_denoise_mode(&self, mode: super::denoise::DenoiseMode) {
+        let enabled = mode == super::denoise::DenoiseMode::Rnnoise;
+        let preference_unchanged = *self.denoise_mode.peek() == mode;
+        let runtime_unchanged = self
+            .denoise_runtime
+            .load(std::sync::atomic::Ordering::Relaxed)
+            == enabled;
+        if preference_unchanged && runtime_unchanged {
+            return;
+        }
+        if !preference_unchanged {
+            storage::save_denoise_mode(mode);
+            let mut denoise_mode = self.denoise_mode;
+            denoise_mode.set(mode);
+        }
+        self.denoise_runtime
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Returns the current microphone status without creating a reactive subscription.
     pub(crate) fn status_untracked(&self) -> MicrophoneStatus {
         self.status.peek().clone()
@@ -321,6 +349,8 @@ impl MicrophoneHandle {
             input_volume_percent: Signal::new(100),
             activation_mode: Signal::new(MicrophoneActivationMode::VoiceActivated),
             vad_threshold_percent: Signal::new(20),
+            denoise_mode: Signal::new(super::denoise::DenoiseMode::Off),
+            denoise_runtime: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             active_capture: Signal::new(ActiveCapture::None),
             active_on_frame: Signal::new(None),
             active_uplink: Signal::new(None),

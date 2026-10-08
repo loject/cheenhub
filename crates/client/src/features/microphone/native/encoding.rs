@@ -70,6 +70,9 @@ pub(super) fn spawn_event_relay(
                 NativeMicrophoneEvent::Frame(frame) => (callbacks.on_frame)(frame),
                 NativeMicrophoneEvent::Level(level) => (callbacks.on_level)(level),
                 NativeMicrophoneEvent::Error(error) => (callbacks.on_error)(error),
+                NativeMicrophoneEvent::DenoiseFailed => (callbacks.on_warning)(
+                    "Подавление шума отключено. Микрофон продолжает работать.",
+                ),
             }
         }
         debug!("native microphone event relay stopped");
@@ -87,6 +90,9 @@ fn run_encoder_worker(
 ) -> Result<(), MicrophoneError> {
     let mut encoder = create_encoder(&config)?;
     let mut detector = VoiceActivityDetector::new(config.clone());
+    let mut denoiser = super::super::denoise::Processor::new();
+    let mut denoiser_enabled_last_frame = false;
+    let mut denoise_warning_sent = false;
     let mut pending = Vec::with_capacity(frame_samples * 2);
     let mut sequence = 0_u64;
     let mut captured_samples = 0_u64;
@@ -99,7 +105,7 @@ fn run_encoder_worker(
         pending.append(&mut samples);
 
         while pending.len() >= frame_samples {
-            let frame: Vec<f32> = pending.drain(..frame_samples).collect();
+            let mut frame: Vec<f32> = pending.drain(..frame_samples).collect();
             let timestamp_us = timestamp_us(captured_samples, config.sample_rate_hz);
             captured_samples = captured_samples.saturating_add(frame_samples as u64);
             let next_bitrate = bitrate_bps.load(Ordering::Relaxed);
@@ -113,6 +119,36 @@ fn run_encoder_worker(
                     "native microphone opus bitrate updated"
                 );
             }
+
+            let denoise_enabled = config
+                .denoise_enabled_live
+                .as_ref()
+                .map_or(config.denoise_enabled, |enabled| {
+                    enabled.load(Ordering::Relaxed)
+                });
+            let denoise_failed = apply_denoising(
+                &mut denoiser,
+                &mut frame,
+                denoise_enabled,
+                &mut denoiser_enabled_last_frame,
+            );
+            if denoise_failed {
+                warn!(
+                    kind = "denoise_failed",
+                    "Windows microphone denoiser failed; passing through captured PCM"
+                );
+                if let Some(enabled) = &config.denoise_enabled_live {
+                    enabled.store(false, Ordering::Relaxed);
+                }
+            }
+            if should_emit_denoise_warning(
+                denoise_enabled,
+                denoise_failed,
+                &mut denoise_warning_sent,
+            ) {
+                let _ = event_sender.unbounded_send(NativeMicrophoneEvent::DenoiseFailed);
+            }
+            sanitize_pcm(&mut frame);
 
             handle_pcm_frame(
                 &mut encoder,
@@ -129,6 +165,71 @@ fn run_encoder_worker(
     }
 
     Ok(())
+}
+
+fn process_denoiser_frame(
+    denoiser: &mut super::super::denoise::Processor,
+    original: &[f32],
+) -> Result<Vec<f32>, &'static str> {
+    let mut processed = original.to_vec();
+    denoiser.process(&mut processed)?;
+    Ok(processed)
+}
+
+fn apply_denoising(
+    denoiser: &mut super::super::denoise::Processor,
+    frame: &mut Vec<f32>,
+    enabled: bool,
+    enabled_last_frame: &mut bool,
+) -> bool {
+    if !enabled {
+        *enabled_last_frame = false;
+        return false;
+    }
+    if !*enabled_last_frame {
+        *denoiser = super::super::denoise::Processor::new();
+    }
+    *enabled_last_frame = true;
+    match process_denoiser_frame(denoiser, frame) {
+        Ok(processed) => {
+            *frame = processed;
+            false
+        }
+        Err(_) => {
+            *enabled_last_frame = false;
+            true
+        }
+    }
+}
+
+fn should_emit_denoise_warning(enabled: bool, failed: bool, warning_sent: &mut bool) -> bool {
+    if !enabled {
+        *warning_sent = false;
+    }
+    if failed && !*warning_sent {
+        *warning_sent = true;
+        return true;
+    }
+    false
+}
+
+fn sanitize_pcm(frame: &mut [f32]) {
+    for sample in frame {
+        if !sample.is_finite() {
+            *sample = 0.0;
+        }
+    }
+}
+
+#[cfg(test)]
+fn captured_pcm_on_denoise_error(
+    denoiser: &mut super::super::denoise::Processor,
+    original: &[f32],
+) -> (Vec<f32>, bool) {
+    match process_denoiser_frame(denoiser, original) {
+        Ok(processed) => (processed, false),
+        Err(_) => (original.to_vec(), true),
+    }
 }
 
 fn create_encoder(config: &MicrophoneConfig) -> Result<Encoder, MicrophoneError> {
@@ -212,6 +313,7 @@ pub(super) enum NativeMicrophoneEvent {
     Frame(EncodedMicrophoneFrame),
     Error(MicrophoneError),
     Level(MicrophoneLevel),
+    DenoiseFailed,
 }
 
 fn apply_input_gain(samples: &mut [f32], input_gain: f32) {

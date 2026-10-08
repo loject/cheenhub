@@ -1,5 +1,6 @@
 //! Native-захват микрофона через `cpal`.
 
+mod config;
 mod samples;
 
 use std::cell::RefCell;
@@ -92,6 +93,13 @@ async fn start_cpal_session(
     let device = input_device(&host, config.device_id.as_deref())?;
     let supported_config = select_input_config(&device, &config)?;
     let sample_format = supported_config.sample_format();
+    if matches!(sample_format, SampleFormat::U8 | SampleFormat::I8) {
+        warn!(
+            sample_format = %sample_format,
+            requested_sample_rate_hz = config.sample_rate_hz,
+            "native microphone only supports eight-bit PCM at requested rate; capture may have audible quantization noise"
+        );
+    }
     let stream_config = supported_config.config();
     let input_channels = stream_config.channels.max(1);
     let input_sample_rate_hz = stream_config.sample_rate.0;
@@ -220,22 +228,8 @@ fn select_input_config(
     config: &MicrophoneConfig,
 ) -> Result<SupportedStreamConfig, MicrophoneError> {
     let target_rate = SampleRate(config.sample_rate_hz);
-    let mut supported_configs = device.supported_input_configs().map_err(cpal_error)?;
-    let mut fallback = None;
-
-    for range in supported_configs.by_ref() {
-        if range.min_sample_rate() > target_rate || range.max_sample_rate() < target_rate {
-            continue;
-        }
-
-        let candidate = range.with_sample_rate(target_rate);
-        if candidate.channels() == u16::from(config.channels) {
-            return Ok(candidate);
-        }
-        fallback.get_or_insert(candidate);
-    }
-
-    fallback.ok_or_else(|| {
+    let supported_configs = device.supported_input_configs().map_err(cpal_error)?;
+    config::select(supported_configs, target_rate, u16::from(config.channels)).ok_or_else(|| {
         MicrophoneError::new(format!(
             "Native-микрофон не поддерживает {} Гц для захвата голоса.",
             config.sample_rate_hz
