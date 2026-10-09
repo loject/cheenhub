@@ -5,9 +5,17 @@ use std::sync::{Arc, mpsc};
 
 use dioxus::prelude::warn;
 
+/// Создаёт CPAL callback, преобразующий interleaved samples устройства в mono PCM для очереди capture.
+///
+/// `channels` задаёт число каналов во входном буфере; ноль обрабатывается как один канал.
+/// При установленном `closed` callback перестаёт принимать данные. В режиме Push-to-talk
+/// аудио принимается только при стабильном удержании: первый буфер нового удержания и буфер,
+/// во время преобразования которого изменилось удержание, отбрасываются. Вне удержания
+/// пустой фрагмент сбрасывает индикатор активности. Заполненная или закрытая очередь
+/// отбрасывает фрагмент без ожидания; метаданные времени CPAL не используются.
 pub(super) fn capture_callback<T>(
     channels: u16,
-    sender: mpsc::SyncSender<Vec<f32>>,
+    capture: super::super::pcm::Capture,
     closed: Arc<AtomicBool>,
 ) -> impl FnMut(&[T], &cpal::InputCallbackInfo) + Send + 'static
 where
@@ -15,17 +23,47 @@ where
 {
     let channels = usize::from(channels.max(1));
     let mut backlog_warning_emitted = false;
+    let mut previous_epoch = None;
     move |data, _info| {
         if closed.load(Ordering::Relaxed) {
             return;
         }
 
-        let samples = downmix_to_mono(data, channels);
-        if samples.is_empty() {
+        let epoch = capture
+            .monitor
+            .as_ref()
+            .and_then(|monitor| monitor.held_epoch());
+        let stable = super::super::pcm::accepts_capture_epoch(
+            &mut previous_epoch,
+            epoch,
+            capture.monitor.is_some(),
+        );
+        // Первый device buffer мог начаться до нажатия; ждём следующий callback.
+        if epoch.is_some() && !stable {
+            return;
+        }
+        // Пустой фрагмент закрывает индикатор активности, не сохраняя аудио вне удержания.
+        let samples = if capture.monitor.is_some() && epoch.is_none() {
+            Vec::new()
+        } else {
+            downmix_to_mono(data, channels)
+        };
+        if samples.is_empty() && capture.monitor.is_none() {
             return;
         }
 
-        match sender.try_send(samples) {
+        // Смена удержания во время downmix запрещает передачу смешанного фрагмента.
+        if capture
+            .monitor
+            .as_ref()
+            .is_some_and(|monitor| monitor.held_epoch() != epoch)
+        {
+            return;
+        }
+        match capture
+            .sender
+            .try_send(super::super::pcm::Chunk { samples, epoch })
+        {
             Ok(()) => {
                 backlog_warning_emitted = false;
             }
@@ -40,7 +78,9 @@ where
     }
 }
 
+/// Приводит поддерживаемые форматы CPAL samples к floating-point PCM перед downmix.
 pub(super) trait CpalInputSample: Copy + Send + 'static {
+    /// Преобразует sample в PCM относительно полного диапазона исходного формата.
     fn to_f32(self) -> f32;
 }
 

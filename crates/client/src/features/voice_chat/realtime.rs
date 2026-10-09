@@ -1,7 +1,12 @@
 //! Voice chat realtime helpers.
 
+mod voice_frames;
+
+/// Отправка голосового кадра с проверкой разрешения исходного capture.
+pub(crate) use voice_frames::send_voice_frame;
+
 use bytes::Bytes;
-use cheenhub_contracts::media::{MediaCodec, MediaDatagram, MediaDatagramKind};
+use cheenhub_contracts::media::{MediaCodec, MediaDatagramKind};
 use cheenhub_contracts::realtime::{
     DirectMessageVoiceRoomsSnapshot, IssueMicrophoneUplinkGrant, JoinDirectMessageVoiceRoom,
     JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom, LeaveVoiceRoom,
@@ -13,7 +18,6 @@ use futures_channel::mpsc;
 use futures_util::StreamExt;
 use uuid::Uuid;
 
-use crate::features::microphone::{EncodedMicrophoneFrame, MicrophoneCodec};
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
 use crate::features::screen_share::{EncodedScreenShareFrame, ScreenShareCodec};
 
@@ -345,36 +349,6 @@ pub(crate) fn subscribe_camera_frames(
     });
 
     receiver
-}
-
-/// Sends one encoded microphone frame to the active voice room.
-pub(crate) async fn send_voice_frame(
-    realtime: &RealtimeHandle,
-    _server_id: &str,
-    room_id: &str,
-    frame: EncodedMicrophoneFrame,
-) -> Result<(), RealtimeError> {
-    let room_id =
-        Uuid::parse_str(room_id).map_err(|_| RealtimeError::new("Voice room id is invalid."))?;
-    let codec = match frame.codec {
-        MicrophoneCodec::Opus => MediaCodec::Opus,
-    };
-    let datagram = MediaDatagram {
-        kind: MediaDatagramKind::VoiceFrame,
-        codec,
-        flags: 0,
-        sequence: frame.sequence,
-        timestamp_us: frame.timestamp_us,
-        duration_us: frame.duration_us,
-        room_id,
-        sender_user_id: Uuid::nil(),
-        payload: frame.bytes,
-    };
-    let bytes = datagram
-        .encode()
-        .map_err(|error| RealtimeError::new(format!("Failed to encode voice frame: {error}")))?;
-
-    realtime.send_unreliable_bytes(Bytes::from(bytes)).await
 }
 
 /// Отправляет один закодированный кадр демонстрации экрана в активную голосовую комнату.

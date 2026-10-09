@@ -227,6 +227,19 @@ fn start_message(
         JsValue::from_str(match config.activation_mode {
             MicrophoneActivationMode::AlwaysActive => "always_active",
             MicrophoneActivationMode::VoiceActivated => "voice_activated",
+            MicrophoneActivationMode::PushToTalk => {
+                dioxus::prelude::warn!(
+                    key_code = config.push_to_talk_key.code(),
+                    recording = !config
+                        .recording_generation
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        .is_multiple_of(2),
+                    "browser rejected global push-to-talk configuration"
+                );
+                return Err(MicrophoneError::new(
+                    "Глобальный Push-to-talk недоступен в браузере.",
+                ));
+            }
         }),
     )?;
     set_property(

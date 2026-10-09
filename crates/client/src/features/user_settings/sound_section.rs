@@ -199,19 +199,13 @@ pub(crate) fn SoundSettingsSection() -> Element {
                             div { class: "mt-1 text-[12px] leading-4 text-zinc-400", "Включение при превышении порога." }
                         }
 
-                        div { class: "group relative",
-                            button {
-                                r#type: "button",
-                                disabled: true,
-                                class: "w-full cursor-not-allowed rounded-2xl border border-zinc-800 bg-zinc-900/35 px-4 py-4 text-left opacity-60",
-                                div { class: "font-medium", "Push-to-talk" }
-                                div { class: "mt-1 text-[12px] leading-4 text-zinc-500", "Активация по удержанию клавиши." }
-                            }
-                            div { class: "pointer-events-none absolute left-1/2 top-full z-10 mt-2 w-[calc(100vw-32px)] max-w-xs -translate-x-1/2 rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-2 text-center text-[12px] text-zinc-200 opacity-0 shadow-[0_16px_40px_rgba(0,0,0,.45)] backdrop-blur-xl transition-opacity duration-200 group-hover:opacity-100 sm:w-max sm:max-w-none",
-                                "в разработке"
-                            }
-                        }
+                        super::push_to_talk_mode::PushToTalkMode {}
+
                     }
+                }
+
+                if activation_mode == MicrophoneActivationMode::PushToTalk || !crate::features::microphone::push_to_talk::supported() {
+                    super::push_to_talk_settings::PushToTalkSettings {}
                 }
 
                 div {
@@ -343,11 +337,12 @@ fn format_jitter_buffer_ms(value_us: u32) -> String {
     }
 }
 
-fn activation_button_class(active: bool) -> &'static str {
+/// Даёт единый размер и оформление карточок выбора режима активации.
+pub(super) fn activation_button_class(active: bool) -> &'static str {
     if active {
-        "relative rounded-2xl border border-accent/30 bg-accent/10 px-4 py-4 text-left transition hover:border-blue-400/45"
+        "relative flex min-h-[104px] flex-col justify-start rounded-2xl border border-accent/30 bg-accent/10 px-4 py-4 text-left transition hover:border-blue-400/45"
     } else {
-        "relative rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-left transition hover:border-zinc-500"
+        "relative flex min-h-[104px] flex-col justify-start rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-left transition hover:border-zinc-500"
     }
 }
 

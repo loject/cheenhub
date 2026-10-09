@@ -27,6 +27,10 @@ pub(super) struct MicrophoneRuntime {
     pub(super) generation: Signal<u64>,
     pub(super) selected_input_device_id: Signal<Option<String>>,
     pub(super) input_volume_percent: Signal<u32>,
+    /// Сохраняемая клавиша глобальной активации микрофона.
+    /// Поколение записи привязки; нечётное значение закрывает передачу на время назначения.
+    pub(super) recording_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    pub(super) push_to_talk_key: Signal<super::push_to_talk::PushToTalkKey>,
     pub(super) activation_mode: Signal<super::backend::MicrophoneActivationMode>,
     pub(super) vad_threshold_percent: Signal<u32>,
     pub(super) denoise_mode: Signal<super::denoise::DenoiseMode>,
@@ -326,6 +330,8 @@ fn capture_config(runtime: &MicrophoneRuntime) -> MicrophoneConfig {
         denoise_enabled: *runtime.denoise_mode.peek() == super::denoise::DenoiseMode::Rnnoise,
         denoise_enabled_live: Some(runtime.denoise_runtime.clone()),
         activation_mode: *runtime.activation_mode.peek(),
+        push_to_talk_key: *runtime.push_to_talk_key.peek(),
+        recording_generation: runtime.recording_generation.clone(),
         vad_threshold: threshold_from_percent(*runtime.vad_threshold_percent.peek()),
         bitrate_bps: *runtime.target_bitrate_bps.peek(),
         ..MicrophoneConfig::default()

@@ -9,6 +9,7 @@ use super::core::{CoreActivationMode, VoiceActivationConfig};
 pub(crate) struct VoiceActivityDetector {
     detector: super::core::VoiceActivityDetector,
     config: MicrophoneConfig,
+    ptt_gate: super::push_to_talk::gate::Gate,
 }
 
 impl VoiceActivityDetector {
@@ -17,7 +18,9 @@ impl VoiceActivityDetector {
         let core = VoiceActivationConfig {
             mode: match config.activation_mode {
                 MicrophoneActivationMode::AlwaysActive => CoreActivationMode::AlwaysActive,
-                MicrophoneActivationMode::VoiceActivated => CoreActivationMode::VoiceActivated,
+                MicrophoneActivationMode::VoiceActivated | MicrophoneActivationMode::PushToTalk => {
+                    CoreActivationMode::VoiceActivated
+                }
             },
             threshold: config.vad_threshold,
             activation_delay_us: config.vad_activation_delay_us,
@@ -26,12 +29,28 @@ impl VoiceActivityDetector {
         Self {
             detector: super::core::VoiceActivityDetector::new(core),
             config,
+            ptt_gate: super::push_to_talk::gate::Gate::default(),
         }
     }
 
     /// Обновляет detector одним level sample.
     pub(crate) fn update(&mut self, rms: f32, duration_us: u32) -> bool {
-        self.detector.update(rms, duration_us)
+        self.update_with_key(rms, duration_us, false)
+    }
+
+    /// Применяет удержание клавиши; PTT не зависит от RMS и задержек VAD.
+    pub(crate) fn update_with_key(&mut self, rms: f32, duration_us: u32, held: bool) -> bool {
+        if self.config.activation_mode == MicrophoneActivationMode::PushToTalk {
+            if held {
+                self.ptt_gate.recover(false);
+                self.ptt_gate.event(true);
+            } else {
+                self.ptt_gate.failed();
+            }
+            self.ptt_gate.active()
+        } else {
+            self.detector.update(rms, duration_us)
+        }
     }
 
     /// Возвращает настройки микрофона.
@@ -41,7 +60,11 @@ impl VoiceActivityDetector {
 
     /// Возвращает текущее состояние gate.
     pub(crate) fn is_active(&self) -> bool {
-        self.detector.is_active()
+        if self.config.activation_mode == MicrophoneActivationMode::PushToTalk {
+            self.ptt_gate.active()
+        } else {
+            self.detector.is_active()
+        }
     }
 }
 

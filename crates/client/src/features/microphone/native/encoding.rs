@@ -1,7 +1,7 @@
 //! Native-кодирование PCM микрофона в Opus.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, mpsc};
 use std::thread;
 
 use dioxus::prelude::{debug, spawn, warn};
@@ -18,9 +18,15 @@ use super::super::vad::{VoiceActivityDetector, rms_level};
 const OPUS_FRAME_DURATION_US: u32 = 10_000;
 const MAX_OPUS_PACKET_BYTES: usize = 4_000;
 
+/// Запускает поток преобразования mono PCM в Opus и отправки событий capture-сессии.
+///
+/// `frame_samples` задаёт число samples в одном кадре. Bitrate и gain читаются из atomics;
+/// gain хранится как биты `f32`. В режиме Push-to-talk worker отбрасывает PCM прошлых
+/// удержаний и присваивает кадрам отзываемое разрешение передачи. Закрытие очереди или
+/// `closed` завершает worker; ошибка запуска или обработки приходит через `event_sender`.
 pub(super) fn spawn_encoder_worker(
     config: MicrophoneConfig,
-    pcm_receiver: mpsc::Receiver<Vec<f32>>,
+    input: super::pcm::Input,
     event_sender: local_mpsc::UnboundedSender<NativeMicrophoneEvent>,
     closed: Arc<AtomicBool>,
     bitrate_bps: Arc<AtomicU32>,
@@ -34,7 +40,7 @@ pub(super) fn spawn_encoder_worker(
         .spawn(move || {
             if let Err(error) = run_encoder_worker(
                 config,
-                pcm_receiver,
+                input,
                 worker_events.clone(),
                 worker_closed.clone(),
                 bitrate_bps,
@@ -60,6 +66,10 @@ pub(super) fn spawn_encoder_worker(
         });
 }
 
+/// Передаёт события native worker в callbacks текущей capture-сессии через Dioxus task.
+///
+/// Перед вызовом `on_frame` проверяет разрешение передачи: отозванный кадр отбрасывается.
+/// Закрытие очереди завершает task; уровни, ошибки и предупреждения доставляются отдельно.
 pub(super) fn spawn_event_relay(
     mut receiver: local_mpsc::UnboundedReceiver<NativeMicrophoneEvent>,
     callbacks: MicrophoneCallbacks,
@@ -67,7 +77,11 @@ pub(super) fn spawn_event_relay(
     spawn(async move {
         while let Some(event) = receiver.next().await {
             match event {
-                NativeMicrophoneEvent::Frame(frame) => (callbacks.on_frame)(frame),
+                NativeMicrophoneEvent::Frame(frame) => {
+                    if frame.can_send() {
+                        (callbacks.on_frame)(frame);
+                    }
+                }
                 NativeMicrophoneEvent::Level(level) => (callbacks.on_level)(level),
                 NativeMicrophoneEvent::Error(error) => (callbacks.on_error)(error),
                 NativeMicrophoneEvent::DenoiseFailed => (callbacks.on_warning)(
@@ -81,13 +95,19 @@ pub(super) fn spawn_event_relay(
 
 fn run_encoder_worker(
     config: MicrophoneConfig,
-    pcm_receiver: mpsc::Receiver<Vec<f32>>,
+    input: super::pcm::Input,
     mut event_sender: local_mpsc::UnboundedSender<NativeMicrophoneEvent>,
     closed: Arc<AtomicBool>,
     bitrate_bps: Arc<AtomicU32>,
     input_gain_bits: Arc<AtomicU32>,
     frame_samples: usize,
 ) -> Result<(), MicrophoneError> {
+    let super::pcm::Input {
+        receiver: pcm_receiver,
+        monitor,
+    } = input;
+    let ptt = config.activation_mode == super::super::backend::MicrophoneActivationMode::PushToTalk;
+    let mut pending_epoch = None;
     let mut encoder = create_encoder(&config)?;
     let mut detector = VoiceActivityDetector::new(config.clone());
     let mut denoiser = super::super::denoise::Processor::new();
@@ -99,12 +119,44 @@ fn run_encoder_worker(
     let mut applied_bitrate = config.bitrate_bps;
 
     while !closed.load(Ordering::Relaxed) {
-        let Ok(mut samples) = pcm_receiver.recv() else {
+        let Ok(mut chunk) = pcm_receiver.recv() else {
             break;
         };
-        pending.append(&mut samples);
+        let epoch = monitor.as_ref().and_then(|monitor| monitor.held_epoch());
+        if !super::pcm::accepts_epoch(chunk.epoch, epoch, ptt) {
+            pending.clear();
+            if detector.is_active() {
+                detector.update_with_key(0.0, OPUS_FRAME_DURATION_US, false);
+                send_event(
+                    &mut event_sender,
+                    NativeMicrophoneEvent::Level(MicrophoneLevel {
+                        rms: 0.0,
+                        active: false,
+                        threshold: config.vad_threshold,
+                        timestamp_us: timestamp_us(captured_samples, config.sample_rate_hz),
+                    }),
+                )?;
+                debug!(
+                    kind = "push_to_talk_closed",
+                    "native microphone transmission gate closed"
+                );
+            }
+            continue;
+        }
+        if pending_epoch != epoch {
+            pending.clear();
+            pending_epoch = epoch;
+        }
+        pending.append(&mut chunk.samples);
 
         while pending.len() >= frame_samples {
+            if closed.load(Ordering::Relaxed)
+                || (ptt
+                    && monitor.as_ref().and_then(|monitor| monitor.held_epoch()) != pending_epoch)
+            {
+                pending.clear();
+                break;
+            }
             let mut frame: Vec<f32> = pending.drain(..frame_samples).collect();
             let timestamp_us = timestamp_us(captured_samples, config.sample_rate_hz);
             captured_samples = captured_samples.saturating_add(frame_samples as u64);
@@ -156,9 +208,13 @@ fn run_encoder_worker(
                 &mut event_sender,
                 &config,
                 f32::from_bits(input_gain_bits.load(Ordering::Relaxed)),
-                frame,
-                sequence,
-                timestamp_us,
+                monitor.as_ref().zip(pending_epoch),
+                PcmFrame {
+                    samples: frame,
+                    sequence,
+                    timestamp_us,
+                    closed: closed.clone(),
+                },
             )?;
             sequence = sequence.saturating_add(1);
         }
@@ -245,20 +301,36 @@ fn create_encoder(config: &MicrophoneConfig) -> Result<Encoder, MicrophoneError>
     Ok(encoder)
 }
 
+struct PcmFrame {
+    samples: Vec<f32>,
+    sequence: u64,
+    timestamp_us: u64,
+    closed: Arc<AtomicBool>,
+}
+
 fn handle_pcm_frame(
     encoder: &mut Encoder,
     detector: &mut VoiceActivityDetector,
     event_sender: &mut local_mpsc::UnboundedSender<NativeMicrophoneEvent>,
     config: &MicrophoneConfig,
     input_gain: f32,
-    mut frame: Vec<f32>,
-    sequence: u64,
-    timestamp_us: u64,
+    hold: Option<(
+        &Arc<super::super::push_to_talk::platform::Monitor>,
+        (u64, u64),
+    )>,
+    pcm: PcmFrame,
 ) -> Result<(), MicrophoneError> {
+    let PcmFrame {
+        samples: mut frame,
+        sequence,
+        timestamp_us,
+        closed,
+    } = pcm;
+    let held = hold.is_some_and(|(monitor, epoch)| monitor.held_epoch() == Some(epoch));
     apply_input_gain(&mut frame, input_gain);
     let rms = rms_level(&frame);
     let previous_active = detector.is_active();
-    let active = detector.update(rms, OPUS_FRAME_DURATION_US);
+    let active = detector.update_with_key(rms, OPUS_FRAME_DURATION_US, held);
     if active != previous_active {
         debug!(
             rms,
@@ -279,16 +351,32 @@ fn handle_pcm_frame(
         }),
     )?;
 
-    if !active {
+    if !active
+        || closed.load(Ordering::Relaxed)
+        || hold.is_some_and(|(monitor, epoch)| monitor.held_epoch() != Some(epoch))
+    {
         return Ok(());
     }
 
     let bytes = encoder
         .encode_vec_float(&frame, MAX_OPUS_PACKET_BYTES)
         .map_err(opus_error)?;
+    if closed.load(Ordering::Relaxed)
+        || hold.is_some_and(|(monitor, epoch)| monitor.held_epoch() != Some(epoch))
+    {
+        return Ok(());
+    }
+    let hold = hold.map(|(monitor, epoch)| (monitor.clone(), epoch));
+    let permission = super::super::frame_permission::FramePermission(Arc::new(move || {
+        !closed.load(Ordering::Acquire)
+            && hold
+                .as_ref()
+                .is_none_or(|(monitor, epoch)| monitor.held_epoch() == Some(*epoch))
+    }));
     send_event(
         event_sender,
         NativeMicrophoneEvent::Frame(EncodedMicrophoneFrame {
+            permission: Some(permission),
             sequence,
             timestamp_us,
             duration_us: OPUS_FRAME_DURATION_US,

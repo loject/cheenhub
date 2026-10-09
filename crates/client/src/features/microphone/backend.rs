@@ -48,6 +48,8 @@ pub(crate) enum MicrophoneActivationMode {
     AlwaysActive,
     /// Encode frames only while voice activation is open.
     VoiceActivated,
+    /// Передаёт звук только при удержании глобальной клавиши на поддерживаемой платформе.
+    PushToTalk,
 }
 
 /// Microphone capture and encoding configuration.
@@ -63,6 +65,10 @@ pub(crate) struct MicrophoneConfig {
     pub(crate) bitrate_bps: u32,
     /// Audio activation mode used before encoding.
     pub(crate) activation_mode: MicrophoneActivationMode,
+    /// Проверенная привязка глобального Push-to-talk.
+    pub(crate) push_to_talk_key: super::push_to_talk::PushToTalkKey,
+    /// Поколение назначения кнопки; используется для паузы capture и отзыва queued frames.
+    pub(crate) recording_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// RMS level threshold that opens voice activation.
     pub(crate) vad_threshold: f32,
     /// Time the level must stay above threshold before activation opens.
@@ -88,6 +94,8 @@ impl Default for MicrophoneConfig {
             channels: 1,
             bitrate_bps: cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS,
             activation_mode: MicrophoneActivationMode::VoiceActivated,
+            push_to_talk_key: super::push_to_talk::PushToTalkKey::default(),
+            recording_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             vad_threshold: 0.02,
             vad_activation_delay_us: 60_000,
             vad_release_delay_us: 250_000,
@@ -118,6 +126,8 @@ pub(crate) struct MicrophoneCallbacks {
 /// One encoded microphone frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EncodedMicrophoneFrame {
+    /// Разрешение исходного capture; `None` для кадров без отзываемого gate.
+    pub(crate) permission: Option<super::frame_permission::FramePermission>,
     /// Sender-local frame sequence.
     pub(crate) sequence: u64,
     /// Frame timestamp in microseconds.
@@ -132,6 +142,15 @@ pub(crate) struct EncodedMicrophoneFrame {
     pub(crate) channels: u8,
     /// Raw encoded frame bytes.
     pub(crate) bytes: Vec<u8>,
+}
+
+impl EncodedMicrophoneFrame {
+    /// Проверяет допустимость отложенной передачи без раскрытия состояния платформы.
+    pub(crate) fn can_send(&self) -> bool {
+        self.permission
+            .as_ref()
+            .is_none_or(|permission| permission.allowed())
+    }
 }
 
 /// Current microphone input level for visualization and threshold tuning.

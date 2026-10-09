@@ -90,6 +90,9 @@ pub(crate) fn save_input_volume_percent(volume_percent: u32) {
 pub(crate) fn load_activation_mode() -> MicrophoneActivationMode {
     let mode = match get::<LocalStorage>(ACTIVATION_MODE_KEY).as_deref() {
         Some("always_on") => MicrophoneActivationMode::AlwaysActive,
+        Some("push_to_talk") if super::push_to_talk::supported() => {
+            MicrophoneActivationMode::PushToTalk
+        }
         _ => MicrophoneActivationMode::VoiceActivated,
     };
     info!(?mode, "loaded microphone activation mode preference");
@@ -101,6 +104,7 @@ pub(crate) fn save_activation_mode(mode: MicrophoneActivationMode) {
     let value = match mode {
         MicrophoneActivationMode::AlwaysActive => "always_on",
         MicrophoneActivationMode::VoiceActivated => "voice_activation",
+        MicrophoneActivationMode::PushToTalk => "push_to_talk",
     };
     set::<LocalStorage>(ACTIVATION_MODE_KEY, value);
     info!(?mode, "saved microphone activation mode preference");
@@ -144,6 +148,21 @@ pub(crate) fn save_denoise_mode(mode: super::denoise::DenoiseMode) {
     set::<LocalStorage>(DENOISE_MODE_KEY, mode.value());
     remove::<LocalStorage>(DENOISE_ENABLED_KEY);
     info!(?mode, "saved microphone noise suppression mode");
+}
+
+/// Загружает проверенную привязку; повреждённые данные заменяются значением по умолчанию.
+pub(crate) fn load_push_to_talk_key() -> super::push_to_talk::PushToTalkKey {
+    super::push_to_talk::PushToTalkKey::from_value(
+        &get::<LocalStorage>("cheenhub.microphone.push_to_talk_key").unwrap_or_default(),
+    )
+}
+
+/// Сохраняет привязку глобальной клавиши без платформенных деталей в UI.
+pub(crate) fn save_push_to_talk_key(key: super::push_to_talk::PushToTalkKey) {
+    set::<LocalStorage>(
+        "cheenhub.microphone.push_to_talk_key",
+        &key.code().to_string(),
+    );
 }
 
 fn clamp_volume_percent(volume_percent: u32) -> u32 {

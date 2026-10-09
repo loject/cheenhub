@@ -66,6 +66,7 @@ pub(super) fn create_encoder(
         output_sequence.set(sequence.saturating_add(1));
         let on_frame_started_at = diagnostics_enabled.then(Instant::now);
         on_frame(EncodedMicrophoneFrame {
+            permission: None,
             sequence,
             timestamp_us,
             duration_us,

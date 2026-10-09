@@ -12,12 +12,15 @@ mod browser_worklet;
 mod core;
 pub(crate) mod denoise;
 mod device_preferences;
+mod frame_permission;
 mod input_devices;
 mod native;
 mod provider;
 mod provider_context;
 mod provider_preferences;
 mod provider_runtime;
+/// Платформенная поддержка глобального удержания клавиши микрофона.
+pub(crate) mod push_to_talk;
 mod storage;
 #[cfg(not(any(
     feature = "web",

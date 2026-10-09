@@ -54,6 +54,10 @@ pub(crate) struct MicrophoneHandle {
     pub(super) selected_input_device_id: Signal<Option<String>>,
     pub(super) selected_input_device_label: Signal<Option<String>>,
     pub(super) input_volume_percent: Signal<u32>,
+    /// Сохраняемая клавиша глобальной активации микрофона.
+    /// Поколение записи привязки; нечётное значение закрывает передачу на время назначения.
+    pub(super) recording_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    pub(super) push_to_talk_key: Signal<super::push_to_talk::PushToTalkKey>,
     pub(super) activation_mode: Signal<MicrophoneActivationMode>,
     pub(super) vad_threshold_percent: Signal<u32>,
     pub(super) denoise_mode: Signal<super::denoise::DenoiseMode>,
@@ -347,6 +351,8 @@ impl MicrophoneHandle {
             selected_input_device_id: Signal::new(None),
             selected_input_device_label: Signal::new(None),
             input_volume_percent: Signal::new(100),
+            recording_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            push_to_talk_key: Signal::new(super::push_to_talk::PushToTalkKey::default()),
             activation_mode: Signal::new(MicrophoneActivationMode::VoiceActivated),
             vad_threshold_percent: Signal::new(20),
             denoise_mode: Signal::new(super::denoise::DenoiseMode::Off),

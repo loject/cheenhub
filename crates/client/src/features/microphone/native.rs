@@ -19,6 +19,13 @@ pub(super) mod device_key;
 mod encoding;
 #[cfg(feature = "linux")]
 mod linux;
+#[cfg(any(
+    target_os = "android",
+    feature = "windows",
+    feature = "linux",
+    feature = "macos"
+))]
+mod pcm;
 
 /// Возвращает backend микрофона для текущей платформы.
 pub(super) fn default_backend() -> Rc<dyn MicrophoneBackend> {

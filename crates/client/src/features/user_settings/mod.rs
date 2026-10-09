@@ -6,6 +6,8 @@ mod page;
 mod password_section;
 mod platform;
 mod profile_section;
+mod push_to_talk_mode;
+mod push_to_talk_settings;
 mod scope;
 mod security_section;
 mod sound_device_refresh;

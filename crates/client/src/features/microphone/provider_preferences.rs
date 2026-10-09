@@ -111,6 +111,10 @@ impl MicrophoneHandle {
 
     /// Обновляет режим активации микрофона.
     pub(crate) fn set_activation_mode(&self, mode: MicrophoneActivationMode) {
+        if mode == MicrophoneActivationMode::PushToTalk && !super::push_to_talk::supported() {
+            warn!("global push-to-talk requested on unsupported platform");
+            return;
+        }
         if *self.activation_mode.peek() == mode {
             return;
         }
@@ -125,6 +129,39 @@ impl MicrophoneHandle {
         let mut activation_mode = self.activation_mode;
         activation_mode.set(mode);
         self.restart_if_active(status, "microphone activation mode change");
+    }
+
+    /// Возвращает клавишу глобального удержания для настроек.
+    pub(crate) fn push_to_talk_key(&self) -> super::push_to_talk::PushToTalkKey {
+        (self.push_to_talk_key)()
+    }
+
+    /// Сохраняет новую клавишу и перезапускает активный capture с закрытым gate.
+    pub(crate) fn set_push_to_talk_key(&self, key: super::push_to_talk::PushToTalkKey) {
+        if !super::push_to_talk::supported() || *self.push_to_talk_key.peek() == key {
+            return;
+        }
+        storage::save_push_to_talk_key(key);
+        let mut signal = self.push_to_talk_key;
+        signal.set(key);
+        info!(key_code = key.code(), "global push-to-talk binding changed");
+        if *self.activation_mode.peek() == MicrophoneActivationMode::PushToTalk {
+            self.restart_if_active(self.status_untracked(), "push-to-talk binding change");
+        }
+    }
+
+    /// Записывает привязку с паузой Push-to-talk; отмена future также снимает паузу.
+    ///
+    /// # Errors
+    /// Возвращает ошибку запуска hooks или времени ожидания, не меняя сохранённую кнопку.
+    pub(crate) async fn record_push_to_talk_binding(&self) -> Result<(), String> {
+        let generation = self.recording_generation.clone();
+        generation.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        let _pause = BindingPause(generation);
+        let key = super::push_to_talk::record_binding().await?;
+        self.set_push_to_talk_key(key);
+        info!(key_code = key.code(), "push-to-talk binding recorded");
+        Ok(())
     }
 
     /// Возвращает порог voice activation в процентах.
@@ -167,5 +204,12 @@ impl MicrophoneHandle {
             let uplink = self.active_uplink.peek().clone();
             self.restart_capture(on_frame, active_capture, uplink);
         }
+    }
+}
+
+struct BindingPause(std::sync::Arc<std::sync::atomic::AtomicU64>);
+impl Drop for BindingPause {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     }
 }

@@ -89,6 +89,24 @@ async fn start_cpal_session(
 ) -> Result<Rc<dyn MicrophoneSession>, MicrophoneError> {
     validate_config(&config)?;
 
+    let monitor =
+        if config.activation_mode == super::super::backend::MicrophoneActivationMode::PushToTalk {
+            let key = config.push_to_talk_key;
+            let recording_generation = config.recording_generation.clone();
+            Some(Arc::new(
+                tokio::task::spawn_blocking(move || {
+                    super::super::push_to_talk::platform::Monitor::start(key, recording_generation)
+                })
+                .await
+                .map_err(|error| {
+                    warn!(%error, "push-to-talk setup task failed");
+                    MicrophoneError::new("Не удалось включить Push-to-talk. Попробуйте ещё раз.")
+                })?
+                .map_err(MicrophoneError::new)?,
+            ))
+        } else {
+            None
+        };
     let host = cpal::default_host();
     let device = input_device(&host, config.device_id.as_deref())?;
     let supported_config = select_input_config(&device, &config)?;
@@ -114,7 +132,10 @@ async fn start_cpal_session(
     spawn_event_relay(event_receiver, callbacks);
     spawn_encoder_worker(
         config.clone(),
-        pcm_receiver,
+        super::pcm::Input {
+            receiver: pcm_receiver,
+            monitor: monitor.clone(),
+        },
         event_sender,
         closed.clone(),
         bitrate_bps.clone(),
@@ -127,7 +148,10 @@ async fn start_cpal_session(
         &stream_config,
         sample_format,
         input_channels,
-        pcm_sender,
+        super::pcm::Capture {
+            sender: pcm_sender,
+            monitor,
+        },
         closed.clone(),
     )?;
     stream.play().map_err(cpal_error)?;
@@ -242,7 +266,7 @@ fn build_input_stream(
     stream_config: &StreamConfig,
     sample_format: SampleFormat,
     input_channels: u16,
-    pcm_sender: mpsc::SyncSender<Vec<f32>>,
+    pcm_sender: super::pcm::Capture,
     closed: Arc<AtomicBool>,
 ) -> Result<Stream, MicrophoneError> {
     let err_fn = move |error| {

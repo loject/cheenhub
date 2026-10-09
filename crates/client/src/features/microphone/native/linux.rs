@@ -130,7 +130,10 @@ impl MicrophoneBackend for PulseMicrophoneBackend {
             let samples = frame_samples(config.sample_rate_hz);
             spawn_encoder_worker(
                 config,
-                pcm_receiver,
+                super::pcm::Input {
+                    receiver: pcm_receiver,
+                    monitor: None,
+                },
                 event_sender,
                 closed,
                 bitrate_bps.clone(),

@@ -35,6 +35,9 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         use_signal(move || stored_input_device.and_then(|device| device.label));
     let input_volume_percent = use_signal(storage::load_input_volume_percent);
     let activation_mode = use_signal(storage::load_activation_mode);
+    let push_to_talk_key = use_signal(storage::load_push_to_talk_key);
+    let recording_generation =
+        use_hook(|| std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)));
     let vad_threshold_percent = use_signal(storage::load_vad_threshold_percent);
     let stored_denoise = storage::load_denoise_mode();
     let denoise_mode = use_signal(move || stored_denoise);
@@ -57,6 +60,8 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         selected_input_device_id,
         input_volume_percent,
         activation_mode,
+        push_to_talk_key,
+        recording_generation: recording_generation.clone(),
         vad_threshold_percent,
         denoise_mode,
         denoise_runtime: denoise_runtime.clone(),
@@ -77,6 +82,8 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         selected_input_device_label,
         input_volume_percent,
         activation_mode,
+        push_to_talk_key,
+        recording_generation: recording_generation.clone(),
         vad_threshold_percent,
         denoise_mode,
         denoise_runtime: denoise_runtime.clone(),

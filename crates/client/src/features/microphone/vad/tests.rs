@@ -58,3 +58,27 @@ fn always_active_keeps_gate_open() {
     assert!(detector.update(0.0, 20_000));
     assert!(detector.update(0.0, 20_000));
 }
+
+#[test]
+fn push_to_talk_requires_key_and_bypasses_voice_threshold() {
+    let mut detector = VoiceActivityDetector::new(MicrophoneConfig {
+        activation_mode: MicrophoneActivationMode::PushToTalk,
+        ..config()
+    });
+
+    assert!(!detector.update_with_key(1.0, 20_000, false));
+    assert!(detector.update_with_key(0.0, 20_000, true));
+    assert!(detector.is_active());
+    assert!(!detector.update_with_key(1.0, 20_000, false));
+    assert!(!detector.is_active());
+}
+
+#[test]
+fn push_to_talk_without_global_input_keeps_gate_closed() {
+    let mut detector = VoiceActivityDetector::new(MicrophoneConfig {
+        activation_mode: MicrophoneActivationMode::PushToTalk,
+        ..config()
+    });
+
+    assert!(!detector.update(1.0, 1_000_000));
+}

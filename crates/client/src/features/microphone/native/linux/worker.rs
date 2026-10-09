@@ -28,7 +28,7 @@ impl Drop for ConnectedContext {
 pub(super) fn run(
     source: Option<&str>,
     closed: &AtomicBool,
-    pcm: SyncSender<Vec<f32>>,
+    pcm: SyncSender<super::super::pcm::Chunk>,
     started: oneshot::Sender<Result<(), MicrophoneError>>,
 ) -> Result<(), MicrophoneError> {
     let mut started = Some(started);
@@ -46,7 +46,7 @@ pub(super) fn run(
 fn capture(
     source: Option<&str>,
     closed: &AtomicBool,
-    pcm: SyncSender<Vec<f32>>,
+    pcm: SyncSender<super::super::pcm::Chunk>,
     started: &mut Option<oneshot::Sender<Result<(), MicrophoneError>>>,
 ) -> Result<(), MicrophoneError> {
     if source.is_some_and(|source| source.contains('\0')) {
@@ -122,7 +122,10 @@ fn capture(
                         stream::PeekResult::Data(data) => decode_samples(data),
                     };
                     stream.discard().map_err(error)?;
-                    match pcm.try_send(samples) {
+                    match pcm.try_send(super::super::pcm::Chunk {
+                        samples,
+                        epoch: None,
+                    }) {
                         Ok(()) => backlog_warned = false,
                         Err(TrySendError::Full(_)) => {
                             if !backlog_warned {

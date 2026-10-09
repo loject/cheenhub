@@ -63,7 +63,11 @@ fn spawn_microphone_callback_relay(
         let emission = Rc::new(RefCell::new(None::<LevelEmissionState>));
         while let Some(event) = receiver.next().await {
             match event {
-                MicrophoneCallbackEvent::Frame(frame) => on_frame(frame),
+                MicrophoneCallbackEvent::Frame(frame) => {
+                    if frame.can_send() {
+                        on_frame(frame);
+                    }
+                }
                 MicrophoneCallbackEvent::Level(next_level) => {
                     if should_emit_level(&emission, next_level) {
                         if *level_active.peek() != next_level.active {
