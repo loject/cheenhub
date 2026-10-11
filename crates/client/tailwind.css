@@ -2,6 +2,152 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Split: сообщения без бабблов, одинаковый стиль для комнат и личных диалогов. */
+.chat-message-group,
+.message-composer-shell {
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.chat-message-group .chat-message-content > div:first-child {
+    margin-bottom: 7px;
+    gap: 10px;
+}
+
+.chat-message-group .chat-message-content > div:first-child > span {
+    color: #f0f2f6;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: -0.012em;
+}
+
+.chat-message-group .chat-message-content > div:first-child.justify-end > span {
+    color: #8cb8fa;
+}
+
+.chat-message-group .chat-message-content > div:first-child > time {
+    color: #737988;
+    font-size: 11px;
+}
+
+.chat-message-group .chat-message-content > .flex.flex-col {
+    gap: 7px;
+}
+
+.chat-message-group .chat-message-content .flex.flex-col.items-start,
+.chat-message-group .chat-message-content .flex.flex-col.items-end {
+    gap: 9px;
+}
+
+.chat-message-group .message-bubble {
+    max-width: 100%;
+    padding: 2px 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: #ced2dc;
+    font-size: 14.5px;
+    line-height: 22.5px;
+    letter-spacing: 0.002em;
+}
+
+.chat-message-group .message-bubble:hover {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.chat-message-group .justify-end .message-bubble {
+    color: #dae7fc;
+    text-align: right;
+}
+
+/* Превью остаётся отдельным медиа-элементом, но без тяжёлых теней. */
+.chat-message-group .chat-message-content .flex.flex-col > .inline-block.shrink-0 {
+    max-width: min(420px, 100%) !important;
+    border-color: rgb(255 255 255 / 0.09);
+    box-shadow: none;
+}
+
+/* Композер: компактная поверхность вместо объёмной капсулы. */
+.message-composer-shell {
+    padding-top: 12px;
+}
+
+.message-composer-shell .message-input-wrap {
+    align-items: center;
+    gap: 5px;
+    padding: 5px 7px;
+    border: 1px solid rgb(202 216 247 / 0.085);
+    border-radius: 15px;
+    background: #13151a;
+    box-shadow: none;
+    transition: background-color 160ms, border-color 160ms, box-shadow 160ms;
+}
+
+.message-composer-shell .message-input-wrap:hover {
+    border-color: rgb(202 216 247 / 0.12);
+    background: #161920;
+}
+
+.message-composer-shell .message-input-wrap:focus-within {
+    border-color: rgb(96 165 250 / 0.25);
+    background: #171a21;
+    box-shadow: 0 0 0 3px rgb(96 165 250 / 0.04);
+}
+
+.message-composer-shell .message-input-wrap > textarea {
+    min-height: 38px;
+    padding: 8px 9px;
+    font-size: 14px;
+    line-height: 22px;
+    letter-spacing: 0.001em;
+}
+
+.message-composer-shell .message-input-wrap > textarea::placeholder {
+    color: #777e8b;
+}
+
+.message-composer-shell .message-input-wrap > :first-child:not(textarea),
+.message-composer-shell .message-emoji-button {
+    width: 38px;
+    height: 38px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    box-shadow: none;
+    color: #8e97a5;
+}
+
+.message-composer-shell .message-input-wrap > :first-child:not(textarea):hover,
+.message-composer-shell .message-emoji-button:hover {
+    border: 0;
+    background: rgb(255 255 255 / 0.05);
+    color: #e6e9f0;
+    transform: none;
+}
+
+.message-composer-shell .message-input-wrap > button[aria-label="Отправить сообщение"] {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: #3474dd;
+    box-shadow: none;
+}
+
+.message-composer-shell .message-input-wrap > button[aria-label="Отправить сообщение"]:hover:not(:disabled) {
+    background: #4889ed;
+    transform: none;
+}
+
+.message-composer-shell .message-input-wrap > button[aria-label="Отправить сообщение"]:disabled {
+    opacity: 0.34;
+}
+
+.message-composer-shell.message-composer-shell:has(.message-emoji-picker:popover-open) .message-emoji-button {
+    box-shadow: none;
+}
+
 .direct-message-list {
     overflow-anchor: none;
 }
