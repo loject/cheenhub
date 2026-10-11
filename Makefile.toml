@@ -86,11 +86,27 @@ description = "Run the backend watcher and Dioxus desktop app with Dioxus render
 run_task = { name = ["backend-watch", "dioxus-desktop-profile"], fork = true, parallel = true }
 
 [tasks.backend-watch]
-description = "Run the backend through cargo-watch."
+description = "Watch backend sources, contracts, and shared Cargo configuration."
 dependencies = ["install-cargo-watch"]
 env_files = [".env"]
 command = "cargo"
-args = ["watch", "-x", "run -p cheenhub_backend"]
+args = [
+    "watch",
+    "--watch",
+    "crates/backend",
+    "--watch",
+    "crates/contracts",
+    "--watch",
+    "Cargo.toml",
+    "--watch",
+    "Cargo.lock",
+    "--watch",
+    ".cargo",
+    "--watch",
+    "rust-toolchain.toml",
+    "-x",
+    "run -p cheenhub_backend",
+]
 
 [tasks.dioxus-web]
 description = "Run the Dioxus web dev server."
