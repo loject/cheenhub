@@ -53,33 +53,31 @@ pub(crate) fn RealtimeConnectionStatusIndicator(mut is_open: Signal<bool>) -> El
     let ping_text = latest_ping.as_deref().unwrap_or("пинг ожидается");
     let latest_jitter = quality.latest_jitter_ms.map(format_ping);
     let jitter_text = latest_jitter.as_deref().unwrap_or("ожидается");
-    let (label, tooltip, class) = match current_status {
-        RealtimeConnectionStatus::ConnectingWebTransport => (
-            "Подключение",
-            "Пробуем подключиться через WebTransport",
-            "border-blue-500/25 bg-blue-500/10 text-blue-300 hover:border-blue-400/40 hover:bg-blue-500/15",
-        ),
+    let (label, tooltip) = match current_status {
+        RealtimeConnectionStatus::ConnectingWebTransport => {
+            ("Подключение", "Пробуем подключиться через WebTransport")
+        }
         RealtimeConnectionStatus::ConnectingWebSocketFallback => (
             "Подключение",
             "Пробуем резервное подключение через WebSocket",
-            "border-amber-500/25 bg-amber-500/10 text-amber-300 hover:border-amber-400/40 hover:bg-amber-500/15",
         ),
-        RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebTransport) => (
-            "Подключен",
-            "Соединение установлено",
-            "border-emerald-500/20 bg-emerald-500/10 text-emerald-300 hover:border-emerald-400/35 hover:bg-emerald-500/15",
-        ),
+        RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebTransport) => {
+            ("Подключен", "Соединение установлено")
+        }
         RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebSocketFallback) => (
             "Резерв",
             "Используется резервное соединение через WebSocket",
-            "border-amber-500/25 bg-amber-500/10 text-amber-300 hover:border-amber-400/40 hover:bg-amber-500/15",
         ),
-        RealtimeConnectionStatus::Disconnected => (
-            "Отключен",
-            "Соединение отключено",
-            "border-red-500/20 bg-red-500/10 text-red-300 hover:border-red-400/35 hover:bg-red-500/15",
-        ),
+        RealtimeConnectionStatus::Disconnected => ("Отключен", "Соединение отключено"),
     };
+    let is_fallback = matches!(
+        current_status,
+        RealtimeConnectionStatus::Connected(RealtimeTransportKind::WebSocketFallback)
+    );
+    let (red, green, blue) = connection_color(current_status, quality.latest_rtt_ms);
+    let indicator_style = format!(
+        "color: rgb({red} {green} {blue}); border-color: rgb({red} {green} {blue} / 0.25); background-color: rgb({red} {green} {blue} / 0.10);"
+    );
     let active_fallback = active_fallback_info(current_status, fallback_info());
     let tooltip = match active_fallback {
         Some(fallback) => format!(
@@ -108,7 +106,8 @@ pub(crate) fn RealtimeConnectionStatusIndicator(mut is_open: Signal<bool>) -> El
         div { class: "relative shrink-0",
             button {
                 r#type: "button",
-                class: "group relative flex h-9 w-9 items-center justify-center rounded-xl border {class}",
+                class: "group relative flex h-9 w-9 items-center justify-center rounded-xl border transition-colors duration-300 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current",
+                style: "{indicator_style}",
                 "aria-label": "{tooltip}",
                 "aria-expanded": "{is_open()}",
                 onclick: move |event| {
@@ -132,6 +131,16 @@ pub(crate) fn RealtimeConnectionStatusIndicator(mut is_open: Signal<bool>) -> El
                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6.5 11a8 8 0 0 1 11 0" }
                         path { stroke_linecap: "round", stroke_linejoin: "round", d: "M3.75 8.25a12 12 0 0 1 16.5 0" }
                         circle { cx: "12", cy: "18.5", r: "1.15", fill: "currentColor", stroke: "none" }
+                    }
+                    if is_fallback {
+                        svg {
+                            style: "position: absolute; right: 3px; bottom: 3px; width: 11px; height: 11px;",
+                            fill: "none", stroke: "currentColor", stroke_width: "1.8",
+                            view_box: "0 0 24 24", "aria-hidden": "true",
+                            circle { cx: "12", cy: "12", r: "10", fill: "rgb(9 9 11)" }
+                            path { d: "M12 6.5v7", stroke_width: "2.4", stroke_linecap: "round" }
+                            circle { cx: "12", cy: "17.5", r: "1.3", fill: "currentColor", stroke: "none" }
+                        }
                     }
                 }
             }
@@ -223,6 +232,27 @@ fn active_fallback_info(
     )
     .then_some(fallback)
     .flatten()
+}
+
+// Цвет зависит только от качества связи; резервный транспорт обозначается формой иконки.
+fn connection_color(status: RealtimeConnectionStatus, rtt_ms: Option<f64>) -> (u8, u8, u8) {
+    match status {
+        RealtimeConnectionStatus::Disconnected => (248, 113, 113),
+        RealtimeConnectionStatus::Connected(_) => {
+            let Some(rtt_ms) = rtt_ms.filter(|value| value.is_finite() && *value >= 0.0) else {
+                return (161, 161, 170);
+            };
+            let progress = ((rtt_ms - 30.0) / 120.0).clamp(0.0, 1.0);
+            let interpolate =
+                |start: f64, end: f64| (start + (end - start) * progress).round() as u8;
+            (
+                interpolate(52.0, 251.0),
+                interpolate(211.0, 146.0),
+                interpolate(153.0, 60.0),
+            )
+        }
+        _ => (161, 161, 170),
+    }
 }
 
 fn format_ping(rtt_ms: f64) -> String {

@@ -38,3 +38,39 @@ fn graph_handles_equal_sample_timestamps() {
     assert!(!points.contains("NaN"));
     assert!(!points.contains("inf"));
 }
+
+#[test]
+fn connection_color_tracks_ping_independently_of_transport() {
+    use crate::features::realtime::{
+        RealtimeConnectionStatus as Status, RealtimeTransportKind as Transport,
+    };
+
+    for transport in [Transport::WebTransport, Transport::WebSocketFallback] {
+        let status = Status::Connected(transport);
+        assert_eq!(super::connection_color(status, Some(0.0)), (52, 211, 153));
+        assert_eq!(super::connection_color(status, Some(30.0)), (52, 211, 153));
+        assert_eq!(super::connection_color(status, Some(90.0)), (152, 179, 107));
+        assert_eq!(super::connection_color(status, Some(150.0)), (251, 146, 60));
+        assert_eq!(
+            super::connection_color(status, Some(1000.0)),
+            (251, 146, 60)
+        );
+        assert_eq!(super::connection_color(status, None), (161, 161, 170));
+    }
+}
+
+#[test]
+fn disconnected_is_red_and_connecting_is_neutral_despite_previous_ping() {
+    use crate::features::realtime::RealtimeConnectionStatus as Status;
+
+    assert_eq!(
+        super::connection_color(Status::Disconnected, Some(10.0)),
+        (248, 113, 113)
+    );
+    for status in [
+        Status::ConnectingWebTransport,
+        Status::ConnectingWebSocketFallback,
+    ] {
+        assert_eq!(super::connection_color(status, Some(10.0)), (161, 161, 170));
+    }
+}
