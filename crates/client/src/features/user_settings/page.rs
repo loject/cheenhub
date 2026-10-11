@@ -87,6 +87,13 @@ pub(crate) fn UserSettingsPage(
 
     rsx! {
         div { class: "fixed inset-0 z-[100] flex items-stretch justify-center bg-black/70 p-0 backdrop-blur-sm md:items-center md:p-3",
+            onkeydown: move |event| {
+                if event.key() == Key::Escape {
+                    event.stop_propagation();
+                    debug!("closing user settings with Escape");
+                    on_close.call(());
+                }
+            },
             button {
                 r#type: "button",
                 class: "absolute inset-0 cursor-default",
@@ -95,6 +102,14 @@ pub(crate) fn UserSettingsPage(
             }
             section {
                 role: "dialog",
+                tabindex: "-1",
+                onmounted: move |event| {
+                    spawn(async move {
+                        if let Err(error) = event.data().set_focus(true).await {
+                            debug!(%error, "could not focus user settings modal");
+                        }
+                    });
+                },
                 "aria-modal": "true",
                 "aria-label": "Настройки пользователя",
                 class: "relative flex h-[100dvh] w-full max-w-none flex-col overflow-hidden rounded-none border-0 bg-zinc-950 text-zinc-100 shadow-none md:h-[calc(100vh-140px)] md:max-w-[1240px] md:flex-row md:rounded-2xl md:border md:border-zinc-800 md:shadow-[0_30px_110px_rgba(0,0,0,.65)]",
