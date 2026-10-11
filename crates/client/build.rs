@@ -50,6 +50,7 @@ fn main() {
 
     forward_env("CHEENHUB_JWT_PUBLIC_KEY_BASE64");
     forward_env("CHEENHUB_BASE_URL");
+    forward_env("CHEENHUB_PORTAL_APP_ID");
     if !forward_env("CHEENHUB_REALTIME_CERT_SHA256") {
         forward_webtransport_cert_hash();
     }

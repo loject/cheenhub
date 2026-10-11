@@ -23,7 +23,10 @@ fn invalid_source_is_rejected_before_calling_pulse() {
         run(
             Some("source\0invalid"),
             &AtomicBool::new(false),
-            pcm,
+            super::super::super::pcm::Capture {
+                sender: pcm,
+                monitor: None
+            },
             started
         )
         .is_err()
@@ -47,7 +50,15 @@ fn live_default_capture_starts_and_stops_without_saving_audio() {
     let (started, mut startup) = oneshot::channel();
     let (finished, completion) = std::sync::mpsc::channel();
     let worker = std::thread::spawn(move || {
-        let result = run(None, &worker_closed, pcm, started);
+        let result = run(
+            None,
+            &worker_closed,
+            super::super::super::pcm::Capture {
+                sender: pcm,
+                monitor: None,
+            },
+            started,
+        );
         let _ = finished.send(result);
     });
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -81,7 +92,10 @@ fn live_missing_explicit_source_fails_without_default_fallback() {
         run(
             Some("cheenhub-nonexistent-source-7ad7936a"),
             &closed,
-            pcm,
+            super::super::super::pcm::Capture {
+                sender: pcm,
+                monitor: None
+            },
             started
         )
         .is_err()

@@ -64,6 +64,8 @@ pub(crate) struct MicrophoneHandle {
     /// Поколение записи привязки; нечётное значение закрывает передачу на время назначения.
     pub(super) recording_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     pub(super) push_to_talk_key: Signal<super::push_to_talk::PushToTalkKey>,
+    /// Состояние Linux portal и подтверждённая привязка для реактивного интерфейса.
+    pub(super) push_to_talk_update: Signal<Option<super::push_to_talk::Update>>,
     pub(super) activation_mode: Signal<MicrophoneActivationMode>,
     pub(super) activation_runtime:
         std::sync::Arc<std::sync::Mutex<super::backend::ActivationConfig>>,
@@ -379,6 +381,7 @@ impl MicrophoneHandle {
             input_volume_percent: Signal::new(100),
             recording_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             push_to_talk_key: Signal::new(super::push_to_talk::PushToTalkKey::default()),
+            push_to_talk_update: Signal::new(None),
             activation_mode: Signal::new(MicrophoneActivationMode::VoiceActivated),
             activation_runtime: std::sync::Arc::new(std::sync::Mutex::new(
                 super::backend::ActivationConfig {

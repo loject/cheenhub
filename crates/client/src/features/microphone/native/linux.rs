@@ -33,6 +33,7 @@ impl Drop for Cancellation {
 
 struct PulseMicrophoneSession {
     cancellation: Cancellation,
+    monitor: Option<Arc<super::super::push_to_talk::platform::Monitor>>,
     bitrate_bps: Arc<AtomicU32>,
     input_gain_bits: Arc<AtomicU32>,
     finished: RefCell<Option<oneshot::Receiver<()>>>,
@@ -41,6 +42,9 @@ struct PulseMicrophoneSession {
 impl MicrophoneSession for PulseMicrophoneSession {
     fn stop_immediately(&self) {
         self.cancellation.0.store(true, Ordering::Relaxed);
+        if let Some(monitor) = &self.monitor {
+            super::super::push_to_talk::platform::release_capture_monitor(monitor);
+        }
     }
 
     fn stop(&self) -> futures_util::future::LocalBoxFuture<'static, Result<(), MicrophoneError>> {
@@ -91,6 +95,19 @@ impl MicrophoneBackend for PulseMicrophoneBackend {
                     "Микрофон поддерживает Opus, mono, 48000 Гц.",
                 ));
             }
+            let monitor = if config.activation_mode
+                == super::super::backend::MicrophoneActivationMode::PushToTalk
+            {
+                Some(Arc::new(
+                    super::super::push_to_talk::platform::Monitor::start(
+                        config.push_to_talk_key,
+                        config.recording_generation.clone(),
+                    )
+                    .map_err(MicrophoneError::new)?,
+                ))
+            } else {
+                None
+            };
             let closed = Arc::new(AtomicBool::new(false));
             // Отмена future запуска освобождает worker даже до получения сессии.
             let cancellation = Cancellation(closed.clone());
@@ -103,13 +120,17 @@ impl MicrophoneBackend for PulseMicrophoneBackend {
             let source = config.device_id.clone().filter(|id| !id.is_empty());
             let worker_closed = closed.clone();
             let worker_events = event_sender.clone();
+            let worker_monitor = monitor.clone();
             std::thread::Builder::new()
                 .name("cheenhub-pulse-capture".to_owned())
                 .spawn(move || {
                     let result = worker::run(
                         source.as_deref(),
                         &worker_closed,
-                        pcm_sender,
+                        super::pcm::Capture {
+                            sender: pcm_sender,
+                            monitor: worker_monitor,
+                        },
                         started_sender,
                     );
                     if let Err(error) = result {
@@ -132,7 +153,7 @@ impl MicrophoneBackend for PulseMicrophoneBackend {
                 config,
                 super::pcm::Input {
                     receiver: pcm_receiver,
-                    monitor: None,
+                    monitor: monitor.clone(),
                 },
                 event_sender,
                 closed,
@@ -143,6 +164,7 @@ impl MicrophoneBackend for PulseMicrophoneBackend {
             info!("linux microphone PulseAudio capture started");
             Ok(Rc::new(PulseMicrophoneSession {
                 cancellation,
+                monitor,
                 bitrate_bps,
                 input_gain_bits,
                 finished: RefCell::new(Some(finished_receiver)),
@@ -154,3 +176,9 @@ impl MicrophoneBackend for PulseMicrophoneBackend {
 
 #[cfg(test)]
 mod tests;
+
+impl Drop for PulseMicrophoneSession {
+    fn drop(&mut self) {
+        self.stop_immediately();
+    }
+}

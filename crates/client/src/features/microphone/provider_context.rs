@@ -17,6 +17,8 @@ use crate::features::toast::ToastHandle;
 /// Provides microphone capture state to authenticated app components.
 #[component]
 pub(crate) fn MicrophoneProvider(children: Element) -> Element {
+    let _ptt_availability = use_resource(super::push_to_talk::availability);
+    use_drop(super::push_to_talk::platform::shutdown);
     let status = use_signal(|| MicrophoneStatus::Idle);
     let level = use_signal(default_level);
     let level_active = use_signal(|| false);
@@ -36,6 +38,18 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let input_volume_percent = use_signal(storage::load_input_volume_percent);
     let activation_mode = use_signal(storage::load_activation_mode);
     let push_to_talk_key = use_signal(storage::load_push_to_talk_key);
+    let mut push_to_talk_update = use_signal(|| None);
+    use_future(move || async move {
+        let mut key_signal = push_to_talk_key;
+        super::push_to_talk::observe_updates(move |update| {
+            if let Some(key) = update.binding {
+                storage::save_push_to_talk_key(key);
+                key_signal.set(key);
+            }
+            push_to_talk_update.set(Some(update));
+        })
+        .await;
+    });
     let recording_generation =
         use_hook(|| std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)));
     let vad_threshold_percent = use_signal(storage::load_vad_threshold_percent);
@@ -108,6 +122,7 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         activation_mode,
         activation_runtime: activation_runtime.clone(),
         push_to_talk_key,
+        push_to_talk_update,
         recording_generation: recording_generation.clone(),
         vad_threshold_percent,
         neural_vad_threshold_percent,

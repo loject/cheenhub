@@ -1,10 +1,10 @@
 //! Отменяемый цикл PulseAudio: все объекты соединения принадлежат одному потоку.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{SyncSender, TrySendError};
+use std::sync::mpsc::TrySendError;
 use std::time::{Duration, Instant};
 
-use dioxus::prelude::warn;
+use dioxus::prelude::{debug, warn};
 use futures_channel::oneshot;
 use libpulse_binding::{
     context,
@@ -28,7 +28,7 @@ impl Drop for ConnectedContext {
 pub(super) fn run(
     source: Option<&str>,
     closed: &AtomicBool,
-    pcm: SyncSender<super::super::pcm::Chunk>,
+    pcm: super::super::pcm::Capture,
     started: oneshot::Sender<Result<(), MicrophoneError>>,
 ) -> Result<(), MicrophoneError> {
     let mut started = Some(started);
@@ -46,7 +46,7 @@ pub(super) fn run(
 fn capture(
     source: Option<&str>,
     closed: &AtomicBool,
-    pcm: SyncSender<super::super::pcm::Chunk>,
+    pcm: super::super::pcm::Capture,
     started: &mut Option<oneshot::Sender<Result<(), MicrophoneError>>>,
 ) -> Result<(), MicrophoneError> {
     if source.is_some_and(|source| source.contains('\0')) {
@@ -92,6 +92,7 @@ fn capture(
         .connect_record(source, Some(&buffer), flags)
         .map_err(error)?;
     let mut backlog_warned = false;
+    let mut previous_epoch = None;
     while !closed.load(Ordering::Relaxed) {
         check_context(context)?;
         match stream.get_state() {
@@ -116,16 +117,41 @@ fn capture(
                 }
                 // Ограниченный объём за итерацию сохраняет отзывчивость отмены при backlog.
                 for _ in 0..16 {
-                    let samples = match stream.peek().map_err(error)? {
+                    let epoch = pcm
+                        .monitor
+                        .as_ref()
+                        .and_then(|monitor| monitor.held_epoch());
+                    let stable = super::super::pcm::accepts_capture_epoch(
+                        &mut previous_epoch,
+                        epoch,
+                        pcm.monitor.is_some(),
+                    );
+                    if epoch.is_some() && !stable {
+                        // PulseAudio мог накопить несколько буферов до нажатия; одного discard недостаточно.
+                        flush_capture(&mut stream, &mut mainloop, closed)?;
+                        debug!(?epoch, "Linux PTT capture backlog flushed for new hold");
+                        continue;
+                    }
+                    let mut samples = match stream.peek().map_err(error)? {
                         stream::PeekResult::Empty => break,
                         stream::PeekResult::Hole(bytes) => vec![0.0; bytes / 4],
                         stream::PeekResult::Data(data) => decode_samples(data),
                     };
                     stream.discard().map_err(error)?;
-                    match pcm.try_send(super::super::pcm::Chunk {
-                        samples,
-                        epoch: None,
-                    }) {
+                    if pcm.monitor.is_some() && epoch.is_none() {
+                        samples.clear();
+                    }
+                    if pcm
+                        .monitor
+                        .as_ref()
+                        .is_some_and(|monitor| monitor.held_epoch() != epoch)
+                    {
+                        continue;
+                    }
+                    match pcm
+                        .sender
+                        .try_send(super::super::pcm::Chunk { samples, epoch })
+                    {
                         Ok(()) => backlog_warned = false,
                         Err(TrySendError::Full(_)) => {
                             if !backlog_warned {
@@ -143,6 +169,30 @@ fn capture(
     }
     let _ = stream.disconnect();
     Ok(())
+}
+
+fn flush_capture(
+    stream: &mut stream::Stream,
+    mainloop: &mut Mainloop,
+    closed: &AtomicBool,
+) -> Result<(), MicrophoneError> {
+    let completed = std::rc::Rc::new(std::cell::Cell::new(None));
+    let result = completed.clone();
+    let _operation = stream.flush(Some(Box::new(move |success| result.set(Some(success)))));
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while completed.get().is_none() {
+        if closed.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        tick(mainloop, Some(deadline))?;
+    }
+    if completed.get() == Some(true) {
+        Ok(())
+    } else {
+        Err(error(
+            "Не удалось очистить буфер микрофона для Push-to-talk",
+        ))
+    }
 }
 
 fn check_context(context: &context::Context) -> Result<(), MicrophoneError> {

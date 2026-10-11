@@ -13,7 +13,40 @@ pub(super) fn PushToTalkSettings() -> Element {
     let busy = task().is_some();
     let key = mic.push_to_talk_key();
     let record_mic = mic.clone();
-    if !push_to_talk::supported() {
+    let update = mic.push_to_talk_update();
+    let configuring = update.as_ref().is_some_and(|update| update.configuring);
+    let portal_error = update.as_ref().and_then(|update| match &update.status {
+        push_to_talk::Status::Failed(message) => Some(message.clone()),
+        _ => None,
+    });
+    let mut available = use_resource(push_to_talk::availability);
+    if available().is_none()
+        || update
+            .as_ref()
+            .is_some_and(|update| update.availability == push_to_talk::Availability::Pending)
+    {
+        return rsx! { p { role: "status", class: "mt-3 text-[12px] text-zinc-400", "Проверяем доступность Push-to-talk…" } };
+    }
+    if !update
+        .as_ref()
+        .map_or(available().unwrap_or(false), |update| {
+            update.availability == push_to_talk::Availability::Available
+        })
+    {
+        if let Some(message) = portal_error {
+            return rsx! {
+                div { class: "mt-3 space-y-2",
+                    p { role: "alert", class: "text-[12px] leading-5 text-red-300", "{message}" }
+                    if update.as_ref().is_some_and(|update| update.restart_capture) {
+                        p { class: "text-[12px] leading-5 text-amber-300", "После проверки выключите и включите микрофон, затем нажмите «Назначить»." }
+                    }
+                    button { r#type: "button", class: "rounded-xl bg-zinc-800 px-3 py-2 text-[13px] text-zinc-100",
+                        onclick: move |_| { push_to_talk::retry_availability(); available.restart(); },
+                        "Проверить снова"
+                    }
+                }
+            };
+        }
         return rsx! { p { class: "mt-3 text-[12px] leading-5 text-zinc-400", {push_to_talk::unsupported_reason()} } };
     }
     rsx! {
@@ -40,10 +73,16 @@ pub(super) fn PushToTalkSettings() -> Element {
                         },
                         if busy {
                             span { aria_hidden: "true", class: "h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-300" }
-                            "Ожидаем кнопку…"
+                            {push_to_talk::waiting_label()}
                         } else { "Назначить" }
                     }
                     if busy {
+                        if configuring {
+                            button { r#type: "button", class: "min-h-10 rounded-xl px-3 text-[13px] text-zinc-100 transition hover:bg-zinc-800",
+                                onclick: move |_| push_to_talk::finish_assignment(),
+                                "Готово"
+                            }
+                        }
                         button { r#type: "button", class: "min-h-10 rounded-xl px-3 text-[13px] text-zinc-300 transition hover:bg-zinc-800",
                             onpointerdown: move |event| { event.prevent_default(); if let Some(pending) = task.take() { pending.cancel(); } error.set(None); info!("push-to-talk binding recording cancelled"); },
                             onclick: move |_| { if let Some(pending) = task.take() { pending.cancel(); } error.set(None); },
@@ -53,10 +92,17 @@ pub(super) fn PushToTalkSettings() -> Element {
                 }
             }
             if busy {
-                p { role: "status", class: "rounded-xl bg-zinc-950/60 px-3 py-2 text-[13px] leading-5 text-zinc-200", "Нажмите и отпустите клавишу или кнопку мыши, включая Mouse4 и Mouse5. Передача голоса приостановлена на время назначения." }
+                p { role: "status", class: "rounded-xl bg-zinc-950/60 px-3 py-2 text-[13px] leading-5 text-zinc-200", {push_to_talk::binding_prompt()} }
             } else {
-                p { class: "text-[12px] leading-5 text-zinc-400", "Удерживайте выбранную кнопку, чтобы говорить. Отпустите, чтобы прекратить передачу. Кнопка также продолжит работать в других приложениях." }
+                p { class: "text-[12px] leading-5 text-zinc-400", {push_to_talk::hold_description()} }
             }
+            if update.as_ref().is_some_and(|update| update.status == push_to_talk::Status::BindingRequired) {
+                p { role: "status", class: "text-[12px] leading-5 text-amber-300", "Передача голоса приостановлена. Нажмите «Назначить», чтобы подключить системное сочетание." }
+            }
+            if update.as_ref().is_some_and(|update| update.restart_capture) {
+                p { role: "status", class: "text-[12px] leading-5 text-amber-300", "Для восстановления Push-to-talk выключите и включите микрофон, затем нажмите «Назначить»." }
+            }
+            if let Some(message) = portal_error { p { role: "alert", class: "text-[12px] leading-5 text-red-300", "{message}" } }
             if let Some(message) = error() { p { role: "alert", class: "text-[12px] leading-5 text-red-300", "{message}" } }
         }
     }

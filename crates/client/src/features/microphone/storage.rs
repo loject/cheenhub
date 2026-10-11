@@ -90,7 +90,7 @@ pub(crate) fn save_input_volume_percent(volume_percent: u32) {
 pub(crate) fn load_activation_mode() -> MicrophoneActivationMode {
     let mode = match get::<LocalStorage>(ACTIVATION_MODE_KEY).as_deref() {
         Some("always_on") => MicrophoneActivationMode::AlwaysActive,
-        Some("push_to_talk") if super::push_to_talk::supported() => {
+        Some("push_to_talk") if super::push_to_talk::platform::restore_saved_mode() => {
             MicrophoneActivationMode::PushToTalk
         }
         _ => MicrophoneActivationMode::VoiceActivated,
@@ -152,15 +152,16 @@ pub(crate) fn save_denoise_mode(mode: super::denoise::DenoiseMode) {
 /// Загружает проверенную привязку; повреждённые данные заменяются значением по умолчанию.
 pub(crate) fn load_push_to_talk_key() -> super::push_to_talk::PushToTalkKey {
     super::push_to_talk::PushToTalkKey::from_value(
-        &get::<LocalStorage>("cheenhub.microphone.push_to_talk_key").unwrap_or_default(),
+        &get::<LocalStorage>(super::push_to_talk::platform::BINDING_STORAGE_KEY)
+            .unwrap_or_default(),
     )
 }
 
 /// Сохраняет привязку глобальной клавиши без платформенных деталей в UI.
 pub(crate) fn save_push_to_talk_key(key: super::push_to_talk::PushToTalkKey) {
     set::<LocalStorage>(
-        "cheenhub.microphone.push_to_talk_key",
-        &key.code().to_string(),
+        super::push_to_talk::platform::BINDING_STORAGE_KEY,
+        &key.storage_value(),
     );
 }
 

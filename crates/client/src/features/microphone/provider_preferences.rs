@@ -142,7 +142,12 @@ impl MicrophoneHandle {
         (self.push_to_talk_key)()
     }
 
-    /// Сохраняет новую клавишу и перезапускает активный capture с закрытым gate.
+    /// Возвращает реактивное состояние portal; прежние платформы не публикуют обновления.
+    pub(crate) fn push_to_talk_update(&self) -> Option<super::push_to_talk::Update> {
+        (self.push_to_talk_update)()
+    }
+
+    /// Сохраняет назначение; перезапускает capture только когда этого требует platform adapter.
     pub(crate) fn set_push_to_talk_key(&self, key: super::push_to_talk::PushToTalkKey) {
         if !super::push_to_talk::supported() || *self.push_to_talk_key.peek() == key {
             return;
@@ -151,7 +156,9 @@ impl MicrophoneHandle {
         let mut signal = self.push_to_talk_key;
         signal.set(key);
         info!(key_code = key.code(), "global push-to-talk binding changed");
-        if *self.activation_mode.peek() == MicrophoneActivationMode::PushToTalk {
+        if *self.activation_mode.peek() == MicrophoneActivationMode::PushToTalk
+            && super::push_to_talk::platform::binding_requires_capture_restart()
+        {
             self.restart_if_active(self.status_untracked(), "push-to-talk binding change");
         }
     }

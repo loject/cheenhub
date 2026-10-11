@@ -33,6 +33,9 @@ upgrade_code = "082cd097-8bbc-4aca-94f7-7881dda02673"
 [linux]
 identifier = "ru.cheenhub"
 categories = ["Network", "Chat"]
+
+[linux.deb]
+files = { "/usr/share/applications/ru.cheenhub.desktop" = "bundle/linux/ru.cheenhub.desktop" }
 section = "net"
 depends = [
     "libwebkit2gtk-4.1-0",
