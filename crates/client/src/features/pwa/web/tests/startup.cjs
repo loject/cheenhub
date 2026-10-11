@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { browser, stalledFetch } = require('./support.cjs');
 
-test('empty landing recovers even when the window load event never fires', async () => {
+test('empty app recovers even when the window load event never fires', async () => {
   const env = browser();
 
   await env.time.advance(20000);
@@ -48,7 +48,7 @@ test('rendering clears the recovery limit for a future failed startup', async ()
   assert.equal(future.reloads(), 1);
 });
 
-test('an offline landing waits for the network before recovering', async () => {
+test('an offline app waits for the network before recovering', async () => {
   const env = browser();
   env.navigator.onLine = false;
 
@@ -124,6 +124,27 @@ test('blocked session storage prevents unbounded automatic recovery', async () =
   await env.event('online');
 
   assert.equal(env.reloads(), 0);
+});
+
+test('public pages do not probe the network or reload', async () => {
+  for (const pathname of ['/', '/index.html', '/login', '/register', '/legal/privacy']) {
+    const env = browser({ pathname, standalone: true });
+    await env.time.advance(60000);
+    await env.event('online');
+    await env.event('offline');
+    await env.event('visibilitychange');
+    assert.equal(env.requests(), 0, pathname);
+    assert.equal(env.reloads(), 0, pathname);
+    assert.equal(env.panel.hidden, true, pathname);
+    assert.equal(env.time.pending(), 0, pathname);
+  }
+});
+
+test('client-side navigation from landing into app enables network recovery', async () => {
+  const env = browser({ pathname: '/' });
+  env.window.location.pathname = '/app/friends';
+  await env.render();
+  assert.equal(env.requests(), 1);
 });
 
 test('an already rendered installed application is preserved on resume', async () => {

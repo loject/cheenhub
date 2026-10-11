@@ -5,7 +5,7 @@ const RUNTIME_CACHE = `cheenhub-pwa-runtime-${CACHE_VERSION}`;
 const CACHE_NAMES = new Set([SHELL_CACHE, RUNTIME_CACHE]);
 const NETWORK_TIMEOUT_MS = 10000;
 const CORE_ASSETS = [
-  "/",
+  "/app",
   "/index.html",
   "/offline.html",
   "/pwa-register.js",
@@ -78,9 +78,14 @@ self.addEventListener("message", (event) => {
   }
 });
 
+function isAppNavigation(url) {
+  return url.pathname === "/app" || url.pathname.startsWith("/app/");
+}
+
 function shouldBypass(request, url) {
   return (
     request.method !== "GET" ||
+    (request.mode === "navigate" && !isAppNavigation(url)) ||
     !sameOrigin(url) ||
     url.pathname.startsWith("/api/") ||
     url.pathname.startsWith("/realtime") ||
@@ -122,10 +127,6 @@ function isStaticAsset(url) {
     url.pathname.startsWith("/screenshots/") ||
     url.pathname === "/pwa-register.js"
   );
-}
-
-function isLandingNavigation(url) {
-  return url.pathname === "/" || url.pathname === "/index.html";
 }
 
 async function fetchWithDeadline(request, cacheResponse) {
@@ -208,12 +209,10 @@ async function fetchWithDeadline(request, cacheResponse) {
 
 async function networkFirstNavigation(request) {
   const cache = await caches.open(SHELL_CACHE);
-  const url = new URL(request.url);
-
   try {
     return await fetchWithDeadline(request, async (response) => {
       await cache.put(request, response.clone());
-      await cache.put("/", response);
+      await cache.put("/app", response);
     });
   } catch (error) {
     const cachedRequest = await cache.match(request);
@@ -221,20 +220,7 @@ async function networkFirstNavigation(request) {
       return cachedRequest;
     }
 
-    if (isLandingNavigation(url)) {
-      const cachedLanding = (await cache.match("/")) || (await cache.match("/index.html"));
-      if (cachedLanding) {
-        return cachedLanding;
-      }
-
-      logWarn("landing fallback cache miss", error);
-      return new Response("CheenHub landing is unavailable while offline.", {
-        status: 503,
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-      });
-    }
-
-    const cached = (await cache.match("/offline.html")) || (await cache.match("/index.html"));
+    const cached = (await cache.match("/app")) || (await cache.match("/offline.html")) || (await cache.match("/index.html"));
 
     if (cached) {
       return cached;

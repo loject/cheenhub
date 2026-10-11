@@ -49,8 +49,9 @@
     );
   }
 
-  function isLandingPath() {
-    return window.location.pathname === "/" || window.location.pathname === "/index.html";
+  function isAppPath() {
+    const pathname = window.location.pathname;
+    return pathname === "/app" || pathname.startsWith("/app/");
   }
 
   function normalizeVersion(value) {
@@ -67,7 +68,7 @@
   }
 
   function shouldUseOfflineExperience() {
-    return isOfflineShell() || (isStandalonePwa() && !isLandingPath());
+    return isAppPath() && (isOfflineShell() || isStandalonePwa());
   }
 
   function appHasRendered() {
@@ -125,13 +126,14 @@
 
   function scheduleRetry() {
     clearRetryTimer();
+    if (!isAppPath()) return;
     retryTimer = window.setTimeout(() => {
       verifyOnline("timer");
     }, RETRY_DELAY_MS);
   }
 
   function recoverStartup(source) {
-    if (appHasRendered() || isOfflineShell() || reloadPending) {
+    if (!isAppPath() || appHasRendered() || isOfflineShell() || reloadPending) {
       return true;
     }
     if (Date.now() - startupStartedAt < STARTUP_GRACE_MS || document.visibilityState !== "visible") {
@@ -173,6 +175,7 @@
   }
 
   function verifyOnline(source) {
+    if (!isAppPath()) return Promise.resolve(false);
     if (!onlineVerification) {
       onlineVerification = checkOnline(source).finally(() => { onlineVerification = null; });
     }
@@ -180,6 +183,7 @@
   }
 
   async function checkOnline(source) {
+    if (!isAppPath()) return false;
     if (!navigator.onLine) {
       showOffline("Ожидаем сеть");
       scheduleRetry();
@@ -192,6 +196,7 @@
       if (!(await canReachOrigin())) {
         throw new Error("origin check returned a non-success response");
       }
+      if (!isAppPath()) return false;
 
       clearRetryTimer();
       hideOffline();
@@ -228,7 +233,7 @@
   }
 
   function collectDocumentUrls() {
-    const urls = new Set(["/", "/index.html", "/offline.html"]);
+    const urls = new Set(["/app", "/index.html", "/offline.html"]);
 
     document
       .querySelectorAll("script[src], link[href]")
@@ -283,7 +288,7 @@
   }
 
   async function cacheCurrentShell() {
-    if (!navigator.onLine) {
+    if (!isAppPath() || !navigator.onLine) {
       return;
     }
 
@@ -357,9 +362,27 @@
   }
 
   function bindOfflineEvents() {
+    let wasAppPath = isAppPath();
     const main = document.getElementById("main");
     if (main && "MutationObserver" in window) {
       const observer = new MutationObserver(() => {
+        const onAppPath = isAppPath();
+        if (onAppPath !== wasAppPath) {
+          wasAppPath = onAppPath;
+          if (onAppPath) {
+            log.info("app route opened; enabling network recovery");
+            verifyOnline("route-enter");
+            if (registrationPromise) {
+              registrationPromise.then(() => cacheCurrentShell())
+                .catch((error) => log.warn("app shell cache failed", error));
+            }
+          } else {
+            log.info("public route opened; disabling network recovery");
+            clearRetryTimer();
+            hideOffline();
+          }
+        }
+        if (!onAppPath) return;
         if (appHasRendered() && !isOfflineShell()) {
           clearRetryTimer();
           try {
@@ -373,22 +396,24 @@
           document.documentElement.dataset.pwaNetwork = "offline";
         }
       });
-      observer.observe(main, { childList: true });
+      observer.observe(main, { childList: true, subtree: true });
     }
 
     window.addEventListener("offline", () => {
+      if (!isAppPath()) return;
       log.info("browser reported offline");
       showOffline("Ожидаем сеть");
       scheduleRetry();
     });
 
     window.addEventListener("online", () => {
+      if (!isAppPath()) return;
       log.info("browser reported online");
       verifyOnline("online-event");
     });
 
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "visible") {
+      if (!isAppPath() || document.visibilityState !== "visible") {
         return;
       }
 
@@ -435,7 +460,7 @@
 
   bindOfflineEvents();
   bindInstallEvents();
-  if (!appHasRendered() && !isOfflineShell()) {
+  if (isAppPath() && !appHasRendered() && !isOfflineShell()) {
     scheduleRetry();
   }
 
@@ -451,9 +476,11 @@
 
   window.addEventListener("load", () => {
     refreshServiceWorkerRegistration("window-load");
-    verifyOnline("initial-load");
-    registrationPromise
-      .then(() => cacheCurrentShell())
-      .catch((error) => log.warn("pwa startup failed", error));
+    if (isAppPath()) {
+      verifyOnline("initial-load");
+      registrationPromise
+        .then(() => cacheCurrentShell())
+        .catch((error) => log.warn("pwa startup failed", error));
+    }
   });
 })();

@@ -8,6 +8,7 @@ function worker(fetch) {
   const time = clock();
   const entries = new Map([
     ['https://cheenhub.ru/', new Response('cached landing')],
+    ['https://cheenhub.ru/app/', new Response('cached app')],
     ['https://cheenhub.ru/assets/client.wasm', new Response('cached wasm')],
   ]);
   const cache = {
@@ -23,7 +24,7 @@ function worker(fetch) {
 }
 
 for (const [handler, url, expected] of [
-  ['networkFirstNavigation', 'https://cheenhub.ru/', 'cached landing'],
+  ['networkFirstNavigation', 'https://cheenhub.ru/app/', 'cached app'],
   ['networkWithRuntimeFallback', 'https://cheenhub.ru/assets/client.wasm', 'cached wasm'],
 ]) {
   test(`${handler} serves cached content when the network stalls`, async () => {
@@ -41,12 +42,12 @@ for (const [handler, url, expected] of [
 }
 
 test('successful navigation returns fresh content and clears the deadline', async () => {
-  const env = worker(async () => new Response('fresh landing'));
+  const env = worker(async () => new Response('fresh app'));
 
-  const response = await env.context.networkFirstNavigation(new Request('https://cheenhub.ru/'));
+  const response = await env.context.networkFirstNavigation(new Request('https://cheenhub.ru/app/'));
   await flush();
 
-  assert.equal(await response.text(), 'fresh landing');
+  assert.equal(await response.text(), 'fresh app');
   assert.equal(env.time.pending(), 0);
 });
 
@@ -59,6 +60,34 @@ test('missing navigation cache returns an error after a stalled request', async 
 
   assert.ok(response);
   assert.equal(response.status, 503);
+});
+
+test('service worker bypasses public navigations only', () => {
+  const env = worker(stalledFetch);
+  const navigation = { method: 'GET', mode: 'navigate', cache: 'default' };
+  for (const path of ['/', '/login', '/register', '/legal/privacy']) {
+    assert.equal(env.context.shouldBypass(navigation, new URL('https://cheenhub.ru' + path)), true);
+  }
+  for (const path of ['/app', '/app/', '/app/friends']) {
+    assert.equal(env.context.shouldBypass(navigation, new URL('https://cheenhub.ru' + path)), false);
+  }
+});
+
+test('app navigation does not overwrite cached landing', async () => {
+  const env = worker(async () => new Response('fresh app'));
+  await env.context.networkFirstNavigation(new Request('https://cheenhub.ru/app/friends'));
+  assert.equal(await (await env.cache.match('https://cheenhub.ru/')).text(), 'cached landing');
+  assert.equal(await (await env.cache.match('/app')).text(), 'fresh app');
+});
+
+test('nested app navigation falls back to cached app shell', async () => {
+  const env = worker(stalledFetch);
+  await env.cache.put('/app', new Response('cached app shell'));
+  let response;
+  env.context.networkFirstNavigation(new Request('https://cheenhub.ru/app/friends'))
+    .then(value => { response = value; });
+  await env.time.advance(10000);
+  assert.equal(await response.text(), 'cached app shell');
 });
 
 test('a stalled response body also falls back to the cached wasm', async () => {

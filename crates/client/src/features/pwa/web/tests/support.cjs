@@ -41,7 +41,7 @@ function stalledFetch(_request, options) {
   });
 }
 
-function browser({ rendered = false, standalone = false, pathname = '/', storage = new Map(), fetch = async () => new Response('ok'), offlineShell = false, hidden = false } = {}) {
+function browser({ rendered = false, standalone = false, pathname = '/app/', storage = new Map(), fetch = async () => new Response('ok'), offlineShell = false, hidden = false } = {}) {
   const time = clock();
   const windowListeners = new Map();
   const documentListeners = new Map();
