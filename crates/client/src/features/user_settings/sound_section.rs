@@ -41,6 +41,8 @@ pub(crate) fn SoundSettingsSection() -> Element {
     let output_volume = playback.output_volume_percent();
     let jitter_buffer_us = playback.jitter_buffer_us();
     let activation_mode = mic.activation_mode();
+    let neural_vad = mic.neural_vad_active();
+    let denoise_retry = mic.clone();
     let activation_level = mic.vad_threshold_percent();
     let microphone_status = mic.status();
     let mic_level = mic.level();
@@ -144,17 +146,33 @@ pub(crate) fn SoundSettingsSection() -> Element {
                         )}
                     }
                     {volume_slider("Громкость микрофона", input_volume, move |value| mic_volume_change.set_input_volume_percent(value))}
-                    if crate::features::microphone::denoise::available() {
+                    if crate::features::microphone::denoise::available() || crate::features::microphone::denoise::browser_available() {
                         label { class: "block",
                             span { class: "mb-2 block text-[13px] font-medium text-zinc-300", "Подавление фонового шума" }
                             select {
                                 class: super::styles::select_class(),
                                 value: denoise_mode.value(),
+                                disabled: mic.denoise_pending(),
                                 onchange: move |event| denoise_change.set_denoise_mode(
                                     crate::features::microphone::denoise::DenoiseMode::from_value(&event.value())
                                 ),
-                                option { value: "off", selected: denoise_mode == crate::features::microphone::denoise::DenoiseMode::Off, "Нет" }
-                                option { value: "rnnoise", selected: denoise_mode == crate::features::microphone::denoise::DenoiseMode::Rnnoise, "RNNoise" }
+                                if crate::features::microphone::denoise::browser_available() {
+                                    option { value: "browser", selected: denoise_mode == crate::features::microphone::denoise::DenoiseMode::Browser, "Браузерный" }
+                                }
+                                option { value: "off", selected: denoise_mode == crate::features::microphone::denoise::DenoiseMode::Off, "Выключено" }
+                                if crate::features::microphone::denoise::available() {
+                                    option { value: "rnnoise", selected: denoise_mode == crate::features::microphone::denoise::DenoiseMode::Rnnoise, "RNNoise" }
+                                }
+                            }
+                            if mic.denoise_failed() {
+                                span { role: "status", class: "mt-2 block text-xs text-amber-300", "RNNoise отключён после ошибки. Микрофон работает без подавления шума." }
+                                button { r#type: "button", disabled: mic.denoise_pending(), class: "mt-2 text-xs text-blue-300 disabled:opacity-50", onclick: move |_| denoise_retry.set_denoise_mode(crate::features::microphone::denoise::DenoiseMode::Rnnoise), "Включить повторно" }
+                            }
+                            if mic.denoise_pending() {
+                                span { role: "status", class: "mt-2 flex items-center gap-2 text-xs text-zinc-400",
+                                    span { class: "h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200" }
+                                    "Меняем настройку…"
+                                }
                             }
                         }
                     }
@@ -234,16 +252,18 @@ pub(crate) fn SoundSettingsSection() -> Element {
                                         class: level_bar_class(mic_level.active),
                                         style: "width: {live_level}%;",
                                     }
-                                    div {
-                                        class: "absolute top-0 h-full w-1 bg-blue-100 shadow-[0_0_10px_rgba(147,197,253,0.75)]",
-                                        style: "left: {activation_level}%;",
+                                    if !neural_vad {
+                                        div {
+                                            class: "absolute top-0 h-full w-1 bg-blue-100 shadow-[0_0_10px_rgba(147,197,253,0.75)]",
+                                            style: "left: {activation_level}%;",
+                                        }
                                     }
                                 }
                             }
 
                             div {
                                 div { class: "mb-2 flex items-center justify-between",
-                                    label { class: "text-[12px] font-medium text-zinc-300", "Чувствительность активации" }
+                                    label { class: "text-[12px] font-medium text-zinc-300", if neural_vad { "Порог вероятности речи RNNoise" } else { "Порог громкости для активации" } }
                                 }
                                 input {
                                     r#type: "range",

@@ -46,7 +46,7 @@ app = [
     "dep:web-transport",
     "dep:web-sys",
 ]
-web = ["app", "dioxus/web"]
+web = ["app", "dioxus/web", "dep:nnnoiseless"]
 desktop = [
     "app",
     "dep:webbrowser",
@@ -84,10 +84,11 @@ windows = [
     "dep:nnnoiseless",
 ]
 # Linux-реализация desktop-клиента: PulseAudio API для ввода/вывода и Opus для голоса.
-linux = ["dep:libpulse-binding", "dep:opus"]
+linux = ["dep:libpulse-binding", "dep:opus", "dep:nnnoiseless"]
 # macOS-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
 macos = ["dep:cpal", "dep:opus"]
 microphone_worker = [
+    "dep:nnnoiseless",
     "dep:cheenhub_contracts",
     "dep:js-sys",
     "dep:serde_json",

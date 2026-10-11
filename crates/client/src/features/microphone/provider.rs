@@ -10,7 +10,6 @@ use super::backend::{
     MicrophoneUplinkConfig,
 };
 use super::provider_runtime::next_generation;
-use super::storage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ActiveCapture {
@@ -34,6 +33,13 @@ pub(super) enum MicrophoneCommand {
     },
     Stop {
         operation_generation: u64,
+    },
+    SetActivation {
+        config: super::backend::ActivationConfig,
+    },
+    SetDenoise {
+        operation_generation: u64,
+        mode: super::denoise::DenoiseMode,
     },
     SetBitrate {
         bitrate_bps: u32,
@@ -59,9 +65,16 @@ pub(crate) struct MicrophoneHandle {
     pub(super) recording_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     pub(super) push_to_talk_key: Signal<super::push_to_talk::PushToTalkKey>,
     pub(super) activation_mode: Signal<MicrophoneActivationMode>,
+    pub(super) activation_runtime:
+        std::sync::Arc<std::sync::Mutex<super::backend::ActivationConfig>>,
     pub(super) vad_threshold_percent: Signal<u32>,
+    /// Независимый сохраняемый порог вероятности речи RNNoise.
+    pub(super) neural_vad_threshold_percent: Signal<u32>,
     pub(super) denoise_mode: Signal<super::denoise::DenoiseMode>,
-    pub(super) denoise_runtime: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub(super) denoise_pending: Signal<bool>,
+    /// Реактивный статус отказа текущего DSP, отдельный от сохраняемого выбора.
+    pub(super) denoise_failed: Signal<bool>,
+    pub(super) denoise_runtime: std::sync::Arc<super::denoise::RuntimeSwitch>,
     pub(super) active_capture: Signal<ActiveCapture>,
     /// Last on_frame callback used to start/restart capture.
     /// Kept so that device changes during an active session can trigger a restart.
@@ -254,24 +267,37 @@ impl MicrophoneHandle {
         (self.denoise_mode)()
     }
 
+    /// Указывает отказ RNNoise в текущей сессии; сохраняемый выбор остаётся доступен для retry.
+    pub(crate) fn denoise_failed(&self) -> bool {
+        (self.denoise_failed)()
+    }
+
+    /// Указывает фактическое использование neural VAD, исключая отказ DSP.
+    pub(crate) fn neural_vad_active(&self) -> bool {
+        self.denoise_mode() == super::denoise::DenoiseMode::Rnnoise && !self.denoise_failed()
+    }
+
+    /// Указывает, ожидается ли применение текущего режима в активной сессии.
+    pub(crate) fn denoise_pending(&self) -> bool {
+        (self.denoise_pending)()
+    }
+
     /// Обновляет настройку подавления шума без перезапуска capture-сессии.
     pub(crate) fn set_denoise_mode(&self, mode: super::denoise::DenoiseMode) {
-        let enabled = mode == super::denoise::DenoiseMode::Rnnoise;
-        let preference_unchanged = *self.denoise_mode.peek() == mode;
-        let runtime_unchanged = self
-            .denoise_runtime
-            .load(std::sync::atomic::Ordering::Relaxed)
-            == enabled;
-        if preference_unchanged && runtime_unchanged {
+        let mode = super::denoise::supported_mode(mode);
+        if *self.denoise_pending.peek()
+            || (*self.denoise_mode.peek() == mode
+                && !*self.denoise_failed.peek()
+                && !self.denoise_runtime.failed())
+        {
             return;
         }
-        if !preference_unchanged {
-            storage::save_denoise_mode(mode);
-            let mut denoise_mode = self.denoise_mode;
-            denoise_mode.set(mode);
-        }
-        self.denoise_runtime
-            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+        let mut pending = self.denoise_pending;
+        pending.set(true);
+        self.send_command(MicrophoneCommand::SetDenoise {
+            mode,
+            operation_generation: *self.generation.peek(),
+        });
     }
 
     /// Returns the current microphone status without creating a reactive subscription.
@@ -354,9 +380,21 @@ impl MicrophoneHandle {
             recording_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             push_to_talk_key: Signal::new(super::push_to_talk::PushToTalkKey::default()),
             activation_mode: Signal::new(MicrophoneActivationMode::VoiceActivated),
+            activation_runtime: std::sync::Arc::new(std::sync::Mutex::new(
+                super::backend::ActivationConfig {
+                    mode: MicrophoneActivationMode::VoiceActivated,
+                    threshold: 0.2,
+                    neural_threshold: 0.5,
+                    activation_delay_us: 60_000,
+                    release_delay_us: 250_000,
+                },
+            )),
             vad_threshold_percent: Signal::new(20),
+            neural_vad_threshold_percent: Signal::new(50),
             denoise_mode: Signal::new(super::denoise::DenoiseMode::Off),
-            denoise_runtime: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            denoise_pending: Signal::new(false),
+            denoise_failed: Signal::new(false),
+            denoise_runtime: std::sync::Arc::new(super::denoise::RuntimeSwitch::new(false)),
             active_capture: Signal::new(ActiveCapture::None),
             active_on_frame: Signal::new(None),
             active_uplink: Signal::new(None),

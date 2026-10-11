@@ -12,9 +12,15 @@ fn failed_denoising_returns_the_original_captured_pcm() {
     let mut processor = super::super::super::denoise::Processor::new();
     let original = vec![f32::NAN; 481];
 
-    let (passed_through, failed) = captured_pcm_on_denoise_error(&mut processor, &original);
+    let mut passed_through = original.clone();
+    let mut was_enabled = false;
 
-    assert!(failed);
+    let (probability, failed) =
+        apply_denoising(&mut processor, &mut passed_through, true, &mut was_enabled);
+
+    assert_eq!(probability, None);
+
+    assert_eq!(failed, super::super::super::denoise::Processor::available());
     assert_eq!(passed_through.len(), original.len());
     assert!(
         passed_through
@@ -30,21 +36,20 @@ fn disabling_then_reenabling_denoising_resets_the_processor() {
     let mut was_enabled = true;
     let mut bypassed_frame = vec![0.25; 481];
 
-    assert!(!apply_denoising(
-        &mut processor,
-        &mut bypassed_frame,
-        false,
-        &mut was_enabled,
-    ));
+    assert_eq!(
+        apply_denoising(&mut processor, &mut bypassed_frame, false, &mut was_enabled,),
+        (None, false)
+    );
     assert!(!was_enabled);
 
     let mut enabled_frame = vec![0.25; 480];
-    assert!(!apply_denoising(
-        &mut processor,
-        &mut enabled_frame,
-        true,
-        &mut was_enabled,
-    ));
+    let (probability, failed) =
+        apply_denoising(&mut processor, &mut enabled_frame, true, &mut was_enabled);
+    assert!(!failed);
+    assert_eq!(
+        probability.is_some(),
+        super::super::super::denoise::Processor::available()
+    );
     assert!(was_enabled);
 }
 
@@ -54,11 +59,14 @@ fn failed_denoising_bypasses_pcm_and_warns_once_until_disabled() {
     let mut was_enabled = false;
     let mut warning_sent = false;
 
-    for expected_warning in [true, false] {
+    let available = super::super::super::denoise::Processor::available();
+    for expected_warning in [available, false] {
         let mut frame = vec![0.25; 481];
-        let failed = apply_denoising(&mut processor, &mut frame, true, &mut was_enabled);
+        let (probability, failed) =
+            apply_denoising(&mut processor, &mut frame, true, &mut was_enabled);
 
-        assert!(failed);
+        assert_eq!(failed, available);
+        assert_eq!(probability, None);
         assert!(frame.iter().all(|sample| *sample == 0.25));
         assert_eq!(
             should_emit_denoise_warning(true, failed, &mut warning_sent),

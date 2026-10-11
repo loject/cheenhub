@@ -1,3 +1,5 @@
+import { recordPcmInputProfile, emitSendProfile } from "/audio/microphone-uplink-diagnostics.js?v=1";
+
 const TRANSPORT_WEBTRANSPORT = "webtransport";
 const TRANSPORT_WEBSOCKET = "websocket";
 const MAX_PCM_AGE_MS = 960;
@@ -5,7 +7,6 @@ const MAX_ENCODER_QUEUE_FRAMES = 32;
 const MAX_WEBSOCKET_BUFFERED_BYTES = 64 * 1024;
 const WARNING_INTERVAL_MS = 5_000;
 const LEVEL_INTERVAL_MS = 50;
-const SEND_PROFILE_INTERVAL_MS = 5_000;
 
 let active = null;
 
@@ -15,6 +16,20 @@ self.onmessage = (event) => {
     void start(message).catch((error) => post("error", { message: errorMessage(error) }));
   } else if (message.kind === "set-bitrate") {
     setBitrate(message.bitrateBps);
+  } else if (message.kind === "set-activation") {
+    if (active) {
+      active.processor.set_activation_config(message.activationMode, message.vadThreshold, message.neuralThreshold, message.vadActivationDelayUs, message.vadReleaseDelayUs);
+      post("status", { message: "microphone activation updated" });
+    }
+  } else if (message.kind === "set-denoise") {
+    try {
+      if (!active || active.closed) throw new Error("microphone session stopped");
+      active.processor.set_denoise_enabled(Boolean(message.denoiseEnabled));
+      active.denoiseRevision = message.denoiseRevision;
+      post("denoise-applied", { denoiseRevision: message.denoiseRevision });
+    } catch (error) {
+      post("denoise-rejected", { denoiseRevision: message.denoiseRevision, message: errorMessage(error) });
+    }
   } else if (message.kind === "set-input-gain") {
     setInputGain(message.inputGain);
   } else if (message.kind === "stop") {
@@ -30,7 +45,7 @@ async function start(config) {
   try {
     const wasm = await import(config.wasmBindgenUrl);
     await wasm.default({ module_or_path: config.wasmUrl });
-    if (wasm.microphone_worker_abi_version() < 4) {
+    if (wasm.microphone_worker_abi_version() < 8) {
       throw new Error("microphone worker wasm ABI is too old");
     }
 
@@ -44,6 +59,8 @@ async function start(config) {
       config.inputGain,
       config.roomId,
     );
+    processor.set_activation_config(config.activationMode, config.vadThreshold, config.neuralThreshold, config.vadActivationDelayUs, config.vadReleaseDelayUs);
+    processor.set_denoise_enabled(Boolean(config.denoiseEnabled));
     transport = await connectRealtime(config, wasm);
     const encoder = createEncoder(config, processor, transport);
     const startedWallMs = Date.now();
@@ -53,6 +70,7 @@ async function start(config) {
       processor,
       transport,
       sampleRateHz: config.sampleRateHz,
+      denoiseRevision: config.denoiseRevision,
       bitrateBps: config.bitrateBps,
       startedWallMs,
       lastChunkWallMs: startedWallMs,
@@ -178,7 +196,7 @@ function handleWorkletMessage(data, current) {
     const timestampUs = Math.max(0, Math.floor(Number(data.timestampUs) || 0));
     const nowMs = Date.now();
 
-    recordPcmInputProfile(current, samples.length, nowMs);
+    recordPcmInputProfile(current, samples.length, nowMs, post);
 
     if (shouldRebaseAfterCapturePause(current, timestampUs, nowMs)) {
       current.startedWallMs = nowMs - timestampUs / 1000;
@@ -188,11 +206,12 @@ function handleWorkletMessage(data, current) {
     const pcmAgeMs = nowMs - (current.startedWallMs + timestampUs / 1000);
     if (pcmAgeMs > MAX_PCM_AGE_MS || current.encoder.encodeQueueSize >= MAX_ENCODER_QUEUE_FRAMES) {
       current.droppedPcm += 1;
-      warnAboutDrops(current, pcmAgeMs);
+      warnAboutDrops(current, pcmAgeMs, pcmAgeMs > MAX_PCM_AGE_MS ? "pcm_age" : "encoder_queue");
       return;
     }
 
     const processed = current.processor.process_pcm(samples, timestampUs);
+    if (processed.denoiseFailed) post("denoise-failed", { denoiseRevision: current.denoiseRevision });
     emitLevel(current, processed, nowMs);
     if (!processed.active || !(processed.samples instanceof Float32Array)) {
       return;
@@ -210,45 +229,6 @@ function handleWorkletMessage(data, current) {
   } catch (error) {
     post("warning", { message: "failed to process microphone worker chunk", detail: errorMessage(error) });
   }
-}
-
-function recordPcmInputProfile(current, frameCount, nowMs) {
-  if (!current.diagnosticsEnabled) {
-    return;
-  }
-
-  if (current.pcmProfileWindowStartMs === 0) {
-    current.pcmProfileWindowStartMs = nowMs;
-  }
-
-  current.receivedPcmChunks += 1;
-  current.receivedPcmFrames += frameCount;
-  current.pcmProfileChunks += 1;
-  current.pcmProfileFrames += frameCount;
-
-  // Report after roughly one second of received AUDIO, not from a timer.
-  if (current.pcmProfileFrames < current.sampleRateHz) {
-    return;
-  }
-
-  const wallDeltaMs = Math.max(0, nowMs - current.pcmProfileWindowStartMs);
-  const effectiveRateHz = wallDeltaMs > 0
-    ? current.pcmProfileFrames * 1000 / wallDeltaMs
-    : 0;
-
-  post("pcm-profile", {
-    receivedPcmChunks: current.receivedPcmChunks,
-    receivedPcmFrames: current.receivedPcmFrames,
-    pcmChunksSinceReport: current.pcmProfileChunks,
-    pcmFramesSinceReport: current.pcmProfileFrames,
-    wallDeltaMs: Math.round(wallDeltaMs),
-    effectiveRateHz,
-    sampleRateHz: current.sampleRateHz,
-  });
-
-  current.pcmProfileWindowStartMs = nowMs;
-  current.pcmProfileChunks = 0;
-  current.pcmProfileFrames = 0;
 }
 
 function shouldRebaseAfterCapturePause(current, timestampUs, nowMs) {
@@ -273,6 +253,7 @@ function emitLevel(current, processed, nowMs) {
     rms: processed.rms,
     active: processed.active,
     threshold: processed.threshold,
+    source: processed.source,
     timestampUs: processed.timestampUs,
   });
 }
@@ -296,9 +277,9 @@ function handleEncodedChunk(chunk, processor, transport) {
       current.sendBackpressureBlockedCount += 1;
       current.sendProfileBackpressureBlockedCount += 1;
     }
-    emitSendProfile(current, nowMs);
+    emitSendProfile(current, nowMs, post);
     current.droppedEncoded += 1;
-    warnAboutDrops(current, 0);
+    warnAboutDrops(current, 0, sendPending ? "send_pending" : "transport_backpressure");
     return;
   }
   try {
@@ -338,58 +319,15 @@ function handleEncodedChunk(chunk, processor, transport) {
   }
 }
 
-function emitSendProfile(current, nowMs) {
-  if (!current.diagnosticsEnabled) {
-    return;
-  }
-  const windowMs = nowMs - current.sendProfileWindowStartMs;
-  if (windowMs < SEND_PROFILE_INTERVAL_MS) {
-    return;
-  }
-  const completed = current.sendProfileCompletedCount;
-  const sendWaitAvgMs = completed > 0
-    ? current.sendProfileWaitTotalMs / completed
-    : 0;
-  const pendingSendMs = current.sendPending && current.sendStartedAtMs > 0
-    ? Math.max(0, nowMs - current.sendStartedAtMs)
-    : 0;
-  post("send-profile", {
-    transport: current.transport.kind,
-    windowMs: Math.round(windowMs),
-    sendCount: current.sendCount,
-    sendCompletedCount: current.sendCompletedCount,
-    sendBlockedCount: current.sendBlockedCount,
-    sendPendingBlockedCount: current.sendPendingBlockedCount,
-    sendBackpressureBlockedCount: current.sendBackpressureBlockedCount,
-    sendsSinceReport: current.sendProfileSendCount,
-    completedSinceReport: current.sendProfileCompletedCount,
-    blockedSinceReport: current.sendProfileBlockedCount,
-    pendingBlockedSinceReport: current.sendProfilePendingBlockedCount,
-    backpressureBlockedSinceReport: current.sendProfileBackpressureBlockedCount,
-    sendWaitTotalMs: Math.round(current.sendProfileWaitTotalMs),
-    sendWaitAvgMs,
-    sendWaitMaxMs: current.sendProfileWaitMaxMs,
-    pendingSendMs,
-    encoderQueueSize: current.encoder.encodeQueueSize,
-  });
-  current.sendProfileWindowStartMs = nowMs;
-  current.sendProfileSendCount = 0;
-  current.sendProfileCompletedCount = 0;
-  current.sendProfileBlockedCount = 0;
-  current.sendProfilePendingBlockedCount = 0;
-  current.sendProfileBackpressureBlockedCount = 0;
-  current.sendProfileWaitTotalMs = 0;
-  current.sendProfileWaitMaxMs = 0;
-}
-
-function warnAboutDrops(current, pcmAgeMs) {
+function warnAboutDrops(current, pcmAgeMs, dropReason) {
   const nowMs = Date.now();
   if (current.lastWarningMs && nowMs - current.lastWarningMs < WARNING_INTERVAL_MS) {
     return;
   }
   current.lastWarningMs = nowMs;
   post("warning", {
-    message: "microphone worker dropped stale uplink audio",
+    message: `microphone worker dropped uplink audio (${dropReason})`,
+    dropReason,
     droppedPcm: current.droppedPcm,
     droppedEncoded: current.droppedEncoded,
     pcmAgeMs: Math.max(0, Math.round(pcmAgeMs)),

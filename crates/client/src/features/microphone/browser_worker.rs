@@ -18,15 +18,18 @@ use super::backend::{
 };
 use super::browser_errors::js_error_message;
 
-const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=9";
-const MICROPHONE_WORKER_WASM_BINDGEN_URL: &str = "/workers/microphone/microphone_worker.js?v=4";
-const MICROPHONE_WORKER_WASM_URL: &str = "/workers/microphone/microphone_worker_bg.wasm?v=4";
+mod control;
+
+const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=14";
+const MICROPHONE_WORKER_WASM_BINDGEN_URL: &str = "/workers/microphone/microphone_worker.js?v=8";
+const MICROPHONE_WORKER_WASM_URL: &str = "/workers/microphone/microphone_worker_bg.wasm?v=8";
 const WORKER_START_TIMEOUT_MS: u32 = 10_000;
 
 type WorkerReadySender = Rc<RefCell<Option<oneshot::Sender<Result<(), String>>>>>;
 
 pub(super) struct BrowserWorkerUplink {
     worker: Worker,
+    denoise_control: control::DenoiseControl,
     _message_closure: Closure<dyn FnMut(MessageEvent)>,
     _error_closure: Closure<dyn FnMut(ErrorEvent)>,
 }
@@ -52,6 +55,56 @@ impl BrowserWorkerUplink {
         {
             let _ = self.worker.post_message(message.as_ref());
         }
+    }
+
+    pub(super) fn set_activation_config(
+        &self,
+        config: super::backend::ActivationConfig,
+    ) -> Result<(), MicrophoneError> {
+        let message = Object::new();
+        set_property(&message, "kind", JsValue::from_str("set-activation"))?;
+        set_property(
+            &message,
+            "neuralThreshold",
+            JsValue::from_f64(f64::from(config.neural_threshold)),
+        )?;
+        let mode = match config.mode {
+            MicrophoneActivationMode::AlwaysActive => "always_active",
+            MicrophoneActivationMode::VoiceActivated => "voice_activated",
+            MicrophoneActivationMode::PushToTalk => {
+                return Err(MicrophoneError::new("Push-to-talk недоступен в браузере"));
+            }
+        };
+        set_property(&message, "activationMode", JsValue::from_str(mode))?;
+        set_property(
+            &message,
+            "vadThreshold",
+            JsValue::from_f64(f64::from(config.threshold)),
+        )?;
+        set_property(
+            &message,
+            "vadActivationDelayUs",
+            JsValue::from_f64(f64::from(config.activation_delay_us)),
+        )?;
+        set_property(
+            &message,
+            "vadReleaseDelayUs",
+            JsValue::from_f64(f64::from(config.release_delay_us)),
+        )?;
+        self.worker
+            .post_message(message.as_ref())
+            .map_err(microphone_error)
+    }
+
+    /// Применяет DSP без переподключения и ждёт подтверждения текущего поколения.
+    pub(super) async fn set_denoise_enabled(
+        &self,
+        enabled: bool,
+        revision: u64,
+    ) -> Result<(), MicrophoneError> {
+        self.denoise_control
+            .set(&self.worker, enabled, revision)
+            .await
     }
 
     pub(super) fn set_input_gain(&self, input_gain: f32) {
@@ -82,8 +135,35 @@ pub(super) async fn start_worker_uplink(
     let message_ready = ready_sender.clone();
     let on_level = callbacks.on_level.clone();
     let on_error = callbacks.on_error.clone();
+    let on_warning = callbacks.on_warning.clone();
+    let denoise_control = control::DenoiseControl::default();
+    let message_control = denoise_control.clone();
+    let denoise_live = config.denoise_enabled_live.clone();
     let message_closure = Closure::wrap(Box::new(move |event: MessageEvent| {
-        handle_worker_message(event.data(), &on_level, &on_error, &message_ready);
+        let data = event.data();
+        let kind = string_property(&data, "kind");
+        let revision = number_property(&data, "denoiseRevision").unwrap_or(0.0) as u64;
+        if kind.as_deref() == Some("denoise-applied") {
+            message_control.complete(revision, Ok(()));
+        } else if kind.as_deref() == Some("denoise-rejected") {
+            message_control.complete(
+                revision,
+                Err(MicrophoneError::new("Worker не применил подавление шума.")),
+            );
+        } else if kind.as_deref() == Some("denoise-failed") {
+            if let Some(enabled) = &denoise_live
+                && !enabled.fail(revision)
+            {
+                return;
+            }
+            warn!(
+                kind = "denoise_failed",
+                "browser worker RNNoise failed; passing through PCM"
+            );
+            on_warning("Подавление шума отключено. Микрофон продолжает работать.");
+        } else {
+            handle_worker_message(data, &on_level, &on_error, &message_ready);
+        }
     }) as Box<dyn FnMut(MessageEvent)>);
     worker.set_onmessage(Some(message_closure.as_ref().unchecked_ref()));
 
@@ -139,6 +219,7 @@ pub(super) async fn start_worker_uplink(
     info!(sample_rate_hz, "microphone uplink worker ready");
     Ok(BrowserWorkerUplink {
         worker,
+        denoise_control,
         _message_closure: message_closure,
         _error_closure: error_closure,
     })
@@ -203,6 +284,11 @@ fn start_message(
     set_property(&message, "roomId", JsValue::from_str(&uplink.room_id))?;
     set_property(
         &message,
+        "denoiseEnabled",
+        JsValue::from_bool(config.denoise_enabled),
+    )?;
+    set_property(
+        &message,
         "sampleRateHz",
         JsValue::from_f64(f64::from(sample_rate_hz)),
     )?;
@@ -244,6 +330,21 @@ fn start_message(
     )?;
     set_property(
         &message,
+        "neuralThreshold",
+        JsValue::from_f64(f64::from(config.neural_vad_threshold)),
+    )?;
+    set_property(
+        &message,
+        "denoiseRevision",
+        JsValue::from_f64(
+            config
+                .denoise_enabled_live
+                .as_ref()
+                .map_or(0, |runtime| runtime.snapshot()) as f64,
+        ),
+    )?;
+    set_property(
+        &message,
         "vadThreshold",
         JsValue::from_f64(f64::from(config.vad_threshold)),
     )?;
@@ -281,6 +382,11 @@ fn handle_worker_message(
         "level" => on_level(MicrophoneLevel {
             rms: number_property(&data, "rms").unwrap_or_default() as f32,
             active: bool_property(&data, "active").unwrap_or(false),
+            source: if string_property(&data, "source").as_deref() == Some("RNNoise") {
+                "RNNoise"
+            } else {
+                "RMS"
+            },
             threshold: number_property(&data, "threshold").unwrap_or_default() as f32,
             timestamp_us: number_property(&data, "timestampUs")
                 .unwrap_or_default()
@@ -367,23 +473,8 @@ fn handle_worker_message(
     }
 }
 
-fn string_property(value: &JsValue, name: &str) -> Option<String> {
-    Reflect::get(value, &JsValue::from_str(name))
-        .ok()
-        .and_then(|value| value.as_string())
-}
-
-fn number_property(value: &JsValue, name: &str) -> Option<f64> {
-    Reflect::get(value, &JsValue::from_str(name))
-        .ok()
-        .and_then(|value| value.as_f64())
-}
-
-fn bool_property(value: &JsValue, name: &str) -> Option<bool> {
-    Reflect::get(value, &JsValue::from_str(name))
-        .ok()
-        .and_then(|value| value.as_bool())
-}
+mod properties;
+use properties::{bool_property, number_property, string_property};
 
 fn set_property(object: &Object, name: &str, value: JsValue) -> Result<(), MicrophoneError> {
     Reflect::set(object, &JsValue::from_str(name), &value)

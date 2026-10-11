@@ -1,44 +1,30 @@
-//! Контракт подавления шума и платформенные реализации.
+//! Алгоритмы подавления шума и сохраняемый выбор пользователя.
 
+mod dsp;
 mod mode;
+mod runtime;
+pub(crate) use runtime::RuntimeSwitch;
 mod platform;
+pub(super) use dsp::Processor;
+pub(crate) use dsp::StreamProcessor;
 pub(crate) use mode::DenoiseMode;
 
-use platform::Processor as PlatformProcessor;
-
-/// Обработчик кадров микрофона, принадлежащий encoder worker-сессии.
-pub(super) struct Processor(Implementation);
-
-enum Implementation {
-    Platform(PlatformProcessor),
-}
-
-impl Processor {
-    /// Указывает, доступен ли denoiser на текущей выбранной сборке.
-    pub(super) fn available() -> bool {
-        PlatformProcessor::available()
-    }
-
-    /// Создаёт чистое состояние DSP для новой encoder-сессии.
-    pub(super) fn new() -> Self {
-        Self(implementation())
-    }
-
-    /// Обрабатывает один 10 мс кадр в нормализованной float PCM.
-    pub(super) fn process(&mut self, frame: &mut [f32]) -> Result<(), &'static str> {
-        match &mut self.0 {
-            Implementation::Platform(processor) => processor.process(frame),
-        }
-    }
-}
-
+/// Указывает, доступен ли RNNoise на текущей платформе.
 pub(crate) fn available() -> bool {
     Processor::available()
 }
 
-fn implementation() -> Implementation {
-    Implementation::Platform(PlatformProcessor::new())
+/// Возвращает начальный режим только для отсутствующей настройки.
+pub(crate) fn default_mode() -> DenoiseMode {
+    platform::default_mode()
 }
 
-#[cfg(test)]
-mod tests;
+/// Указывает, доступен ли отдельный режим встроенного browser-шумоподавления.
+pub(crate) fn browser_available() -> bool {
+    platform::browser_available()
+}
+
+/// Нормализует сохранённый выбор относительно доступных алгоритмов этой сборки.
+pub(crate) fn supported_mode(mode: DenoiseMode) -> DenoiseMode {
+    mode.supported(available(), browser_available())
+}

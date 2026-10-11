@@ -67,8 +67,8 @@ fn live_default_capture_starts_and_stops_without_saving_audio() {
         .expect("capture stopped");
     worker.join().expect("worker joined");
     let captured = captured.expect("PCM received");
-    assert!(!captured.is_empty());
-    assert!(captured.iter().all(|sample| sample.is_finite()));
+    assert!(!captured.samples.is_empty());
+    assert!(captured.samples.iter().all(|sample| sample.is_finite()));
 }
 
 #[test]

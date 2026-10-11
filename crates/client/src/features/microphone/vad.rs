@@ -23,6 +23,7 @@ impl VoiceActivityDetector {
                 }
             },
             threshold: config.vad_threshold,
+            neural_threshold: config.neural_vad_threshold,
             activation_delay_us: config.vad_activation_delay_us,
             release_delay_us: config.vad_release_delay_us,
         };
@@ -33,13 +34,18 @@ impl VoiceActivityDetector {
         }
     }
 
-    /// Обновляет detector одним level sample.
-    pub(crate) fn update(&mut self, rms: f32, duration_us: u32) -> bool {
-        self.update_with_key(rms, duration_us, false)
-    }
-
-    /// Применяет удержание клавиши; PTT не зависит от RMS и задержек VAD.
-    pub(crate) fn update_with_key(&mut self, rms: f32, duration_us: u32, held: bool) -> bool {
+    /// Использует вероятность речи RNNoise вместо RMS, если обработчик её предоставил.
+    ///
+    /// Вероятность лежит в диапазоне 0–1 и имеет независимый порог. Смена источника
+    /// сбрасывает накопленные задержки, сохраняя настройки задержек и режим активации.
+    pub(crate) fn update_with_speech(
+        &mut self,
+        rms: f32,
+        speech_probability: Option<f32>,
+        duration_us: u32,
+        held: bool,
+    ) -> bool {
+        self.refresh_config();
         if self.config.activation_mode == MicrophoneActivationMode::PushToTalk {
             if held {
                 self.ptt_gate.recover(false);
@@ -49,13 +55,45 @@ impl VoiceActivityDetector {
             }
             self.ptt_gate.active()
         } else {
-            self.detector.update(rms, duration_us)
+            self.detector
+                .update_with_speech(rms, speech_probability, duration_us)
         }
     }
 
-    /// Возвращает настройки микрофона.
-    pub(crate) fn config(&self) -> &MicrophoneConfig {
-        &self.config
+    fn refresh_config(&mut self) {
+        let Some(live) = &self.config.activation_live else {
+            return;
+        };
+        let next = *live.lock().unwrap_or_else(|error| error.into_inner());
+        if self.config.activation_mode == next.mode
+            && self.config.vad_threshold == next.threshold
+            && self.config.neural_vad_threshold == next.neural_threshold
+            && self.config.vad_activation_delay_us == next.activation_delay_us
+            && self.config.vad_release_delay_us == next.release_delay_us
+        {
+            return;
+        }
+        self.config.activation_mode = next.mode;
+        self.config.vad_threshold = next.threshold;
+        self.config.neural_vad_threshold = next.neural_threshold;
+        self.config.vad_activation_delay_us = next.activation_delay_us;
+        self.config.vad_release_delay_us = next.release_delay_us;
+        self.detector.reconfigure(VoiceActivationConfig {
+            mode: if next.mode == MicrophoneActivationMode::AlwaysActive {
+                CoreActivationMode::AlwaysActive
+            } else {
+                CoreActivationMode::VoiceActivated
+            },
+            threshold: next.threshold,
+            neural_threshold: next.neural_threshold,
+            activation_delay_us: next.activation_delay_us,
+            release_delay_us: next.release_delay_us,
+        });
+    }
+
+    /// Возвращает источник и фактический порог текущей активации.
+    pub(crate) fn activation_diagnostics(&self) -> (&'static str, f32) {
+        self.detector.activation_diagnostics()
     }
 
     /// Возвращает текущее состояние gate.

@@ -14,6 +14,7 @@ use super::provider::{ActiveCapture, MicrophoneCommand};
 use super::storage;
 use crate::features::toast::ToastHandle;
 
+mod denoise;
 mod events;
 pub(super) use events::{microphone_callbacks, status_from_error};
 
@@ -32,9 +33,20 @@ pub(super) struct MicrophoneRuntime {
     pub(super) recording_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     pub(super) push_to_talk_key: Signal<super::push_to_talk::PushToTalkKey>,
     pub(super) activation_mode: Signal<super::backend::MicrophoneActivationMode>,
+    pub(super) activation_runtime:
+        std::sync::Arc<std::sync::Mutex<super::backend::ActivationConfig>>,
     pub(super) vad_threshold_percent: Signal<u32>,
+    /// Независимый сохраняемый порог вероятности речи RNNoise.
+    pub(super) neural_vad_threshold_percent: Signal<u32>,
     pub(super) denoise_mode: Signal<super::denoise::DenoiseMode>,
-    pub(super) denoise_runtime: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub(super) denoise_pending: Signal<bool>,
+    /// Реактивный статус отказа текущего DSP, отдельный от сохраняемого выбора.
+    pub(super) denoise_failed: Signal<bool>,
+    /// Таймер операции denoise; управляемое время позволяет проверять отмену без внешнего runtime.
+    pub(super) denoise_timeout: fn() -> futures_util::future::LocalBoxFuture<'static, ()>,
+    /// Отмена ожидающего изменения при смене поколения сессии.
+    pub(super) denoise_cancel: Rc<std::cell::RefCell<Option<futures_channel::oneshot::Sender<()>>>>,
+    pub(super) denoise_runtime: std::sync::Arc<super::denoise::RuntimeSwitch>,
     pub(super) active_capture: Signal<ActiveCapture>,
     pub(super) active_on_frame: Signal<Option<MicrophoneFrameCallback>>,
     pub(super) active_uplink: Signal<Option<MicrophoneUplinkConfig>>,
@@ -56,6 +68,7 @@ pub(super) async fn run_microphone_runtime(
                 uplink,
             } => {
                 if operation_is_current(&runtime, operation_generation) {
+                    denoise::cancel(&runtime);
                     start_capture(
                         runtime.clone(),
                         operation_generation,
@@ -72,6 +85,7 @@ pub(super) async fn run_microphone_runtime(
                 uplink,
             } => {
                 if operation_is_current(&runtime, operation_generation) {
+                    denoise::cancel(&runtime);
                     restart_capture(
                         runtime.clone(),
                         operation_generation,
@@ -85,7 +99,24 @@ pub(super) async fn run_microphone_runtime(
                 operation_generation,
             } => {
                 if operation_is_current(&runtime, operation_generation) {
+                    denoise::cancel(&runtime);
                     stop_capture(runtime.clone());
+                }
+            }
+            MicrophoneCommand::SetActivation { config } => {
+                let session = runtime.session.peek().clone();
+                if let Some(session) = session
+                    && let Err(error) = session.set_activation_config(config)
+                {
+                    warn!(%error, "failed to update live microphone activation");
+                }
+            }
+            MicrophoneCommand::SetDenoise {
+                mode,
+                operation_generation,
+            } => {
+                if operation_is_current(&runtime, operation_generation) {
+                    denoise::apply(runtime.clone(), mode);
                 }
             }
             MicrophoneCommand::SetBitrate { bitrate_bps } => {
@@ -114,16 +145,20 @@ fn start_capture(
         "starting microphone capture"
     );
     prepare_capture_state(&runtime, on_frame.clone(), capture, uplink.clone());
+    runtime.denoise_runtime.store(
+        *runtime.denoise_mode.peek() == super::denoise::DenoiseMode::Rnnoise,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    let mut failed = runtime.denoise_failed;
+    failed.set(false);
     let config = capture_config(&runtime);
 
     spawn(async move {
         let callbacks = microphone_callbacks(
             on_frame.clone(),
-            runtime.level,
-            runtime.level_active,
-            runtime.status,
+            runtime.clone(),
+            operation_generation,
             uplink.clone(),
-            runtime.toast,
         );
         match runtime.backend.start(config, callbacks).await {
             Ok(next_session) => {
@@ -134,6 +169,13 @@ fn start_capture(
                     }
                     return;
                 }
+                let activation = *runtime
+                    .activation_runtime
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                if let Err(error) = next_session.set_activation_config(activation) {
+                    warn!(%error, "failed to apply current microphone activation after start");
+                }
                 let input_gain = gain_from_percent(*runtime.input_volume_percent.peek());
                 if let Err(error) = next_session.set_input_gain(input_gain) {
                     next_session.stop_immediately();
@@ -143,6 +185,13 @@ fn start_capture(
                     let next_status = status_from_error(error.clone());
                     warn!(%error, input_gain, "failed to apply current microphone input gain after start");
                     clear_failed_capture(&runtime, next_status);
+                    return;
+                }
+                if !operation_is_current(&runtime, operation_generation) {
+                    next_session.stop_immediately();
+                    if let Err(error) = next_session.stop().await {
+                        warn!(%error, "failed to stop stale microphone after noise suppression update");
+                    }
                     return;
                 }
                 let mut session = runtime.session;
@@ -178,6 +227,12 @@ fn restart_capture(
     let previous_session = runtime.session.peek().clone();
     stop_session_immediately(previous_session.as_ref());
     prepare_capture_state(&runtime, on_frame.clone(), capture, uplink.clone());
+    runtime.denoise_runtime.store(
+        *runtime.denoise_mode.peek() == super::denoise::DenoiseMode::Rnnoise,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    let mut failed = runtime.denoise_failed;
+    failed.set(false);
     let config = capture_config(&runtime);
 
     spawn(async move {
@@ -192,11 +247,9 @@ fn restart_capture(
 
         let callbacks = microphone_callbacks(
             on_frame.clone(),
-            runtime.level,
-            runtime.level_active,
-            runtime.status,
+            runtime.clone(),
+            operation_generation,
             uplink.clone(),
-            runtime.toast,
         );
         match runtime.backend.start(config, callbacks).await {
             Ok(next_session) => {
@@ -207,6 +260,13 @@ fn restart_capture(
                     }
                     return;
                 }
+                let activation = *runtime
+                    .activation_runtime
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                if let Err(error) = next_session.set_activation_config(activation) {
+                    warn!(%error, "failed to apply current microphone activation after start");
+                }
                 let input_gain = gain_from_percent(*runtime.input_volume_percent.peek());
                 if let Err(error) = next_session.set_input_gain(input_gain) {
                     next_session.stop_immediately();
@@ -216,6 +276,13 @@ fn restart_capture(
                     let next_status = status_from_error(error.clone());
                     warn!(%error, input_gain, "failed to apply current microphone input gain after restart");
                     clear_failed_capture(&runtime, next_status);
+                    return;
+                }
+                if !operation_is_current(&runtime, operation_generation) {
+                    next_session.stop_immediately();
+                    if let Err(error) = next_session.stop().await {
+                        warn!(%error, "failed to stop stale microphone after noise suppression update");
+                    }
                     return;
                 }
                 let mut session = runtime.session;
@@ -329,10 +396,14 @@ fn capture_config(runtime: &MicrophoneRuntime) -> MicrophoneConfig {
         input_gain: gain_from_percent(*runtime.input_volume_percent.peek()),
         denoise_enabled: *runtime.denoise_mode.peek() == super::denoise::DenoiseMode::Rnnoise,
         denoise_enabled_live: Some(runtime.denoise_runtime.clone()),
+        browser_denoise_enabled: *runtime.denoise_mode.peek()
+            == super::denoise::DenoiseMode::Browser,
         activation_mode: *runtime.activation_mode.peek(),
+        activation_live: Some(runtime.activation_runtime.clone()),
         push_to_talk_key: *runtime.push_to_talk_key.peek(),
         recording_generation: runtime.recording_generation.clone(),
         vad_threshold: threshold_from_percent(*runtime.vad_threshold_percent.peek()),
+        neural_vad_threshold: *runtime.neural_vad_threshold_percent.peek() as f32 / 100.0,
         bitrate_bps: *runtime.target_bitrate_bps.peek(),
         ..MicrophoneConfig::default()
     }
@@ -373,6 +444,7 @@ pub(super) fn default_level() -> MicrophoneLevel {
     MicrophoneLevel {
         rms: 0.0,
         active: false,
+        source: "RMS",
         threshold: MicrophoneConfig::default().vad_threshold,
         timestamp_us: 0,
     }
@@ -403,4 +475,9 @@ pub(super) fn persist_input_device(device_id: Option<&str>, label: Option<&str>)
             );
         }
     }
+}
+
+/// Ограничивает ожидание смены денойзера через платформенный async runtime.
+pub(super) fn denoise_timeout() -> futures_util::future::LocalBoxFuture<'static, ()> {
+    Box::pin(crate::features::runtime::sleep_ms(3_000))
 }

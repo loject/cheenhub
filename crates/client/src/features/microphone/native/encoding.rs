@@ -113,6 +113,7 @@ fn run_encoder_worker(
     let mut denoiser = super::super::denoise::Processor::new();
     let mut denoiser_enabled_last_frame = false;
     let mut denoise_warning_sent = false;
+    let mut denoise_revision = None;
     let mut pending = Vec::with_capacity(frame_samples * 2);
     let mut sequence = 0_u64;
     let mut captured_samples = 0_u64;
@@ -126,12 +127,13 @@ fn run_encoder_worker(
         if !super::pcm::accepts_epoch(chunk.epoch, epoch, ptt) {
             pending.clear();
             if detector.is_active() {
-                detector.update_with_key(0.0, OPUS_FRAME_DURATION_US, false);
+                detector.update_with_speech(0.0, None, OPUS_FRAME_DURATION_US, false);
                 send_event(
                     &mut event_sender,
                     NativeMicrophoneEvent::Level(MicrophoneLevel {
                         rms: 0.0,
                         active: false,
+                        source: "RMS",
                         threshold: config.vad_threshold,
                         timestamp_us: timestamp_us(captured_samples, config.sample_rate_hz),
                     }),
@@ -172,30 +174,43 @@ fn run_encoder_worker(
                 );
             }
 
-            let denoise_enabled = config
+            let denoise_snapshot = config
                 .denoise_enabled_live
                 .as_ref()
-                .map_or(config.denoise_enabled, |enabled| {
-                    enabled.load(Ordering::Relaxed)
-                });
-            let denoise_failed = apply_denoising(
+                .map(|runtime| runtime.snapshot());
+            if denoise_snapshot != denoise_revision {
+                denoise_warning_sent = false;
+                denoise_revision = denoise_snapshot;
+            }
+            let denoise_enabled =
+                denoise_snapshot.map_or(config.denoise_enabled, |snapshot| snapshot & 1 != 0);
+            let denoise_was_enabled = denoiser_enabled_last_frame;
+            let (speech_probability, denoise_failed) = apply_denoising(
                 &mut denoiser,
                 &mut frame,
                 denoise_enabled,
                 &mut denoiser_enabled_last_frame,
             );
+            if denoise_was_enabled != denoiser_enabled_last_frame {
+                debug!(
+                    kind = "vad_source_changed",
+                    rnnoise = speech_probability.is_some(),
+                    "native microphone voice detection source updated"
+                );
+            }
+            let mut current_failure = denoise_failed;
             if denoise_failed {
                 warn!(
                     kind = "denoise_failed",
-                    "Windows microphone denoiser failed; passing through captured PCM"
+                    "native microphone RNNoise failed; passing through captured PCM"
                 );
                 if let Some(enabled) = &config.denoise_enabled_live {
-                    enabled.store(false, Ordering::Relaxed);
+                    current_failure = enabled.fail(denoise_snapshot.unwrap_or(0));
                 }
             }
             if should_emit_denoise_warning(
                 denoise_enabled,
-                denoise_failed,
+                current_failure,
                 &mut denoise_warning_sent,
             ) {
                 let _ = event_sender.unbounded_send(NativeMicrophoneEvent::DenoiseFailed);
@@ -211,6 +226,7 @@ fn run_encoder_worker(
                 monitor.as_ref().zip(pending_epoch),
                 PcmFrame {
                     samples: frame,
+                    speech_probability,
                     sequence,
                     timestamp_us,
                     closed: closed.clone(),
@@ -223,37 +239,25 @@ fn run_encoder_worker(
     Ok(())
 }
 
-fn process_denoiser_frame(
-    denoiser: &mut super::super::denoise::Processor,
-    original: &[f32],
-) -> Result<Vec<f32>, &'static str> {
-    let mut processed = original.to_vec();
-    denoiser.process(&mut processed)?;
-    Ok(processed)
-}
-
 fn apply_denoising(
     denoiser: &mut super::super::denoise::Processor,
-    frame: &mut Vec<f32>,
+    frame: &mut [f32],
     enabled: bool,
     enabled_last_frame: &mut bool,
-) -> bool {
+) -> (Option<f32>, bool) {
     if !enabled {
         *enabled_last_frame = false;
-        return false;
+        return (None, false);
     }
     if !*enabled_last_frame {
         *denoiser = super::super::denoise::Processor::new();
     }
     *enabled_last_frame = true;
-    match process_denoiser_frame(denoiser, frame) {
-        Ok(processed) => {
-            *frame = processed;
-            false
-        }
+    match denoiser.process(frame) {
+        Ok(speech_probability) => (speech_probability, false),
         Err(_) => {
             *enabled_last_frame = false;
-            true
+            (None, true)
         }
     }
 }
@@ -277,17 +281,6 @@ fn sanitize_pcm(frame: &mut [f32]) {
     }
 }
 
-#[cfg(test)]
-fn captured_pcm_on_denoise_error(
-    denoiser: &mut super::super::denoise::Processor,
-    original: &[f32],
-) -> (Vec<f32>, bool) {
-    match process_denoiser_frame(denoiser, original) {
-        Ok(processed) => (processed, false),
-        Err(_) => (original.to_vec(), true),
-    }
-}
-
 fn create_encoder(config: &MicrophoneConfig) -> Result<Encoder, MicrophoneError> {
     let mut encoder = Encoder::new(config.sample_rate_hz, Channels::Mono, Application::Voip)
         .map_err(opus_error)?;
@@ -303,6 +296,7 @@ fn create_encoder(config: &MicrophoneConfig) -> Result<Encoder, MicrophoneError>
 
 struct PcmFrame {
     samples: Vec<f32>,
+    speech_probability: Option<f32>,
     sequence: u64,
     timestamp_us: u64,
     closed: Arc<AtomicBool>,
@@ -322,6 +316,7 @@ fn handle_pcm_frame(
 ) -> Result<(), MicrophoneError> {
     let PcmFrame {
         samples: mut frame,
+        speech_probability,
         sequence,
         timestamp_us,
         closed,
@@ -330,12 +325,14 @@ fn handle_pcm_frame(
     apply_input_gain(&mut frame, input_gain);
     let rms = rms_level(&frame);
     let previous_active = detector.is_active();
-    let active = detector.update_with_key(rms, OPUS_FRAME_DURATION_US, held);
+    let active = detector.update_with_speech(rms, speech_probability, OPUS_FRAME_DURATION_US, held);
     if active != previous_active {
         debug!(
             rms,
+            speech_probability,
             active,
-            threshold = detector.config().vad_threshold,
+            source = detector.activation_diagnostics().0,
+            threshold = detector.activation_diagnostics().1,
             timestamp_us,
             "native microphone voice activation changed"
         );
@@ -346,7 +343,8 @@ fn handle_pcm_frame(
         NativeMicrophoneEvent::Level(MicrophoneLevel {
             rms,
             active,
-            threshold: detector.config().vad_threshold,
+            source: detector.activation_diagnostics().0,
+            threshold: detector.activation_diagnostics().1,
             timestamp_us,
         }),
     )?;

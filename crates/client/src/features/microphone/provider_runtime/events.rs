@@ -23,14 +23,12 @@ struct LevelEmissionState {
 
 pub(in crate::features::microphone) fn microphone_callbacks(
     on_frame: MicrophoneFrameCallback,
-    level: Signal<MicrophoneLevel>,
-    level_active: Signal<bool>,
-    status: Signal<MicrophoneStatus>,
+    runtime: super::MicrophoneRuntime,
+    generation: u64,
     uplink: Option<crate::features::microphone::backend::MicrophoneUplinkConfig>,
-    toast: ToastHandle,
 ) -> crate::features::microphone::backend::MicrophoneCallbacks {
     let (events, receiver) = mpsc::unbounded();
-    spawn_microphone_callback_relay(receiver, on_frame, level, level_active, status, toast);
+    spawn_microphone_callback_relay(receiver, on_frame, runtime, generation);
     let frame_events = events.clone();
     let error_events = events.clone();
     let warning_events = events.clone();
@@ -54,14 +52,19 @@ pub(in crate::features::microphone) fn microphone_callbacks(
 fn spawn_microphone_callback_relay(
     mut receiver: mpsc::UnboundedReceiver<MicrophoneCallbackEvent>,
     on_frame: MicrophoneFrameCallback,
-    mut level: Signal<MicrophoneLevel>,
-    mut level_active: Signal<bool>,
-    mut status: Signal<MicrophoneStatus>,
-    toast: ToastHandle,
+    mut runtime: super::MicrophoneRuntime,
+    generation: u64,
 ) {
     spawn(async move {
+        let mut level = runtime.level;
+        let mut level_active = runtime.level_active;
+        let mut status = runtime.status;
+        let toast = runtime.toast;
         let emission = Rc::new(RefCell::new(None::<LevelEmissionState>));
         while let Some(event) = receiver.next().await {
+            if !super::operation_is_current(&runtime, generation) {
+                continue;
+            }
             match event {
                 MicrophoneCallbackEvent::Frame(frame) => {
                     if frame.can_send() {
@@ -71,6 +74,12 @@ fn spawn_microphone_callback_relay(
                 MicrophoneCallbackEvent::Level(next_level) => {
                     if should_emit_level(&emission, next_level) {
                         if *level_active.peek() != next_level.active {
+                            debug!(
+                                source = next_level.source,
+                                threshold = next_level.threshold,
+                                active = next_level.active,
+                                "microphone activation changed"
+                            );
                             level_active.set(next_level.active);
                         }
                         level.set(next_level);
@@ -82,10 +91,16 @@ fn spawn_microphone_callback_relay(
                     reset_level(&mut level, &mut level_active);
                 }
                 MicrophoneCallbackEvent::Warning(message) => {
+                    if !runtime.denoise_runtime.failed() {
+                        continue;
+                    }
                     warn!(
                         kind = "denoise_failed",
                         "microphone DSP degraded; capture remains active"
                     );
+                    if runtime.denoise_runtime.failed() {
+                        runtime.denoise_failed.set(true);
+                    }
                     apply_warning(message, &toast);
                 }
             }

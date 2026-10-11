@@ -65,9 +65,20 @@ struct BrowserMicrophoneSession {
     _error_closure: Option<Closure<dyn FnMut(JsValue)>>,
     bitrate_bps: Rc<Cell<u32>>,
     input_gain: Rc<Cell<f32>>,
+    denoise_control: super::browser_denoise::control::BrowserDenoiseControl,
 }
 
 impl MicrophoneSession for BrowserMicrophoneSession {
+    fn set_activation_config(
+        &self,
+        config: super::backend::ActivationConfig,
+    ) -> Result<(), MicrophoneError> {
+        if let Some(uplink) = &self.uplink {
+            uplink.set_activation_config(config)?;
+        }
+        Ok(())
+    }
+
     fn stop_immediately(&self) {
         if self.capture_released.replace(true) {
             return;
@@ -99,13 +110,16 @@ impl MicrophoneSession for BrowserMicrophoneSession {
         let encoder = self.encoder.clone();
         let context = self.context.clone();
         async move {
-            if let Some(encoder) = encoder {
-                encoder.close().map_err(microphone_error)?;
-            }
-            JsFuture::from(context.close().map_err(microphone_error)?)
-                .await
-                .map_err(microphone_error)?;
-            Ok(())
+            let encoder_result = encoder
+                .map(|encoder| encoder.close().map_err(microphone_error))
+                .transpose();
+            finish_cleanup(encoder_result.map(|_| ()), async move {
+                JsFuture::from(context.close().map_err(microphone_error)?)
+                    .await
+                    .map_err(microphone_error)?;
+                Ok(())
+            })
+            .await
         }
         .boxed_local()
     }
@@ -119,6 +133,14 @@ impl MicrophoneSession for BrowserMicrophoneSession {
             uplink.set_bitrate_bps(bitrate_bps);
         }
         async move { Ok(()) }.boxed_local()
+    }
+
+    fn set_denoise_mode(
+        &self,
+        mode: super::denoise::DenoiseMode,
+        runtime: std::sync::Arc<super::denoise::RuntimeSwitch>,
+    ) -> LocalBoxFuture<'static, Result<(), MicrophoneError>> {
+        self.denoise_control.set(mode, runtime)
     }
 
     fn set_input_gain(&self, input_gain: f32) -> Result<(), MicrophoneError> {
@@ -162,6 +184,13 @@ async fn start_browser_session(
     verify_encoder_support(&context, &browser_encoder_config).await?;
     let stream = request_stream_or_close_context(&context, config.clone()).await?;
     let track = first_track_or_cleanup(&stream, &context).await?;
+    if let Err(error) =
+        super::browser_capture::verify_noise_suppression(&track, config.browser_denoise_enabled)
+    {
+        stop_media_stream(&stream);
+        close_context_lossy(&context).await;
+        return Err(error);
+    }
     log_selected_audio_track(&track, config.device_id.as_deref());
 
     let source = match context.create_media_stream_source(&stream) {
@@ -289,7 +318,20 @@ async fn start_browser_session(
         output_connected = worklet_output_connected(),
         "browser microphone audio worklet capture started"
     );
+    let denoise_control = super::browser_denoise::control::BrowserDenoiseControl::new(
+        track.clone(),
+        uplink.clone(),
+        capture_released.clone(),
+        if config.browser_denoise_enabled {
+            super::denoise::DenoiseMode::Browser
+        } else if config.denoise_enabled {
+            super::denoise::DenoiseMode::Rnnoise
+        } else {
+            super::denoise::DenoiseMode::Off
+        },
+    );
     Ok(Rc::new(BrowserMicrophoneSession {
+        denoise_control,
         encoder,
         context,
         track,
@@ -433,3 +475,13 @@ fn disconnect_audio_node(node: &AudioNode) {
 fn microphone_error(error: JsValue) -> MicrophoneError {
     MicrophoneError::new(js_error_message(error))
 }
+
+async fn finish_cleanup(
+    encoder_result: Result<(), MicrophoneError>,
+    context_close: impl std::future::Future<Output = Result<(), MicrophoneError>>,
+) -> Result<(), MicrophoneError> {
+    context_close.await.and(encoder_result)
+}
+
+#[cfg(test)]
+mod tests;

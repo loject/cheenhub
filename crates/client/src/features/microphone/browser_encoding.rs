@@ -119,6 +119,7 @@ pub(super) fn microphone_message_closure(
     input_gain: Rc<Cell<f32>>,
 ) -> Closure<dyn FnMut(MessageEvent)> {
     let detector = Rc::new(RefCell::new(VoiceActivityDetector::new(config.clone())));
+    let denoiser = RefCell::new(super::browser_denoise::BrowserDenoiser::new(config.clone()));
     let diagnostics = Rc::new(MicrophoneWorkletDiagnostics::new());
     Closure::wrap(Box::new(move |event: MessageEvent| {
         if closed.get() {
@@ -128,6 +129,7 @@ pub(super) fn microphone_message_closure(
             event.data(),
             WorkletMessageContext {
                 encoder: &encoder,
+                denoiser: &denoiser,
                 detector: &detector,
                 callbacks: &callbacks,
                 sample_rate_hz,
@@ -246,14 +248,25 @@ fn handle_worklet_message(
             duration_us,
         });
     let mut samples = chunk.samples;
+    let speech_probability = context.denoiser.borrow_mut().process(
+        &mut samples,
+        context.sample_rate_hz,
+        context.callbacks,
+    );
     apply_input_gain(&mut samples, context.input_gain);
     let rms = rms_level(&samples);
     let previous_active = context.detector.borrow().is_active();
-    let active = context.detector.borrow_mut().update(rms, duration_us);
+    let active = context.detector.borrow_mut().update_with_speech(
+        rms,
+        speech_probability,
+        duration_us,
+        false,
+    );
     if active != previous_active {
         debug!(
             rms,
             active,
+            source = context.detector.borrow().activation_diagnostics().0,
             threshold = detector_threshold(context.detector),
             timestamp_us = chunk.timestamp_us,
             "microphone voice activation changed"
@@ -262,6 +275,7 @@ fn handle_worklet_message(
     (context.callbacks.on_level)(MicrophoneLevel {
         rms,
         active,
+        source: context.detector.borrow().activation_diagnostics().0,
         threshold: detector_threshold(context.detector),
         timestamp_us: chunk.timestamp_us,
     });
@@ -335,6 +349,7 @@ fn handle_worklet_message(
 
 struct WorkletMessageContext<'a> {
     encoder: &'a AudioEncoder,
+    denoiser: &'a RefCell<super::browser_denoise::BrowserDenoiser>,
     detector: &'a Rc<RefCell<VoiceActivityDetector>>,
     callbacks: &'a MicrophoneCallbacks,
     sample_rate_hz: u32,
@@ -440,7 +455,7 @@ fn audio_data_from_samples(
 }
 
 fn detector_threshold(detector: &Rc<RefCell<VoiceActivityDetector>>) -> f32 {
-    detector.borrow().config().vad_threshold
+    detector.borrow().activation_diagnostics().1
 }
 
 fn elapsed_us_since(started_at: &Option<Instant>) -> u128 {

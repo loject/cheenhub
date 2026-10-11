@@ -119,6 +119,7 @@ impl MicrophoneHandle {
             return;
         }
 
+        let previous_mode = *self.activation_mode.peek();
         let status = self.status_untracked();
         info!(
             ?status,
@@ -128,7 +129,12 @@ impl MicrophoneHandle {
         storage::save_activation_mode(mode);
         let mut activation_mode = self.activation_mode;
         activation_mode.set(mode);
-        self.restart_if_active(status, "microphone activation mode change");
+        self.update_live_activation();
+        if previous_mode == MicrophoneActivationMode::PushToTalk
+            || mode == MicrophoneActivationMode::PushToTalk
+        {
+            self.restart_if_active(status, "push-to-talk activation mode change");
+        }
     }
 
     /// Возвращает клавишу глобального удержания для настроек.
@@ -166,12 +172,23 @@ impl MicrophoneHandle {
 
     /// Возвращает порог voice activation в процентах.
     pub(crate) fn vad_threshold_percent(&self) -> u32 {
-        (self.vad_threshold_percent)()
+        if self.neural_vad_active() {
+            (self.neural_vad_threshold_percent)()
+        } else {
+            (self.vad_threshold_percent)()
+        }
     }
 
     /// Обновляет порог voice activation в процентах.
     pub(crate) fn set_vad_threshold_percent(&self, threshold_percent: u32) {
         let threshold_percent = threshold_percent.min(100);
+        if self.neural_vad_active() {
+            storage::save_neural_vad_threshold_percent(threshold_percent);
+            let mut threshold = self.neural_vad_threshold_percent;
+            threshold.set(threshold_percent);
+            self.update_live_activation();
+            return;
+        }
         if *self.vad_threshold_percent.peek() == threshold_percent {
             return;
         }
@@ -185,7 +202,28 @@ impl MicrophoneHandle {
         storage::save_vad_threshold_percent(threshold_percent);
         let mut vad_threshold = self.vad_threshold_percent;
         vad_threshold.set(threshold_percent);
-        self.restart_if_active(status, "microphone vad threshold change");
+        self.update_live_activation();
+    }
+
+    fn update_live_activation(&self) {
+        let mut live = self
+            .activation_runtime
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        live.mode = *self.activation_mode.peek();
+        live.threshold =
+            super::provider_runtime::threshold_from_percent(*self.vad_threshold_percent.peek());
+        live.neural_threshold = *self.neural_vad_threshold_percent.peek() as f32 / 100.0;
+        let config = *live;
+        drop(live);
+        info!(mode = ?config.mode, threshold = config.threshold, "updating microphone activation without restarting capture");
+        if self
+            .commands
+            .unbounded_send(super::provider::MicrophoneCommand::SetActivation { config })
+            .is_err()
+        {
+            warn!("microphone runtime activation command receiver is unavailable");
+        }
     }
 
     fn restart_callback(

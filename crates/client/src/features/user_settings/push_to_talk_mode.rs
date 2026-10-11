@@ -11,10 +11,10 @@ pub(super) fn PushToTalkMode() -> Element {
     let selected = mic.activation_mode() == MicrophoneActivationMode::PushToTalk;
     rsx! {
         button { r#type: "button", disabled: !supported, aria_pressed: selected,
-            class: super::sound_section::activation_button_class(selected),
+            class: if supported { super::sound_section::activation_button_class(selected) } else { "rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 text-left opacity-50 cursor-not-allowed" },
             onclick: move |_| mic.set_activation_mode(MicrophoneActivationMode::PushToTalk),
             div { class: "font-medium", "Push-to-talk" }
-            div { class: "mt-1 text-[12px] leading-4 text-zinc-400", "Говорите, удерживая кнопку клавиатуры или мыши." }
+            div { class: "mt-1 text-[12px] leading-4 text-zinc-400", if supported { "Говорите, удерживая кнопку клавиатуры или мыши." } else { "Недоступно на этой платформе." } }
         }
     }
 }

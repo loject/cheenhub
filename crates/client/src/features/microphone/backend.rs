@@ -52,6 +52,21 @@ pub(crate) enum MicrophoneActivationMode {
     PushToTalk,
 }
 
+/// Живые параметры gate микрофона; изменение не требует новой capture/uplink-сессии.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ActivationConfig {
+    /// Режим передачи; переходы к Push-to-talk требуют отдельного capture setup.
+    pub(crate) mode: MicrophoneActivationMode,
+    /// Нормализованный RMS-порог, используемый без RNNoise.
+    pub(crate) threshold: f32,
+    /// Порог вероятности речи RNNoise, независимый от RMS.
+    pub(crate) neural_threshold: f32,
+    /// Длительность сигнала для открытия gate, в микросекундах.
+    pub(crate) activation_delay_us: u32,
+    /// Удержание gate после окончания речи, в микросекундах.
+    pub(crate) release_delay_us: u32,
+}
+
 /// Microphone capture and encoding configuration.
 #[derive(Debug, Clone)]
 pub(crate) struct MicrophoneConfig {
@@ -65,12 +80,16 @@ pub(crate) struct MicrophoneConfig {
     pub(crate) bitrate_bps: u32,
     /// Audio activation mode used before encoding.
     pub(crate) activation_mode: MicrophoneActivationMode,
+    /// Живые параметры gate текущей сессии; `None` сохраняет стартовую конфигурацию.
+    pub(crate) activation_live: Option<std::sync::Arc<std::sync::Mutex<ActivationConfig>>>,
     /// Проверенная привязка глобального Push-to-talk.
     pub(crate) push_to_talk_key: super::push_to_talk::PushToTalkKey,
     /// Поколение назначения кнопки; используется для паузы capture и отзыва queued frames.
     pub(crate) recording_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// RMS level threshold that opens voice activation.
     pub(crate) vad_threshold: f32,
+    /// Порог вероятности речи RNNoise в диапазоне 0–1.
+    pub(crate) neural_vad_threshold: f32,
     /// Time the level must stay above threshold before activation opens.
     pub(crate) vad_activation_delay_us: u32,
     /// Time activation remains open after the level falls below threshold.
@@ -81,9 +100,11 @@ pub(crate) struct MicrophoneConfig {
     pub(crate) input_gain: f32,
     /// Whether Windows worker DSP is enabled for this capture.
     pub(crate) denoise_enabled: bool,
+    /// Включает встроенный denoiser браузера вместо RNNoise.
+    pub(crate) browser_denoise_enabled: bool,
     /// Worker-owned runtime switch sampled at frame boundaries. A failed DSP clears this without
     /// changing the persisted user preference.
-    pub(crate) denoise_enabled_live: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub(crate) denoise_enabled_live: Option<std::sync::Arc<super::denoise::RuntimeSwitch>>,
 }
 
 impl Default for MicrophoneConfig {
@@ -94,14 +115,17 @@ impl Default for MicrophoneConfig {
             channels: 1,
             bitrate_bps: cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS,
             activation_mode: MicrophoneActivationMode::VoiceActivated,
+            activation_live: None,
             push_to_talk_key: super::push_to_talk::PushToTalkKey::default(),
             recording_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             vad_threshold: 0.02,
+            neural_vad_threshold: 0.5,
             vad_activation_delay_us: 60_000,
             vad_release_delay_us: 250_000,
             device_id: None,
             input_gain: 1.0,
             denoise_enabled: false,
+            browser_denoise_enabled: false,
             denoise_enabled_live: None,
         }
     }
@@ -160,6 +184,8 @@ pub(crate) struct MicrophoneLevel {
     pub(crate) rms: f32,
     /// Whether the activation gate is currently open.
     pub(crate) active: bool,
+    /// Источник порога: RMS или вероятность речи RNNoise.
+    pub(crate) source: &'static str,
     /// Active threshold used for this measurement.
     pub(crate) threshold: f32,
     /// Capture timestamp in microseconds when provided by the backend.
@@ -198,6 +224,26 @@ pub(crate) trait MicrophoneSession {
 
     /// Обновляет linear input gain без перезапуска активного захвата.
     fn set_input_gain(&self, input_gain: f32) -> Result<(), MicrophoneError>;
+
+    /// Обновляет gate отдельного worker; main/native runtime читает общий snapshot.
+    fn set_activation_config(&self, _config: ActivationConfig) -> Result<(), MicrophoneError> {
+        Ok(())
+    }
+
+    /// Обновляет browser capture и worker без перезапуска; native DSP читает atomic.
+    fn set_denoise_mode(
+        &self,
+        mode: super::denoise::DenoiseMode,
+        runtime: std::sync::Arc<super::denoise::RuntimeSwitch>,
+    ) -> LocalBoxFuture<'static, Result<(), MicrophoneError>> {
+        Box::pin(async move {
+            runtime.store(
+                mode == super::denoise::DenoiseMode::Rnnoise,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            Ok(())
+        })
+    }
 }
 
 /// Microphone capture backend.
@@ -235,6 +281,19 @@ impl MicrophoneError {
         }
     }
 
+    /// Отмечает ошибку, после которой platform-сессию необходимо отозвать.
+    pub(crate) fn invalidated(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            kind: MicrophoneErrorKind::Invalidated,
+        }
+    }
+
+    /// Указывает, нельзя ли продолжать работу этой capture-сессии.
+    pub(crate) fn is_invalidated(&self) -> bool {
+        self.kind == MicrophoneErrorKind::Invalidated
+    }
+
     /// Returns whether the user or browser denied microphone access.
     pub(crate) fn is_permission_denied(&self) -> bool {
         self.kind == MicrophoneErrorKind::PermissionDenied
@@ -245,6 +304,7 @@ impl MicrophoneError {
 enum MicrophoneErrorKind {
     PermissionDenied,
     Unavailable,
+    Invalidated,
 }
 
 impl fmt::Display for MicrophoneError {

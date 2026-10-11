@@ -18,6 +18,8 @@ pub(crate) struct VoiceActivationConfig {
     pub(crate) mode: CoreActivationMode,
     /// RMS-порог открытия gate.
     pub(crate) threshold: f32,
+    /// Порог вероятности речи RNNoise в диапазоне 0–1, независимый от RMS.
+    pub(crate) neural_threshold: f32,
     /// Минимальная длительность сигнала выше порога.
     pub(crate) activation_delay_us: u32,
     /// Время удержания gate после падения сигнала.
@@ -28,6 +30,7 @@ pub(crate) struct VoiceActivationConfig {
 #[derive(Debug, Clone)]
 pub(crate) struct VoiceActivityDetector {
     config: VoiceActivationConfig,
+    speech_probability_used: bool,
     active: bool,
     above_threshold_us: u32,
     below_threshold_us: u32,
@@ -38,19 +41,46 @@ impl VoiceActivityDetector {
     pub(crate) fn new(config: VoiceActivationConfig) -> Self {
         Self {
             active: matches!(config.mode, CoreActivationMode::AlwaysActive),
+            speech_probability_used: false,
             config,
             above_threshold_us: 0,
             below_threshold_us: 0,
         }
     }
 
-    /// Обновляет gate одним измерением уровня.
-    pub(crate) fn update(&mut self, rms: f32, duration_us: u32) -> bool {
+    /// Использует отдельный neural-порог для RNNoise либо RMS-порог.
+    ///
+    /// Смена источника сбрасывает только накопленные задержки, сохраняя gate;
+    /// AlwaysActive остаётся открытым. Вероятность задаётся в диапазоне 0–1.
+    pub(crate) fn update_with_speech(
+        &mut self,
+        rms: f32,
+        speech_probability: Option<f32>,
+        duration_us: u32,
+    ) -> bool {
+        let uses_probability = speech_probability.is_some();
+        if uses_probability != self.speech_probability_used {
+            self.speech_probability_used = uses_probability;
+
+            self.above_threshold_us = 0;
+            self.below_threshold_us = 0;
+        }
+        let level = speech_probability.unwrap_or(rms);
         match self.config.mode {
             CoreActivationMode::AlwaysActive => self.active = true,
-            CoreActivationMode::VoiceActivated => self.update_voice_activation(rms, duration_us),
+            CoreActivationMode::VoiceActivated => self.update_voice_activation(level, duration_us),
         }
         self.active
+    }
+
+    /// Обновляет пороги и задержки без сброса gate и накопленных длительностей.
+    ///
+    /// AlwaysActive открывает gate немедленно; возврат к VAD сохраняет его до release delay.
+    pub(crate) fn reconfigure(&mut self, config: VoiceActivationConfig) {
+        if config.mode == CoreActivationMode::AlwaysActive {
+            self.active = true;
+        }
+        self.config = config;
     }
 
     /// Возвращает текущее состояние gate.
@@ -65,9 +95,23 @@ impl VoiceActivityDetector {
         self.config
     }
 
+    /// Возвращает источник и порог активации в шкале последнего обработанного кадра.
+    pub(crate) fn activation_diagnostics(&self) -> (&'static str, f32) {
+        if self.speech_probability_used {
+            ("RNNoise", self.config.neural_threshold)
+        } else {
+            ("RMS", self.config.threshold)
+        }
+    }
+
     /// Обновляет состояние voice activation gate.
     fn update_voice_activation(&mut self, rms: f32, duration_us: u32) {
-        let release_threshold = self.config.threshold * VAD_RELEASE_THRESHOLD_RATIO;
+        let threshold = if self.speech_probability_used {
+            self.config.neural_threshold
+        } else {
+            self.config.threshold
+        };
+        let release_threshold = threshold * VAD_RELEASE_THRESHOLD_RATIO;
         if self.active {
             if rms >= release_threshold {
                 self.below_threshold_us = 0;
@@ -78,7 +122,7 @@ impl VoiceActivityDetector {
                     self.active = false;
                 }
             }
-        } else if rms >= self.config.threshold {
+        } else if rms >= threshold {
             self.above_threshold_us = self.above_threshold_us.saturating_add(duration_us);
             self.below_threshold_us = 0;
             if self.above_threshold_us >= self.config.activation_delay_us {

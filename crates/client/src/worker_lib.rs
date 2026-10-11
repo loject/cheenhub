@@ -4,4 +4,7 @@
 #[path = "features/microphone/core.rs"]
 mod microphone_core;
 
+#[path = "features/microphone/denoise/dsp/mod.rs"]
+mod microphone_denoise;
+
 pub mod workers;

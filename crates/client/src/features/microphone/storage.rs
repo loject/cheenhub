@@ -132,13 +132,12 @@ pub(crate) fn save_vad_threshold_percent(threshold_percent: u32) {
 
 /// Загружает алгоритм, сохраняя выбор из прежнего переключателя.
 pub(crate) fn load_denoise_mode() -> super::denoise::DenoiseMode {
-    let mode = match get::<LocalStorage>(DENOISE_MODE_KEY) {
-        Some(value) => super::denoise::DenoiseMode::from_value(&value),
-        None if get::<LocalStorage>(DENOISE_ENABLED_KEY).as_deref() == Some("true") => {
-            super::denoise::DenoiseMode::Rnnoise
-        }
-        None => super::denoise::DenoiseMode::Off,
-    };
+    let mode = super::denoise::DenoiseMode::from_preferences(
+        get::<LocalStorage>(DENOISE_MODE_KEY).as_deref(),
+        get::<LocalStorage>(DENOISE_ENABLED_KEY).as_deref(),
+        super::denoise::default_mode(),
+    );
+    let mode = super::denoise::supported_mode(mode);
     info!(?mode, "loaded microphone noise suppression mode");
     mode
 }
@@ -195,4 +194,20 @@ where
     S: StorageBacking<Key = String>,
 {
     S::set(key.to_owned(), &Option::<String>::None);
+}
+
+/// Загружает порог вероятности речи RNNoise; RMS-настройка остаётся независимой.
+pub(crate) fn load_neural_vad_threshold_percent() -> u32 {
+    get::<LocalStorage>("cheenhub.microphone.neural_vad_threshold_percent")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(50)
+        .min(100)
+}
+
+/// Сохраняет neural-порог в процентах вероятности речи.
+pub(crate) fn save_neural_vad_threshold_percent(value: u32) {
+    set::<LocalStorage>(
+        "cheenhub.microphone.neural_vad_threshold_percent",
+        &value.min(100).to_string(),
+    );
 }

@@ -124,16 +124,15 @@ fn microphone_track_constraints(config: &MicrophoneConfig) -> MediaTrackConstrai
     let browser_voice_processing = JsValue::from_bool(browser_voice_processing_enabled());
     audio.set_channel_count(&JsValue::from_f64(f64::from(config.channels)));
     audio.set_echo_cancellation(&browser_voice_processing);
-    audio.set_noise_suppression(&browser_voice_processing);
+    let browser_denoise =
+        JsValue::from_bool(config.browser_denoise_enabled && browser_voice_processing_enabled());
+    audio.set_noise_suppression(&browser_denoise);
     audio.set_auto_gain_control(&browser_voice_processing);
-    // Усиленная ML-изоляция голоса Chrome (deep noise suppression) поверх обычного
-    // noiseSuppression: лучше давит постоянный фоновый шум (вентилятор, улица, набор
-    // на клавиатуре). Это нестандартный constraint, поэтому задаем его через Reflect;
-    // движки без поддержки просто игнорируют неизвестный ключ.
+    // Встроенная изоляция активна только в браузерном режиме, отдельно от RNNoise.
     let _ = Reflect::set(
         audio.as_ref(),
         &JsValue::from_str("voiceIsolation"),
-        &browser_voice_processing,
+        &browser_denoise,
     );
     if let Some(ref device_id) = config.device_id
         && !device_id.is_empty()
@@ -243,3 +242,75 @@ fn set_property(object: &Object, name: &str, value: &JsValue) {
 
 #[cfg(test)]
 mod tests;
+
+/// Переключает встроенный denoiser на существующем track, сохраняя capture-сессию.
+pub(super) async fn update_noise_suppression(
+    track: &web_sys::MediaStreamTrack,
+    enabled: bool,
+) -> Result<(), MicrophoneError> {
+    if enabled && !browser_voice_processing_enabled() {
+        return Err(MicrophoneError::new(
+            "Встроенное подавление шума отключено в браузере.",
+        ));
+    }
+    let constraints = MediaTrackConstraints::new();
+    let voice_processing = JsValue::from_bool(browser_voice_processing_enabled());
+    let denoise = JsValue::from_bool(enabled && browser_voice_processing_enabled());
+    constraints.set_channel_count(&JsValue::from_f64(1.0));
+    constraints.set_echo_cancellation(&voice_processing);
+    constraints.set_auto_gain_control(&voice_processing);
+    constraints.set_noise_suppression(&denoise);
+    Reflect::set(
+        constraints.as_ref(),
+        &JsValue::from_str("voiceIsolation"),
+        &denoise,
+    )
+    .map_err(microphone_error)?;
+    let promise = track
+        .apply_constraints_with_constraints(&constraints)
+        .map_err(microphone_error)?;
+    JsFuture::from(promise).await.map_err(microphone_error)?;
+    verify_noise_suppression(track, enabled)
+}
+
+/// Проверяет фактически включённый browser DSP после захвата или изменения constraints.
+pub(super) fn verify_noise_suppression(
+    track: &web_sys::MediaStreamTrack,
+    enabled: bool,
+) -> Result<(), MicrophoneError> {
+    let settings = track_settings(track);
+    let noise = settings
+        .as_ref()
+        .and_then(|settings| optional_bool(settings, "noiseSuppression"));
+    let isolation = settings
+        .as_ref()
+        .and_then(|settings| optional_bool(settings, "voiceIsolation"));
+    verify_processing(
+        enabled,
+        browser_voice_processing_enabled(),
+        noise,
+        isolation,
+    )
+}
+
+fn verify_processing(
+    enabled: bool,
+    permitted: bool,
+    noise: Option<bool>,
+    isolation: Option<bool>,
+) -> Result<(), MicrophoneError> {
+    let active = noise == Some(true) || isolation == Some(true);
+    if active != enabled || (enabled && !permitted) {
+        warn!(
+            enabled,
+            permitted,
+            ?noise,
+            ?isolation,
+            "browser microphone denoise settings mismatch"
+        );
+        return Err(MicrophoneError::new(
+            "Браузер не применил выбранное подавление шума.",
+        ));
+    }
+    Ok(())
+}

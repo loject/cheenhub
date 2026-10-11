@@ -39,18 +39,38 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let recording_generation =
         use_hook(|| std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)));
     let vad_threshold_percent = use_signal(storage::load_vad_threshold_percent);
+    let neural_vad_threshold_percent = use_signal(storage::load_neural_vad_threshold_percent);
+    let initial_mode = *activation_mode.peek();
+    let initial_threshold = *vad_threshold_percent.peek();
+    let activation_runtime = use_hook(move || {
+        let config = MicrophoneConfig::default();
+        std::sync::Arc::new(std::sync::Mutex::new(super::backend::ActivationConfig {
+            mode: initial_mode,
+            threshold: super::provider_runtime::threshold_from_percent(initial_threshold),
+            neural_threshold: *neural_vad_threshold_percent.peek() as f32 / 100.0,
+            activation_delay_us: config.vad_activation_delay_us,
+            release_delay_us: config.vad_release_delay_us,
+        }))
+    });
     let stored_denoise = storage::load_denoise_mode();
     let denoise_mode = use_signal(move || stored_denoise);
-    let denoise_runtime = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
-        stored_denoise == super::denoise::DenoiseMode::Rnnoise,
-    ));
+    let denoise_failed = use_signal(|| false);
+    let denoise_pending = use_signal(|| false);
+    let denoise_runtime = use_hook(move || {
+        std::sync::Arc::new(super::denoise::RuntimeSwitch::new(
+            stored_denoise == super::denoise::DenoiseMode::Rnnoise,
+        ))
+    });
     let active_capture = use_signal(|| ActiveCapture::None);
     let active_on_frame = use_signal(|| None::<MicrophoneFrameCallback>);
     let active_uplink = use_signal(|| None::<MicrophoneUplinkConfig>);
     let target_bitrate_bps = use_signal(|| MicrophoneConfig::default().bitrate_bps);
     let backend = default_backend();
     let toast = use_context::<ToastHandle>();
+    let denoise_cancel = use_hook(|| Rc::new(std::cell::RefCell::new(None)));
     let runtime = MicrophoneRuntime {
+        denoise_cancel,
+        denoise_timeout: super::provider_runtime::denoise_timeout,
         backend,
         status,
         level,
@@ -60,10 +80,14 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         selected_input_device_id,
         input_volume_percent,
         activation_mode,
+        activation_runtime: activation_runtime.clone(),
         push_to_talk_key,
         recording_generation: recording_generation.clone(),
         vad_threshold_percent,
+        neural_vad_threshold_percent,
         denoise_mode,
+        denoise_pending,
+        denoise_failed,
         denoise_runtime: denoise_runtime.clone(),
         toast,
         active_capture,
@@ -82,10 +106,14 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
         selected_input_device_label,
         input_volume_percent,
         activation_mode,
+        activation_runtime: activation_runtime.clone(),
         push_to_talk_key,
         recording_generation: recording_generation.clone(),
         vad_threshold_percent,
+        neural_vad_threshold_percent,
         denoise_mode,
+        denoise_pending,
+        denoise_failed,
         denoise_runtime: denoise_runtime.clone(),
         active_capture,
         active_on_frame,

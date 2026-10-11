@@ -14,7 +14,7 @@ use crate::microphone_core::{
     duration_us, rms_level,
 };
 
-const MICROPHONE_WORKER_ABI_VERSION: u32 = 4;
+const MICROPHONE_WORKER_ABI_VERSION: u32 = 8;
 
 /// Возвращает версию ABI worker микрофона.
 #[wasm_bindgen]
@@ -56,6 +56,8 @@ pub fn microphone_worker_bind_uplink_websocket_message(grant: &str) -> Result<St
 #[wasm_bindgen]
 pub struct MicrophoneWorkerProcessor {
     detector: VoiceActivityDetector,
+    denoiser: crate::microphone_denoise::StreamProcessor,
+    denoise_enabled: bool,
     sample_rate_hz: u32,
     input_gain: f32,
     room_id: Uuid,
@@ -64,6 +66,34 @@ pub struct MicrophoneWorkerProcessor {
 
 #[wasm_bindgen]
 impl MicrophoneWorkerProcessor {
+    /// Обновляет активацию текущего потока, сохраняя последовательность пакетов и соединение.
+    pub fn set_activation_config(
+        &mut self,
+        mode: &str,
+        threshold: f32,
+        neural_threshold: f32,
+        activation_delay_us: u32,
+        release_delay_us: u32,
+    ) -> Result<(), JsValue> {
+        let mode = match mode {
+            "always_active" => CoreActivationMode::AlwaysActive,
+            "voice_activated" => CoreActivationMode::VoiceActivated,
+            value => {
+                return Err(js_error(format!(
+                    "unsupported microphone activation mode: {value}"
+                )));
+            }
+        };
+        self.detector.reconfigure(VoiceActivationConfig {
+            mode,
+            threshold,
+            neural_threshold,
+            activation_delay_us,
+            release_delay_us,
+        });
+        Ok(())
+    }
+
     /// Создает processor для одной активной комнаты.
     #[wasm_bindgen(constructor)]
     #[allow(clippy::too_many_arguments)]
@@ -94,11 +124,14 @@ impl MicrophoneWorkerProcessor {
         let detector = VoiceActivityDetector::new(VoiceActivationConfig {
             mode,
             threshold: vad_threshold,
+            neural_threshold: 0.5,
             activation_delay_us: vad_activation_delay_us,
             release_delay_us: vad_release_delay_us,
         });
         Ok(Self {
             detector,
+            denoiser: crate::microphone_denoise::StreamProcessor::new(),
+            denoise_enabled: false,
             sample_rate_hz,
             input_gain,
             room_id,
@@ -113,17 +146,35 @@ impl MicrophoneWorkerProcessor {
         timestamp_us: f64,
     ) -> Result<JsValue, JsValue> {
         let mut samples = samples.to_vec();
+        let result = if self.denoise_enabled && self.sample_rate_hz != 48_000 {
+            Err("RNNoise requires 48 kHz PCM")
+        } else {
+            self.denoiser.process(&mut samples, self.denoise_enabled)
+        };
+        let denoise_failed = result.is_err();
+        if denoise_failed {
+            self.denoise_enabled = false;
+        }
+        let speech_probability = result.ok().flatten();
         apply_input_gain(&mut samples, self.input_gain);
         let duration_us = duration_us(samples.len(), self.sample_rate_hz);
         let rms = rms_level(&samples);
-        let active = self.detector.update(rms, duration_us);
+        let active = self
+            .detector
+            .update_with_speech(rms, speech_probability, duration_us);
         let output = Object::new();
+        set_property(&output, "denoiseFailed", JsValue::from_bool(denoise_failed))?;
         set_property(&output, "rms", JsValue::from_f64(f64::from(rms)))?;
         set_property(&output, "active", JsValue::from_bool(active))?;
         set_property(
             &output,
+            "source",
+            JsValue::from_str(self.detector.activation_diagnostics().0),
+        )?;
+        set_property(
+            &output,
             "threshold",
-            JsValue::from_f64(f64::from(self.detector.config().threshold)),
+            JsValue::from_f64(f64::from(self.detector.activation_diagnostics().1)),
         )?;
         set_property(
             &output,
@@ -145,6 +196,11 @@ impl MicrophoneWorkerProcessor {
             set_property(&output, "samples", JsValue::NULL)?;
         }
         Ok(output.into())
+    }
+
+    /// Переключает RNNoise для следующих PCM chunks без перезапуска worker.
+    pub fn set_denoise_enabled(&mut self, enabled: bool) {
+        self.denoise_enabled = enabled;
     }
 
     /// Обновляет linear input gain для следующих PCM chunks.
