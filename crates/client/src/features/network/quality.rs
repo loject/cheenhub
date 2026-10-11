@@ -31,6 +31,7 @@ pub(crate) struct NetworkQualityState {
 pub(crate) struct NetworkQualityHandle {
     state: Signal<NetworkQualityState>,
     frequent_probes: Signal<bool>,
+    simulated_ping_delay_ms: Signal<u32>,
 }
 
 impl NetworkQualityHandle {
@@ -39,7 +40,21 @@ impl NetworkQualityHandle {
         Self {
             state,
             frequent_probes,
+            simulated_ping_delay_ms: Signal::new(0),
         }
+    }
+
+    /// Задает добавочную задержку probe; измерения и медиатрафик хранятся независимо.
+    pub(crate) fn set_simulated_ping_delay_ms(&mut self, delay_ms: u32) {
+        if (self.simulated_ping_delay_ms)() != delay_ms {
+            debug!(delay_ms, "updated simulated network probe delay");
+            self.simulated_ping_delay_ms.set(delay_ms);
+        }
+    }
+
+    /// Возвращает задержку обработки pong в миллисекундах.
+    pub(crate) fn simulated_ping_delay_ms(&self) -> u32 {
+        (self.simulated_ping_delay_ms)()
     }
 
     /// Возвращает текущий снимок качества сети.

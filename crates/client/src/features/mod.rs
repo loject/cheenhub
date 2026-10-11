@@ -8,6 +8,8 @@ pub(crate) mod auth;
 pub(crate) mod autostart;
 pub(crate) mod camera;
 pub(crate) mod clipboard;
+/// Локальные инструменты разработчика и их сохраненные настройки.
+pub(crate) mod developer_mode;
 pub(crate) mod host_settings;
 pub(crate) mod image_picker;
 pub(crate) mod landing;

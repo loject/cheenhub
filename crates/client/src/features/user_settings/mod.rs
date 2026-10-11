@@ -2,10 +2,12 @@
 
 mod account_section;
 mod delete_account_modal;
+mod developer_section;
 mod page;
 mod password_section;
 mod platform;
 mod profile_section;
+mod profile_submission;
 mod push_to_talk_mode;
 mod push_to_talk_settings;
 mod scope;

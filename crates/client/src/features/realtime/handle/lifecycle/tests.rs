@@ -166,3 +166,35 @@ fn retired_connection_watcher_cannot_close_resumed_session() {
         assert!(matches!(receiver.next().now_or_never(), Some(None)));
     });
 }
+
+#[test]
+fn changing_transport_preference_restarts_even_primary_or_connecting_session() {
+    let dom = VirtualDom::new(|| rsx! {});
+    dom.in_scope(ScopeId::ROOT, || {
+        let realtime = create_handle();
+        let mut requests = realtime.subscribe_reconnect_requests();
+        realtime.set_connection_status(RealtimeConnectionStatus::Connected(
+            RealtimeTransportKind::WebTransport,
+        ));
+
+        realtime.set_force_websocket(true);
+
+        assert!(realtime.force_websocket());
+        assert_eq!(
+            realtime.connection_status(),
+            RealtimeConnectionStatus::ConnectingWebSocketFallback
+        );
+        assert_eq!(requests.next().now_or_never(), Some(Some(())));
+        realtime.set_force_websocket(true);
+        assert!(requests.next().now_or_never().is_none());
+
+        realtime.set_force_websocket(false);
+
+        assert!(!realtime.force_websocket());
+        assert_eq!(
+            realtime.connection_status(),
+            RealtimeConnectionStatus::ConnectingWebTransport
+        );
+        assert_eq!(requests.next().now_or_never(), Some(Some(())));
+    });
+}

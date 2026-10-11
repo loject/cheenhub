@@ -25,3 +25,20 @@ fn keeps_only_the_latest_minute_at_voice_ping_frequency() {
         Some(75_000)
     );
 }
+
+#[test]
+fn clearing_measurements_preserves_simulated_probe_delay() {
+    use dioxus::prelude::*;
+    let dom = VirtualDom::new(|| rsx! {});
+    dom.in_scope(ScopeId::ROOT, || {
+        let mut quality =
+            super::NetworkQualityHandle::new(Signal::new(Default::default()), Signal::new(false));
+        quality.set_simulated_ping_delay_ms(1800);
+        quality.record_ping(1000, 25.0);
+
+        quality.clear();
+
+        assert_eq!(quality.simulated_ping_delay_ms(), 1800);
+        assert!(quality.current().samples.is_empty());
+    });
+}

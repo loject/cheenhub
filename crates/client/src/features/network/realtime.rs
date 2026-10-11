@@ -14,8 +14,13 @@ pub(crate) struct PingMeasurement {
     pub(crate) rtt_ms: f64,
 }
 
-/// Sends one reliable network ping and waits for the pong response.
-pub(crate) async fn ping(realtime: &RealtimeHandle) -> Result<PingMeasurement, RealtimeError> {
+/// Отправляет надежный ping и измеряет RTT после добавочной задержки pong.
+///
+/// `simulated_delay_ms` применяется только к probe; ожидание остается внутри watchdog-таймаута.
+pub(crate) async fn ping(
+    realtime: &RealtimeHandle,
+    simulated_delay_ms: u32,
+) -> Result<PingMeasurement, RealtimeError> {
     let sent_at_ms = now_ms();
     let sent_at = Instant::now();
     let _: Pong = realtime
@@ -25,6 +30,9 @@ pub(crate) async fn ping(realtime: &RealtimeHandle) -> Result<PingMeasurement, R
             Ping { sent_at_ms },
         )
         .await?;
+    if simulated_delay_ms > 0 {
+        crate::features::runtime::sleep_ms(simulated_delay_ms).await;
+    }
     let received_at_ms = now_ms();
     let rtt_ms = sent_at.elapsed().as_secs_f64() * 1_000.0;
 

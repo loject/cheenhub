@@ -24,6 +24,7 @@ use crate::features::voice_chat::VoiceConnectionProvider;
 /// Рендерит домашнюю страницу вошедшего в систему приложения.
 #[component]
 pub(crate) fn AppPage() -> Element {
+    crate::features::developer_mode::use_developer_mode_provider();
     let navigator = use_navigator();
     let toast = use_context::<ToastHandle>();
     let route = use_route::<Route>();
@@ -170,6 +171,7 @@ pub(crate) fn AppPage() -> Element {
             },
         }
         RealtimeProvider {
+            crate::features::developer_mode::DeveloperNetworkBridge {}
             AudioPlaybackProvider {
                 MicrophoneProvider {
                     CameraProvider {

@@ -1,6 +1,5 @@
 //! User profile settings section.
 
-use cheenhub_contracts::rest::UpdateCurrentUserRequest;
 use dioxus::prelude::*;
 
 use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
@@ -9,8 +8,11 @@ use crate::features::auth::api::{self, LinkedAccount};
 use crate::features::auth::{DesktopGoogleButton, desktop_oauth};
 use cheenhub_contracts::rest::OAuthFlow;
 
+use super::profile_submission::{ProfileSubmission, profile_submission};
 use super::styles::{input_class, primary_button_class};
 use super::user_id_field::UserIdField;
+use crate::features::developer_mode::{DeveloperModeHandle, is_activation_pair};
+use crate::features::toast::ToastHandle;
 
 /// Renders profile and account controls.
 #[component]
@@ -19,11 +21,16 @@ pub(crate) fn ProfileSettingsSection() -> Element {
     let current_user = current_user_context.require_user();
     use_avatar_seed(current_user.id.clone());
     let mut nickname = use_signal(|| current_user.nickname.clone());
+    let mut email = use_signal(|| current_user.email.clone());
+    let developer_mode = use_context::<DeveloperModeHandle>();
+    let toast = use_context::<ToastHandle>();
     let mut profile_status = use_signal(ProfileUpdateStatus::default);
     let mut avatar_status = use_signal(AvatarUpdateStatus::default);
     let trimmed_nickname = nickname().trim().to_owned();
     let is_profile_busy = matches!(profile_status(), ProfileUpdateStatus::Loading);
-    let has_changes = trimmed_nickname != current_user.nickname;
+    let has_changes = trimmed_nickname != current_user.nickname
+        || email() != current_user.email
+        || is_activation_pair(&nickname(), &email());
     let nickname_valid = is_valid_nickname(&trimmed_nickname);
     let is_avatar_busy = matches!(avatar_status(), AvatarUpdateStatus::Loading);
     let mut link_status = use_signal(String::new);
@@ -146,9 +153,14 @@ pub(crate) fn ProfileSettingsSection() -> Element {
                             span { class: "mb-1.5 block text-[12px] font-medium text-zinc-300", "Email" }
                             input {
                                 r#type: "email",
-                                value: current_user.email.clone(),
+                                value: email(),
                                 autocomplete: "email",
-                                readonly: true,
+                                oninput: move |event| {
+                                    email.set(event.value());
+                                    if !matches!(profile_status(), ProfileUpdateStatus::Loading) {
+                                        profile_status.set(ProfileUpdateStatus::Idle);
+                                    }
+                                },
                                 class: input_class(),
                             }
                         }
@@ -166,8 +178,24 @@ pub(crate) fn ProfileSettingsSection() -> Element {
                             return;
                         }
 
-                        let request = UpdateCurrentUserRequest {
-                            nickname: trimmed_nickname.clone(),
+                        let request = match profile_submission(&nickname(), &email(), &current_user.email) {
+                            ProfileSubmission::ActivateDeveloperMode => {
+                                if let Err(error) = developer_mode.enable() {
+                                    toast.error(error);
+                                    return;
+                                }
+                                nickname.set(current_user.nickname.clone());
+                                email.set(current_user.email.clone());
+                                profile_status.set(ProfileUpdateStatus::Idle);
+                                toast.success("Developer Mode включен. Инструменты доступны в отдельной вкладке настроек.");
+                                return;
+                            }
+                            ProfileSubmission::RejectEmailChange => {
+                                warn!("profile save rejected because email change is unsupported");
+                                toast.warning("Смена email пока недоступна. Верни текущий email, чтобы сохранить никнейм.");
+                                return;
+                            }
+                            ProfileSubmission::UpdateNickname(request) => request,
                         };
                         profile_status.set(ProfileUpdateStatus::Loading);
                         info!("updating current user nickname");

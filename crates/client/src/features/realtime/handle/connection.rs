@@ -43,6 +43,11 @@ impl RealtimeHandle {
         &self,
         access_token: String,
     ) -> Result<Authenticated, RealtimeError> {
+        if self.force_websocket() {
+            info!("using explicitly selected WebSocket realtime transport");
+            self.mark_connecting(RealtimeTransportKind::WebSocketFallback);
+            return self.connect_websocket(access_token, None).await;
+        }
         let started_at = Instant::now();
         let webtransport = self.open_webtransport().boxed_local();
         let timeout = sleep_ms(WEBTRANSPORT_CONNECT_TIMEOUT_MS).boxed_local();
@@ -83,7 +88,7 @@ impl RealtimeHandle {
                     "WebTransport realtime connection failed; trying WebSocket fallback"
                 );
                 self.mark_connecting(RealtimeTransportKind::WebSocketFallback);
-                self.connect_websocket(access_token, failure.info)
+                self.connect_websocket(access_token, Some(failure.info))
                     .await
                     .map_err(|websocket_error| {
                         RealtimeError::new(format!(
@@ -177,7 +182,7 @@ impl RealtimeHandle {
     async fn connect_websocket(
         &self,
         access_token: String,
-        fallback_info: RealtimeFallbackInfo,
+        fallback_info: Option<RealtimeFallbackInfo>,
     ) -> Result<Authenticated, RealtimeError> {
         let url = config::realtime_websocket_url()?;
         info!(%url, "connecting WebSocket realtime fallback session");
@@ -225,7 +230,7 @@ impl RealtimeHandle {
         self.set_connection_status(RealtimeConnectionStatus::Connected(
             RealtimeTransportKind::WebSocketFallback,
         ));
-        self.publish_fallback_info(Some(fallback_info));
+        self.publish_fallback_info(fallback_info);
 
         Ok(authenticated)
     }

@@ -6,7 +6,37 @@ use super::{ConnectedTransport, RealtimeHandle};
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeTransportKind};
 
 impl RealtimeHandle {
-    /// Запрашивает немедленную новую попытку WebTransport вместо отключения или fallback.
+    /// Возвращает локальное переопределение выбора транспорта.
+    pub(crate) fn force_websocket(&self) -> bool {
+        self.inner.force_websocket.get()
+    }
+
+    /// Изменяет выбор транспорта и перезапускает runtime, включая выполняемое подключение.
+    ///
+    /// Повторная установка того же значения не создает запрос переподключения.
+    pub(crate) fn set_force_websocket(&self, enabled: bool) {
+        if self.inner.force_websocket.replace(enabled) == enabled {
+            return;
+        }
+        let requested = self
+            .inner
+            .reconnect_requests
+            .borrow()
+            .as_ref()
+            .is_some_and(|sender| sender.unbounded_send(()).is_ok());
+        dioxus::prelude::info!(enabled, requested, "updated realtime transport preference");
+        if requested {
+            self.mark_connecting(if enabled {
+                RealtimeTransportKind::WebSocketFallback
+            } else {
+                RealtimeTransportKind::WebTransport
+            });
+        }
+    }
+
+    /// Запрашивает новую попытку соединения вместо отключения или резервного транспорта.
+    ///
+    /// По умолчанию выбирает WebTransport; локальное переопределение сохраняет WebSocket.
     ///
     /// Возвращает `false`, если уже идёт подключение, активен WebTransport или runtime
     /// недоступен. Принятый запрос сразу меняет статус, блокируя повторные нажатия;
@@ -32,7 +62,11 @@ impl RealtimeHandle {
             return false;
         }
         dioxus::prelude::info!(?status, "manual realtime reconnect requested");
-        self.mark_connecting(RealtimeTransportKind::WebTransport);
+        self.mark_connecting(if self.force_websocket() {
+            RealtimeTransportKind::WebSocketFallback
+        } else {
+            RealtimeTransportKind::WebTransport
+        });
         true
     }
 

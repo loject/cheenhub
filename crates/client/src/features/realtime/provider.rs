@@ -17,7 +17,8 @@ pub(crate) fn RealtimeProvider(children: Element) -> Element {
     use_context_provider(move || context_realtime.clone());
     let network_quality_state = use_signal(Default::default);
     let frequent_network_probes = use_signal(|| false);
-    let network_quality = NetworkQualityHandle::new(network_quality_state, frequent_network_probes);
+    let network_quality =
+        use_hook(move || NetworkQualityHandle::new(network_quality_state, frequent_network_probes));
     use_context_provider(move || network_quality);
 
     let drop_realtime = realtime.clone();

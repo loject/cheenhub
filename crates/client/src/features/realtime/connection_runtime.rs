@@ -48,7 +48,11 @@ pub(super) async fn run_connection(
 async fn run_connection_loop(realtime: &RealtimeHandle, mut network_quality: NetworkQualityHandle) {
     let mut reconnect_delay_ms = RECONNECT_INITIAL_DELAY_MS;
     loop {
-        realtime.mark_connecting(RealtimeTransportKind::WebTransport);
+        realtime.mark_connecting(if realtime.force_websocket() {
+            RealtimeTransportKind::WebSocketFallback
+        } else {
+            RealtimeTransportKind::WebTransport
+        });
         info!("opening realtime session");
         let access_token = match auth_api::fresh_access_token().await {
             Ok(access_token) => access_token,
@@ -77,7 +81,9 @@ async fn run_connection_loop(realtime: &RealtimeHandle, mut network_quality: Net
                 let mut probe_wakeup_delay_ms = 0;
                 loop {
                     let attempt_started_at = Instant::now();
-                    let ping = network_realtime::ping(realtime).boxed_local();
+                    let ping =
+                        network_realtime::ping(realtime, network_quality.simulated_ping_delay_ms())
+                            .boxed_local();
                     let timeout = sleep_ms(PING_ATTEMPT_TIMEOUT_MS).boxed_local();
                     let probe_failed = match select(ping, timeout).await {
                         Either::Left((Ok(measurement), _)) => {

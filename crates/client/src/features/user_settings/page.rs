@@ -3,11 +3,13 @@
 use dioxus::prelude::*;
 
 use super::account_section::AccountSettingsSection;
+use super::developer_section::DeveloperSettingsSection;
 use super::platform;
 use super::profile_section::ProfileSettingsSection;
 use super::security_section::SecuritySettingsSection;
 use super::sound_section::SoundSettingsSection;
 use super::system_section::SystemSettingsSection;
+use crate::features::developer_mode::DeveloperModeHandle;
 
 /// User settings sections shown in the modal menu.
 #[derive(Clone, Copy, PartialEq)]
@@ -22,6 +24,8 @@ pub(crate) enum UserSettingsSection {
     System,
     /// Сеанс и управление жизненным циклом аккаунта.
     Account,
+    /// Локальные инструменты; доступны только после активации Developer Mode.
+    Developer,
 }
 
 #[derive(Clone, Copy)]
@@ -32,6 +36,11 @@ struct UserSettingsSectionMeta {
 }
 
 const SETTINGS_SECTIONS: &[UserSettingsSectionMeta] = &[
+    UserSettingsSectionMeta {
+        kind: UserSettingsSection::Developer,
+        label: "Developer Mode",
+        description: "Инструменты проверки",
+    },
     UserSettingsSectionMeta {
         kind: UserSettingsSection::Profile,
         label: "Профиль",
@@ -66,7 +75,14 @@ pub(crate) fn UserSettingsPage(
     on_select_section: EventHandler<UserSettingsSection>,
     on_close: EventHandler<()>,
 ) -> Element {
+    let developer_mode = use_context::<DeveloperModeHandle>();
+    let developer_enabled = developer_mode.current().enabled;
     let active_section = platform::resolve_section(active_section);
+    let active_section = if active_section == UserSettingsSection::Developer && !developer_enabled {
+        UserSettingsSection::Profile
+    } else {
+        active_section
+    };
     let section_label = section_label(active_section);
 
     rsx! {
@@ -90,7 +106,7 @@ pub(crate) fn UserSettingsPage(
                     div { class: "flex gap-2 overflow-x-auto pb-1 md:block md:space-y-1 md:overflow-visible md:pb-0",
                         for section in SETTINGS_SECTIONS
                             .iter()
-                            .filter(|section| platform::is_section_available(section.kind))
+                            .filter(|section| platform::is_section_available(section.kind) && (section.kind != UserSettingsSection::Developer || developer_enabled))
                         {
                             button {
                                 key: "{section.label}",
@@ -123,6 +139,11 @@ pub(crate) fn UserSettingsPage(
                     }
                     div { class: "order-3 min-h-0 w-full flex-1 overflow-y-auto bg-zinc-950/35 px-4 py-4 pb-6 md:mx-auto md:max-w-[980px] md:overflow-visible md:bg-transparent md:px-6 md:py-6",
                         match active_section {
+                            UserSettingsSection::Developer => rsx! {
+                                DeveloperSettingsSection {
+                                    on_reset: move |_| on_select_section.call(UserSettingsSection::Profile),
+                                }
+                            },
                             UserSettingsSection::Profile => rsx! {
                                 ProfileSettingsSection {}
                             },
@@ -156,6 +177,7 @@ fn settings_item_class(active: bool) -> &'static str {
 
 fn section_label(section: UserSettingsSection) -> &'static str {
     match section {
+        UserSettingsSection::Developer => "Developer Mode",
         UserSettingsSection::Profile => "Профиль",
         UserSettingsSection::Sound => "Звук",
         UserSettingsSection::Security => "Безопасность",
