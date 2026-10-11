@@ -2,25 +2,27 @@
 
 use cheenhub_contracts::rest::HostMetricsSample;
 use dioxus::prelude::*;
+use serde_json::{Value, json};
+
+use super::metrics_chart::MetricsTrendChart;
 
 pub(super) fn cpu_total_chart(samples: &[HostMetricsSample]) -> Element {
-    let system = points(samples, 100.0, |sample| {
-        f64::from(sample.cpu.system_percent)
-    });
-    let cheenhub = points(samples, 100.0, |sample| {
-        f64::from(sample.cpu.cheenhub_percent)
-    });
-    let database = points(samples, 100.0, |sample| {
-        f64::from(sample.cpu.database_percent)
-    });
+    let option = chart_option(
+        vec![
+            line_series("Система", "#e4e4e7", samples, |sample| f64::from(sample.cpu.system_percent)),
+            line_series("CheenHub", "#60a5fa", samples, |sample| f64::from(sample.cpu.cheenhub_percent)),
+            line_series("База данных", "#a78bfa", samples, |sample| f64::from(sample.cpu.database_percent)),
+        ],
+        "%",
+        Some(100.0),
+        false,
+    );
     rsx! {
-        div { class: "mt-4 h-36 rounded-xl border border-zinc-800/80 bg-zinc-950 p-3",
-            svg { class: "h-full w-full", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История нагрузки процессора",
-                line { x1: "0", y1: "20", x2: "100", y2: "20", stroke: "rgba(255,255,255,0.06)", stroke_width: "0.35" }
-                polyline { points: "{system}", fill: "none", stroke: "#e4e4e7", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
-                polyline { points: "{cheenhub}", fill: "none", stroke: "#60a5fa", stroke_width: "1.15", vector_effect: "non-scaling-stroke" }
-                polyline { points: "{database}", fill: "none", stroke: "#a78bfa", stroke_width: "1.15", vector_effect: "non-scaling-stroke" }
-            }
+        MetricsTrendChart {
+            name: "cpu-total",
+            label: "История нагрузки процессора",
+            class: "mt-4 h-36 rounded-xl border border-zinc-800/80 bg-zinc-950 p-3",
+            option,
         }
     }
 }
@@ -50,13 +52,23 @@ pub(super) fn logical_cpu_grid(samples: &[HostMetricsSample]) -> Element {
     rsx! {
         div { class: "mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4",
             for core_index in 0..core_count {
-                div { class: "rounded-xl border border-zinc-800/80 bg-zinc-950 p-3",
+                div { key: "{core_index}", class: "rounded-xl border border-zinc-800/80 bg-zinc-950 p-3",
                     div { class: "flex items-center justify-between gap-3",
                         span { class: "text-[11px] font-medium text-zinc-500", "CPU {core_index}" }
                         strong { class: "tabular-nums text-[12px] font-semibold text-zinc-200", "{format_percent(samples.last().and_then(|sample| sample.cpu.logical_processors_percent.get(core_index)).copied().unwrap_or(0.0))}" }
                     }
-                    svg { class: "mt-2 h-10 w-full", view_box: "0 0 100 24", preserve_aspect_ratio: "none", "aria-hidden": "true",
-                        polyline { points: "{core_points(samples, core_index)}", fill: "none", stroke: "#60a5fa", stroke_width: "1.1", vector_effect: "non-scaling-stroke" }
+                    MetricsTrendChart {
+                        name: "cpu-core",
+                        label: "История нагрузки логического ядра",
+                        class: "mt-2 h-10 w-full",
+                        option: chart_option(
+                            vec![line_series("CPU", "#60a5fa", samples, |sample| {
+                                f64::from(sample.cpu.logical_processors_percent.get(core_index).copied().unwrap_or(0.0))
+                            })],
+                            "%",
+                            Some(100.0),
+                            true,
+                        ),
                     }
                 }
             }
@@ -65,15 +77,20 @@ pub(super) fn logical_cpu_grid(samples: &[HostMetricsSample]) -> Element {
 }
 
 pub(super) fn memory_chart(samples: &[HostMetricsSample]) -> Element {
-    let max = samples
-        .last()
-        .map(|sample| sample.memory.total_bytes as f64)
-        .unwrap_or(1.0)
-        .max(1.0);
-    let used = points(samples, max, |sample| sample.memory.used_bytes as f64);
+    const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
+    let max = samples.iter().map(|sample| sample.memory.total_bytes).max().unwrap_or(0) as f64 / GIB;
+    let option = chart_option(
+        vec![line_series("Занято", "#34d399", samples, |sample| sample.memory.used_bytes as f64 / GIB)],
+        " ГБ",
+        Some(max.max(1.0)),
+        false,
+    );
     rsx! {
-        svg { class: "mt-5 h-32 w-full rounded-xl border border-zinc-800/80 bg-zinc-950 p-3", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История использования оперативной памяти",
-            polyline { points: "{used}", fill: "none", stroke: "#34d399", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
+        MetricsTrendChart {
+            name: "memory",
+            label: "История использования оперативной памяти",
+            class: "mt-5 h-32 w-full rounded-xl border border-zinc-800/80 bg-zinc-950 p-3",
+            option,
         }
     }
 }
@@ -95,44 +112,52 @@ pub(super) fn memory_breakdown(sample: &HostMetricsSample) -> Element {
 }
 
 pub(super) fn disk_chart(samples: &[HostMetricsSample]) -> Element {
-    let max = samples
-        .last()
-        .and_then(|sample| sample.disk.as_ref())
-        .map(|disk| disk.total_bytes as f64)
-        .unwrap_or(1.0)
-        .max(1.0);
-    let used = points(samples, max, |sample| {
-        sample
-            .disk
-            .as_ref()
-            .expect("filtered samples contain disk metrics")
-            .used_bytes as f64
-    });
+    const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
+    let max = samples.iter().filter_map(|sample| sample.disk.as_ref()).map(|disk| disk.total_bytes).max().unwrap_or(0) as f64 / GIB;
+    let option = chart_option(
+        vec![line_series("Занято", "#fbbf24", samples, |sample| {
+            sample.disk.as_ref().map_or(0.0, |disk| disk.used_bytes as f64 / GIB)
+        })],
+        " ГБ",
+        Some(max.max(1.0)),
+        false,
+    );
     rsx! {
-        svg { class: "mt-5 h-32 w-full rounded-xl border border-zinc-800/80 bg-zinc-950 p-3", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История занятого места на накопителе",
-            polyline { points: "{used}", fill: "none", stroke: "#fbbf24", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
+        MetricsTrendChart {
+            name: "disk",
+            label: "История занятого места на накопителе",
+            class: "mt-5 h-32 w-full rounded-xl border border-zinc-800/80 bg-zinc-950 p-3",
+            option,
         }
     }
 }
 
 pub(super) fn network_chart(samples: &[HostMetricsSample]) -> Element {
-    let max = samples
-        .iter()
-        .flat_map(|sample| {
-            [
-                sample.network.sent_bytes_per_second,
-                sample.network.received_bytes_per_second,
-            ]
-        })
-        .fold(1.0_f64, f64::max);
-    let received = points(samples, max, |sample| {
-        sample.network.received_bytes_per_second
-    });
-    let sent = points(samples, max, |sample| sample.network.sent_bytes_per_second);
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * KIB;
+    let peak = samples.iter().flat_map(|sample| [sample.network.sent_bytes_per_second, sample.network.received_bytes_per_second]).fold(0.0_f64, f64::max);
+    let (scale, unit) = if peak >= MIB {
+        (MIB, " МБ/с")
+    } else if peak >= KIB {
+        (KIB, " КБ/с")
+    } else {
+        (1.0, " Б/с")
+    };
+    let option = chart_option(
+        vec![
+            line_series("Получение", "#60a5fa", samples, |sample| sample.network.received_bytes_per_second / scale),
+            line_series("Отправка", "#a78bfa", samples, |sample| sample.network.sent_bytes_per_second / scale),
+        ],
+        unit,
+        None,
+        false,
+    );
     rsx! {
-        svg { class: "mt-5 h-32 w-full rounded-xl border border-zinc-800/80 bg-zinc-950 p-3", view_box: "0 0 100 40", preserve_aspect_ratio: "none", role: "img", "aria-label": "История сетевого трафика CheenHub",
-            polyline { points: "{received}", fill: "none", stroke: "#60a5fa", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
-            polyline { points: "{sent}", fill: "none", stroke: "#a78bfa", stroke_width: "1.25", vector_effect: "non-scaling-stroke" }
+        MetricsTrendChart {
+            name: "network",
+            label: "История сетевого трафика CheenHub",
+            class: "mt-5 h-32 w-full rounded-xl border border-zinc-800/80 bg-zinc-950 p-3",
+            option,
         }
     }
 }
@@ -159,42 +184,68 @@ pub(super) fn legend_value(label: &'static str, value: String, dot_class: &'stat
     }
 }
 
-pub(super) fn points(
+/// Создаёт серию ECharts с настоящими отметками времени, а не индексами точек.
+fn line_series(
+    name: &str,
+    color: &str,
     samples: &[HostMetricsSample],
-    max_value: f64,
     value: impl Fn(&HostMetricsSample) -> f64,
-) -> String {
-    let denominator = samples.len().saturating_sub(1).max(1) as f64;
-    samples
-        .iter()
-        .enumerate()
-        .map(|(index, sample)| {
-            let x = index as f64 / denominator * 100.0;
-            let y = 40.0 - (value(sample) / max_value.max(0.001)).clamp(0.0, 1.0) * 40.0;
-            format!("{x:.2},{y:.2}")
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+) -> Value {
+    let data: Vec<_> = samples.iter().map(|sample| json!([sample.sampled_at_unix_ms, value(sample)])).collect();
+    json!({
+        "name": name,
+        "type": "line",
+        "showSymbol": false,
+        "smooth": false,
+        "sampling": "lttb",
+        "lineStyle": { "width": 2, "color": color },
+        "itemStyle": { "color": color },
+        "data": data
+    })
 }
 
-pub(super) fn core_points(samples: &[HostMetricsSample], core_index: usize) -> String {
-    let denominator = samples.len().saturating_sub(1).max(1) as f64;
-    samples
-        .iter()
-        .enumerate()
-        .map(|(index, sample)| {
-            let x = index as f64 / denominator * 100.0;
-            let value = sample
-                .cpu
-                .logical_processors_percent
-                .get(core_index)
-                .copied()
-                .unwrap_or(0.0);
-            let y = 24.0 - f64::from(value.clamp(0.0, 100.0)) / 100.0 * 24.0;
-            format!("{x:.2},{y:.2}")
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+/// Общая конфигурация осей, подсказок и сетки для графиков системных метрик.
+fn chart_option(series: Vec<Value>, unit: &str, max: Option<f64>, compact: bool) -> String {
+    let mut y_axis = json!({
+        "type": "value",
+        "min": 0,
+        "axisLine": { "show": false },
+        "axisTick": { "show": false },
+        "axisLabel": { "color": "#71717a", "fontSize": 10, "formatter": format!("{{value}}{unit}") },
+        "splitLine": { "lineStyle": { "color": "rgba(255,255,255,0.06)" } }
+    });
+    if let Some(max) = max {
+        y_axis["max"] = json!(max);
+    }
+    if compact {
+        y_axis["show"] = json!(false);
+    }
+    json!({
+        "animation": false,
+        "grid": if compact {
+            json!({ "left": 1, "right": 1, "top": 2, "bottom": 2 })
+        } else {
+            json!({ "left": 4, "right": 8, "top": 8, "bottom": 12, "containLabel": true })
+        },
+        "tooltip": {
+            "trigger": "axis",
+            "confine": true,
+            "backgroundColor": "#09090b",
+            "borderColor": "#3f3f46",
+            "textStyle": { "color": "#e4e4e7", "fontSize": 11 }
+        },
+        "xAxis": {
+            "type": "time",
+            "boundaryGap": false,
+            "axisLine": { "lineStyle": { "color": "#3f3f46" } },
+            "axisTick": { "show": false },
+            "axisLabel": { "color": "#71717a", "fontSize": 10, "hideOverlap": true },
+            "splitLine": { "show": false },
+            "show": !compact
+        },
+        "yAxis": y_axis,
+        "series": series
+    }).to_string()
 }
 
 pub(super) fn cpu_toggle_class(active: bool) -> &'static str {

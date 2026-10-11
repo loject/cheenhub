@@ -163,6 +163,23 @@ pub(super) async fn update_chart(id: &str, option: &str) -> Result<(), String> {
         .map_err(|error| format!("График не обновился: {error}"))
 }
 
+/// Освобождает экземпляр ECharts при размонтировании контейнера.
+pub(super) async fn dispose_chart(id: &str) -> Result<(), String> {
+    let eval = document::eval(
+        r#"
+        const id = await dioxus.recv();
+        window.__cheenhubCharts?.dispose(id);
+        return true;
+        "#,
+    );
+    eval.send(id.to_owned())
+        .map_err(|_| "Не удалось освободить график.".to_owned())?;
+    eval.join::<bool>()
+        .await
+        .map(|_| ())
+        .map_err(|error| format!("Не удалось освободить график: {error}"))
+}
+
 /// Передаёт в скрипт идентификатор контейнера и конфигурацию графика.
 fn send_chart_payload(eval: &document::Eval, id: &str, option: &str) -> Result<(), String> {
     eval.send(id.to_owned())

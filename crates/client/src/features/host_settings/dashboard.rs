@@ -15,6 +15,7 @@ use super::stats_panel::HostStatsPanel;
 use super::tabs::{HostSettingsTab, host_settings_tabs};
 
 mod charts;
+mod metrics_chart;
 mod sections;
 mod states;
 
