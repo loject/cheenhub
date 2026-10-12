@@ -114,7 +114,7 @@ dx bundle \
     --android \
     --target aarch64-linux-android \
     --package cheenhub_client \
-    --bin cheen_hub \
+    --bin cheenhub \
     --release \
     --no-default-features \
     --features mobile \

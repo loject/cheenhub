@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const DIOXUS_ANDROID_RESOURCE_PATH: &str = "android/app/app/src/main/res";
-const DIOXUS_TARGET_NAME: &str = "cheen_hub";
+const DIOXUS_TARGET_NAME: &str = "cheenhub";
 
 /// Заменяет сгенерированные Dioxus launcher icons проектными Android-ресурсами.
 pub(crate) fn install() {

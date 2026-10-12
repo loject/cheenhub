@@ -285,7 +285,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          dx bundle --windows --target x86_64-pc-windows-msvc --package cheenhub_client --bin cheen_hub --release --no-default-features --features desktop,windows --package-types nsis --out-dir dist/windows/raw
+          dx bundle --windows --target x86_64-pc-windows-msvc --package cheenhub_client --bin cheenhub --release --no-default-features --features desktop,windows --package-types nsis --out-dir dist/windows/raw
           if ($LASTEXITCODE -ne 0) { throw "Windows Dioxus bundle failed." }
           $payload = Get-ChildItem -Path dist/windows/raw -Recurse -Filter *.exe | Sort-Object FullName | Select-Object -First 1
           if (-not $payload) {
@@ -388,7 +388,7 @@ jobs:
       - name: Build Linux packages
         shell: bash
         run: |
-          dx bundle --linux --package cheenhub_client --bin cheen_hub --release --no-default-features --features desktop,linux --package-types deb --package-types appimage --out-dir dist/linux/raw
+          dx bundle --linux --package cheenhub_client --bin cheenhub --release --no-default-features --features desktop,linux --package-types deb --package-types appimage --out-dir dist/linux/raw
 
       - name: Normalize Linux release assets
         shell: bash
@@ -568,14 +568,14 @@ jobs:
             --android \
             --target aarch64-linux-android \
             --package cheenhub_client \
-            --bin cheen_hub \
+            --bin cheenhub \
             --release \
             --no-default-features \
             --features mobile \
             --package-types apk \
             --out-dir dist/android/dioxus
 
-          generated_android_root="target/dx/cheen_hub/release/android/app"
+          generated_android_root="target/dx/cheenhub/release/android/app"
           generated_gradle_file="${generated_android_root}/app/build.gradle.kts"
           if [[ ! -f "${generated_gradle_file}" ]]; then
             echo "Generated Android Gradle file was not found: ${generated_gradle_file}." >&2

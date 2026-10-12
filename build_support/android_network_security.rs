@@ -6,7 +6,7 @@ use url::Url;
 
 const DEFAULT_BASE_URL: &str = "http://127.0.0.1:3000";
 const DIOXUS_ANDROID_RESOURCE_PATH: &str = "android/app/app/src/main/res/xml";
-const DIOXUS_TARGET_NAME: &str = "cheen_hub";
+const DIOXUS_TARGET_NAME: &str = "cheenhub";
 
 /// Устанавливает ограниченную сетевую политику Android для host текущего API.
 pub(crate) fn install() {

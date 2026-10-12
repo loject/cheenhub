@@ -126,8 +126,8 @@ fn init_dioxus_profile_logger() {
         "dioxus_core::scope_arena=trace,",
         "dioxus_core::virtual_dom=trace,",
         "dioxus_core::runtime=trace,",
-        "cheen_hub::features::voice_chat=trace,",
-        "cheen_hub::features::social=trace",
+        "cheenhub::features::voice_chat=trace,",
+        "cheenhub::features::social=trace",
     );
 
     if std::env::var_os(ENABLE_ENV).is_none() {

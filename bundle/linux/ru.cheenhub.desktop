@@ -2,8 +2,8 @@
 Type=Application
 Name=CheenHub
 Comment=Голосовое общение
-Exec=cheen_hub
-Icon=cheen_hub
+Exec=cheenhub
+Icon=cheenhub
 Terminal=false
 NoDisplay=true
 Categories=Network;Chat;

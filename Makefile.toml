@@ -117,7 +117,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--addr",
     "${DIOXUS_ADDR}",
     "--port",
@@ -137,7 +137,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--addr",
     "${DIOXUS_ADDR}",
     "--port",
@@ -151,6 +151,7 @@ mac_alias = "dioxus-desktop-mac"
 windows_alias = "dioxus-desktop-windows"
 
 [tasks.dioxus-desktop-linux]
+env = { CHEENHUB_PORTAL_APP_ID = "ru.cheenhub.Development" }
 description = "Run the Dioxus desktop dev app on Linux."
 dependencies = ["install-dioxus-cli"]
 command = "dx"
@@ -160,7 +161,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--no-default-features",
     "--features",
     "desktop,linux",
@@ -176,7 +177,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--no-default-features",
     "--features",
     "desktop,macos",
@@ -192,7 +193,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--no-default-features",
     "--features",
     "desktop,windows",
@@ -212,7 +213,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--no-default-features",
     "--features",
     "mobile",
@@ -232,7 +233,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--no-default-features",
     "--features",
     "mobile",
@@ -257,7 +258,7 @@ windows_alias = "dioxus-desktop-profile-windows"
 [tasks.dioxus-desktop-profile-linux]
 description = "Run the Dioxus desktop dev app on Linux with Dioxus render profiling."
 dependencies = ["install-dioxus-cli"]
-env = { CHEENHUB_DIOXUS_PROFILE = "1" }
+env = { CHEENHUB_DIOXUS_PROFILE = "1", CHEENHUB_PORTAL_APP_ID = "ru.cheenhub.Development" }
 command = "dx"
 args = [
     "serve",
@@ -265,7 +266,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--no-default-features",
     "--features",
     "desktop,linux",
@@ -282,7 +283,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--no-default-features",
     "--features",
     "desktop,macos",
@@ -299,7 +300,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--no-default-features",
     "--features",
     "desktop,windows",
@@ -315,7 +316,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--release",
 ]
 
@@ -333,7 +334,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--release",
     "--no-default-features",
     "--features",
@@ -354,7 +355,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--release",
     "--no-default-features",
     "--features",
@@ -379,7 +380,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--release",
     "--no-default-features",
     "--features",
@@ -400,7 +401,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--release",
     "--no-default-features",
     "--features",
@@ -424,7 +425,7 @@ args = [
     "--package",
     "cheenhub_client",
     "--bin",
-    "cheen_hub",
+    "cheenhub",
     "--release",
     "--no-default-features",
     "--features",
@@ -778,3 +779,8 @@ args = ["run", "-p", "xtask", "--", "release-version", "print-tag"]
 description = "Ask for a release tag, build the workspace, then create and push the git tag."
 command = "cargo"
 args = ["run", "-p", "xtask", "--", "release-version", "tag"]
+
+[tasks.setup-linux-dev]
+description = "Register the Linux development app for desktop integration without installing a package."
+command = "sh"
+args = ["scripts/setup-linux-dev.sh"]
