@@ -115,7 +115,22 @@ async fn probe(service: &Service) {
                 "Linux PTT GlobalShortcuts backend unavailable"
             );
             service.available(false);
-            service.publish(Status::Failed("Системное управление Push-to-talk недоступно. Проверьте установку приложения и поддержку глобальных сочетаний в вашей среде рабочего стола.".into()));
+            let message = match &result {
+                Ok(Err(detail)) if detail.contains("App info not found") => {
+                    "Чтобы назначить клавишу для разговора, настройте интеграцию CheenHub с рабочим столом. Остальные режимы доступны."
+                }
+                Ok(Err(detail))
+                    if detail.contains("UnknownMethod")
+                        || detail.contains("UnknownInterface")
+                        || detail.contains("GlobalShortcuts API unavailable") =>
+                {
+                    "В вашей среде рабочего стола этот режим пока недоступен. Выберите активацию голосом или постоянно включённый микрофон."
+                }
+                _ => {
+                    "Не удалось подключить управление клавишей. Попробуйте ещё раз. Остальные режимы доступны."
+                }
+            };
+            service.publish(Status::Failed(message.into()));
         }
     }
 }

@@ -1,6 +1,6 @@
 //! Назначение кнопки удержания с загрузкой, отменой и обработкой ошибок.
 
-use crate::features::microphone::{MicrophoneHandle, push_to_talk};
+use crate::features::microphone::{MicrophoneActivationMode, MicrophoneHandle, push_to_talk};
 use dioxus::core::Task;
 use dioxus::prelude::*;
 
@@ -10,6 +10,18 @@ pub(super) fn PushToTalkSettings() -> Element {
     let mic = use_context::<MicrophoneHandle>();
     let mut task = use_signal(|| None::<Task>);
     let mut error = use_signal(|| None::<String>);
+    let activation_mic = mic.clone();
+    use_effect(move || {
+        let recording = task.peek().is_some();
+        if activation_mic.activation_mode() != MicrophoneActivationMode::PushToTalk
+            && recording
+            && let Some(pending) = task.take()
+        {
+            pending.cancel();
+            error.set(None);
+            info!("push-to-talk binding recording cancelled after activation mode changed");
+        }
+    });
     let busy = task().is_some();
     let key = mic.push_to_talk_key();
     let record_mic = mic.clone();
@@ -20,12 +32,10 @@ pub(super) fn PushToTalkSettings() -> Element {
         _ => None,
     });
     let mut available = use_resource(push_to_talk::availability);
-    if available().is_none()
-        || update
-            .as_ref()
-            .is_some_and(|update| update.availability == push_to_talk::Availability::Pending)
-    {
-        return rsx! { p { role: "status", class: "mt-3 text-[12px] text-zinc-400", "Проверяем доступность Push-to-talk…" } };
+    if update.as_ref().map_or(available().is_none(), |update| {
+        update.availability == push_to_talk::Availability::Pending
+    }) {
+        return rsx! { div { role: "status", class: "mt-3 flex items-center gap-2 text-[12px] text-zinc-400", span { aria_hidden: "true", class: "h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200" } "Проверяем управление клавишей…" } };
     }
     if !update
         .as_ref()
@@ -33,21 +43,19 @@ pub(super) fn PushToTalkSettings() -> Element {
             update.availability == push_to_talk::Availability::Available
         })
     {
-        if let Some(message) = portal_error {
-            return rsx! {
-                div { class: "mt-3 space-y-2",
-                    p { role: "alert", class: "text-[12px] leading-5 text-red-300", "{message}" }
-                    if update.as_ref().is_some_and(|update| update.restart_capture) {
-                        p { class: "text-[12px] leading-5 text-amber-300", "После проверки выключите и включите микрофон, затем нажмите «Назначить»." }
-                    }
-                    button { r#type: "button", class: "rounded-xl bg-zinc-800 px-3 py-2 text-[13px] text-zinc-100",
+        return rsx! {
+            div { class: "mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between",
+                p { role: "status", class: "text-[12px] leading-5 text-zinc-400",
+                    {portal_error.unwrap_or_else(|| push_to_talk::unsupported_reason().into())}
+                }
+                if update.is_some() {
+                    button { r#type: "button", class: "shrink-0 self-start rounded-lg bg-zinc-800 px-3 py-2 text-[12px] text-zinc-200 transition hover:bg-zinc-700",
                         onclick: move |_| { push_to_talk::retry_availability(); available.restart(); },
-                        "Проверить снова"
+                        "Повторить проверку"
                     }
                 }
-            };
-        }
-        return rsx! { p { class: "mt-3 text-[12px] leading-5 text-zinc-400", {push_to_talk::unsupported_reason()} } };
+            }
+        };
     }
     rsx! {
         div { class: "mt-4 space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/45 p-4",

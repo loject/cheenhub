@@ -222,8 +222,13 @@ pub(crate) fn SoundSettingsSection() -> Element {
                     }
                 }
 
-                if activation_mode == MicrophoneActivationMode::PushToTalk || !crate::features::microphone::push_to_talk::supported() {
-                    super::push_to_talk_settings::PushToTalkSettings {}
+                div {
+                    "data-open": if activation_mode == MicrophoneActivationMode::PushToTalk || mic.push_to_talk_update().is_some_and(|update| update.availability != crate::features::microphone::push_to_talk::Availability::Available) || !crate::features::microphone::push_to_talk::supported() { "true" } else { "false" },
+                    inert: activation_mode != MicrophoneActivationMode::PushToTalk && mic.push_to_talk_update().is_some_and(|update| update.availability == crate::features::microphone::push_to_talk::Availability::Available),
+                    class: "grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity] duration-300 ease-out pointer-events-none data-[open=true]:grid-rows-[1fr] data-[open=true]:opacity-100 data-[open=true]:pointer-events-auto",
+                    div { class: "min-h-0 overflow-hidden",
+                        super::push_to_talk_settings::PushToTalkSettings {}
+                    }
                 }
 
                 div {
