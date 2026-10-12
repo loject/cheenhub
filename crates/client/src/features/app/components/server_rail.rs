@@ -2,6 +2,7 @@
 
 use cheenhub_contracts::rest::ServerSummary;
 use dioxus::prelude::*;
+use dioxus_sdk_storage::{LocalStorage, use_storage};
 
 use crate::features::landing::components::logo_icon::LogoIcon;
 
@@ -31,7 +32,10 @@ pub(crate) fn ServerRail(
     on_add_server: EventHandler<()>,
 ) -> Element {
     let mut show_load_error = use_signal(|| false);
-    let mut show_empty_server_hint = use_signal(|| true);
+    let mut show_empty_server_hint =
+        use_storage::<LocalStorage, bool>("cheenhub.app.show_empty_server_hint".to_owned(), || {
+            true
+        });
     let list_class = if !is_loading && servers.is_empty() {
         "space-y-2 overflow-visible pb-3"
     } else {
@@ -87,7 +91,7 @@ pub(crate) fn ServerRail(
                                     class: "pointer-events-auto absolute right-0 top-0 flex size-10 items-center justify-center rounded-xl text-zinc-500 transition-[background-color,color,scale] duration-150 ease-out hover:bg-white/5 hover:text-zinc-200 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70",
                                     "aria-label": "Закрыть подсказку о серверах",
                                     onclick: move |_| {
-                                        info!("dismissed empty server rail hint");
+                                        info!("dismissed empty server rail hint; saving preference");
                                         show_empty_server_hint.set(false);
                                     },
                                     svg { class: "size-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
