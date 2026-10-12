@@ -1,6 +1,6 @@
 //! Контейнер системного графика на общем экземпляре библиотеки Apache ECharts.
 
-use dioxus::prelude::*;
+use dioxus::{dioxus_core::spawn_forever, prelude::*};
 
 use super::super::chart_bridge;
 

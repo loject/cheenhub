@@ -9,9 +9,15 @@ use super::metrics_chart::MetricsTrendChart;
 pub(super) fn cpu_total_chart(samples: &[HostMetricsSample]) -> Element {
     let option = chart_option(
         vec![
-            line_series("Система", "#e4e4e7", samples, |sample| f64::from(sample.cpu.system_percent)),
-            line_series("CheenHub", "#60a5fa", samples, |sample| f64::from(sample.cpu.cheenhub_percent)),
-            line_series("База данных", "#a78bfa", samples, |sample| f64::from(sample.cpu.database_percent)),
+            line_series("Система", "#e4e4e7", samples, |sample| {
+                f64::from(sample.cpu.system_percent)
+            }),
+            line_series("CheenHub", "#60a5fa", samples, |sample| {
+                f64::from(sample.cpu.cheenhub_percent)
+            }),
+            line_series("База данных", "#a78bfa", samples, |sample| {
+                f64::from(sample.cpu.database_percent)
+            }),
         ],
         "%",
         Some(100.0),
@@ -78,9 +84,16 @@ pub(super) fn logical_cpu_grid(samples: &[HostMetricsSample]) -> Element {
 
 pub(super) fn memory_chart(samples: &[HostMetricsSample]) -> Element {
     const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
-    let max = samples.iter().map(|sample| sample.memory.total_bytes).max().unwrap_or(0) as f64 / GIB;
+    let max = samples
+        .iter()
+        .map(|sample| sample.memory.total_bytes)
+        .max()
+        .unwrap_or(0) as f64
+        / GIB;
     let option = chart_option(
-        vec![line_series("Занято", "#34d399", samples, |sample| sample.memory.used_bytes as f64 / GIB)],
+        vec![line_series("Занято", "#34d399", samples, |sample| {
+            sample.memory.used_bytes as f64 / GIB
+        })],
         " ГБ",
         Some(max.max(1.0)),
         false,
@@ -113,10 +126,19 @@ pub(super) fn memory_breakdown(sample: &HostMetricsSample) -> Element {
 
 pub(super) fn disk_chart(samples: &[HostMetricsSample]) -> Element {
     const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
-    let max = samples.iter().filter_map(|sample| sample.disk.as_ref()).map(|disk| disk.total_bytes).max().unwrap_or(0) as f64 / GIB;
+    let max = samples
+        .iter()
+        .filter_map(|sample| sample.disk.as_ref())
+        .map(|disk| disk.total_bytes)
+        .max()
+        .unwrap_or(0) as f64
+        / GIB;
     let option = chart_option(
         vec![line_series("Занято", "#fbbf24", samples, |sample| {
-            sample.disk.as_ref().map_or(0.0, |disk| disk.used_bytes as f64 / GIB)
+            sample
+                .disk
+                .as_ref()
+                .map_or(0.0, |disk| disk.used_bytes as f64 / GIB)
         })],
         " ГБ",
         Some(max.max(1.0)),
@@ -135,7 +157,15 @@ pub(super) fn disk_chart(samples: &[HostMetricsSample]) -> Element {
 pub(super) fn network_chart(samples: &[HostMetricsSample]) -> Element {
     const KIB: f64 = 1024.0;
     const MIB: f64 = KIB * KIB;
-    let peak = samples.iter().flat_map(|sample| [sample.network.sent_bytes_per_second, sample.network.received_bytes_per_second]).fold(0.0_f64, f64::max);
+    let peak = samples
+        .iter()
+        .flat_map(|sample| {
+            [
+                sample.network.sent_bytes_per_second,
+                sample.network.received_bytes_per_second,
+            ]
+        })
+        .fold(0.0_f64, f64::max);
     let (scale, unit) = if peak >= MIB {
         (MIB, " МБ/с")
     } else if peak >= KIB {
@@ -145,8 +175,12 @@ pub(super) fn network_chart(samples: &[HostMetricsSample]) -> Element {
     };
     let option = chart_option(
         vec![
-            line_series("Получение", "#60a5fa", samples, |sample| sample.network.received_bytes_per_second / scale),
-            line_series("Отправка", "#a78bfa", samples, |sample| sample.network.sent_bytes_per_second / scale),
+            line_series("Получение", "#60a5fa", samples, |sample| {
+                sample.network.received_bytes_per_second / scale
+            }),
+            line_series("Отправка", "#a78bfa", samples, |sample| {
+                sample.network.sent_bytes_per_second / scale
+            }),
         ],
         unit,
         None,
@@ -191,7 +225,10 @@ fn line_series(
     samples: &[HostMetricsSample],
     value: impl Fn(&HostMetricsSample) -> f64,
 ) -> Value {
-    let data: Vec<_> = samples.iter().map(|sample| json!([sample.sampled_at_unix_ms, value(sample)])).collect();
+    let data: Vec<_> = samples
+        .iter()
+        .map(|sample| json!([sample.sampled_at_unix_ms, value(sample)]))
+        .collect();
     json!({
         "name": name,
         "type": "line",
@@ -245,7 +282,8 @@ fn chart_option(series: Vec<Value>, unit: &str, max: Option<f64>, compact: bool)
         },
         "yAxis": y_axis,
         "series": series
-    }).to_string()
+    })
+    .to_string()
 }
 
 pub(super) fn cpu_toggle_class(active: bool) -> &'static str {
