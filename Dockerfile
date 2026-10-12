@@ -53,6 +53,7 @@ RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/regist
     --mount=type=cache,id=cheenhub-web-target,target=/app/target,sharing=locked \
     cargo make build-microphone-worker-wasm-release \
     && dx build --release --platform web --package cheenhub_client --bin cheenhub --locked --debug-symbols false \
+    && cargo run --locked -p xtask -- release-artifacts render-landing \
     && mkdir -p /app/web-public \
     && cp -a /app/target/dx/cheenhub/release/web/public/. /app/web-public/
 

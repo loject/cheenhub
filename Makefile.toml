@@ -309,6 +309,9 @@ args = [
 [tasks.build-web]
 description = "Build the microphone worker wasm artifact and the Dioxus web client."
 dependencies = ["install-dioxus-cli", "build-microphone-worker-wasm-release"]
+run_task = { name = ["build-web-client", "render-landing"], fork = true }
+
+[tasks.build-web-client]
 command = "dx"
 args = [
     "build",
@@ -319,6 +322,11 @@ args = [
     "cheenhub",
     "--release",
 ]
+
+[tasks.render-landing]
+description = "Render the static landing HTML with CHEENHUB_APP_VERSION."
+command = "cargo"
+args = ["run", "--locked", "-p", "xtask", "--", "release-artifacts", "render-landing"]
 
 [tasks.bundle-windows-release]
 description = "Build Windows NSIS and MSI client bundles."

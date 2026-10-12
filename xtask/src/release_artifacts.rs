@@ -7,14 +7,20 @@ use std::process::{Command, Output};
 
 use crate::XtaskResult;
 
+mod landing;
+
+/// Выполняет выбранную операцию подготовки или публикации релизных артефактов.
+///
+/// Аргументы содержат имя операции и её параметры; ошибки возвращаются CLI.
 pub(crate) fn run(args: Vec<String>) -> XtaskResult<()> {
     let action = args.first().map(String::as_str).unwrap_or("collect");
     match action {
         "collect" => collect_release_artifacts(&args[1..]),
         "publish" => publish_release_artifacts(&args[1..]),
+        "render-landing" => landing::run(&args[1..]),
         "-h" | "--help" | "help" => {
             println!(
-                "Usage:\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>\n  cargo run -p xtask -- release-artifacts publish <release-tag> <asset-dir>"
+                "Usage:\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>\n  cargo run -p xtask -- release-artifacts publish <release-tag> <asset-dir>\n  cargo run -p xtask -- release-artifacts render-landing [<output-html>]"
             );
             Ok(())
         }
