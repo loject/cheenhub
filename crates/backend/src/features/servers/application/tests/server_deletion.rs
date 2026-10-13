@@ -246,9 +246,11 @@ async fn deleting_server_removes_only_its_voice_presence() {
     let notification = notifications
         .try_recv()
         .expect("участник получает завершение присутствия");
-    let crate::realtime::WebSocketOutbound::Envelope(envelope) = notification else {
+    let crate::realtime::WebSocketOutbound::PreparedEnvelope(json) = notification else {
         panic!("ожидался снимок участников");
     };
+    let envelope: cheenhub_contracts::realtime::RealtimeEnvelope =
+        serde_json::from_str(json.as_str()).unwrap();
     let snapshot: cheenhub_contracts::realtime::VoiceRoomSnapshot =
         serde_json::from_value(envelope.payload).unwrap();
     assert_eq!(snapshot.room_id, room_id.to_string());

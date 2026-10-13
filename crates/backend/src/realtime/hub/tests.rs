@@ -1,9 +1,25 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+
 use bytes::Bytes;
+use cheenhub_contracts::realtime::{NetworkKind, RealtimeKind, RealtimeModule};
 use dashmap::DashMap;
+use serde::{Serialize, Serializer};
 use uuid::Uuid;
 
 use super::{RealtimeHub, RealtimeSession};
-use crate::realtime::sink::{DatagramSink, WebSocketOutbound};
+use crate::realtime::sink::{DatagramSink, EnvelopeSink, WebSocketOutbound};
+
+struct CountingPayload(Arc<AtomicUsize>);
+
+impl Serialize for CountingPayload {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        serializer.serialize_str("one serialization")
+    }
+}
 
 #[test]
 fn session_registry_is_sharded_by_session_id() {
@@ -12,6 +28,44 @@ fn session_registry_is_sharded_by_session_id() {
     let hub = RealtimeHub::default();
 
     assert_sharded_registry(&hub.sessions);
+}
+
+#[tokio::test]
+async fn fanout_serializes_payload_once_for_multiple_recipients() {
+    let hub = RealtimeHub::default();
+    let first_stream = Uuid::new_v4();
+    let second_stream = Uuid::new_v4();
+    let (first_sender, mut first_receiver) = tokio::sync::mpsc::channel(1);
+    let (second_sender, mut second_receiver) = tokio::sync::mpsc::channel(1);
+    for (stream_id, sender) in [(first_stream, first_sender), (second_stream, second_sender)] {
+        hub.register_stream(
+            stream_id,
+            RealtimeModule::Network,
+            Uuid::new_v4(),
+            EnvelopeSink::websocket(sender),
+        )
+        .await;
+    }
+
+    let count = Arc::new(AtomicUsize::new(0));
+    hub.fanout_to_streams(
+        RealtimeModule::Network,
+        &Uuid::new_v4(),
+        RealtimeKind::Network(NetworkKind::Ping),
+        &[first_stream, second_stream],
+        CountingPayload(count.clone()),
+    )
+    .await;
+
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    for receiver in [&mut first_receiver, &mut second_receiver] {
+        let Ok(WebSocketOutbound::PreparedEnvelope(text)) = receiver.try_recv() else {
+            panic!("событие должно попасть в очередь каждого получателя");
+        };
+        let envelope: cheenhub_contracts::realtime::RealtimeEnvelope =
+            serde_json::from_str(text.as_str()).expect("корректный общий конверт");
+        assert_eq!(envelope.payload, serde_json::json!("one serialization"));
+    }
 }
 
 #[tokio::test]

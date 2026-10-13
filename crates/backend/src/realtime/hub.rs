@@ -14,56 +14,13 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
-use super::SERVICE_RESTARTING_CLOSE_CODE;
-use super::protocol;
-use super::sink::{DatagramSink, EnvelopeSink};
+use super::sink::{DatagramSink, EnvelopeSink, PreparedEnvelope};
+
+mod disconnect;
+pub(crate) use disconnect::DisconnectReason;
 
 const SLOW_DATAGRAM_FANOUT_WARN_AFTER: Duration = Duration::from_millis(40);
 const SLOW_DATAGRAM_FANOUT_WARNING_INTERVAL: Duration = Duration::from_secs(5);
-
-/// Причина, по которой backend закрывает активный realtime-транспорт.
-///
-/// Причина определяет код закрытия, который видит клиент: отзыв auth-сессии —
-/// это потеря доступа, а плановый рестарт — временная недоступность сервера,
-/// после которой клиент должен переподключиться сразу.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DisconnectReason {
-    /// Связанная с транспортом auth-сессия была отозвана.
-    AuthSessionRevoked,
-    /// Процесс переходит в фазу завершения.
-    ServiceRestarting,
-}
-
-impl std::fmt::Display for DisconnectReason {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let label = match self {
-            Self::AuthSessionRevoked => "auth_session_revoked",
-            Self::ServiceRestarting => "service_restarting",
-        };
-        formatter.write_str(label)
-    }
-}
-
-impl DisconnectReason {
-    /// Возвращает код закрытия транспорта для этой причины.
-    ///
-    /// Для отзыва сессии используется 4003 из диапазона WebTransport, для
-    /// планового рестарта — 1013 (try again later) по RFC 6455.
-    pub(crate) fn close_code(self) -> u32 {
-        match self {
-            Self::AuthSessionRevoked => 4003,
-            Self::ServiceRestarting => SERVICE_RESTARTING_CLOSE_CODE,
-        }
-    }
-
-    /// Возвращает текст причины, который получает клиент при закрытии.
-    pub(crate) fn close_message(self) -> &'static str {
-        match self {
-            Self::AuthSessionRevoked => "auth session revoked",
-            Self::ServiceRestarting => "backend is shutting down",
-        }
-    }
-}
 
 /// Общий реестр активных потоков realtime, привязанных к модулям.
 #[derive(Default)]
@@ -402,7 +359,7 @@ impl RealtimeHub {
         stream_ids: &[Uuid],
         payload: P,
     ) where
-        P: Serialize + Clone,
+        P: Serialize,
     {
         let stream_ids = stream_ids.iter().copied().collect::<HashSet<_>>();
         let streams = self
@@ -414,13 +371,25 @@ impl RealtimeHub {
             .cloned()
             .collect::<Vec<_>>();
 
+        if streams.is_empty() {
+            return;
+        }
+        let prepared = match PreparedEnvelope::new(module, kind, payload) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                warn!(
+                    ?module, ?kind, %server_id, %error,
+                    "failed to prepare realtime fanout envelope"
+                );
+                return;
+            }
+        };
+
         // TODO: benchmark this fanout path before adding bounded concurrency or task spawning.
         join_all(streams.into_iter().map(|stream| {
-            let payload = payload.clone();
+            let prepared = &prepared;
             async move {
-                if let Err(error) =
-                    protocol::write_envelope(&stream.send, module, kind, None, payload).await
-                {
+                if let Err(error) = stream.send.send_prepared_envelope(prepared).await {
                     warn!(
                         stream_id = %stream.id,
                         ?module,
@@ -444,7 +413,7 @@ impl RealtimeHub {
         payload: P,
     ) -> usize
     where
-        P: Serialize + Clone,
+        P: Serialize,
     {
         let recipients = self.recipients_for_users(module, user_ids).await;
         let stream_ids = recipients

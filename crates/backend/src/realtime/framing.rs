@@ -31,6 +31,12 @@ pub(crate) async fn read_envelope(
 }
 
 async fn write_frame(send: &Mutex<SendStream>, payload: &[u8]) -> anyhow::Result<()> {
+    let frame = prepare_frame(payload)?;
+    write_prepared_frame(send, &frame).await
+}
+
+/// Подготавливает полный фрейм WebTransport один раз для всех получателей.
+pub(crate) fn prepare_frame(payload: &[u8]) -> anyhow::Result<Bytes> {
     if payload.len() > MAX_FRAME_BYTES {
         return Err(anyhow!("realtime frame is too large"));
     }
@@ -38,7 +44,14 @@ async fn write_frame(send: &Mutex<SendStream>, payload: &[u8]) -> anyhow::Result
     let mut frame = BytesMut::with_capacity(4 + payload.len());
     frame.put_u32(payload.len() as u32);
     frame.extend_from_slice(payload);
+    Ok(frame.freeze())
+}
 
+/// Отправляет уже подготовленный фрейм без повторного копирования JSON.
+pub(crate) async fn write_prepared_frame(
+    send: &Mutex<SendStream>,
+    frame: &[u8],
+) -> anyhow::Result<()> {
     let mut written = 0;
     let mut send = send.lock().await;
     while written < frame.len() {

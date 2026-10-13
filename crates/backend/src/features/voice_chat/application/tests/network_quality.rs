@@ -315,7 +315,7 @@ async fn repeated_network_quality_publication_is_dropped_before_fanout() {
 
     assert!(matches!(
         receiver.try_recv(),
-        Ok(WebSocketOutbound::Envelope(_))
+        Ok(WebSocketOutbound::PreparedEnvelope(_))
     ));
     assert!(receiver.try_recv().is_err());
     assert_eq!(state.voice_presence_store.room_participants_call_count(), 1);
@@ -391,11 +391,11 @@ async fn network_quality_fanout_reaches_only_streams_in_the_active_room() {
 
     assert!(matches!(
         alice_receiver.try_recv(),
-        Ok(WebSocketOutbound::Envelope(_))
+        Ok(WebSocketOutbound::PreparedEnvelope(_))
     ));
     assert!(matches!(
         bob_receiver.try_recv(),
-        Ok(WebSocketOutbound::Envelope(_))
+        Ok(WebSocketOutbound::PreparedEnvelope(_))
     ));
     assert!(carol_receiver.try_recv().is_err());
 }

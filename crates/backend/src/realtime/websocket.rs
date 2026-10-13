@@ -74,6 +74,7 @@ async fn handle_socket(state: AppState, session_id: Uuid, socket: WebSocket) {
                         continue;
                     }
                 },
+                WebSocketOutbound::PreparedEnvelope(text) => Message::Text(text),
                 WebSocketOutbound::Datagram(bytes) => Message::Binary(bytes),
                 WebSocketOutbound::Close { code, reason } => {
                     // Close-кадр отправляем последним действием писателя, поэтому

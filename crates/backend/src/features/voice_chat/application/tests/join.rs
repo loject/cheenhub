@@ -146,10 +146,13 @@ async fn deleted_join_target_still_notifies_replaced_room() {
         result,
         Err(super::super::VoiceChatApplicationError::NotFound(_))
     ));
-    let crate::realtime::WebSocketOutbound::Envelope(envelope) = notifications.try_recv().unwrap()
+    let crate::realtime::WebSocketOutbound::PreparedEnvelope(json) =
+        notifications.try_recv().unwrap()
     else {
         panic!("ожидался снимок покинутой комнаты");
     };
+    let envelope: cheenhub_contracts::realtime::RealtimeEnvelope =
+        serde_json::from_str(json.as_str()).unwrap();
     let snapshot: cheenhub_contracts::realtime::VoiceRoomSnapshot =
         serde_json::from_value(envelope.payload).unwrap();
     assert_eq!(snapshot.room_id, old_room);

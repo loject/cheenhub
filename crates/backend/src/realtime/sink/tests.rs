@@ -2,6 +2,47 @@ use cheenhub_contracts::realtime::{NetworkKind, Ping, RealtimeKind, RealtimeModu
 
 use super::*;
 
+#[test]
+fn prepared_envelope_preserves_both_wire_formats() {
+    let module = RealtimeModule::Network;
+    let kind = RealtimeKind::Network(NetworkKind::Ping);
+    let expected = RealtimeEnvelope::new(module, kind, None, Ping { sent_at_ms: 42 })
+        .expect("обычный конверт сериализуется");
+    let prepared = PreparedEnvelope::new(module, kind, Ping { sent_at_ms: 42 })
+        .expect("общий конверт сериализуется");
+
+    let text = prepared.websocket_text.as_str();
+    let actual: RealtimeEnvelope = serde_json::from_str(text).expect("корректный JSON");
+    assert_eq!(actual, expected);
+
+    let frame = &prepared.webtransport_frame;
+    let length = u32::from_be_bytes(frame[..4].try_into().expect("префикс длины")) as usize;
+    assert_eq!(length, text.len());
+    assert_eq!(&frame[4..], text.as_bytes());
+}
+
+#[tokio::test]
+async fn prepared_websocket_envelope_reports_full_outbound_queue() {
+    let (sender, _receiver) = mpsc::channel(1);
+    sender
+        .try_send(WebSocketOutbound::Datagram(Bytes::from_static(b"occupied")))
+        .expect("очередь принимает первое сообщение");
+    let sink = EnvelopeSink::websocket(sender);
+    let prepared = PreparedEnvelope::new(
+        RealtimeModule::Network,
+        RealtimeKind::Network(NetworkKind::Ping),
+        Ping { sent_at_ms: 1 },
+    )
+    .expect("общий конверт сериализуется");
+    assert!(
+        sink.send_prepared_envelope(&prepared)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("outbound queue is full")
+    );
+}
+
 #[tokio::test]
 async fn websocket_envelope_reports_full_outbound_queue() {
     let (sender, _receiver) = mpsc::channel(1);
