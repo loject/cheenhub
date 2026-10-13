@@ -1,13 +1,16 @@
 //! Сбор и агрегация разрешённых системных метрик.
 
-use std::{collections::HashSet, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 
 use anyhow::Context;
 use cheenhub_contracts::rest::{
     HostCpuMetrics, HostDiskMetrics, HostMemoryMetrics, HostMetricsSample, HostNetworkMetrics,
 };
 
-use super::docker::{ContainerStats, DockerClient};
+use super::docker::{ContainerStats, CpuStats, DockerClient};
 
 const COMPOSE_SERVICE_LABEL: &str = "com.docker.compose.service";
 
@@ -17,6 +20,7 @@ pub(super) struct MetricsCollector {
     database_service: String,
     disk_path: String,
     previous_cpu: Option<CpuSnapshot>,
+    previous_container_cpu: HashMap<String, CpuStats>,
     previous_network: Option<NetworkSnapshot>,
 }
 
@@ -33,6 +37,7 @@ impl MetricsCollector {
             database_service,
             disk_path,
             previous_cpu: None,
+            previous_container_cpu: HashMap::new(),
             previous_network: None,
         }
     }
@@ -45,15 +50,47 @@ impl MetricsCollector {
         let containers = self.docker.running_containers().await?;
         let mut app_stats = Vec::new();
         let mut database_stats = Vec::new();
+        let mut next_container_cpu = HashMap::new();
+        let mut cheenhub_cpu = 0.0_f32;
+        let mut database_cpu = 0.0_f32;
 
         for container in containers {
             let Some(service) = container.labels.get(COMPOSE_SERVICE_LABEL) else {
                 continue;
             };
-            if self.app_services.contains(service) {
-                app_stats.push(self.docker.container_stats(&container.id).await?);
-            } else if service == &self.database_service {
-                database_stats.push(self.docker.container_stats(&container.id).await?);
+            let is_app = self.app_services.contains(service);
+            let is_database = service == &self.database_service;
+            if !is_app && !is_database {
+                continue;
+            }
+
+            let stats = self.docker.container_stats(&container.id).await?;
+            if let Some(previous) = self.previous_container_cpu.get(&container.id) {
+                if let Some(percent) = stats.cpu_stats.whole_host_cpu_percent_since(*previous) {
+                    if is_app {
+                        cheenhub_cpu += percent;
+                    } else {
+                        database_cpu += percent;
+                    }
+                } else {
+                    tracing::debug!(
+                        container_id = %container.id,
+                        service = %service,
+                        "Docker CPU counters did not advance or were reset"
+                    );
+                }
+            } else {
+                tracing::debug!(
+                    container_id = %container.id,
+                    service = %service,
+                    "initializing Docker container CPU baseline"
+                );
+            }
+            next_container_cpu.insert(container.id, stats.cpu_stats);
+            if is_app {
+                app_stats.push(stats);
+            } else {
+                database_stats.push(stats);
             }
         }
         if app_stats.is_empty() {
@@ -63,6 +100,8 @@ impl MetricsCollector {
             anyhow::bail!("CheenHub database container was not found");
         }
 
+        // Исключаем остановленные контейнеры из истории; новые получат базовый замер.
+        self.previous_container_cpu = next_container_cpu;
         let previous_cpu = self.previous_cpu.replace(cpu.clone());
         let network_totals = aggregate_network(&app_stats);
         let now = Instant::now();
@@ -76,8 +115,8 @@ impl MetricsCollector {
         };
 
         let (system_percent, logical_processors_percent) = cpu.usage_since(&previous_cpu);
-        let cheenhub_cpu = aggregate_cpu(&app_stats).clamp(0.0, 100.0);
-        let database_cpu = aggregate_cpu(&database_stats).clamp(0.0, 100.0);
+        let cheenhub_cpu = cheenhub_cpu.clamp(0.0, 100.0);
+        let database_cpu = database_cpu.clamp(0.0, 100.0);
         let other_cpu = (system_percent - cheenhub_cpu - database_cpu).max(0.0);
         let cheenhub_memory = aggregate_memory(&app_stats);
         let database_memory = aggregate_memory(&database_stats);
@@ -124,13 +163,6 @@ impl MetricsCollector {
             },
         }))
     }
-}
-
-fn aggregate_cpu(stats: &[ContainerStats]) -> f32 {
-    stats
-        .iter()
-        .map(ContainerStats::whole_host_cpu_percent)
-        .sum()
 }
 
 fn aggregate_memory(stats: &[ContainerStats]) -> u64 {

@@ -130,29 +130,12 @@ pub(super) struct ContainerSummary {
 #[derive(Deserialize)]
 pub(super) struct ContainerStats {
     pub(super) cpu_stats: CpuStats,
-    pub(super) precpu_stats: CpuStats,
     pub(super) memory_stats: MemoryStats,
     #[serde(default)]
     pub(super) networks: HashMap<String, NetworkStats>,
 }
 
 impl ContainerStats {
-    pub(super) fn whole_host_cpu_percent(&self) -> f32 {
-        let container_delta = self
-            .cpu_stats
-            .cpu_usage
-            .total_usage
-            .saturating_sub(self.precpu_stats.cpu_usage.total_usage);
-        let system_delta = self
-            .cpu_stats
-            .system_cpu_usage
-            .saturating_sub(self.precpu_stats.system_cpu_usage);
-        if system_delta == 0 {
-            return 0.0;
-        }
-        ((container_delta as f64 / system_delta as f64) * 100.0) as f32
-    }
-
     pub(super) fn effective_memory_bytes(&self) -> u64 {
         let cache = self
             .memory_stats
@@ -176,7 +159,7 @@ impl ContainerStats {
     }
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Clone, Copy, Default, Deserialize)]
 pub(super) struct CpuStats {
     #[serde(default)]
     pub(super) cpu_usage: CpuUsage,
@@ -184,7 +167,23 @@ pub(super) struct CpuStats {
     pub(super) system_cpu_usage: u64,
 }
 
-#[derive(Default, Deserialize)]
+impl CpuStats {
+    /// Доля CPU всего хоста, использованная контейнером между двумя замерами.
+    ///
+    /// Возвращает `None`, если счётчики сбросились или время CPU хоста не изменилось.
+    pub(super) fn whole_host_cpu_percent_since(self, previous: Self) -> Option<f32> {
+        if self.cpu_usage.total_usage < previous.cpu_usage.total_usage
+            || self.system_cpu_usage <= previous.system_cpu_usage
+        {
+            return None;
+        }
+        let container_delta = self.cpu_usage.total_usage - previous.cpu_usage.total_usage;
+        let system_delta = self.system_cpu_usage - previous.system_cpu_usage;
+        Some((container_delta as f64 / system_delta as f64 * 100.0) as f32)
+    }
+}
+
+#[derive(Clone, Copy, Default, Deserialize)]
 pub(super) struct CpuUsage {
     #[serde(default)]
     pub(super) total_usage: u64,
