@@ -10,10 +10,40 @@ use uuid::Uuid;
 use crate::features::servers::application;
 use crate::features::servers::error::ServerError;
 use crate::realtime::EnvelopeSink;
+use crate::realtime::hub::RealtimeRecipient;
 use crate::realtime::protocol::{
     decode_payload, require_request_id, send_rejection, write_envelope,
 };
 use crate::state::AppState;
+
+/// Отбирает потоки сервера, используя политику членства модуля Servers.
+///
+/// Временный путь до появления in-memory подписок; транспортный Hub не делает SQL.
+pub(crate) async fn server_recipients(
+    state: &AppState,
+    module: RealtimeModule,
+    server_id: &Uuid,
+) -> Vec<RealtimeRecipient> {
+    let candidates = state.realtime_hub.module_recipients(module);
+    let mut recipients = Vec::new();
+
+    for candidate in candidates {
+        match application::user_has_server_access(state, &candidate.user_id, server_id).await {
+            Ok(true) => recipients.push(candidate),
+            Ok(false) => {}
+            Err(error) => tracing::warn!(
+                stream_id = %candidate.stream_id,
+                ?module,
+                user_id = %candidate.user_id,
+                %server_id,
+                %error,
+                "failed to evaluate server realtime recipient"
+            ),
+        }
+    }
+
+    recipients
+}
 
 /// Обрабатывает один конверт модуля управления серверами.
 pub(crate) async fn handle(

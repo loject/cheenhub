@@ -9,7 +9,7 @@ use dashmap::DashMap;
 use serde::{Serialize, Serializer};
 use uuid::Uuid;
 
-use super::{RealtimeHub, RealtimeSession};
+use super::{RealtimeHub, RealtimeSession, RealtimeStream};
 use crate::realtime::sink::{DatagramSink, EnvelopeSink, WebSocketOutbound};
 
 struct CountingPayload(Arc<AtomicUsize>);
@@ -66,6 +66,79 @@ async fn fanout_serializes_payload_once_for_multiple_recipients() {
             serde_json::from_str(text.as_str()).expect("корректный общий конверт");
         assert_eq!(envelope.payload, serde_json::json!("one serialization"));
     }
+}
+
+#[test]
+fn stream_registry_is_sharded_by_stream_id() {
+    fn assert_sharded_registry(_: &DashMap<Uuid, RealtimeStream>) {}
+
+    assert_sharded_registry(&RealtimeHub::default().streams);
+}
+
+#[tokio::test]
+async fn stream_registry_filters_module_and_ignores_duplicate_registration() {
+    let hub = RealtimeHub::default();
+    let stream_id = Uuid::new_v4();
+    let other_stream_id = Uuid::new_v4();
+    let user_id = Uuid::new_v4();
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(2);
+    let (other_sender, mut other_receiver) = tokio::sync::mpsc::channel(2);
+
+    hub.register_stream(
+        stream_id,
+        cheenhub_contracts::realtime::RealtimeModule::Network,
+        user_id,
+        crate::realtime::EnvelopeSink::websocket(sender),
+    )
+    .await;
+    hub.register_stream(
+        other_stream_id,
+        cheenhub_contracts::realtime::RealtimeModule::TextChat,
+        Uuid::new_v4(),
+        crate::realtime::EnvelopeSink::websocket(other_sender),
+    )
+    .await;
+    let (duplicate_sender, _duplicate_receiver) = tokio::sync::mpsc::channel(1);
+    hub.register_stream(
+        stream_id,
+        cheenhub_contracts::realtime::RealtimeModule::TextChat,
+        Uuid::new_v4(),
+        crate::realtime::EnvelopeSink::websocket(duplicate_sender),
+    )
+    .await;
+
+    let recipients = hub.module_recipients(cheenhub_contracts::realtime::RealtimeModule::Network);
+    assert_eq!(recipients.len(), 1);
+    assert_eq!(recipients[0].stream_id, stream_id);
+    assert_eq!(recipients[0].user_id, user_id);
+    assert_eq!(
+        hub.module_recipients(cheenhub_contracts::realtime::RealtimeModule::TextChat).len(),
+        1
+    );
+
+    hub.fanout_to_streams(
+        cheenhub_contracts::realtime::RealtimeModule::Network,
+        &Uuid::nil(),
+        cheenhub_contracts::realtime::RealtimeKind::Network(
+            cheenhub_contracts::realtime::NetworkKind::Ping,
+        ),
+        &[stream_id, stream_id, other_stream_id, Uuid::new_v4()],
+        cheenhub_contracts::realtime::Ping { sent_at_ms: 7 },
+    )
+    .await;
+
+    assert!(matches!(
+        receiver.try_recv(),
+        Ok(WebSocketOutbound::PreparedEnvelope(_))
+    ));
+    assert!(receiver.try_recv().is_err());
+    assert!(other_receiver.try_recv().is_err());
+
+    hub.unregister_stream(stream_id).await;
+    assert!(
+        hub.module_recipients(cheenhub_contracts::realtime::RealtimeModule::Network)
+            .is_empty()
+    );
 }
 
 #[tokio::test]

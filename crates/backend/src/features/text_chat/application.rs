@@ -320,10 +320,12 @@ pub(super) async fn ensure_room_write_allowed(
 async fn fanout_message_created(state: &AppState, message: TextChatMessage) -> anyhow::Result<()> {
     let server_id = Uuid::parse_str(&message.server_id)?;
     let room_id = Uuid::parse_str(&message.room_id)?;
-    let candidates = state
-        .realtime_hub
-        .recipients(state, RealtimeModule::TextChat, &server_id)
-        .await;
+    let candidates = crate::features::servers::realtime::server_recipients(
+        state,
+        RealtimeModule::TextChat,
+        &server_id,
+    )
+    .await;
     let mut stream_ids = Vec::new();
 
     for candidate in candidates {
@@ -362,10 +364,12 @@ async fn fanout_message_deleted(
 ) -> anyhow::Result<()> {
     let server_id = Uuid::parse_str(&message.server_id)?;
     let room_id = Uuid::parse_str(&message.room_id)?;
-    let candidates = state
-        .realtime_hub
-        .recipients(state, RealtimeModule::TextChat, &server_id)
-        .await;
+    let candidates = crate::features::servers::realtime::server_recipients(
+        state,
+        RealtimeModule::TextChat,
+        &server_id,
+    )
+    .await;
     let mut stream_ids = Vec::new();
 
     for candidate in candidates {

@@ -57,10 +57,12 @@ pub(super) async fn fanout_snapshot(
     snapshot: VoiceRoomSnapshot,
 ) {
     let stream_ids = match target.kind {
-        VoicePresenceTargetKind::Server => state
-            .realtime_hub
-            .recipients(state, RealtimeModule::VoiceChat, &target.server_id)
-            .await
+        VoicePresenceTargetKind::Server => crate::features::servers::realtime::server_recipients(
+            state,
+            RealtimeModule::VoiceChat,
+            &target.server_id,
+        )
+        .await
             .iter()
             .map(|recipient| recipient.stream_id)
             .collect::<Vec<_>>(),

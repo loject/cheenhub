@@ -402,10 +402,12 @@ pub(crate) async fn broadcast_server_audio_bitrate(
     server_id: &Uuid,
     audio_bitrate_bps: u32,
 ) {
-    let stream_ids = state
-        .realtime_hub
-        .recipients(state, RealtimeModule::VoiceChat, server_id)
-        .await
+    let stream_ids = crate::features::servers::realtime::server_recipients(
+        state,
+        RealtimeModule::VoiceChat,
+        server_id,
+    )
+    .await
         .iter()
         .map(|recipient| recipient.stream_id)
         .collect::<Vec<_>>();

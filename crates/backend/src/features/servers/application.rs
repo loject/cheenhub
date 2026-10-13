@@ -415,6 +415,26 @@ async fn resolve_write_access(
 #[cfg(test)]
 mod tests;
 
+/// Проверяет доступ пользователя к серверу без привязки к realtime-транспорту.
+pub(crate) async fn user_has_server_access(
+    state: &AppState,
+    user_id: &Uuid,
+    server_id: &Uuid,
+) -> anyhow::Result<bool> {
+    let Some(server) = state.server_store.find_server(server_id).await? else {
+        return Ok(false);
+    };
+    if server.owner_user_id == *user_id {
+        return Ok(true);
+    }
+
+    Ok(state
+        .server_store
+        .find_active_server_member(server_id, user_id)
+        .await?
+        .is_some())
+}
+
 /// Проверяет владение серверами перед удалением аккаунта.
 pub(crate) async fn user_owns_servers(state: &AppState, user_id: &Uuid) -> anyhow::Result<bool> {
     Ok(state

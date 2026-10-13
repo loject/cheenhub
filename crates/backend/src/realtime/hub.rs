@@ -12,8 +12,6 @@ use tokio::time::Instant;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::state::AppState;
-
 use super::sink::{DatagramSink, EnvelopeSink, PreparedEnvelope};
 
 mod disconnect;
@@ -22,37 +20,69 @@ pub(crate) use disconnect::DisconnectReason;
 const SLOW_DATAGRAM_FANOUT_WARN_AFTER: Duration = Duration::from_millis(40);
 const SLOW_DATAGRAM_FANOUT_WARNING_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Общий реестр активных потоков realtime, привязанных к модулям.
+/// Реестр активных realtime-транспортов и точечной доставки событий.
+///
+/// Хранит привязку потоков к аутентифицированным пользователям и модулям,
+/// а также сессии для датаграмм и сигналов отключения. Не определяет,
+/// кто имеет право получать событие: получателей выбирают модули приложения.
 #[derive(Default)]
 pub(crate) struct RealtimeHub {
-    streams: Mutex<Vec<RealtimeStream>>,
+    /// Надёжные потоки по их идентификаторам, независимо от транспорта.
+    streams: DashMap<Uuid, RealtimeStream>,
+    /// Активные транспортные сессии по идентификатору подключения.
     sessions: DashMap<Uuid, RealtimeSession>,
+    /// Время последнего предупреждения для ограничения повторяющихся логов.
     last_slow_datagram_fanout_warning_at: Mutex<Option<Instant>>,
 }
 
+/// Зарегистрированный надёжный поток одного realtime-модуля.
+///
+/// Владелец определяется при аутентификации; запись не хранит права доступа
+/// к серверам или комнатам и используется только для адресной доставки.
 #[derive(Clone)]
 struct RealtimeStream {
+    /// Уникальный идентификатор потока для поиска и удаления из реестра.
     id: Uuid,
+    /// Модуль, сообщения которого принимает этот поток.
     module: RealtimeModule,
+    /// Аутентифицированный пользователь, открывший поток.
     user_id: Uuid,
+    /// Абстракция отправки конвертов через WebTransport или WebSocket.
     send: EnvelopeSink,
 }
 
+/// Активная транспортная сессия для датаграмм и управления отключением.
+///
+/// Не определяет участие пользователя в голосовых комнатах: это состояние
+/// принадлежит модулю голосового чата.
 #[derive(Clone)]
 struct RealtimeSession {
+    /// Идентификатор транспортного подключения.
     id: Uuid,
+    /// Аутентифицированный пользователь, которому принадлежит сессия.
     user_id: Uuid,
+    /// Идентификатор auth-сессии для адресного отзыва подключения.
     auth_session_id: Uuid,
+    /// Канал отправки ненадёжных датаграмм по выбранному транспорту.
     datagrams: DatagramSink,
+    /// Сигнал закрытия транспорта с причиной отключения.
     disconnect: watch::Sender<Option<DisconnectReason>>,
 }
 
+/// Результат доставки одной датаграммы одному получателю.
+///
+/// Используется для диагностики медленных и неуспешных отправок.
 struct DatagramFanoutOutcome {
+    /// Продолжительность попытки отправки конкретному получателю.
     elapsed: Duration,
+    /// Признак ошибки отправки, независимо от её длительности.
     failed: bool,
 }
 
-/// Публичный идентификатор потока, используемый в политиках вещания на уровне функций.
+/// Сведения об активном потоке для выбора получателей модулем приложения.
+///
+/// Наличие записи подтверждает активность потока, но не право пользователя
+/// получать конкретное событие: это проверяет вызывающий модуль.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RealtimeRecipient {
     /// Идентификатор надёжного realtime-потока.
@@ -87,18 +117,17 @@ impl RealtimeHub {
         user_id: Uuid,
         send: EnvelopeSink,
     ) {
-        let mut streams = self.streams.lock().await;
-        if streams.iter().any(|stream| stream.id == stream_id) {
-            return;
+        if let dashmap::Entry::Vacant(entry) = self.streams.entry(stream_id) {
+            entry.insert(RealtimeStream {
+                id: stream_id,
+                module,
+                user_id,
+                send,
+            });
+            debug!(%stream_id, ?module, %user_id, "registered realtime stream");
         }
-        streams.push(RealtimeStream {
-            id: stream_id,
-            module,
-            user_id,
-            send,
-        });
-        debug!(%stream_id, ?module, %user_id, "registered realtime stream");
     }
+
 
     /// Регистрирует аутентифицированную realtime-сессию для вещания датаграмм.
     ///
@@ -286,50 +315,24 @@ impl RealtimeHub {
 
     /// Удаляет надежный поток, привязанный к модулю.
     pub(crate) async fn unregister_stream(&self, stream_id: Uuid) {
-        let mut streams = self.streams.lock().await;
-        streams.retain(|stream| stream.id != stream_id);
+        self.streams.remove(&stream_id);
         debug!(%stream_id, "unregistered realtime stream");
     }
 
-    /// Возвращает активных получателей для модуля realtime на одном сервере.
-    pub(crate) async fn recipients(
-        &self,
-        state: &AppState,
-        module: RealtimeModule,
-        server_id: &Uuid,
-    ) -> Vec<RealtimeRecipient> {
-        let streams = self
-            .streams
-            .lock()
-            .await
+    /// Возвращает идентификаторы и владельцев потоков модуля без проверок доступа.
+    ///
+    /// Принимающий модуль самостоятельно определяет допустимых получателей.
+    pub(crate) fn module_recipients(&self, module: RealtimeModule) -> Vec<RealtimeRecipient> {
+        self.streams
             .iter()
             .filter(|stream| stream.module == module)
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut recipients = Vec::new();
-
-        for stream in streams {
-            match user_has_server_access(state, &stream.user_id, server_id).await {
-                Ok(true) => recipients.push(RealtimeRecipient {
-                    stream_id: stream.id,
-                    user_id: stream.user_id,
-                }),
-                Ok(false) => {}
-                Err(error) => {
-                    warn!(
-                        stream_id = %stream.id,
-                        ?module,
-                        user_id = %stream.user_id,
-                        %server_id,
-                        %error,
-                        "failed to evaluate realtime server recipient"
-                    );
-                }
-            }
-        }
-
-        recipients
+            .map(|stream| RealtimeRecipient {
+                stream_id: stream.id,
+                user_id: stream.user_id,
+            })
+            .collect()
     }
+
 
     /// Возвращает активные потоки модуля для конкретных пользователей.
     pub(crate) async fn recipients_for_users(
@@ -339,8 +342,6 @@ impl RealtimeHub {
     ) -> Vec<RealtimeRecipient> {
         let user_ids = user_ids.iter().copied().collect::<HashSet<_>>();
         self.streams
-            .lock()
-            .await
             .iter()
             .filter(|stream| stream.module == module && user_ids.contains(&stream.user_id))
             .map(|stream| RealtimeRecipient {
@@ -362,13 +363,11 @@ impl RealtimeHub {
         P: Serialize,
     {
         let stream_ids = stream_ids.iter().copied().collect::<HashSet<_>>();
-        let streams = self
-            .streams
-            .lock()
-            .await
+        let streams = stream_ids
             .iter()
-            .filter(|stream| stream.module == module && stream_ids.contains(&stream.id))
-            .cloned()
+            .filter_map(|stream_id| self.streams.get(stream_id))
+            .filter(|stream| stream.module == module)
+            .map(|stream| stream.value().clone())
             .collect::<Vec<_>>();
 
         if streams.is_empty() {
@@ -438,25 +437,6 @@ impl RealtimeHub {
         *last_warning_at = Some(now);
         true
     }
-}
-
-async fn user_has_server_access(
-    state: &AppState,
-    user_id: &Uuid,
-    server_id: &Uuid,
-) -> anyhow::Result<bool> {
-    let Some(server) = state.server_store.find_server(server_id).await? else {
-        return Ok(false);
-    };
-    if server.owner_user_id == *user_id {
-        return Ok(true);
-    }
-
-    Ok(state
-        .server_store
-        .find_active_server_member(server_id, user_id)
-        .await?
-        .is_some())
 }
 
 #[cfg(test)]

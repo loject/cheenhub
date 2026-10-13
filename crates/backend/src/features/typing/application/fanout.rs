@@ -132,10 +132,12 @@ async fn room_recipients(
     room_id: &Uuid,
     exclude_user_id: Uuid,
 ) -> Vec<Uuid> {
-    let candidates = state
-        .realtime_hub
-        .recipients(state, RealtimeModule::TextChat, server_id)
-        .await;
+    let candidates = crate::features::servers::realtime::server_recipients(
+        state,
+        RealtimeModule::TextChat,
+        server_id,
+    )
+    .await;
     let mut stream_ids = Vec::new();
 
     for candidate in candidates {
