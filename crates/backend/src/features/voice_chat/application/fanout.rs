@@ -63,9 +63,9 @@ pub(super) async fn fanout_snapshot(
             &target.server_id,
         )
         .await
-            .iter()
-            .map(|recipient| recipient.stream_id)
-            .collect::<Vec<_>>(),
+        .iter()
+        .map(|recipient| recipient.stream_id)
+        .collect::<Vec<_>>(),
         VoicePresenceTargetKind::DirectMessage => {
             let user_ids = match direct_message_user_ids(state, &target.room_id).await {
                 Ok(user_ids) => user_ids,

@@ -101,7 +101,8 @@ pub(crate) fn HostActivityPanel() -> Element {
                         received_samples = response.samples.len(),
                         "host voice activity history loaded"
                     );
-                    history.set(merge_history(&history.read(), response));
+                    let merged = merge_history(&history.read(), response);
+                    history.set(merged);
                 }
                 Err(error) => {
                     warn!(

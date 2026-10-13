@@ -408,9 +408,9 @@ pub(crate) async fn broadcast_server_audio_bitrate(
         server_id,
     )
     .await
-        .iter()
-        .map(|recipient| recipient.stream_id)
-        .collect::<Vec<_>>();
+    .iter()
+    .map(|recipient| recipient.stream_id)
+    .collect::<Vec<_>>();
 
     tracing::info!(
         server_id = %server_id,

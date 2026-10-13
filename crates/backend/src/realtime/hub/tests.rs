@@ -112,7 +112,8 @@ async fn stream_registry_filters_module_and_ignores_duplicate_registration() {
     assert_eq!(recipients[0].stream_id, stream_id);
     assert_eq!(recipients[0].user_id, user_id);
     assert_eq!(
-        hub.module_recipients(cheenhub_contracts::realtime::RealtimeModule::TextChat).len(),
+        hub.module_recipients(cheenhub_contracts::realtime::RealtimeModule::TextChat)
+            .len(),
         1
     );
 

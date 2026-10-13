@@ -194,5 +194,8 @@ fn zoom_controls_are_enabled_for_messages_history() {
 
     assert_eq!(option["dataZoom"][0]["type"], "inside");
     assert_eq!(option["dataZoom"][1]["type"], "slider");
-    assert_eq!(option["toolbox"]["feature"]["restore"]["title"], "Сбросить масштаб");
+    assert_eq!(
+        option["toolbox"]["feature"]["restore"]["title"],
+        "Сбросить масштаб"
+    );
 }

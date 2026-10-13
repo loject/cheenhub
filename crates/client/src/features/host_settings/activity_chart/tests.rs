@@ -92,6 +92,9 @@ fn zoom_controls_and_single_measurement_are_rendered() {
 
     assert_eq!(parsed["dataZoom"][0]["type"], "inside");
     assert_eq!(parsed["dataZoom"][1]["type"], "slider");
-    assert_eq!(parsed["toolbox"]["feature"]["restore"]["title"], "Сбросить масштаб");
+    assert_eq!(
+        parsed["toolbox"]["feature"]["restore"]["title"],
+        "Сбросить масштаб"
+    );
     assert_eq!(parsed["series"][0]["showSymbol"], true);
 }
