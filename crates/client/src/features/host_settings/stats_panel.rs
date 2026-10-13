@@ -38,7 +38,7 @@ pub(crate) fn HostStatsPanel() -> Element {
         }
         let mut chart_error = chart_error;
         spawn(async move {
-            if let Err(error) = messages_chart::mount_chart(&id, &data).await {
+            if let Err(error) = messages_chart::update_chart(&id, &data).await {
                 warn!(%error, "failed to render host messages chart");
                 chart_error.set(Some(error));
             } else {

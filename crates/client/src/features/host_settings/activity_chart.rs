@@ -104,9 +104,20 @@ fn chart_option(samples: &[HostVoiceActivitySample]) -> String {
         .max()
         .unwrap_or(0);
     let option = serde_json::json!({
-        "animationDuration": 350,
-        "animationEasing": "cubicOut",
-        "grid": { "left": 8, "right": 16, "top": 16, "bottom": 24, "containLabel": true },
+        "animation": false,
+        "grid": { "left": 8, "right": 16, "top": 25, "bottom": 52, "containLabel": true },
+        "dataZoom": [
+            { "type": "inside", "xAxisIndex": 0, "filterMode": "none",
+              "zoomOnMouseWheel": true, "moveOnMouseMove": true, "moveOnMouseWheel": false },
+            { "type": "slider", "xAxisIndex": 0, "filterMode": "none",
+              "bottom": 3, "height": 16, "borderColor": "#3f3f46",
+              "textStyle": { "color": "#71717a" } }
+        ],
+        "toolbox": {
+            "top": 0, "right": 12, "itemSize": 13,
+            "iconStyle": { "borderColor": "#a1a1aa" },
+            "feature": { "restore": { "title": "Сбросить масштаб" } }
+        },
         "tooltip": {
             "trigger": "axis",
             "confine": true,
@@ -136,7 +147,7 @@ fn chart_option(samples: &[HostVoiceActivitySample]) -> String {
                 "name": "Подключения",
                 "type": "line",
                 "smooth": 0.25,
-                "showSymbol": false,
+                "showSymbol": samples.len() == 1,
                 "sampling": "lttb",
                 "connectNulls": false,
                 "lineStyle": { "width": 2, "color": "#60a5fa" },
@@ -156,7 +167,7 @@ fn chart_option(samples: &[HostVoiceActivitySample]) -> String {
                 "name": "Видеоисточники",
                 "type": "line",
                 "smooth": 0.25,
-                "showSymbol": false,
+                "showSymbol": samples.len() == 1,
                 "sampling": "lttb",
                 "connectNulls": false,
                 "lineStyle": { "width": 2, "type": "dashed", "color": "#c084fc" },

@@ -1,5 +1,7 @@
 //! Сценарии мониторинга активности голосового чата для владельца хоста.
 
+use std::time::Instant;
+
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
 use cheenhub_contracts::rest::{
@@ -50,6 +52,7 @@ pub(crate) async fn activity_history(
             .max(now - ChronoDuration::hours(24)),
         None => now - ChronoDuration::hours(24),
     };
+    let query_started = Instant::now();
     let samples = match state
         .host_settings_store
         .load_voice_activity_samples(since, now)
@@ -60,6 +63,7 @@ pub(crate) async fn activity_history(
             tracing::warn!(
                 %error,
                 %user_id,
+                query_ms = query_started.elapsed().as_millis() as u64,
                 "host voice activity history is unavailable"
             );
             return Ok(HostVoiceActivityHistoryResponse {
@@ -71,6 +75,7 @@ pub(crate) async fn activity_history(
     tracing::debug!(
         %user_id,
         sample_count = samples.len(),
+        query_ms = query_started.elapsed().as_millis() as u64,
         "returned host voice activity history"
     );
     Ok(HostVoiceActivityHistoryResponse {

@@ -44,26 +44,27 @@ pub(crate) fn HostActivityPanel() -> Element {
     let chart_error = use_signal(|| None::<String>);
     let chart_id = use_signal(activity_chart::new_chart_id);
 
-    // График монтируется один раз: экземпляр ECharts переиспользуется, а новые
-    // измерения приходят через обновление опции ниже.
+    // Читаем историю в эффекте, чтобы Dioxus обновлял график после отрисовки контейнера.
     use_effect(move || {
+        let samples = history_samples(&history.read());
         let id = chart_id.read().clone();
+        if samples.is_empty() {
+            return;
+        }
         let mut chart_error = chart_error;
         spawn(async move {
-            let samples = history_samples(&history.read());
-            if samples.len() < 2 {
-                return;
-            }
-            if let Err(error) = activity_chart::mount_chart(&id, &samples).await {
-                warn!(%error, "failed to render host voice activity chart");
-                chart_error.set(Some(error));
+            match activity_chart::update_chart(&id, &samples).await {
+                Ok(()) => chart_error.set(None),
+                Err(error) => {
+                    warn!(%error, chart_id = %id, "failed to render host voice activity chart");
+                    chart_error.set(Some(error));
+                }
             }
         });
     });
 
     use_future(move || async move {
         loop {
-            sleep_ms(COUNTER_REFRESH_INTERVAL_MS).await;
             match api::load_activity().await {
                 Ok(activity) => {
                     info!(
@@ -78,37 +79,40 @@ pub(crate) fn HostActivityPanel() -> Element {
                     counter.set(CounterState::Failed);
                 }
             }
+            sleep_ms(COUNTER_REFRESH_INTERVAL_MS).await;
         }
     });
 
     use_future(move || async move {
         loop {
-            sleep_ms(HISTORY_REFRESH_INTERVAL_MS).await;
-            // Запрос идёт от отметки последней точки, поэтому клиент не забирает
-            // все измерения суток каждые 10 секунд.
+            // Первый запрос выполняем сразу, затем догружаем измерения раз в 10 секунд.
             let after = match &*history.read() {
                 HistoryState::Ready { samples, .. } => {
                     samples.last().map(|sample| sample.sampled_at_unix_ms)
                 }
                 _ => None,
             };
+            let started = std::time::Instant::now();
             match api::load_activity_history(after).await {
                 Ok(response) => {
-                    let merged = merge_history(&history.read(), response);
-                    let samples = history_samples(&merged);
-                    if !samples.is_empty()
-                        && let Err(error) =
-                            activity_chart::update_chart(&chart_id.read().clone(), &samples).await
-                    {
-                        warn!(%error, "failed to update host voice activity chart");
-                    }
-                    history.set(merged);
+                    debug!(
+                        initial = after.is_none(),
+                        elapsed_ms = started.elapsed().as_millis() as u64,
+                        received_samples = response.samples.len(),
+                        "host voice activity history loaded"
+                    );
+                    history.set(merge_history(&history.read(), response));
                 }
                 Err(error) => {
-                    warn!(message = %error.message(), "failed to refresh host voice activity history");
+                    warn!(
+                        message = %error.message(),
+                        elapsed_ms = started.elapsed().as_millis() as u64,
+                        "failed to refresh host voice activity history"
+                    );
                     history.set(HistoryState::Failed(error.message().to_owned()));
                 }
             }
+            sleep_ms(HISTORY_REFRESH_INTERVAL_MS).await;
         }
     });
 
@@ -198,9 +202,6 @@ fn history_samples(state: &HistoryState) -> Vec<HostVoiceActivitySample> {
 
 /// Карточка графика: контейнер для ECharts плюс состояние без данных.
 fn chart_card(state: HistoryState, chart_id: String, chart_error: Option<String>) -> Element {
-    if let Some(message) = chart_error {
-        return chart_error_state(&message);
-    }
     match state {
         HistoryState::Loading => rsx! {
             div { class: "mt-3 h-56 animate-pulse rounded-[20px] border border-zinc-800 bg-zinc-950/60" }
@@ -213,10 +214,13 @@ fn chart_card(state: HistoryState, chart_id: String, chart_error: Option<String>
         HistoryState::Ready {
             available: true,
             ref samples,
-        } if samples.len() < 2 => empty_history(),
+        } if samples.is_empty() => empty_history(),
         HistoryState::Ready { .. } => rsx! {
             div { class: "mt-3 rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-4 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
                 {chart_header(state)}
+                if let Some(message) = chart_error {
+                    p { class: "mt-2 text-[11px] text-amber-300", "{message}" }
+                }
                 div { class: "mt-3 h-56 w-full", id: "{chart_id}" }
             }
         },

@@ -181,3 +181,18 @@ fn partial_first_minute_is_drawn_inside_the_axis_window() {
     assert_eq!(option["series"][0]["data"][0][0], 21_630_000);
     assert_eq!(option["series"][0]["data"][0][1], 2);
 }
+
+#[test]
+fn zoom_controls_are_enabled_for_messages_history() {
+    let data = MessagesChartData {
+        window_end_unix_ms: 86_400_000,
+        room_samples: vec![],
+        direct_samples: vec![],
+    };
+    let option: serde_json::Value =
+        serde_json::from_str(&chart_option(&data)).expect("valid chart option");
+
+    assert_eq!(option["dataZoom"][0]["type"], "inside");
+    assert_eq!(option["dataZoom"][1]["type"], "slider");
+    assert_eq!(option["toolbox"]["feature"]["restore"]["title"], "Сбросить масштаб");
+}

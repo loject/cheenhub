@@ -281,6 +281,16 @@ fn chart_option(series: Vec<Value>, unit: &str, max: Option<f64>, compact: bool)
             "show": !compact
         },
         "yAxis": y_axis,
+        "dataZoom": [{
+            "type": "inside", "xAxisIndex": 0, "filterMode": "none",
+            "zoomOnMouseWheel": true, "moveOnMouseMove": true,
+            "moveOnMouseWheel": false
+        }],
+        "toolbox": {
+            "show": !compact, "top": 0, "right": 8, "itemSize": 12,
+            "iconStyle": { "borderColor": "#a1a1aa" },
+            "feature": { "restore": { "title": "Сбросить масштаб" } }
+        },
         "series": series
     })
     .to_string()

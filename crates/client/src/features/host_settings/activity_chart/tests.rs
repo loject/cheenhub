@@ -84,3 +84,14 @@ fn window_pruning_keeps_only_last_24_hours() {
         vec![3, 1]
     );
 }
+
+#[test]
+fn zoom_controls_and_single_measurement_are_rendered() {
+    let option = chart_option(&[sample(1_000, 3, 1)]);
+    let parsed: serde_json::Value = serde_json::from_str(&option).expect("valid chart option");
+
+    assert_eq!(parsed["dataZoom"][0]["type"], "inside");
+    assert_eq!(parsed["dataZoom"][1]["type"], "slider");
+    assert_eq!(parsed["toolbox"]["feature"]["restore"]["title"], "Сбросить масштаб");
+    assert_eq!(parsed["series"][0]["showSymbol"], true);
+}
