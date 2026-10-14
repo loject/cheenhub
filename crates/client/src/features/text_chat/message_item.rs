@@ -46,6 +46,8 @@ pub(crate) fn ChatMessageItem(
     } else {
         "flex min-w-0 flex-col items-start gap-1.5"
     };
+    let pin_line_side = if is_own { "-right-2" } else { "-left-2" };
+    let pin_tooltip_side = if is_own { "right-0" } else { "left-0" };
     let bubble_class = if is_own {
         "message-bubble w-fit max-w-full whitespace-pre-wrap break-words rounded-[14px] border border-blue-400/25 bg-[#0d223b] px-3.5 py-2.5 text-[13px] leading-5 text-blue-50 shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-[background-color,border-color] duration-150 hover:border-blue-400/40 hover:bg-[#102946]"
     } else {
@@ -66,7 +68,9 @@ pub(crate) fn ChatMessageItem(
                 menu_pos.set(Some((p.x, p.y)));
             },
             div { class: "flex min-w-0 max-w-[min(100%,42rem)] items-end gap-1.5",
-                div { class: content_stack_class,
+                div {
+                    class: "{content_stack_class} group/pinned relative hover:z-30 focus-within:z-30 focus-visible:rounded-md focus-visible:outline focus-visible:outline-1 focus-visible:outline-blue-400/50 focus-visible:outline-offset-2",
+                    tabindex: if is_pinned { "0" } else { "-1" },
                     if !message.body.is_empty() {
                         div { class: bubble_class,
                             span { class: "[overflow-wrap:anywhere]", "{message.body}" }
@@ -75,8 +79,13 @@ pub(crate) fn ChatMessageItem(
                     {children}
                     if is_pinned {
                         span {
-                            class: "rounded-md bg-blue-400/10 px-2 py-0.5 text-[10px] font-medium text-blue-300",
-                            "Закреплено"
+                            class: "pointer-events-none absolute bottom-1 top-1 w-[2px] rounded-full bg-blue-400/60 {pin_line_side}",
+                            "aria-hidden": "true",
+                        }
+                        span {
+                            role: "tooltip",
+                            class: "pointer-events-none absolute -top-9 z-40 whitespace-nowrap rounded-lg border border-white/[0.1] bg-[#15171d] px-2.5 py-1.5 text-[11px] font-medium text-zinc-200 opacity-0 shadow-[0_8px_24px_rgba(0,0,0,0.45)] transition-opacity duration-150 group-hover/pinned:opacity-100 group-focus-within/pinned:opacity-100 {pin_tooltip_side}",
+                            "Сообщение закреплено"
                         }
                     }
                 }
