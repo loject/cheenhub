@@ -82,6 +82,7 @@ impl MigrationTrait for Migration {
 
 #[derive(DeriveIden)]
 enum Pins {
+    #[sea_orm(iden = "text_message_pins")]
     Table,
     MessageId,
     ServerId,
