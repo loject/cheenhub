@@ -1498,6 +1498,7 @@ dependencies = [
  "base64",
  "bytes",
  "cheenhub_contracts",
+ "cheenhub_migrations",
  "chrono",
  "dashmap",
  "dotenvy",

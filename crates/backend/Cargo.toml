@@ -51,4 +51,5 @@ web-transport-quinn.workspace = true
 x509-parser.workspace = true
 
 [dev-dependencies]
+cheenhub_migrations = { path = "../migrations" }
 tokio-tungstenite.workspace = true
