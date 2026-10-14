@@ -3,9 +3,9 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use cheenhub_contracts::realtime::{
-    ChatImageLoadedResponse, DeleteMessage, LoadChatImage, LoadRoomHistory, RealtimeEnvelope,
-    RealtimeKind, RealtimeModule, RejectionCode, SendMessage, StartTyping, StopTyping,
-    TextChatKind, TypingSnapshotRequest, UploadChatImage,
+    ChatImageLoadedResponse, DeleteMessage, ListPinnedMessages, LoadChatImage, LoadRoomHistory,
+    PinMessage, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode, SendMessage,
+    StartTyping, StopTyping, TextChatKind, TypingSnapshotRequest, UnpinMessage, UploadChatImage,
 };
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
@@ -149,6 +149,57 @@ pub(crate) async fn handle(
                         send,
                         RealtimeModule::TextChat,
                         RealtimeKind::TextChat(TextChatKind::DeleteMessageAccepted),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::TextChat(TextChatKind::ListPinnedMessages) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: ListPinnedMessages = decode_payload(&envelope)?;
+            match application::list_pinned_messages(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::TextChat,
+                        RealtimeKind::TextChat(TextChatKind::PinnedMessages),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::TextChat(TextChatKind::PinMessage) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: PinMessage = decode_payload(&envelope)?;
+            match application::pin_message(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::TextChat,
+                        RealtimeKind::TextChat(TextChatKind::PinMessageAccepted),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::TextChat(TextChatKind::UnpinMessage) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: UnpinMessage = decode_payload(&envelope)?;
+            match application::unpin_message(state, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::TextChat,
+                        RealtimeKind::TextChat(TextChatKind::UnpinMessageAccepted),
                         Some(request_id),
                         response,
                     )

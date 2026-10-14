@@ -20,6 +20,10 @@ pub(crate) fn ChatMessageGroup(
     removing_message_ids: Vec<String>,
     can_delete_messages: bool,
     on_delete: EventHandler<String>,
+    can_pin_messages: bool,
+    pinned_message_ids: Vec<String>,
+    on_pin_toggle: EventHandler<String>,
+    highlighted_message_id: Option<String>,
     server_id: String,
     room_id: String,
 ) -> Element {
@@ -81,6 +85,10 @@ pub(crate) fn ChatMessageGroup(
                             removing: removing_message_ids.contains(&message.id),
                             can_delete_messages,
                             on_delete: move |id| on_delete.call(id),
+                            can_pin_messages,
+                            is_pinned: pinned_message_ids.contains(&message.id),
+                            on_pin_toggle: Some(on_pin_toggle),
+                            highlighted: highlighted_message_id.as_deref() == Some(message.id.as_str()),
                             for attachment in message.attachments.iter().cloned() {
                                 super::image_attachment::ChatImageAttachment {
                                     key: "{super::image_attachment::ChatImageLoadKey::render_key(&server_id, &room_id, &attachment.id)}",

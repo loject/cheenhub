@@ -9,15 +9,18 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::features::text_chat::domain::{
-    ChatAttachment, MessagesPerMinute, NewChatAttachment, TextMessage,
+    ChatAttachment, MessagesPerMinute, NewChatAttachment, PinnedMessage, TextMessage,
 };
-use crate::features::text_chat::infrastructure::{HISTORY_LIMIT, TextChatStore, TextMessagePage};
+use crate::features::text_chat::infrastructure::{
+    HISTORY_LIMIT, PIN_LIMIT, PinMessageResult, TextChatStore, TextMessagePage,
+};
 
 /// In-memory-хранилище текстового чата для локального запуска и тестов.
 #[derive(Default)]
 pub(crate) struct InMemoryTextChatStore {
     messages: Mutex<Vec<TextMessage>>,
     attachments: Mutex<Vec<ChatAttachment>>,
+    pins: Mutex<Vec<PinnedMessage>>,
 }
 
 #[async_trait]
@@ -141,8 +144,93 @@ impl TextChatStore for InMemoryTextChatStore {
         };
         message.deleted_at = Some(Utc::now());
         message.deleted_by_user_id = Some(*deleted_by_user_id);
+        self.pins
+            .lock()
+            .map_err(|_| poisoned())?
+            .retain(|pin| pin.message.id != *message_id);
 
         Ok(Some(message.clone()))
+    }
+
+    async fn pin_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+        user_id: &Uuid,
+    ) -> anyhow::Result<PinMessageResult> {
+        let messages = self.messages.lock().map_err(|_| poisoned())?;
+        let Some(message) = messages
+            .iter()
+            .find(|message| {
+                message.id == *message_id
+                    && message.server_id == *server_id
+                    && message.room_id == *room_id
+                    && message.deleted_at.is_none()
+            })
+            .cloned()
+        else {
+            return Ok(PinMessageResult::NotFound);
+        };
+        let mut pins = self.pins.lock().map_err(|_| poisoned())?;
+        if pins.iter().any(|pin| pin.message.id == *message_id) {
+            return Ok(PinMessageResult::AlreadyPinned);
+        }
+        if pins
+            .iter()
+            .filter(|pin| pin.message.room_id == *room_id)
+            .count()
+            >= PIN_LIMIT
+        {
+            return Ok(PinMessageResult::LimitReached);
+        }
+        let pin = PinnedMessage {
+            message,
+            pinned_by_user_id: *user_id,
+            pinned_at: Utc::now(),
+        };
+        pins.push(pin.clone());
+        tracing::debug!(%server_id, %room_id, %message_id, %user_id, "stored in-memory message pin");
+        Ok(PinMessageResult::Pinned(Box::new(pin)))
+    }
+
+    async fn unpin_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+    ) -> anyhow::Result<bool> {
+        let mut pins = self.pins.lock().map_err(|_| poisoned())?;
+        let previous = pins.len();
+        pins.retain(|pin| {
+            pin.message.id != *message_id
+                || pin.message.server_id != *server_id
+                || pin.message.room_id != *room_id
+        });
+        if previous != pins.len() {
+            tracing::debug!(%server_id, %room_id, %message_id, "removed in-memory message pin");
+        }
+        Ok(previous != pins.len())
+    }
+
+    async fn list_pinned_messages(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+    ) -> anyhow::Result<Vec<PinnedMessage>> {
+        let pins = self.pins.lock().map_err(|_| poisoned())?;
+        let mut selected = pins
+            .iter()
+            .filter(|pin| pin.message.server_id == *server_id && pin.message.room_id == *room_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        selected.sort_by_key(|pin| {
+            (
+                std::cmp::Reverse(pin.pinned_at),
+                std::cmp::Reverse(pin.message.id),
+            )
+        });
+        Ok(selected)
     }
 
     async fn count_text_messages(&self) -> anyhow::Result<u64> {

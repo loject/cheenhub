@@ -81,6 +81,34 @@ fn room_management_is_denied_without_permission() {
     assert!(!permissions.can_manage_rooms);
 }
 
+#[test]
+fn pin_messages_permission_requires_assigned_role() {
+    let role = role(
+        "pin-moderator",
+        ServerRoleKind::Custom,
+        vec![ServerRolePermission::PinMessages],
+    );
+    let without_role =
+        ServerPermissions::from_server(&server_summary(true, vec![role.clone()], Vec::new()));
+    let with_role = ServerPermissions::from_server(&server_summary(
+        true,
+        vec![role],
+        vec!["pin-moderator".to_owned()],
+    ));
+
+    assert!(!without_role.can_pin_messages);
+    assert!(with_role.can_pin_messages);
+    assert!(!with_role.can_delete_messages);
+}
+
+#[test]
+fn server_owner_can_pin_without_role() {
+    let mut server = server_summary(true, Vec::new(), Vec::new());
+    server.is_owner = true;
+
+    assert!(ServerPermissions::from_server(&server).can_pin_messages);
+}
+
 fn server_summary(
     is_member: bool,
     roles: Vec<ServerRoleSummary>,

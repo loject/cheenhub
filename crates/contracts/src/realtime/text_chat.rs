@@ -34,6 +34,22 @@ pub enum TextChatKind {
     DeleteMessageAccepted,
     /// Сообщение удалено автором; получатели должны убрать его.
     MessageDeleted,
+    /// Запросить закрепления комнаты.
+    ListPinnedMessages,
+    /// Ответ со списком закреплений комнаты.
+    PinnedMessages,
+    /// Закрепить сообщение.
+    PinMessage,
+    /// Подтверждение закрепления.
+    PinMessageAccepted,
+    /// Снять закрепление.
+    UnpinMessage,
+    /// Подтверждение снятия закрепления.
+    UnpinMessageAccepted,
+    /// Событие закрепления сообщения.
+    MessagePinned,
+    /// Событие снятия закрепления.
+    MessageUnpinned,
     /// Сообщить, что пользователь печатает сообщение в комнате.
     StartTyping,
     /// Сообщить, что пользователь перестал печатать сообщение в комнате.
@@ -180,6 +196,79 @@ pub struct MessageDeletedPayload {
     /// Идентификатор комнаты.
     pub room_id: String,
     /// Идентификатор удаленного сообщения.
+    pub message_id: String,
+}
+
+/// Запрос списка закреплений комнаты.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListPinnedMessages {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+}
+
+/// Запрос закрепления сообщения в комнате.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PinMessage {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+    /// Идентификатор сообщения.
+    pub message_id: String,
+}
+
+/// Запрос снятия закрепления сообщения в комнате.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnpinMessage {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+    /// Идентификатор сообщения.
+    pub message_id: String,
+}
+
+/// Сообщение с метаданными закрепления.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PinnedTextMessage {
+    /// Полный снимок исходного сообщения.
+    pub message: TextChatMessage,
+    /// Пользователь, закрепивший сообщение.
+    pub pinned_by_user_id: String,
+    /// Время закрепления в формате RFC3339.
+    pub pinned_at: String,
+}
+
+/// Ответ со всеми закреплениями комнаты.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PinnedMessages {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+    /// Закрепления от новых к старым.
+    pub messages: Vec<PinnedTextMessage>,
+    /// Максимальное количество закреплений в комнате.
+    pub limit: u32,
+}
+
+/// Подтверждение добавления закрепления.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PinMessageAccepted {
+    /// Сохранённое закрепление.
+    pub pinned: PinnedTextMessage,
+}
+
+/// Подтверждение снятия закрепления, также используется в realtime-событии.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnpinMessageAccepted {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+    /// Идентификатор сообщения.
     pub message_id: String,
 }
 

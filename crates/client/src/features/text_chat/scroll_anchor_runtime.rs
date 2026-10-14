@@ -23,6 +23,20 @@ impl AnchorElements {
         self.revision.set(next);
     }
 
+    /// Готовит прокрутку к конкретному сообщению, отменяя предыдущие якоря.
+    pub(super) fn jump_command(self, message_id: String) -> ScrollCommand {
+        self.interacted();
+        let revision = *self.revision.peek();
+        ScrollCommand::Restore {
+            anchor: ScrollAnchor {
+                message_id,
+                inside_y: 0.0,
+                preceding_ids: Vec::new(),
+                revision,
+            },
+        }
+    }
+
     /// Проверяет, не переместил ли пользователь список после измерения.
     pub(super) fn is_current(self, anchor: &ScrollAnchor) -> bool {
         *self.revision.peek() == anchor.revision

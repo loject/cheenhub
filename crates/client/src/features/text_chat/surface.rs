@@ -33,7 +33,7 @@ pub(crate) fn RoomChatSurface(
         RoomChatSurfaceMode::Full => rsx! {
             div { id: "text-room-view", class: "text-room-view hidden min-h-0 min-w-0 flex-1 flex-col",
                 if active {
-                    ChatRoomPanel { server_id, room, compact: false }
+                    ChatRoomPanel { key: "{server_id}:{room.id}", server_id, room, compact: false }
                 }
             }
         },
@@ -72,7 +72,7 @@ pub(crate) fn RoomChatSurface(
                         },
                     }
                     if active {
-                        ChatRoomPanel { server_id, room, compact: true }
+                        ChatRoomPanel { key: "{server_id}:{room.id}", server_id, room, compact: true }
                     }
                 }
             }

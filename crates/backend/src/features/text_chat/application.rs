@@ -19,8 +19,10 @@ use crate::state::AppState;
 
 mod attachments;
 mod history_authors;
+mod pins;
 
 pub(crate) use attachments::{chat_image, upload_chat_image};
+pub(crate) use pins::{list_pinned_messages, pin_message, unpin_message};
 
 /// Загружает последние текстовые сообщения комнаты.
 pub(crate) async fn load_room_history(

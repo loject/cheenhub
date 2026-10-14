@@ -24,7 +24,10 @@ use super::history::{
 };
 use super::history_status::ChatHistoryStatus;
 use super::messages::{append_message, remove_message};
+use super::pin_navigation::use_pin_navigation;
+use super::pins_panel::{PinListAction, PinnedMessagesPanel};
 use super::realtime::{self, TextChatEvent};
+use super::room_pins::{RoomPinsTarget, use_room_pins};
 use super::scroll::{ScrollCommand, update_scroll_state};
 use super::{
     CHAT_CONTENT_CLASS, ChatMessageDateDivider, ChatMessageGroup, VirtualChatLayout,
@@ -38,6 +41,13 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let permissions = use_context::<ServerRegistry>().permissions(&server_id);
     let current_user = use_context::<CurrentUserContext>().require_user();
     let room_compose_state = use_context::<MessageComposeState>();
+    let pins_target = RoomPinsTarget {
+        realtime: realtime.clone(),
+        server_id: server_id.clone(),
+        room_id: room.id.clone(),
+    };
+    let pins_state = use_room_pins(pins_target.clone());
+    let pin_navigation = use_pin_navigation();
     let mut messages = use_signal(Vec::<TextChatMessage>::new);
     let mut appearing_message_ids = use_signal(Vec::<String>::new);
     let mut removing_message_ids = use_signal(Vec::<String>::new);
@@ -58,6 +68,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         virtual_layout,
     );
     let event_room_id = room.id.clone();
+    let event_server_id = server_id.clone();
     let history_server_id = server_id.clone();
     let history_room_id = room.id.clone();
     let older_server_id = server_id.clone();
@@ -107,6 +118,8 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let appearing_message_ids_list = appearing_message_ids();
     let removing_message_ids_list = removing_message_ids();
     let rendered_messages = messages();
+    let pinned_message_ids = pins_state.ids();
+    let highlighted_message_id = pin_navigation.highlighted();
     let has_messages = !rendered_messages.is_empty();
     let message_groups = prepare_text_chat_groups(&rendered_messages);
     let message_group_ids = message_groups
@@ -134,8 +147,10 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                         }
                     }
                     TextChatEvent::MessageDeleted(payload) => {
-                        if payload.room_id == event_room_id {
+                        if payload.room_id == event_room_id && payload.server_id == event_server_id
+                        {
                             let message_id = payload.message_id.clone();
+                            pins_state.remove(&message_id);
                             removing_message_ids.write().push(message_id.clone());
                             spawn(async move {
                                 sleep_duration(Duration::from_millis(220)).await;
@@ -183,6 +198,16 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
             removing_message_ids.write().retain(|id| id != &message_id);
         });
     });
+    let toggle_pins_target = pins_target.clone();
+    let on_toggle_pin = use_callback(move |message_id: String| {
+        pins_state.toggle(toggle_pins_target.clone(), message_id);
+    });
+    let list_pins_target = pins_target.clone();
+    let navigation_target = HistoryTarget {
+        realtime: realtime.clone(),
+        server_id: server_id.clone(),
+        room_id: room.id.clone(),
+    };
     let retry_target = HistoryTarget {
         realtime: realtime.clone(),
         server_id: server_id.clone(),
@@ -191,6 +216,24 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
 
     rsx! {
         div { class: "relative flex h-full min-h-0 min-w-0 w-full flex-col bg-[#08090b]",
+            PinnedMessagesPanel {
+                items: pins_state.previews(),
+                loading: pins_state.loading(),
+                error: pins_state.error(),
+                action_error: pins_state.action_error(),
+                limit: pins_state.limit(),
+                can_unpin: permissions.can_pin_messages,
+                busy_message_id: pins_state.busy(),
+                navigating_message_id: pin_navigation.busy(),
+                navigation_error: pin_navigation.error(),
+                on_action: move |action| match action {
+                    PinListAction::Retry => pins_state.refresh(list_pins_target.clone()),
+                    PinListAction::Unpin(message_id) => pins_state.unpin(list_pins_target.clone(), message_id),
+                    PinListAction::Navigate(message_id) => pin_navigation.jump(
+                        navigation_target.clone(), history_state, anchor_elements, message_id,
+                    ),
+                },
+            }
             div {
                 class: list_class,
                 onmounted: move |event| {
@@ -265,6 +308,10 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                                         removing_message_ids: removing_message_ids_list.clone(),
                                         can_delete_messages: permissions.can_delete_messages,
                                         on_delete: move |id| on_delete_message.call(id),
+                                        can_pin_messages: permissions.can_pin_messages && pins_state.busy().is_none(),
+                                        pinned_message_ids: pinned_message_ids.clone(),
+                                        on_pin_toggle: move |id| on_toggle_pin.call(id),
+                                        highlighted_message_id: highlighted_message_id.clone(),
                                         server_id: server_id.clone(),
                                         room_id: room.id.clone(),
                                     }

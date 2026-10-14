@@ -12,6 +12,8 @@ pub(crate) struct ServerPermissions {
     pub(crate) can_kick_voice: bool,
     /// Может ли пользователь удалять чужие сообщения.
     pub(crate) can_delete_messages: bool,
+    /// Может ли пользователь закреплять и откреплять сообщения.
+    pub(crate) can_pin_messages: bool,
     /// Может ли пользователь создавать, редактировать и удалять комнаты.
     pub(crate) can_manage_rooms: bool,
 }
@@ -26,6 +28,7 @@ impl ServerPermissions {
             ),
             can_kick_voice: has_permission(server, ServerRolePermission::KickVoiceMembers),
             can_delete_messages: has_permission(server, ServerRolePermission::DeleteMessages),
+            can_pin_messages: has_permission(server, ServerRolePermission::PinMessages),
             can_manage_rooms: has_permission(server, ServerRolePermission::ManageRooms),
         }
     }

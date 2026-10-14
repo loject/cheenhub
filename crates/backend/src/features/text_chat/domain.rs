@@ -28,6 +28,17 @@ pub(crate) struct TextMessage {
     pub(crate) deleted_by_user_id: Option<Uuid>,
 }
 
+/// Закреплённое сообщение со сведениями о действии модератора.
+#[derive(Debug, Clone)]
+pub(crate) struct PinnedMessage {
+    /// Исходное сообщение, которое остаётся частью обычной истории.
+    pub(crate) message: TextMessage,
+    /// Пользователь, закрепивший сообщение.
+    pub(crate) pinned_by_user_id: Uuid,
+    /// Время закрепления.
+    pub(crate) pinned_at: DateTime<Utc>,
+}
+
 /// Число сообщений, отправленных в одну минуту окна статистики.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct MessagesPerMinute {

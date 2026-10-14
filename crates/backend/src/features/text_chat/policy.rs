@@ -13,6 +13,30 @@ pub(crate) async fn can_delete_any_message(
     user_id: &Uuid,
     server_id: &Uuid,
 ) -> anyhow::Result<bool> {
+    has_permission(
+        state,
+        user_id,
+        server_id,
+        ServerRolePermission::DeleteMessages,
+    )
+    .await
+}
+
+/// Проверяет право на закрепление и открепление сообщений сервера.
+pub(crate) async fn can_pin_messages(
+    state: &AppState,
+    user_id: &Uuid,
+    server_id: &Uuid,
+) -> anyhow::Result<bool> {
+    has_permission(state, user_id, server_id, ServerRolePermission::PinMessages).await
+}
+
+async fn has_permission(
+    state: &AppState,
+    user_id: &Uuid,
+    server_id: &Uuid,
+    permission: ServerRolePermission,
+) -> anyhow::Result<bool> {
     let Some(server) = state.server_store.find_server(server_id).await? else {
         return Ok(false);
     };
@@ -41,9 +65,7 @@ pub(crate) async fn can_delete_any_message(
 
     Ok(roles.iter().any(|role| {
         (role.kind == ServerRoleKind::Member || user_role_ids.contains(&role.id))
-            && role
-                .permissions
-                .contains(&ServerRolePermission::DeleteMessages)
+            && role.permissions.contains(&permission)
     }))
 }
 

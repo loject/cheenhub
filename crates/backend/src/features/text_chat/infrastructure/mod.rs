@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::features::text_chat::domain::{
-    ChatAttachment, MessagesPerMinute, NewChatAttachment, TextMessage,
+    ChatAttachment, MessagesPerMinute, NewChatAttachment, PinnedMessage, TextMessage,
 };
 
 #[cfg(test)]
@@ -25,6 +25,20 @@ pub(crate) use object_storage::{
 pub(crate) use postgres::PostgresTextChatStore;
 
 const HISTORY_LIMIT: u64 = 50;
+/// Максимальное число закреплений в одной комнате.
+pub(crate) const PIN_LIMIT: usize = 50;
+
+/// Результат атомарной попытки закрепления сообщения.
+pub(crate) enum PinMessageResult {
+    /// Закрепление создано и сохранено.
+    Pinned(Box<PinnedMessage>),
+    /// Сообщение уже закреплено.
+    AlreadyPinned,
+    /// Достигнут лимит закреплений комнаты.
+    LimitReached,
+    /// Сообщение отсутствует, удалено или находится в другой комнате.
+    NotFound,
+}
 
 /// Одна страница текстовых сообщений.
 pub(crate) struct TextMessagePage {
@@ -79,6 +93,32 @@ pub(crate) trait TextChatStore: Send + Sync {
         deleted_by_user_id: &Uuid,
         require_authorship: bool,
     ) -> anyhow::Result<Option<TextMessage>>;
+
+    /// Атомарно закрепляет существующее неудалённое сообщение с лимитом на комнату.
+    async fn pin_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+        user_id: &Uuid,
+    ) -> anyhow::Result<PinMessageResult>;
+
+    /// Снимает закрепление, не удаляя само сообщение.
+    ///
+    /// Возвращает `false`, если закрепления в указанной комнате уже нет.
+    async fn unpin_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+    ) -> anyhow::Result<bool>;
+
+    /// Возвращает до PIN_LIMIT закреплений комнаты, начиная с самых новых.
+    async fn list_pinned_messages(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+    ) -> anyhow::Result<Vec<PinnedMessage>>;
 
     /// Считает все текстовые сообщения комнат, включая мягко удалённые.
     async fn count_text_messages(&self) -> anyhow::Result<u64>;

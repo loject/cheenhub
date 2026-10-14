@@ -14,6 +14,10 @@ pub(crate) fn ChatMessageItem(
     removing: bool,
     can_delete_messages: bool,
     on_delete: EventHandler<String>,
+    #[props(default)] can_pin_messages: bool,
+    #[props(default)] is_pinned: bool,
+    #[props(default)] on_pin_toggle: Option<EventHandler<String>>,
+    #[props(default)] highlighted: bool,
     children: Element,
 ) -> Element {
     let register_anchor =
@@ -21,7 +25,13 @@ pub(crate) fn ChatMessageItem(
     let current_user = use_context::<CurrentUserContext>().require_user();
     let is_own = message.author_user_id == current_user.id;
     let can_delete = is_own || can_delete_messages;
+    let can_pin = can_pin_messages && on_pin_toggle.is_some();
     let mut menu_pos = use_signal(|| None::<(f64, f64)>);
+    let highlight_class = if highlighted {
+        "rounded-xl bg-blue-400/10 ring-1 ring-inset ring-blue-400/60"
+    } else {
+        ""
+    };
 
     let row_class = match (animate, removing, is_own) {
         (_, true, true) => "chat-message-removing flex w-full justify-end",
@@ -44,10 +54,10 @@ pub(crate) fn ChatMessageItem(
 
     rsx! {
         div {
-            class: row_class,
+            class: "{row_class} {highlight_class}",
             onmounted: move |event| register_anchor.call(event.data.clone()),
             oncontextmenu: move |event| {
-                if !can_delete {
+                if !can_delete && !can_pin {
                     return;
                 }
                 event.prevent_default();
@@ -63,6 +73,12 @@ pub(crate) fn ChatMessageItem(
                         }
                     }
                     {children}
+                    if is_pinned {
+                        span {
+                            class: "rounded-md bg-blue-400/10 px-2 py-0.5 text-[10px] font-medium text-blue-300",
+                            "Закреплено"
+                        }
+                    }
                 }
 
                 if is_own {
@@ -76,6 +92,7 @@ pub(crate) fn ChatMessageItem(
         if let Some((x, y)) = menu_pos() {
             {
                 let message_id = message.id.clone();
+                let pin_message_id = message.id.clone();
                 rsx! {
                     div {
                         class: "fixed inset-0 z-[999]",
@@ -85,6 +102,20 @@ pub(crate) fn ChatMessageItem(
                         class: "fixed z-[1000] min-w-[180px] overflow-hidden rounded-[16px] border border-zinc-800 bg-zinc-950/95 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,.55)] backdrop-blur-xl",
                         style: "left: clamp(12px, {x}px, calc(100vw - 200px)); top: clamp(12px, {y}px, calc(100vh - 80px));",
                         onclick: move |event| event.stop_propagation(),
+                        if can_pin {
+                            if let Some(on_pin_toggle) = on_pin_toggle {
+                                button {
+                                    r#type: "button",
+                                    class: "flex min-h-10 w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] text-blue-200 transition-colors hover:bg-blue-400/10",
+                                    onclick: move |_| {
+                                        menu_pos.set(None);
+                                        on_pin_toggle.call(pin_message_id.clone());
+                                    },
+                                    if is_pinned { "Открепить сообщение" } else { "Закрепить сообщение" }
+                                }
+                            }
+                        }
+                        if can_delete {
                         button {
                             r#type: "button",
                             class: "flex min-h-10 w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] text-red-300 transition-[background-color,color,transform] duration-150 hover:bg-red-500/10 hover:text-red-200 active:scale-[0.96]",
@@ -105,6 +136,7 @@ pub(crate) fn ChatMessageItem(
                                 }
                             }
                             "Удалить сообщение"
+                        }
                         }
                     }
                 }

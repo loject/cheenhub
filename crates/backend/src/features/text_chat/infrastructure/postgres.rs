@@ -4,17 +4,22 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend, DatabaseConnection,
+    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, Statement,
+    TransactionTrait,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::features::text_chat::domain::{
-    ChatAttachment, MessagesPerMinute, NewChatAttachment, TextMessage,
+    ChatAttachment, MessagesPerMinute, NewChatAttachment, PinnedMessage, TextMessage,
 };
-use crate::features::text_chat::infrastructure::entities::{text_chat_attachments, text_messages};
-use crate::features::text_chat::infrastructure::{HISTORY_LIMIT, TextChatStore, TextMessagePage};
+use crate::features::text_chat::infrastructure::entities::{
+    text_chat_attachments, text_message_pins, text_messages,
+};
+use crate::features::text_chat::infrastructure::{
+    HISTORY_LIMIT, PIN_LIMIT, PinMessageResult, TextChatStore, TextMessagePage,
+};
 
 /// Postgres-backed text chat storage.
 pub(crate) struct PostgresTextChatStore {
@@ -163,6 +168,7 @@ impl TextChatStore for PostgresTextChatStore {
         // Привязка к server_id/room_id обязательна: проверка прав в application слое
         // выполняется для запрошенной комнаты, поэтому мутировать можно только строку
         // именно из этой комнаты (иначе — IDOR между серверами).
+        let txn = self.database.begin().await?;
         let mut query = text_messages::Entity::find()
             .filter(text_messages::Column::Id.eq(*message_id))
             .filter(text_messages::Column::ServerId.eq(*server_id))
@@ -171,7 +177,7 @@ impl TextChatStore for PostgresTextChatStore {
         if require_authorship {
             query = query.filter(text_messages::Column::AuthorUserId.eq(*deleted_by_user_id));
         }
-        let Some(row) = query.one(&self.database).await? else {
+        let Some(row) = query.lock_exclusive().one(&txn).await? else {
             return Ok(None);
         };
 
@@ -179,9 +185,144 @@ impl TextChatStore for PostgresTextChatStore {
         let mut active: text_messages::ActiveModel = row.into();
         active.deleted_at = Set(Some(deleted_at));
         active.deleted_by_user_id = Set(Some(*deleted_by_user_id));
-        let updated = active.update(&self.database).await?;
+        let updated = active.update(&txn).await?;
+        text_message_pins::Entity::delete_many()
+            .filter(text_message_pins::Column::MessageId.eq(*message_id))
+            .filter(text_message_pins::Column::ServerId.eq(*server_id))
+            .filter(text_message_pins::Column::RoomId.eq(*room_id))
+            .exec(&txn)
+            .await?;
+        txn.commit().await?;
 
         Ok(Some(updated.into()))
+    }
+
+    async fn pin_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+        user_id: &Uuid,
+    ) -> anyhow::Result<PinMessageResult> {
+        let txn = self.database.begin().await?;
+        // Advisory-lock сохраняет лимит атомарным между несколькими экземплярами backend.
+        // Используем DB-specific операцию только для сериализации закреплений одной комнаты.
+        txn.query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",
+            [room_id.to_string().into()],
+        ))
+        .await?;
+        let row = text_messages::Entity::find()
+            .filter(text_messages::Column::Id.eq(*message_id))
+            .filter(text_messages::Column::ServerId.eq(*server_id))
+            .filter(text_messages::Column::RoomId.eq(*room_id))
+            .filter(text_messages::Column::DeletedAt.is_null())
+            .lock_exclusive()
+            .one(&txn)
+            .await?;
+        let Some(row) = row else {
+            return Ok(PinMessageResult::NotFound);
+        };
+
+        if text_message_pins::Entity::find_by_id(*message_id)
+            .one(&txn)
+            .await?
+            .is_some()
+        {
+            return Ok(PinMessageResult::AlreadyPinned);
+        }
+        let count = text_message_pins::Entity::find()
+            .filter(text_message_pins::Column::ServerId.eq(*server_id))
+            .filter(text_message_pins::Column::RoomId.eq(*room_id))
+            .count(&txn)
+            .await?;
+        if count >= PIN_LIMIT as u64 {
+            return Ok(PinMessageResult::LimitReached);
+        }
+
+        let pinned_at = Utc::now();
+        text_message_pins::ActiveModel {
+            message_id: Set(*message_id),
+            server_id: Set(*server_id),
+            room_id: Set(*room_id),
+            pinned_by_user_id: Set(*user_id),
+            pinned_at: Set(pinned_at),
+        }
+        .insert(&txn)
+        .await?;
+        txn.commit().await?;
+        tracing::debug!(%server_id, %room_id, %message_id, %user_id, "stored message pin");
+
+        let mut messages = vec![TextMessage::from(row)];
+        hydrate_attachments(&self.database, &mut messages).await?;
+        Ok(PinMessageResult::Pinned(Box::new(PinnedMessage {
+            message: messages.remove(0),
+            pinned_by_user_id: *user_id,
+            pinned_at,
+        })))
+    }
+
+    async fn unpin_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+    ) -> anyhow::Result<bool> {
+        let deleted = text_message_pins::Entity::delete_many()
+            .filter(text_message_pins::Column::ServerId.eq(*server_id))
+            .filter(text_message_pins::Column::RoomId.eq(*room_id))
+            .filter(text_message_pins::Column::MessageId.eq(*message_id))
+            .exec(&self.database)
+            .await?;
+        if deleted.rows_affected != 0 {
+            tracing::debug!(%server_id, %room_id, %message_id, "removed message pin");
+        }
+        Ok(deleted.rows_affected != 0)
+    }
+
+    async fn list_pinned_messages(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+    ) -> anyhow::Result<Vec<PinnedMessage>> {
+        let pins = text_message_pins::Entity::find()
+            .filter(text_message_pins::Column::ServerId.eq(*server_id))
+            .filter(text_message_pins::Column::RoomId.eq(*room_id))
+            .order_by_desc(text_message_pins::Column::PinnedAt)
+            .order_by_desc(text_message_pins::Column::MessageId)
+            .limit(PIN_LIMIT as u64)
+            .all(&self.database)
+            .await?;
+        if pins.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids = pins.iter().map(|pin| pin.message_id).collect::<Vec<_>>();
+        let mut messages = text_messages::Entity::find()
+            .filter(text_messages::Column::Id.is_in(ids))
+            .filter(text_messages::Column::ServerId.eq(*server_id))
+            .filter(text_messages::Column::RoomId.eq(*room_id))
+            .filter(text_messages::Column::DeletedAt.is_null())
+            .all(&self.database)
+            .await?
+            .into_iter()
+            .map(TextMessage::from)
+            .collect::<Vec<_>>();
+        hydrate_attachments(&self.database, &mut messages).await?;
+        let mut by_id: HashMap<Uuid, TextMessage> = messages
+            .into_iter()
+            .map(|message| (message.id, message))
+            .collect();
+        Ok(pins
+            .into_iter()
+            .filter_map(|pin| {
+                by_id.remove(&pin.message_id).map(|message| PinnedMessage {
+                    message,
+                    pinned_by_user_id: pin.pinned_by_user_id,
+                    pinned_at: pin.pinned_at,
+                })
+            })
+            .collect())
     }
 
     async fn count_text_messages(&self) -> anyhow::Result<u64> {

@@ -72,6 +72,7 @@ pub(super) enum RolePermission {
     ManageRoles,
     KickVoiceMembers,
     DeleteMessages,
+    PinMessages,
     ManageRooms,
 }
 
@@ -83,6 +84,7 @@ impl RolePermission {
             RolePermission::ManageRoles,
             RolePermission::KickVoiceMembers,
             RolePermission::DeleteMessages,
+            RolePermission::PinMessages,
             RolePermission::ManageRooms,
         ]
     }
@@ -94,6 +96,7 @@ impl RolePermission {
             RolePermission::ManageRoles => "manage_roles",
             RolePermission::KickVoiceMembers => "kick_voice_members",
             RolePermission::DeleteMessages => "delete_messages",
+            RolePermission::PinMessages => "pin_messages",
             RolePermission::ManageRooms => "manage_rooms",
         }
     }
@@ -105,6 +108,7 @@ impl RolePermission {
             RolePermission::ManageRoles => "Управлять ролями",
             RolePermission::KickVoiceMembers => "Кикать из голосовой комнаты",
             RolePermission::DeleteMessages => "Удалять чужие сообщения",
+            RolePermission::PinMessages => "Закреплять сообщения",
             RolePermission::ManageRooms => "Создавать и редактировать комнаты",
         }
     }
@@ -120,6 +124,9 @@ impl RolePermission {
             RolePermission::DeleteMessages => {
                 "Удаление любых сообщений в текстовых комнатах сервера."
             }
+            RolePermission::PinMessages => {
+                "Закрепление и открепление сообщений в текстовых комнатах сервера."
+            }
             RolePermission::ManageRooms => "Создание, переименование и удаление комнат сервера.",
         }
     }
@@ -131,6 +138,7 @@ impl RolePermission {
             ServerRolePermission::ManageRoles => RolePermission::ManageRoles,
             ServerRolePermission::KickVoiceMembers => RolePermission::KickVoiceMembers,
             ServerRolePermission::DeleteMessages => RolePermission::DeleteMessages,
+            ServerRolePermission::PinMessages => RolePermission::PinMessages,
             ServerRolePermission::ManageRooms => RolePermission::ManageRooms,
         }
     }
@@ -142,6 +150,7 @@ impl RolePermission {
             RolePermission::ManageRoles => ServerRolePermission::ManageRoles,
             RolePermission::KickVoiceMembers => ServerRolePermission::KickVoiceMembers,
             RolePermission::DeleteMessages => ServerRolePermission::DeleteMessages,
+            RolePermission::PinMessages => ServerRolePermission::PinMessages,
             RolePermission::ManageRooms => ServerRolePermission::ManageRooms,
         }
     }
