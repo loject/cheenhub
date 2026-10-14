@@ -251,11 +251,11 @@ impl TextChatStore for PostgresTextChatStore {
         }
         .insert(&txn)
         .await?;
+        let mut messages = vec![TextMessage::from(row)];
+        hydrate_attachments(&txn, &mut messages).await?;
         txn.commit().await?;
         tracing::debug!(%server_id, %room_id, %message_id, %user_id, "stored message pin");
 
-        let mut messages = vec![TextMessage::from(row)];
-        hydrate_attachments(&self.database, &mut messages).await?;
         Ok(PinMessageResult::Pinned(Box::new(PinnedMessage {
             message: messages.remove(0),
             pinned_by_user_id: *user_id,
@@ -399,7 +399,7 @@ impl From<text_chat_attachments::Model> for ChatAttachment {
 }
 
 async fn hydrate_attachments(
-    database: &DatabaseConnection,
+    database: &impl ConnectionTrait,
     messages: &mut [TextMessage],
 ) -> anyhow::Result<()> {
     let message_ids = messages
