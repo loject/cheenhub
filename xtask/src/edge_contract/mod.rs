@@ -254,7 +254,12 @@ fn body_limit(fixture: &Fixture) -> XtaskResult<()> {
 }
 
 fn auth_rate_limit(_fixture: &Fixture) -> XtaskResult<()> {
-    let config = include_str!("../../../deploy/nginx/default.conf");
+    // Конфигурация нужна только при запуске проверки, а не при сборке xtask.
+    let config = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../deploy/nginx/default.conf"),
+    )
+    .map_err(|error| format!("cannot read Nginx contract configuration: {error}"))?;
+    let config = config.as_str();
     contains(config, "zone=cheenhub_auth:10m rate=5r/s", "auth rate")?;
     contains(
         config,
