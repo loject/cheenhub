@@ -28,7 +28,8 @@ fn external_binding_change_publishes_metadata_and_invalidates_old_audio() {
     assert!(end.is_none());
     assert!(listener.has_changed().unwrap());
     let update = listener.borrow_and_update().clone();
-    assert_eq!(update.status, Status::Ready);
+    assert!(!update.binding_required);
+    assert!(update.error.is_none());
     assert_eq!(
         update
             .binding
@@ -54,7 +55,7 @@ fn revoked_binding_publishes_failure_and_closes_gate() {
     let end = changed(&service, &mut assignment, None);
 
     assert!(matches!(end, Some(End::Failed)));
-    assert!(matches!(service.updates.borrow().status, Status::Failed(_)));
+    assert!(service.updates.borrow().error.is_some());
     assert_eq!(
         service.updates.borrow().binding,
         Some(binding::PushToTalkKey::default())
@@ -182,7 +183,7 @@ fn queued_revocation_at_finish_publishes_binding_removal_before_error() {
         service.updates.borrow().binding,
         Some(binding::PushToTalkKey::default())
     );
-    assert!(matches!(service.updates.borrow().status, Status::Failed(_)));
+    assert!(service.updates.borrow().error.is_some());
 }
 
 #[tokio::test]

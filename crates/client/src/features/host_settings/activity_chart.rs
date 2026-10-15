@@ -5,10 +5,8 @@
 //! [`super::chart_bridge`], поэтому оба графика дашборда используют один
 //! загруженный экземпляр библиотеки.
 
-use cheenhub_contracts::rest::HostVoiceActivitySample;
-use dioxus::prelude::*;
-
 use super::chart_bridge;
+use cheenhub_contracts::rest::HostVoiceActivitySample;
 
 /// Глубина показываемой истории в миллисекундах: 24 часа.
 const HISTORY_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
@@ -21,14 +19,6 @@ const CHART_NAME: &str = "activity";
 /// Возвращает уникальный идентификатор контейнера графика активности.
 pub(super) fn new_chart_id() -> String {
     chart_bridge::new_chart_id(CHART_NAME)
-}
-
-/// Создаёт экземпляр графика активности и сразу рисует первые данные.
-pub(super) async fn mount_chart(
-    id: &str,
-    samples: &[HostVoiceActivitySample],
-) -> Result<(), String> {
-    chart_bridge::mount_chart(id, &chart_option(samples)).await
 }
 
 /// Передаёт графику активности обновлённые измерения.

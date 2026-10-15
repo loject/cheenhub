@@ -117,28 +117,6 @@ pub(super) fn new_chart_id(name: &str) -> String {
     format!("cheenhub-{name}-chart-{next}")
 }
 
-/// Создаёт экземпляр графика в контейнере `id` и сразу рисует `option`.
-///
-/// `option` — готовая JSON-конфигурация ECharts. Контейнер с таким `id`
-/// должен уже существовать в разметке.
-pub(super) async fn mount_chart(id: &str, option: &str) -> Result<(), String> {
-    let eval = document::eval(&format!(
-        r#"
-        const id = await dioxus.recv();
-        const option = JSON.parse(await dioxus.recv());
-        {bridge}
-        await window.__cheenhubCharts.mount(id, option);
-        return true;
-        "#,
-        bridge = bridge_script()
-    ));
-    send_chart_payload(&eval, id, option)?;
-    eval.join::<bool>()
-        .await
-        .map(|_| ())
-        .map_err(|error| format!("График не построился: {error}"))
-}
-
 /// Передаёт графику обновлённое содержимое без пересоздания экземпляра.
 ///
 /// Если экземпляра ещё нет, мост создаёт его: быстрый первый ответ может

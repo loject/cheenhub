@@ -24,7 +24,7 @@ fn capture_started_during_probe_recovers_without_restarting_microphone() {
 
     let monitor = Monitor::attach(service.clone(), recording).unwrap();
 
-    assert_eq!(service.updates.borrow().availability, Availability::Pending);
+    assert_eq!(service.updates.borrow().availability, None);
     assert_eq!(monitor.held_epoch(), None);
     assert!(matches!(commands.try_recv(), Ok(Command::Ensure)));
     service.available(true);
@@ -156,11 +156,9 @@ fn available_probe_does_not_make_gate_ready() {
     service.publish(Status::Available);
     service.state.event(true);
 
-    assert_eq!(
-        service.updates.borrow().availability,
-        Availability::Available
-    );
-    assert_eq!(service.updates.borrow().status, Status::Available);
+    assert_eq!(service.updates.borrow().availability, Some(true));
+    assert!(!service.updates.borrow().binding_required);
+    assert!(service.updates.borrow().error.is_none());
     assert_eq!(service.state.held_epoch(&AtomicU64::new(0)), None);
 }
 
@@ -177,7 +175,16 @@ fn binding_required_and_failed_states_invalidate_captured_epoch() {
         service.publish(status.clone());
         service.state.event(true);
 
-        assert_eq!(service.updates.borrow().status, status);
+        match status {
+            Status::BindingRequired => assert!(service.updates.borrow().binding_required),
+            Status::Failed(message) => {
+                assert_eq!(
+                    service.updates.borrow().error.as_deref(),
+                    Some(message.as_str())
+                );
+            }
+            _ => unreachable!("проверяются только состояния остановленной передачи"),
+        }
         assert_eq!(service.state.held_epoch(&recording), None);
     }
 }

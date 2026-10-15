@@ -4,7 +4,7 @@
 pub(super) mod gate;
 mod key;
 mod status;
-pub(crate) use status::{Availability, Status, Update};
+pub(crate) use status::Update;
 /// Платформенный контракт глобального ввода, записи кнопки и доступности функции.
 pub(super) mod platform;
 

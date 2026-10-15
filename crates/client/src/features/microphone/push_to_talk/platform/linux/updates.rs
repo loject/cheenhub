@@ -1,7 +1,7 @@
 //! Публикация состояния portal в UI без доступа worker к Dioxus signals или storage.
 
-use super::{Service, binding};
-use crate::features::microphone::push_to_talk::{Availability, Status, Update};
+use super::{Service, Status, binding};
+use crate::features::microphone::push_to_talk::Update;
 
 impl Service {
     /// Сбрасывает подсказку только для захвата живого worker.
@@ -20,7 +20,13 @@ impl Service {
         if status != Status::Ready {
             self.state.fail();
         }
-        self.updates.send_modify(|update| update.status = status);
+        self.updates.send_modify(|update| {
+            update.binding_required = status == Status::BindingRequired;
+            update.error = match status {
+                Status::Failed(message) => Some(message),
+                _ => None,
+            };
+        });
     }
 
     /// Публикует подтверждённое описание или удаление назначения для UI и storage.
@@ -49,21 +55,17 @@ impl Service {
     pub(super) fn available(&self, available: bool) {
         self.available
             .store(available, std::sync::atomic::Ordering::Release);
-        self.updates.send_modify(|update| {
-            update.availability = if available {
-                Availability::Available
-            } else {
-                Availability::Unavailable
-            }
-        });
+        self.updates
+            .send_modify(|update| update.availability = Some(available));
     }
 }
 
 /// Создаёт начальное состояние до фактического probe.
 pub(super) fn initial() -> Update {
     Update {
-        status: Status::Available,
-        availability: Availability::Pending,
+        availability: None,
+        binding_required: false,
+        error: None,
         binding: None,
         configuring: false,
         restart_capture: false,

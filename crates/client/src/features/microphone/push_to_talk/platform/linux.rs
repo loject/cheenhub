@@ -8,7 +8,7 @@ mod state;
 mod updates;
 mod worker;
 
-use crate::features::microphone::push_to_talk::{Availability, Status, Update};
+use crate::features::microphone::push_to_talk::Update;
 use binding::PushToTalkKey;
 use dioxus::prelude::warn;
 use state::State;
@@ -17,6 +17,19 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
 };
 use tokio::sync::{mpsc, oneshot, watch};
+
+/// Внутреннее состояние Linux Portal и готовности capture.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Status {
+    /// Portal доступен, но активной PTT-сессии нет.
+    Available,
+    /// Требуется назначение сочетания, передача остановлена.
+    BindingRequired,
+    /// Сессия готова к новому событию Activated.
+    Ready,
+    /// Ошибка закрыла gate и требует реакции пользователя.
+    Failed(String),
+}
 
 static SERVICE: Mutex<Option<Arc<Service>>> = Mutex::new(None);
 
@@ -163,9 +176,9 @@ pub(super) async fn availability() -> bool {
     let mut updates = service.updates.subscribe();
     loop {
         match updates.borrow_and_update().availability {
-            Availability::Available => return true,
-            Availability::Unavailable => return false,
-            Availability::Pending => {}
+            Some(true) => return true,
+            Some(false) => return false,
+            None => {}
         }
         if updates.changed().await.is_err() {
             return false;

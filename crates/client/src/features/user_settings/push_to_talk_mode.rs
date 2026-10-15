@@ -10,10 +10,10 @@ pub(super) fn PushToTalkMode() -> Element {
     let available = use_resource(push_to_talk::availability);
     let update = mic.push_to_talk_update();
     let pending = update.as_ref().map_or(available().is_none(), |update| {
-        update.availability == push_to_talk::Availability::Pending
+        update.availability.is_none()
     });
     let supported = update.map_or(available().unwrap_or(false), |update| {
-        update.availability == push_to_talk::Availability::Available
+        update.availability == Some(true)
     });
     let selected = mic.activation_mode() == MicrophoneActivationMode::PushToTalk;
     rsx! {

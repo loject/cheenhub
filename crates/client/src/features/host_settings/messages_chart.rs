@@ -4,10 +4,8 @@
 //! сообщения комнат и личные сообщения — и шкалу значений. Экземпляр ECharts
 //! ведёт общий [`super::chart_bridge`].
 
-use cheenhub_contracts::rest::HostMessagesPerMinuteSample;
-use dioxus::prelude::*;
-
 use super::chart_bridge;
+use cheenhub_contracts::rest::HostMessagesPerMinuteSample;
 
 /// Короткое имя графика в идентификаторе контейнера.
 const CHART_NAME: &str = "messages";
@@ -48,11 +46,6 @@ impl MessagesChartData {
     pub(super) fn is_empty(&self) -> bool {
         self.room_samples.is_empty() && self.direct_samples.is_empty()
     }
-}
-
-/// Создаёт экземпляр графика сообщений и сразу рисует первые данные.
-pub(super) async fn mount_chart(id: &str, data: &MessagesChartData) -> Result<(), String> {
-    chart_bridge::mount_chart(id, &chart_option(data)).await
 }
 
 /// Передаёт графику обновлённые данные без пересоздания экземпляра.

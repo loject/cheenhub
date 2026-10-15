@@ -1,10 +1,10 @@
 //! Единственный worker PTT; восстановление транспорта не восстанавливает удержание.
 
+use super::Status;
 use super::{
     Command, Service,
     session::{self, End},
 };
-use crate::features::microphone::push_to_talk::Status;
 use dioxus::prelude::{info, warn};
 use std::{
     sync::{Arc, atomic::Ordering},
@@ -96,7 +96,7 @@ async fn probe(service: &Service) {
     service.available.store(false, Ordering::Release);
     service
         .updates
-        .send_modify(|update| update.availability = super::Availability::Pending);
+        .send_modify(|update| update.availability = None);
     let result = tokio::time::timeout(Duration::from_secs(4), session::open()).await;
     match result {
         Ok(Ok((_, session))) => {

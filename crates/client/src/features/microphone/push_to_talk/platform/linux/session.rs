@@ -1,7 +1,7 @@
 //! Жизненный цикл GlobalShortcuts: автоматическое восстановление и явное назначение.
 
+use super::Status;
 use super::{Command, Service, binding, identity};
-use crate::features::microphone::push_to_talk::Status;
 use ashpd::{
     desktop::{
         Session,

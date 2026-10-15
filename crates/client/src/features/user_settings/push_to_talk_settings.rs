@@ -27,20 +27,17 @@ pub(super) fn PushToTalkSettings() -> Element {
     let record_mic = mic.clone();
     let update = mic.push_to_talk_update();
     let configuring = update.as_ref().is_some_and(|update| update.configuring);
-    let portal_error = update.as_ref().and_then(|update| match &update.status {
-        push_to_talk::Status::Failed(message) => Some(message.clone()),
-        _ => None,
-    });
+    let portal_error = update.as_ref().and_then(|update| update.error.clone());
     let mut available = use_resource(push_to_talk::availability);
     if update.as_ref().map_or(available().is_none(), |update| {
-        update.availability == push_to_talk::Availability::Pending
+        update.availability.is_none()
     }) {
         return rsx! { div { role: "status", class: "mt-3 flex items-center gap-2 text-[12px] text-zinc-400", span { aria_hidden: "true", class: "h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200" } "Проверяем управление клавишей…" } };
     }
     if !update
         .as_ref()
         .map_or(available().unwrap_or(false), |update| {
-            update.availability == push_to_talk::Availability::Available
+            update.availability == Some(true)
         })
     {
         return rsx! {
@@ -104,7 +101,7 @@ pub(super) fn PushToTalkSettings() -> Element {
             } else {
                 p { class: "text-[12px] leading-5 text-zinc-400", {push_to_talk::hold_description()} }
             }
-            if update.as_ref().is_some_and(|update| update.status == push_to_talk::Status::BindingRequired) {
+            if update.as_ref().is_some_and(|update| update.binding_required) {
                 p { role: "status", class: "text-[12px] leading-5 text-amber-300", "Передача голоса приостановлена. Нажмите «Назначить», чтобы подключить системное сочетание." }
             }
             if update.as_ref().is_some_and(|update| update.restart_capture) {
