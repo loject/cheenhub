@@ -214,25 +214,32 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         room_id: room.id.clone(),
     };
 
+    let pin_previews = pins_state.previews();
+    let show_pinned_panel = !pin_previews.is_empty();
+
     rsx! {
         div { class: "relative flex h-full min-h-0 min-w-0 w-full flex-col bg-[#08090b]",
-            PinnedMessagesPanel {
-                items: pins_state.previews(),
-                loading: pins_state.loading(),
-                error: pins_state.error(),
-                action_error: pins_state.action_error(),
-                limit: pins_state.limit(),
-                can_unpin: permissions.can_pin_messages,
-                busy_message_id: pins_state.busy(),
-                navigating_message_id: pin_navigation.busy(),
-                navigation_error: pin_navigation.error(),
-                on_action: move |action| match action {
-                    PinListAction::Retry => pins_state.refresh(list_pins_target.clone()),
-                    PinListAction::Unpin(message_id) => pins_state.unpin(list_pins_target.clone(), message_id),
-                    PinListAction::Navigate(message_id) => pin_navigation.jump(
-                        navigation_target.clone(), history_state, anchor_elements, message_id,
-                    ),
-                },
+            if show_pinned_panel {
+                div { class: "absolute inset-x-0 top-0 z-30",
+                    PinnedMessagesPanel {
+                        items: pin_previews,
+                        loading: pins_state.loading(),
+                        error: pins_state.error(),
+                        action_error: pins_state.action_error(),
+                        limit: pins_state.limit(),
+                        can_unpin: permissions.can_pin_messages,
+                        busy_message_id: pins_state.busy(),
+                        navigating_message_id: pin_navigation.busy(),
+                        navigation_error: pin_navigation.error(),
+                        on_action: move |action| match action {
+                            PinListAction::Retry => pins_state.refresh(list_pins_target.clone()),
+                            PinListAction::Unpin(message_id) => pins_state.unpin(list_pins_target.clone(), message_id),
+                            PinListAction::Navigate(message_id) => pin_navigation.jump(
+                                navigation_target.clone(), history_state, anchor_elements, message_id,
+                            ),
+                        },
+                    }
+                }
             }
             div {
                 class: list_class,
@@ -259,6 +266,9 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                         });
                     }
                 },
+                if show_pinned_panel {
+                    div { class: "h-12 shrink-0", "aria-hidden": "true" }
+                }
                 div { class: inner_class,
                     onresize: move |_| measure_history.call(()),
                     if older_loading() {
