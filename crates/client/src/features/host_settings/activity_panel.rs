@@ -92,7 +92,7 @@ pub(crate) fn HostActivityPanel() -> Element {
                 }
                 _ => None,
             };
-            let started = std::time::Instant::now();
+            let started = web_time::Instant::now();
             match api::load_activity_history(after).await {
                 Ok(response) => {
                     debug!(
