@@ -9,10 +9,6 @@ PATH = "${CARGO_INSTALL_ROOT}/bin${CARGO_CLI_PATH_SEPARATOR}${PATH}"
 DIOXUS_ADDR = { value = "0.0.0.0", condition = { env_not_set = ["DIOXUS_ADDR"] } }
 DIOXUS_PORT = { value = "8080", condition = { env_not_set = ["DIOXUS_PORT"] } }
 DIOXUS_WEB_PORT = { value = "8081", condition = { env_not_set = ["DIOXUS_WEB_PORT"] } }
-POSTGRES_USER = { value = "postgres", condition = { env_not_set = ["POSTGRES_USER"] } }
-POSTGRES_PASSWORD = { value = "mysecretpassword", condition = { env_not_set = ["POSTGRES_PASSWORD"] } }
-POSTGRES_DB = { value = "cheenhub", condition = { env_not_set = ["POSTGRES_DB"] } }
-POSTGRES_PORT = { value = "5432", condition = { env_not_set = ["POSTGRES_PORT"] } }
 MICROPHONE_WORKER_OUT_DIR = { value = "crates/client/public/workers/microphone", condition = { env_not_set = ["MICROPHONE_WORKER_OUT_DIR"] } }
 RELEASE_BUNDLE_OUT_DIR = { value = "target/cheenhub-release/raw", condition = { env_not_set = ["RELEASE_BUNDLE_OUT_DIR"] } }
 
@@ -21,45 +17,33 @@ alias = "dev-stack"
 
 [tasks.dev-stack]
 description = "Ensure local infrastructure and run the backend watcher plus Dioxus dev server."
-dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
+dependencies = ["setup", "ensure-docker-desktop", "ensure-postgres"]
 run_task = "dev-services"
 
 [tasks.dev-stack-desktop]
 description = "Ensure local infrastructure and run the backend watcher plus Dioxus desktop app."
-dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
+dependencies = ["setup", "ensure-docker-desktop", "ensure-postgres"]
 run_task = "dev-services-desktop"
 
 [tasks.dev-stack-android]
 description = "Ensure local infrastructure and run the backend watcher plus Dioxus Android app on a connected device."
-dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
+dependencies = ["setup", "ensure-docker-desktop", "ensure-postgres"]
 run_task = "dev-services-android"
 
 [tasks.dev-stack-android-emulator]
 description = "Ensure local infrastructure and run the backend watcher plus Dioxus Android app on the API 35 emulator."
-dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres"]
+dependencies = ["setup", "ensure-docker-desktop", "ensure-postgres"]
 run_task = "dev-services-android-emulator"
 
 [tasks.dev-stack-backend]
 description = "Ensure local infrastructure, apply database migrations, and run the backend watcher."
-dependencies = ["setup", "ensure-local-jwt-env", "ensure-docker-desktop", "ensure-postgres", "migrate-database"]
+dependencies = ["setup", "ensure-docker-desktop", "migrate-database"]
 run_task = "backend-watch"
 
-[tasks.ensure-local-jwt-env]
-description = "Ensure local .env contains a valid matching JWT Ed25519 key pair."
+[tasks.ensure-dev-env]
+description = "Create local .env while preserving existing PostgreSQL and JWT secrets."
 command = "cargo"
-args = [
-    "run",
-    "--quiet",
-    "-p",
-    "cheenhub_backend",
-    "--bin",
-    "cheenhub_generate_jwt_keys",
-    "--",
-    "--ensure-local-env",
-    ".env",
-    "--key-id",
-    "dev-ed25519-1",
-]
+args = ["run", "--quiet", "-p", "xtask", "--", "dev-env", "ensure"]
 
 [tasks.dev-services]
 description = "Run the backend watcher, microphone worker watcher, and Dioxus dev server in parallel."
@@ -677,6 +661,7 @@ exit 1
 
 [tasks.dev-compose-up]
 description = "Start the local Docker services and wait until they report healthy."
+dependencies = ["ensure-dev-env"]
 env_files = [".env"]
 command = "docker"
 args = [
@@ -731,6 +716,7 @@ dependencies = ["dev-compose-up"]
 
 [tasks.migrate-database]
 description = "Run database migrations using local .env configuration."
+dependencies = ["ensure-postgres"]
 env_files = [".env"]
 command = "cargo"
 args = ["run", "-p", "cheenhub_migrations", "--", "up"]

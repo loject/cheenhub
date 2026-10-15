@@ -10197,6 +10197,12 @@ checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 [[package]]
 name = "xtask"
 version = "0.34.0"
+dependencies = [
+ "base64",
+ "ed25519-dalek",
+ "rand_core 0.6.4",
+ "url",
+]
 
 [[package]]
 name = "xxhash-rust"
