@@ -1,7 +1,10 @@
 //! Настройка HTTP-роутера.
 
 mod api;
+mod static_files;
 mod trace;
+
+use std::path::Path;
 
 use axum::{
     Router,
@@ -19,12 +22,14 @@ use crate::state::AppState;
 pub(crate) fn router(state: AppState) -> Router {
     let cors = cors_layer(&state.cheenhub_client_base_url);
 
-    Router::new()
+    let router = Router::new()
         // Служебный маршрут лежит вне /api, чтобы его нельзя было спутать с
         // продуктовым API: он отвечает только о готовности процесса.
         .route("/health", get(api::health))
         .nest("/api", api::router())
-        .fallback(api::not_found)
+        .fallback(api::not_found);
+    let router = static_files::mount_index(router, Path::new("web-public"));
+    static_files::mount_asset_dirs(router, Path::new("web-public"))
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http().make_span_with(trace::request_span))
