@@ -8,10 +8,14 @@ use anyhow::Context;
 use axum::{Router, http::HeaderValue, middleware, response::Response};
 use axum_server::{Handle, tls_rustls::RustlsConfig};
 
+mod auth_limit;
+mod reload;
+
 /// Слушатель HTTPS с управляемым завершением работы.
 pub(crate) struct HttpsListener {
     handle: Handle<SocketAddr>,
     task: tokio::task::JoinHandle<anyhow::Result<()>>,
+    reload_task: tokio::task::JoinHandle<()>,
 }
 
 /// Запускает HTTPS на выделенном TCP-порту с сертификатом WebTransport.
@@ -26,16 +30,22 @@ pub(crate) async fn start(
 ) -> anyhow::Result<HttpsListener> {
     // Предпочитаем ring; уже установленный TLS-провайдер не заменяем.
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let tls = RustlsConfig::from_pem_file(cert_path, key_path)
+    let (cert_pem, key_pem) = reload::read_pair(cert_path, key_path)?;
+    let tls = RustlsConfig::from_pem(cert_pem.clone(), key_pem.clone())
         .await
         .context("failed to load HTTPS TLS certificate and key")?;
+    let reload_config = tls.clone();
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .with_context(|| format!("failed to bind HTTPS listener at {address}"))?;
     let bound_address = listener.local_addr()?;
     let listener = listener.into_std()?;
     let handle = Handle::new();
-    let https_app = app.layer(middleware::map_response(
+    let https_app = app.layer(middleware::from_fn_with_state(
+        auth_limit::Limiter::new(),
+        auth_limit::enforce,
+    ));
+    let https_app = https_app.layer(middleware::map_response(
         |mut response: Response| async move {
             response.headers_mut().insert(
                 "strict-transport-security",
@@ -49,7 +59,7 @@ pub(crate) async fn start(
         .handle(handle.clone());
     let task = tokio::spawn(async move {
         let result = server
-            .serve(https_app.into_make_service())
+            .serve(https_app.into_make_service_with_connect_info::<SocketAddr>())
             .await
             .context("HTTPS server stopped with an error");
         if let Err(error) = &result {
@@ -58,13 +68,25 @@ pub(crate) async fn start(
         }
         result
     });
+    let reload_task = reload::spawn(
+        reload_config,
+        cert_path.to_owned(),
+        key_path.to_owned(),
+        cert_pem,
+        key_pem,
+    );
     tracing::info!(address = %bound_address, "additional HTTPS listener started");
-    Ok(HttpsListener { handle, task })
+    Ok(HttpsListener {
+        handle,
+        task,
+        reload_task,
+    })
 }
 
 impl HttpsListener {
     /// Прекращает новые HTTPS-подключения и ожидает завершения активных запросов.
     pub(crate) async fn shutdown(self) -> anyhow::Result<()> {
+        self.reload_task.abort();
         self.handle.graceful_shutdown(Some(Duration::from_secs(25)));
         self.task.await.context("HTTPS listener task failed")?
     }
