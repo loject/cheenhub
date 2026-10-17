@@ -25,14 +25,14 @@ pub(crate) fn Hero() -> Element {
                     }
                 }
                 h1 { class: "a2 mx-auto max-w-3xl text-center text-4xl font-semibold leading-[1.1] tracking-[-0.05em] text-zinc-50 sm:text-5xl lg:text-[60px]",
-                    "Голосовой чат,"
+                    "Мгновенная голосовая"
                     br {}
-                    span { class: "text-zinc-400", "который просто работает." }
+                    span { class: "text-zinc-400", "связь для игр." }
                 }
                 p { class: "a3 mx-auto mt-5 max-w-xl text-center text-[15px] leading-relaxed text-zinc-500",
-                    "Открытая альтернатива Discord для геймеров — без лагов, без раздутости,"
+                    "Заходи в голосовой канал, зови друзей и общайся без VPN."
                     br { class: "hidden sm:inline" }
-                    "с разработкой в открытом эфире."
+                    "Свой сервер — для локального голосового чата в LAN."
                 }
                 div { class: "a4 relative z-[30] mt-8 flex flex-wrap items-center justify-center gap-3",
                     WebButton { large: false }
@@ -40,7 +40,7 @@ pub(crate) fn Hero() -> Element {
                 }
                 SocialLinks { class_name: "a5 mt-5 flex flex-wrap items-center justify-center gap-4 text-[13px] text-zinc-500", hover_class: "transition hover:text-zinc-200" }
                 div { class: "a5 relative z-[10] mt-8 flex flex-wrap items-center justify-center gap-2",
-                    Pill { strong: "< 1 мс", text: "задержка" }
+                    Pill { strong: "< 1 мс", text: "в LAN на своём сервере" }
                     Pill { strong: "Opus", text: "кодек" }
                     Pill { strong: "Быстрый", text: "WebTransport" }
                     Pill { strong: "MIT", text: "лицензия" }
