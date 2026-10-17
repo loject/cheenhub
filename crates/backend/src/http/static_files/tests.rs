@@ -172,6 +172,55 @@ async fn unknown_asset_does_not_fall_back_to_html_or_api() {
 }
 
 #[tokio::test]
+async fn assets_and_wasm_have_immutable_cache_on_success() {
+    let fixture = Fixture::new();
+    let assets = fixture.path().join("assets");
+    let wasm = fixture.path().join("wasm");
+    fs::create_dir(&assets).unwrap();
+    fs::create_dir(&wasm).unwrap();
+    fs::write(assets.join("bundle.js"), "const value = 1;").unwrap();
+    fs::write(wasm.join("module.wasm"), b"\0asm\x01\0\0\0").unwrap();
+
+    for path in ["/assets/bundle.js", "/wasm/module.wasm"] {
+        let (status, headers, _) = request_with_headers(fixture.path(), path).await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+        assert_eq!(
+            headers.get(header::CACHE_CONTROL).unwrap(),
+            "public, max-age=31536000, immutable",
+            "{path}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn missing_assets_do_not_receive_immutable_cache() {
+    let fixture = Fixture::new();
+    fs::create_dir(fixture.path().join("assets")).unwrap();
+    fs::create_dir(fixture.path().join("wasm")).unwrap();
+
+    for path in ["/assets/missing.js", "/wasm/missing.wasm"] {
+        let (status, headers, _) = request_with_headers(fixture.path(), path).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+        assert!(headers.get(header::CACHE_CONTROL).is_none(), "{path}");
+    }
+}
+
+#[tokio::test]
+async fn immutable_cache_is_not_applied_to_api_or_spa() {
+    let fixture = Fixture::new();
+    fs::write(fixture.path().join("index.html"), "<h1>App</h1>").unwrap();
+    fs::create_dir(fixture.path().join("assets")).unwrap();
+
+    let (spa_status, spa_headers, _) = request_with_headers(fixture.path(), "/app").await;
+    let (api_status, api_headers, _) = request_with_headers(fixture.path(), "/api/ping").await;
+
+    assert_eq!(spa_status, StatusCode::OK);
+    assert_eq!(spa_headers.get(header::CACHE_CONTROL).unwrap(), "no-cache");
+    assert_eq!(api_status, StatusCode::OK);
+    assert!(api_headers.get(header::CACHE_CONTROL).is_none());
+}
+
+#[tokio::test]
 async fn missing_index_keeps_original_spa_fallback() {
     let fixture = Fixture::new();
 
