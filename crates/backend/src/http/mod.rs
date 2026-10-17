@@ -3,6 +3,7 @@
 mod api;
 mod documents;
 mod landing;
+mod pwa_files;
 mod service_worker;
 mod static_files;
 mod trace;
@@ -33,6 +34,7 @@ pub(crate) fn router(state: AppState) -> Router {
         .fallback(api::not_found);
     let router = static_files::mount_index(router, Path::new("web-public"));
     let router = documents::mount_documents(router, Path::new("web-public"));
+    let router = pwa_files::mount_pwa_files(router, Path::new("web-public"));
     let router = landing::mount_landing(router, Path::new("web-public"));
     let router = service_worker::mount_service_worker(router, Path::new("web-public"));
     static_files::mount_asset_dirs(router, Path::new("web-public"))
