@@ -1,4 +1,6 @@
-use super::{api_base_url, parse_edge_http_port, parse_https_port, socket_addr_from};
+use super::{
+    api_base_url, parse_edge_http_port, parse_https_port, parse_webtransport_port, socket_addr_from,
+};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 
 #[test]
@@ -53,6 +55,27 @@ fn https_port_is_disabled_by_default_and_accepts_a_distinct_port() {
 fn https_port_rejects_invalid_or_conflicting_values() {
     for value in ["0", "3000", "65536", "not-a-port"] {
         assert!(parse_https_port(Some(value), 3000).is_err(), "{value}");
+    }
+}
+
+#[test]
+fn webtransport_port_defaults_to_http_port_and_accepts_independent_udp_port() {
+    assert_eq!(parse_webtransport_port(None, 3000).unwrap(), 3000);
+    assert_eq!(parse_webtransport_port(Some("443"), 3000).unwrap(), 443);
+    assert_eq!(parse_webtransport_port(Some("443"), 443).unwrap(), 443);
+    assert_eq!(
+        socket_addr_from("::", parse_webtransport_port(Some("443"), 3000).unwrap()).unwrap(),
+        SocketAddr::from((Ipv6Addr::UNSPECIFIED, 443))
+    );
+}
+
+#[test]
+fn webtransport_port_rejects_invalid_or_zero_values() {
+    for value in ["0", "65536", "invalid", "-1"] {
+        assert!(
+            parse_webtransport_port(Some(value), 3000).is_err(),
+            "{value}"
+        );
     }
 }
 

@@ -242,7 +242,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let realtime_state = state.clone();
-    let realtime_address = address;
+    let realtime_address = config.webtransport_socket_addr()?;
     let realtime_server = realtime::bind(
         realtime_address,
         &realtime_tls.cert_path,

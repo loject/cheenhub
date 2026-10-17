@@ -8,6 +8,19 @@
 4. Nginx принимает TCP `80/443`, отдаёт frontend и проксирует `/api/*` в backend.
 5. Frontend собирается как отдельный Docker image, потому что базовый URL сервиса и публичный JWT-ключ зашиваются на этапе сборки.
 
+## Отдельный UDP-порт WebTransport для нативного запуска
+
+Опциональный `WEBTRANSPORT_PORT` задаёт UDP-порт WebTransport независимо от
+`BACKEND_PORT` (HTTP TCP) и `BACKEND_HTTPS_PORT` (HTTPS TCP). При отсутствии
+переменной WebTransport продолжает использовать `BACKEND_PORT`; текущий Docker
+Compose и проброс `443/udp → 3000/udp` не меняются.
+
+При нативном развёртывании можно использовать `WEBTRANSPORT_PORT=443` и
+`BACKEND_HTTPS_PORT=443` одновременно: TCP и UDP являются разными протоколами.
+Запуск на порту ниже 1024 требует `CAP_NET_BIND_SERVICE` через systemd или
+другой контролируемый механизм, без запуска backend от root.
+Пока внешний UDP 443 занят Docker, нативный WebTransport на нём запускать нельзя.
+
 ## Подготовительный автономный backend-образ
 
 В `Dockerfile` есть дополнительная цель `backend-standalone-runtime`. Она

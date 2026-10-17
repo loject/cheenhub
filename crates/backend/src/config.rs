@@ -16,6 +16,8 @@ pub(crate) struct AppConfig {
     pub(crate) backend_port: u16,
     /// Дополнительный HTTPS TCP-порт; без него слушатель отключён.
     pub(crate) backend_https_port: Option<u16>,
+    /// UDP-порт WebTransport; по умолчанию совпадает с `BACKEND_PORT`.
+    pub(crate) webtransport_port: u16,
     /// Дополнительный HTTP edge порт; по умолчанию отключён.
     pub(crate) backend_edge_http_port: Option<u16>,
     /// Путь к webroot Certbot для проверок ACME HTTP-01.
@@ -96,6 +98,10 @@ impl AppConfig {
         let backend_port = optional("BACKEND_PORT", "3000")
             .parse()
             .context("BACKEND_PORT must be a valid u16 port")?;
+        let webtransport_port = parse_webtransport_port(
+            optional_non_empty("WEBTRANSPORT_PORT").as_deref(),
+            backend_port,
+        )?;
         let backend_https_port = parse_https_port(
             optional_non_empty("BACKEND_HTTPS_PORT").as_deref(),
             backend_port,
@@ -110,6 +116,7 @@ impl AppConfig {
             backend_host: optional("BACKEND_HOST", "127.0.0.1"),
             backend_port,
             backend_https_port,
+            webtransport_port,
             backend_edge_http_port,
             backend_acme_webroot: optional("BACKEND_ACME_WEBROOT", "/var/www/certbot"),
             log_filter: optional("RUST_LOG", "cheenhub_backend=debug,tower_http=debug,info"),
@@ -174,6 +181,13 @@ impl AppConfig {
             .transpose()
     }
 
+    /// Возвращает UDP-адрес WebTransport отдельно от TCP-слушателей.
+    ///
+    /// Без `WEBTRANSPORT_PORT` использует тот же номер, что и `BACKEND_PORT`.
+    pub(crate) fn webtransport_socket_addr(&self) -> anyhow::Result<SocketAddr> {
+        socket_addr_from(&self.backend_host, self.webtransport_port)
+    }
+
     /// Возвращает отдельный HTTP edge адрес, если он включён.
     pub(crate) fn edge_socket_addr(&self) -> anyhow::Result<Option<SocketAddr>> {
         self.backend_edge_http_port
@@ -219,6 +233,19 @@ fn parse_edge_http_port(
         ));
     }
     Ok(Some(port))
+}
+
+fn parse_webtransport_port(value: Option<&str>, backend_port: u16) -> anyhow::Result<u16> {
+    let Some(value) = value else {
+        return Ok(backend_port);
+    };
+    let port: u16 = value
+        .parse()
+        .context("WEBTRANSPORT_PORT must be a valid u16 port")?;
+    if port == 0 {
+        return Err(anyhow!("WEBTRANSPORT_PORT must be nonzero"));
+    }
+    Ok(port)
 }
 
 /// Собирает socket address из хоста и порта, оборачивая IPv6-хост в скобки.
