@@ -149,10 +149,11 @@ fn is_spa_route(method: &axum::http::Method, path: &str) -> bool {
 
 /// Подключает каталоги ресурсов фронтенда без SPA fallback.
 ///
-/// Регистрируются только существующие каталоги /assets/ и /wasm/.
+/// Регистрируются только существующие каталоги /assets/, /wasm/,
+/// /icons/ и /screenshots/.
 /// Файлы читаются с диска при запросе, поэтому изменения ресурсов видны
-/// без перезапуска. Успешные ответы кэшируются на год как immutable,
-/// а ошибки не получают длительного кэширования.
+/// без перезапуска. Для /assets/ и /wasm/ действует годовой immutable-кэш,
+/// для /icons/ и /screenshots/ — суточный; ошибки не кэшируются надолго.
 pub(super) fn mount_asset_dirs<S>(mut router: Router<S>, directory: &Path) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -160,31 +161,45 @@ where
     let assets = directory.join("assets");
     if assets.is_dir() {
         tracing::info!(directory = %assets.display(), "включена раздача /assets/");
-        router = router.nest("/assets", immutable_files(assets));
+        router = router.nest(
+            "/assets",
+            cached_files(assets, "public, max-age=31536000, immutable"),
+        );
     }
 
     let wasm = directory.join("wasm");
     if wasm.is_dir() {
         tracing::info!(directory = %wasm.display(), "включена раздача /wasm/");
-        router = router.nest("/wasm", immutable_files(wasm));
+        router = router.nest(
+            "/wasm",
+            cached_files(wasm, "public, max-age=31536000, immutable"),
+        );
+    }
+
+    for (route, name) in [("/icons", "icons"), ("/screenshots", "screenshots")] {
+        let path = directory.join(name);
+        if path.is_dir() {
+            tracing::info!(route, directory = %path.display(), "включена раздача публичных изображений");
+            router = router.nest(route, cached_files(path, "public, max-age=86400"));
+        }
     }
 
     router
 }
 
 // Кэширование ограничено вложенным роутером: API и HTML его не наследуют.
-fn immutable_files<S>(directory: std::path::PathBuf) -> Router<S>
+fn cached_files<S>(directory: std::path::PathBuf, cache_control: &'static str) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
     Router::<S>::new()
         .fallback_service(ServeDir::new(directory))
         .layer(axum::middleware::map_response(
-            |mut response: Response| async move {
+            move |mut response: Response| async move {
                 if response.status().is_success() || response.status() == StatusCode::NOT_MODIFIED {
                     response.headers_mut().insert(
                         header::CACHE_CONTROL,
-                        axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+                        axum::http::HeaderValue::from_static(cache_control),
                     );
                 }
                 response

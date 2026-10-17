@@ -303,3 +303,57 @@ async fn index_and_spa_responses_have_security_headers() {
     assert_eq!(api_status, StatusCode::OK);
     assert!(api_headers.get("content-security-policy").is_none());
 }
+
+#[tokio::test]
+async fn icons_and_screenshots_have_daily_cache_and_correct_mime() {
+    let fixture = Fixture::new();
+    fs::create_dir(fixture.path().join("icons")).unwrap();
+    fs::create_dir(fixture.path().join("screenshots")).unwrap();
+    fs::write(fixture.path().join("icons/logo.svg"), "<svg/>").unwrap();
+    fs::write(fixture.path().join("screenshots/demo.png"), "png").unwrap();
+
+    for (path, expected_type) in [
+        ("/icons/logo.svg", "image/svg+xml"),
+        ("/screenshots/demo.png", "image/png"),
+    ] {
+        let (status, headers, _) = request_with_headers(fixture.path(), path).await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+        assert_eq!(
+            headers.get(header::CONTENT_TYPE).unwrap(),
+            expected_type,
+            "{path}"
+        );
+        assert_eq!(
+            headers.get(header::CACHE_CONTROL).unwrap(),
+            "public, max-age=86400",
+            "{path}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn missing_media_files_have_no_daily_cache() {
+    let fixture = Fixture::new();
+    fs::create_dir(fixture.path().join("icons")).unwrap();
+    fs::create_dir(fixture.path().join("screenshots")).unwrap();
+
+    for path in ["/icons/missing.svg", "/screenshots/missing.png"] {
+        let (status, headers, _) = request_with_headers(fixture.path(), path).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+        assert!(headers.get(header::CACHE_CONTROL).is_none(), "{path}");
+    }
+}
+
+#[tokio::test]
+async fn daily_cache_does_not_affect_spa_or_api() {
+    let fixture = Fixture::new();
+    fs::write(fixture.path().join("index.html"), "app").unwrap();
+    fs::create_dir(fixture.path().join("icons")).unwrap();
+
+    let (spa_status, spa_headers, _) = request_with_headers(fixture.path(), "/app").await;
+    let (api_status, api_headers, _) = request_with_headers(fixture.path(), "/api/ping").await;
+    assert_eq!(spa_status, StatusCode::OK);
+    assert_eq!(spa_headers.get(header::CACHE_CONTROL).unwrap(), "no-cache");
+    assert_eq!(api_status, StatusCode::OK);
+    assert!(api_headers.get(header::CACHE_CONTROL).is_none());
+}
