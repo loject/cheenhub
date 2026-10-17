@@ -11,7 +11,7 @@ use axum::{
     routing::get,
 };
 
-use super::{mount_asset_dirs, mount_index};
+use super::{is_spa_route, mount_asset_dirs, mount_index};
 
 struct Fixture(PathBuf);
 
@@ -161,4 +161,57 @@ async fn unknown_asset_does_not_fall_back_to_html_or_api() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(api_status, StatusCode::OK);
     assert_eq!(api_body, "pong");
+}
+
+#[tokio::test]
+async fn missing_index_keeps_original_spa_fallback() {
+    let fixture = Fixture::new();
+
+    let (status, _, _) = request(fixture.path(), "/login").await;
+
+    assert_eq!(status, StatusCode::IM_A_TEAPOT);
+}
+
+#[tokio::test]
+async fn spa_navigation_returns_index_html() {
+    let fixture = Fixture::new();
+    fs::write(fixture.path().join("index.html"), "<h1>CheenHub</h1>").unwrap();
+
+    let (status, content_type, body) = request(fixture.path(), "/settings/profile").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(content_type.as_deref(), Some("text/html; charset=utf-8"));
+    assert_eq!(body, "<h1>CheenHub</h1>");
+}
+
+#[tokio::test]
+async fn root_and_unknown_files_do_not_use_spa_fallback() {
+    let fixture = Fixture::new();
+    fs::write(fixture.path().join("index.html"), "html").unwrap();
+
+    let (root_status, _, _) = request(fixture.path(), "/").await;
+    let (file_status, _, _) = request(fixture.path(), "/missing.js").await;
+    let (api_status, _, _) = request(fixture.path(), "/api/missing").await;
+
+    assert_eq!(root_status, StatusCode::NOT_FOUND);
+    assert_eq!(file_status, StatusCode::NOT_FOUND);
+    assert_eq!(api_status, StatusCode::NOT_FOUND);
+}
+
+#[test]
+fn spa_routes_exclude_unsafe_methods_and_reserved_paths() {
+    assert!(is_spa_route(&axum::http::Method::HEAD, "/login"));
+    assert!(!is_spa_route(&axum::http::Method::POST, "/login"));
+    for path in [
+        "/health",
+        "/assets/missing",
+        "/wasm/missing",
+        "/icons/missing",
+        "/screenshots/missing",
+        "/api/private",
+        "/missing.js",
+        "/",
+    ] {
+        assert!(!is_spa_route(&axum::http::Method::GET, path), "{path}");
+    }
 }

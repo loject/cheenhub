@@ -32,10 +32,11 @@ impl IndexFile {
     }
 }
 
-/// Регистрирует GET /index.html, только если каталог статики существует.
+/// Регистрирует /index.html и SPA fallback при наличии собранного HTML.
 ///
-/// Содержимое читается однократно при создании роутера; после обновления
-/// фронтенда процесс нужно перезапустить. Если каталога нет, роутер не меняется.
+/// Содержимое читается при создании роутера; после обновления фронтенда
+/// процесс нужно перезапустить. При отсутствии index.html SPA fallback
+/// не включается, а при отсутствии каталога роутер не меняется.
 pub(super) fn mount_index<S>(router: Router<S>, directory: &Path) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -60,15 +61,67 @@ where
             IndexFile::Unreadable
         }
     };
+    let spa_html = match &file {
+        IndexFile::Ready(body) => Some(body.clone()),
+        IndexFile::Missing | IndexFile::Unreadable => None,
+    };
     tracing::info!(directory = %directory.display(), "включена раздача /index.html");
 
-    router.route(
+    let router = router.route(
         "/index.html",
         get(move || {
             let file = file.clone();
             async move { file.respond() }
         }),
-    )
+    );
+    let Some(html) = spa_html else {
+        return router;
+    };
+    tracing::info!("включён SPA fallback для HTML-навигации");
+    router.fallback(move |method: axum::http::Method, uri: axum::http::Uri| {
+        let html = html.clone();
+        async move {
+            if !is_spa_route(&method, uri.path()) {
+                return StatusCode::NOT_FOUND.into_response();
+            }
+            let body = if method == axum::http::Method::HEAD {
+                Bytes::new()
+            } else {
+                html
+            };
+            (
+                [
+                    (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                    (header::CACHE_CONTROL, "no-cache"),
+                ],
+                body,
+            )
+                .into_response()
+        }
+    })
+}
+
+fn is_spa_route(method: &axum::http::Method, path: &str) -> bool {
+    if method != axum::http::Method::GET && method != axum::http::Method::HEAD {
+        return false;
+    }
+    if path == "/" || path.split('/').any(|segment| segment.contains('.')) {
+        return false;
+    }
+    const RESERVED: [&str; 6] = [
+        "/api",
+        "/health",
+        "/assets",
+        "/wasm",
+        "/icons",
+        "/screenshots",
+    ];
+    !RESERVED.iter().any(|prefix| {
+        path == *prefix
+            || path
+                .strip_prefix(prefix)
+                .is_some_and(|tail| tail.starts_with('/'))
+    })
 }
 
 /// Подключает каталоги ресурсов фронтенда без SPA fallback.
