@@ -32,16 +32,27 @@ pub(crate) fn router(state: AppState) -> Router {
         .route("/health", get(api::health))
         .nest("/api", api::router())
         .fallback(api::not_found);
-    let router = static_files::mount_index(router, Path::new("web-public"));
-    let router = documents::mount_documents(router, Path::new("web-public"));
-    let router = pwa_files::mount_pwa_files(router, Path::new("web-public"));
-    let router = landing::mount_landing(router, Path::new("web-public"));
-    let router = service_worker::mount_service_worker(router, Path::new("web-public"));
-    static_files::mount_asset_dirs(router, Path::new("web-public"))
+    mount_static_site(router, Path::new("web-public"))
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http().make_span_with(trace::request_span))
 }
+
+// Единый порядок подключения статических маршрутов для сервера и HTTP-тестов.
+fn mount_static_site<S>(router: Router<S>, directory: &Path) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    let router = static_files::mount_index(router, directory);
+    let router = documents::mount_documents(router, directory);
+    let router = pwa_files::mount_pwa_files(router, directory);
+    let router = landing::mount_landing(router, directory);
+    let router = service_worker::mount_service_worker(router, directory);
+    static_files::mount_asset_dirs(router, directory)
+}
+
+#[cfg(test)]
+mod tests;
 
 /// Строит CORS-слой.
 fn cors_layer(client_base_url: &str) -> CorsLayer {
