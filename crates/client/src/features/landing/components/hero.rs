@@ -38,6 +38,7 @@ pub(crate) fn Hero() -> Element {
                     WebButton { large: false }
                     DownloadDropdown { opens_up: false, large: false, compact: false, opens_right: false }
                 }
+                p { class: "a5 mt-3 text-center text-[12px] text-zinc-500", "Без установки · бесплатно · без VPN" }
                 SocialLinks { class_name: "a5 mt-5 flex flex-wrap items-center justify-center gap-4 text-[13px] text-zinc-500", hover_class: "transition hover:text-zinc-200" }
                 div { class: "a5 relative z-[10] mt-8 flex flex-wrap items-center justify-center gap-2",
                     Pill { strong: "< 1 мс", text: "в LAN на своём сервере" }

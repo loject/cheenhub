@@ -15,11 +15,9 @@ pub(crate) fn WebButton(large: bool) -> Element {
     rsx! {
         a {
             href: "https://cheenhub.ru/app",
-            target: "_blank",
-            rel: "noopener",
             class: "{class_name}",
             GlobeIcon { class_name: "h-4 w-4" }
-            "Открыть веб-версию"
+            "Начать общение"
         }
     }
 }

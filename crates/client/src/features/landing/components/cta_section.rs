@@ -15,13 +15,13 @@ pub(crate) fn CtaSection() -> Element {
                 div { class: "relative",
                     div { class: "mb-3 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950 px-3 py-1 text-[10px] uppercase tracking-[0.24em] text-zinc-500",
                         span { class: "h-1.5 w-1.5 rounded-full bg-accent/70" }
-                        "Следи за разработкой"
+                        "Готов к игре?"
                     }
-                    h2 { class: "text-2xl font-semibold tracking-[-0.04em] text-zinc-50 sm:text-3xl", "Разработка в прямом эфире." }
+                    h2 { class: "text-2xl font-semibold tracking-[-0.04em] text-zinc-50 sm:text-3xl", "Зови друзей. Заходи в голос." }
                     p { class: "mx-auto mt-3 max-w-lg text-[14px] leading-relaxed text-zinc-500",
-                        "Каждый стрим — реальный коммит. Смотри как строится продукт,"
+                        "Открой CheenHub в браузере без установки "
                         br { class: "hidden sm:inline" }
-                        "задавай вопросы, предлагай фичи прямо в чате."
+                        "или скачай приложение и подключайся к друзьям."
                     }
                     div { class: "mt-7 flex flex-wrap items-center justify-center gap-3",
                         WebButton { large: true }
