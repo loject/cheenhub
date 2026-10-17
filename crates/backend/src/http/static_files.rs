@@ -13,6 +13,38 @@ use axum::{
 };
 use tower_http::services::ServeDir;
 
+// Политика соответствует SPA-политике текущего Nginx и разрешает Dioxus/WASM.
+const APP_CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+
+fn html_response(body: Bytes) -> Response {
+    let mut response = (
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        body,
+    )
+        .into_response();
+    let headers = response.headers_mut();
+    headers.insert(
+        "content-security-policy",
+        axum::http::HeaderValue::from_static(APP_CSP),
+    );
+    headers.insert(
+        "x-content-type-options",
+        axum::http::HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        "x-frame-options",
+        axum::http::HeaderValue::from_static("DENY"),
+    );
+    headers.insert(
+        "referrer-policy",
+        axum::http::HeaderValue::from_static("strict-origin-when-cross-origin"),
+    );
+    response
+}
+
 #[derive(Clone)]
 enum IndexFile {
     Ready(Bytes),
@@ -23,9 +55,7 @@ enum IndexFile {
 impl IndexFile {
     fn respond(self) -> Response {
         match self {
-            Self::Ready(body) => {
-                ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], body).into_response()
-            }
+            Self::Ready(body) => html_response(body),
             Self::Missing => StatusCode::NOT_FOUND.into_response(),
             Self::Unreadable => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
@@ -89,14 +119,7 @@ where
             } else {
                 html
             };
-            (
-                [
-                    (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-                    (header::CACHE_CONTROL, "no-cache"),
-                ],
-                body,
-            )
-                .into_response()
+            html_response(body)
         }
     })
 }

@@ -35,6 +35,17 @@ impl Drop for Fixture {
 }
 
 async fn request(directory: &Path, path: &str) -> (StatusCode, Option<String>, String) {
+    let (status, headers, body) = request_with_headers(directory, path).await;
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .map(|value| value.to_str().unwrap().to_owned());
+    (status, content_type, body)
+}
+
+async fn request_with_headers(
+    directory: &Path,
+    path: &str,
+) -> (StatusCode, axum::http::HeaderMap, String) {
     let app = mount_asset_dirs(
         mount_index(
             Router::<()>::new()
@@ -57,13 +68,10 @@ async fn request(directory: &Path, path: &str) -> (StatusCode, Option<String>, S
         .await
         .unwrap();
     let status = response.status();
-    let content_type = response
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .map(|value| value.to_str().unwrap().to_owned());
+    let headers = response.headers().clone();
     let body = response.text().await.unwrap();
     server.abort();
-    (status, content_type, body)
+    (status, headers, body)
 }
 
 #[tokio::test]
@@ -214,4 +222,35 @@ fn spa_routes_exclude_unsafe_methods_and_reserved_paths() {
     ] {
         assert!(!is_spa_route(&axum::http::Method::GET, path), "{path}");
     }
+}
+
+#[tokio::test]
+async fn index_and_spa_responses_have_security_headers() {
+    let fixture = Fixture::new();
+    fs::write(fixture.path().join("index.html"), "<h1>CheenHub</h1>").unwrap();
+
+    for path in ["/index.html", "/settings/profile"] {
+        let (status, headers, body) = request_with_headers(fixture.path(), path).await;
+
+        assert_eq!(status, StatusCode::OK, "{path}");
+        assert_eq!(body, "<h1>CheenHub</h1>");
+        for (name, expected) in [
+            ("content-type", "text/html; charset=utf-8"),
+            ("cache-control", "no-cache"),
+            ("content-security-policy", super::APP_CSP),
+            ("x-content-type-options", "nosniff"),
+            ("x-frame-options", "DENY"),
+            ("referrer-policy", "strict-origin-when-cross-origin"),
+        ] {
+            assert_eq!(
+                headers.get(name).unwrap().to_str().unwrap(),
+                expected,
+                "{path}: {name}"
+            );
+        }
+    }
+
+    let (api_status, api_headers, _) = request_with_headers(fixture.path(), "/api/ping").await;
+    assert_eq!(api_status, StatusCode::OK);
+    assert!(api_headers.get("content-security-policy").is_none());
 }
