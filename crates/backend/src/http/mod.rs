@@ -1,6 +1,7 @@
 //! Настройка HTTP-роутера.
 
 mod api;
+mod body_limit;
 mod documents;
 pub(crate) mod https;
 mod landing;
@@ -35,6 +36,8 @@ pub(crate) fn router(state: AppState) -> Router {
         .fallback(api::not_found);
     mount_static_site(router, Path::new("web-public"))
         .with_state(state)
+        .layer(body_limit::layer())
+        .layer(axum::middleware::from_fn(body_limit::log_rejection))
         .layer(cors)
         .layer(TraceLayer::new_for_http().make_span_with(trace::request_span))
 }
