@@ -248,6 +248,19 @@ async fn main() -> anyhow::Result<()> {
         &realtime_tls.cert_path,
         &realtime_tls.key_path,
     )?;
+    // Дополнительный HTTPS слушает отдельный TCP-порт, не меняя HTTP/QUIC.
+    let https_listener = match config.https_socket_addr()? {
+        Some(https_address) => Some(
+            http::https::start(
+                https_address,
+                &realtime_tls.cert_path,
+                &realtime_tls.key_path,
+                app.clone(),
+            )
+            .await?,
+        ),
+        None => None,
+    };
     let realtime_task = tokio::spawn(async move {
         realtime::serve(
             realtime_state,
@@ -266,7 +279,12 @@ async fn main() -> anyhow::Result<()> {
         .context("backend server stopped with an error");
     // Ошибка HTTP также завершает realtime до уничтожения runtime.
     lifecycle.begin_draining();
+    let https_result = match https_listener {
+        Some(listener) => listener.shutdown().await,
+        None => Ok(()),
+    };
     let realtime_result = lifecycle::finish_realtime(realtime_task).await;
     http_result?;
+    https_result?;
     realtime_result
 }

@@ -14,6 +14,8 @@ pub(crate) struct AppConfig {
     pub(crate) backend_host: String,
     /// Порт, используемый HTTP-слушателем.
     pub(crate) backend_port: u16,
+    /// Дополнительный HTTPS TCP-порт; без него слушатель отключён.
+    pub(crate) backend_https_port: Option<u16>,
     /// Фильтр трассировки, используемый `tracing-subscriber`.
     pub(crate) log_filter: String,
     /// Base64-кодированный seed приватного ключа Ed25519 для подписи Access JWT.
@@ -87,12 +89,18 @@ pub(crate) enum AuthStoreConfig {
 impl AppConfig {
     /// Загружает конфигурацию бэкенда из окружения процесса.
     pub(crate) fn from_env() -> anyhow::Result<Self> {
+        let backend_port = optional("BACKEND_PORT", "3000")
+            .parse()
+            .context("BACKEND_PORT must be a valid u16 port")?;
+        let backend_https_port = parse_https_port(
+            optional_non_empty("BACKEND_HTTPS_PORT").as_deref(),
+            backend_port,
+        )?;
         Ok(Self {
             database_url: required("DATABASE_URL")?,
             backend_host: optional("BACKEND_HOST", "127.0.0.1"),
-            backend_port: optional("BACKEND_PORT", "3000")
-                .parse()
-                .context("BACKEND_PORT must be a valid u16 port")?,
+            backend_port,
+            backend_https_port,
             log_filter: optional("RUST_LOG", "cheenhub_backend=debug,tower_http=debug,info"),
             jwt_private_key_base64: required("JWT_ED25519_PRIVATE_KEY_BASE64")?,
             jwt_key_id: required("JWT_KEY_ID")?,
@@ -145,6 +153,30 @@ impl AppConfig {
     pub(crate) fn socket_addr(&self) -> anyhow::Result<SocketAddr> {
         socket_addr_from(&self.backend_host, self.backend_port)
     }
+
+    /// Возвращает адрес дополнительного HTTPS TCP-слушателя, если он включён.
+    ///
+    /// Привязка использует тот же `BACKEND_HOST`, что и HTTP.
+    pub(crate) fn https_socket_addr(&self) -> anyhow::Result<Option<SocketAddr>> {
+        self.backend_https_port
+            .map(|port| socket_addr_from(&self.backend_host, port))
+            .transpose()
+    }
+}
+
+fn parse_https_port(value: Option<&str>, http_port: u16) -> anyhow::Result<Option<u16>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let port: u16 = value
+        .parse()
+        .context("BACKEND_HTTPS_PORT must be a valid u16 port")?;
+    if port == 0 || port == http_port {
+        return Err(anyhow!(
+            "BACKEND_HTTPS_PORT must be nonzero and different from BACKEND_PORT"
+        ));
+    }
+    Ok(Some(port))
 }
 
 /// Собирает socket address из хоста и порта, оборачивая IPv6-хост в скобки.

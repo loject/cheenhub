@@ -1,4 +1,4 @@
-use super::{api_base_url, socket_addr_from};
+use super::{api_base_url, parse_https_port, socket_addr_from};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 
 #[test]
@@ -41,4 +41,17 @@ fn rejects_base_url_with_path_credentials_or_unsupported_scheme() {
     assert!(api_base_url("https://cheenhub.test/root").is_err());
     assert!(api_base_url("https://user:secret@cheenhub.test").is_err());
     assert!(api_base_url("ftp://cheenhub.test").is_err());
+}
+
+#[test]
+fn https_port_is_disabled_by_default_and_accepts_a_distinct_port() {
+    assert_eq!(parse_https_port(None, 3000).unwrap(), None);
+    assert_eq!(parse_https_port(Some("3443"), 3000).unwrap(), Some(3443));
+}
+
+#[test]
+fn https_port_rejects_invalid_or_conflicting_values() {
+    for value in ["0", "3000", "65536", "not-a-port"] {
+        assert!(parse_https_port(Some(value), 3000).is_err(), "{value}");
+    }
 }

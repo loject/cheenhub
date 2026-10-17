@@ -16,6 +16,7 @@ aws-config.workspace = true
 aws-credential-types.workspace = true
 aws-sdk-s3.workspace = true
 axum.workspace = true
+axum-server.workspace = true
 base64.workspace = true
 bytes.workspace = true
 cheenhub_contracts = { path = "../contracts" }

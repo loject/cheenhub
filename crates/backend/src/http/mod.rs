@@ -2,6 +2,7 @@
 
 mod api;
 mod documents;
+pub(crate) mod https;
 mod landing;
 mod pwa_files;
 mod service_worker;
