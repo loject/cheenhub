@@ -1,0 +1,91 @@
+name: Build native CheenHub Linux archive
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-linux-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  RUST_TOOLCHAIN: '1.97.1'
+  CHEENHUB_BASE_URL: ${{ vars.CHEENHUB_BASE_URL || 'https://cheenhub.ru' }}
+  CHEENHUB_JWT_KEY_ID: ${{ vars.CHEENHUB_JWT_KEY_ID || 'prod-ed25519-1' }}
+  CHEENHUB_JWT_PUBLIC_KEY_BASE64: ${{ vars.CHEENHUB_JWT_PUBLIC_KEY_BASE64 || '' }}
+  CHEENHUB_REALTIME_CERT_SHA256: ${{ vars.CHEENHUB_REALTIME_CERT_SHA256 || '' }}
+
+jobs:
+  archive:
+    name: Package native Linux binaries and web assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate build configuration
+        shell: bash
+        run: |
+          if [[ -z "${CHEENHUB_JWT_PUBLIC_KEY_BASE64}" ]]; then
+            echo 'Set CHEENHUB_JWT_PUBLIC_KEY_BASE64 repository variable.' >&2
+            exit 1
+          fi
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal
+          rustup default "${RUST_TOOLCHAIN}"
+          rustup target add wasm32-unknown-unknown
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: native-linux-1.97.1
+
+      - name: Install Dioxus build tools
+        shell: bash
+        run: |
+          cargo install --locked cargo-make --version 0.37.24
+          cargo install --locked wasm-bindgen-cli --version 0.2.128
+          cargo install --locked dioxus-cli --version 0.8.0-alpha.1
+
+      - name: Resolve application version
+        id: version
+        shell: bash
+        run: |
+          version="$(cargo run --quiet --locked -p xtask -- release-version print-tag)"
+          echo "value=${version}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build native Rust binaries
+        shell: bash
+        run: cargo build --release --locked -p cheenhub_backend -p cheenhub_migrations
+
+      - name: Build frontend and landing
+        shell: bash
+        env:
+          CHEENHUB_APP_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          cargo make build-microphone-worker-wasm-release
+          dx build --release --platform web --package cheenhub_client --bin cheenhub --locked --debug-symbols false
+          cargo run --locked -p xtask -- release-artifacts render-landing
+
+      - name: Build and verify Linux archive
+        shell: bash
+        run: bash deploy/scripts/package-native-linux.sh dist
+
+      - name: Upload Linux archive and SHA-256
+        uses: actions/upload-artifact@v7
+        with:
+          name: cheenhub-native-linux-${{ github.sha }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

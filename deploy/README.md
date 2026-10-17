@@ -33,6 +33,21 @@ Compose и проброс `443/udp → 3000/udp` не меняются.
 обычные `backend-runtime`, `web-runtime`, CI-релизы и production Compose
 остаются без изменений. Переключение TCP `80/443` здесь не выполняется.
 
+## Нативный Linux-архив без Docker (подготовительный этап)
+
+Workflow `.github/workflows/publish-native-linux.yml` запускается вручную из
+GitHub Actions. Он собирает `cheenhub_backend`, `cheenhub_migrations` и
+`web-public` на Ubuntu 24.04 без Docker, затем прикладывает архив
+`cheenhub-native-linux-x86_64-<sha>.tar.gz` и его файл `.sha256`.
+Архив содержит `bin/`, `web-public/`, `BUILD_INFO` и `SHA256SUMS`.
+
+Перед запуском задай `CHEENHUB_JWT_PUBLIC_KEY_BASE64` в переменных
+репозитория, как и для обычной frontend-сборки. Артефакт можно скачать
+со страницы выполнения workflow; проверяй архив через `sha256sum -c`
+и содержимое через `sha256sum -c SHA256SUMS` после распаковки.
+Архив рассчитан на Linux x86_64 с совместимыми системными библиотеками;
+секретов и `.env.production` в нём нет. Production-деплой пока не меняется.
+
 ## Первичная подготовка сервера
 
 На сервере нужен Docker Compose v2 и git checkout репозитория, например `/opt/cheenhub`. Deploy workflow считает репозиторий единственным source of truth и перед запуском миграций синхронизирует server checkout с commit'ом workflow.
