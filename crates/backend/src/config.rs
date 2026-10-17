@@ -16,6 +16,10 @@ pub(crate) struct AppConfig {
     pub(crate) backend_port: u16,
     /// Дополнительный HTTPS TCP-порт; без него слушатель отключён.
     pub(crate) backend_https_port: Option<u16>,
+    /// Дополнительный HTTP edge порт; по умолчанию отключён.
+    pub(crate) backend_edge_http_port: Option<u16>,
+    /// Путь к webroot Certbot для проверок ACME HTTP-01.
+    pub(crate) backend_acme_webroot: String,
     /// Фильтр трассировки, используемый `tracing-subscriber`.
     pub(crate) log_filter: String,
     /// Base64-кодированный seed приватного ключа Ed25519 для подписи Access JWT.
@@ -96,11 +100,18 @@ impl AppConfig {
             optional_non_empty("BACKEND_HTTPS_PORT").as_deref(),
             backend_port,
         )?;
+        let backend_edge_http_port = parse_edge_http_port(
+            optional_non_empty("BACKEND_EDGE_HTTP_PORT").as_deref(),
+            backend_port,
+            backend_https_port,
+        )?;
         Ok(Self {
             database_url: required("DATABASE_URL")?,
             backend_host: optional("BACKEND_HOST", "127.0.0.1"),
             backend_port,
             backend_https_port,
+            backend_edge_http_port,
+            backend_acme_webroot: optional("BACKEND_ACME_WEBROOT", "/var/www/certbot"),
             log_filter: optional("RUST_LOG", "cheenhub_backend=debug,tower_http=debug,info"),
             jwt_private_key_base64: required("JWT_ED25519_PRIVATE_KEY_BASE64")?,
             jwt_key_id: required("JWT_KEY_ID")?,
@@ -162,6 +173,13 @@ impl AppConfig {
             .map(|port| socket_addr_from(&self.backend_host, port))
             .transpose()
     }
+
+    /// Возвращает отдельный HTTP edge адрес, если он включён.
+    pub(crate) fn edge_socket_addr(&self) -> anyhow::Result<Option<SocketAddr>> {
+        self.backend_edge_http_port
+            .map(|port| socket_addr_from(&self.backend_host, port))
+            .transpose()
+    }
 }
 
 fn parse_https_port(value: Option<&str>, http_port: u16) -> anyhow::Result<Option<u16>> {
@@ -174,6 +192,30 @@ fn parse_https_port(value: Option<&str>, http_port: u16) -> anyhow::Result<Optio
     if port == 0 || port == http_port {
         return Err(anyhow!(
             "BACKEND_HTTPS_PORT must be nonzero and different from BACKEND_PORT"
+        ));
+    }
+    Ok(Some(port))
+}
+
+fn parse_edge_http_port(
+    value: Option<&str>,
+    backend_port: u16,
+    https_port: Option<u16>,
+) -> anyhow::Result<Option<u16>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let port: u16 = value
+        .parse()
+        .context("BACKEND_EDGE_HTTP_PORT must be a valid u16 port")?;
+    if port == 0 || port == backend_port || Some(port) == https_port {
+        return Err(anyhow!(
+            "BACKEND_EDGE_HTTP_PORT must be nonzero and distinct from existing ports"
+        ));
+    }
+    if https_port.is_none() {
+        return Err(anyhow!(
+            "BACKEND_EDGE_HTTP_PORT requires BACKEND_HTTPS_PORT"
         ));
     }
     Ok(Some(port))

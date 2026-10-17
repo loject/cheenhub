@@ -1,4 +1,4 @@
-use super::{api_base_url, parse_https_port, socket_addr_from};
+use super::{api_base_url, parse_edge_http_port, parse_https_port, socket_addr_from};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 
 #[test]
@@ -53,5 +53,26 @@ fn https_port_is_disabled_by_default_and_accepts_a_distinct_port() {
 fn https_port_rejects_invalid_or_conflicting_values() {
     for value in ["0", "3000", "65536", "not-a-port"] {
         assert!(parse_https_port(Some(value), 3000).is_err(), "{value}");
+    }
+}
+
+#[test]
+fn edge_port_requires_https_and_distinct_port() {
+    assert_eq!(parse_edge_http_port(None, 3000, None).unwrap(), None);
+    assert_eq!(
+        parse_edge_http_port(Some("8080"), 3000, Some(3443)).unwrap(),
+        Some(8080)
+    );
+    for (port, https) in [
+        ("8080", None),
+        ("0", Some(3443)),
+        ("3000", Some(3443)),
+        ("3443", Some(3443)),
+        ("invalid", Some(3443)),
+    ] {
+        assert!(
+            parse_edge_http_port(Some(port), 3000, https).is_err(),
+            "{port}"
+        );
     }
 }

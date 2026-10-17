@@ -3,6 +3,7 @@
 mod api;
 mod body_limit;
 mod documents;
+pub(crate) mod edge;
 pub(crate) mod https;
 mod landing;
 mod pwa_files;

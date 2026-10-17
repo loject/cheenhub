@@ -11,7 +11,7 @@ mod state;
 mod telemetry;
 
 use anyhow::Context;
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 use tokio::net::TcpListener;
 use tracing::info;
 
@@ -261,6 +261,17 @@ async fn main() -> anyhow::Result<()> {
         ),
         None => None,
     };
+    let edge_task = match config.edge_socket_addr()? {
+        Some(edge_address) => Some(
+            http::edge::start(
+                edge_address,
+                &config.cheenhub_api_base_url,
+                Path::new(&config.backend_acme_webroot),
+            )
+            .await?,
+        ),
+        None => None,
+    };
     let realtime_task = tokio::spawn(async move {
         realtime::serve(
             realtime_state,
@@ -279,12 +290,17 @@ async fn main() -> anyhow::Result<()> {
         .context("backend server stopped with an error");
     // Ошибка HTTP также завершает realtime до уничтожения runtime.
     lifecycle.begin_draining();
+    let edge_result = match edge_task {
+        Some(task) => task.await.context("edge HTTP listener task failed")?,
+        None => Ok(()),
+    };
     let https_result = match https_listener {
         Some(listener) => listener.shutdown().await,
         None => Ok(()),
     };
     let realtime_result = lifecycle::finish_realtime(realtime_task).await;
     http_result?;
+    edge_result?;
     https_result?;
     realtime_result
 }
