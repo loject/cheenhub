@@ -68,6 +68,15 @@ COPY --from=backend-builder /usr/local/bin/cheenhub_migrations /usr/local/bin/ch
 EXPOSE 3000/tcp 3000/udp
 CMD ["cheenhub_backend"]
 
+# Подготовительный образ для прямого обслуживания сайта из Rust без Nginx.
+# Не заменяет backend-runtime, используемый текущими release и compose.
+FROM backend-runtime AS backend-standalone-runtime
+COPY --from=web-builder /app/web-public /app/web-public
+RUN test -s /app/web-public/index.html \
+    && test -s /app/web-public/landing.html \
+    && test -s /app/web-public/sw.js \
+    && test -s /app/web-public/manifest.webmanifest
+
 FROM nginx:1.27-alpine AS web-runtime
 COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=web-builder /app/web-public /usr/share/nginx/html

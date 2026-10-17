@@ -8,6 +8,18 @@
 4. Nginx принимает TCP `80/443`, отдаёт frontend и проксирует `/api/*` в backend.
 5. Frontend собирается как отдельный Docker image, потому что базовый URL сервиса и публичный JWT-ключ зашиваются на этапе сборки.
 
+## Подготовительный автономный backend-образ
+
+В `Dockerfile` есть дополнительная цель `backend-standalone-runtime`. Она
+наследует бинарники из `backend-runtime` и копирует готовый `web-public` из
+`web-builder` в `/app/web-public`, где Axum ищет файлы сайта. Сборка прервётся,
+если отсутствуют `index.html`, `landing.html`, `sw.js` или manifest PWA.
+
+Для её сборки нужны те же `CHEENHUB_*` build-args, которые используются для
+`web-runtime` в `.github/workflows/release-images.yml`. Это отдельная цель:
+обычные `backend-runtime`, `web-runtime`, CI-релизы и production Compose
+остаются без изменений. Переключение TCP `80/443` здесь не выполняется.
+
 ## Первичная подготовка сервера
 
 На сервере нужен Docker Compose v2 и git checkout репозитория, например `/opt/cheenhub`. Deploy workflow считает репозиторий единственным source of truth и перед запуском миграций синхронизирует server checkout с commit'ом workflow.
