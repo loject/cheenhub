@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: native-linux-${{ github.ref }}
@@ -31,6 +31,10 @@ jobs:
       - name: Validate build configuration
         shell: bash
         run: |
+          if [[ "${GITHUB_REF}" != 'refs/heads/main' ]]; then
+            echo 'Publish native preview only from main.' >&2
+            exit 1
+          fi
           if [[ -z "${CHEENHUB_JWT_PUBLIC_KEY_BASE64}" ]]; then
             echo 'Set CHEENHUB_JWT_PUBLIC_KEY_BASE64 repository variable.' >&2
             exit 1
@@ -89,3 +93,28 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+      - name: Publish native preview on GitHub Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          source_archive="$(find dist -maxdepth 1 -name 'cheenhub-native-linux-x86_64-*.tar.gz' -print -quit)"
+          if [[ -z "$source_archive" ]]; then
+            echo 'Native Linux archive not found.' >&2
+            exit 1
+          fi
+          asset='cheenhub-native-linux-x86_64.tar.gz'
+          cp -- "$source_archive" "dist/$asset"
+          (cd dist && sha256sum "$asset" > "$asset.sha256")
+          if ! gh release view native-preview >/dev/null 2>&1; then
+            gh release create native-preview \
+              --target "$GITHUB_SHA" \
+              --title 'CheenHub native Linux preview' \
+              --notes 'Ручные тестовые Linux-сборки. Пока не для production.' \
+              --prerelease
+          fi
+          gh release upload native-preview "dist/$asset" "dist/$asset.sha256" --clobber
+          echo "Published $asset for commit $GITHUB_SHA"

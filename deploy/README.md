@@ -48,6 +48,29 @@ GitHub Actions. Он собирает `cheenhub_backend`, `cheenhub_migrations` 
 Архив рассчитан на Linux x86_64 с совместимыми системными библиотеками;
 секретов и `.env.production` в нём нет. Production-деплой пока не меняется.
 
+## Установка и обновление одной командой (нативный preview)
+
+После ручного запуска workflow `Build native CheenHub Linux archive` на `main`
+архив публикуется в обновляемом prerelease `native-preview`. Установщик
+скачивает архив и SHA-256 самостоятельно; Git, Docker и Rust ему не нужны.
+Запускать от обычного пользователя Linux x86_64 с работающим `systemd --user`:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/loject/cheenhub/main/install.sh)
+```
+
+Выбери `1` для установки или обновления. Повторный запуск открывает то же
+меню; для неинтерактивного обновления передай `update`. Сервис работает на
+`http://127.0.0.1:3000`, журнал: `journalctl --user -u cheenhub -f`.
+Конфигурация в `~/.config/cheenhub/backend.env` сохраняется при обновлениях;
+в случае неудачного запуска устанавливается предыдущая версия.
+
+На этом этапе это только локальный preview с `AUTH_STORE=inmemory`: учётные
+записи не сохраняются после рестарта, а frontend собирается с указанным в
+GitHub Actions публичным URL. Для полноценного self-hosting ещё потребуются
+настройка динамического адреса frontend, PostgreSQL и HTTPS. Установка не
+затрагивает запущенный Docker production.
+
 ## Первичная подготовка сервера
 
 На сервере нужен Docker Compose v2 и git checkout репозитория, например `/opt/cheenhub`. Deploy workflow считает репозиторий единственным source of truth и перед запуском миграций синхронизирует server checkout с commit'ом workflow.
