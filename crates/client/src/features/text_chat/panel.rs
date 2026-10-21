@@ -108,7 +108,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let list_class = if compact {
         "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#08090b] p-4 pt-3"
     } else {
-        "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#08090b] px-5 py-7 lg:px-8 lg:py-8"
+        "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#08090b] px-5 py-5 lg:px-8 lg:py-6"
     };
     let inner_class = if compact {
         "min-w-0 w-full space-y-4"
