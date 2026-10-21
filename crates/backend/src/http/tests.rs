@@ -83,11 +83,15 @@ async fn html_routes_keep_their_distinct_security_policies() {
 
     for (path, body, script_rule) in [
         ("/", "landing", "script-src 'none'"),
-        ("/index.html", "app", "script-src 'self' 'wasm-unsafe-eval'"),
+        (
+            "/index.html",
+            "app",
+            "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'",
+        ),
         (
             "/app/settings",
             "app",
-            "script-src 'self' 'wasm-unsafe-eval'",
+            "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'",
         ),
         ("/offline.html", "offline", "script-src 'self'"),
     ] {

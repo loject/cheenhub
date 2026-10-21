@@ -13,8 +13,8 @@ use axum::{
 };
 use tower_http::services::ServeDir;
 
-// Политика соответствует SPA-политике текущего Nginx и разрешает Dioxus/WASM.
-const APP_CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+// Dioxus document::eval использует Function(): одного wasm-unsafe-eval недостаточно.
+const APP_CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 fn html_response(body: Bytes) -> Response {
     let mut response = (
