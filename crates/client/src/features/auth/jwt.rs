@@ -11,16 +11,23 @@ use dioxus::logger::tracing::{info, warn};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::Deserialize;
 
+mod key_cache;
+
 #[cfg(test)]
 mod tests;
 
 const REFRESH_SKEW_SECONDS: i64 = 60;
 
-/// Загружает публичный ключ backend перед операцией аутентификации.
+/// Возвращает публичный ключ backend для операций аутентификации.
 ///
-/// Ключ передаётся явно проверке токена, без глобального состояния. При сетевой
-/// ошибке вызывающий код сохраняет сессию. Адрес backend задаётся при компиляции.
+/// Первая загрузка общая для параллельных потребителей, затем ключ хранится
+/// в памяти клиента. При ошибке сессия сохраняется, загрузку можно повторить.
+/// Адрес backend задаётся при компиляции.
 pub(crate) async fn load_verification_key() -> Result<AuthVerificationKey, JwtVerifyError> {
+    key_cache::load().await
+}
+
+async fn fetch_verification_key() -> Result<AuthVerificationKey, JwtVerifyError> {
     let result = async {
         let key = super::http::get("/auth/verification-key")
             .timeout(std::time::Duration::from_secs(15))
