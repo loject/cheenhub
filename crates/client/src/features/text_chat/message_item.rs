@@ -12,6 +12,8 @@ pub(crate) fn ChatMessageItem(
     #[props(default)] anchor_elements: Option<super::scroll_anchor_runtime::AnchorElements>,
     animate: bool,
     removing: bool,
+    #[props(default)] show_hover_time: bool,
+    #[props(default)] allow_own_delete: bool,
     can_delete_messages: bool,
     on_delete: EventHandler<String>,
     #[props(default)] can_pin_messages: bool,
@@ -24,39 +26,35 @@ pub(crate) fn ChatMessageItem(
         super::scroll_anchor_runtime::use_message_anchor(message.id.clone(), anchor_elements);
     let current_user = use_context::<CurrentUserContext>().require_user();
     let is_own = message.author_user_id == current_user.id;
-    let can_delete = is_own || can_delete_messages;
+    let can_delete = can_delete_messages || (is_own && allow_own_delete);
     let can_pin = can_pin_messages && on_pin_toggle.is_some();
     let mut menu_pos = use_signal(|| None::<(f64, f64)>);
     let highlight_class = if highlighted {
-        "rounded-xl bg-blue-400/10 ring-1 ring-inset ring-blue-400/60"
+        "bg-blue-400/15 ring-1 ring-inset ring-blue-400/60"
+    } else if is_pinned {
+        "bg-blue-500/[0.045] hover:bg-blue-500/[0.08]"
     } else {
-        ""
+        "hover:bg-white/[0.03]"
     };
-
-    let row_class = match (animate, removing, is_own) {
-        (_, true, true) => "chat-message-removing flex w-full justify-end",
-        (_, true, false) => "chat-message-removing flex w-full justify-start",
-        (true, false, true) => "chat-message flex w-full justify-end",
-        (true, false, false) => "chat-message flex w-full justify-start",
-        (false, false, true) => "flex w-full justify-end",
-        (false, false, false) => "flex w-full justify-start",
+    let row_class = match (animate, removing) {
+        (_, true) => "chat-message-removing",
+        (true, false) => "chat-message",
+        (false, false) => "",
     };
-    let content_stack_class = if is_own {
-        "flex min-w-0 flex-col items-end gap-1.5"
+    let content_class = if is_own {
+        "w-full whitespace-pre-wrap break-words text-left text-[14.5px] leading-[22.5px] tracking-[0.002em] text-[#e2ecfd]"
     } else {
-        "flex min-w-0 flex-col items-start gap-1.5"
+        "w-full whitespace-pre-wrap break-words text-left text-[14.5px] leading-[22.5px] tracking-[0.002em] text-[#d4d8e2]"
     };
-    let pin_line_side = if is_own { "-right-2" } else { "-left-2" };
-    let pin_tooltip_side = if is_own { "right-0" } else { "left-0" };
-    let bubble_class = if is_own {
-        "message-bubble w-fit max-w-full whitespace-pre-wrap break-words rounded-[14px] border border-blue-400/25 bg-[#0d223b] px-3.5 py-2.5 text-[13px] leading-5 text-blue-50 shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-[background-color,border-color] duration-150 hover:border-blue-400/40 hover:bg-[#102946]"
-    } else {
-        "message-bubble w-fit max-w-full whitespace-pre-wrap break-words rounded-[14px] bg-[#1a1c21] px-3.5 py-2.5 text-[13px] leading-5 text-zinc-300 shadow-[0_0_0_1px_rgba(255,255,255,0.045),0_8px_24px_rgba(0,0,0,0.12)] transition-[background-color,box-shadow] duration-150 hover:bg-[#1e2026] hover:shadow-[0_0_0_1px_rgba(255,255,255,0.075),0_8px_24px_rgba(0,0,0,0.14)]"
-    };
+    let item_time = message_time(&message.created_at);
+    let item_datetime = super::message_date::full_message_datetime(&message.created_at);
+    let quick_pin_handler = on_pin_toggle.clone();
+    let quick_pin_id = message.id.clone();
+    let quick_delete_id = message.id.clone();
 
     rsx! {
         div {
-            class: "{row_class} {highlight_class}",
+            class: "{row_class} {highlight_class} group/msg relative flex w-full items-start justify-between gap-3 rounded-xl px-2 py-1 transition-colors duration-100 hover:z-30 focus-within:z-30",
             onmounted: move |event| register_anchor.call(event.data.clone()),
             oncontextmenu: move |event| {
                 if !can_delete && !can_pin {
@@ -67,32 +65,77 @@ pub(crate) fn ChatMessageItem(
                 let p = event.client_coordinates();
                 menu_pos.set(Some((p.x, p.y)));
             },
-            div { class: "flex min-w-0 max-w-[min(100%,42rem)] items-end gap-1.5",
-                div {
-                    class: "{content_stack_class} group/pinned relative hover:z-30 focus-within:z-30 focus-visible:rounded-md focus-visible:outline focus-visible:outline-1 focus-visible:outline-blue-400/50 focus-visible:outline-offset-2",
-                    tabindex: if is_pinned { "0" } else { "-1" },
-                    if !message.body.is_empty() {
-                        div { class: bubble_class,
-                            span { class: "[overflow-wrap:anywhere]", "{message.body}" }
+            if is_own || is_pinned {
+                span {
+                    class: if is_pinned { "pointer-events-none absolute bottom-1.5 left-0 top-1.5 w-[2.5px] rounded-full bg-blue-400" } else { "pointer-events-none absolute bottom-1.5 left-0 top-1.5 w-[2.5px] rounded-full bg-blue-400/35" },
+                    "aria-hidden": "true",
+                }
+            }
+            if show_hover_time {
+                time {
+                    class: "pointer-events-none absolute -left-[3.1rem] top-2 hidden w-10 select-none text-right text-[10px] font-medium tabular-nums text-zinc-400 opacity-0 transition-opacity duration-100 group-hover/msg:opacity-100 group-focus-within/msg:opacity-100 min-[901px]:block",
+                    datetime: "{message.created_at}",
+                    title: "{item_datetime}",
+                    "{item_time}"
+                }
+            }
+            div { class: "flex min-w-0 max-w-[46rem] flex-1 flex-col items-start gap-1.5 pl-0.5",
+                if is_pinned {
+                    div { class: "inline-flex items-center gap-1 text-[11px] font-medium text-blue-300/90",
+                        svg { class: "h-3 w-3", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2",
+                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "m16 3 5 5-4 1-3 4-1 3-2 2-5-5 2-2 3-1 4-3 1-4zM9 15l-5 6" }
                         }
+                        span { "Закреплено в комнате" }
                     }
-                    {children}
-                    if is_pinned {
-                        span {
-                            class: "pointer-events-none absolute bottom-1 top-1 w-[2px] rounded-full bg-blue-400/60 {pin_line_side}",
-                            "aria-hidden": "true",
-                        }
-                        span {
-                            role: "tooltip",
-                            class: "pointer-events-none absolute -top-9 z-40 whitespace-nowrap rounded-lg border border-white/[0.1] bg-[#15171d] px-2.5 py-1.5 text-[11px] font-medium text-zinc-200 opacity-0 shadow-[0_8px_24px_rgba(0,0,0,0.45)] transition-opacity duration-150 group-hover/pinned:opacity-100 group-focus-within/pinned:opacity-100 {pin_tooltip_side}",
-                            "Сообщение закреплено"
+                }
+                if !message.body.is_empty() {
+                    div { class: content_class,
+                        span { class: "[overflow-wrap:anywhere]", "{message.body}" }
+                        if is_own {
+                            if let Some(status) = message.delivery_status {
+                                {delivery_status_marks(status)}
+                            }
                         }
                     }
                 }
-
-                if is_own {
-                    if let Some(status) = message.delivery_status {
-                        {delivery_status_marks(status)}
+                {children}
+            }
+            if is_own && message.body.is_empty() {
+                if let Some(status) = message.delivery_status {
+                    {delivery_status_marks(status)}
+                }
+            }
+            if can_pin || can_delete {
+                div {
+                    class: "pointer-events-none absolute -top-3 right-2 z-20 flex items-center gap-0.5 rounded-xl border border-zinc-800 bg-zinc-950/95 p-1 opacity-0 shadow-[0_8px_24px_rgba(0,0,0,0.45)] backdrop-blur-md transition-opacity duration-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100",
+                    if show_hover_time {
+                        span { class: "px-1.5 text-[10px] tabular-nums text-zinc-400 min-[901px]:hidden", "{item_time}" }
+                    }
+                    if can_pin {
+                        if let Some(handler) = quick_pin_handler {
+                            button {
+                                r#type: "button",
+                                class: if is_pinned { "flex h-7 items-center gap-1 rounded-lg bg-blue-500/20 px-2 text-[11px] font-medium text-blue-200 transition-colors hover:bg-blue-500/30" } else { "flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100" },
+                                title: if is_pinned { "Открепить сообщение" } else { "Закрепить сообщение" },
+                                onclick: move |_| handler.call(quick_pin_id.clone()),
+                                svg { class: "h-3.5 w-3.5", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.9",
+                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "m16 3 5 5-4 1-3 4-1 3-2 2-5-5 2-2 3-1 4-3 1-4zM9 15l-5 6" }
+                                }
+                                if is_pinned { "Открепить" } else { "Закрепить" }
+                            }
+                        }
+                    }
+                    if can_delete {
+                        button {
+                            r#type: "button",
+                            class: "flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-red-500/15 hover:text-red-300",
+                            title: "Удалить сообщение",
+                            "aria-label": "Удалить сообщение",
+                            onclick: move |_| on_delete.call(quick_delete_id.clone()),
+                            svg { class: "h-3.5 w-3.5", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.9",
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 4v7m4-7v7" }
+                            }
+                        }
                     }
                 }
             }
