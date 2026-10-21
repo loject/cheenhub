@@ -14,6 +14,24 @@ use axum::{
 use tower_http::services::ServeDir;
 use url::Url;
 
+/// Перенаправляет все запросы HTTP на публичный HTTPS origin нативного сервера.
+///
+/// Код 308 сохраняет метод и тело запроса; Host клиента не влияет на адрес назначения.
+pub(crate) fn redirect_router(https_api_url: &str) -> anyhow::Result<Router> {
+    let url = Url::parse(https_api_url).context("invalid CHEENHUB_BASE_URL for HTTP redirect")?;
+    if url.scheme() != "https" {
+        return Err(anyhow!("direct HTTPS requires HTTPS CHEENHUB_BASE_URL"));
+    }
+    let origin = url.origin().ascii_serialization();
+    Ok(Router::new().fallback(move |uri: Uri| {
+        let target = format!(
+            "{origin}{}",
+            uri.path_and_query().map_or("/", |part| part.as_str())
+        );
+        async move { axum::response::Redirect::permanent(&target) }
+    }))
+}
+
 /// Запускает отдельный HTTP-слушатель для проверки Certbot и редиректов.
 ///
 /// Принимает HTTPS API URL, выделяет из него канонический origin и отдаёт

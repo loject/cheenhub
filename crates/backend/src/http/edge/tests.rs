@@ -12,6 +12,25 @@ use axum::{
 
 use super::router;
 
+#[tokio::test]
+async fn direct_https_mode_redirects_every_http_request_to_configured_port() {
+    for (method, path) in [
+        (Method::GET, "/health"),
+        (Method::POST, "/api/auth/login?next=%2Fapp"),
+        (Method::GET, "/.well-known/acme-challenge/token"),
+    ] {
+        let app = super::redirect_router("https://cheenhub.test:13443/api").unwrap();
+
+        let (status, headers, _) = request(app, method, path, "untrusted.test").await;
+
+        assert_eq!(status, StatusCode::PERMANENT_REDIRECT);
+        assert_eq!(
+            headers.get("location").unwrap(),
+            &format!("https://cheenhub.test:13443{path}")
+        );
+    }
+}
+
 struct Fixture(PathBuf);
 
 impl Fixture {

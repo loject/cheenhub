@@ -284,7 +284,13 @@ async fn main() -> anyhow::Result<()> {
     });
 
     info!(%address, "backend listening");
-    let http_result = axum::serve(listener, app)
+    let http_app = if config.backend_https_port.is_some() {
+        tracing::info!(%address, "HTTP listener redirects all requests to HTTPS");
+        http::edge::redirect_router(&config.cheenhub_api_base_url)?
+    } else {
+        app
+    };
+    let http_result = axum::serve(listener, http_app)
         .with_graceful_shutdown(lifecycle.wait_for_draining())
         .await
         .context("backend server stopped with an error");
