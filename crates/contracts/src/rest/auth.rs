@@ -2,6 +2,17 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Публичный ключ проверки access JWT активного backend.
+///
+/// Загружается клиентом по HTTPS перед проверкой токенов; приватные данные не передаются.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthVerificationKey {
+    /// Идентификатор ключа в заголовке и claims JWT.
+    pub key_id: String,
+    /// Публичный Ed25519-ключ из 32 байт в стандартном Base64.
+    pub public_key_base64: String,
+}
+
 /// Тело запроса для создания новой учетной записи по email и паролю.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegisterRequest {

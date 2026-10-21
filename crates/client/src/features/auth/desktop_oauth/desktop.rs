@@ -99,12 +99,15 @@ async fn authenticate(
             GoogleDesktopAuthPollResponse::Failed { message } => return Err(message),
             GoogleDesktopAuthPollResponse::Ready => {
                 on_progress(Progress::Completing);
+                let key = crate::features::auth::jwt::load_verification_key()
+                    .await
+                    .map_err(|error| error.to_string())?;
                 let value: serde_json::Value = json(api::post("/auth/oauth/google/complete").json(
                     &serde_json::json!({"handoff_code": attempt.0.as_ref().unwrap().poll_secret}),
                 ))
                 .await?;
                 // Привязка не должна сохранять чужую сессию даже при неожиданном ответе.
-                let result = finish(value, flow)?;
+                let result = finish(value, flow, &key)?;
                 attempt.0 = None;
                 info!(attempt_id = %start.attempt_id, "desktop Google OAuth completed");
                 return Ok(result);
@@ -113,7 +116,11 @@ async fn authenticate(
     }
 }
 
-fn finish(value: serde_json::Value, flow: OAuthFlow) -> Result<OAuthCompletion, String> {
+fn finish(
+    value: serde_json::Value,
+    flow: OAuthFlow,
+    key: &cheenhub_contracts::rest::AuthVerificationKey,
+) -> Result<OAuthCompletion, String> {
     if flow == OAuthFlow::Link {
         if value.get("kind").and_then(serde_json::Value::as_str) == Some("linked") {
             return Ok(OAuthCompletion::Linked);
@@ -123,7 +130,7 @@ fn finish(value: serde_json::Value, flow: OAuthFlow) -> Result<OAuthCompletion, 
         );
     }
     // Нет await между проверкой результата и сохранением: отменённая задача сюда не попадёт.
-    api::parse_oauth_completion(value)
+    api::parse_oauth_completion(value, key)
 }
 
 async fn json<T: DeserializeOwned>(request: reqwest::RequestBuilder) -> Result<T, String> {

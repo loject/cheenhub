@@ -20,6 +20,7 @@ use crate::state::AppState;
 /// Собирает маршруты аутентификации.
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
+        .route("/verification-key", get(transport::verification_key::get))
         .route("/register", post(transport::handlers::register))
         .route("/login", post(transport::handlers::login))
         .route(

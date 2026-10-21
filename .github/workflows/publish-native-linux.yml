@@ -19,8 +19,6 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   RUST_TOOLCHAIN: '1.97.1'
   CHEENHUB_BASE_URL: ${{ inputs.base_url || vars.CHEENHUB_BASE_URL || 'https://cheenhub.ru' }}
-  CHEENHUB_JWT_KEY_ID: ${{ vars.CHEENHUB_JWT_KEY_ID || 'prod-ed25519-1' }}
-  CHEENHUB_JWT_PUBLIC_KEY_BASE64: ${{ vars.CHEENHUB_JWT_PUBLIC_KEY_BASE64 || '' }}
   CHEENHUB_REALTIME_CERT_SHA256: ${{ vars.CHEENHUB_REALTIME_CERT_SHA256 || '' }}
 
 jobs:
@@ -38,10 +36,6 @@ jobs:
         run: |
           if [[ "${GITHUB_REF}" != 'refs/heads/main' ]]; then
             echo 'Publish native preview only from main.' >&2
-            exit 1
-          fi
-          if [[ -z "${CHEENHUB_JWT_PUBLIC_KEY_BASE64}" ]]; then
-            echo 'Set CHEENHUB_JWT_PUBLIC_KEY_BASE64 repository variable.' >&2
             exit 1
           fi
 

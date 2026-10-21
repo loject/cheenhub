@@ -81,6 +81,10 @@ pub(crate) async fn refresh_access_token_classified() -> Result<String, RefreshE
         });
     };
 
+    let key = jwt::load_verification_key()
+        .await
+        .map_err(|error| RefreshError::Retryable(error.to_string()))?;
+
     let _refresh_lock = match refresh_lock::acquire(&tokens).await {
         refresh_lock::RefreshLockOutcome::Acquired(guard) => guard,
         refresh_lock::RefreshLockOutcome::TokensChanged(access_token) => {
@@ -129,7 +133,7 @@ pub(crate) async fn refresh_access_token_classified() -> Result<String, RefreshE
     apply_refresh_tokens(
         &response.access_token,
         &response.refresh_token,
-        jwt::verify(&response.access_token).map(|_| ()),
+        jwt::verify(&response.access_token, &key).map(|_| ()),
         storage::save,
         storage::clear,
     )
@@ -171,7 +175,7 @@ fn apply_refresh_tokens(
 /// Действие фонового цикла сессии после того, как сохранённый access JWT не прошёл локальную проверку.
 ///
 /// Вызывается, когда `jwt::verify` отверг сохранённый access token: битый формат, чужая подпись,
-/// несовпадение `kid` или недоступный встроенный публичный ключ.
+/// несовпадение `kid` или недоступный публичный ключ backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AccessTokenRecovery {
     /// Сервер выдал новый access token, который проходит локальную проверку: сессия живёт дальше.

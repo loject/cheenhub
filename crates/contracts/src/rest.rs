@@ -10,12 +10,13 @@ pub mod social;
 
 pub use auth::{
     AccountDeletionResponse, AccountRestoreRequest, ActiveSession, ActiveSessionsResponse,
-    AuthResponse, AuthUser, ChangeCurrentUserPasswordRequest, GoogleNativeAuthCompleteRequest,
-    GoogleNativeAuthStartResponse, LinkedAccount, LinkedAccountsResponse, LoginRequest,
-    LogoutRequest, OAuthCompleteRequest, OAuthCompleteResponse, OAuthFlow, OAuthProvider,
-    OAuthRegistrationRequest, OAuthStartRequest, OAuthStartResponse, PasswordResetConfirmRequest,
-    PasswordResetRequest, RefreshRequest, RegisterRequest, SessionClientInfo, SessionDeviceKind,
-    UnlinkProviderRequest, UpdateCurrentUserRequest,
+    AuthResponse, AuthUser, AuthVerificationKey, ChangeCurrentUserPasswordRequest,
+    GoogleNativeAuthCompleteRequest, GoogleNativeAuthStartResponse, LinkedAccount,
+    LinkedAccountsResponse, LoginRequest, LogoutRequest, OAuthCompleteRequest,
+    OAuthCompleteResponse, OAuthFlow, OAuthProvider, OAuthRegistrationRequest, OAuthStartRequest,
+    OAuthStartResponse, PasswordResetConfirmRequest, PasswordResetRequest, RefreshRequest,
+    RegisterRequest, SessionClientInfo, SessionDeviceKind, UnlinkProviderRequest,
+    UpdateCurrentUserRequest,
 };
 pub use desktop_oauth::{
     GoogleDesktopAuthPollResponse, GoogleDesktopAuthRequest, GoogleDesktopAuthStartResponse,

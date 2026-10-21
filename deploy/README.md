@@ -6,7 +6,7 @@
 2. `deploy/compose.yml` запускает `db`, одноразовую миграцию, backend, nginx frontend и certbot.
 3. Backend слушает HTTP API по TCP и WebTransport по UDP на общем внутреннем порту `3000`; compose публикует WebTransport по UDP `443`.
 4. Nginx принимает TCP `80/443`, отдаёт frontend и проксирует `/api/*` в backend.
-5. Frontend собирается как отдельный Docker image, потому что базовый URL сервиса и публичный JWT-ключ зашиваются на этапе сборки.
+5. Frontend собирается как отдельный Docker image с базовым URL сервиса, заданным при компиляции. Публичный JWT-ключ и `kid` загружаются из работающего backend.
 
 ## Отдельный UDP-порт WebTransport для нативного запуска
 
@@ -41,8 +41,7 @@ GitHub Actions. Он собирает `cheenhub_backend`, `cheenhub_migrations` 
 `cheenhub-native-linux-x86_64-<sha>.tar.gz` и его файл `.sha256`.
 Архив содержит `bin/`, `web-public/`, `BUILD_INFO` и `SHA256SUMS`.
 
-Перед запуском задай `CHEENHUB_JWT_PUBLIC_KEY_BASE64` в переменных
-репозитория, как и для обычной frontend-сборки. Артефакт можно скачать
+JWT-настройки для сборки передавать не нужно. Артефакт можно скачать
 со страницы выполнения workflow; проверяй архив через `sha256sum -c`
 и содержимое через `sha256sum -c SHA256SUMS` после распаковки.
 Архив рассчитан на Linux x86_64 с совместимыми системными библиотеками;
@@ -51,8 +50,12 @@ GitHub Actions. Он собирает `cheenhub_backend`, `cheenhub_migrations` 
 ## Ручная проверка нативного запуска на другом порту
 
 Для замены текущего Docker-запуска используем существующий backend и web-клиент
-с адресом и публичным JWT-ключом, встроенными при сборке. Runtime-конфигурации
-клиента нет. `install.sh` на этом этапе не используется: он остаётся отдельным preview.
+с адресом, заданным при сборке. Публичный JWT-ключ и `kid` клиент получает
+через `GET /api/auth/verification-key` перед проверкой токенов. Backend берёт
+`JWT_KEY_ID` и `JWT_ED25519_PRIVATE_KEY_BASE64` из серверного `.env` при запуске
+и вычисляет публичный ключ из активного приватного. Приватный ключ не передаётся.
+Отдельные `CHEENHUB_JWT_*` для frontend больше не нужны.
+`install.sh` на этом этапе не используется: он остаётся отдельным preview.
 
 Перед сборкой подготовь корневой `.env`. Для локальной проверки:
 
@@ -66,8 +69,8 @@ CHEENHUB_CLIENT_BASE_URL=https://localhost:13443
 ```
 
 Остальные настройки бери из действующего `.env`: `AUTH_STORE=postgres`,
-`DATABASE_URL`, приватный JWT-ключ backend и соответствующие ему публичный ключ
-и `kid` frontend. Для существующего production не создавай новую JWT-пару.
+`DATABASE_URL`, `JWT_ED25519_PRIVATE_KEY_BASE64` и `JWT_KEY_ID`.
+Для существующего production не создавай новую JWT-пару.
 В `WEBTRANSPORT_TLS_CERT_PATH` и `WEBTRANSPORT_TLS_KEY_PATH` укажи абсолютные пути
 к сертификату и ключу: локально — к dev-сертификату, на сервере — к действующему
 сертификату домена. Для локального HTTPS браузер должен доверять dev-сертификату.
@@ -91,12 +94,15 @@ Frontend build script читает корневой `.env`; backend читает
 адрес существующего production Postgres и открой TCP/UDP `13443`.
 Проверяй `/health`, вход, WebTransport и голос; HTTP-редирект сам по себе
 не подтверждает готовность. Текущие Nginx/Docker и их порты `80/443` до окончания
-проверки не переключаются. Другой адрес или JWT-ключ требуют пересборки frontend.
+проверки не переключаются. Другой адрес требует пересборки frontend.
+После смены JWT-ключа перезапусти backend: клиент загружает активный ключ перед
+операциями аутентификации. Новый клиент требует backend с маршрутом
+`/api/auth/verification-key`; с прежним backend без этого маршрута вход не сработает.
 
 Вместо локальной сборки можно запустить `Build native CheenHub Linux archive`
 на `main` в GitHub Actions, указав `base_url=https://cheenhub.ru:13443`.
-Публичный JWT-ключ и `kid` берутся из переменных репозитория и должны совпадать
-с действующим backend. Скачай полученный архив и SHA-256, проверь контрольную
+Публичный JWT-ключ и `kid` загрузятся из запущенного backend. Скачай полученный
+архив и SHA-256, проверь контрольную
 сумму и запусти распакованный backend с описанным выше серверным `.env`.
 Workflow собирает архив; настройка БД, сертификатов и запуск на сервере выполняются отдельно.
 
@@ -273,8 +279,6 @@ Workflow `.github/workflows/release-images.yml`:
 ```text
 CHEENHUB_DOMAIN=cheenhub.ru
 CHEENHUB_BASE_URL=https://cheenhub.ru
-CHEENHUB_JWT_KEY_ID=prod-ed25519-1
-CHEENHUB_JWT_PUBLIC_KEY_BASE64=<public key from .env.production>
 CHEENHUB_REALTIME_CERT_SHA256=
 ```
 

@@ -48,21 +48,11 @@ fn main() {
     let app_version = resolve_app_version();
     println!("cargo:rustc-env=CHEENHUB_APP_VERSION={app_version}");
 
-    forward_env("CHEENHUB_JWT_PUBLIC_KEY_BASE64");
     forward_env("CHEENHUB_BASE_URL");
     forward_env("CHEENHUB_PORTAL_APP_ID");
     if !forward_env("CHEENHUB_REALTIME_CERT_SHA256") {
         forward_webtransport_cert_hash();
     }
-
-    if env::var("CHEENHUB_JWT_KEY_ID").is_err()
-        && let Ok(key_id) = env::var("JWT_KEY_ID")
-    {
-        println!("cargo:rustc-env=CHEENHUB_JWT_KEY_ID={key_id}");
-        return;
-    }
-
-    forward_env("CHEENHUB_JWT_KEY_ID");
 }
 
 fn prepare_installer_payload() {

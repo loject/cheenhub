@@ -1,7 +1,7 @@
 //! Клиент API аутентификации.
 
 use cheenhub_contracts::rest::{
-    ApiError, AuthResponse, AuthUser, LoginRequest, LogoutRequest, OAuthFlow,
+    ApiError, AuthResponse, AuthUser, AuthVerificationKey, LoginRequest, LogoutRequest, OAuthFlow,
     OAuthRegistrationRequest, OAuthStartRequest, PasswordResetConfirmRequest, PasswordResetRequest,
     RegisterRequest,
 };
@@ -21,14 +21,20 @@ pub(crate) use super::refresh::refresh_access_token;
 
 /// Регистрирует новую учетную запись и сохраняет возвращенные токены.
 pub(crate) async fn register(request: RegisterRequest) -> Result<AuthUser, String> {
+    let key = jwt::load_verification_key()
+        .await
+        .map_err(|error| error.to_string())?;
     let response = post_json("/auth/register", &request).await?;
-    save_response(response)
+    save_response(response, &key)
 }
 
 /// Входит по email и паролю и сохраняет возвращенные токены.
 pub(crate) async fn login(request: LoginRequest) -> Result<AuthUser, String> {
+    let key = jwt::load_verification_key()
+        .await
+        .map_err(|error| error.to_string())?;
     let response = post_json("/auth/login", &request).await?;
-    save_response(response)
+    save_response(response, &key)
 }
 
 /// Запрашивает письмо для сброса пароля для учетной записи.
@@ -68,8 +74,11 @@ pub(crate) async fn complete_google_oauth(handoff_code: String) -> Result<OAuthC
 pub(crate) async fn register_with_google_oauth(
     request: OAuthRegistrationRequest,
 ) -> Result<OAuthCompletion, String> {
+    let key = jwt::load_verification_key()
+        .await
+        .map_err(|error| error.to_string())?;
     let response = post_json("/auth/oauth/google/register", &request).await?;
-    save_response(response).map(OAuthCompletion::Authenticated)
+    save_response(response, &key).map(OAuthCompletion::Authenticated)
 }
 
 /// Завершает привязку аккаунта через OAuth с кодом handoff от бэкенда.
@@ -181,7 +190,10 @@ pub(crate) async fn fresh_access_token() -> Result<String, String> {
         return Err("Войди, чтобы продолжить.".to_owned());
     };
 
-    if jwt::is_fresh(&tokens.access_token) {
+    let key = jwt::load_verification_key()
+        .await
+        .map_err(|error| error.to_string())?;
+    if jwt::is_fresh(&tokens.access_token, &key) {
         return Ok(tokens.access_token);
     }
 
@@ -274,6 +286,9 @@ async fn start_oauth(
 }
 
 async fn complete_oauth(path: &str, handoff_code: String) -> Result<OAuthCompletion, String> {
+    let key = jwt::load_verification_key()
+        .await
+        .map_err(|error| error.to_string())?;
     let response = post(path)
         .json(&OAuthCompleteRequest {
             handoff_code,
@@ -292,12 +307,15 @@ async fn complete_oauth(path: &str, handoff_code: String) -> Result<OAuthComplet
         .await
         .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned())?;
 
-    parse_oauth_completion(value)
+    parse_oauth_completion(value, &key)
 }
 
-pub(super) fn parse_oauth_completion(value: Value) -> Result<OAuthCompletion, String> {
+pub(super) fn parse_oauth_completion(
+    value: Value,
+    key: &AuthVerificationKey,
+) -> Result<OAuthCompletion, String> {
     if let Ok(response) = serde_json::from_value::<AuthResponse>(value.clone()) {
-        return save_response(response).map(OAuthCompletion::Authenticated);
+        return save_response(response, key).map(OAuthCompletion::Authenticated);
     }
 
     let kind = value
@@ -320,7 +338,7 @@ pub(super) fn parse_oauth_completion(value: Value) -> Result<OAuthCompletion, St
     {
         let response = serde_json::from_value::<AuthResponse>(response_value.clone())
             .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned())?;
-        return save_response(response).map(OAuthCompletion::Authenticated);
+        return save_response(response, key).map(OAuthCompletion::Authenticated);
     }
 
     if value.get("registration_required").and_then(Value::as_bool) == Some(true) {
@@ -421,8 +439,8 @@ where
     }
 }
 
-fn save_response(response: AuthResponse) -> Result<AuthUser, String> {
-    jwt::verify(&response.access_token).map_err(|error| error.to_string())?;
+fn save_response(response: AuthResponse, key: &AuthVerificationKey) -> Result<AuthUser, String> {
+    jwt::verify(&response.access_token, key).map_err(|error| error.to_string())?;
     storage::save(&response.access_token, &response.refresh_token);
     Ok(response.user)
 }

@@ -22,7 +22,15 @@ pub(crate) fn TokenRefresher(on_session_expired: EventHandler<SessionEnd>) -> El
                     break;
                 };
                 let access_token = tokens.access_token;
-                let seconds = match jwt::seconds_until_refresh(&access_token) {
+                let key = match jwt::load_verification_key().await {
+                    Ok(key) => key,
+                    Err(error) => {
+                        warn!(%error, "JWT verification key unavailable; retrying without ending session");
+                        sleep_ms(5_000).await;
+                        continue;
+                    }
+                };
+                let seconds = match jwt::seconds_until_refresh(&access_token, &key) {
                     Ok(seconds) => seconds,
                     Err(error) => {
                         warn!(%error, "stored access token is invalid; trying to recover it with the refresh token");

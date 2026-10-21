@@ -24,12 +24,24 @@ fn opens_only_google_https_authorization_urls() {
 }
 #[test]
 fn linking_rejects_session_and_registration_payloads() {
-    assert!(finish(serde_json::json!({"kind":"linked"}), OAuthFlow::Link).is_ok());
-    assert!(finish(serde_json::json!({"auth_response": {}}), OAuthFlow::Link).is_err());
+    let key = cheenhub_contracts::rest::AuthVerificationKey {
+        key_id: "unused".to_owned(),
+        public_key_base64: String::new(),
+    };
+    assert!(finish(serde_json::json!({"kind":"linked"}), OAuthFlow::Link, &key).is_ok());
+    assert!(
+        finish(
+            serde_json::json!({"auth_response": {}}),
+            OAuthFlow::Link,
+            &key
+        )
+        .is_err()
+    );
     assert!(
         finish(
             serde_json::json!({"kind":"registration_required"}),
-            OAuthFlow::Link
+            OAuthFlow::Link,
+            &key
         )
         .is_err()
     );

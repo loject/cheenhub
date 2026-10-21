@@ -26,8 +26,6 @@ env:
   CHEENHUB_DOMAIN: ${{ vars.CHEENHUB_DOMAIN || 'cheenhub.ru' }}
   CHEENHUB_BASE_URL: ${{ vars.CHEENHUB_BASE_URL || 'https://cheenhub.ru' }}
   CHEENHUB_REALTIME_CERT_SHA256: ${{ vars.CHEENHUB_REALTIME_CERT_SHA256 || '' }}
-  CHEENHUB_JWT_KEY_ID: ${{ vars.CHEENHUB_JWT_KEY_ID || 'prod-ed25519-1' }}
-  CHEENHUB_JWT_PUBLIC_KEY_BASE64: ${{ vars.CHEENHUB_JWT_PUBLIC_KEY_BASE64 || '' }}
 
 jobs:
   prepare:
@@ -70,14 +68,6 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "release-tag=${artifact_tag}" >> "$GITHUB_OUTPUT"
-
-      - name: Validate release configuration
-        shell: bash
-        run: |
-          if [[ -z "${CHEENHUB_JWT_PUBLIC_KEY_BASE64}" ]]; then
-            echo "CHEENHUB_JWT_PUBLIC_KEY_BASE64 repository variable is required for production frontend builds." >&2
-            exit 1
-          fi
 
   build-backend:
     if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
@@ -189,8 +179,6 @@ jobs:
           build-args: |
             CHEENHUB_BASE_URL=${{ env.CHEENHUB_BASE_URL }}
             CHEENHUB_APP_VERSION=${{ needs.prepare.outputs.app-version }}
-            CHEENHUB_JWT_KEY_ID=${{ env.CHEENHUB_JWT_KEY_ID }}
-            CHEENHUB_JWT_PUBLIC_KEY_BASE64=${{ env.CHEENHUB_JWT_PUBLIC_KEY_BASE64 }}
             CHEENHUB_REALTIME_CERT_SHA256=${{ env.CHEENHUB_REALTIME_CERT_SHA256 }}
           cache-from: |
             type=registry,ref=${{ needs.prepare.outputs.web-image }}:buildcache

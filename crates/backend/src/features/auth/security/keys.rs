@@ -5,6 +5,9 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use ed25519_dalek::SigningKey;
 
+#[cfg(test)]
+mod tests;
+
 /// Активные ключи подписи аутентификации.
 #[derive(Clone)]
 pub(crate) struct AuthKeys {
@@ -15,6 +18,14 @@ pub(crate) struct AuthKeys {
 }
 
 impl AuthKeys {
+    /// Возвращает публичную часть активного ключа для проверки JWT клиентом.
+    pub(crate) fn verification_key(&self) -> cheenhub_contracts::rest::AuthVerificationKey {
+        cheenhub_contracts::rest::AuthVerificationKey {
+            key_id: self.key_id.clone(),
+            public_key_base64: STANDARD.encode(self.signing_key.verifying_key().to_bytes()),
+        }
+    }
+
     /// Создает ключи аутентификации из конфигурации бэкенда.
     pub(crate) fn from_config(private_key_base64: &str, key_id: String) -> anyhow::Result<Self> {
         if key_id.trim().is_empty() {

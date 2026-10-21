@@ -26,6 +26,9 @@ pub(super) async fn complete(
     challenge: String,
     id_token: String,
 ) -> Result<OAuthCompletion, String> {
+    let key = crate::features::auth::jwt::load_verification_key()
+        .await
+        .map_err(|error| error.to_string())?;
     let response = post("/auth/oauth/google/native/complete")
         .json(&GoogleNativeAuthCompleteRequest {
             challenge,
@@ -41,5 +44,5 @@ pub(super) async fn complete(
         .json::<Value>()
         .await
         .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned())?;
-    parse_oauth_completion(value)
+    parse_oauth_completion(value, &key)
 }

@@ -14,8 +14,6 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   CHEENHUB_BASE_URL: ${{ vars.CHEENHUB_BASE_URL || 'https://cheenhub.ru' }}
-  CHEENHUB_JWT_KEY_ID: ${{ vars.CHEENHUB_JWT_KEY_ID || 'prod-ed25519-1' }}
-  CHEENHUB_JWT_PUBLIC_KEY_BASE64: ${{ vars.CHEENHUB_JWT_PUBLIC_KEY_BASE64 || '' }}
   CHEENHUB_REALTIME_CERT_SHA256: ${{ vars.CHEENHUB_REALTIME_CERT_SHA256 || '' }}
 
 jobs:
@@ -30,10 +28,6 @@ jobs:
       - name: Validate frontend configuration
         shell: bash
         run: |
-          if [[ -z "${CHEENHUB_JWT_PUBLIC_KEY_BASE64}" ]]; then
-            echo 'CHEENHUB_JWT_PUBLIC_KEY_BASE64 repository variable is required.' >&2
-            exit 1
-          fi
           if ! grep -q 'AS backend-standalone-runtime' Dockerfile; then
             echo 'Dockerfile must contain backend-standalone-runtime.' >&2
             exit 1
@@ -70,8 +64,6 @@ jobs:
           build-args: |
             CHEENHUB_BASE_URL=${{ env.CHEENHUB_BASE_URL }}
             CHEENHUB_APP_VERSION=${{ steps.release.outputs.app-version }}
-            CHEENHUB_JWT_KEY_ID=${{ env.CHEENHUB_JWT_KEY_ID }}
-            CHEENHUB_JWT_PUBLIC_KEY_BASE64=${{ env.CHEENHUB_JWT_PUBLIC_KEY_BASE64 }}
             CHEENHUB_REALTIME_CERT_SHA256=${{ env.CHEENHUB_REALTIME_CERT_SHA256 }}
           cache-from: |
             type=registry,ref=${{ steps.release.outputs.backend }}:buildcache
