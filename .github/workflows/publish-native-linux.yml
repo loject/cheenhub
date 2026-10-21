@@ -2,6 +2,11 @@ name: Build native CheenHub Linux archive
 
 on:
   workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Frontend server URL, e.g. https://cheenhub.ru:13443'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -13,7 +18,7 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   RUST_TOOLCHAIN: '1.97.1'
-  CHEENHUB_BASE_URL: ${{ vars.CHEENHUB_BASE_URL || 'https://cheenhub.ru' }}
+  CHEENHUB_BASE_URL: ${{ inputs.base_url || vars.CHEENHUB_BASE_URL || 'https://cheenhub.ru' }}
   CHEENHUB_JWT_KEY_ID: ${{ vars.CHEENHUB_JWT_KEY_ID || 'prod-ed25519-1' }}
   CHEENHUB_JWT_PUBLIC_KEY_BASE64: ${{ vars.CHEENHUB_JWT_PUBLIC_KEY_BASE64 || '' }}
   CHEENHUB_REALTIME_CERT_SHA256: ${{ vars.CHEENHUB_REALTIME_CERT_SHA256 || '' }}
@@ -56,7 +61,7 @@ jobs:
         shell: bash
         run: |
           cargo install --locked cargo-make --version 0.37.24
-          cargo install --locked wasm-bindgen-cli --version 0.2.128
+          cargo install --locked wasm-bindgen-cli --version 0.2.127
           cargo install --locked dioxus-cli --version 0.8.0-alpha.1
 
       - name: Resolve application version

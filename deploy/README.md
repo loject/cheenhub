@@ -48,6 +48,58 @@ GitHub Actions. Он собирает `cheenhub_backend`, `cheenhub_migrations` 
 Архив рассчитан на Linux x86_64 с совместимыми системными библиотеками;
 секретов и `.env.production` в нём нет. Production-деплой пока не меняется.
 
+## Ручная проверка нативного запуска на другом порту
+
+Для замены текущего Docker-запуска используем существующий backend и web-клиент
+с адресом и публичным JWT-ключом, встроенными при сборке. Runtime-конфигурации
+клиента нет. `install.sh` на этом этапе не используется: он остаётся отдельным preview.
+
+Перед сборкой подготовь корневой `.env`. Для локальной проверки:
+
+```dotenv
+BACKEND_HOST=127.0.0.1
+BACKEND_PORT=13000
+BACKEND_HTTPS_PORT=13443
+WEBTRANSPORT_PORT=13443
+CHEENHUB_BASE_URL=https://localhost:13443
+CHEENHUB_CLIENT_BASE_URL=https://localhost:13443
+```
+
+Остальные настройки бери из действующего `.env`: `AUTH_STORE=postgres`,
+`DATABASE_URL`, приватный JWT-ключ backend и соответствующие ему публичный ключ
+и `kid` frontend. Для существующего production не создавай новую JWT-пару.
+В `WEBTRANSPORT_TLS_CERT_PATH` и `WEBTRANSPORT_TLS_KEY_PATH` укажи абсолютные пути
+к сертификату и ключу: локально — к dev-сертификату, на сервере — к действующему
+сертификату домена. Для локального HTTPS браузер должен доверять dev-сертификату.
+
+Сборка на локальной машине с установленными Rust/Dioxus:
+
+```bash
+cargo build --release --locked -p cheenhub_backend -p cheenhub_migrations
+CHEENHUB_APP_VERSION="$(cargo run --quiet --locked -p xtask -- release-version print-tag)" cargo make build-web
+bash deploy/scripts/package-native-linux.sh dist
+```
+
+Frontend build script читает корневой `.env`; backend читает `.env` при запуске.
+Секреты и сертификаты не входят в архив. После распаковки помести `.env` рядом
+с `bin/` и `web-public/`, затем из корня распакованного релиза выполни
+`bin/cheenhub_backend`. Backend сам раздаёт web-клиент по HTTPS; HTTP на `13000`
+перенаправляет все запросы на HTTPS с сохранением пути и метода.
+
+Для проверки на сервере поменяй оба URL на `https://cheenhub.ru:13443`,
+`BACKEND_HOST` на `0.0.0.0` и повтори сборку frontend. Используй доступный с хоста
+адрес существующего production Postgres и открой TCP/UDP `13443`.
+Проверяй `/health`, вход, WebTransport и голос; HTTP-редирект сам по себе
+не подтверждает готовность. Текущие Nginx/Docker и их порты `80/443` до окончания
+проверки не переключаются. Другой адрес или JWT-ключ требуют пересборки frontend.
+
+Вместо локальной сборки можно запустить `Build native CheenHub Linux archive`
+на `main` в GitHub Actions, указав `base_url=https://cheenhub.ru:13443`.
+Публичный JWT-ключ и `kid` берутся из переменных репозитория и должны совпадать
+с действующим backend. Скачай полученный архив и SHA-256, проверь контрольную
+сумму и запусти распакованный backend с описанным выше серверным `.env`.
+Workflow собирает архив; настройка БД, сертификатов и запуск на сервере выполняются отдельно.
+
 ## Установка и обновление одной командой (нативный preview)
 
 После ручного запуска workflow `Build native CheenHub Linux archive` на `main`
