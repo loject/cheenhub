@@ -1,6 +1,6 @@
 //! Точечная раздача статических файлов без изменения API-маршрутов.
 //!
-//! Поддерживаются /index.html, /assets/* и /wasm/*; остальное остаётся за Nginx.
+//! Раздаёт HTML приложения и явно перечисленные публичные каталоги сборки.
 
 use std::{fs, io::ErrorKind, path::Path};
 
@@ -131,13 +131,16 @@ fn is_spa_route(method: &axum::http::Method, path: &str) -> bool {
     if path == "/" || path.split('/').any(|segment| segment.contains('.')) {
         return false;
     }
-    const RESERVED: [&str; 6] = [
+    const RESERVED: [&str; 9] = [
         "/api",
         "/health",
         "/assets",
         "/wasm",
         "/icons",
         "/screenshots",
+        "/audio",
+        "/workers",
+        "/vendor",
     ];
     !RESERVED.iter().any(|prefix| {
         path == *prefix
@@ -150,10 +153,11 @@ fn is_spa_route(method: &axum::http::Method, path: &str) -> bool {
 /// Подключает каталоги ресурсов фронтенда без SPA fallback.
 ///
 /// Регистрируются только существующие каталоги /assets/, /wasm/,
-/// /icons/ и /screenshots/.
+/// /icons/, /screenshots/, /audio/, /workers/ и /vendor/.
 /// Файлы читаются с диска при запросе, поэтому изменения ресурсов видны
 /// без перезапуска. Для /assets/ и /wasm/ действует годовой immutable-кэш,
 /// для /icons/ и /screenshots/ — суточный; ошибки не кэшируются надолго.
+/// Изменяемые audio/workers/vendor требуют проверки актуальности через no-cache.
 pub(super) fn mount_asset_dirs<S>(mut router: Router<S>, directory: &Path) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -176,11 +180,17 @@ where
         );
     }
 
-    for (route, name) in [("/icons", "icons"), ("/screenshots", "screenshots")] {
+    for (route, name, cache) in [
+        ("/icons", "icons", "public, max-age=86400"),
+        ("/screenshots", "screenshots", "public, max-age=86400"),
+        ("/audio", "audio", "no-cache"),
+        ("/workers", "workers", "no-cache"),
+        ("/vendor", "vendor", "no-cache"),
+    ] {
         let path = directory.join(name);
         if path.is_dir() {
-            tracing::info!(route, directory = %path.display(), "включена раздача публичных изображений");
-            router = router.nest(route, cached_files(path, "public, max-age=86400"));
+            tracing::info!(route, cache_control = cache, directory = %path.display(), "включена раздача публичных ресурсов");
+            router = router.nest(route, cached_files(path, cache));
         }
     }
 

@@ -265,6 +265,9 @@ fn spa_routes_exclude_unsafe_methods_and_reserved_paths() {
         "/wasm/missing",
         "/icons/missing",
         "/screenshots/missing",
+        "/audio/missing",
+        "/workers/missing",
+        "/vendor/missing",
         "/api/private",
         "/missing.js",
         "/",
@@ -339,6 +342,41 @@ async fn missing_media_files_have_no_daily_cache() {
 
     for path in ["/icons/missing.svg", "/screenshots/missing.png"] {
         let (status, headers, _) = request_with_headers(fixture.path(), path).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+        assert!(headers.get(header::CACHE_CONTROL).is_none(), "{path}");
+    }
+}
+
+#[tokio::test]
+async fn audio_workers_and_vendor_files_are_served_with_types_and_revalidation() {
+    let fixture = Fixture::new();
+    fs::write(fixture.path().join("index.html"), "app").unwrap();
+    let cases = [
+        ("audio/microphone-worklet.js", "?v=4", "text/javascript"),
+        (
+            "audio/notifications/current-user-joined.wav",
+            "",
+            "audio/wav",
+        ),
+        ("workers/microphone/processor.wasm", "", "application/wasm"),
+        ("vendor/echarts.min.js", "", "text/javascript"),
+    ];
+    for (file, query, expected_type) in cases {
+        let path = fixture.path().join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "resource").unwrap();
+
+        let (status, headers, body) =
+            request_with_headers(fixture.path(), &format!("/{file}{query}")).await;
+
+        assert_eq!(status, StatusCode::OK, "{file}");
+        assert_eq!(body, "resource", "{file}");
+        assert_eq!(headers[header::CONTENT_TYPE], expected_type, "{file}");
+        assert_eq!(headers[header::CACHE_CONTROL], "no-cache", "{file}");
+    }
+    for path in ["/audio/missing", "/workers/missing", "/vendor/missing"] {
+        let (status, headers, _) = request_with_headers(fixture.path(), path).await;
+
         assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
         assert!(headers.get(header::CACHE_CONTROL).is_none(), "{path}");
     }
