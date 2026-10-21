@@ -1,29 +1,54 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Установка и обновление CheenHub для текущего пользователя без Docker и Rust.
-# На первом этапе используется локальный preview без постоянного хранилища.
+# Root обновляет текущий production; обычный пользователь устанавливает preview.
+# Сборка из исходников не требуется; production использует существующие БД и Certbot.
 
 readonly REPOSITORY='loject/cheenhub'
 readonly CHANNEL='native-preview'
 readonly ASSET='cheenhub-native-linux-x86_64.tar.gz'
 readonly RELEASE_URL="https://github.com/${REPOSITORY}/releases/download/${CHANNEL}"
-readonly APP_DIR="${HOME}/.local/share/cheenhub"
-readonly CONFIG_DIR="${HOME}/.config/cheenhub"
-readonly UNIT_DIR="${HOME}/.config/systemd/user"
 readonly SERVICE='cheenhub.service'
 
 fail() { printf 'Ошибка: %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*"; }
 
+is_system_install() { [[ ${EUID} -eq 0 ]]; }
+
+initialize_paths() {
+    if is_system_install; then
+        APP_DIR=/opt/cheenhub-native
+        CONFIG_DIR="$APP_DIR"
+        CONFIG_FILE="$APP_DIR/.env"
+        UNIT_DIR=/etc/systemd/system
+    else
+        APP_DIR="${HOME}/.local/share/cheenhub"
+        CONFIG_DIR="${HOME}/.config/cheenhub"
+        CONFIG_FILE="$CONFIG_DIR/backend.env"
+        UNIT_DIR="${HOME}/.config/systemd/user"
+    fi
+}
+
+service_control() {
+    if is_system_install; then systemctl "$@"; else systemctl --user "$@"; fi
+}
+
 requirements() {
     [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] || fail 'Поддерживается только Linux x86_64.'
-    [[ "${EUID}" -ne 0 ]] || fail 'Запускайте от обычного пользователя без sudo.'
     local command
     for command in curl tar sha256sum mktemp openssl systemctl; do
         command -v "$command" >/dev/null 2>&1 || fail "Не найдена утилита $command. Установите её системным пакетным менеджером."
     done
-    systemctl --user show-environment >/dev/null 2>&1 || fail 'Нет пользовательской сессии systemd. Войдите по SSH обычным пользователем.'
+    if is_system_install; then
+        for command in systemd-run systemd-analyze groupadd getent flock install cmp readlink; do
+            command -v "$command" >/dev/null 2>&1 || fail "Не найдена утилита $command."
+        done
+        [[ -s "$CONFIG_FILE" ]] || fail "Для текущего production нужен существующий $CONFIG_FILE с настройками БД и JWT."
+        [[ -r /var/lib/docker/volumes/cheenhub_letsencrypt/_data/live/cheenhub.ru/fullchain.pem ]] \
+            || fail 'Не найден действующий production-сертификат cheenhub.ru.'
+    else
+        systemctl --user show-environment >/dev/null 2>&1 || fail 'Нет пользовательской сессии systemd. Войдите по SSH обычным пользователем.'
+    fi
 }
 
 verify_archive() {
@@ -47,9 +72,14 @@ verify_archive() {
 }
 
 write_config() {
-    if [[ ! -e "$CONFIG_DIR/backend.env" ]]; then
+    if is_system_install; then
+        [[ -s "$CONFIG_FILE" ]] || fail "Не найден production .env: $CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+        return
+    fi
+    if [[ ! -e "$CONFIG_FILE" ]]; then
         info 'Создаю локальную тестовую конфигурацию.'
-        (umask 077; cat > "$CONFIG_DIR/backend.env" <<CONFIG
+        (umask 077; cat > "$CONFIG_FILE" <<CONFIG
 AUTH_STORE=inmemory
 DATABASE_URL=postgres://unused:unused@127.0.0.1:1/unused
 BACKEND_HOST=127.0.0.1
@@ -67,6 +97,35 @@ CONFIG
 }
 
 write_unit() {
+    if is_system_install; then
+        cat > "$UNIT_DIR/$SERVICE" <<UNIT
+[Unit]
+Description=CheenHub native production backend
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+[Service]
+Type=simple
+DynamicUser=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+WorkingDirectory=$APP_DIR/current
+EnvironmentFile=$CONFIG_FILE
+BindReadOnlyPaths=/var/lib/docker/volumes/cheenhub_certbot-webroot/_data:/var/lib/cheenhub/acme
+ExecStart=$APP_DIR/current/bin/cheenhub_backend
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=35
+[Install]
+WantedBy=multi-user.target
+UNIT
+        if [[ -f /opt/cheenhub/deploy/secrets/firebase-service-account.json ]]; then
+            sed -i '/^ExecStart=/i LoadCredential=fcm:/opt/cheenhub/deploy/secrets/firebase-service-account.json' "$UNIT_DIR/$SERVICE"
+        fi
+        return
+    fi
     cat > "$UNIT_DIR/$SERVICE" <<'UNIT'
 [Unit]
 Description=CheenHub native backend
@@ -89,9 +148,13 @@ UNIT
 
 healthcheck() {
     local attempt
+    local -a health_url=(http://127.0.0.1:3000/health)
+    if is_system_install; then
+        health_url=(--resolve cheenhub.ru:443:127.0.0.1 https://cheenhub.ru/health)
+    fi
     for attempt in {1..15}; do
-        if systemctl --user is-active --quiet "$SERVICE" && \
-           curl --noproxy '*' --silent --fail --max-time 2 http://127.0.0.1:3000/health >/dev/null; then
+        if service_control is-active --quiet "$SERVICE" && \
+           curl --noproxy '*' --silent --fail --max-time 2 "${health_url[@]}" >/dev/null; then
             return 0
         fi
         sleep 1
@@ -103,6 +166,9 @@ install_or_update() {
     requirements
     local archive name release old_link='' next_link
     mkdir -p "$APP_DIR/releases" "$CONFIG_DIR" "$UNIT_DIR"
+    if is_system_install; then
+        install -d -m 755 "$APP_DIR" "$APP_DIR/releases" "$UNIT_DIR"
+    fi
     INSTALL_TEMP_DIR="$(mktemp -d)"
     trap 'if [[ -n "${INSTALL_TEMP_DIR:-}" ]]; then rm -rf -- "$INSTALL_TEMP_DIR"; fi' EXIT
     info 'Скачиваю последнюю нативную сборку CheenHub с GitHub Releases.'
@@ -127,6 +193,14 @@ install_or_update() {
     fi
     write_config
     write_unit
+    if is_system_install; then
+        configure_tls_renewal
+        info 'Применяю миграции к существующей production-базе.'
+        systemd-run --quiet --wait --pipe --collect --unit="cheenhub-migrate-$$" \
+            --property="EnvironmentFile=$CONFIG_FILE" --property=DynamicUser=yes \
+            --working-directory="$release" "$release/bin/cheenhub_migrations" up \
+            || fail 'Миграции не выполнены; текущая версия приложения продолжает работать.'
+    fi
     if [[ -L "$APP_DIR/current" ]]; then
         old_link="$(readlink "$APP_DIR/current")"
     elif [[ -e "$APP_DIR/current" ]]; then
@@ -135,32 +209,167 @@ install_or_update() {
     next_link="$APP_DIR/.current-next-$$"
     ln -s "$release" "$next_link"
     mv -Tf "$next_link" "$APP_DIR/current"
-    systemctl --user daemon-reload
-    systemctl --user enable "$SERVICE" >/dev/null
+    service_control daemon-reload
+    service_control enable "$SERVICE" >/dev/null
     info 'Запускаю сервис.'
-    if systemctl --user restart "$SERVICE" && healthcheck; then
-        info 'Готово: http://127.0.0.1:3000'
-        info 'Настройки: ~/.config/cheenhub/backend.env'
-        printf '%s\n' 'Внимание: AUTH_STORE=inmemory — данные не сохраняются после рестарта.'
+    if service_control restart "$SERVICE" && healthcheck; then
+        if is_system_install; then
+            info 'Готово: https://cheenhub.ru — продление TLS и горячее применение настроены.'
+        else
+            info 'Готово: http://127.0.0.1:3000'
+            printf '%s\n' 'Внимание: AUTH_STORE=inmemory — данные не сохраняются после рестарта.'
+        fi
+        info "Настройки: $CONFIG_FILE"
     else
         printf 'Новая версия не запустилась.\n' >&2
         if [[ -n "$old_link" ]]; then
             ln -s "$old_link" "$next_link"
             mv -Tf "$next_link" "$APP_DIR/current"
-            systemctl --user restart "$SERVICE" || true
+            service_control restart "$SERVICE" || true
             info 'Возвращён предыдущий релиз.'
         else
-            systemctl --user stop "$SERVICE" || true
+            service_control stop "$SERVICE" || true
             rm -f "$APP_DIR/current"
         fi
-        systemctl --user status "$SERVICE" --no-pager >&2 || true
+        service_control status "$SERVICE" --no-pager >&2 || true
         exit 1
     fi
+}
+
+configure_tls_renewal() {
+    local letsencrypt_dir webroot_dir marker hook lineage
+    # Подключает существующий Certbot в Docker к нативному production-сервису.
+    if [[ $EUID -ne 0 ]]; then
+        echo 'Run this script as root on the production server.' >&2
+        exit 1
+    fi
+
+    letsencrypt_dir=/var/lib/docker/volumes/cheenhub_letsencrypt/_data
+    webroot_dir=/var/lib/docker/volumes/cheenhub_certbot-webroot/_data
+    marker="$webroot_dir/.cheenhub-tls-renewed"
+    hook="$letsencrypt_dir/renewal-hooks/deploy/50-cheenhub-native"
+
+    test -r "$letsencrypt_dir/live/cheenhub.ru/fullchain.pem"
+    test -r "$letsencrypt_dir/live/cheenhub.ru/privkey.pem"
+    lineage=$(basename "$(readlink -f "$letsencrypt_dir/live/cheenhub.ru")")
+    test -r "$letsencrypt_dir/renewal/$lineage.conf"
+    test -d "$webroot_dir"
+    test -f "$CONFIG_FILE"
+    grep -q '^WEBTRANSPORT_TLS_CERT_PATH=' "$CONFIG_FILE"
+    grep -q '^WEBTRANSPORT_TLS_KEY_PATH=' "$CONFIG_FILE"
+
+    if systemctl is-active --quiet cheenhub-tls-renewal.path; then
+        systemctl stop cheenhub-tls-renewal.path
+    fi
+
+    if ! getent group cheenhub-tls >/dev/null; then
+        groupadd --system cheenhub-tls
+    fi
+    install -d -m 755 /etc/cheenhub /usr/local/libexec
+    install -d -m 750 -o root -g cheenhub-tls /etc/cheenhub/tls
+
+    cat >/usr/local/libexec/cheenhub-sync-tls <<'SYNC'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Только root публикует проверенную пару; приложение получает доступ на чтение.
+exec 9>/run/lock/cheenhub-sync-tls.lock
+flock 9
+source_dir=/var/lib/docker/volumes/cheenhub_letsencrypt/_data/live/cheenhub.ru
+target_dir=/etc/cheenhub/tls
+staging=$(mktemp -d "$target_dir/.update.XXXXXXXX")
+trap 'rm -f "$staging/fullchain.pem" "$staging/privkey.pem"; rmdir "$staging"' EXIT
+install -m 640 -o root -g cheenhub-tls "$source_dir/fullchain.pem" "$staging/fullchain.pem"
+install -m 640 -o root -g cheenhub-tls "$source_dir/privkey.pem" "$staging/privkey.pem"
+openssl verify -purpose sslserver -verify_hostname cheenhub.ru \
+    -untrusted "$staging/fullchain.pem" "$staging/fullchain.pem" >/dev/null
+cert_public=$(openssl x509 -in "$staging/fullchain.pem" -pubkey -noout |
+    openssl pkey -pubin -outform DER | sha256sum)
+key_public=$(openssl pkey -in "$staging/privkey.pem" -pubout -outform DER | sha256sum)
+if [[ "$cert_public" != "$key_public" ]]; then
+    echo 'CheenHub: TLS certificate and private key do not match; keeping current pair.' >&2
+    exit 1
+fi
+if cmp -s "$staging/fullchain.pem" "$target_dir/fullchain.pem" &&
+    cmp -s "$staging/privkey.pem" "$target_dir/privkey.pem"; then
+    echo 'CheenHub: TLS files unchanged; application restart is not required.'
+    exit 0
+fi
+
+# Оба TLS-наблюдателя отклоняют неполную пару и ждут двух стабильных чтений.
+mv -f "$staging/fullchain.pem" "$target_dir/fullchain.pem"
+mv -f "$staging/privkey.pem" "$target_dir/privkey.pem"
+echo 'CheenHub: TLS files published for HTTPS and WebTransport hot reload.'
+SYNC
+    chmod 755 /usr/local/libexec/cheenhub-sync-tls
+    /usr/local/libexec/cheenhub-sync-tls
+
+    install -d -m 755 "$(dirname "$hook")"
+    cat >"$hook" <<'HOOK'
+#!/bin/sh
+set -eu
+
+# Учитываем ссылку cheenhub.ru на фактический lineage cheenhub.ru-0001.
+if [ -z "${RENEWED_LINEAGE:-}" ] ||
+    [ "$(readlink -f "$RENEWED_LINEAGE")" != "$(readlink -f /etc/letsencrypt/live/cheenhub.ru)" ]; then
+    exit 0
+fi
+
+# Сигнал сохраняется до успешного применения, в том числе при перезагрузке хоста.
+: > /var/www/certbot/.cheenhub-tls-renewed
+echo 'CheenHub: renewed TLS certificate queued for hot reload.'
+HOOK
+    chmod 755 "$hook"
+
+    cat >/etc/systemd/system/cheenhub-tls-renewal.path <<UNIT
+[Unit]
+Description=Watch for renewed CheenHub TLS certificate
+
+[Path]
+PathExists=$marker
+Unit=cheenhub-tls-renewal.service
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+    cat >/etc/systemd/system/cheenhub-tls-renewal.service <<UNIT
+[Unit]
+Description=Publish renewed CheenHub TLS files for hot reload
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/cheenhub-sync-tls
+ExecStartPost=/usr/bin/rm -f $marker
+Restart=on-failure
+RestartSec=15
+UNIT
+
+    install -d -m 755 /etc/systemd/system/cheenhub.service.d
+    cat >/etc/systemd/system/cheenhub.service.d/tls.conf <<'UNIT'
+[Service]
+SupplementaryGroups=cheenhub-tls
+UNIT
+    sed -i \
+        -e 's#^WEBTRANSPORT_TLS_CERT_PATH=.*#WEBTRANSPORT_TLS_CERT_PATH=/etc/cheenhub/tls/fullchain.pem#' \
+        -e 's#^WEBTRANSPORT_TLS_KEY_PATH=.*#WEBTRANSPORT_TLS_KEY_PATH=/etc/cheenhub/tls/privkey.pem#' \
+        "$CONFIG_FILE"
+
+    systemd-analyze verify /etc/systemd/system/cheenhub-tls-renewal.path \
+        /etc/systemd/system/cheenhub-tls-renewal.service /etc/systemd/system/cheenhub.service
+    systemctl daemon-reload
+    # Приложение перезапускается один раз общим процессом установки/обновления.
+    systemctl enable --now cheenhub-tls-renewal.path
+    echo 'CheenHub: automatic TLS renewal and hot reload are configured.'
 }
 
 usage() {
     cat <<'HELP'
 CheenHub Native Installer (Linux x86_64)
+  От root: текущий production cheenhub.ru, существующие .env, БД и Certbot
+  От обычного пользователя: локальный HTTP-preview
   install.sh                 Интерактивное меню
   install.sh install         Установить или обновить из GitHub Releases
   install.sh update          То же, что install
@@ -172,6 +381,7 @@ HELP
 }
 
 main() {
+    initialize_paths
     local action="${1:-}"
     if [[ $# -gt 1 ]]; then usage; exit 2; fi
     if [[ -z "$action" && -t 0 ]]; then
@@ -182,10 +392,12 @@ main() {
     action="${action:-install}"
     case "$action" in
         1|install|update) install_or_update ;;
-        2|status) systemctl --user status "$SERVICE" --no-pager ;;
-        3|restart) systemctl --user restart "$SERVICE" ;;
-        4|stop) systemctl --user stop "$SERVICE" ;;
-        5|logs) journalctl --user -u "$SERVICE" --no-pager -n 80 ;;
+        2|status) service_control status "$SERVICE" --no-pager ;;
+        3|restart) service_control restart "$SERVICE" ;;
+        4|stop) service_control stop "$SERVICE" ;;
+        5|logs)
+            if is_system_install; then journalctl -u "$SERVICE" --no-pager -n 80
+            else journalctl --user -u "$SERVICE" --no-pager -n 80; fi ;;
         6|exit) exit 0 ;;
         -h|--help|help) usage ;;
         *) usage; exit 2 ;;

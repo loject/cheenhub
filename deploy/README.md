@@ -125,11 +125,23 @@ bash <(curl -fsSL https://raw.githubusercontent.com/loject/cheenhub/main/install
 Конфигурация в `~/.config/cheenhub/backend.env` сохраняется при обновлениях;
 в случае неудачного запуска устанавливается предыдущая версия.
 
-На этом этапе это только локальный preview с `AUTH_STORE=inmemory`: учётные
+Под обычным пользователем это локальный preview с `AUTH_STORE=inmemory`: учётные
 записи не сохраняются после рестарта, а frontend собирается с указанным в
 GitHub Actions публичным URL. Для полноценного self-hosting ещё потребуются
 настройка динамического адреса frontend, PostgreSQL и HTTPS. Установка не
 затрагивает запущенный Docker production.
+
+Для установки/обновления **текущего нативного production cheenhub.ru** запустите тот же установщик от root:
+
+```bash
+bash install.sh install
+# Последующие обновления:
+bash install.sh update
+```
+
+Этот режим использует `/opt/cheenhub-native/.env`, системный `cheenhub.service`, существующие PostgreSQL и Certbot. Он не создаёт новую БД или JWT-ключи. До первого запуска необходимы production `.env`, действующий сертификат в volume `cheenhub_letsencrypt` и webroot в `cheenhub_certbot-webroot`. Для нового произвольного сервера этот режим пока не предназначен.
+
+Установщик проверяет архив, устанавливает TLS-файлы и автоматическое продление, выполняет миграции с существующим `.env`, затем переключает версию и проверяет HTTPS health. При ошибке миграций текущий процесс продолжает работать; при неудачном запуске возвращается предыдущая версия приложения. Применённые миграции БД автоматически не откатываются. URL frontend остаётся заданным при сборке архива: для production публикуйте сборку с `base_url=https://cheenhub.ru`.
 
 ## Первичная подготовка сервера
 
@@ -226,6 +238,28 @@ Compose ждёт `stop_grace_period: 30s`. После завершения HTTP 
 Backend проверяет `fullchain.pem` и `privkey.pem` каждые `WEBTRANSPORT_TLS_RELOAD_INTERVAL_SECONDS` секунд (по умолчанию 5). Одинаковый валидный candidate применяется после двух проверок только для новых WebTransport соединений; UDP listener и действующие сессии сохраняются.
 
 `deploy/scripts/renew-letsencrypt.sh` выполняет certbot renewal и reload nginx. Backend сам применяет изменения cert/key для новых WebTransport соединений без restart.
+
+Для текущего нативного production (`cheenhub.service`) настройка TLS входит в обычную установку и обновление от root:
+
+```bash
+bash install.sh update
+```
+
+Установщик использует существующие volumes `cheenhub_letsencrypt` и `cheenhub_certbot-webroot`, сертификат `cheenhub.ru` и конфигурацию `/opt/cheenhub-native/.env`. Он переключает TLS-пути на `/etc/cheenhub/tls` и даёт процессу группу `cheenhub-tls`. Эти настройки применяются при общем перезапуске приложения после обновления; отдельного перезапуска ради TLS нет. TLS-файлы принадлежат root и доступны группе только на чтение (`0640`, каталог `0750`).
+
+Действующий контейнер Certbot продолжает проверять продление каждые 12 часов. После успешного продления deploy hook сохраняет сигнал в общем webroot, а `cheenhub-tls-renewal.path` запускает `/usr/local/libexec/cheenhub-sync-tls`. Скрипт проверяет срок действия, домен и соответствие ключа сертификату, затем публикует пару файлов. HTTPS и WebTransport подхватывают её через существующие TLS-наблюдатели после двух стабильных чтений, обычно за 5–10 секунд. Последующие продления не требуют перезапуска и не прерывают действующие соединения.
+
+Сигнал удаляется после успешной публикации; неудачное применение повторяется с интервалом 15 секунд, не более трёх запусков за пять минут. Ошибки видны в `journalctl -u cheenhub-tls-renewal.service`; после устранения причины выполните `systemctl reset-failed cheenhub-tls-renewal.service cheenhub-tls-renewal.path` и `systemctl restart cheenhub-tls-renewal.path`.
+
+Проверка всей цепочки через staging Let’s Encrypt без перезапуска приложения:
+
+```bash
+docker exec cheenhub-certbot-1 certbot renew --cert-name cheenhub.ru-0001 \
+    --webroot -w /var/www/certbot --dry-run --run-deploy-hooks --no-random-sleep-on-renew
+journalctl -u cheenhub-tls-renewal.service -n 20 --no-pager
+```
+
+В текущем volume `live/cheenhub.ru` — ссылка на lineage `cheenhub.ru-0001`; hook сравнивает фактические каталоги, поэтому учитывает эту ссылку. При `--dry-run --run-deploy-hooks` применяется действующий production-сертификат; тестовый сертификат не устанавливается. Certbot и PostgreSQL при этой настройке остаются в Docker.
 
 Полная ссылка на Docker image называется **image reference**. Для GHCR она выглядит так:
 
