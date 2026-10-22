@@ -10,50 +10,97 @@ use std::{
 };
 
 use cheenhub_contracts::rest::{HostMetricsResponse, HostMetricsSample};
+use cheenhub_metrics_proxy::{NativeMetricsCollector, running_in_container};
 use tokio::sync::RwLock;
 
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
 const MAX_SAMPLES: usize = 150;
 const STALE_AFTER: Duration = Duration::from_secs(10);
 
-/// Оперативная история нагрузки, полученная от изолированного metrics proxy.
+/// Оперативная история нагрузки Linux-хоста или изолированного Docker metrics proxy.
 pub(crate) struct HostMetricsMonitor {
-    proxy_url: Option<String>,
+    source: MetricsSource,
     client: reqwest::Client,
     samples: RwLock<VecDeque<HostMetricsSample>>,
     connected: AtomicBool,
+    failure_reported: AtomicBool,
+}
+
+#[derive(Debug, PartialEq)]
+enum MetricsSource {
+    Native,
+    Proxy(String),
+    Unavailable,
+}
+
+fn select_source(container: bool, proxy_url: Option<String>) -> MetricsSource {
+    if container {
+        proxy_url.map_or(MetricsSource::Unavailable, MetricsSource::Proxy)
+    } else {
+        MetricsSource::Native
+    }
 }
 
 impl HostMetricsMonitor {
-    /// Создаёт монитор для настроенного внутреннего proxy URL.
+    /// Выбирает прямой сбор вне контейнера и изолированный proxy внутри него.
     pub(crate) fn new(proxy_url: Option<String>) -> Self {
         Self {
-            proxy_url: proxy_url.map(|url| url.trim_end_matches('/').to_owned()),
+            source: select_source(
+                running_in_container(),
+                proxy_url.map(|url| url.trim_end_matches('/').to_owned()),
+            ),
             client: reqwest::Client::new(),
             samples: RwLock::new(VecDeque::with_capacity(MAX_SAMPLES)),
             connected: AtomicBool::new(false),
+            failure_reported: AtomicBool::new(false),
         }
     }
 
     /// Создаёт отключённый монитор для тестовых состояний приложения.
     #[cfg(test)]
     pub(crate) fn disabled() -> Self {
-        Self::new(None)
+        Self {
+            source: MetricsSource::Unavailable,
+            client: reqwest::Client::new(),
+            samples: RwLock::new(VecDeque::with_capacity(MAX_SAMPLES)),
+            connected: AtomicBool::new(false),
+            failure_reported: AtomicBool::new(false),
+        }
     }
 
     /// Периодически обновляет историю до завершения процесса backend.
     pub(crate) async fn run(self: Arc<Self>) {
-        let Some(proxy_url) = self.proxy_url.clone() else {
-            tracing::warn!(
-                missing_env = "CHEENHUB_METRICS_PROXY_URL",
-                "host metrics dashboard is unavailable because metrics proxy is not configured"
-            );
-            return;
-        };
-        tracing::info!(proxy_url = %proxy_url, "starting host metrics monitor");
-        loop {
-            self.collect_once(&proxy_url).await;
-            tokio::time::sleep(SAMPLE_INTERVAL).await;
+        match &self.source {
+            MetricsSource::Unavailable => {
+                tracing::warn!(
+                    missing_env = "CHEENHUB_METRICS_PROXY_URL",
+                    source = "docker_proxy",
+                    "host metrics unavailable: container deployment requires an isolated metrics proxy"
+                );
+            }
+            MetricsSource::Proxy(proxy_url) => {
+                tracing::info!(source = "docker_proxy", "starting host metrics monitor");
+                loop {
+                    self.collect_once(proxy_url).await;
+                    tokio::time::sleep(SAMPLE_INTERVAL).await;
+                }
+            }
+            MetricsSource::Native => {
+                let disk_path = std::env::var("CHEENHUB_METRICS_DISK_PATH")
+                    .ok()
+                    .filter(|path| !path.trim().is_empty())
+                    .unwrap_or_else(|| "/".to_owned());
+                let mut collector = NativeMetricsCollector::new(disk_path.clone());
+                tracing::info!(source = "native", %disk_path, "starting host metrics monitor");
+                loop {
+                    match collector.collect().await {
+                        Ok(Some(sample)) => self.record_sample(sample).await,
+                        Ok(None) => {}
+                        Err(error) => self.record_failure(&error.to_string()),
+                    }
+                    tokio::time::sleep(SAMPLE_INTERVAL).await;
+                }
+            }
         }
     }
 
@@ -96,21 +143,27 @@ impl HostMetricsMonitor {
                 return;
             }
         };
+        self.record_sample(sample).await;
+    }
+
+    async fn record_sample(&self, sample: HostMetricsSample) {
         let mut samples = self.samples.write().await;
         if samples.len() == MAX_SAMPLES {
             samples.pop_front();
         }
         samples.push_back(sample);
+        self.failure_reported.store(false, Ordering::Relaxed);
         if !self.connected.swap(true, Ordering::Relaxed) {
-            tracing::info!("host metrics proxy connection established");
+            tracing::info!("host metrics source is available");
         }
     }
 
     fn record_failure(&self, error: &str) {
-        if self.connected.swap(false, Ordering::Relaxed) {
-            tracing::warn!(%error, "host metrics proxy connection lost");
+        self.connected.store(false, Ordering::Relaxed);
+        if !self.failure_reported.swap(true, Ordering::Relaxed) {
+            tracing::warn!(%error, "host metrics source is unavailable");
         } else {
-            tracing::debug!(%error, "host metrics proxy is not ready");
+            tracing::debug!(%error, "host metrics source is not ready");
         }
     }
 }
@@ -122,3 +175,6 @@ fn unix_timestamp_millis() -> i64 {
         .as_millis()
         .min(i64::MAX as u128) as i64
 }
+
+#[cfg(test)]
+mod tests;

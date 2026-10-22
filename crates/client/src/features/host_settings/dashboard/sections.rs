@@ -3,7 +3,7 @@
 //! Каждая секция умеет показать собственное состояние «нет данных», поэтому
 //! недоступность сборщика метрик не скрывает остальные части дашборда.
 
-use cheenhub_contracts::rest::HostMetricsSample;
+use cheenhub_contracts::rest::{HostMetricsSample, HostNetworkScope};
 use dioxus::prelude::*;
 
 use super::charts::{
@@ -144,15 +144,20 @@ fn network_section(latest: Option<&HostMetricsSample>, samples: &[HostMetricsSam
     let Some(latest) = latest else {
         return rsx! {
             section { class: "mt-5 rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-5",
-                p { class: "text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500", "Сеть CheenHub" }
+                p { class: "text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500", "Сетевой трафик" }
                 {section_without_data("Счётчики сетевого трафика появятся после первого измерения.")}
             }
         };
     };
 
+    let title = match latest.network.scope {
+        HostNetworkScope::Application => "Сеть CheenHub",
+        HostNetworkScope::Host => "Сеть хоста",
+    };
+
     rsx! {
         section { class: "mt-5 rounded-[20px] border border-zinc-800 bg-zinc-950/70 p-5 shadow-[0_18px_60px_rgba(0,0,0,.22)]",
-            p { class: "text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500", "Сеть CheenHub" }
+            p { class: "text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500", "{title}" }
             div { class: "mt-2 grid grid-cols-2 gap-3",
                 {metric_value("Получение", latest.network.received_bytes_per_second, "text-blue-300")}
                 {metric_value("Отправка", latest.network.sent_bytes_per_second, "text-violet-300")}

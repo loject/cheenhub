@@ -5,16 +5,21 @@ use std::{
     time::Instant,
 };
 
-use anyhow::Context;
 use cheenhub_contracts::rest::{
     HostCpuMetrics, HostDiskMetrics, HostMemoryMetrics, HostMetricsSample, HostNetworkMetrics,
+    HostNetworkScope,
 };
 
 use super::docker::{ContainerStats, CpuStats, DockerClient};
+use super::system::{
+    CpuSnapshot, NetworkSnapshot, read_cpu_snapshot, read_disk_snapshot, read_memory_snapshot,
+    unix_timestamp_millis,
+};
 
 const COMPOSE_SERVICE_LABEL: &str = "com.docker.compose.service";
 
-pub(super) struct MetricsCollector {
+/// Собирает нагрузку хоста и выбранных Docker Compose сервисов через Docker socket.
+pub struct MetricsCollector {
     docker: DockerClient,
     app_services: HashSet<String>,
     database_service: String,
@@ -25,7 +30,8 @@ pub(super) struct MetricsCollector {
 }
 
 impl MetricsCollector {
-    pub(super) fn new(
+    /// Создаёт сборщик с путём socket, именами Compose сервисов и путём файловой системы.
+    pub fn new(
         socket_path: String,
         app_services: Vec<String>,
         database_service: String,
@@ -42,9 +48,13 @@ impl MetricsCollector {
         }
     }
 
-    pub(super) async fn collect(&mut self) -> anyhow::Result<Option<HostMetricsSample>> {
-        let cpu = read_cpu_snapshot().await?;
-        let memory = read_memory_snapshot().await?;
+    /// Возвращает снимок после базового замера или ошибку чтения системных/Docker счётчиков.
+    ///
+    /// # Errors
+    /// Ошибка означает недоступность CPU/RAM, Docker API либо отсутствие выбранных сервисов.
+    pub async fn collect(&mut self) -> anyhow::Result<Option<HostMetricsSample>> {
+        let cpu = read_cpu_snapshot(std::path::Path::new("/proc")).await?;
+        let memory = read_memory_snapshot(std::path::Path::new("/proc")).await?;
         // Ошибка диска не должна ломать сбор CPU/RAM/network: отдаём sample без disk.
         let disk = read_disk_snapshot(&self.disk_path);
         let containers = self.docker.running_containers().await?;
@@ -150,6 +160,7 @@ impl MetricsCollector {
                 used_bytes: disk.used_bytes,
             }),
             network: HostNetworkMetrics {
+                scope: HostNetworkScope::Application,
                 sent_bytes_per_second: network_totals.0.saturating_sub(previous_network.sent_bytes)
                     as f64
                     / elapsed,
@@ -181,147 +192,3 @@ fn aggregate_network(stats: &[ContainerStats]) -> (u64, u64) {
         )
     })
 }
-
-#[derive(Clone)]
-struct CpuSnapshot {
-    total: CpuCounters,
-    logical: Vec<CpuCounters>,
-}
-
-impl CpuSnapshot {
-    fn usage_since(&self, previous: &Self) -> (f32, Vec<f32>) {
-        let total = self.total.usage_since(&previous.total);
-        let logical = self
-            .logical
-            .iter()
-            .zip(&previous.logical)
-            .map(|(current, previous)| current.usage_since(previous))
-            .collect();
-        (total, logical)
-    }
-}
-
-#[derive(Clone, Copy)]
-struct CpuCounters {
-    total: u64,
-    idle: u64,
-}
-
-impl CpuCounters {
-    fn usage_since(self, previous: &Self) -> f32 {
-        let total = self.total.saturating_sub(previous.total);
-        let idle = self.idle.saturating_sub(previous.idle);
-        if total == 0 {
-            return 0.0;
-        }
-        (((total.saturating_sub(idle)) as f64 / total as f64) * 100.0) as f32
-    }
-}
-
-async fn read_cpu_snapshot() -> anyhow::Result<CpuSnapshot> {
-    let contents = tokio::fs::read_to_string("/proc/stat")
-        .await
-        .context("failed to read host CPU counters")?;
-    let mut counters = contents
-        .lines()
-        .filter(|line| line.starts_with("cpu"))
-        .map(parse_cpu_line);
-    let total = counters
-        .next()
-        .transpose()?
-        .context("host CPU counters are missing")?;
-    let logical = counters.collect::<anyhow::Result<Vec<_>>>()?;
-    Ok(CpuSnapshot { total, logical })
-}
-
-fn parse_cpu_line(line: &str) -> anyhow::Result<CpuCounters> {
-    let values = line
-        .split_whitespace()
-        .skip(1)
-        .map(str::parse::<u64>)
-        .collect::<Result<Vec<_>, _>>()?;
-    if values.len() < 5 {
-        anyhow::bail!("host CPU counter line is incomplete");
-    }
-    Ok(CpuCounters {
-        total: values.iter().copied().sum(),
-        idle: values[3].saturating_add(values[4]),
-    })
-}
-
-struct MemorySnapshot {
-    total_bytes: u64,
-    used_bytes: u64,
-}
-
-async fn read_memory_snapshot() -> anyhow::Result<MemorySnapshot> {
-    let contents = tokio::fs::read_to_string("/proc/meminfo")
-        .await
-        .context("failed to read host memory counters")?;
-    let total_kib = meminfo_value(&contents, "MemTotal")?;
-    let available_kib = meminfo_value(&contents, "MemAvailable")?;
-    let total_bytes = total_kib.saturating_mul(1024);
-    Ok(MemorySnapshot {
-        total_bytes,
-        used_bytes: total_bytes.saturating_sub(available_kib.saturating_mul(1024)),
-    })
-}
-
-fn meminfo_value(contents: &str, key: &str) -> anyhow::Result<u64> {
-    contents
-        .lines()
-        .find_map(|line| {
-            let (name, value) = line.split_once(':')?;
-            (name == key).then(|| value.split_whitespace().next()?.parse().ok())?
-        })
-        .with_context(|| format!("host memory counter {key} is missing"))
-}
-
-struct DiskSnapshot {
-    total_bytes: u64,
-    used_bytes: u64,
-}
-
-/// Читает статистику накопителя; `None`, если путь недоступен или statvfs не удался.
-fn read_disk_snapshot(path: &str) -> Option<DiskSnapshot> {
-    let c_path = std::ffi::CString::new(path).ok()?;
-    let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
-    if unsafe { libc::statvfs(c_path.as_ptr(), &mut stats) } != 0 {
-        tracing::warn!(
-            disk_path = %path,
-            error = %std::io::Error::last_os_error(),
-            "host disk metrics are unavailable"
-        );
-        return None;
-    }
-    Some(disk_snapshot_from_statvfs(&stats))
-}
-
-/// Считает занятое место как total - free. `f_bfree` учитывает все свободные блоки,
-/// тогда как `f_bavail` дополнительно исключает зарезервированные для root.
-fn disk_snapshot_from_statvfs(stats: &libc::statvfs) -> DiskSnapshot {
-    let block_bytes = stats.f_frsize;
-    let total_bytes = stats.f_blocks.saturating_mul(block_bytes);
-    let free_bytes = stats.f_bfree.saturating_mul(block_bytes);
-    DiskSnapshot {
-        total_bytes,
-        used_bytes: total_bytes.saturating_sub(free_bytes),
-    }
-}
-
-struct NetworkSnapshot {
-    sampled_at: Instant,
-    sent_bytes: u64,
-    received_bytes: u64,
-}
-
-fn unix_timestamp_millis() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .min(i64::MAX as u128) as i64
-}
-
-#[cfg(test)]
-mod tests;

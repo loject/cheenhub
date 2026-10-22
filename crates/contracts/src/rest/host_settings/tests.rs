@@ -13,6 +13,7 @@ fn deserializes_metrics_sample_without_disk_field_from_old_proxy() {
         serde_json::from_str(json).expect("old metrics sample deserializes");
 
     assert!(sample.disk.is_none());
+    assert_eq!(sample.network.scope, super::HostNetworkScope::Application);
 }
 
 #[test]

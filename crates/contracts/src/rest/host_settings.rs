@@ -153,7 +153,7 @@ pub struct HostMetricsSample {
     /// Использование накопителя хоста; отсутствует у старых metrics-proxy или при недоступности диска.
     #[serde(default)]
     pub disk: Option<HostDiskMetrics>,
-    /// Сетевой трафик CheenHub.
+    /// Сетевой трафик приложения или хоста согласно области network.scope.
     pub network: HostNetworkMetrics,
 }
 
@@ -179,9 +179,9 @@ pub struct HostMemoryMetrics {
     pub total_bytes: u64,
     /// Используемый объём оперативной памяти хоста.
     pub used_bytes: u64,
-    /// Память контейнеров CheenHub без базы данных.
+    /// Память CheenHub: контейнеры либо приватная резидентная память процесса backend.
     pub cheenhub_bytes: u64,
-    /// Память контейнера базы данных CheenHub.
+    /// Память базы: контейнер либо приватная резидентная память локальных процессов PostgreSQL.
     pub database_bytes: u64,
     /// Память, занятая остальной системой.
     pub other_bytes: u64,
@@ -196,16 +196,30 @@ pub struct HostDiskMetrics {
     pub used_bytes: u64,
 }
 
-/// Сетевой трафик только контейнеров CheenHub без базы данных.
+/// Область измерения сетевого трафика, определяющая подпись в дашборде.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostNetworkScope {
+    /// Трафик контейнеров CheenHub без базы данных; значение для старых proxy.
+    #[default]
+    Application,
+    /// Трафик сетевых интерфейсов хоста без loopback.
+    Host,
+}
+
+/// Сетевой трафик приложения или хоста с явно указанной областью измерения.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct HostNetworkMetrics {
+    /// Источник счётчиков; старые proxy без поля измеряли только приложение.
+    #[serde(default)]
+    pub scope: HostNetworkScope,
     /// Скорость исходящего трафика в байтах в секунду.
     pub sent_bytes_per_second: f64,
     /// Скорость входящего трафика в байтах в секунду.
     pub received_bytes_per_second: f64,
-    /// Суммарный исходящий трафик с момента запуска контейнеров.
+    /// Накопленные исходящие байты контейнеров либо интерфейсов хоста.
     pub sent_bytes_total: u64,
-    /// Суммарный входящий трафик с момента запуска контейнеров.
+    /// Накопленные входящие байты контейнеров либо интерфейсов хоста.
     pub received_bytes_total: u64,
 }
 

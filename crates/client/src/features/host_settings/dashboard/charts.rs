@@ -189,7 +189,7 @@ pub(super) fn network_chart(samples: &[HostMetricsSample]) -> Element {
     rsx! {
         MetricsTrendChart {
             name: "network",
-            label: "История сетевого трафика CheenHub",
+            label: "История сетевого трафика",
             class: "mt-5 h-32 w-full rounded-xl border border-zinc-800/80 bg-zinc-950 p-3",
             option,
         }

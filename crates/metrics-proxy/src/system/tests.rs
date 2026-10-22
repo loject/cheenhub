@@ -23,6 +23,14 @@ fn parses_linux_cpu_line() {
 }
 
 #[test]
+fn guest_cpu_is_not_counted_twice_in_host_total() {
+    let counters = parse_cpu_line("cpu 100 20 30 400 50 6 7 8 40 10").unwrap();
+
+    assert_eq!(counters.total, 621);
+    assert_eq!(counters.idle, 450);
+}
+
+#[test]
 fn reads_memory_value_in_kibibytes() {
     assert_eq!(
         meminfo_value("MemTotal:       16384 kB\n", "MemTotal").expect("value exists"),

@@ -1,20 +1,17 @@
 #![warn(missing_docs)]
 //! Минимальный proxy системных метрик между Docker socket и backend CheenHub.
 
-mod collector;
-mod docker;
-
 use std::sync::Arc;
 
 use axum::{Router, extract::State, http::StatusCode, routing::get};
-use collector::MetricsCollector;
+use cheenhub_metrics_proxy::DockerMetricsCollector;
 use tokio::{net::TcpListener, sync::Mutex};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Clone)]
 struct ProxyState {
-    collector: Arc<Mutex<MetricsCollector>>,
+    collector: Arc<Mutex<DockerMetricsCollector>>,
 }
 
 #[tokio::main]
@@ -35,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "0.0.0.0:9100".to_owned());
     let listener = TcpListener::bind(&address).await?;
     let state = ProxyState {
-        collector: Arc::new(Mutex::new(MetricsCollector::new(
+        collector: Arc::new(Mutex::new(DockerMetricsCollector::new(
             socket_path,
             app_services,
             database_service,

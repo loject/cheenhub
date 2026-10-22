@@ -26,7 +26,7 @@ pub use host_settings::{
     EmailTransport, GmailConnectionStartResponse, GrantHostOwnerRequest, HostAccessResponse,
     HostCpuMetrics, HostDiskMetrics, HostEmailSettingsResponse, HostLogEntry, HostLogLevel,
     HostLogSettingsResponse, HostLogStreamMessage, HostMemoryMetrics, HostMessagesPerMinuteSample,
-    HostMetricsResponse, HostMetricsSample, HostNetworkMetrics, HostOwnerSummary,
+    HostMetricsResponse, HostMetricsSample, HostNetworkMetrics, HostNetworkScope, HostOwnerSummary,
     HostOwnersResponse, HostRegistrationSettingsResponse, HostStatsResponse,
     HostVoiceActivityHistoryResponse, HostVoiceActivityResponse, HostVoiceActivitySample,
     UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
