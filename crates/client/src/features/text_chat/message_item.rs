@@ -5,6 +5,8 @@ use dioxus::prelude::*;
 
 use crate::features::app::current_user::CurrentUserContext;
 
+use super::message_edit_dialog::{InlineMessageEditState, RoomMessageInlineEditor};
+
 /// Рендерит одну строку сообщения текстового чата.
 #[component]
 pub(crate) fn ChatMessageItem(
@@ -16,6 +18,8 @@ pub(crate) fn ChatMessageItem(
     #[props(default)] allow_own_delete: bool,
     can_delete_messages: bool,
     on_delete: EventHandler<String>,
+    #[props(default)] on_edit: Option<EventHandler<String>>,
+    #[props(default)] inline_edit: Option<InlineMessageEditState>,
     #[props(default)] can_pin_messages: bool,
     #[props(default)] is_pinned: bool,
     #[props(default)] on_pin_toggle: Option<EventHandler<String>>,
@@ -27,9 +31,14 @@ pub(crate) fn ChatMessageItem(
     let current_user = use_context::<CurrentUserContext>().require_user();
     let is_own = message.author_user_id == current_user.id;
     let can_delete = can_delete_messages || (is_own && allow_own_delete);
+    let can_edit = is_own && on_edit.is_some();
+    let active_edit = inline_edit.filter(|state| can_edit && state.message_id == message.id);
+    let is_editing = active_edit.is_some();
     let can_pin = can_pin_messages && on_pin_toggle.is_some();
     let mut menu_pos = use_signal(|| None::<(f64, f64)>);
-    let highlight_class = if highlighted {
+    let highlight_class = if is_editing {
+        "bg-white/[0.025]"
+    } else if highlighted {
         "bg-blue-400/15 ring-1 ring-inset ring-blue-400/60"
     } else if is_pinned {
         "bg-blue-500/[0.045] hover:bg-blue-500/[0.08]"
@@ -51,13 +60,16 @@ pub(crate) fn ChatMessageItem(
     let quick_pin_handler = on_pin_toggle.clone();
     let quick_pin_id = message.id.clone();
     let quick_delete_id = message.id.clone();
+    let quick_edit_handler = on_edit.clone();
+    let quick_edit_id = message.id.clone();
+    let edited_datetime = message.edited_at.as_deref().map(super::message_date::full_message_datetime);
 
     rsx! {
         div {
             class: "{row_class} {highlight_class} group/msg relative flex w-full items-start justify-between gap-3 rounded-xl px-2 py-1 transition-colors duration-100 hover:z-30 focus-within:z-30",
             onmounted: move |event| register_anchor.call(event.data.clone()),
             oncontextmenu: move |event| {
-                if !can_delete && !can_pin {
+                if is_editing || (!can_delete && !can_pin && !can_edit) {
                     return;
                 }
                 event.prevent_default();
@@ -88,7 +100,16 @@ pub(crate) fn ChatMessageItem(
                         span { "Закреплено в комнате" }
                     }
                 }
-                if !message.body.is_empty() {
+                if let Some(edit_state) = active_edit {
+                    RoomMessageInlineEditor {
+                        key: "{message.id}",
+                        message: message.clone(),
+                        saving: edit_state.saving,
+                        error: edit_state.error,
+                        on_cancel: edit_state.on_cancel,
+                        on_save: edit_state.on_save,
+                    }
+                } else if !message.body.is_empty() {
                     div { class: content_class,
                         span { class: "[overflow-wrap:anywhere]", "{message.body}" }
                         if is_own {
@@ -99,13 +120,22 @@ pub(crate) fn ChatMessageItem(
                     }
                 }
                 {children}
+                if !is_editing {
+                    if let Some(edited_datetime) = &edited_datetime {
+                        span {
+                            class: "text-[10px] font-medium text-zinc-500",
+                            title: "Изменено: {edited_datetime}",
+                            "(изменено)"
+                        }
+                    }
+                }
             }
-            if is_own && message.body.is_empty() {
+            if is_own && message.body.is_empty() && !is_editing {
                 if let Some(status) = message.delivery_status {
                     {delivery_status_marks(status)}
                 }
             }
-            if can_pin || can_delete {
+            if (can_pin || can_delete || can_edit) && !is_editing {
                 div {
                     class: "pointer-events-none absolute -top-3 right-2 z-20 flex items-center gap-0.5 rounded-xl border border-zinc-800 bg-zinc-950/95 p-1 opacity-0 shadow-[0_8px_24px_rgba(0,0,0,0.45)] backdrop-blur-md transition-opacity duration-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100",
                     if show_hover_time {
@@ -122,6 +152,20 @@ pub(crate) fn ChatMessageItem(
                                     path { stroke_linecap: "round", stroke_linejoin: "round", d: "m16 3 5 5-4 1-3 4-1 3-2 2-5-5 2-2 3-1 4-3 1-4zM9 15l-5 6" }
                                 }
                                 if is_pinned { "Открепить" } else { "Закрепить" }
+                            }
+                        }
+                    }
+                    if can_edit {
+                        if let Some(handler) = quick_edit_handler {
+                            button {
+                                r#type: "button",
+                                class: "flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-white",
+                                title: "Редактировать сообщение",
+                                onclick: move |_| handler.call(quick_edit_id.clone()),
+                                svg { class: "h-3.5 w-3.5", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.9",
+                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "m16.9 3.9 3.2 3.2M4 20l4.5-1 11-11a2.3 2.3 0 0 0-3.2-3.2l-11 11L4 20z" }
+                                }
+                                "Изменить"
                             }
                         }
                     }
@@ -145,6 +189,7 @@ pub(crate) fn ChatMessageItem(
             {
                 let message_id = message.id.clone();
                 let pin_message_id = message.id.clone();
+                let edit_message_id = message.id.clone();
                 rsx! {
                     div {
                         class: "fixed inset-0 z-[999]",
@@ -154,6 +199,19 @@ pub(crate) fn ChatMessageItem(
                         class: "fixed z-[1000] min-w-[180px] overflow-hidden rounded-[16px] border border-zinc-800 bg-zinc-950/95 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,.55)] backdrop-blur-xl",
                         style: "left: clamp(12px, {x}px, calc(100vw - 200px)); top: clamp(12px, {y}px, calc(100vh - 80px));",
                         onclick: move |event| event.stop_propagation(),
+                        if can_edit {
+                            if let Some(handler) = on_edit {
+                                button {
+                                    r#type: "button",
+                                    class: "flex min-h-10 w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] text-zinc-200 transition-colors hover:bg-white/10",
+                                    onclick: move |_| {
+                                        menu_pos.set(None);
+                                        handler.call(edit_message_id.clone());
+                                    },
+                                    "Редактировать сообщение"
+                                }
+                            }
+                        }
                         if can_pin {
                             if let Some(on_pin_toggle) = on_pin_toggle {
                                 button {

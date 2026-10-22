@@ -23,7 +23,8 @@ use super::history::{
     load_older_history,
 };
 use super::history_status::ChatHistoryStatus;
-use super::messages::{append_message, remove_message};
+use super::message_edit_dialog::InlineMessageEditState;
+use super::messages::{append_message, apply_message_edit, remove_message};
 use super::pin_navigation::use_pin_navigation;
 use super::pins_panel::{PinListAction, PinnedMessagesPanel};
 use super::realtime::{self, TextChatEvent};
@@ -49,6 +50,9 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let pins_state = use_room_pins(pins_target.clone());
     let pin_navigation = use_pin_navigation();
     let mut messages = use_signal(Vec::<TextChatMessage>::new);
+    let mut editing_message = use_signal(|| None::<TextChatMessage>);
+    let mut edit_saving = use_signal(|| false);
+    let mut edit_error = use_signal(|| None::<String>);
     let mut appearing_message_ids = use_signal(Vec::<String>::new);
     let mut removing_message_ids = use_signal(Vec::<String>::new);
     let initial_loading = use_signal(|| true);
@@ -78,6 +82,9 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let delete_server_id = server_id.clone();
     let delete_room_id = room.id.clone();
     let delete_realtime = realtime.clone();
+    let edit_realtime = realtime.clone();
+    let edit_server_id = server_id.clone();
+    let edit_room_id = room.id.clone();
     let history_realtime = realtime.clone();
     let event_realtime = realtime.clone();
     let older_realtime = realtime.clone();
@@ -146,10 +153,23 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             pending_scroll.set(Some(ScrollCommand::Bottom));
                         }
                     }
+                    TextChatEvent::MessageEdited(message) => {
+                        if message.server_id == event_server_id && message.room_id == event_room_id {
+                            let mut current = messages();
+                            if apply_message_edit(&mut current, message.clone()) {
+                                messages.set(current);
+                                debug!(server_id = %event_server_id, room_id = %event_room_id, message_id = %message.id, "applied realtime room message edit");
+                            }
+                            pins_state.apply_edited_message(&message);
+                        }
+                    }
                     TextChatEvent::MessageDeleted(payload) => {
                         if payload.room_id == event_room_id && payload.server_id == event_server_id
                         {
                             let message_id = payload.message_id.clone();
+                            if editing_message().as_ref().is_some_and(|active| active.id == message_id) {
+                                editing_message.set(None);
+                            }
                             pins_state.remove(&message_id);
                             removing_message_ids.write().push(message_id.clone());
                             spawn(async move {
@@ -197,6 +217,71 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
             remove_message(&mut messages, &message_id);
             removing_message_ids.write().retain(|id| id != &message_id);
         });
+    });
+    let on_start_edit = use_callback(move |message_id: String| {
+        if edit_saving() {
+            return;
+        }
+        if let Some(message) = messages().into_iter().find(|message| {
+            message.id == message_id && message.author_user_id == current_user.id
+        }) {
+            edit_error.set(None);
+            editing_message.set(Some(message));
+        }
+    });
+    let on_cancel_edit = use_callback(move |_| {
+        if !edit_saving() {
+            editing_message.set(None);
+            edit_error.set(None);
+        }
+    });
+    let on_save_edit = use_callback(move |body: String| {
+        if edit_saving() {
+            return;
+        }
+        let Some(message) = editing_message() else {
+            return;
+        };
+        let realtime = edit_realtime.clone();
+        let server_id = edit_server_id.clone();
+        let room_id = edit_room_id.clone();
+        let message_id = message.id;
+        edit_saving.set(true);
+        edit_error.set(None);
+        spawn(async move {
+            match realtime::edit_text_message(
+                &realtime,
+                server_id.clone(),
+                room_id.clone(),
+                message_id.clone(),
+                body,
+            ).await {
+                Ok(accepted) => {
+                    let updated = accepted.message;
+                    let mut current = messages();
+                    if apply_message_edit(&mut current, updated.clone()) {
+                        messages.set(current);
+                    }
+                    pins_state.apply_edited_message(&updated);
+                    editing_message.set(None);
+                    debug!(%server_id, %room_id, %message_id, "room message edit accepted");
+                }
+                Err(error) => {
+                    warn!(%server_id, %room_id, %message_id, %error, "room message edit failed");
+                    edit_error.set(Some(
+                        "Не удалось сохранить изменения. Проверь соединение и повтори попытку.".to_owned()
+                    ));
+                }
+            }
+            edit_saving.set(false);
+        });
+    });
+    let inline_edit = editing_message().map(|active| InlineMessageEditState {
+        message_id: active.id,
+        saving: edit_saving(),
+        error: edit_error(),
+        on_cancel: on_cancel_edit,
+        on_save: on_save_edit,
     });
     let toggle_pins_target = pins_target.clone();
     let on_toggle_pin = use_callback(move |message_id: String| {
@@ -308,7 +393,10 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                                 VirtualChatRow {
                                     row_id: group_key.clone(),
                                     active: rendered_group_range.contains(&group_index)
-                                        || super::scroll_anchor_runtime::targets_group(pending_scroll(), &group),
+                                        || super::scroll_anchor_runtime::targets_group(pending_scroll(), &group)
+                                        || inline_edit.as_ref().is_some_and(|active| {
+                                            group.iter().any(|message| message.id == active.message_id)
+                                        }),
                                     estimated_height,
                                     layout: virtual_layout,
                                     ChatMessageGroup {
@@ -318,6 +406,8 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                                         removing_message_ids: removing_message_ids_list.clone(),
                                         can_delete_messages: permissions.can_delete_messages,
                                         on_delete: move |id| on_delete_message.call(id),
+                                        on_edit: if room.can_write { Some(on_start_edit) } else { None },
+                                        inline_edit: inline_edit.clone(),
                                         can_pin_messages: permissions.can_pin_messages && pins_state.busy().is_none(),
                                         pinned_message_ids: pinned_message_ids.clone(),
                                         on_pin_toggle: move |id| on_toggle_pin.call(id),

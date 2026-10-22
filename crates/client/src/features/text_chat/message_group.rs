@@ -7,6 +7,7 @@ use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
 
 use super::message_date::full_message_datetime;
+use super::message_edit_dialog::InlineMessageEditState;
 use super::message_item::ChatMessageItem;
 use super::message_item::message_time;
 use super::messages::is_appearing_message;
@@ -20,6 +21,8 @@ pub(crate) fn ChatMessageGroup(
     removing_message_ids: Vec<String>,
     can_delete_messages: bool,
     on_delete: EventHandler<String>,
+    on_edit: Option<EventHandler<String>>,
+    inline_edit: Option<InlineMessageEditState>,
     can_pin_messages: bool,
     pinned_message_ids: Vec<String>,
     on_pin_toggle: EventHandler<String>,
@@ -78,6 +81,8 @@ pub(crate) fn ChatMessageGroup(
                             allow_own_delete: true,
                             can_delete_messages,
                             on_delete: move |id| on_delete.call(id),
+                            on_edit,
+                            inline_edit: inline_edit.clone(),
                             can_pin_messages,
                             is_pinned: pinned_message_ids.contains(&message.id),
                             on_pin_toggle: Some(on_pin_toggle),

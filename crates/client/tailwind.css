@@ -2,6 +2,88 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Встроенное редактирование: почти без дополнительной визуальной оболочки. */
+.chat-inline-editor {
+    padding: 4px 0 3px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    animation: chat-inline-editor-in 140ms ease-out both;
+}
+
+.chat-inline-editor:focus-within {
+    box-shadow: none;
+}
+
+.chat-inline-editor-saving {
+    opacity: 0.88;
+}
+
+.chat-inline-editor .chat-inline-editor-input {
+    border-color: rgb(255 255 255 / 0.10);
+    background: #16191f;
+    box-shadow: none;
+}
+
+.chat-inline-editor .chat-inline-editor-input:focus {
+    border-color: rgb(148 163 184 / 0.28);
+    background: #191d25;
+    box-shadow: none;
+}
+
+.chat-inline-editor form > div:first-child {
+    color: #9298a4;
+    font-weight: 500;
+}
+
+.chat-inline-editor form > div:first-child svg {
+    color: #9298a4;
+    opacity: 0.7;
+}
+
+.chat-inline-editor button[type="submit"] {
+    background: #3e4c61;
+    color: #f1f5f9;
+    box-shadow: none;
+}
+
+.chat-inline-editor button[type="submit"]:hover:not(:disabled) {
+    background: #526279;
+    box-shadow: none;
+}
+
+.chat-inline-editor-actions {
+    animation: chat-inline-editor-actions-in 160ms ease-out both;
+}
+
+.chat-inline-editor-error {
+    animation: chat-inline-editor-error-in 180ms ease-out both;
+}
+
+@keyframes chat-inline-editor-in {
+    from { opacity: 0; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes chat-inline-editor-actions-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes chat-inline-editor-error-in {
+    from { opacity: 0; transform: translateY(-3px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .chat-inline-editor,
+    .chat-inline-editor-actions,
+    .chat-inline-editor-error {
+        animation: none;
+    }
+}
+
 /* Split: сообщения без бабблов, одинаковый стиль для комнат и личных диалогов. */
 .chat-message-group,
 .message-composer-shell {
