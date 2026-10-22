@@ -1,0 +1,79 @@
+name: Deploy native production
+
+on:
+  workflow_call:
+    inputs:
+      release_tag:
+        description: 'Version tag whose native archive will be installed.'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    name: Install tagged native release
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 20
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Checkout tagged installer
+        uses: actions/checkout@v7
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          for name in DEPLOY_SSH_HOST DEPLOY_SSH_USER DEPLOY_SSH_PRIVATE_KEY; do
+            [[ -n "${!name}" ]] || { echo "Missing deployment secret: $name" >&2; exit 1; }
+          done
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > ~/.ssh/cheenhub_deploy_key
+          ssh-keyscan -p "$DEPLOY_SSH_PORT" "$DEPLOY_SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Install exact native release on production
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_REF" == "refs/tags/$RELEASE_TAG" ]]
+          target="${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}"
+          ssh_options=(-i ~/.ssh/cheenhub_deploy_key -o BatchMode=yes -o ConnectTimeout=15)
+          directory=$(ssh "${ssh_options[@]}" -p "$DEPLOY_SSH_PORT" "$target" 'mktemp -d /tmp/cheenhub-deploy.XXXXXXXX')
+          [[ "$directory" =~ ^/tmp/cheenhub-deploy\.[A-Za-z0-9]+$ ]]
+          scp "${ssh_options[@]}" -P "$DEPLOY_SSH_PORT" install.sh "$target:$directory/install.sh"
+          printf -v quoted_directory '%q' "$directory"
+          printf -v quoted_tag '%q' "$RELEASE_TAG"
+          printf -v quoted_sha '%q' "$GITHUB_SHA"
+          ssh "${ssh_options[@]}" -p "$DEPLOY_SSH_PORT" "$target" \
+            "bash -s -- $quoted_directory $quoted_tag $quoted_sha" <<'REMOTE'
+          set -euo pipefail
+          directory=$1
+          tag=$2
+          commit=$3
+          trap 'rm -f "$directory/install.sh"; rmdir "$directory"' EXIT
+          if [[ $(id -u) -eq 0 ]]; then
+            bash "$directory/install.sh" update --version "$tag" --expected-commit "$commit"
+          else
+            sudo -n bash "$directory/install.sh" update --version "$tag" --expected-commit "$commit"
+          fi
+          REMOTE

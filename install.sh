@@ -5,15 +5,42 @@ set -euo pipefail
 # Сборка из исходников не требуется; production использует существующие БД и Certbot.
 
 readonly REPOSITORY='loject/cheenhub'
-readonly CHANNEL='native-preview'
 readonly ASSET='cheenhub-native-linux-x86_64.tar.gz'
-readonly RELEASE_URL="https://github.com/${REPOSITORY}/releases/download/${CHANNEL}"
 readonly SERVICE='cheenhub.service'
+RELEASE_VERSION=''
+EXPECTED_COMMIT=''
 
 fail() { printf 'Ошибка: %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*"; }
 
 is_system_install() { [[ ${EUID} -eq 0 ]]; }
+
+select_release_source() {
+    if [[ -n "$RELEASE_VERSION" ]]; then
+        CHANNEL="$RELEASE_VERSION"
+        RELEASE_URL="https://github.com/${REPOSITORY}/releases/download/${CHANNEL}"
+    elif is_system_install; then
+        CHANNEL=latest
+        RELEASE_URL="https://github.com/${REPOSITORY}/releases/latest/download"
+    else
+        CHANNEL=native-preview
+        RELEASE_URL="https://github.com/${REPOSITORY}/releases/download/${CHANNEL}"
+    fi
+}
+
+verify_release_metadata() {
+    local metadata="$1/BUILD_INFO"
+    [[ -f "$metadata" ]] || fail 'В архиве отсутствует BUILD_INFO.'
+    if [[ -n "$EXPECTED_COMMIT" ]]; then
+        grep -Fxq "commit=$EXPECTED_COMMIT" "$metadata" || fail 'Архив собран из другого коммита.'
+    fi
+    if [[ -n "$RELEASE_VERSION" ]]; then
+        grep -Fxq "release_tag=$RELEASE_VERSION" "$metadata" || fail 'Архив не соответствует запрошенному тегу.'
+    fi
+    if is_system_install; then
+        grep -Fxq 'base_url=https://cheenhub.ru' "$metadata" || fail 'Архив собран с другим адресом production.'
+    fi
+}
 
 initialize_paths() {
     if is_system_install; then
@@ -168,12 +195,14 @@ install_or_update() {
     mkdir -p "$APP_DIR/releases" "$CONFIG_DIR" "$UNIT_DIR"
     if is_system_install; then
         install -d -m 755 "$APP_DIR" "$APP_DIR/releases" "$UNIT_DIR"
+        exec 8>"$APP_DIR/.install.lock"
+        flock -n 8 || fail 'Установка CheenHub уже выполняется.'
     fi
     INSTALL_TEMP_DIR="$(mktemp -d)"
     trap 'if [[ -n "${INSTALL_TEMP_DIR:-}" ]]; then rm -rf -- "$INSTALL_TEMP_DIR"; fi' EXIT
-    info 'Скачиваю последнюю нативную сборку CheenHub с GitHub Releases.'
+    info "Скачиваю нативную сборку CheenHub: $CHANNEL."
     curl -fLsS --retry 3 --connect-timeout 15 "$RELEASE_URL/$ASSET" -o "$INSTALL_TEMP_DIR/$ASSET" \
-        || fail 'Нативный релиз пока не опубликован. Запустите Build native CheenHub Linux archive в GitHub Actions.'
+        || fail "Нативный архив $CHANNEL не опубликован в GitHub Releases."
     curl -fLsS --retry 3 --connect-timeout 15 "$RELEASE_URL/$ASSET.sha256" -o "$INSTALL_TEMP_DIR/$ASSET.sha256" \
         || fail 'Не удалось скачать файл SHA-256.'
     name="$(verify_archive "$INSTALL_TEMP_DIR")"
@@ -186,9 +215,11 @@ install_or_update() {
             [[ -s "$INSTALL_TEMP_DIR/$name/$path" ]] || fail "В релизе отсутствует $path"
         done
         (cd "$INSTALL_TEMP_DIR/$name" && sha256sum --check --status SHA256SUMS) || fail 'Внутренние контрольные суммы неверны.'
+        verify_release_metadata "$INSTALL_TEMP_DIR/$name"
         mv "$INSTALL_TEMP_DIR/$name" "$release"
     else
         (cd "$release" && sha256sum --check --status SHA256SUMS) || fail 'Ранее установленный релиз повреждён.'
+        verify_release_metadata "$release"
         info "Релиз $name уже скачан."
     fi
     write_config
@@ -373,6 +404,8 @@ CheenHub Native Installer (Linux x86_64)
   install.sh                 Интерактивное меню
   install.sh install         Установить или обновить из GitHub Releases
   install.sh update          То же, что install
+  install.sh update --version vX.Y.Z   Установить конкретный релиз
+  --expected-commit SHA      Проверить SHA коммита архива (для CI)
   install.sh status          Состояние сервиса
   install.sh restart         Перезапустить сервис
   install.sh stop            Остановить сервис
@@ -382,8 +415,19 @@ HELP
 
 main() {
     initialize_paths
-    local action="${1:-}"
-    if [[ $# -gt 1 ]]; then usage; exit 2; fi
+    local action=''
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --version|--expected-commit)
+                [[ $# -ge 2 ]] || fail "После $1 требуется значение."
+                if [[ "$1" == --version ]]; then RELEASE_VERSION="$2"; else EXPECTED_COMMIT="$2"; fi
+                shift 2 ;;
+            *) [[ -z "$action" ]] || fail "Лишний аргумент: $1"; action="$1"; shift ;;
+        esac
+    done
+    [[ -z "$RELEASE_VERSION" || "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]] || fail 'Некорректный тег версии.'
+    [[ -z "$EXPECTED_COMMIT" || "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail 'Ожидается полный SHA коммита.'
+    [[ -z "$EXPECTED_COMMIT" || -n "$RELEASE_VERSION" ]] || fail 'Проверка SHA требует --version.'
     if [[ -z "$action" && -t 0 ]]; then
         printf '\n=== CheenHub ===\n1) Установить / обновить\n2) Статус\n3) Перезапустить\n4) Остановить\n5) Логи\n6) Выход\n'
         read -r -p 'Выберите действие [1]: ' action
@@ -391,7 +435,7 @@ main() {
     fi
     action="${action:-install}"
     case "$action" in
-        1|install|update) install_or_update ;;
+        1|install|update) select_release_source; install_or_update ;;
         2|status) service_control status "$SERVICE" --no-pager ;;
         3|restart) service_control restart "$SERVICE" ;;
         4|stop) service_control stop "$SERVICE" ;;

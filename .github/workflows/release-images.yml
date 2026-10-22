@@ -927,6 +927,44 @@ jobs:
           echo "RuStore version ${version_id} was sent to moderation."
           echo "::endgroup::"
 
+  build-native-server:
+    name: Build native production archive
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.event.created == true
+    needs: prepare
+    uses: ./.github/workflows/publish-native-linux.yml
+    with:
+      base_url: https://cheenhub.ru
+    secrets: inherit
+
+  publish-native-server:
+    name: Publish native production archive
+    runs-on: ubuntu-24.04
+    needs: [build-native-server, publish-android-github]
+    steps:
+      - name: Checkout tagged installer
+        uses: actions/checkout@v7
+      - name: Download native archive
+        uses: actions/download-artifact@v8
+        with:
+          name: cheenhub-native-linux-${{ github.sha }}
+          path: dist/native
+      - name: Publish native release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd dist/native
+          archive="cheenhub-native-linux-x86_64-${GITHUB_SHA::12}.tar.gz"
+          sha256sum --check "$archive.sha256"
+          asset=cheenhub-native-linux-x86_64.tar.gz
+          cp "$archive" "$asset"
+          sha256sum "$asset" > "$asset.sha256"
+          cp ../../install.sh install.sh
+          sha256sum install.sh > install.sh.sha256
+          gh release upload "$GITHUB_REF_NAME" "$asset" "$asset.sha256" install.sh install.sh.sha256 --clobber
+
   deploy-production:
     name: Deploy completed release to production
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.event.created == true
@@ -938,10 +976,10 @@ jobs:
       - build-linux-client
       - build-android-client
       - publish-android-github
-    uses: ./.github/workflows/run-migrations.yml
+      - publish-native-server
+    uses: ./.github/workflows/deploy-native.yml
     with:
-      backend_image_ref: ${{ needs.prepare.outputs.backend-image }}:${{ github.ref_name }}
-      web_image_ref: ${{ needs.prepare.outputs.web-image }}:${{ github.ref_name }}
+      release_tag: ${{ github.ref_name }}
     secrets: inherit
 
   publish-dev-release:

@@ -33,10 +33,10 @@ Compose и проброс `443/udp → 3000/udp` не меняются.
 обычные `backend-runtime`, `web-runtime`, CI-релизы и production Compose
 остаются без изменений. Переключение TCP `80/443` здесь не выполняется.
 
-## Нативный Linux-архив без Docker (подготовительный этап)
+## Нативный Linux-архив без Docker
 
 Workflow `.github/workflows/publish-native-linux.yml` запускается вручную из
-GitHub Actions. Он собирает `cheenhub_backend`, `cheenhub_migrations` и
+GitHub Actions для preview и вызывается релизным workflow для тега. Он собирает `cheenhub_backend`, `cheenhub_migrations` и
 `web-public` на Ubuntu 24.04 без Docker, затем прикладывает архив
 `cheenhub-native-linux-x86_64-<sha>.tar.gz` и его файл `.sha256`.
 Архив содержит `bin/`, `web-public/`, `BUILD_INFO` и `SHA256SUMS`.
@@ -45,7 +45,7 @@ JWT-настройки для сборки передавать не нужно.
 со страницы выполнения workflow; проверяй архив через `sha256sum -c`
 и содержимое через `sha256sum -c SHA256SUMS` после распаковки.
 Архив рассчитан на Linux x86_64 с совместимыми системными библиотеками;
-секретов и `.env.production` в нём нет. Production-деплой пока не меняется.
+секретов и `.env.production` в нём нет. В `BUILD_INFO` записываются commit, URL frontend и релизный тег для проверки установщиком.
 
 ## Ручная проверка нативного запуска на другом порту
 
@@ -55,7 +55,7 @@ JWT-настройки для сборки передавать не нужно.
 `JWT_KEY_ID` и `JWT_ED25519_PRIVATE_KEY_BASE64` из серверного `.env` при запуске
 и вычисляет публичный ключ из активного приватного. Приватный ключ не передаётся.
 Отдельные `CHEENHUB_JWT_*` для frontend больше не нужны.
-`install.sh` на этом этапе не используется: он остаётся отдельным preview.
+Для проверки на другом порту архив запускается вручную; системный режим `install.sh` предназначен для текущего production `https://cheenhub.ru`.
 
 Перед сборкой подготовь корневой `.env`. Для локальной проверки:
 
@@ -134,12 +134,14 @@ GitHub Actions публичным URL. Для полноценного self-host
 Для установки/обновления **текущего нативного production cheenhub.ru** запустите тот же установщик от root:
 
 ```bash
-bash install.sh install
+bash install.sh install --version vX.Y.Z
 # Последующие обновления:
-bash install.sh update
+bash install.sh update --version vX.Y.Z
 ```
 
 Этот режим использует `/opt/cheenhub-native/.env`, системный `cheenhub.service`, существующие PostgreSQL и Certbot. Он не создаёт новую БД или JWT-ключи. До первого запуска необходимы production `.env`, действующий сертификат в volume `cheenhub_letsencrypt` и webroot в `cheenhub_certbot-webroot`. Для нового произвольного сервера этот режим пока не предназначен.
+
+`--version` выбирает архив из GitHub Release этого тега. Без параметра root устанавливает последний обычный GitHub Release; локальный preview продолжает использовать `native-preview`. В CI дополнительно передаётся `--expected-commit` с полным SHA: перед миграциями и переключением проверяются тег, SHA и production URL из `BUILD_INFO`. Старые preview-архивы без этих метаданных для системной установки не подходят. Одновременные системные установки блокируются через `flock`.
 
 PostgreSQL в обеих Compose-конфигурациях публикует порт только на `127.0.0.1:5432`. В `DATABASE_URL` нативного backend используйте `127.0.0.1:5432`, сохраняя пользователя, пароль и имя существующей БД. Внутренний IP контейнера для этого не нужен. Контейнерные backend и миграции продолжают обращаться к БД по имени Docker-сервиса `db`: их `DATABASE_URL` в `.env.production` на localhost менять не нужно. Данные остаются в volume `cheenhub_postgres-data`.
 
@@ -277,54 +279,38 @@ CHEENHUB_BACKEND_IMAGE_REF=ghcr.io/loject/cheenhub/backend:v1.0.0
 CHEENHUB_WEB_IMAGE_REF=ghcr.io/loject/cheenhub/web:v1.0.0
 ```
 
-## Ручной деплой через GitHub Actions
+## Автодеплой по тегу
 
-Workflow `.github/workflows/run-migrations.yml` запускается вручную через `workflow_dispatch`, сначала применяет миграции, затем обновляет backend и frontend containers.
+Тег `vX.Y.Z` должен совпадать с версией workspace. После push нового тега `.github/workflows/release-images.yml`:
 
-Inputs:
+1. Запускает существующие релизные сборки и нативный архив через `publish-native-linux.yml`.
+2. Публикует архив, SHA-256 и `install.sh` в GitHub Release этого тега.
+3. После успешных обязательных сборок вызывает `deploy-native.yml`. Ожидание Windows/Linux/Android и публикации APK сохраняется; RuStore не блокирует production.
+4. По SSH передаёт установщик из checkout того же тега и запускает `update --version vX.Y.Z --expected-commit SHA`.
+5. Установщик проверяет архив и метаданные, настраивает TLS, применяет миграции, переключает релиз, перезапускает системный сервис и проверяет HTTPS. При неудачном запуске возвращает предыдущую версию приложения; миграции БД автоматически не откатываются.
 
-- `backend_image_ref` - опциональный полный image reference backend-образа, например `ghcr.io/<owner>/<repo>/backend:v1.0.0`; если оставить пустым, используется `ghcr.io/<owner>/<repo>/backend:latest`.
-- `web_image_ref` - опциональный полный image reference frontend-образа, например `ghcr.io/<owner>/<repo>/web:v1.0.0`; если оставить пустым, используется `ghcr.io/<owner>/<repo>/web:latest`.
-- `compose_project_dir` - путь к checkout проекта на Ubuntu-сервере, по умолчанию `/opt/cheenhub`.
-- `env_file` - production env-файл относительно `compose_project_dir`, по умолчанию `.env.production`.
+У environment `production` сохраняется группа concurrency `deploy-production` с `cancel-in-progress: false`: работающий деплой не прерывается новым. Существующие Docker-артефакты продолжают публиковаться, а production обновляется нативным установщиком. Старый workflow деплоя Docker удалён.
 
-Secrets:
-
-- `DEPLOY_SSH_HOST` - адрес Ubuntu-сервера.
-- `DEPLOY_SSH_USER` - пользователь для SSH.
-- `DEPLOY_SSH_PRIVATE_KEY` - приватный SSH-ключ для деплоя.
-- `DEPLOY_SSH_PORT` - опционально, по умолчанию `22`.
-- `FCM_SERVICE_ACCOUNT_JSON` - полный JSON service account Firebase; workflow передаёт его на сервер через stdin и сохраняет с правами `600` только в gitignored `deploy/secrets`.
-- `GHCR_READ_TOKEN` - опционально, нужен для приватных GHCR packages.
-- `GHCR_USERNAME` - опционально, по умолчанию используется actor workflow.
-
-Workflow подключается по SSH, проверяет что `compose_project_dir` является чистым git checkout, делает `git fetch` и `git checkout --detach` на commit workflow, затем использует `deploy/compose.migrate.yml`: делает `docker compose pull migrate`, поднимает `db` и запускает одноразовый service `migrate` из указанного backend image. После успешной миграции workflow использует `deploy/compose.yml`, подтягивает и перезапускает `backend`, `web` и `certbot`.
-
-Для локальной сборки на сервере можно добавить `deploy/compose.build.yml`, а для ручного frontend-артефакта оставить текущий overlay `deploy/compose.artifact.yml`.
-
-## GitHub Actions release
-
-Workflow `.github/workflows/release-images.yml`:
-
-- собирает `backend-runtime` и `web-runtime` из корневого `Dockerfile`;
-- публикует образы в GHCR:
-  - `ghcr.io/<owner>/<repo>/backend:<tag>`;
-  - `ghcr.io/<owner>/<repo>/web:<tag>`;
-- на git-теге `v*` создаёт GitHub Release и прикрепляет `docker save` архивы этих образов.
-
-Для production frontend image задай repository variables:
-
-```text
-CHEENHUB_DOMAIN=cheenhub.ru
-CHEENHUB_BASE_URL=https://cheenhub.ru
-CHEENHUB_REALTIME_CERT_SHA256=
-```
-
-Релиз создаётся пушем тега:
+Перед созданием тега изменения CI должны находиться в опубликованном коммите:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
-После релиза обнови `CHEENHUB_BACKEND_IMAGE_REF` и `CHEENHUB_WEB_IMAGE_REF` на сервере и перезапусти compose. Если GHCR package приватный, сначала выполни на сервере `docker login ghcr.io`.
+Для ручной установки выбранной версии на сервере:
+
+```bash
+bash install.sh update --version vX.Y.Z
+```
+
+## Доступ GitHub Actions к production
+
+В repository secrets или environment `production` нужны:
+
+- `DEPLOY_SSH_HOST` — адрес сервера.
+- `DEPLOY_SSH_USER` — root или пользователь с `sudo` без пароля.
+- `DEPLOY_SSH_PRIVATE_KEY` — приватный SSH-ключ.
+- `DEPLOY_SSH_PORT` — необязательно, по умолчанию `22`.
+
+Серверный `.env`, данные PostgreSQL, сертификаты и существующий Firebase service account сохраняются на сервере. Новый deploy workflow не передаёт их из GitHub и не требует JWT-настроек для сборки. Подключение по SSH не зависит от чистоты старого checkout `/opt/cheenhub`.

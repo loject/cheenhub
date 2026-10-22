@@ -1,6 +1,11 @@
 name: Build native CheenHub Linux archive
 
 on:
+  workflow_call:
+    inputs:
+      base_url:
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       base_url:
@@ -34,8 +39,8 @@ jobs:
       - name: Validate build configuration
         shell: bash
         run: |
-          if [[ "${GITHUB_REF}" != 'refs/heads/main' ]]; then
-            echo 'Publish native preview only from main.' >&2
+          if [[ "${GITHUB_REF}" != 'refs/heads/main' && "${GITHUB_REF}" != refs/tags/v* ]]; then
+            echo 'Native builds require main or a version tag.' >&2
             exit 1
           fi
 
@@ -63,7 +68,13 @@ jobs:
         shell: bash
         run: |
           version="$(cargo run --quiet --locked -p xtask -- release-version print-tag)"
-          echo "value=${version}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            [[ "${GITHUB_REF_NAME}" == "$version" ]] || exit 1
+            echo "value=${version}" >> "$GITHUB_OUTPUT"
+            echo "CHEENHUB_RELEASE_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          else
+            echo "value=${version}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build native Rust binaries
         shell: bash
@@ -94,6 +105,7 @@ jobs:
           retention-days: 30
 
       - name: Publish native preview on GitHub Releases
+        if: github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -41,6 +41,8 @@ install -m 755 target/release/cheenhub_backend "$package_dir/bin/cheenhub_backen
 install -m 755 target/release/cheenhub_migrations "$package_dir/bin/cheenhub_migrations"
 cp -a target/dx/cheenhub/release/web/public/. "$package_dir/web-public/"
 printf 'commit=%s\nplatform=linux-x86_64\n' "$commit" > "$package_dir/BUILD_INFO"
+printf 'base_url=%s\nrelease_tag=%s\n' "${CHEENHUB_BASE_URL:-}" \
+    "${CHEENHUB_RELEASE_TAG:-}" >> "$package_dir/BUILD_INFO"
 
 (
     cd "$package_dir"
