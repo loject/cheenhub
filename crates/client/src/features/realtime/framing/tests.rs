@@ -2,12 +2,12 @@ use super::{InboundRealtimeEnvelope, decode_inbound_envelope};
 
 #[test]
 fn unknown_kind_is_skipped() {
-    let input = br#"{"module":"text_chat","kind":"message_edited","request_id":null,"payload":{}}"#;
+    let input = br#"{"module":"text_chat","kind":"future_message_kind","request_id":null,"payload":{}}"#;
     let decoded = decode_inbound_envelope(input).expect("valid unknown event");
     assert!(matches!(
         decoded,
         InboundRealtimeEnvelope::Unknown { module, kind }
-            if module == "text_chat" && kind == "message_edited"
+            if module == "text_chat" && kind == "future_message_kind"
     ));
 }
 

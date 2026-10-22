@@ -21,10 +21,15 @@ pub(crate) struct InlineMessageEditState {
 }
 
 /// Проверяет, можно ли сохранить изменённый текст без изменения вложений.
-pub(super) fn can_save_edit(body: &str, original: &str, has_attachment: bool) -> bool {
+pub(super) fn can_save_edit(
+    body: &str,
+    original: &str,
+    has_attachment: bool,
+    max_chars: usize,
+) -> bool {
     let trimmed = body.trim();
     (has_attachment || !trimmed.is_empty())
-        && trimmed.chars().count() <= 2000
+        && trimmed.chars().count() <= max_chars
         && trimmed != original
 }
 
@@ -32,6 +37,8 @@ pub(super) fn can_save_edit(body: &str, original: &str, has_attachment: bool) ->
 #[component]
 pub(crate) fn RoomMessageInlineEditor(
     message: TextChatMessage,
+    #[props(default)] external_attachment: bool,
+    #[props(default)] max_edit_chars: Option<usize>,
     saving: bool,
     error: Option<String>,
     on_cancel: EventHandler<()>,
@@ -42,8 +49,9 @@ pub(crate) fn RoomMessageInlineEditor(
     let body = draft();
     let original_for_submit = message.body.clone();
     let original_for_keys = message.body.clone();
-    let has_attachment = !message.attachments.is_empty();
-    let valid = can_save_edit(&body, &message.body, has_attachment);
+    let has_attachment = external_attachment || !message.attachments.is_empty();
+    let max_chars = max_edit_chars.unwrap_or(2000);
+    let valid = can_save_edit(&body, &message.body, has_attachment, max_chars);
 
     rsx! {
         div {
@@ -55,7 +63,7 @@ pub(crate) fn RoomMessageInlineEditor(
                 onsubmit: move |event| {
                     event.prevent_default();
                     let next = draft();
-                    if !saving && can_save_edit(&next, &original_for_submit, has_attachment) {
+                    if !saving && can_save_edit(&next, &original_for_submit, has_attachment, max_chars) {
                         on_save.call(next.trim().to_owned());
                     }
                 },
@@ -74,7 +82,7 @@ pub(crate) fn RoomMessageInlineEditor(
                 textarea {
                     autofocus: true,
                     rows: "2",
-                    maxlength: "2000",
+                    maxlength: "{max_chars}",
                     style: "field-sizing: content;",
                     value: "{body}",
                     disabled: saving,
@@ -101,7 +109,7 @@ pub(crate) fn RoomMessageInlineEditor(
                             event.prevent_default();
                             event.stop_propagation();
                             let next = draft();
-                            if !saving && can_save_edit(&next, &original_for_keys, has_attachment) {
+                            if !saving && can_save_edit(&next, &original_for_keys, has_attachment, max_chars) {
                                 on_save.call(next.trim().to_owned());
                             }
                         }
@@ -121,8 +129,8 @@ pub(crate) fn RoomMessageInlineEditor(
                         "Esc — отмена · Ctrl+Enter — сохранить"
                     }
                     span {
-                        class: if body.chars().count() >= 1900 { "ml-auto text-[10.5px] tabular-nums text-amber-300" } else { "ml-auto text-[10.5px] tabular-nums text-zinc-500" },
-                        "{body.chars().count()} / 2000"
+                        class: if body.chars().count() >= max_chars.saturating_sub(100) { "ml-auto text-[10.5px] tabular-nums text-amber-300" } else { "ml-auto text-[10.5px] tabular-nums text-zinc-500" },
+                        "{body.chars().count()} / {max_chars}"
                     }
                     button {
                         r#type: "button",

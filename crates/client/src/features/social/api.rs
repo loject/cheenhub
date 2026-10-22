@@ -1,11 +1,12 @@
 //! REST API клиента для друзей и личных сообщений.
 
 use cheenhub_contracts::rest::{
-    DmConversationSummary, DmImageAttachmentSummary, DmMessageSummary, ListDmConversationsResponse,
-    ListDmMessagesResponse, ListFriendRequestsResponse, ListFriendsResponse,
-    MarkDmConversationReadRequest, MarkDmConversationReadResponse, OpenDmConversationRequest,
-    OpenDmConversationResponse, SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse,
-    SendFriendRequestRequest, SendFriendRequestResponse, UploadDmImageResponse, UserSearchResult,
+    DmConversationSummary, DmImageAttachmentSummary, DmMessageSummary, EditDmMessageRequest,
+    EditDmMessageResponse, ListDmConversationsResponse, ListDmMessagesResponse,
+    ListFriendRequestsResponse, ListFriendsResponse, MarkDmConversationReadRequest,
+    MarkDmConversationReadResponse, OpenDmConversationRequest, OpenDmConversationResponse,
+    SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
+    SendFriendRequestResponse, UploadDmImageResponse, UserSearchResult,
 };
 use reqwest::{Response, StatusCode};
 use serde::Serialize;
@@ -193,6 +194,21 @@ pub(crate) async fn send_dm_message(
     .map(|response| response.message)
 }
 
+/// Изменяет только текст собственного личного сообщения.
+pub(crate) async fn edit_dm_message(
+    conversation_id: &str,
+    message_id: &str,
+    body: String,
+) -> Result<DmMessageSummary, String> {
+    authorized_json::<EditDmMessageResponse>(
+        "PATCH",
+        &format!("/direct-messages/conversations/{conversation_id}/messages/{message_id}"),
+        Some(&EditDmMessageRequest { body }),
+    )
+    .await
+    .map(|response| response.message)
+}
+
 /// Загружает изображение для личного сообщения.
 pub(crate) async fn upload_dm_image(
     conversation_id: &str,
@@ -308,6 +324,7 @@ async fn send(
     let mut request = match method {
         "GET" => auth_api::get(path),
         "POST" => auth_api::post(path),
+        "PATCH" => auth_api::patch(path),
         "DELETE" => auth_api::delete(path),
         _ => return Err("Неподдерживаемый API-метод.".to_owned()),
     }

@@ -24,6 +24,7 @@ use crate::features::text_chat::{
 use crate::features::voice_chat::{DirectCallHandle, VoiceConnectionHandle, VoiceConnectionState};
 
 use super::direct_message_chat_platform;
+use super::direct_message_editing::use_direct_message_editing;
 use super::direct_message_group::{DirectMessageGroup, prepare_direct_message_groups};
 use super::direct_message_scroll_button::DirectMessageScrollButton;
 use super::direct_message_sending::use_direct_message_operations;
@@ -50,6 +51,8 @@ pub(crate) fn DirectMessageWorkspace(
     let current_user = use_context::<CurrentUserContext>().require_user();
     let application_focus = use_context::<ApplicationFocusContext>();
     let messages = use_signal(Vec::<DmMessageSummary>::new);
+    let (on_start_edit, inline_edit) =
+        use_direct_message_editing(conversation.id.clone(), current_user.id.clone(), messages);
     let appearing_message_ids = use_signal(Vec::<String>::new);
     let removing_message_ids = use_signal(Vec::<String>::new);
     let is_loading_messages = use_signal(|| false);
@@ -145,7 +148,6 @@ pub(crate) fn DirectMessageWorkspace(
     let on_overview_changed = Callback::new(move |_| {
         on_overview_changed.call(());
     });
-
     use_effect({
         let conversation_id = conversation_id.clone();
         move || {
@@ -153,7 +155,6 @@ pub(crate) fn DirectMessageWorkspace(
             load_messages(conversation_id.clone(), state, on_overview_changed);
         }
     });
-
     use_hook({
         let realtime = realtime.clone();
         let status_realtime = realtime.clone();
@@ -173,7 +174,6 @@ pub(crate) fn DirectMessageWorkspace(
                     }
                 }
             });
-
             spawn(async move {
                 let mut events = subscribe_social_events(&realtime);
                 while let Some(event) = events.next().await {
@@ -189,7 +189,6 @@ pub(crate) fn DirectMessageWorkspace(
             });
         }
     });
-
     use_effect({
         let conversation_id = conversation_id.clone();
         move || {
@@ -203,7 +202,6 @@ pub(crate) fn DirectMessageWorkspace(
             }
         }
     });
-
     use_effect(move || {
         let _message_count = messages.len();
         let Some(command) = pending_scroll() else {
@@ -217,18 +215,15 @@ pub(crate) fn DirectMessageWorkspace(
             apply_scroll_command(element, command).await;
         });
     });
-
     use_effect(move || {
         let next_conversation_id = Some(conversation_id.clone());
         if direct_workspace_conversation_id() == next_conversation_id {
             return;
         }
-
         direct_workspace_conversation_id.set(next_conversation_id);
         embedded_chat_height_px.set(None);
         embedded_chat_resize_origin.set(None);
     });
-
     use_effect({
         let conversation_id = conversation.id.clone();
         let target = target.clone();
@@ -243,7 +238,6 @@ pub(crate) fn DirectMessageWorkspace(
                 media_active || direct_call.is_visible_for_conversation(&conversation_id);
             let generation = voice_surface_generation.peek().wrapping_add(1);
             voice_surface_generation.set(generation);
-
             if call_active {
                 if !*displayed_voice_surface.peek() {
                     let chat_open = direct_message_chat_platform::open_by_default();
@@ -261,11 +255,9 @@ pub(crate) fn DirectMessageWorkspace(
                 }
                 return;
             }
-
             if !*displayed_voice_surface.peek() || *voice_surface_exiting.peek() {
                 return;
             }
-
             debug!(%conversation_id, "animating direct call surface exit");
             voice_surface_exiting.set(true);
             spawn(async move {
@@ -277,7 +269,6 @@ pub(crate) fn DirectMessageWorkspace(
             });
         }
     });
-
     rsx! {
         section {
             class: "room-workspace voice-shell relative flex min-h-0 flex-1 flex-col bg-[#08090b]",
@@ -294,7 +285,6 @@ pub(crate) fn DirectMessageWorkspace(
                     let Some((start_y, start_height, workspace_height)) = embedded_chat_resize_origin() else {
                         return;
                     };
-
                     event.prevent_default();
                     let point = event.client_coordinates();
                     let next_height = clamp_embedded_chat_height(
@@ -455,13 +445,18 @@ pub(crate) fn DirectMessageWorkspace(
                                             }
                                             VirtualChatRow {
                                                 row_id: group_key.clone(),
-                                                active: rendered_group_range.contains(&group_index),
+                                                active: rendered_group_range.contains(&group_index)
+                                                     || inline_edit.as_ref().is_some_and(|active| {
+                                                         group.iter().any(|message| message.id == active.message_id)
+                                                     }),
                                                 estimated_height,
                                                 layout: virtual_layout,
                                                 DirectMessageGroup {
                                                     messages: group,
                                                     appearing_message_ids: appearing_message_ids_list.clone(),
                                                     removing_message_ids: removing_message_ids_list.clone(),
+                                                     on_edit: on_start_edit,
+                                                     inline_edit: inline_edit.clone(),
                                                 }
                                             }
                                         }

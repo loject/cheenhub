@@ -32,6 +32,7 @@ pub(crate) use history_loading_state::ChatHistoryLoadingState;
 pub(crate) use history_viewport::use_history_overflow;
 pub(crate) use message_date::{friendly_message_date, full_message_datetime, message_day_key};
 pub(crate) use message_date_divider::ChatMessageDateDivider;
+pub(crate) use message_edit_dialog::InlineMessageEditState;
 pub(crate) use message_group::ChatMessageGroup;
 pub(crate) use message_item::{ChatMessageItem, message_time};
 pub(crate) use messages::{group_consecutive_messages, is_appearing_message};

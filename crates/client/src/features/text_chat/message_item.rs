@@ -20,6 +20,8 @@ pub(crate) fn ChatMessageItem(
     on_delete: EventHandler<String>,
     #[props(default)] on_edit: Option<EventHandler<String>>,
     #[props(default)] inline_edit: Option<InlineMessageEditState>,
+    #[props(default)] external_attachment: bool,
+    #[props(default)] max_edit_chars: Option<usize>,
     #[props(default)] can_pin_messages: bool,
     #[props(default)] is_pinned: bool,
     #[props(default)] on_pin_toggle: Option<EventHandler<String>>,
@@ -62,7 +64,10 @@ pub(crate) fn ChatMessageItem(
     let quick_delete_id = message.id.clone();
     let quick_edit_handler = on_edit.clone();
     let quick_edit_id = message.id.clone();
-    let edited_datetime = message.edited_at.as_deref().map(super::message_date::full_message_datetime);
+    let edited_datetime = message
+        .edited_at
+        .as_deref()
+        .map(super::message_date::full_message_datetime);
 
     rsx! {
         div {
@@ -104,6 +109,8 @@ pub(crate) fn ChatMessageItem(
                     RoomMessageInlineEditor {
                         key: "{message.id}",
                         message: message.clone(),
+                        external_attachment,
+                        max_edit_chars,
                         saving: edit_state.saving,
                         error: edit_state.error,
                         on_cancel: edit_state.on_cancel,

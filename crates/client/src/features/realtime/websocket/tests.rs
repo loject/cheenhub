@@ -56,7 +56,7 @@ fn shutdown_interrupts_blocked_writer_and_reader_without_draining_queue() {
 fn unknown_event_does_not_close_websocket_dispatcher() {
     let (inbound, mut received) = mpsc::unbounded();
     let unknown =
-        r#"{"module":"text_chat","kind":"message_edited","request_id":null,"payload":{}}"#;
+        r#"{"module":"text_chat","kind":"future_message_kind","request_id":null,"payload":{}}"#;
     let known = r#"{"module":"control","kind":"control_ack","request_id":null,"payload":{}}"#;
 
     assert!(dispatch_text_envelope("ws://test", 1, unknown, &inbound));

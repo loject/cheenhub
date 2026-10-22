@@ -2,6 +2,7 @@
 
 pub(crate) mod api;
 mod direct_message_chat_platform;
+mod direct_message_editing;
 mod direct_message_group;
 mod direct_message_image;
 mod direct_message_scroll_button;

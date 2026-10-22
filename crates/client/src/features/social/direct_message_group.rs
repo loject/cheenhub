@@ -6,8 +6,9 @@ use dioxus::prelude::*;
 use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::text_chat::{
-    ChatMessageItem, estimated_group_height, estimated_image_preview_height, friendly_message_date,
-    full_message_datetime, is_appearing_message, message_day_key, message_time,
+    ChatMessageItem, InlineMessageEditState, estimated_group_height,
+    estimated_image_preview_height, friendly_message_date, full_message_datetime,
+    is_appearing_message, message_day_key, message_time,
 };
 
 use super::direct_message_image::DirectMessageImage;
@@ -68,6 +69,8 @@ pub(super) fn DirectMessageGroup(
     messages: Vec<DmMessageSummary>,
     appearing_message_ids: Vec<String>,
     removing_message_ids: Vec<String>,
+    on_edit: EventHandler<String>,
+    inline_edit: Option<InlineMessageEditState>,
 ) -> Element {
     let Some(first_message) = messages.first().cloned() else {
         return rsx! {};
@@ -116,6 +119,10 @@ pub(super) fn DirectMessageGroup(
                             show_hover_time: index > 0,
                             can_delete_messages: false,
                             on_delete: move |_| {},
+                            on_edit: Some(on_edit),
+                            inline_edit: inline_edit.clone(),
+                            external_attachment: message.image.is_some(),
+                            max_edit_chars: Some(4000),
                             if let Some(image) = message.image.clone() {
                                 DirectMessageImage {
                                     conversation_id: message.conversation_id.clone(),

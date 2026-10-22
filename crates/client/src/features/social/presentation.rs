@@ -197,9 +197,9 @@ pub(super) fn refresh_messages(
     on_overview_changed: Callback<()>,
 ) {
     spawn(async move {
-        match api::list_dm_messages(&conversation_id, None).await {
-            Ok(response) => {
-                let next_messages = response.messages;
+        let oldest_loaded_id = (state.messages)().first().map(|message| message.id.clone());
+        match fetch_loaded_dm_messages(&conversation_id, oldest_loaded_id.as_deref()).await {
+            Ok(next_messages) => {
                 debug!(
                     conversation_id = %conversation_id,
                     message_count = next_messages.len(),
@@ -253,94 +253,60 @@ pub(super) fn push_message_with_motion(
     true
 }
 
+/// Перечитывает все открытые страницы истории: realtime-событие не содержит ID правки.
+async fn fetch_loaded_dm_messages(
+    conversation_id: &str,
+    oldest_loaded_id: Option<&str>,
+) -> Result<Vec<DmMessageSummary>, String> {
+    let mut response = api::list_dm_messages(conversation_id, None).await?;
+    let mut latest = response.messages;
+    while response.has_more
+        && oldest_loaded_id.is_some_and(|oldest| !latest.iter().any(|message| message.id == oldest))
+    {
+        let Some(cursor) = latest.first().map(|message| message.id.clone()) else {
+            break;
+        };
+        response = api::list_dm_messages(conversation_id, Some(&cursor)).await?;
+        if response.messages.is_empty() {
+            break;
+        }
+        let mut older = response.messages;
+        older.extend(latest);
+        latest = older;
+    }
+    Ok(latest)
+}
+
 fn set_messages_with_motion(
     mut messages: Signal<Vec<DmMessageSummary>>,
     mut appearing_message_ids: Signal<Vec<String>>,
-    mut removing_message_ids: Signal<Vec<String>>,
+    _removing_message_ids: Signal<Vec<String>>,
     next_messages: Vec<DmMessageSummary>,
 ) {
-    let previous_messages = messages();
-    let added_ids = next_messages
-        .iter()
-        .filter(|message| {
-            !previous_messages
-                .iter()
-                .any(|previous| previous.id == message.id)
-        })
-        .map(|message| message.id.clone())
-        .collect::<Vec<_>>();
-    let removed_ids = previous_messages
-        .iter()
-        .filter(|message| {
-            !next_messages
-                .iter()
-                .any(|next_message| next_message.id == message.id)
-        })
-        .map(|message| message.id.clone())
-        .collect::<Vec<_>>();
-
-    removing_message_ids.write().retain(|message_id| {
-        !next_messages
-            .iter()
-            .any(|message| message.id == *message_id)
-    });
-
-    if added_ids.is_empty() && removed_ids.is_empty() {
-        messages.set(next_messages);
-        return;
-    }
-
-    let mut combined_messages = Vec::new();
-    for previous in &previous_messages {
-        if let Some(next) = next_messages
-            .iter()
-            .find(|next_message| next_message.id == previous.id)
-        {
-            combined_messages.push(next.clone());
-        } else {
-            combined_messages.push(previous.clone());
-        }
-    }
-    for next in next_messages {
-        if !combined_messages
-            .iter()
-            .any(|message| message.id == next.id)
-        {
-            combined_messages.push(next);
-        }
-    }
-
-    for added_id in &added_ids {
+    let (merged, added_ids) = merge_direct_messages(messages(), next_messages);
+    for added_id in added_ids {
         appearing_message_ids.write().push(added_id.clone());
-        clear_appearing_after(appearing_message_ids, added_id.clone());
+        clear_appearing_after(appearing_message_ids, added_id);
     }
-    for removed_id in &removed_ids {
-        removing_message_ids.write().push(removed_id.clone());
-    }
-    messages.set(combined_messages);
+    messages.set(merged);
+}
 
-    if !removed_ids.is_empty() {
-        spawn(async move {
-            sleep_duration(Duration::from_millis(180)).await;
-            let active_removed_ids = {
-                let current_removing_ids = removing_message_ids();
-                removed_ids
-                    .iter()
-                    .filter(|message_id| current_removing_ids.contains(message_id))
-                    .cloned()
-                    .collect::<Vec<_>>()
-            };
-            if active_removed_ids.is_empty() {
-                return;
-            }
-            messages
-                .write()
-                .retain(|message| !active_removed_ids.contains(&message.id));
-            removing_message_ids
-                .write()
-                .retain(|message_id| !active_removed_ids.contains(message_id));
-        });
+/// Обновляет совпадающие сообщения, не теряя ранее загруженные страницы истории.
+fn merge_direct_messages(
+    mut previous: Vec<DmMessageSummary>,
+    incoming: Vec<DmMessageSummary>,
+) -> (Vec<DmMessageSummary>, Vec<String>) {
+    let mut added_ids = Vec::new();
+    for next in incoming {
+        if let Some(existing) = previous.iter_mut().find(|item| item.id == next.id) {
+            *existing = next;
+        } else {
+            added_ids.push(next.id.clone());
+            previous.push(next);
+        }
     }
+    previous.sort_by_key(|message| message.seq);
+    (previous, added_ids)
 }
 
 fn clear_appearing_after(mut appearing_message_ids: Signal<Vec<String>>, message_id: String) {
@@ -364,7 +330,7 @@ pub(super) fn dm_as_text_message(message: DmMessageSummary) -> TextChatMessage {
         attachments: Vec::new(),
         delivery_status: message.delivery_status,
         created_at: message.created_at,
-        edited_at: None,
+        edited_at: message.edited_at,
     }
 }
 
@@ -415,3 +381,6 @@ async fn mark_latest_message_read(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
