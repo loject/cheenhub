@@ -4,6 +4,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use cheenhub_contracts::realtime::{
     ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
+    EditMessage, EditMessageAccepted,
     LoadChatImage, LoadRoomHistory, MessageDeletedPayload, RealtimeEnvelope, RealtimeKind,
     RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
     UploadChatImage,
@@ -18,6 +19,8 @@ use crate::features::realtime::{RealtimeError, RealtimeHandle};
 pub(crate) enum TextChatEvent {
     /// A new message was created.
     MessageCreated(TextChatMessage),
+    /// Подтверждённое сервером изменение текста сообщения комнаты.
+    MessageEdited(TextChatMessage),
     /// A message was removed by its author.
     MessageDeleted(MessageDeletedPayload),
 }
@@ -60,6 +63,23 @@ pub(crate) async fn send_text_message(
                 body,
                 attachment_ids: attachment_id.into_iter().collect(),
             },
+        )
+        .await
+}
+
+/// Редактирует текст своего сообщения комнаты и ждёт сохранения сервером.
+pub(crate) async fn edit_text_message(
+    realtime: &RealtimeHandle,
+    server_id: String,
+    room_id: String,
+    message_id: String,
+    body: String,
+) -> Result<EditMessageAccepted, RealtimeError> {
+    realtime
+        .request(
+            RealtimeModule::TextChat,
+            RealtimeKind::TextChat(TextChatKind::EditMessage),
+            EditMessage { server_id, room_id, message_id, body },
         )
         .await
 }
@@ -122,7 +142,7 @@ pub(crate) async fn delete_text_message(
         .await
 }
 
-/// Subscribes to inbound text chat events (creates and deletes) for this tab.
+/// Подписывается на создание, редактирование и удаление сообщений комнат.
 pub(crate) fn subscribe_text_chat(
     realtime: &RealtimeHandle,
 ) -> mpsc::UnboundedReceiver<TextChatEvent> {
@@ -152,6 +172,15 @@ fn decode_text_chat_event(envelope: RealtimeEnvelope) -> Option<TextChatEvent> {
         RealtimeKind::TextChat(TextChatKind::MessageCreated) => {
             let message = serde_json::from_value::<TextChatMessage>(envelope.payload).ok()?;
             Some(TextChatEvent::MessageCreated(message))
+        }
+        RealtimeKind::TextChat(TextChatKind::MessageEdited) => {
+            let message = serde_json::from_value::<TextChatMessage>(envelope.payload)
+                .map_err(|error| {
+                    dioxus::prelude::warn!(%error, "invalid text chat MessageEdited payload");
+                    error
+                })
+                .ok()?;
+            Some(TextChatEvent::MessageEdited(message))
         }
         RealtimeKind::TextChat(TextChatKind::MessageDeleted) => {
             let payload = serde_json::from_value::<MessageDeletedPayload>(envelope.payload).ok()?;

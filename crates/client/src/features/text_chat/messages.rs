@@ -52,6 +52,39 @@ pub(super) fn remove_message(messages: &mut Signal<Vec<TextChatMessage>>, messag
     messages.set(next);
 }
 
+/// Обновляет существующее сообщение, сохраняя более позднюю редакцию при перестановке событий.
+pub(super) fn apply_message_edit(
+    messages: &mut [TextChatMessage],
+    edited: TextChatMessage,
+) -> bool {
+    let Some(current) = messages.iter_mut().find(|current| {
+        current.id == edited.id
+            && current.server_id == edited.server_id
+            && current.room_id == edited.room_id
+    }) else {
+        return false;
+    };
+    if edited.edited_at.is_none() {
+        return false;
+    }
+    if let (Some(current_time), Some(next_time)) = (&current.edited_at, &edited.edited_at) {
+        let current_parsed = chrono::DateTime::parse_from_rfc3339(current_time);
+        let next_parsed = chrono::DateTime::parse_from_rfc3339(next_time);
+        if let (Ok(current_parsed), Ok(next_parsed)) = (current_parsed, next_parsed) {
+            if current_parsed > next_parsed {
+                return false;
+            }
+        } else if current_time > next_time {
+            return false;
+        }
+    }
+    if current == &edited {
+        return false;
+    }
+    *current = edited;
+    true
+}
+
 pub(crate) fn is_appearing_message(message_id: &str, appearing_message_ids: &[String]) -> bool {
     appearing_message_ids
         .iter()
@@ -81,3 +114,6 @@ pub(crate) fn group_consecutive_messages(
 
     groups
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,6 +1,6 @@
 //! Состояние закреплений комнаты, загрузка и согласование realtime-событий.
 
-use cheenhub_contracts::realtime::PinnedTextMessage;
+use cheenhub_contracts::realtime::{PinnedTextMessage, TextChatMessage};
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
@@ -246,6 +246,23 @@ impl RoomPinsState {
         self.pins.set(all);
         let next_revision = self.revision.peek().wrapping_add(1);
         self.revision.set(next_revision);
+    }
+
+    /// Обновляет текст закреплённого сообщения по событию редакции.
+    pub(super) fn apply_edited_message(mut self, message: &TextChatMessage) {
+        let mut pins = self.pins.read().to_vec();
+        let mut changed = false;
+        for pin in &mut pins {
+            changed |= super::messages::apply_message_edit(
+                std::slice::from_mut(&mut pin.message),
+                message.clone(),
+            );
+        }
+        if changed {
+            self.pins.set(pins);
+            let next_revision = self.revision.peek().wrapping_add(1);
+            self.revision.set(next_revision);
+        }
     }
 
     /// Убирает закрепление из локального списка после открепления или удаления сообщения.

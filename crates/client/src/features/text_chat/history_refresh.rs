@@ -10,7 +10,7 @@ use futures_util::future::{Either, select};
 use futures_util::{FutureExt, StreamExt};
 
 use super::history::{HistoryState, HistoryTarget, INITIAL_HISTORY_TIMEOUT};
-use super::{realtime, scroll::ScrollCommand, scroll_anchor_runtime::capture_anchor};
+use super::{messages::apply_message_edit, realtime, scroll::ScrollCommand, scroll_anchor_runtime::capture_anchor};
 use crate::features::realtime::RealtimeError;
 use crate::features::runtime::sleep_duration;
 
@@ -63,6 +63,11 @@ impl HistoryRefresh {
                 .retain(|message| !compare_message(message, oldest).is_lt());
             self.has_more |= self.messages.len() < before_trim;
         }
+        let current_edits = current
+            .iter()
+            .filter(|message| message.edited_at.is_some())
+            .cloned()
+            .collect::<Vec<_>>();
         let current_ids = current
             .iter()
             .map(|message| message.id.as_str())
@@ -84,6 +89,9 @@ impl HistoryRefresh {
             if !saved_ids.contains(message.id.as_str()) && merged_ids.insert(message.id.clone()) {
                 self.messages.push(message);
             }
+        }
+        for live in &current_edits {
+            apply_message_edit(&mut self.messages, live.clone());
         }
         self.messages
             .retain(|message| !self.deleted_ids.contains(&message.id));

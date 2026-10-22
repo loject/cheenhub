@@ -105,3 +105,17 @@ fn gap_message_deleted_during_refresh_is_not_resurrected() {
     let (merged, _) = refresh.finish(messages(&["02", "04"]));
     assert_eq!(ids(merged), ["02", "03", "05"]);
 }
+
+#[test]
+fn reconnect_keeps_live_edit_when_server_page_was_fetched_before_edit() {
+    let saved = messages(&["02"]);
+    let mut refresh = HistoryRefresh::new(saved.clone());
+    assert_eq!(refresh.push_page(page(&["02"], false)), None);
+    let mut updated = saved;
+    updated[0].body = "Изменённый текст".to_owned();
+    updated[0].edited_at = Some("2026-10-23T05:00:00Z".to_owned());
+
+    let (merged, _) = refresh.finish(updated);
+    assert_eq!(merged[0].body, "Изменённый текст");
+    assert_eq!(merged[0].edited_at.as_deref(), Some("2026-10-23T05:00:00Z"));
+}

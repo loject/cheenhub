@@ -9,6 +9,7 @@ mod history_viewport;
 mod image_attachment;
 mod message_date;
 mod message_date_divider;
+mod message_edit_dialog;
 mod message_group;
 mod message_item;
 mod messages;
