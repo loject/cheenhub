@@ -1,14 +1,61 @@
 //! Фрейминг realtime-потока с префиксом длины.
 
 use bytes::{BufMut, Bytes, BytesMut};
-use cheenhub_contracts::realtime::RealtimeEnvelope;
+use cheenhub_contracts::realtime::{RealtimeEnvelope, RealtimeKind, RealtimeModule};
+use dioxus::prelude::warn;
 use futures_util::lock::Mutex;
 use std::rc::Rc;
+use uuid::Uuid;
 use web_transport::{RecvStream, SendStream};
 
 use super::error::RealtimeError;
 
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
+
+#[cfg(test)]
+mod tests;
+
+#[derive(serde::Deserialize)]
+struct RawRealtimeEnvelope {
+    module: String,
+    kind: String,
+    request_id: Option<Uuid>,
+    payload: serde_json::Value,
+}
+
+/// Результат чтения конверта: известное сообщение или неизвестное событие.
+pub(crate) enum InboundRealtimeEnvelope {
+    /// Известный модуль и тип сообщения.
+    Known(RealtimeEnvelope),
+    /// Неизвестный модуль или тип; событие можно безопасно пропустить.
+    Unknown { module: String, kind: String },
+}
+
+/// Разбирает JSON, отличая новые типы событий от поврежденного конверта.
+pub(crate) fn decode_inbound_envelope(
+    bytes: &[u8],
+) -> Result<InboundRealtimeEnvelope, RealtimeError> {
+    let raw: RawRealtimeEnvelope = serde_json::from_slice(bytes).map_err(|error| {
+        RealtimeError::new(format!("Failed to decode realtime envelope: {error}"))
+    })?;
+    let module = serde_json::from_value::<RealtimeModule>(serde_json::Value::String(
+        raw.module.clone(),
+    ));
+    let kind = serde_json::from_value::<RealtimeKind>(serde_json::Value::String(raw.kind.clone()));
+
+    match (module, kind) {
+        (Ok(module), Ok(kind)) => Ok(InboundRealtimeEnvelope::Known(RealtimeEnvelope {
+            module,
+            kind,
+            request_id: raw.request_id,
+            payload: raw.payload,
+        })),
+        _ => Ok(InboundRealtimeEnvelope::Unknown {
+            module: raw.module,
+            kind: raw.kind,
+        }),
+    }
+}
 
 /// Записывает один JSON-фрейм конверта в надежный поток.
 pub(crate) async fn write_envelope(
@@ -21,17 +68,22 @@ pub(crate) async fn write_envelope(
     write_frame(send, &bytes).await
 }
 
-/// Читает один JSON-фрейм конверта из надежного потока.
+/// Читает следующий известный конверт, пропуская неизвестные события.
 pub(crate) async fn read_envelope(
     recv: &mut RecvStream,
 ) -> Result<Option<RealtimeEnvelope>, RealtimeError> {
-    let Some(frame) = read_frame(recv).await? else {
-        return Ok(None);
-    };
+    loop {
+        let Some(frame) = read_frame(recv).await? else {
+            return Ok(None);
+        };
 
-    serde_json::from_slice(&frame)
-        .map(Some)
-        .map_err(|error| RealtimeError::new(format!("Failed to decode realtime envelope: {error}")))
+        match decode_inbound_envelope(&frame)? {
+            InboundRealtimeEnvelope::Known(envelope) => return Ok(Some(envelope)),
+            InboundRealtimeEnvelope::Unknown { module, kind } => {
+                warn!(%module, %kind, "ignoring unknown realtime event");
+            }
+        }
+    }
 }
 
 async fn write_frame(send: &Rc<Mutex<SendStream>>, payload: &[u8]) -> Result<(), RealtimeError> {

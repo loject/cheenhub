@@ -1,5 +1,5 @@
 use super::*;
-use futures_util::{FutureExt, future::Abortable};
+use futures_util::{FutureExt, StreamExt, future::Abortable};
 use std::{cell::Cell, rc::Rc};
 
 #[test]
@@ -50,4 +50,22 @@ fn shutdown_interrupts_blocked_writer_and_reader_without_draining_queue() {
     assert!(writer_dropped.get());
     assert!(reader_dropped.get());
     assert!(cloned_sender.is_closed());
+}
+
+#[test]
+fn unknown_event_does_not_close_websocket_dispatcher() {
+    let (inbound, mut received) = mpsc::unbounded();
+    let unknown = r#"{"module":"text_chat","kind":"message_edited","request_id":null,"payload":{}}"#;
+    let known = r#"{"module":"control","kind":"control_ack","request_id":null,"payload":{}}"#;
+
+    assert!(dispatch_text_envelope("ws://test", 1, unknown, &inbound));
+    assert!(received.next().now_or_never().is_none());
+
+    assert!(dispatch_text_envelope("ws://test", 1, known, &inbound));
+    let event = received
+        .next()
+        .now_or_never()
+        .expect("known event must be delivered")
+        .expect("dispatcher must stay open");
+    assert!(event.has_matching_module_kind());
 }

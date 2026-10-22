@@ -10,6 +10,7 @@ use dioxus::prelude::{debug, warn};
 use futures_channel::mpsc;
 use futures_util::future::{AbortHandle, AbortRegistration};
 
+use super::framing::{self, InboundRealtimeEnvelope};
 use super::handle::DatagramListeners;
 
 pub(super) use native::{spawn_reader, spawn_writer, split};
@@ -70,8 +71,12 @@ fn dispatch_text_envelope(
     text: &str,
     inbound: &mpsc::UnboundedSender<RealtimeEnvelope>,
 ) -> bool {
-    let envelope = match serde_json::from_str::<RealtimeEnvelope>(text) {
-        Ok(envelope) => envelope,
+    let envelope = match framing::decode_inbound_envelope(text.as_bytes()) {
+        Ok(InboundRealtimeEnvelope::Known(envelope)) => envelope,
+        Ok(InboundRealtimeEnvelope::Unknown { module, kind }) => {
+            warn!(%url, %generation, %module, %kind, "ignoring unknown WebSocket realtime event");
+            return true;
+        }
         Err(error) => {
             warn!(
                 %url,
