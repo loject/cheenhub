@@ -64,14 +64,17 @@ pub(crate) fn HostDashboardPage() -> Element {
     }
 }
 
-/// Шапка страницы со статусом источника системных метрик.
+/// Шапка страницы с версией сборки и статусом источника системных метрик.
 fn header_block(metrics: Option<&HostMetricsResponse>) -> Element {
+    let app_version = env!("CHEENHUB_APP_VERSION");
+
     rsx! {
         div { class: "flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between",
             div {
                 p { class: "text-[11px] font-medium uppercase tracking-[0.20em] text-zinc-600", "Настройки хоста" }
                 h1 { class: "mt-1 text-balance text-[22px] font-semibold tracking-[-0.04em] text-zinc-50", "Нагрузка на систему" }
                 p { class: "mt-1.5 max-w-2xl text-pretty text-[13px] leading-5 text-zinc-500", "Следи за ресурсами CheenHub, базы данных и остальной системы в реальном времени." }
+                p { class: "mt-2 text-[11px] font-medium text-zinc-500", "CheenHub · {app_version}" }
             }
             match metrics {
                 Some(metrics) => rsx! {
