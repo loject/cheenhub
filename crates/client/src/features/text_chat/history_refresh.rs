@@ -10,7 +10,10 @@ use futures_util::future::{Either, select};
 use futures_util::{FutureExt, StreamExt};
 
 use super::history::{HistoryState, HistoryTarget, INITIAL_HISTORY_TIMEOUT};
-use super::{messages::apply_message_edit, realtime, scroll::ScrollCommand, scroll_anchor_runtime::capture_anchor};
+use super::{
+    messages::apply_message_edit, realtime, scroll::ScrollCommand,
+    scroll_anchor_runtime::capture_anchor,
+};
 use crate::features::realtime::RealtimeError;
 use crate::features::runtime::sleep_duration;
 

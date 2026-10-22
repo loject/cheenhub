@@ -154,7 +154,8 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                         }
                     }
                     TextChatEvent::MessageEdited(message) => {
-                        if message.server_id == event_server_id && message.room_id == event_room_id {
+                        if message.server_id == event_server_id && message.room_id == event_room_id
+                        {
                             let mut current = messages();
                             if apply_message_edit(&mut current, message.clone()) {
                                 messages.set(current);
@@ -167,7 +168,10 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                         if payload.room_id == event_room_id && payload.server_id == event_server_id
                         {
                             let message_id = payload.message_id.clone();
-                            if editing_message().as_ref().is_some_and(|active| active.id == message_id) {
+                            if editing_message()
+                                .as_ref()
+                                .is_some_and(|active| active.id == message_id)
+                            {
                                 editing_message.set(None);
                             }
                             pins_state.remove(&message_id);
@@ -222,9 +226,10 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
         if edit_saving() {
             return;
         }
-        if let Some(message) = messages().into_iter().find(|message| {
-            message.id == message_id && message.author_user_id == current_user.id
-        }) {
+        if let Some(message) = messages()
+            .into_iter()
+            .find(|message| message.id == message_id && message.author_user_id == current_user.id)
+        {
             edit_error.set(None);
             editing_message.set(Some(message));
         }
@@ -255,7 +260,9 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 room_id.clone(),
                 message_id.clone(),
                 body,
-            ).await {
+            )
+            .await
+            {
                 Ok(accepted) => {
                     let updated = accepted.message;
                     let mut current = messages();
@@ -269,7 +276,8 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                 Err(error) => {
                     warn!(%server_id, %room_id, %message_id, %error, "room message edit failed");
                     edit_error.set(Some(
-                        "Не удалось сохранить изменения. Проверь соединение и повтори попытку.".to_owned()
+                        "Не удалось сохранить изменения. Проверь соединение и повтори попытку."
+                            .to_owned(),
                     ));
                 }
             }

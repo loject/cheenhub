@@ -4,10 +4,9 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use cheenhub_contracts::realtime::{
     ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
-    EditMessage, EditMessageAccepted,
-    LoadChatImage, LoadRoomHistory, MessageDeletedPayload, RealtimeEnvelope, RealtimeKind,
-    RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
-    UploadChatImage,
+    EditMessage, EditMessageAccepted, LoadChatImage, LoadRoomHistory, MessageDeletedPayload,
+    RealtimeEnvelope, RealtimeKind, RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted,
+    TextChatKind, TextChatMessage, UploadChatImage,
 };
 use futures_channel::mpsc;
 use futures_util::StreamExt;
@@ -79,7 +78,12 @@ pub(crate) async fn edit_text_message(
         .request(
             RealtimeModule::TextChat,
             RealtimeKind::TextChat(TextChatKind::EditMessage),
-            EditMessage { server_id, room_id, message_id, body },
+            EditMessage {
+                server_id,
+                room_id,
+                message_id,
+                body,
+            },
         )
         .await
 }
