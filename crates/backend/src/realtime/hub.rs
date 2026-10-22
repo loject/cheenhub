@@ -387,12 +387,21 @@ impl RealtimeHub {
             let prepared = &prepared;
             async move {
                 if let Err(error) = stream.send.send_prepared_envelope(prepared).await {
+                    let transport = match &stream.send {
+                        EnvelopeSink::WebTransport(_) => "webtransport",
+                        EnvelopeSink::WebSocket(_) => "websocket",
+                    };
+                    let started_at = Instant::now();
                     warn!(
                         stream_id = %stream.id,
                         ?module,
+                        ?kind,
+                        %transport,
                         %server_id,
                         user_id = %stream.user_id,
-                        %error,
+                        elapsed_ms = started_at.elapsed().as_millis(),
+                        error = %format_args!("{error:#}"),
+                        root_cause = %error.root_cause(),
                         "failed to fan out realtime event"
                     );
                 }
