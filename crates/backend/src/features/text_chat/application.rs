@@ -18,10 +18,12 @@ use crate::features::text_chat::validation;
 use crate::state::AppState;
 
 mod attachments;
+mod edits;
 mod history_authors;
 mod pins;
 
 pub(crate) use attachments::{chat_image, upload_chat_image};
+pub(crate) use edits::edit_message;
 pub(crate) use pins::{list_pinned_messages, pin_message, unpin_message};
 
 /// Загружает последние текстовые сообщения комнаты.
@@ -136,6 +138,7 @@ pub(crate) async fn send_message(
         body,
         attachments,
         created_at: Utc::now(),
+        edited_at: None,
         deleted_at: None,
         deleted_by_user_id: None,
     };
@@ -143,7 +146,9 @@ pub(crate) async fn send_message(
     let state_for_insert = state.clone();
     let message_for_insert = message.clone();
 
-    if let Err(error) = fanout_message_created(state, payload.clone()).await {
+    if let Err(error) =
+        fanout_room_message(state, payload.clone(), TextChatKind::MessageCreated).await
+    {
         error!(
             message_id = %message.id,
             server_id = %message.server_id,
@@ -319,7 +324,11 @@ pub(super) async fn ensure_room_write_allowed(
     ))
 }
 
-async fn fanout_message_created(state: &AppState, message: TextChatMessage) -> anyhow::Result<()> {
+async fn fanout_room_message(
+    state: &AppState,
+    message: TextChatMessage,
+    kind: TextChatKind,
+) -> anyhow::Result<()> {
     let server_id = Uuid::parse_str(&message.server_id)?;
     let room_id = Uuid::parse_str(&message.room_id)?;
     let candidates = crate::features::servers::realtime::server_recipients(
@@ -340,6 +349,7 @@ async fn fanout_message_created(state: &AppState, message: TextChatMessage) -> a
                     stream_id = %candidate.stream_id,
                     user_id = %candidate.user_id,
                     %error,
+                    ?kind,
                     "failed to evaluate text chat fanout policy"
                 );
             }
@@ -351,7 +361,7 @@ async fn fanout_message_created(state: &AppState, message: TextChatMessage) -> a
         .fanout_to_streams(
             RealtimeModule::TextChat,
             &server_id,
-            RealtimeKind::TextChat(TextChatKind::MessageCreated),
+            RealtimeKind::TextChat(kind),
             &stream_ids,
             message,
         )
@@ -469,6 +479,7 @@ fn message_summary(message: &TextMessage, author_avatar_url: Option<String>) -> 
             .collect(),
         delivery_status: None,
         created_at: message.created_at.to_rfc3339(),
+        edited_at: message.edited_at.as_ref().map(|value| value.to_rfc3339()),
     }
 }
 

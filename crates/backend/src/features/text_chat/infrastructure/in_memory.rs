@@ -124,6 +124,52 @@ impl TextChatStore for InMemoryTextChatStore {
         })
     }
 
+    async fn find_editable_text_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+        author_user_id: &Uuid,
+    ) -> anyhow::Result<Option<TextMessage>> {
+        let message = self
+            .messages
+            .lock()
+            .map_err(|_| poisoned())?
+            .iter()
+            .find(|message| {
+                message.server_id == *server_id
+                    && message.room_id == *room_id
+                    && message.id == *message_id
+                    && message.author_user_id == *author_user_id
+                    && message.deleted_at.is_none()
+            })
+            .cloned();
+        Ok(message)
+    }
+
+    async fn edit_text_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+        author_user_id: &Uuid,
+        body: String,
+    ) -> anyhow::Result<Option<TextMessage>> {
+        let mut messages = self.messages.lock().map_err(|_| poisoned())?;
+        let Some(message) = messages.iter_mut().find(|message| {
+            message.server_id == *server_id
+                && message.room_id == *room_id
+                && message.id == *message_id
+                && message.author_user_id == *author_user_id
+                && message.deleted_at.is_none()
+        }) else {
+            return Ok(None);
+        };
+        message.body = body;
+        message.edited_at = Some(Utc::now());
+        Ok(Some(message.clone()))
+    }
+
     async fn soft_delete_message(
         &self,
         server_id: &Uuid,

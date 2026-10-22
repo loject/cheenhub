@@ -41,6 +41,7 @@ async fn fill_messages(store: &dyn TextChatStore, now: DateTime<Utc>) {
                 body: "message".to_owned(),
                 attachments: Vec::new(),
                 created_at,
+                edited_at: None,
                 deleted_at: None,
                 deleted_by_user_id: None,
             })
@@ -109,6 +110,7 @@ async fn in_memory_window_boundary_keeps_the_lower_bound_exclusive() {
                 body: "message".to_owned(),
                 attachments: Vec::new(),
                 created_at,
+                edited_at: None,
                 deleted_at: None,
                 deleted_by_user_id: None,
             })

@@ -1,5 +1,7 @@
 //! Postgres-backed text chat storage.
 
+mod edits;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_orm::sea_query::Expr;
@@ -44,6 +46,7 @@ impl TextChatStore for PostgresTextChatStore {
             author_nickname: Set(message.author_nickname),
             body: Set(message.body),
             created_at: Set(message.created_at),
+            edited_at: Set(message.edited_at),
             deleted_at: Set(None),
             deleted_by_user_id: Set(None),
         }
@@ -154,6 +157,42 @@ impl TextChatStore for PostgresTextChatStore {
         hydrate_attachments(&self.database, &mut messages).await?;
 
         Ok(TextMessagePage { messages, has_more })
+    }
+
+    async fn find_editable_text_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+        author_user_id: &Uuid,
+    ) -> anyhow::Result<Option<TextMessage>> {
+        edits::find_editable_text_message(
+            &self.database,
+            server_id,
+            room_id,
+            message_id,
+            author_user_id,
+        )
+        .await
+    }
+
+    async fn edit_text_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+        author_user_id: &Uuid,
+        body: String,
+    ) -> anyhow::Result<Option<TextMessage>> {
+        edits::edit_text_message(
+            &self.database,
+            server_id,
+            room_id,
+            message_id,
+            author_user_id,
+            body,
+        )
+        .await
     }
 
     async fn soft_delete_message(
@@ -371,6 +410,7 @@ impl From<text_messages::Model> for TextMessage {
             body: row.body,
             attachments: Vec::new(),
             created_at: row.created_at,
+            edited_at: row.edited_at,
             deleted_at: row.deleted_at,
             deleted_by_user_id: row.deleted_by_user_id,
         }

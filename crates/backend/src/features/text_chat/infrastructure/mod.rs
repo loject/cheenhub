@@ -70,6 +70,27 @@ pub(crate) trait TextChatStore: Send + Sync {
         before_message_id: Option<&Uuid>,
     ) -> anyhow::Result<TextMessagePage>;
 
+    /// Находит неудалённое сообщение указанного автора и комнаты вместе с вложениями.
+    async fn find_editable_text_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+        author_user_id: &Uuid,
+    ) -> anyhow::Result<Option<TextMessage>>;
+
+    /// Атомарно изменяет только текст собственного неудалённого сообщения.
+    ///
+    /// Возвращает None, если автор, комната или состояние сообщения не совпадают.
+    async fn edit_text_message(
+        &self,
+        server_id: &Uuid,
+        room_id: &Uuid,
+        message_id: &Uuid,
+        author_user_id: &Uuid,
+        body: String,
+    ) -> anyhow::Result<Option<TextMessage>>;
+
     /// Мягко удаляет сообщение, фиксируя, кто его удалил.
     ///
     /// Удаление всегда ограничено сообщением, которое реально принадлежит

@@ -48,6 +48,7 @@ async fn cannot_delete_message_from_foreign_server_via_owned_room() {
             body: "secret".to_owned(),
             attachments: Vec::new(),
             created_at: Utc::now(),
+            edited_at: None,
             deleted_at: None,
             deleted_by_user_id: None,
         })

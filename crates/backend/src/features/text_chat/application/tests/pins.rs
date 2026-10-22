@@ -33,6 +33,7 @@ async fn add_message(
             body: "Важное сообщение".to_owned(),
             attachments: Vec::new(),
             created_at: Utc::now(),
+            edited_at: None,
             deleted_at: None,
             deleted_by_user_id: None,
         })

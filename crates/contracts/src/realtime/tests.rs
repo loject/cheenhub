@@ -403,6 +403,7 @@ fn avatar_fields_round_trip_in_realtime_payloads() {
         attachments: Vec::new(),
         delivery_status: None,
         created_at: "2026-05-13T00:00:00Z".to_owned(),
+        edited_at: None,
     };
     let decoded: TextChatMessage =
         serde_json::from_str(&serde_json::to_string(&message).expect("message serializes"))
@@ -419,4 +420,22 @@ fn avatar_fields_round_trip_in_realtime_payloads() {
         serde_json::from_str(&serde_json::to_string(&participant).expect("participant serializes"))
             .expect("participant decodes");
     assert_eq!(decoded.avatar_url, participant.avatar_url);
+}
+
+#[test]
+fn message_edited_kind_and_optional_edit_timestamp_preserve_wire_compatibility() {
+    let kind = RealtimeKind::TextChat(TextChatKind::MessageEdited);
+    assert_eq!(serde_json::to_value(kind).unwrap(), "message_edited");
+
+    let legacy = serde_json::json!({
+        "id": "message-id",
+        "server_id": "server-id",
+        "room_id": "room-id",
+        "author_user_id": "user-id",
+        "author_nickname": "Автор",
+        "body": "Исходный текст",
+        "created_at": "2026-10-23T00:00:00Z"
+    });
+    let message: TextChatMessage = serde_json::from_value(legacy).expect("legacy message decodes");
+    assert_eq!(message.edited_at, None);
 }

@@ -42,6 +42,7 @@ mod m20261016_000038_create_host_registration_settings;
 mod m20261017_000039_move_legacy_legal_acceptance;
 mod m20261018_000040_add_user_kind_and_system_accounts;
 mod m20261019_000041_create_text_message_pins;
+mod m20261023_000042_add_text_message_edited_at;
 #[cfg(test)]
 mod tests;
 
@@ -95,6 +96,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261017_000039_move_legacy_legal_acceptance::Migration),
             Box::new(m20261018_000040_add_user_kind_and_system_accounts::Migration),
             Box::new(m20261019_000041_create_text_message_pins::Migration),
+            Box::new(m20261023_000042_add_text_message_edited_at::Migration),
         ]
     }
 }

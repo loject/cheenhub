@@ -38,9 +38,8 @@ pub(crate) fn decode_inbound_envelope(
     let raw: RawRealtimeEnvelope = serde_json::from_slice(bytes).map_err(|error| {
         RealtimeError::new(format!("Failed to decode realtime envelope: {error}"))
     })?;
-    let module = serde_json::from_value::<RealtimeModule>(serde_json::Value::String(
-        raw.module.clone(),
-    ));
+    let module =
+        serde_json::from_value::<RealtimeModule>(serde_json::Value::String(raw.module.clone()));
     let kind = serde_json::from_value::<RealtimeKind>(serde_json::Value::String(raw.kind.clone()));
 
     match (module, kind) {

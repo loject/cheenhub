@@ -141,6 +141,7 @@ async fn insert_message(
             body: "message".to_owned(),
             attachments: Vec::new(),
             created_at,
+            edited_at: None,
             deleted_at: None,
             deleted_by_user_id: None,
         })

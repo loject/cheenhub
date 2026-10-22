@@ -31,11 +31,11 @@ pub use social::{
 };
 pub use text_chat::{
     ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
-    ListPinnedMessages, LoadChatImage, LoadRoomHistory, MessageDeletedPayload, PinMessage,
-    PinMessageAccepted, PinnedMessages, PinnedTextMessage, RoomHistory, SendMessage,
-    SendMessageAccepted, StartTyping, StopTyping, TextChatImageAttachment, TextChatKind,
-    TextChatMessage, TypingChanged, TypingSnapshot, TypingSnapshotRequest, UnpinMessage,
-    UnpinMessageAccepted, UploadChatImage,
+    EditMessage, EditMessageAccepted, ListPinnedMessages, LoadChatImage, LoadRoomHistory,
+    MessageDeletedPayload, PinMessage, PinMessageAccepted, PinnedMessages, PinnedTextMessage,
+    RoomHistory, SendMessage, SendMessageAccepted, StartTyping, StopTyping,
+    TextChatImageAttachment, TextChatKind, TextChatMessage, TypingChanged, TypingSnapshot,
+    TypingSnapshotRequest, UnpinMessage, UnpinMessageAccepted, UploadChatImage,
 };
 pub use typing::TypingAuthor;
 pub use voice_chat::{

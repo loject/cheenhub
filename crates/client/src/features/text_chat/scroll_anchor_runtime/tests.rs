@@ -79,6 +79,7 @@ fn message(id: &str) -> TextChatMessage {
         attachments: Vec::new(),
         delivery_status: None,
         created_at: "2026-10-02T00:00:00Z".into(),
+        edited_at: None,
     }
 }
 

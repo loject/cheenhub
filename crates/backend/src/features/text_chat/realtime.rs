@@ -3,9 +3,10 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use cheenhub_contracts::realtime::{
-    ChatImageLoadedResponse, DeleteMessage, ListPinnedMessages, LoadChatImage, LoadRoomHistory,
-    PinMessage, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode, SendMessage,
-    StartTyping, StopTyping, TextChatKind, TypingSnapshotRequest, UnpinMessage, UploadChatImage,
+    ChatImageLoadedResponse, DeleteMessage, EditMessage, ListPinnedMessages, LoadChatImage,
+    LoadRoomHistory, PinMessage, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
+    SendMessage, StartTyping, StopTyping, TextChatKind, TypingSnapshotRequest, UnpinMessage,
+    UploadChatImage,
 };
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
@@ -134,6 +135,23 @@ pub(crate) async fn handle(
                             content_type: attachment.content_type,
                             data_base64: BASE64.encode(bytes),
                         },
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::TextChat(TextChatKind::EditMessage) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: EditMessage = decode_payload(&envelope)?;
+            match application::edit_message(state, user, user_id, payload).await {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::TextChat,
+                        RealtimeKind::TextChat(TextChatKind::EditMessageAccepted),
+                        Some(request_id),
+                        response,
                     )
                     .await
                 }

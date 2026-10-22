@@ -22,6 +22,7 @@ async fn history_author_mask_tracks_deletion_and_restoration() {
         body: "Сообщение".to_owned(),
         attachments: Vec::new(),
         created_at: now,
+        edited_at: None,
         deleted_at: None,
         deleted_by_user_id: None,
     }];

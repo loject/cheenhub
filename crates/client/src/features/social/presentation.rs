@@ -364,6 +364,7 @@ pub(super) fn dm_as_text_message(message: DmMessageSummary) -> TextChatMessage {
         attachments: Vec::new(),
         delivery_status: message.delivery_status,
         created_at: message.created_at,
+        edited_at: None,
     }
 }
 

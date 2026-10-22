@@ -28,6 +28,12 @@ pub enum TextChatKind {
     ImageLoaded,
     /// Событие о новом сообщении.
     MessageCreated,
+    /// Изменить текст собственного сообщения.
+    EditMessage,
+    /// Подтверждает сохранение изменений текста сообщения.
+    EditMessageAccepted,
+    /// Сообщение отредактировано автором.
+    MessageEdited,
     /// Удалить одно из собственных сообщений пользователя.
     DeleteMessage,
     /// Подтверждает, что удаление сообщения принято.
@@ -102,6 +108,26 @@ pub struct SendMessage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SendMessageAccepted {
     /// Принятое сообщение.
+    pub message: TextChatMessage,
+}
+
+/// Запрос редактирования текста существующего сообщения комнаты.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditMessage {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор комнаты.
+    pub room_id: String,
+    /// Идентификатор редактируемого сообщения.
+    pub message_id: String,
+    /// Новый текст; пустой допускается только при наличии вложения.
+    pub body: String,
+}
+
+/// Подтверждение сохранения отредактированного сообщения.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditMessageAccepted {
+    /// Актуальный снимок сообщения со временем редактирования.
     pub message: TextChatMessage,
 }
 
@@ -297,6 +323,9 @@ pub struct TextChatMessage {
     pub delivery_status: Option<DmMessageDeliveryStatus>,
     /// Временная метка создания сообщения в формате RFC3339.
     pub created_at: String,
+    /// Время последнего изменения текста в формате RFC3339.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edited_at: Option<String>,
 }
 
 /// Полезная нагрузка запроса о начале набора сообщения в комнате.

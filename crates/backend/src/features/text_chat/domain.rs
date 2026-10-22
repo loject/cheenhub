@@ -22,6 +22,8 @@ pub(crate) struct TextMessage {
     pub(crate) attachments: Vec<ChatAttachment>,
     /// Временная метка создания сообщения.
     pub(crate) created_at: DateTime<Utc>,
+    /// Время последнего изменения текста, если сообщение редактировалось.
+    pub(crate) edited_at: Option<DateTime<Utc>>,
     /// Временная метка мягкого удаления; задается при удалении сообщения.
     pub(crate) deleted_at: Option<DateTime<Utc>>,
     /// Пользователь, удаливший сообщение; для модераторских удалений может отличаться от автора.

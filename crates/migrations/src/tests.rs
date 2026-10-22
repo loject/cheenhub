@@ -6,6 +6,15 @@ use uuid::Uuid;
 use crate::Migrator;
 
 #[test]
+fn migration_registry_contains_text_message_edited_timestamp() {
+    let names = Migrator::migrations()
+        .iter()
+        .map(|migration| migration.name().to_owned())
+        .collect::<Vec<_>>();
+    assert!(names.contains(&"m20261023_000042_add_text_message_edited_at".to_owned()));
+}
+
+#[test]
 fn migration_registry_contains_legacy_legal_acceptance_move() {
     let migration_names = Migrator::migrations()
         .iter()

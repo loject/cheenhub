@@ -16,6 +16,7 @@ fn text_pin_preview_keeps_message_identity_and_formats_timestamp() {
             attachments: Vec::new(),
             delivery_status: None,
             created_at: "2026-10-14T10:00:00Z".to_owned(),
+            edited_at: None,
         },
         pinned_by_user_id: "moderator-id".to_owned(),
         pinned_at: "2026-10-14T12:34:00+00:00".to_owned(),

@@ -14,6 +14,7 @@ fn message(id: &str) -> TextChatMessage {
         attachments: Vec::new(),
         delivery_status: None,
         created_at: "2026-10-14T00:00:00Z".to_owned(),
+        edited_at: None,
     }
 }
 

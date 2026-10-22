@@ -16,6 +16,7 @@ use crate::state::AppState;
 
 mod attachments;
 mod deletion;
+mod edits;
 mod history;
 mod messages;
 mod pins;

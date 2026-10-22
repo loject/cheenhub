@@ -38,6 +38,7 @@ async fn room_history_returns_latest_fifty_oldest_to_newest() {
                 body: format!("message {index}"),
                 attachments: Vec::new(),
                 created_at: base_time + Duration::seconds(index),
+                edited_at: None,
                 deleted_at: None,
                 deleted_by_user_id: None,
             })
@@ -92,6 +93,7 @@ async fn room_history_page_before_cursor_returns_older_messages() {
                 body: format!("message {index}"),
                 attachments: Vec::new(),
                 created_at: base_time + Duration::seconds(index),
+                edited_at: None,
                 deleted_at: None,
                 deleted_by_user_id: None,
             })
@@ -166,6 +168,7 @@ async fn foreign_history_cursor_is_rejected() {
             body: "foreign".to_owned(),
             attachments: Vec::new(),
             created_at: Utc::now(),
+            edited_at: None,
             deleted_at: None,
             deleted_by_user_id: None,
         })
@@ -236,6 +239,7 @@ async fn server_system_author_uses_configured_name_and_server_avatar_in_history(
             body: "Account rendering".to_owned(),
             attachments: Vec::new(),
             created_at: Utc::now(),
+            edited_at: None,
             deleted_at: None,
             deleted_by_user_id: None,
         })
