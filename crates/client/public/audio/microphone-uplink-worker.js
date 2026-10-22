@@ -1,4 +1,4 @@
-import { recordPcmInputProfile, emitSendProfile } from "/audio/microphone-uplink-diagnostics.js?v=1";
+import { recordPcmInputProfile, emitSendProfile } from "./microphone-uplink-diagnostics.js?v=1";
 
 const TRANSPORT_WEBTRANSPORT = "webtransport";
 const TRANSPORT_WEBSOCKET = "websocket";
