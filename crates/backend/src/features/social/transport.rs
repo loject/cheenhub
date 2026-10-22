@@ -8,11 +8,11 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use cheenhub_contracts::rest::{
-    ApiError, ListDmConversationsResponse, ListDmMessagesResponse, ListFriendRequestsResponse,
-    ListFriendsQuery, ListFriendsResponse, MarkDmConversationReadRequest,
-    MarkDmConversationReadResponse, OpenDmConversationRequest, OpenDmConversationResponse,
-    SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
-    SendFriendRequestResponse, UploadDmImageResponse,
+    ApiError, EditDmMessageRequest, EditDmMessageResponse, ListDmConversationsResponse,
+    ListDmMessagesResponse, ListFriendRequestsResponse, ListFriendsQuery, ListFriendsResponse,
+    MarkDmConversationReadRequest, MarkDmConversationReadResponse, OpenDmConversationRequest,
+    OpenDmConversationResponse, SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse,
+    SendFriendRequestRequest, SendFriendRequestResponse, UploadDmImageResponse,
 };
 use serde::Deserialize;
 
@@ -184,6 +184,19 @@ pub(crate) async fn send_dm_message(
 ) -> Result<Json<SendDmMessageResponse>, SocialError> {
     let token = bearer_token(&headers)?;
     application::send_dm_message(&state, token, conversation_id, request)
+        .await
+        .map(Json)
+}
+
+/// Обновляет текст собственного личного сообщения.
+pub(crate) async fn edit_dm_message(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((conversation_id, message_id)): Path<(String, String)>,
+    Json(request): Json<EditDmMessageRequest>,
+) -> Result<Json<EditDmMessageResponse>, SocialError> {
+    let token = bearer_token(&headers)?;
+    application::edit_dm_message(&state, token, conversation_id, message_id, request)
         .await
         .map(Json)
 }

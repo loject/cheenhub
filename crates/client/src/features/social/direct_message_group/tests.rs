@@ -14,6 +14,7 @@ fn message(id: &str, sender: &str, created_at: &str) -> DmMessageSummary {
         image: None,
         delivery_status: None,
         created_at: created_at.to_owned(),
+        edited_at: None,
     }
 }
 

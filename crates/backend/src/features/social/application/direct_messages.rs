@@ -2,9 +2,10 @@
 
 use cheenhub_contracts::realtime::{DirectMessageCreated, SocialChangeReason};
 use cheenhub_contracts::rest::{
-    ListDmConversationsResponse, ListDmMessagesResponse, MarkDmConversationReadRequest,
-    MarkDmConversationReadResponse, OpenDmConversationRequest, OpenDmConversationResponse,
-    SendDmMessageRequest, SendDmMessageResponse,
+    EditDmMessageRequest, EditDmMessageResponse, ListDmConversationsResponse,
+    ListDmMessagesResponse, MarkDmConversationReadRequest, MarkDmConversationReadResponse,
+    OpenDmConversationRequest, OpenDmConversationResponse, SendDmMessageRequest,
+    SendDmMessageResponse,
 };
 use chrono::Utc;
 use uuid::Uuid;
@@ -322,6 +323,93 @@ pub(crate) async fn send_dm_message(
             &current_user.id,
             recipient_last_read_seq(state, &conversation_id, &friend_user_id).await?,
             message,
+        )
+        .await?,
+    })
+}
+
+/// Изменяет только текст собственного неудалённого сообщения без ограничения по времени.
+pub(crate) async fn edit_dm_message(
+    state: &AppState,
+    access_token: &str,
+    conversation_id: String,
+    message_id: String,
+    request: EditDmMessageRequest,
+) -> Result<EditDmMessageResponse, SocialError> {
+    let (current_user, _) = require_current_user(state, access_token)
+        .await
+        .map_err(map_auth_error)?;
+    let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
+    let conversation = load_user_conversation(state, &conversation_id, &current_user.id).await?;
+    let message_id = parse_id(&message_id, "Сообщение не найдено.")?;
+    let original = state
+        .social_store
+        .dm_message_by_id(&conversation_id, &message_id)
+        .await
+        .map_err(SocialError::Internal)?
+        .ok_or_else(|| SocialError::NotFound("Сообщение не найдено.".to_owned()))?;
+
+    if original.sender_user_id != current_user.id || original.deleted_at.is_some() {
+        tracing::warn!(
+            conversation_id = %conversation_id,
+            message_id = %message_id,
+            user_id = %current_user.id,
+            "rejected direct message edit for non-author or deleted message"
+        );
+        return Err(SocialError::NotFound("Сообщение не найдено.".to_owned()));
+    }
+
+    let body = if request.body.trim().is_empty() && original.image_id.is_some() {
+        String::new()
+    } else {
+        message_body(request.body)?
+    };
+    let changed = original.body != body;
+    let updated = if changed {
+        state
+            .social_store
+            .update_dm_message_body(
+                &conversation_id,
+                &message_id,
+                &current_user.id,
+                &body,
+                Utc::now(),
+            )
+            .await
+            .map_err(SocialError::Internal)?
+            .ok_or_else(|| SocialError::NotFound("Сообщение не найдено.".to_owned()))?
+    } else {
+        original
+    };
+
+    if changed {
+        tracing::debug!(
+            conversation_id = %conversation_id,
+            message_id = %message_id,
+            user_id = %current_user.id,
+            "edited direct message"
+        );
+        let recipient_id = other_user_id(&conversation, &current_user.id);
+        notify_social_changed(
+            state,
+            &[current_user.id, recipient_id],
+            SocialChangeReason::DirectMessages,
+            Some(conversation_id),
+        )
+        .await;
+    }
+
+    Ok(EditDmMessageResponse {
+        message: message_summary(
+            state,
+            &current_user.id,
+            recipient_last_read_seq(
+                state,
+                &conversation_id,
+                &other_user_id(&conversation, &current_user.id),
+            )
+            .await?,
+            updated,
         )
         .await?,
     })

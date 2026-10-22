@@ -188,6 +188,28 @@ impl SocialStore for InMemorySocialStore {
             .cloned())
     }
 
+    async fn update_dm_message_body(
+        &self,
+        conversation_id: &Uuid,
+        message_id: &Uuid,
+        author_id: &Uuid,
+        body: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<DmMessage>> {
+        let mut messages = self.messages.lock().map_err(|_| poisoned())?;
+        let Some(message) = messages.iter_mut().find(|message| {
+            message.conversation_id == *conversation_id
+                && message.id == *message_id
+                && message.sender_user_id == *author_id
+                && message.deleted_at.is_none()
+        }) else {
+            return Ok(None);
+        };
+        message.body = body.to_owned();
+        message.updated_at = now;
+        Ok(Some(message.clone()))
+    }
+
     async fn dm_message_by_image_id(
         &self,
         conversation_id: &Uuid,

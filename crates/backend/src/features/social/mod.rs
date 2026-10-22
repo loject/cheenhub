@@ -11,7 +11,7 @@ mod transport;
 use axum::{
     Router,
     extract::DefaultBodyLimit,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
 };
 
 use crate::state::AppState;
@@ -60,6 +60,10 @@ pub(crate) fn dm_routes() -> Router<AppState> {
         .route(
             "/conversations/{conversation_id}/messages",
             get(transport::list_dm_messages).post(transport::send_dm_message),
+        )
+        .route(
+            "/conversations/{conversation_id}/messages/{message_id}",
+            patch(transport::edit_dm_message),
         )
         .route(
             "/conversations/{conversation_id}/images",

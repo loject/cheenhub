@@ -203,6 +203,9 @@ pub struct DmMessageSummary {
     pub delivery_status: Option<DmMessageDeliveryStatus>,
     /// Временная метка создания в формате RFC3339.
     pub created_at: String,
+    /// Время последнего изменения текста в формате RFC3339, если сообщение редактировали.
+    #[serde(default)]
+    pub edited_at: Option<String>,
 }
 
 /// Метаданные изображения в личном сообщении.
@@ -294,6 +297,20 @@ pub struct UploadDmImageResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SendDmMessageResponse {
     /// Созданное сообщение.
+    pub message: DmMessageSummary,
+}
+
+/// Запрос на редактирование текста собственного личного сообщения.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditDmMessageRequest {
+    /// Новый текст сообщения; прикреплённое изображение не изменяется.
+    pub body: String,
+}
+
+/// Ответ на изменение текста личного сообщения.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditDmMessageResponse {
+    /// Сообщение с обновлённым текстом и временем редактирования.
     pub message: DmMessageSummary,
 }
 

@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, IntoActiveModel,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
-    sea_query::LockType,
+    sea_query::{Expr, LockType},
 };
 use uuid::Uuid;
 
@@ -234,6 +234,28 @@ impl SocialStore for PostgresSocialStore {
             .filter(dm_messages::Column::Id.eq(*message_id))
             .one(&self.database)
             .await?
+            .map(Into::into))
+    }
+
+    async fn update_dm_message_body(
+        &self,
+        conversation_id: &Uuid,
+        message_id: &Uuid,
+        author_id: &Uuid,
+        body: &str,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<DmMessage>> {
+        Ok(dm_messages::Entity::update_many()
+            .col_expr(dm_messages::Column::Body, Expr::value(body.to_owned()))
+            .col_expr(dm_messages::Column::UpdatedAt, Expr::value(now))
+            .filter(dm_messages::Column::ConversationId.eq(*conversation_id))
+            .filter(dm_messages::Column::Id.eq(*message_id))
+            .filter(dm_messages::Column::SenderUserId.eq(*author_id))
+            .filter(dm_messages::Column::DeletedAt.is_null())
+            .exec_with_returning(&self.database)
+            .await?
+            .into_iter()
+            .next()
             .map(Into::into))
     }
 

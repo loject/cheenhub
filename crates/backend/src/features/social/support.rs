@@ -285,6 +285,8 @@ fn message_summary_from_parts(
     recipient_last_read_seq: i64,
     message: DmMessage,
 ) -> DmMessageSummary {
+    let edited_at =
+        (message.updated_at > message.created_at).then(|| message.updated_at.to_rfc3339());
     DmMessageSummary {
         id: message.id.to_string(),
         conversation_id: message.conversation_id.to_string(),
@@ -296,6 +298,7 @@ fn message_summary_from_parts(
         body: message.body,
         image,
         created_at: message.created_at.to_rfc3339(),
+        edited_at,
     }
 }
 

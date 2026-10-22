@@ -1,4 +1,5 @@
 mod deletion;
+mod editing;
 mod friend_list;
 mod search;
 
