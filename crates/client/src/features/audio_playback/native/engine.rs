@@ -154,24 +154,16 @@ fn select_output_config(
     device: &cpal::Device,
     sample_rate_hz: u32,
 ) -> Result<SupportedStreamConfig, String> {
-    let mut supported_configs = device.supported_output_configs().map_err(cpal_error)?;
-    let mut fallback = None;
-
-    for range in supported_configs.by_ref() {
-        if range.min_sample_rate().0 > sample_rate_hz || range.max_sample_rate().0 < sample_rate_hz
-        {
-            continue;
+    let supported_configs = device.supported_output_configs().map_err(cpal_error)?;
+    if let Some(config) = select_preferred_output_config(supported_configs, sample_rate_hz) {
+        if matches!(config.sample_format(), SampleFormat::I8 | SampleFormat::U8) {
+            warn!(
+                sample_format = %config.sample_format(),
+                sample_rate_hz,
+                "native audio output is using 8-bit PCM; playback quality may be degraded"
+            );
         }
-
-        let candidate = range.with_sample_rate(cpal::SampleRate(sample_rate_hz));
-        if candidate.channels() >= 2 {
-            return Ok(candidate);
-        }
-        fallback.get_or_insert(candidate);
-    }
-
-    if let Some(fallback) = fallback {
-        return Ok(fallback);
+        return Ok(config);
     }
 
     let default_config = device.default_output_config().map_err(cpal_error)?;
@@ -181,6 +173,42 @@ fn select_output_config(
         "native output device does not support requested sample rate; using default cpal config with resampling"
     );
     Ok(default_config)
+}
+
+fn select_preferred_output_config(
+    configs: impl IntoIterator<Item = cpal::SupportedStreamConfigRange>,
+    sample_rate_hz: u32,
+) -> Option<SupportedStreamConfig> {
+    configs
+        .into_iter()
+        .filter_map(|range| {
+            if range.min_sample_rate().0 > sample_rate_hz
+                || range.max_sample_rate().0 < sample_rate_hz
+            {
+                return None;
+            }
+
+            let quality = match range.sample_format() {
+                SampleFormat::F32 => 8,
+                SampleFormat::F64 => 7,
+                SampleFormat::I32 => 6,
+                SampleFormat::U32 => 5,
+                SampleFormat::I16 => 4,
+                SampleFormat::U16 => 3,
+                SampleFormat::I8 => 2,
+                SampleFormat::U8 => 1,
+                _ => return None,
+            };
+            let rank = (
+                quality >= 3,
+                range.channels() == 2,
+                range.channels() >= 2,
+                quality,
+            );
+            Some((rank, range.with_sample_rate(cpal::SampleRate(sample_rate_hz))))
+        })
+        .max_by_key(|(rank, _)| *rank)
+        .map(|(_, config)| config)
 }
 
 fn build_output_stream(
