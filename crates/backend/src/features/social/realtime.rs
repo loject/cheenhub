@@ -1,5 +1,10 @@
 //! Realtime-адаптер друзей и личных сообщений.
 
+mod direct_messages;
+
+#[cfg(test)]
+mod tests;
+
 use anyhow::Context;
 
 use cheenhub_contracts::realtime::{
@@ -27,6 +32,16 @@ pub(crate) async fn handle(
     envelope: RealtimeEnvelope,
 ) -> anyhow::Result<()> {
     match envelope.kind {
+        RealtimeKind::Social(
+            SocialKind::ListDirectMessageConversations
+            | SocialKind::OpenDirectMessageConversation
+            | SocialKind::LoadDirectMessageHistory
+            | SocialKind::SendDirectMessage
+            | SocialKind::EditDirectMessage
+            | SocialKind::MarkDirectMessageRead
+            | SocialKind::UploadDirectMessageImage
+            | SocialKind::LoadDirectMessageImage,
+        ) => direct_messages::handle(state, user_id, send, envelope).await,
         RealtimeKind::Social(SocialKind::Subscribe) => {
             let request_id = require_request_id(&envelope)?;
             tracing::debug!(%user_id, "subscribed social realtime stream");

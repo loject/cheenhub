@@ -1,6 +1,8 @@
 use super::*;
 use uuid::Uuid;
 
+mod direct_messages;
+
 #[test]
 fn typing_kinds_resolve_to_their_owning_module() {
     // Оба модуля используют одинаковое имя вида `start_typing`, поэтому

@@ -8,10 +8,46 @@ use serde::{Deserialize, Serialize};
 
 use super::typing::TypingAuthor;
 
+mod direct_messages;
+
+pub use direct_messages::*;
+
 /// Тип realtime-сообщения social-модуля.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SocialKind {
+    /// Запросить список личных диалогов текущего пользователя.
+    ListDirectMessageConversations,
+    /// Вернуть список личных диалогов.
+    DirectMessageConversations,
+    /// Открыть личный диалог с другом.
+    OpenDirectMessageConversation,
+    /// Вернуть открытый или существующий личный диалог.
+    DirectMessageConversationOpened,
+    /// Загрузить страницу истории личного диалога.
+    LoadDirectMessageHistory,
+    /// Вернуть страницу истории личного диалога.
+    DirectMessageHistory,
+    /// Отправить сообщение в личный диалог.
+    SendDirectMessage,
+    /// Подтвердить сохранение личного сообщения.
+    SendDirectMessageAccepted,
+    /// Изменить текст собственного личного сообщения.
+    EditDirectMessage,
+    /// Подтвердить сохранение изменений личного сообщения.
+    EditDirectMessageAccepted,
+    /// Подтвердить прочтение личного диалога до сообщения.
+    MarkDirectMessageRead,
+    /// Вернуть checkpoint прочтения и счётчики непрочитанных сообщений.
+    MarkDirectMessageReadAccepted,
+    /// Загрузить изображение для личного диалога.
+    UploadDirectMessageImage,
+    /// Вернуть метаданные загруженного изображения.
+    UploadDirectMessageImageAccepted,
+    /// Загрузить прикреплённое изображение личного диалога.
+    LoadDirectMessageImage,
+    /// Вернуть MIME-тип и байты изображения в base64.
+    DirectMessageImageLoaded,
     /// Подписка вкладки на social-события текущего пользователя.
     Subscribe,
     /// Подписка на social-события активна.

@@ -24,10 +24,15 @@ pub use server::{
     ServerRoleSummary, ServerRolesSaved,
 };
 pub use social::{
-    ConversationReadCheckpoint, DirectMessageCreated, DirectMessageTypingChanged,
-    DirectMessageTypingSnapshot, DirectMessageTypingSnapshotRequest, SocialChangeReason,
-    SocialChanged, SocialKind, SocialReady, StartDirectMessageTyping, StopDirectMessageTyping,
-    SubscribeSocial,
+    ConversationReadCheckpoint, DirectMessageConversationOpened, DirectMessageConversations,
+    DirectMessageCreated, DirectMessageHistory, DirectMessageImageLoaded,
+    DirectMessageTypingChanged, DirectMessageTypingSnapshot, DirectMessageTypingSnapshotRequest,
+    EditDirectMessage, EditDirectMessageAccepted, ListDirectMessageConversations,
+    LoadDirectMessageHistory, LoadDirectMessageImage, MarkDirectMessageRead,
+    MarkDirectMessageReadAccepted, OpenDirectMessageConversation, SendDirectMessage,
+    SendDirectMessageAccepted, SocialChangeReason, SocialChanged, SocialKind, SocialReady,
+    StartDirectMessageTyping, StopDirectMessageTyping, SubscribeSocial, UploadDirectMessageImage,
+    UploadDirectMessageImageAccepted,
 };
 pub use text_chat::{
     ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
