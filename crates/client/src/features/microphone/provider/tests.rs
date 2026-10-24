@@ -3,11 +3,38 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use dioxus::prelude::*;
 use futures_util::FutureExt;
 
 use super::{ActiveCapture, should_start_level_preview, should_stop_level_preview};
 use crate::features::microphone::provider_runtime::stop_session_immediately;
 use crate::features::microphone::{MicrophoneError, MicrophoneSession, MicrophoneStatus};
+
+#[test]
+fn muted_voice_preference_blocks_capture_after_leave_and_reconnect() {
+    let dom = dioxus::prelude::VirtualDom::new(|| dioxus::prelude::rsx! {});
+    dom.in_scope(dioxus::prelude::ScopeId::ROOT, || {
+        let mut microphone = super::MicrophoneHandle::for_test();
+        let (commands, mut received) = futures_channel::mpsc::unbounded();
+        microphone.commands = commands;
+        microphone.voice_enabled.set(false);
+        let on_frame: crate::features::microphone::MicrophoneFrameCallback = Rc::new(|_| {});
+
+        microphone.stop();
+        assert!(matches!(
+            received.try_recv(),
+            Ok(super::MicrophoneCommand::Stop { .. })
+        ));
+        microphone.restart(on_frame.clone());
+        microphone.start(on_frame);
+
+        assert!(!microphone.voice_enabled());
+        assert!(
+            received.try_recv().is_err(),
+            "muted microphone must not start capture"
+        );
+    });
+}
 
 struct TestSession {
     stopped_immediately: Rc<Cell<bool>>,

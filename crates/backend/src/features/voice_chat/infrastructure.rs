@@ -2,9 +2,9 @@
 
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
-use std::sync::Arc;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Weak};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -31,6 +31,8 @@ pub(crate) use uplink::{
 pub(crate) struct InMemoryVoicePresenceStore {
     /// Канонические записи присутствия и их read indexes.
     presence: PresenceRegistry,
+    /// Слабые ссылки на очереди рассылки; завершённые публикации не удерживают комнаты.
+    snapshot_publications: Mutex<HashMap<VoicePresenceTarget, Weak<Mutex<()>>>>,
     /// Одноразовые разрешения на подключение microphone uplink.
     microphone_uplink_grants: Mutex<Vec<MicrophoneUplinkGrant>>,
     /// Активные привязки дополнительных microphone uplink-сессий.
@@ -47,6 +49,8 @@ pub(crate) struct InMemoryVoicePresenceStore {
 /// Активная запись присутствия в голосовой комнате.
 #[derive(Debug, Clone)]
 pub(crate) struct VoicePresence {
+    /// Явный выбор микрофона, действующий до выхода или замены присутствия.
+    pub(crate) microphone_enabled: bool,
     /// Поток realtime-модуля, которому принадлежит это присутствие и который используется для очистки при отключении.
     pub(crate) realtime_stream_id: Uuid,
     /// Аутентифицированная сессия WebTransport, получающая медиадатаграммы.
@@ -88,6 +92,40 @@ pub(crate) struct VoicePresenceTarget {
 }
 
 impl InMemoryVoicePresenceStore {
+    /// Возвращает общий mutex для незавершённых публикаций снимка одной комнаты.
+    ///
+    /// Вызывающий держит lock от чтения актуального снимка до завершения fanout.
+    /// Комнаты независимы; слабые ссылки удаляются при следующем обращении.
+    pub(crate) async fn snapshot_publication_lock(
+        &self,
+        target: VoicePresenceTarget,
+    ) -> Arc<Mutex<()>> {
+        let mut publications = self.snapshot_publications.lock().await;
+        publications.retain(|_, lock| lock.strong_count() > 0);
+        if let Some(lock) = publications.get(&target).and_then(Weak::upgrade) {
+            return lock;
+        }
+        let lock = Arc::new(Mutex::new(()));
+        publications.insert(target, Arc::downgrade(&lock));
+        lock
+    }
+
+    /// Атомарно обновляет выбор микрофона активного владельца потока.
+    ///
+    /// Возвращает цель и признак изменения; `None` означает отсутствие соответствующего
+    /// присутствия. Неизменившийся выбор не требует повторного fanout.
+    pub(crate) async fn set_microphone_enabled(
+        &self,
+        stream_id: &Uuid,
+        user_id: &Uuid,
+        room_id: &Uuid,
+        enabled: bool,
+    ) -> Option<(VoicePresenceTarget, bool)> {
+        self.presence
+            .set_microphone_enabled(stream_id, user_id, room_id, enabled)
+            .await
+    }
+
     /// Заменяет присутствие одного пользователя или realtime-потока и возвращает удаленные записи.
     pub(crate) async fn join(&self, presence: VoicePresence) -> Vec<VoicePresence> {
         let removed = self.presence.join(presence).await;

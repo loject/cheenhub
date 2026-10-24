@@ -60,11 +60,16 @@ pub enum VoiceChatKind {
     PublishNetworkQuality,
     /// Событие изменения RTT одного участника голосового общения.
     ParticipantNetworkQualityUpdated,
+    /// Изменить явный выбор микрофона текущего голосового присутствия.
+    SetMicrophoneState,
 }
 
 /// Полезная нагрузка запроса на присоединение к комнате с поддержкой голоса.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JoinVoiceRoom {
+    /// Сохранённый выбор пользователя; отсутствие поля сохраняет поведение старых клиентов.
+    #[serde(default = "microphone_enabled_by_default")]
+    pub microphone_enabled: bool,
     /// Идентификатор сервера.
     pub server_id: String,
     /// Идентификатор комнаты.
@@ -115,6 +120,9 @@ pub struct MicrophoneUplinkBound {
 /// Полезная нагрузка запроса на присоединение к голосовому звонку личного диалога.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JoinDirectMessageVoiceRoom {
+    /// Явный выбор микрофона до начала захвата; не зависит от VAD и PTT.
+    #[serde(default = "microphone_enabled_by_default")]
+    pub microphone_enabled: bool,
     /// Идентификатор личного диалога.
     pub conversation_id: String,
 }
@@ -373,6 +381,9 @@ pub struct DirectMessageVoiceRoomsSnapshot {
 /// Полезная нагрузка участника голосовой комнаты.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoiceRoomParticipant {
+    /// Разрешил ли пользователь свой микрофон; тишина и ошибки устройства не меняют выбор.
+    #[serde(default = "microphone_enabled_by_default")]
+    pub microphone_enabled: bool,
     /// Стабильный идентификатор пользователя.
     pub user_id: String,
     /// Снимок имени пользователя.
@@ -381,4 +392,17 @@ pub struct VoiceRoomParticipant {
     pub avatar_url: Option<String>,
     /// Метка времени RFC3339, когда этот участник присоединился.
     pub joined_at: String,
+}
+
+/// Изменение явного выбора микрофона для присутствия отправляющего realtime-потока.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetVoiceMicrophoneState {
+    /// UUID комнаты; запрос от предыдущей комнаты должен быть отклонён.
+    pub room_id: String,
+    /// Включён ли микрофон по выбору пользователя, независимо от VAD, PTT и capture-ошибок.
+    pub microphone_enabled: bool,
+}
+
+fn microphone_enabled_by_default() -> bool {
+    true
 }

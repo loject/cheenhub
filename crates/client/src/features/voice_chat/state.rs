@@ -241,7 +241,11 @@ impl VoiceConnectionHandle {
                 room_id = %target.room_id,
                 "requesting voice room join"
             );
-            let join = join_target(&realtime, &target);
+            let join = join_target(
+                &realtime,
+                &target,
+                handle.microphone.voice_enabled_untracked(),
+            );
             match select(
                 join.boxed_local(),
                 sleep_ms(JOIN_RESPONSE_TIMEOUT_MS).boxed_local(),

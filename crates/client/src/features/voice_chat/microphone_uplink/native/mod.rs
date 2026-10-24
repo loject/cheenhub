@@ -17,14 +17,5 @@ pub(crate) fn restart(
     ));
 }
 
-/// Переключает микрофон для выбранной комнаты.
-pub(crate) fn toggle(
-    microphone: MicrophoneHandle,
-    realtime: RealtimeHandle,
-    server_id: String,
-    room_id: String,
-) {
-    microphone.toggle(voice_frame_sender::voice_frame_sender_callback(
-        realtime, server_id, room_id,
-    ));
-}
+#[cfg(test)]
+mod tests;

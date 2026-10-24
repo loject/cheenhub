@@ -6,6 +6,33 @@ use cheenhub_contracts::rest::ServerRoomKind;
 use super::{create_room, join_room, registered_user, state};
 
 #[tokio::test]
+async fn joining_with_microphone_disabled_includes_muted_state_in_snapshot() {
+    let state = state();
+    let (user, user_id) = registered_user(&state).await;
+    let (server_id, room_id) = create_room(&state, &user_id, "voice", ServerRoomKind::Voice).await;
+    let request = serde_json::from_value(serde_json::json!({
+        "server_id": server_id,
+        "room_id": room_id,
+        "microphone_enabled": false,
+    }))
+    .expect("valid join request");
+
+    let snapshot = join_room(
+        &state,
+        uuid::Uuid::new_v4(),
+        uuid::Uuid::new_v4(),
+        &user,
+        &user_id,
+        request,
+    )
+    .await
+    .expect("join succeeds");
+
+    let participant = serde_json::to_value(&snapshot.participants[0]).unwrap();
+    assert_eq!(participant["microphone_enabled"], false);
+}
+
+#[tokio::test]
 async fn joining_server_voice_room_returns_server_audio_bitrate() {
     let state = state();
     let (user, user_id) = registered_user(&state).await;
@@ -24,6 +51,7 @@ async fn joining_server_voice_room_returns_server_audio_bitrate() {
         &user,
         &user_id,
         JoinVoiceRoom {
+            microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
         },
@@ -52,6 +80,7 @@ async fn failed_post_join_lookup_removes_rejected_presence() {
     state
         .voice_presence_store
         .join(VoicePresence {
+            microphone_enabled: true,
             realtime_stream_id: stream_id,
             session_id: uuid::Uuid::new_v4(),
             target_kind: target.kind,
@@ -106,6 +135,7 @@ async fn deleted_join_target_still_notifies_replaced_room() {
         )
         .await;
     let old = VoicePresence {
+        microphone_enabled: true,
         realtime_stream_id: old_stream,
         session_id: uuid::Uuid::new_v4(),
         target_kind: VoicePresenceTargetKind::Server,
@@ -126,6 +156,7 @@ async fn deleted_join_target_still_notifies_replaced_room() {
     let replaced = state
         .voice_presence_store
         .join(VoicePresence {
+            microphone_enabled: true,
             realtime_stream_id: stream_id,
             session_id: uuid::Uuid::new_v4(),
             target_kind: target.kind,

@@ -82,12 +82,17 @@ pub(crate) async fn join_room(
     realtime: &RealtimeHandle,
     server_id: String,
     room_id: String,
+    microphone_enabled: bool,
 ) -> Result<VoiceRoomSnapshot, RealtimeError> {
     realtime
         .request(
             RealtimeModule::VoiceChat,
             RealtimeKind::VoiceChat(VoiceChatKind::JoinVoiceRoom),
-            JoinVoiceRoom { server_id, room_id },
+            JoinVoiceRoom {
+                microphone_enabled,
+                server_id,
+                room_id,
+            },
         )
         .await
 }
@@ -111,12 +116,16 @@ pub(crate) async fn leave_room(
 pub(crate) async fn join_direct_message_room(
     realtime: &RealtimeHandle,
     conversation_id: String,
+    microphone_enabled: bool,
 ) -> Result<VoiceRoomSnapshot, RealtimeError> {
     realtime
         .request(
             RealtimeModule::VoiceChat,
             RealtimeKind::VoiceChat(VoiceChatKind::JoinDirectMessageVoiceRoom),
-            JoinDirectMessageVoiceRoom { conversation_id },
+            JoinDirectMessageVoiceRoom {
+                microphone_enabled,
+                conversation_id,
+            },
         )
         .await
 }

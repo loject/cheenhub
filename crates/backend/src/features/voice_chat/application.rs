@@ -19,6 +19,7 @@ mod avatar;
 mod direct_call_push;
 mod direct_calls;
 mod fanout;
+mod microphone;
 mod network_quality;
 mod permissions;
 mod presence;
@@ -34,6 +35,7 @@ use fanout::{
     direct_message_voice_target, fanout_removed_rooms, fanout_snapshot, participant_summary,
     room_snapshot, server_voice_target,
 };
+pub(crate) use microphone::set_microphone_state;
 pub(crate) use network_quality::publish_network_quality;
 #[cfg(test)]
 use network_quality::{
@@ -65,6 +67,7 @@ pub(crate) async fn join_room(
     let removed = state
         .voice_presence_store
         .join(VoicePresence {
+            microphone_enabled: request.microphone_enabled,
             realtime_stream_id,
             session_id,
             target_kind: target.kind,
@@ -85,7 +88,7 @@ pub(crate) async fn join_room(
         .map(|server| server.is_some());
     presence::finish_server_join(state, realtime_stream_id, target, removed, available).await?;
     let mut snapshot = room_snapshot(state, target).await;
-    fanout_snapshot(state, target, snapshot.clone()).await;
+    fanout_snapshot(state, target).await;
     snapshot.audio_bitrate_bps = Some(server.audio_bitrate_bps);
 
     Ok(snapshot)
@@ -112,7 +115,7 @@ pub(crate) async fn leave_room(
     }
 
     let snapshot = room_snapshot(state, target).await;
-    fanout_snapshot(state, target, snapshot.clone()).await;
+    fanout_snapshot(state, target).await;
 
     Ok(snapshot)
 }
@@ -132,6 +135,7 @@ pub(crate) async fn join_direct_message_room(
     let removed = state
         .voice_presence_store
         .join(VoicePresence {
+            microphone_enabled: request.microphone_enabled,
             realtime_stream_id,
             session_id,
             target_kind: target.kind,
@@ -151,7 +155,7 @@ pub(crate) async fn join_direct_message_room(
     );
     fanout_removed_rooms(state, removed, Some(target)).await;
     let snapshot = room_snapshot(state, target).await;
-    fanout_snapshot(state, target, snapshot.clone()).await;
+    fanout_snapshot(state, target).await;
 
     Ok(snapshot)
 }
@@ -188,7 +192,7 @@ pub(crate) async fn leave_direct_message_room(
     );
     direct_calls::end_direct_call_for_presence(state, user_id, &conversation_id).await;
     let snapshot = room_snapshot(state, target).await;
-    fanout_snapshot(state, target, snapshot.clone()).await;
+    fanout_snapshot(state, target).await;
 
     Ok(snapshot)
 }
@@ -231,7 +235,7 @@ pub(crate) async fn kick_member(
 
     let target = server_voice_target(server_id, room_id);
     let snapshot = room_snapshot(state, target).await;
-    fanout_snapshot(state, target, snapshot.clone()).await;
+    fanout_snapshot(state, target).await;
 
     Ok(snapshot)
 }
@@ -320,8 +324,7 @@ pub(crate) async fn update_user_nickname(state: &AppState, user_id: &Uuid, nickn
         "updated active voice presence nickname"
     );
     for target in rooms {
-        let snapshot = room_snapshot(state, target).await;
-        fanout_snapshot(state, target, snapshot).await;
+        fanout_snapshot(state, target).await;
     }
 }
 

@@ -10,11 +10,22 @@ use super::device_preferences::{
 };
 const INPUT_VOLUME_PERCENT_KEY: &str = "cheenhub.microphone.input_volume_percent";
 const ACTIVATION_MODE_KEY: &str = "cheenhub.microphone.activation_mode";
+const VOICE_ENABLED_KEY: &str = "cheenhub.microphone.voice_enabled";
 const VAD_THRESHOLD_PERCENT_KEY: &str = "cheenhub.microphone.vad_threshold_percent";
 const DENOISE_MODE_KEY: &str = "cheenhub.microphone.denoise_mode";
 const DENOISE_ENABLED_KEY: &str = "cheenhub.microphone.denoise_enabled";
 const DEFAULT_INPUT_VOLUME_PERCENT: u32 = 100;
 const DEFAULT_VAD_THRESHOLD_PERCENT: u32 = 20;
+
+/// Загружает явный выбор микрофона; при первом запуске сохраняет прежний autostart.
+pub(crate) fn load_voice_enabled() -> bool {
+    get::<LocalStorage>(VOICE_ENABLED_KEY).as_deref() != Some("false")
+}
+
+/// Сохраняет только выбор пользователя, без временных статусов захвата.
+pub(crate) fn save_voice_enabled(enabled: bool) {
+    set::<LocalStorage>(VOICE_ENABLED_KEY, if enabled { "true" } else { "false" });
+}
 
 /// Stored microphone input device preference.
 #[derive(Debug, Clone, PartialEq, Eq)]

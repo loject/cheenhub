@@ -46,6 +46,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
     let is_leaving = matches!(state, VoiceConnectionState::Disconnecting { .. });
     let media_controls_enabled = matches!(state, VoiceConnectionState::Connected { .. });
     let microphone_live = matches!(microphone_status, MicrophoneStatus::Live);
+    let microphone_enabled = microphone.voice_enabled();
     let microphone_starting = matches!(microphone_status, MicrophoneStatus::Starting);
     let microphone_speaking = microphone_live && microphone_level.active;
     let camera_live = matches!(camera_status, CameraStatus::Live);
@@ -54,12 +55,12 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
     let screen_share_starting = matches!(screen_share_status, ScreenShareStatus::Starting);
     let microphone_level_height =
         (microphone_level.rms / microphone_level.threshold.max(0.001)).clamp(0.08, 1.0) * 100.0;
-    let microphone_label = match &microphone_status {
-        MicrophoneStatus::Idle => "Включить микрофон".to_owned(),
-        MicrophoneStatus::Starting => "Запрашиваем микрофон".to_owned(),
-        MicrophoneStatus::Live => "Выключить микрофон".to_owned(),
-        MicrophoneStatus::PermissionDenied => "Доступ к микрофону запрещен".to_owned(),
-        MicrophoneStatus::Error(message) => message.clone(),
+    let microphone_label = if microphone_starting {
+        "Запрашиваем микрофон"
+    } else if microphone_enabled {
+        "Выключить микрофон"
+    } else {
+        "Включить микрофон"
     };
     let camera_label = match camera_status {
         CameraStatus::Idle => "Включить камеру",
@@ -146,12 +147,12 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                             }
                         }
                     }
-                    span { class: control_icon_class(microphone_live),
+                    span { class: control_icon_class(microphone_enabled),
                         svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M19 11a7 7 0 0 1-14 0m7 8v3m-4 0h8m-4-18a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V7a3 3 0 0 0-3-3Z" }
                         }
                     }
-                    span { class: control_icon_class(!microphone_live),
+                    span { class: control_icon_class(!microphone_enabled),
                         svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15 9.34V7a3 3 0 0 0-5.68-1.34M9 9v2a3 3 0 0 0 5.12 2.12M19 11a7 7 0 0 1-7 7m0 0v3m0-3a7 7 0 0 1-7-7m3 10h8M3 3l18 18" }
                         }

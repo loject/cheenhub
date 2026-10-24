@@ -26,6 +26,7 @@ use crate::state::AppState;
 
 mod direct_messages;
 mod join;
+mod microphone;
 mod network_quality;
 mod nickname;
 
@@ -142,6 +143,7 @@ async fn user_can_join_and_leave_voice_room() {
         &user,
         &user_id,
         JoinVoiceRoom {
+            microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
         },
@@ -176,7 +178,11 @@ async fn text_room_rejects_voice_join() {
         uuid::Uuid::new_v4(),
         &user,
         &user_id,
-        JoinVoiceRoom { server_id, room_id },
+        JoinVoiceRoom {
+            microphone_enabled: true,
+            server_id,
+            room_id,
+        },
     )
     .await
     .expect_err("text rooms should reject voice presence");
@@ -198,6 +204,7 @@ async fn user_can_leave_after_room_becomes_text_only() {
         &user,
         &user_id,
         JoinVoiceRoom {
+            microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
         },
@@ -248,6 +255,7 @@ async fn joining_new_room_replaces_previous_presence() {
         &user,
         &user_id,
         JoinVoiceRoom {
+            microphone_enabled: true,
             server_id: first_server_id.clone(),
             room_id: first_room_id.clone(),
         },
@@ -261,6 +269,7 @@ async fn joining_new_room_replaces_previous_presence() {
         &user,
         &user_id,
         JoinVoiceRoom {
+            microphone_enabled: true,
             server_id: second_server_id.clone(),
             room_id: second_room_id.clone(),
         },
@@ -301,6 +310,7 @@ async fn member_can_list_active_voice_room_participants_for_server() {
         &user,
         &user_id,
         JoinVoiceRoom {
+            microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
         },
@@ -339,6 +349,7 @@ async fn joined_user_can_stop_video_stream() {
         &user,
         &user_id,
         JoinVoiceRoom {
+            microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
         },
@@ -376,6 +387,7 @@ async fn stop_video_stream_rejects_stale_session() {
         &user,
         &user_id,
         JoinVoiceRoom {
+            microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
         },
@@ -415,6 +427,7 @@ async fn active_presence_session_can_bind_one_worker_with_one_time_grant() {
         &user,
         &user_id,
         JoinVoiceRoom {
+            microphone_enabled: true,
             server_id,
             room_id: room_id.clone(),
         },
@@ -470,6 +483,7 @@ async fn stale_session_cannot_issue_microphone_uplink_grant() {
         &user,
         &user_id,
         JoinVoiceRoom {
+            microphone_enabled: true,
             server_id,
             room_id: room_id.clone(),
         },

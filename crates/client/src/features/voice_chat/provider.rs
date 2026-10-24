@@ -89,13 +89,19 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         room_snapshots,
         remembered_room,
         speaking_generations,
-        join_generation,
+        join_generation: join_generation.clone(),
         realtime: realtime.clone(),
         microphone: microphone.clone(),
         current_user: current_user.clone(),
     });
     let context_handle = handle.clone();
     use_context_provider(move || context_handle.clone());
+    super::microphone_state::use_microphone_state_publication(
+        state,
+        join_generation.clone(),
+        microphone.clone(),
+        realtime.clone(),
+    );
     use_voice_network_quality_runtime(
         state,
         current_user.id.clone(),

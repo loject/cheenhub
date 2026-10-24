@@ -5,7 +5,7 @@
 mod implementation;
 
 #[cfg(not(feature = "web"))]
-#[path = "microphone_uplink/native.rs"]
+#[path = "microphone_uplink/native/mod.rs"]
 mod implementation;
 
-pub(crate) use implementation::{restart, toggle};
+pub(crate) use implementation::restart;

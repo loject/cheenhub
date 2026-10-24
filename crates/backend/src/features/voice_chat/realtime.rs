@@ -5,7 +5,8 @@ use cheenhub_contracts::realtime::{
     JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom,
     LeaveVoiceRoom, ListDirectCalls, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
     PublishVoiceNetworkQuality, RealtimeEnvelope, RealtimeKind, RealtimeModule, RejectionCode,
-    RespondDirectCall, StartDirectCall, StopVoiceVideoStream, VoiceChatKind,
+    RespondDirectCall, SetVoiceMicrophoneState, StartDirectCall, StopVoiceVideoStream,
+    VoiceChatKind,
 };
 use cheenhub_contracts::rest::AuthUser;
 use uuid::Uuid;
@@ -300,6 +301,25 @@ pub(crate) async fn handle(
                         send,
                         RealtimeModule::VoiceChat,
                         RealtimeKind::VoiceChat(VoiceChatKind::MicrophoneUplinkBound),
+                        Some(request_id),
+                        response,
+                    )
+                    .await
+                }
+                Err(error) => reject_application_error(send, Some(request_id), error).await,
+            }
+        }
+        RealtimeKind::VoiceChat(VoiceChatKind::SetMicrophoneState) => {
+            let request_id = require_request_id(&envelope)?;
+            let payload: SetVoiceMicrophoneState = decode_payload(&envelope)?;
+            match application::set_microphone_state(state, realtime_stream_id, user_id, payload)
+                .await
+            {
+                Ok(response) => {
+                    write_envelope(
+                        send,
+                        RealtimeModule::VoiceChat,
+                        RealtimeKind::VoiceChat(VoiceChatKind::VoiceRoomSnapshot),
                         Some(request_id),
                         response,
                     )

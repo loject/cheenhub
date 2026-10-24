@@ -5,7 +5,7 @@ use std::cell::Cell;
 use dioxus::prelude::{debug, info, spawn, warn};
 
 use crate::features::auth::api;
-use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus, MicrophoneUplinkConfig};
+use crate::features::microphone::{MicrophoneHandle, MicrophoneUplinkConfig};
 use crate::features::realtime::{
     RealtimeHandle, realtime_cert_sha256_hex, realtime_url, realtime_websocket_url,
 };
@@ -22,35 +22,6 @@ pub(crate) fn restart(
     realtime_handle: RealtimeHandle,
     server_id: String,
     room_id: String,
-) {
-    prepare_and_start(microphone, realtime_handle, server_id, room_id, true);
-}
-
-/// Переключает микрофон через отдельную browser realtime-сессию.
-pub(crate) fn toggle(
-    microphone: MicrophoneHandle,
-    realtime_handle: RealtimeHandle,
-    server_id: String,
-    room_id: String,
-) {
-    if matches!(
-        microphone.status_untracked(),
-        MicrophoneStatus::Live | MicrophoneStatus::Starting
-    ) {
-        next_preparation_generation();
-        microphone.stop();
-        return;
-    }
-
-    prepare_and_start(microphone, realtime_handle, server_id, room_id, false);
-}
-
-fn prepare_and_start(
-    microphone: MicrophoneHandle,
-    realtime_handle: RealtimeHandle,
-    server_id: String,
-    room_id: String,
-    restart: bool,
 ) {
     let preparation_generation = next_preparation_generation();
     let microphone_generation = microphone.operation_generation();
@@ -79,12 +50,8 @@ fn prepare_and_start(
             server_id,
             room_id.clone(),
         );
-        info!(%room_id, restart, "starting dedicated microphone worker uplink");
-        if restart {
-            microphone.restart_with_uplink(fallback, uplink);
-        } else {
-            microphone.start_with_uplink(fallback, uplink);
-        }
+        info!(%room_id, "starting dedicated microphone worker uplink");
+        microphone.restart_with_uplink(fallback, uplink);
     });
 }
 

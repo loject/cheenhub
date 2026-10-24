@@ -37,7 +37,10 @@ pub(super) fn ActiveVoiceNotificationControls() -> Element {
                 },
                 target_id: target.room_id,
                 target_name: target.room_name,
-                microphone: microphone_notification_state(notification_microphone.status()),
+                microphone: microphone_notification_state(
+                    notification_microphone.status(),
+                    notification_microphone.voice_enabled(),
+                ),
             }),
             VoiceConnectionState::Disconnected
             | VoiceConnectionState::Connecting { .. }
@@ -66,12 +69,28 @@ pub(super) fn ActiveVoiceNotificationControls() -> Element {
                             room_id = %target.room_id,
                             "handling Android notification microphone toggle"
                         );
-                        microphone_uplink::toggle(
-                            microphone.clone(),
-                            realtime.clone(),
-                            target.server_id,
-                            target.room_id,
-                        );
+                        // У недоступного микрофона системное действие предлагает включение:
+                        // это retry захвата с прежним выбором, а не команда выключения.
+                        if microphone.voice_enabled()
+                            && matches!(
+                                microphone.status_untracked(),
+                                MicrophoneStatus::PermissionDenied | MicrophoneStatus::Error(_)
+                            )
+                        {
+                            microphone_uplink::restart(
+                                microphone.clone(),
+                                realtime.clone(),
+                                target.server_id,
+                                target.room_id,
+                            );
+                        } else {
+                            microphone_uplink::toggle(
+                                microphone.clone(),
+                                realtime.clone(),
+                                target.server_id,
+                                target.room_id,
+                            );
+                        }
                     }
                     VoiceNotificationAction::Leave => {
                         info!(
@@ -95,9 +114,15 @@ pub(super) fn ActiveVoiceNotificationControls() -> Element {
     rsx! {}
 }
 
-fn microphone_notification_state(status: MicrophoneStatus) -> VoiceNotificationMicrophoneState {
+fn microphone_notification_state(
+    status: MicrophoneStatus,
+    enabled: bool,
+) -> VoiceNotificationMicrophoneState {
+    if !enabled {
+        return VoiceNotificationMicrophoneState::Off;
+    }
     match status {
-        MicrophoneStatus::Idle => VoiceNotificationMicrophoneState::Off,
+        MicrophoneStatus::Idle => VoiceNotificationMicrophoneState::Starting,
         MicrophoneStatus::Starting => VoiceNotificationMicrophoneState::Starting,
         MicrophoneStatus::Live => VoiceNotificationMicrophoneState::Live,
         MicrophoneStatus::PermissionDenied | MicrophoneStatus::Error(_) => {

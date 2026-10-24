@@ -20,6 +20,7 @@ async fn nickname_update_changes_active_voice_presence() {
         &user,
         &user_id,
         JoinVoiceRoom {
+            microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
         },

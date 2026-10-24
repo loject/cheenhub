@@ -42,6 +42,7 @@ pub(crate) fn VoiceParticipantTile(
     on_toggle_user_menu: EventHandler<(String, String, f64, f64)>,
 ) -> Element {
     use_avatar_seed(participant.user_id.clone());
+    let speaking = speaking && participant.microphone_enabled;
     let screen_sharing = media == VoiceParticipantTileMedia::ScreenShare;
     let camera_on = matches!(media, VoiceParticipantTileMedia::Camera);
     let video_on = screen_sharing || camera_on;
@@ -141,6 +142,9 @@ pub(crate) fn VoiceParticipantTile(
             div { class: "participant-tile-label absolute inset-x-4 bottom-4 z-20 flex justify-center",
                 div { class: "participant-tile-label-surface max-w-full rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-1.5 text-[13px] font-semibold text-zinc-100 shadow-[0_12px_30px_rgba(0,0,0,.32)] backdrop-blur-xl",
                     div { class: "flex min-w-0 items-center gap-1.5",
+                        if !participant.microphone_enabled {
+                            super::microphone_muted_badge::MicrophoneMutedBadge {}
+                        }
                         if speaking {
                             span { class: "h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,.12)]" }
                             span { class: "sr-only", "Говорит" }

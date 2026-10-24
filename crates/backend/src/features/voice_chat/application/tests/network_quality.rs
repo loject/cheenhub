@@ -29,6 +29,7 @@ async fn insert_presence(
     state
         .voice_presence_store
         .join(VoicePresence {
+            microphone_enabled: true,
             realtime_stream_id,
             session_id: Uuid::new_v4(),
             target_kind,
@@ -72,7 +73,11 @@ async fn network_quality_accepts_maximum_rtt_and_rejects_value_above_it() {
         uuid::Uuid::new_v4(),
         &user,
         &user_id,
-        JoinVoiceRoom { server_id, room_id },
+        JoinVoiceRoom {
+            microphone_enabled: true,
+            server_id,
+            room_id,
+        },
     )
     .await
     .expect("join should succeed");

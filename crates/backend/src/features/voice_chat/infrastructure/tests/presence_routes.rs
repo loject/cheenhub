@@ -15,6 +15,7 @@ fn presence(
     user_id: Uuid,
 ) -> VoicePresence {
     VoicePresence {
+        microphone_enabled: true,
         realtime_stream_id,
         session_id,
         target_kind: VoicePresenceTargetKind::Server,
@@ -34,6 +35,7 @@ fn direct_message_presence(
     user_id: Uuid,
 ) -> VoicePresence {
     VoicePresence {
+        microphone_enabled: true,
         realtime_stream_id,
         session_id,
         target_kind: VoicePresenceTargetKind::DirectMessage,

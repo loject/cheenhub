@@ -49,18 +49,19 @@ pub(crate) fn DirectCallControls(
     let is_leaving =
         matches!(state, VoiceConnectionState::Disconnecting { .. }) || direct_call.busy();
     let microphone_live = matches!(microphone_status, MicrophoneStatus::Live);
+    let microphone_enabled = microphone.voice_enabled();
     let microphone_starting = matches!(microphone_status, MicrophoneStatus::Starting);
     let microphone_speaking = microphone_live && microphone_level.active;
     let camera_live = matches!(camera_status, CameraStatus::Live);
     let camera_starting = matches!(camera_status, CameraStatus::Starting);
     let screen_share_live = matches!(screen_share_status, ScreenShareStatus::Live);
     let screen_share_starting = matches!(screen_share_status, ScreenShareStatus::Starting);
-    let microphone_label = match &microphone_status {
-        MicrophoneStatus::Idle => "Включить микрофон".to_owned(),
-        MicrophoneStatus::Starting => "Запрашиваем микрофон".to_owned(),
-        MicrophoneStatus::Live => "Выключить микрофон".to_owned(),
-        MicrophoneStatus::PermissionDenied => "Доступ к микрофону запрещён".to_owned(),
-        MicrophoneStatus::Error(message) => message.clone(),
+    let microphone_label = if microphone_starting {
+        "Запрашиваем микрофон"
+    } else if microphone_enabled {
+        "Выключить микрофон"
+    } else {
+        "Включить микрофон"
     };
     let camera_label = match camera_status {
         CameraStatus::Idle => "Включить камеру",
@@ -149,8 +150,8 @@ pub(crate) fn DirectCallControls(
                             );
                         }
                     },
-                    span { class: control_icon_class(microphone_live), {microphone_icon(false)} }
-                    span { class: control_icon_class(!microphone_live), {microphone_icon(true)} }
+                    span { class: control_icon_class(microphone_enabled), {microphone_icon(false)} }
+                    span { class: control_icon_class(!microphone_enabled), {microphone_icon(true)} }
                 }
                 button {
                     r#type: "button",

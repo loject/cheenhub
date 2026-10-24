@@ -6445,6 +6445,11 @@ html,
   --tw-ring-color: rgb(39 39 42 / var(--tw-ring-opacity, 1));
 }
 
+.ring-zinc-950 {
+  --tw-ring-opacity: 1;
+  --tw-ring-color: rgb(9 9 11 / var(--tw-ring-opacity, 1));
+}
+
 .blur-0 {
   --tw-blur: blur(0);
   filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);

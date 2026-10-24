@@ -1,6 +1,29 @@
 use super::*;
 use uuid::Uuid;
 
+#[test]
+fn voice_microphone_choice_defaults_for_legacy_peers_and_preserves_explicit_mute() {
+    let legacy = serde_json::json!({
+        "user_id": "participant", "nickname": "Участник", "avatar_url": null, "joined_at": "",
+    });
+    let participant: VoiceRoomParticipant = serde_json::from_value(legacy.clone()).unwrap();
+    assert!(participant.microphone_enabled);
+    let mut muted = legacy;
+    muted["microphone_enabled"] = serde_json::json!(false);
+    let participant: VoiceRoomParticipant = serde_json::from_value(muted).unwrap();
+    assert!(!participant.microphone_enabled);
+    let join: JoinVoiceRoom = serde_json::from_value(serde_json::json!({
+        "server_id": "server", "room_id": "room",
+    }))
+    .unwrap();
+    assert!(join.microphone_enabled);
+    let direct: JoinDirectMessageVoiceRoom = serde_json::from_value(serde_json::json!({
+        "conversation_id": "conversation", "microphone_enabled": false,
+    }))
+    .unwrap();
+    assert!(!direct.microphone_enabled);
+}
+
 mod direct_messages;
 
 #[test]
@@ -355,6 +378,7 @@ fn voice_room_snapshot_with_audio_bitrate_round_trips() {
         server_id: Uuid::new_v4().to_string(),
         room_id: Uuid::new_v4().to_string(),
         participants: vec![VoiceRoomParticipant {
+            microphone_enabled: true,
             user_id: Uuid::new_v4().to_string(),
             nickname: "voice_user".to_owned(),
             avatar_url: None,
@@ -413,6 +437,7 @@ fn avatar_fields_round_trip_in_realtime_payloads() {
     assert_eq!(decoded.author_avatar_url, message.author_avatar_url);
 
     let participant = VoiceRoomParticipant {
+        microphone_enabled: true,
         user_id: Uuid::new_v4().to_string(),
         nickname: "voice_user".to_owned(),
         avatar_url: Some("http://localhost/api/images/avatar".to_owned()),

@@ -56,18 +56,19 @@ pub(crate) fn SidebarVoiceControls() -> Element {
         _ => None,
     };
     let microphone_live = matches!(microphone_status, MicrophoneStatus::Live);
+    let microphone_enabled = microphone.voice_enabled();
     let microphone_starting = matches!(microphone_status, MicrophoneStatus::Starting);
     let microphone_speaking = microphone_live && microphone_level.active;
     let camera_live = matches!(camera_status, CameraStatus::Live);
     let camera_starting = matches!(camera_status, CameraStatus::Starting);
     let microphone_level_width =
         (microphone_level.rms / microphone_level.threshold.max(0.001)).clamp(0.08, 1.0) * 100.0;
-    let microphone_label = match &microphone_status {
-        MicrophoneStatus::Idle => "Включить микрофон".to_owned(),
-        MicrophoneStatus::Starting => "Запрашиваем микрофон".to_owned(),
-        MicrophoneStatus::Live => "Выключить микрофон".to_owned(),
-        MicrophoneStatus::PermissionDenied => "Доступ к микрофону запрещен".to_owned(),
-        MicrophoneStatus::Error(message) => message.clone(),
+    let microphone_label = if microphone_starting {
+        "Запрашиваем микрофон"
+    } else if microphone_enabled {
+        "Выключить микрофон"
+    } else {
+        "Включить микрофон"
     };
     let output_label = if output_muted {
         "Включить звук"
@@ -163,7 +164,7 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                                 target.room_id.clone(),
                             );
                         },
-                        if microphone_live {
+                        if microphone_enabled {
                             span {
                                 class: "pointer-events-none absolute inset-x-1.5 bottom-1 h-1 overflow-hidden rounded-full bg-zinc-950/60",
                                 span {

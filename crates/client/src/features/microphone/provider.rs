@@ -52,6 +52,8 @@ pub(super) enum MicrophoneCommand {
 /// Context handle used by features that need microphone input.
 #[derive(Clone)]
 pub(crate) struct MicrophoneHandle {
+    /// Сохраняемый явный выбор микрофона; stop и ошибки захвата его не меняют.
+    pub(super) voice_enabled: Signal<bool>,
     pub(super) status: Signal<MicrophoneStatus>,
     pub(super) level: Signal<MicrophoneLevel>,
     pub(super) level_active: Signal<bool>,
@@ -171,6 +173,10 @@ impl MicrophoneHandle {
         capture: ActiveCapture,
         uplink: Option<MicrophoneUplinkConfig>,
     ) {
+        if capture == ActiveCapture::Voice && !*self.voice_enabled.peek() {
+            debug!("skipping voice capture start for muted microphone preference");
+            return;
+        }
         // Lifecycle-команды могут продолжаться после `await` вне реактивного scope Dioxus.
         // Здесь нужна только моментальная проверка, а не подписка текущей задачи на Signal.
         let previous_status = self.status_untracked();
@@ -218,6 +224,10 @@ impl MicrophoneHandle {
         capture: ActiveCapture,
         uplink: Option<MicrophoneUplinkConfig>,
     ) {
+        if capture == ActiveCapture::Voice && !*self.voice_enabled.peek() {
+            debug!("skipping voice capture restart for muted microphone preference");
+            return;
+        }
         let mut generation = self.generation;
         let operation_generation = next_generation(&mut generation);
         self.send_command(MicrophoneCommand::Restart {
@@ -371,6 +381,7 @@ impl MicrophoneHandle {
     pub(crate) fn for_test() -> Self {
         let (commands, _commands_rx) = mpsc::unbounded();
         Self {
+            voice_enabled: Signal::new(true),
             status: Signal::new(MicrophoneStatus::Idle),
             level: Signal::new(super::provider_runtime::default_level()),
             level_active: Signal::new(false),

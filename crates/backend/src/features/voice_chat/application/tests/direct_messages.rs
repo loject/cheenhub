@@ -97,6 +97,45 @@ async fn direct_message_conversation(
 }
 
 #[tokio::test]
+async fn direct_call_microphone_choice_is_present_on_join_and_can_be_enabled() {
+    use cheenhub_contracts::realtime::SetVoiceMicrophoneState;
+    let state = state();
+    let (alice, alice_id, _bob, _bob_id, conversation_id) =
+        direct_message_conversation(&state).await;
+    let stream_id = uuid::Uuid::new_v4();
+
+    let snapshot = join_direct_message_room(
+        &state,
+        stream_id,
+        uuid::Uuid::new_v4(),
+        &alice,
+        &alice_id,
+        JoinDirectMessageVoiceRoom {
+            conversation_id: conversation_id.clone(),
+            microphone_enabled: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(!snapshot.participants[0].microphone_enabled);
+
+    let snapshot = crate::features::voice_chat::application::set_microphone_state(
+        &state,
+        stream_id,
+        &alice_id,
+        SetVoiceMicrophoneState {
+            room_id: conversation_id,
+            microphone_enabled: true,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(snapshot.participants[0].microphone_enabled);
+}
+
+#[tokio::test]
 async fn callee_can_accept_direct_call_and_both_users_can_recover_it() {
     let state = state();
     let (alice, alice_id, _bob, bob_id, conversation_id) =
@@ -172,7 +211,10 @@ async fn disconnecting_direct_message_presence_ends_active_call() {
         uuid::Uuid::new_v4(),
         &alice,
         &alice_id,
-        JoinDirectMessageVoiceRoom { conversation_id },
+        JoinDirectMessageVoiceRoom {
+            microphone_enabled: true,
+            conversation_id,
+        },
     )
     .await
     .expect("caller should join media presence");
@@ -376,6 +418,7 @@ async fn friends_can_join_and_leave_direct_message_voice_room() {
         &alice,
         &alice_id,
         JoinDirectMessageVoiceRoom {
+            microphone_enabled: true,
             conversation_id: conversation_id.clone(),
         },
     )
@@ -391,6 +434,7 @@ async fn friends_can_join_and_leave_direct_message_voice_room() {
         &bob,
         &bob_id,
         JoinDirectMessageVoiceRoom {
+            microphone_enabled: true,
             conversation_id: conversation_id.clone(),
         },
     )

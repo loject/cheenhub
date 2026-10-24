@@ -209,6 +209,7 @@ async fn deleting_server_removes_only_its_voice_presence() {
         state
             .voice_presence_store
             .join(VoicePresence {
+                microphone_enabled: true,
                 realtime_stream_id: if target_user_id == user_id {
                     stream_id
                 } else {

@@ -24,7 +24,6 @@ pub(crate) async fn update_user_avatar(
         "updated active voice presence avatar"
     );
     for target in rooms {
-        let snapshot = super::room_snapshot(state, target).await;
-        super::fanout_snapshot(state, target, snapshot).await;
+        super::fanout_snapshot(state, target).await;
     }
 }

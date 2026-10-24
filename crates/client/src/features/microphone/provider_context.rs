@@ -20,6 +20,7 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     let _ptt_availability = use_resource(super::push_to_talk::availability);
     use_drop(super::push_to_talk::platform::shutdown);
     let status = use_signal(|| MicrophoneStatus::Idle);
+    let voice_enabled = use_signal(storage::load_voice_enabled);
     let level = use_signal(default_level);
     let level_active = use_signal(|| false);
     let session = use_signal(|| None::<Rc<dyn MicrophoneSession>>);
@@ -111,6 +112,7 @@ pub(crate) fn MicrophoneProvider(children: Element) -> Element {
     };
     let commands = use_coroutine(move |receiver| run_microphone_runtime(receiver, runtime.clone()));
     let handle = MicrophoneHandle {
+        voice_enabled,
         status,
         level,
         level_active,

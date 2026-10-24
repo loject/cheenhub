@@ -57,12 +57,18 @@ pub(super) fn RoomListItem(
                         class: "flex items-center -space-x-1 rounded-full",
                         "aria-label": "Показать участников голосовой комнаты",
                         for participant in visible_voice_participants {
-                            UserAvatar {
-                                key: "{participant.user_id}",
+                            span { key: "{participant.user_id}", class: "relative inline-flex",
+                              UserAvatar {
                                 nickname: participant.nickname.clone(),
                                 avatar_url: participant.avatar_url.clone(),
                                 class: "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-zinc-950 bg-zinc-800 text-[9px] font-bold text-zinc-100 ring-1 ring-zinc-800".to_owned(),
                                 avatar_seed: Some(participant.user_id.clone()),
+                              }
+                              if !participant.microphone_enabled {
+                                span { class: "absolute -bottom-0.5 -right-0.5",
+                                    crate::features::voice_chat::MicrophoneMutedBadge { compact: true }
+                                }
+                              }
                             }
                         }
                         if hidden_voice_participant_count > 0 {
@@ -87,6 +93,9 @@ pub(super) fn RoomListItem(
                                     }
                                     span { class: "min-w-0 truncate text-[12px] font-medium text-zinc-200",
                                         "{participant.nickname}"
+                                    }
+                                    if !participant.microphone_enabled {
+                                        crate::features::voice_chat::MicrophoneMutedBadge {}
                                     }
                                 }
                             }

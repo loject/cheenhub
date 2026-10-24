@@ -107,6 +107,7 @@ async fn join_voice_presence(state: &AppState, session_id: Uuid) -> Uuid {
     state
         .voice_presence_store
         .join(VoicePresence {
+            microphone_enabled: true,
             realtime_stream_id,
             session_id,
             target_kind: VoicePresenceTargetKind::Server,

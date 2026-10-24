@@ -109,7 +109,11 @@ impl VoiceConnectionHandle {
         if current.is_connecting_to(target) {
             self.microphone.set_bitrate_bps(joined.audio_bitrate_bps);
             let mut snapshot = joined.snapshot;
-            ensure_current_user_present(&mut snapshot.participants, &self.current_user);
+            ensure_current_user_present(
+                &mut snapshot.participants,
+                &self.current_user,
+                self.microphone.voice_enabled(),
+            );
             self.apply_room_snapshot(snapshot.clone());
             info!(
                 target_kind = ?target.kind,

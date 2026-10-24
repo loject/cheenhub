@@ -26,8 +26,7 @@ pub(super) async fn fanout_removed_rooms(
     }
 
     for target in rooms {
-        let snapshot = room_snapshot(state, target).await;
-        fanout_snapshot(state, target, snapshot).await;
+        fanout_snapshot(state, target).await;
     }
 }
 
@@ -51,11 +50,18 @@ pub(super) async fn room_snapshot(
     }
 }
 
-pub(super) async fn fanout_snapshot(
-    state: &AppState,
-    target: VoicePresenceTarget,
-    snapshot: VoiceRoomSnapshot,
-) {
+/// Последовательно рассылает актуальный снимок одной голосовой цели.
+///
+/// Снимок читается после определения получателей под отдельным mutex комнаты;
+/// ожидающие рассылки не могут отправить ранее захваченное состояние участников.
+pub(super) async fn fanout_snapshot(state: &AppState, target: VoicePresenceTarget) {
+    // Снимок читается после ожидания предыдущей рассылки, иначе более старый
+    // fanout может навсегда вернуть устаревший mute-статус другого участника.
+    let publication = state
+        .voice_presence_store
+        .snapshot_publication_lock(target)
+        .await;
+    let _publication = publication.lock().await;
     let stream_ids = match target.kind {
         VoicePresenceTargetKind::Server => crate::features::servers::realtime::server_recipients(
             state,
@@ -87,6 +93,7 @@ pub(super) async fn fanout_snapshot(
                 .collect::<Vec<_>>()
         }
     };
+    let snapshot = room_snapshot(state, target).await;
     tracing::debug!(
         server_id = %snapshot.server_id,
         room_id = %snapshot.room_id,
@@ -144,6 +151,7 @@ async fn direct_message_user_ids(
 
 pub(super) fn participant_summary(presence: &VoicePresence) -> VoiceRoomParticipant {
     VoiceRoomParticipant {
+        microphone_enabled: presence.microphone_enabled,
         user_id: presence.user_id.to_string(),
         nickname: presence.nickname.clone(),
         avatar_url: presence.avatar_url.clone(),

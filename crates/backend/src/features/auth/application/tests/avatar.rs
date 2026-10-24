@@ -79,6 +79,7 @@ async fn avatar_upload_updates_active_voice_presence() {
     state
         .voice_presence_store
         .join(VoicePresence {
+            microphone_enabled: true,
             realtime_stream_id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
             target_kind: VoicePresenceTargetKind::Server,

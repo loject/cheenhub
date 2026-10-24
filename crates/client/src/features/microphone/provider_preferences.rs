@@ -8,6 +8,33 @@ use super::provider::MicrophoneHandle;
 use super::{provider_runtime::persist_input_device, storage};
 
 impl MicrophoneHandle {
+    /// Возвращает явный выбор микрофона независимо от capture, VAD, PTT и ошибок.
+    pub(crate) fn voice_enabled(&self) -> bool {
+        (self.voice_enabled)()
+    }
+
+    /// Читает выбор из async lifecycle-задачи без реактивной подписки.
+    pub(crate) fn voice_enabled_untracked(&self) -> bool {
+        *self.voice_enabled.peek()
+    }
+
+    /// Сохраняет выбор микрофона для следующих подключений и запусков приложения.
+    ///
+    /// Захватом управляет вызывающая фича: остановка preview и временная потеря
+    /// audio focus не должны менять этот выбор.
+    pub(crate) fn set_voice_enabled(&self, enabled: bool) {
+        if *self.voice_enabled.peek() == enabled {
+            return;
+        }
+        storage::save_voice_enabled(enabled);
+        let mut preference = self.voice_enabled;
+        preference.set(enabled);
+        info!(
+            microphone_enabled = enabled,
+            "changed saved voice microphone preference"
+        );
+    }
+
     /// Сохраняет устройство ввода; пустой device_id означает системное устройство.
     pub(crate) fn set_input_device(&self, device: &AudioInputDevice) {
         self.set_input_device_preference(

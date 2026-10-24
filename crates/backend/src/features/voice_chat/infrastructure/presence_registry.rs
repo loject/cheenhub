@@ -270,6 +270,31 @@ impl PresenceRegistry {
         self.index.for_stream_user(realtime_stream_id, user_id)
     }
 
+    /// Меняет микрофон только для текущего владельца присутствия и указанной комнаты.
+    ///
+    /// Проверка и запись выполняются под одним lock. Возвращает цель и признак изменения;
+    /// `None` означает чужой поток, другую комнату или уже завершённое присутствие.
+    pub(super) async fn set_microphone_enabled(
+        &self,
+        stream_id: &Uuid,
+        user_id: &Uuid,
+        room_id: &Uuid,
+        enabled: bool,
+    ) -> Option<(VoicePresenceTarget, bool)> {
+        let mut state = self.state.lock().await;
+        let current = state.by_stream.get(stream_id)?.clone();
+        if current.user_id != *user_id || current.room_id != *room_id {
+            return None;
+        }
+        let changed = current.microphone_enabled != enabled;
+        if changed {
+            let mut updated = (*current).clone();
+            updated.microphone_enabled = enabled;
+            self.replace_canonical_presence(&mut state, Arc::new(updated));
+        }
+        Some((current.target(), changed))
+    }
+
     /// Обновляет никнейм присутствующего пользователя и возвращает затронутую цель.
     pub(super) async fn update_user_nickname(
         &self,

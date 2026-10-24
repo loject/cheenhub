@@ -20,12 +20,17 @@ pub(super) struct JoinedVoiceRoom {
 pub(super) async fn join_target(
     realtime: &RealtimeHandle,
     target: &VoiceRoomTarget,
+    microphone_enabled: bool,
 ) -> Result<JoinedVoiceRoom, RealtimeError> {
     match target.kind {
         VoiceRoomTargetKind::Server => {
-            let snapshot =
-                realtime::join_room(realtime, target.server_id.clone(), target.room_id.clone())
-                    .await?;
+            let snapshot = realtime::join_room(
+                realtime,
+                target.server_id.clone(),
+                target.room_id.clone(),
+                microphone_enabled,
+            )
+            .await?;
             let audio_bitrate_bps = snapshot
                 .audio_bitrate_bps
                 .unwrap_or(VOICE_AUDIO_BITRATE_BPS);
@@ -35,8 +40,12 @@ pub(super) async fn join_target(
             })
         }
         VoiceRoomTargetKind::DirectMessage => {
-            let snapshot =
-                realtime::join_direct_message_room(realtime, target.room_id.clone()).await?;
+            let snapshot = realtime::join_direct_message_room(
+                realtime,
+                target.room_id.clone(),
+                microphone_enabled,
+            )
+            .await?;
             Ok(JoinedVoiceRoom {
                 snapshot,
                 audio_bitrate_bps: VOICE_AUDIO_BITRATE_BPS,
@@ -62,6 +71,7 @@ pub(super) async fn leave_target(
 pub(super) fn ensure_current_user_present(
     participants: &mut Vec<VoiceRoomParticipant>,
     user: &AuthUser,
+    microphone_enabled: bool,
 ) {
     if participants
         .iter()
@@ -71,6 +81,7 @@ pub(super) fn ensure_current_user_present(
     }
 
     participants.push(VoiceRoomParticipant {
+        microphone_enabled,
         user_id: user.id.clone(),
         nickname: user.nickname.clone(),
         avatar_url: user.avatar_url.clone(),
