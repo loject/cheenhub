@@ -4,6 +4,8 @@ use cheenhub_contracts::{realtime::TextChatMessage, rest::DmMessageDeliveryStatu
 use dioxus::prelude::*;
 
 use crate::features::app::current_user::CurrentUserContext;
+use crate::features::clipboard::copy_text;
+use crate::features::toast::ToastHandle;
 
 use super::message_edit_dialog::{InlineMessageEditState, RoomMessageInlineEditor};
 
@@ -31,6 +33,9 @@ pub(crate) fn ChatMessageItem(
     let register_anchor =
         super::scroll_anchor_runtime::use_message_anchor(message.id.clone(), anchor_elements);
     let current_user = use_context::<CurrentUserContext>().require_user();
+    let toast = use_context::<ToastHandle>();
+    let mut copying = use_signal(|| false);
+    let can_copy = !message.body.is_empty();
     let is_own = message.author_user_id == current_user.id;
     let can_delete = can_delete_messages || (is_own && allow_own_delete);
     let can_edit = is_own && on_edit.is_some();
@@ -64,6 +69,8 @@ pub(crate) fn ChatMessageItem(
     let quick_delete_id = message.id.clone();
     let quick_edit_handler = on_edit.clone();
     let quick_edit_id = message.id.clone();
+    let copy_body = message.body.clone();
+    let copy_message_id = message.id.clone();
     let edited_datetime = message
         .edited_at
         .as_deref()
@@ -142,11 +149,53 @@ pub(crate) fn ChatMessageItem(
                     {delivery_status_marks(status)}
                 }
             }
-            if (can_pin || can_delete || can_edit) && !is_editing {
+            if (can_copy || can_pin || can_delete || can_edit) && !is_editing {
                 div {
                     class: "pointer-events-none absolute -top-3 right-2 z-20 flex items-center gap-0.5 rounded-xl border border-zinc-800 bg-zinc-950/95 p-1 opacity-0 shadow-[0_8px_24px_rgba(0,0,0,0.45)] backdrop-blur-md transition-opacity duration-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100",
                     if show_hover_time {
                         span { class: "px-1.5 text-[10px] tabular-nums text-zinc-400 min-[901px]:hidden", "{item_time}" }
+                    }
+                    if can_copy {
+                        button {
+                            r#type: "button",
+                            class: "flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 disabled:cursor-wait disabled:opacity-60",
+                            title: "Скопировать сообщение",
+                            "aria-label": "Скопировать сообщение",
+                            disabled: copying(),
+                            onclick: move |_| {
+                                if copying() {
+                                    return;
+                                }
+                                copying.set(true);
+                                let body = copy_body.clone();
+                                let message_id = copy_message_id.clone();
+                                spawn(async move {
+                                    match copy_text(body).await {
+                                        Ok(()) => {
+                                            debug!(%message_id, "message text copied to clipboard");
+                                            toast.success("Сообщение скопировано.");
+                                        }
+                                        Err(error) => {
+                                            warn!(%message_id, %error, "failed to copy message text");
+                                            toast.error("Не удалось скопировать сообщение. Попробуйте ещё раз.");
+                                        }
+                                    }
+                                    copying.set(false);
+                                });
+                            },
+                            if copying() {
+                                svg { class: "h-3.5 w-3.5 animate-spin", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2",
+                                    "aria-hidden": "true",
+                                    path { stroke_linecap: "round", d: "M12 3a9 9 0 1 1-9 9" }
+                                }
+                            } else {
+                                svg { class: "h-3.5 w-3.5", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.9",
+                                    "aria-hidden": "true",
+                                    rect { x: "8", y: "8", width: "12", height: "13", rx: "2" }
+                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" }
+                                }
+                            }
+                        }
                     }
                     if can_pin {
                         if let Some(handler) = quick_pin_handler {
