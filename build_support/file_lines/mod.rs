@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 const MAX_RUST_FILE_LINES: usize = 500;
 
+/// Проверяет лимит production-файлов Rust в workspace, определяемом по manifest текущего crate.
 pub(crate) fn check_workspace_file_lines() {
     let manifest_dir = PathBuf::from(
         std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR should be set"),
@@ -30,6 +31,10 @@ pub(crate) fn check_workspace_file_lines() {
 }
 
 fn check_directory(directory: &Path, oversized: &mut Vec<(PathBuf, usize)>) {
+    // Сценарии и helpers внутри tests/ не относятся к production-коду.
+    if directory.file_name().is_some_and(|name| name == "tests") {
+        return;
+    }
     let entries = fs::read_dir(directory)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", directory.display()));
 
@@ -48,6 +53,9 @@ fn check_directory(directory: &Path, oversized: &mut Vec<(PathBuf, usize)>) {
 }
 
 fn check_file(path: &Path, oversized: &mut Vec<(PathBuf, usize)>) {
+    if path.file_name().is_some_and(|name| name == "tests.rs") {
+        return;
+    }
     let contents = fs::read_to_string(path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     let line_count = contents.lines().count();
@@ -55,3 +63,6 @@ fn check_file(path: &Path, oversized: &mut Vec<(PathBuf, usize)>) {
         oversized.push((path.to_path_buf(), line_count));
     }
 }
+
+#[cfg(test)]
+mod tests;

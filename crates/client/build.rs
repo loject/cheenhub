@@ -16,7 +16,7 @@ const DEFAULT_DEV_KEY_PATH: &str = "target/cheenhub-dev/webtransport-key.pem";
 const DEV_CERT_LIFETIME_DAYS: i64 = 13;
 
 mod file_lines {
-    include!("../../build_support/file_lines.rs");
+    include!("../../build_support/file_lines/mod.rs");
 }
 
 mod android_launcher_icons {
