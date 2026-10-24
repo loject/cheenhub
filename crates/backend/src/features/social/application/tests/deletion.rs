@@ -9,7 +9,7 @@ async fn deleted_friend_rejects_new_actions_but_preserves_history() {
     let setup = setup_pair().await;
     send_dm_message(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             image_id: None,
@@ -36,7 +36,7 @@ async fn deleted_friend_rejects_new_actions_but_preserves_history() {
 
     let denied = send_dm_message(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             image_id: None,
@@ -49,7 +49,7 @@ async fn deleted_friend_rejects_new_actions_but_preserves_history() {
     assert_deleted(
         open_dm_conversation(
             &setup.state,
-            &setup.bob_access_token,
+            &user_id(&setup.bob_user_id),
             OpenDmConversationRequest {
                 friend_user_id: setup.alice_user_id.clone(),
             },
@@ -83,7 +83,7 @@ async fn deleted_friend_rejects_new_actions_but_preserves_history() {
     );
     let history = list_dm_messages(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id.clone(),
         None,
     )
@@ -94,7 +94,7 @@ async fn deleted_friend_rejects_new_actions_but_preserves_history() {
     assert_ne!(history.messages[0].sender_nickname, "alice_dm");
     assert!(history.messages[0].sender_avatar_url.is_none());
     assert_eq!(
-        list_dm_conversations(&setup.state, &setup.bob_access_token)
+        list_dm_conversations(&setup.state, &user_id(&setup.bob_user_id))
             .await
             .expect("existing conversations remain readable")
             .conversations
@@ -112,7 +112,7 @@ async fn deleted_friend_rejects_new_actions_but_preserves_history() {
     );
     send_dm_message(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id,
         SendDmMessageRequest {
             image_id: None,

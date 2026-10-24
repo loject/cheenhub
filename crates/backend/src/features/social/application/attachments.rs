@@ -8,50 +8,47 @@ use image::GenericImageView;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::features::auth::application::require_current_user;
 use crate::features::images::domain::{NewStoredImage, StoredImage};
 use crate::features::social::error::SocialError;
-use crate::features::social::support::{load_user_conversation, map_auth_error, parse_id};
+use crate::features::social::support::{load_user_conversation, parse_id};
 use crate::state::AppState;
 
 const DM_IMAGE_KIND_PREFIX: &str = "direct_message_image:";
 const MAX_DM_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 
 /// Загружает изображение, которое затем можно прикрепить к личному сообщению.
+///
+/// Вызывающий транспорт обязан проверить сессию и активность аккаунта `user_id`.
 pub(crate) async fn upload_dm_image(
     state: &AppState,
-    access_token: &str,
+    user_id: &Uuid,
     conversation_id: String,
     bytes: Bytes,
 ) -> Result<UploadDmImageResponse, SocialError> {
-    let (user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
     let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
-    load_user_conversation(state, &conversation_id, &user.id).await?;
-    let image = validate_image(user.id, conversation_id, bytes)?;
+    load_user_conversation(state, &conversation_id, user_id).await?;
+    let image = validate_image(*user_id, conversation_id, bytes)?;
     let summary = summary(&image);
     state
         .image_store
         .insert_image(image)
         .await
         .map_err(SocialError::Internal)?;
-    tracing::info!(conversation_id = %conversation_id, user_id = %user.id, image_id = %summary.id, "uploaded direct message image");
+    tracing::info!(conversation_id = %conversation_id, user_id = %user_id, image_id = %summary.id, "uploaded direct message image");
     Ok(UploadDmImageResponse { image: summary })
 }
 
 /// Загружает байты изображения для участника диалога.
+///
+/// Вызывающий транспорт обязан проверить сессию и активность аккаунта `user_id`.
 pub(crate) async fn dm_image(
     state: &AppState,
-    access_token: &str,
+    user_id: &Uuid,
     conversation_id: String,
     image_id: String,
 ) -> Result<StoredImage, SocialError> {
-    let (user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
     let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
-    let conversation = load_user_conversation(state, &conversation_id, &user.id).await?;
+    let conversation = load_user_conversation(state, &conversation_id, user_id).await?;
     let image_id = parse_id(&image_id, "Изображение не найдено.")?;
     if state
         .social_store
@@ -60,7 +57,7 @@ pub(crate) async fn dm_image(
         .map_err(SocialError::Internal)?
         .is_none()
     {
-        tracing::warn!(conversation_id = %conversation.id, user_id = %user.id, %image_id, "rejected unattached direct message image read");
+        tracing::warn!(conversation_id = %conversation.id, user_id = %user_id, %image_id, "rejected unattached direct message image read");
         return Err(SocialError::NotFound("Изображение не найдено.".to_owned()));
     }
     let image = state

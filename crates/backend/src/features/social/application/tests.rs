@@ -1,6 +1,7 @@
 mod deletion;
 mod editing;
 mod friend_list;
+mod identity;
 mod search;
 
 use std::sync::Arc;
@@ -38,7 +39,7 @@ async fn incoming_direct_message_increments_unread_count() {
 
     send_dm_message(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             image_id: None,
@@ -48,13 +49,13 @@ async fn incoming_direct_message_increments_unread_count() {
     .await
     .expect("message should send");
 
-    let alice_conversations = list_dm_conversations(&setup.state, &setup.alice_access_token)
+    let alice_conversations = list_dm_conversations(&setup.state, &user_id(&setup.alice_user_id))
         .await
         .expect("conversations should load");
     let alice_conversation = &alice_conversations.conversations[0];
     assert_eq!(alice_conversation.unread_count, 1);
 
-    let bob_conversations = list_dm_conversations(&setup.state, &setup.bob_access_token)
+    let bob_conversations = list_dm_conversations(&setup.state, &user_id(&setup.bob_user_id))
         .await
         .expect("conversations should load");
     assert_eq!(bob_conversations.conversations[0].unread_count, 0);
@@ -70,7 +71,7 @@ async fn mark_as_read_advances_seq_once_and_counts_only_incoming_messages() {
     let setup = setup_pair().await;
     let bob_first = send_dm_message(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             image_id: None,
@@ -82,7 +83,7 @@ async fn mark_as_read_advances_seq_once_and_counts_only_incoming_messages() {
     .message;
     let alice_own = send_dm_message(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             image_id: None,
@@ -94,7 +95,7 @@ async fn mark_as_read_advances_seq_once_and_counts_only_incoming_messages() {
     .message;
     let bob_second = send_dm_message(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             image_id: None,
@@ -109,7 +110,7 @@ async fn mark_as_read_advances_seq_once_and_counts_only_incoming_messages() {
 
     let first_read = mark_dm_conversation_read(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         MarkDmConversationReadRequest {
             last_read_message_id: alice_own.id.clone(),
@@ -122,7 +123,7 @@ async fn mark_as_read_advances_seq_once_and_counts_only_incoming_messages() {
 
     let repeated = mark_dm_conversation_read(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         MarkDmConversationReadRequest {
             last_read_message_id: alice_own.id.clone(),
@@ -135,7 +136,7 @@ async fn mark_as_read_advances_seq_once_and_counts_only_incoming_messages() {
 
     let stale = mark_dm_conversation_read(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         MarkDmConversationReadRequest {
             last_read_message_id: bob_first.id.clone(),
@@ -148,7 +149,7 @@ async fn mark_as_read_advances_seq_once_and_counts_only_incoming_messages() {
 
     let final_read = mark_dm_conversation_read(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         MarkDmConversationReadRequest {
             last_read_message_id: bob_second.id.clone(),
@@ -183,7 +184,7 @@ async fn outgoing_direct_message_is_read_when_recipient_read_seq_reaches_it() {
     let setup = setup_pair().await;
     let alice_message = send_dm_message(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             image_id: None,
@@ -196,7 +197,7 @@ async fn outgoing_direct_message_is_read_when_recipient_read_seq_reaches_it() {
 
     let before_read = list_dm_messages(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         None,
     )
@@ -209,7 +210,7 @@ async fn outgoing_direct_message_is_read_when_recipient_read_seq_reaches_it() {
 
     mark_dm_conversation_read(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id.clone(),
         MarkDmConversationReadRequest {
             last_read_message_id: alice_message.id,
@@ -220,7 +221,7 @@ async fn outgoing_direct_message_is_read_when_recipient_read_seq_reaches_it() {
 
     let after_read = list_dm_messages(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id,
         None,
     )
@@ -238,7 +239,7 @@ async fn direct_message_image_upload_send_and_load_is_scoped_and_single_use() {
     let bytes = png_bytes();
     let uploaded = upload_dm_image(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         Bytes::from(bytes.clone()),
     )
@@ -248,7 +249,7 @@ async fn direct_message_image_upload_send_and_load_is_scoped_and_single_use() {
 
     let orphan_error = dm_image(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         uploaded.id.clone(),
     )
@@ -261,7 +262,7 @@ async fn direct_message_image_upload_send_and_load_is_scoped_and_single_use() {
 
     let sent = send_dm_message(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             body: String::new(),
@@ -283,7 +284,7 @@ async fn direct_message_image_upload_send_and_load_is_scoped_and_single_use() {
 
     let loaded = dm_image(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id.clone(),
         uploaded.id.clone(),
     )
@@ -293,7 +294,7 @@ async fn direct_message_image_upload_send_and_load_is_scoped_and_single_use() {
 
     let reused = send_dm_message(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id,
         SendDmMessageRequest {
             body: String::new(),
@@ -327,7 +328,7 @@ async fn direct_message_image_is_hidden_from_unrelated_conversation_member() {
         .expect("second pair request should accept");
     let foreign_conversation = open_dm_conversation(
         &setup.state,
-        &charlie.access_token,
+        &user_id(&charlie.user.id),
         OpenDmConversationRequest {
             friend_user_id: dave.user.id.clone(),
         },
@@ -337,7 +338,7 @@ async fn direct_message_image_is_hidden_from_unrelated_conversation_member() {
     .conversation;
     let uploaded = upload_dm_image(
         &setup.state,
-        &charlie.access_token,
+        &user_id(&charlie.user.id),
         foreign_conversation.id.clone(),
         Bytes::from(png_bytes()),
     )
@@ -346,7 +347,7 @@ async fn direct_message_image_is_hidden_from_unrelated_conversation_member() {
     .image;
     send_dm_message(
         &setup.state,
-        &charlie.access_token,
+        &user_id(&charlie.user.id),
         foreign_conversation.id.clone(),
         SendDmMessageRequest {
             body: String::new(),
@@ -358,7 +359,7 @@ async fn direct_message_image_is_hidden_from_unrelated_conversation_member() {
 
     let denied = dm_image(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         foreign_conversation.id,
         uploaded.id,
     )
@@ -371,7 +372,7 @@ async fn direct_message_image_is_hidden_from_unrelated_conversation_member() {
 }
 
 async fn conversation_unread(setup: &PairSetup) -> i64 {
-    list_dm_conversations(&setup.state, &setup.alice_access_token)
+    list_dm_conversations(&setup.state, &user_id(&setup.alice_user_id))
         .await
         .expect("conversations should load")
         .conversations[0]
@@ -397,7 +398,7 @@ async fn setup_pair() -> PairSetup {
         .expect("friend request should accept");
     let conversation = open_dm_conversation(
         &state,
-        &alice.access_token,
+        &user_id(&alice.user.id),
         OpenDmConversationRequest {
             friend_user_id: bob.user.id.clone(),
         },
@@ -410,6 +411,7 @@ async fn setup_pair() -> PairSetup {
         state,
         alice_access_token: alice.access_token,
         bob_access_token: bob.access_token,
+        bob_user_id: bob.user.id,
         alice_user_id: alice.user.id,
         conversation_id: conversation.id,
     }
@@ -495,5 +497,10 @@ struct PairSetup {
     alice_access_token: String,
     bob_access_token: String,
     alice_user_id: String,
+    bob_user_id: String,
     conversation_id: String,
+}
+
+fn user_id(value: &str) -> uuid::Uuid {
+    uuid::Uuid::parse_str(value).expect("valid user id")
 }

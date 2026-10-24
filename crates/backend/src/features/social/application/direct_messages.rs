@@ -11,7 +11,6 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use super::attachments::validate_attachment_owner;
-use crate::features::auth::application::require_current_user;
 use crate::features::push_notifications::{DirectMessagePush, direct_message_preview};
 use crate::features::social::domain::DmMessage;
 use crate::features::social::error::SocialError;
@@ -20,77 +19,75 @@ use crate::features::social::realtime::{
     notify_conversation_read_checkpoint, notify_direct_message_created, notify_social_changed,
 };
 use crate::features::social::support::{
-    conversation_summaries, conversation_summary, ensure_user_active, load_user_conversation,
-    map_auth_error, message_body, message_summaries, message_summary, other_user_id, parse_id,
+    conversation_summaries, conversation_summary, ensure_user_active, ensure_user_exists,
+    load_user_conversation, message_body, message_summaries, message_summary, other_user_id,
+    parse_id,
 };
 use crate::state::AppState;
 
 /// Возвращает личные диалоги.
+///
+/// Вызывающий транспорт обязан проверить сессию и активность аккаунта `user_id`.
 pub(crate) async fn list_dm_conversations(
     state: &AppState,
-    access_token: &str,
+    user_id: &Uuid,
 ) -> Result<ListDmConversationsResponse, SocialError> {
-    let (current_user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
     let conversations = state
         .social_store
-        .conversations_for_user(&current_user.id)
+        .conversations_for_user(user_id)
         .await
         .map_err(SocialError::Internal)?;
     Ok(ListDmConversationsResponse {
-        conversations: conversation_summaries(state, &current_user.id, conversations).await?,
+        conversations: conversation_summaries(state, user_id, conversations).await?,
     })
 }
 
 /// Открывает личный диалог с другом.
+///
+/// Вызывающий транспорт обязан проверить сессию и активность аккаунта `user_id`.
 pub(crate) async fn open_dm_conversation(
     state: &AppState,
-    access_token: &str,
+    user_id: &Uuid,
     request: OpenDmConversationRequest,
 ) -> Result<OpenDmConversationResponse, SocialError> {
-    let (current_user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
     let friend_user_id = parse_id(&request.friend_user_id, "Пользователь не найден.")?;
     ensure_user_active(state, &friend_user_id).await?;
     super::friendship_policy::ensure_accepted_friendship(
         state,
-        &current_user.id,
+        user_id,
         &friend_user_id,
         "Писать можно только друзьям.",
     )
     .await?;
     let conversation = state
         .social_store
-        .get_or_create_conversation(&current_user.id, &friend_user_id, Utc::now())
+        .get_or_create_conversation(user_id, &friend_user_id, Utc::now())
         .await
         .map_err(SocialError::Internal)?;
     notify_social_changed(
         state,
-        &[current_user.id, friend_user_id],
+        &[*user_id, friend_user_id],
         SocialChangeReason::DirectMessages,
         Some(conversation.id),
     )
     .await;
     Ok(OpenDmConversationResponse {
-        conversation: conversation_summary(state, &current_user.id, conversation).await?,
+        conversation: conversation_summary(state, user_id, conversation).await?,
     })
 }
 
 /// Возвращает страницу сообщений личного диалога.
+///
+/// Вызывающий транспорт обязан проверить сессию и активность аккаунта `user_id`.
 pub(crate) async fn list_dm_messages(
     state: &AppState,
-    access_token: &str,
+    user_id: &Uuid,
     conversation_id: String,
     before_message_id: Option<String>,
 ) -> Result<ListDmMessagesResponse, SocialError> {
-    let (current_user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
     let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
-    let conversation = load_user_conversation(state, &conversation_id, &current_user.id).await?;
-    let friend_user_id = other_user_id(&conversation, &current_user.id);
+    let conversation = load_user_conversation(state, &conversation_id, user_id).await?;
+    let friend_user_id = other_user_id(&conversation, user_id);
     let before_message_id = before_message_id
         .as_deref()
         .map(|value| parse_id(value, "История сообщений недоступна."))
@@ -109,35 +106,28 @@ pub(crate) async fn list_dm_messages(
     let recipient_last_read_seq =
         recipient_last_read_seq(state, &conversation.id, &friend_user_id).await?;
     Ok(ListDmMessagesResponse {
-        messages: message_summaries(
-            state,
-            &current_user.id,
-            recipient_last_read_seq,
-            page.messages,
-        )
-        .await?,
+        messages: message_summaries(state, user_id, recipient_last_read_seq, page.messages).await?,
         recipient_last_read_seq,
         has_more: page.has_more,
     })
 }
 
 /// Помечает личный диалог прочитанным до указанного сообщения.
+///
+/// Вызывающий транспорт обязан проверить сессию и активность аккаунта `user_id`.
 pub(crate) async fn mark_dm_conversation_read(
     state: &AppState,
-    access_token: &str,
+    user_id: &Uuid,
     conversation_id: String,
     request: MarkDmConversationReadRequest,
 ) -> Result<MarkDmConversationReadResponse, SocialError> {
-    let (current_user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
     let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
-    let conversation = load_user_conversation(state, &conversation_id, &current_user.id).await?;
+    let conversation = load_user_conversation(state, &conversation_id, user_id).await?;
     let last_read_message_id = parse_id(
         &request.last_read_message_id,
         "Сообщение не найдено в этом диалоге.",
     )?;
-    let friend_user_id = other_user_id(&conversation, &current_user.id);
+    let friend_user_id = other_user_id(&conversation, user_id);
     if state
         .social_store
         .dm_message_by_id(&conversation.id, &last_read_message_id)
@@ -147,7 +137,7 @@ pub(crate) async fn mark_dm_conversation_read(
     {
         tracing::warn!(
             conversation_id = %conversation.id,
-            user_id = %current_user.id,
+            user_id = %user_id,
             %last_read_message_id,
             "rejected read checkpoint for message outside direct conversation"
         );
@@ -158,18 +148,13 @@ pub(crate) async fn mark_dm_conversation_read(
     let now = Utc::now();
     let update = state
         .social_store
-        .mark_conversation_read(
-            &conversation.id,
-            &current_user.id,
-            &last_read_message_id,
-            now,
-        )
+        .mark_conversation_read(&conversation.id, user_id, &last_read_message_id, now)
         .await
         .map_err(SocialError::Internal)?;
     if let Some(checkpoint) = update.checkpoint.clone() {
         tracing::info!(
             conversation_id = %conversation.id,
-            user_id = %current_user.id,
+            user_id = %user_id,
             last_read_seq = checkpoint.last_read_seq,
             unread_count = normalize_unread_count(update.state.unread_count),
             "marked direct conversation read"
@@ -177,7 +162,7 @@ pub(crate) async fn mark_dm_conversation_read(
         notify_conversation_read_checkpoint(state, &[friend_user_id], &checkpoint).await;
         notify_social_changed(
             state,
-            &[current_user.id, friend_user_id],
+            &[*user_id, friend_user_id],
             SocialChangeReason::DirectMessages,
             Some(conversation.id),
         )
@@ -185,14 +170,14 @@ pub(crate) async fn mark_dm_conversation_read(
     } else {
         tracing::debug!(
             conversation_id = %conversation.id,
-            user_id = %current_user.id,
+            user_id = %user_id,
             last_read_message_id = %last_read_message_id,
             "ignored stale direct conversation read checkpoint"
         );
     }
     let total_unread_count = state
         .social_store
-        .total_unread_count(&current_user.id)
+        .total_unread_count(user_id)
         .await
         .map_err(SocialError::Internal)?;
     Ok(MarkDmConversationReadResponse {
@@ -212,22 +197,21 @@ pub(crate) async fn mark_dm_conversation_read(
 }
 
 /// Отправляет личное сообщение.
+///
+/// Вызывающий транспорт обязан проверить сессию и активность аккаунта `user_id`.
 pub(crate) async fn send_dm_message(
     state: &AppState,
-    access_token: &str,
+    user_id: &Uuid,
     conversation_id: String,
     request: SendDmMessageRequest,
 ) -> Result<SendDmMessageResponse, SocialError> {
-    let (current_user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
     let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
-    let conversation = load_user_conversation(state, &conversation_id, &current_user.id).await?;
-    let friend_user_id = other_user_id(&conversation, &current_user.id);
+    let conversation = load_user_conversation(state, &conversation_id, user_id).await?;
+    let friend_user_id = other_user_id(&conversation, user_id);
     ensure_user_active(state, &friend_user_id).await?;
     super::friendship_policy::ensure_accepted_friendship(
         state,
-        &current_user.id,
+        user_id,
         &friend_user_id,
         "Писать можно только друзьям.",
     )
@@ -238,13 +222,14 @@ pub(crate) async fn send_dm_message(
         .map(|value| parse_id(value, "Изображение недоступно."))
         .transpose()?;
     if let Some(image_id) = image_id {
-        validate_attachment_owner(state, conversation_id, image_id, current_user.id).await?;
+        validate_attachment_owner(state, conversation_id, image_id, *user_id).await?;
     }
     let body = if request.body.trim().is_empty() && image_id.is_some() {
         String::new()
     } else {
         message_body(request.body)?
     };
+    let current_user = ensure_user_exists(state, user_id).await?;
     let now = Utc::now();
     let message = state
         .social_store
@@ -252,7 +237,7 @@ pub(crate) async fn send_dm_message(
             id: Uuid::new_v4(),
             conversation_id,
             seq: 0,
-            sender_user_id: current_user.id,
+            sender_user_id: *user_id,
             body,
             image_id,
             created_at: now,
@@ -264,7 +249,7 @@ pub(crate) async fn send_dm_message(
     tracing::info!(
         conversation_id = %conversation_id,
         message_id = %message.id,
-        sender_user_id = %current_user.id,
+        sender_user_id = %user_id,
         seq = message.seq,
         "sent direct message"
     );
@@ -273,7 +258,7 @@ pub(crate) async fn send_dm_message(
         message.id,
         message.conversation_id,
         message.seq,
-        current_user.id,
+        *user_id,
         &current_user.nickname,
         &message_preview,
         message.created_at,
@@ -303,7 +288,7 @@ pub(crate) async fn send_dm_message(
             message_id: message.id.to_string(),
             conversation_id: message.conversation_id.to_string(),
             message_seq: message.seq,
-            sender_user_id: current_user.id.to_string(),
+            sender_user_id: user_id.to_string(),
             sender_nickname: current_user.nickname.clone(),
             body: message_preview,
             created_at: message.created_at.to_rfc3339(),
@@ -312,7 +297,7 @@ pub(crate) async fn send_dm_message(
     .await;
     notify_social_changed(
         state,
-        &[current_user.id, friend_user_id],
+        &[*user_id, friend_user_id],
         SocialChangeReason::DirectMessages,
         Some(conversation_id),
     )
@@ -320,7 +305,7 @@ pub(crate) async fn send_dm_message(
     Ok(SendDmMessageResponse {
         message: message_summary(
             state,
-            &current_user.id,
+            user_id,
             recipient_last_read_seq(state, &conversation_id, &friend_user_id).await?,
             message,
         )
@@ -329,18 +314,17 @@ pub(crate) async fn send_dm_message(
 }
 
 /// Изменяет только текст собственного неудалённого сообщения без ограничения по времени.
+///
+/// Вызывающий транспорт обязан проверить сессию и активность аккаунта `user_id`.
 pub(crate) async fn edit_dm_message(
     state: &AppState,
-    access_token: &str,
+    user_id: &Uuid,
     conversation_id: String,
     message_id: String,
     request: EditDmMessageRequest,
 ) -> Result<EditDmMessageResponse, SocialError> {
-    let (current_user, _) = require_current_user(state, access_token)
-        .await
-        .map_err(map_auth_error)?;
     let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
-    let conversation = load_user_conversation(state, &conversation_id, &current_user.id).await?;
+    let conversation = load_user_conversation(state, &conversation_id, user_id).await?;
     let message_id = parse_id(&message_id, "Сообщение не найдено.")?;
     let original = state
         .social_store
@@ -349,11 +333,11 @@ pub(crate) async fn edit_dm_message(
         .map_err(SocialError::Internal)?
         .ok_or_else(|| SocialError::NotFound("Сообщение не найдено.".to_owned()))?;
 
-    if original.sender_user_id != current_user.id || original.deleted_at.is_some() {
+    if original.sender_user_id != *user_id || original.deleted_at.is_some() {
         tracing::warn!(
             conversation_id = %conversation_id,
             message_id = %message_id,
-            user_id = %current_user.id,
+            user_id = %user_id,
             "rejected direct message edit for non-author or deleted message"
         );
         return Err(SocialError::NotFound("Сообщение не найдено.".to_owned()));
@@ -368,13 +352,7 @@ pub(crate) async fn edit_dm_message(
     let updated = if changed {
         state
             .social_store
-            .update_dm_message_body(
-                &conversation_id,
-                &message_id,
-                &current_user.id,
-                &body,
-                Utc::now(),
-            )
+            .update_dm_message_body(&conversation_id, &message_id, user_id, &body, Utc::now())
             .await
             .map_err(SocialError::Internal)?
             .ok_or_else(|| SocialError::NotFound("Сообщение не найдено.".to_owned()))?
@@ -386,13 +364,13 @@ pub(crate) async fn edit_dm_message(
         tracing::debug!(
             conversation_id = %conversation_id,
             message_id = %message_id,
-            user_id = %current_user.id,
+            user_id = %user_id,
             "edited direct message"
         );
-        let recipient_id = other_user_id(&conversation, &current_user.id);
+        let recipient_id = other_user_id(&conversation, user_id);
         notify_social_changed(
             state,
-            &[current_user.id, recipient_id],
+            &[*user_id, recipient_id],
             SocialChangeReason::DirectMessages,
             Some(conversation_id),
         )
@@ -402,11 +380,11 @@ pub(crate) async fn edit_dm_message(
     Ok(EditDmMessageResponse {
         message: message_summary(
             state,
-            &current_user.id,
+            user_id,
             recipient_last_read_seq(
                 state,
                 &conversation_id,
-                &other_user_id(&conversation, &current_user.id),
+                &other_user_id(&conversation, user_id),
             )
             .await?,
             updated,

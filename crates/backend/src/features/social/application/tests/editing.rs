@@ -9,7 +9,7 @@ async fn author_edit_updates_history_without_changing_delivery_state() {
     let setup = setup_pair().await;
     let sent = send_dm_message(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             body: "Исходный текст".to_owned(),
@@ -23,7 +23,7 @@ async fn author_edit_updates_history_without_changing_delivery_state() {
 
     let edited = edit_dm_message(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id.clone(),
         sent.id.clone(),
         EditDmMessageRequest {
@@ -44,7 +44,7 @@ async fn author_edit_updates_history_without_changing_delivery_state() {
 
     let recipient_history = list_dm_messages(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         None,
     )
@@ -55,7 +55,7 @@ async fn author_edit_updates_history_without_changing_delivery_state() {
 
     let repeated = edit_dm_message(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id,
         sent.id,
         EditDmMessageRequest {
@@ -72,7 +72,7 @@ async fn recipient_cannot_edit_another_users_message() {
     let setup = setup_pair().await;
     let sent = send_dm_message(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             body: "Только мой текст".to_owned(),
@@ -85,7 +85,7 @@ async fn recipient_cannot_edit_another_users_message() {
 
     let denied = edit_dm_message(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         sent.id,
         EditDmMessageRequest {
@@ -98,7 +98,7 @@ async fn recipient_cannot_edit_another_users_message() {
 
     let history = list_dm_messages(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id,
         None,
     )
@@ -113,7 +113,7 @@ async fn editing_text_only_message_rejects_blank_body() {
     let setup = setup_pair().await;
     let sent = send_dm_message(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             body: "Не пустое сообщение".to_owned(),
@@ -126,7 +126,7 @@ async fn editing_text_only_message_rejects_blank_body() {
 
     let error = edit_dm_message(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id,
         sent.id,
         EditDmMessageRequest {
@@ -143,7 +143,7 @@ async fn editing_image_caption_keeps_attachment_and_allows_empty_caption() {
     let setup = setup_pair().await;
     let image = upload_dm_image(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         Bytes::from(png_bytes()),
     )
@@ -152,7 +152,7 @@ async fn editing_image_caption_keeps_attachment_and_allows_empty_caption() {
     .image;
     let sent = send_dm_message(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             body: String::new(),
@@ -165,7 +165,7 @@ async fn editing_image_caption_keeps_attachment_and_allows_empty_caption() {
 
     let captioned = edit_dm_message(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id.clone(),
         sent.id.clone(),
         EditDmMessageRequest {
@@ -180,7 +180,7 @@ async fn editing_image_caption_keeps_attachment_and_allows_empty_caption() {
 
     let cleared = edit_dm_message(
         &setup.state,
-        &setup.alice_access_token,
+        &user_id(&setup.alice_user_id),
         setup.conversation_id,
         sent.id,
         EditDmMessageRequest {

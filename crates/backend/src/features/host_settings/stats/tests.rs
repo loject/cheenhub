@@ -180,7 +180,7 @@ async fn send_direct_message(
 ) {
     let conversation = social::open_dm_conversation(
         state,
-        &sender.access_token,
+        &uuid::Uuid::parse_str(&sender.user.id).expect("valid user id"),
         OpenDmConversationRequest {
             friend_user_id: friend.user.id.clone(),
         },
@@ -190,7 +190,7 @@ async fn send_direct_message(
 
     social::send_dm_message(
         state,
-        &sender.access_token,
+        &uuid::Uuid::parse_str(&sender.user.id).expect("valid user id"),
         conversation.conversation.id.clone(),
         SendDmMessageRequest {
             body: "personal message".to_owned(),

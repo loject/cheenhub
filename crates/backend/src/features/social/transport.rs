@@ -1,5 +1,8 @@
 //! HTTP-обработчики друзей и личных сообщений.
 
+#[cfg(test)]
+mod tests;
+
 use axum::{
     Json,
     body::Bytes,
@@ -16,9 +19,12 @@ use cheenhub_contracts::rest::{
 };
 use serde::Deserialize;
 
+use crate::features::auth::application::require_current_user;
 use crate::features::social::application;
 use crate::features::social::error::SocialError;
+use crate::features::social::support::map_auth_error;
 use crate::state::AppState;
+use uuid::Uuid;
 
 /// Query-параметры поиска пользователей.
 #[derive(Deserialize)]
@@ -144,8 +150,8 @@ pub(crate) async fn list_dm_conversations(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<ListDmConversationsResponse>, SocialError> {
-    let token = bearer_token(&headers)?;
-    application::list_dm_conversations(&state, token)
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    application::list_dm_conversations(&state, &user_id)
         .await
         .map(Json)
 }
@@ -156,8 +162,8 @@ pub(crate) async fn open_dm_conversation(
     headers: HeaderMap,
     Json(request): Json<OpenDmConversationRequest>,
 ) -> Result<Json<OpenDmConversationResponse>, SocialError> {
-    let token = bearer_token(&headers)?;
-    application::open_dm_conversation(&state, token, request)
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    application::open_dm_conversation(&state, &user_id, request)
         .await
         .map(Json)
 }
@@ -169,8 +175,8 @@ pub(crate) async fn list_dm_messages(
     Path(conversation_id): Path<String>,
     Query(query): Query<DmMessagesQuery>,
 ) -> Result<Json<ListDmMessagesResponse>, SocialError> {
-    let token = bearer_token(&headers)?;
-    application::list_dm_messages(&state, token, conversation_id, query.before_message_id)
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    application::list_dm_messages(&state, &user_id, conversation_id, query.before_message_id)
         .await
         .map(Json)
 }
@@ -182,8 +188,8 @@ pub(crate) async fn send_dm_message(
     Path(conversation_id): Path<String>,
     Json(request): Json<SendDmMessageRequest>,
 ) -> Result<Json<SendDmMessageResponse>, SocialError> {
-    let token = bearer_token(&headers)?;
-    application::send_dm_message(&state, token, conversation_id, request)
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    application::send_dm_message(&state, &user_id, conversation_id, request)
         .await
         .map(Json)
 }
@@ -195,8 +201,8 @@ pub(crate) async fn edit_dm_message(
     Path((conversation_id, message_id)): Path<(String, String)>,
     Json(request): Json<EditDmMessageRequest>,
 ) -> Result<Json<EditDmMessageResponse>, SocialError> {
-    let token = bearer_token(&headers)?;
-    application::edit_dm_message(&state, token, conversation_id, message_id, request)
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    application::edit_dm_message(&state, &user_id, conversation_id, message_id, request)
         .await
         .map(Json)
 }
@@ -208,8 +214,8 @@ pub(crate) async fn upload_dm_image(
     Path(conversation_id): Path<String>,
     bytes: Bytes,
 ) -> Result<Json<UploadDmImageResponse>, SocialError> {
-    let token = bearer_token(&headers)?;
-    application::upload_dm_image(&state, token, conversation_id, bytes)
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    application::upload_dm_image(&state, &user_id, conversation_id, bytes)
         .await
         .map(Json)
 }
@@ -220,8 +226,8 @@ pub(crate) async fn dm_image(
     headers: HeaderMap,
     Path((conversation_id, image_id)): Path<(String, String)>,
 ) -> Result<Response, SocialError> {
-    let token = bearer_token(&headers)?;
-    let image = application::dm_image(&state, token, conversation_id, image_id).await?;
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    let image = application::dm_image(&state, &user_id, conversation_id, image_id).await?;
     let data = image
         .data
         .ok_or_else(|| SocialError::NotFound("Изображение не найдено.".to_owned()))?;
@@ -239,8 +245,8 @@ pub(crate) async fn mark_dm_conversation_read(
     Path(conversation_id): Path<String>,
     Json(request): Json<MarkDmConversationReadRequest>,
 ) -> Result<Json<MarkDmConversationReadResponse>, SocialError> {
-    let token = bearer_token(&headers)?;
-    application::mark_dm_conversation_read(&state, token, conversation_id, request)
+    let user_id = authenticated_user_id(&state, &headers).await?;
+    application::mark_dm_conversation_read(&state, &user_id, conversation_id, request)
         .await
         .map(Json)
 }
@@ -282,4 +288,13 @@ fn bearer_token(headers: &HeaderMap) -> Result<&str, SocialError> {
         .strip_prefix("Bearer ")
         .filter(|token| !token.is_empty())
         .ok_or_else(|| SocialError::Unauthorized("Войди, чтобы продолжить.".to_owned()))
+}
+
+/// Проверяет HTTP-сессию перед вызовом независимых от токена сценариев ЛС.
+async fn authenticated_user_id(state: &AppState, headers: &HeaderMap) -> Result<Uuid, SocialError> {
+    let token = bearer_token(headers)?;
+    let (user, _) = require_current_user(state, token)
+        .await
+        .map_err(map_auth_error)?;
+    Ok(user.id)
 }

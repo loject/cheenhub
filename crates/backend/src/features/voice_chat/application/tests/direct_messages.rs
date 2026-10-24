@@ -61,7 +61,7 @@ async fn conversation_between(
         .expect("friend request should accept");
     open_dm_conversation(
         state,
-        &requester.access_token,
+        &uuid::Uuid::parse_str(&requester.user.id).expect("valid user id"),
         cheenhub_contracts::rest::OpenDmConversationRequest {
             friend_user_id: recipient.user.id.clone(),
         },

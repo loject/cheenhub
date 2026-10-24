@@ -7,7 +7,7 @@ async fn friends_are_cursor_paginated_by_latest_message_then_identifier() {
     let setup = setup_pair().await;
     send_dm_message(
         &setup.state,
-        &setup.bob_access_token,
+        &user_id(&setup.bob_user_id),
         setup.conversation_id.clone(),
         SendDmMessageRequest {
             image_id: None,
@@ -21,13 +21,14 @@ async fn friends_are_cursor_paginated_by_latest_message_then_identifier() {
     let charlie_conversation = befriend_and_open(
         &setup.state,
         &setup.alice_access_token,
+        &setup.alice_user_id,
         &charlie.access_token,
         &charlie.user.id,
     )
     .await;
     send_dm_message(
         &setup.state,
-        &charlie.access_token,
+        &user_id(&charlie.user.id),
         charlie_conversation,
         SendDmMessageRequest {
             image_id: None,
@@ -116,6 +117,7 @@ fn last_body(response: &cheenhub_contracts::rest::ListFriendsResponse) -> Option
 async fn befriend_and_open(
     state: &AppState,
     requester_access_token: &str,
+    requester_user_id: &str,
     recipient_access_token: &str,
     recipient_user_id: &str,
 ) -> String {
@@ -133,7 +135,7 @@ async fn befriend_and_open(
         .expect("friend request should accept");
     open_dm_conversation(
         state,
-        requester_access_token,
+        &user_id(requester_user_id),
         OpenDmConversationRequest {
             friend_user_id: recipient_user_id.to_owned(),
         },
