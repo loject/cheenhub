@@ -209,6 +209,7 @@ fn spawn_video_reader(
                 Ok(None) => break,
                 Err(error) => {
                     warn!(%error, "failed to read screen sharing frame");
+                    (callbacks.on_error)(screen_share_video_encoding_error(error));
                     break;
                 }
             };
@@ -221,6 +222,7 @@ fn spawn_video_reader(
             let key_frame = sequence.is_multiple_of(u64::from(key_frame_interval_frames));
             if let Err(error) = encoder.encode(&frame, key_frame) {
                 warn!(%error, "failed to encode screen sharing frame");
+                (callbacks.on_error)(screen_share_video_encoding_error(error));
                 frame.close();
                 break;
             }
