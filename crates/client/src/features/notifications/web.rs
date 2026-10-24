@@ -109,7 +109,7 @@ async fn listen_for_text_chat_messages(
     let mut receiver = subscribe_text_chat(&realtime);
 
     while let Some(event) = receiver.next().await {
-        let TextChatEvent::MessageCreated(message) = event else {
+        let TextChatEvent::Created(message) = event else {
             continue;
         };
 

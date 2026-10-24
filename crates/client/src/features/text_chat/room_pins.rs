@@ -64,7 +64,7 @@ pub(super) fn use_room_pins(target: RoomPinsTarget) -> RoomPinsState {
                         if pin.message.server_id == event_target.server_id
                             && pin.message.room_id == event_target.room_id =>
                     {
-                        state.upsert(pin);
+                        state.upsert(*pin);
                     }
                     RoomPinEvent::Unpinned(unpin)
                         if unpin.server_id == event_target.server_id

@@ -14,14 +14,14 @@ use uuid::Uuid;
 
 use crate::features::realtime::{RealtimeError, RealtimeHandle};
 
-/// Inbound text chat event delivered via WebSocket subscription.
+/// Входящее событие сообщений комнаты из общей realtime-подписки.
 pub(crate) enum TextChatEvent {
-    /// A new message was created.
-    MessageCreated(TextChatMessage),
+    /// В комнате создано новое сообщение.
+    Created(TextChatMessage),
     /// Подтверждённое сервером изменение текста сообщения комнаты.
-    MessageEdited(TextChatMessage),
-    /// A message was removed by its author.
-    MessageDeleted(MessageDeletedPayload),
+    Edited(TextChatMessage),
+    /// Сообщение удалено автором.
+    Deleted(MessageDeletedPayload),
 }
 
 /// Loads latest text chat history for a room.
@@ -175,7 +175,7 @@ fn decode_text_chat_event(envelope: RealtimeEnvelope) -> Option<TextChatEvent> {
     match envelope.kind {
         RealtimeKind::TextChat(TextChatKind::MessageCreated) => {
             let message = serde_json::from_value::<TextChatMessage>(envelope.payload).ok()?;
-            Some(TextChatEvent::MessageCreated(message))
+            Some(TextChatEvent::Created(message))
         }
         RealtimeKind::TextChat(TextChatKind::MessageEdited) => {
             let message = serde_json::from_value::<TextChatMessage>(envelope.payload)
@@ -184,11 +184,11 @@ fn decode_text_chat_event(envelope: RealtimeEnvelope) -> Option<TextChatEvent> {
                     error
                 })
                 .ok()?;
-            Some(TextChatEvent::MessageEdited(message))
+            Some(TextChatEvent::Edited(message))
         }
         RealtimeKind::TextChat(TextChatKind::MessageDeleted) => {
             let payload = serde_json::from_value::<MessageDeletedPayload>(envelope.payload).ok()?;
-            Some(TextChatEvent::MessageDeleted(payload))
+            Some(TextChatEvent::Deleted(payload))
         }
         _ => None,
     }

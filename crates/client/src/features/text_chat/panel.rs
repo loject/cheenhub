@@ -145,7 +145,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
             let mut receiver = realtime::subscribe_text_chat(&realtime);
             while let Some(event) = receiver.next().await {
                 match event {
-                    TextChatEvent::MessageCreated(message) => {
+                    TextChatEvent::Created(message) => {
                         if message.room_id == event_room_id
                             && append_message(&mut messages, &mut appearing_message_ids, message)
                             && is_near_bottom()
@@ -153,7 +153,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             pending_scroll.set(Some(ScrollCommand::Bottom));
                         }
                     }
-                    TextChatEvent::MessageEdited(message) => {
+                    TextChatEvent::Edited(message) => {
                         if message.server_id == event_server_id && message.room_id == event_room_id
                         {
                             let mut current = messages();
@@ -164,7 +164,7 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
                             pins_state.apply_edited_message(&message);
                         }
                     }
-                    TextChatEvent::MessageDeleted(payload) => {
+                    TextChatEvent::Deleted(payload) => {
                         if payload.room_id == event_room_id && payload.server_id == event_server_id
                         {
                             let message_id = payload.message_id.clone();

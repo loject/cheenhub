@@ -64,10 +64,10 @@ pub(crate) fn ChatMessageItem(
     };
     let item_time = message_time(&message.created_at);
     let item_datetime = super::message_date::full_message_datetime(&message.created_at);
-    let quick_pin_handler = on_pin_toggle.clone();
+    let quick_pin_handler = on_pin_toggle;
     let quick_pin_id = message.id.clone();
     let quick_delete_id = message.id.clone();
-    let quick_edit_handler = on_edit.clone();
+    let quick_edit_handler = on_edit;
     let quick_edit_id = message.id.clone();
     let copy_body = message.body.clone();
     let copy_message_id = message.id.clone();

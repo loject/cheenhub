@@ -14,7 +14,7 @@ use crate::features::realtime::{RealtimeError, RealtimeHandle};
 /// Уведомление об изменении закреплений серверной комнаты.
 pub(super) enum RoomPinEvent {
     /// Участник закрепил существующее сообщение.
-    Pinned(PinnedTextMessage),
+    Pinned(Box<PinnedTextMessage>),
     /// Участник снял закрепление с сообщения.
     Unpinned(UnpinMessageAccepted),
 }
@@ -122,7 +122,7 @@ fn decode_pin_event(envelope: RealtimeEnvelope) -> Option<RoomPinEvent> {
     match envelope.kind {
         RealtimeKind::TextChat(TextChatKind::MessagePinned) => {
             let pinned = serde_json::from_value::<PinnedTextMessage>(envelope.payload).ok()?;
-            Some(RoomPinEvent::Pinned(pinned))
+            Some(RoomPinEvent::Pinned(Box::new(pinned)))
         }
         RealtimeKind::TextChat(TextChatKind::MessageUnpinned) => {
             let unpinned = serde_json::from_value::<UnpinMessageAccepted>(envelope.payload).ok()?;

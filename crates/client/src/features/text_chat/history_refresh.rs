@@ -138,7 +138,7 @@ pub(super) async fn refresh_history(target: HistoryTarget, mut state: HistorySta
                 None => None,
             };
             while let Some(Some(event)) = events.next().now_or_never() {
-                if let realtime::TextChatEvent::MessageDeleted(payload) = event
+                if let realtime::TextChatEvent::Deleted(payload) = event
                     && payload.room_id == target.room_id
                     && payload.server_id == target.server_id
                 {
@@ -203,7 +203,7 @@ async fn load_refresh(
         let history = loop {
             match select(events.next().boxed_local(), request).await {
                 Either::Left((Some(event), pending_request)) => {
-                    if let realtime::TextChatEvent::MessageDeleted(payload) = event
+                    if let realtime::TextChatEvent::Deleted(payload) = event
                         && payload.room_id == target.room_id
                         && payload.server_id == target.server_id
                     {
