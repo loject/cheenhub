@@ -1,12 +1,8 @@
-//! REST API клиента для друзей и личных сообщений.
+//! REST API клиента для друзей и заявок.
 
 use cheenhub_contracts::rest::{
-    DmConversationSummary, DmImageAttachmentSummary, DmMessageSummary, EditDmMessageRequest,
-    EditDmMessageResponse, ListDmConversationsResponse, ListDmMessagesResponse,
-    ListFriendRequestsResponse, ListFriendsResponse, MarkDmConversationReadRequest,
-    MarkDmConversationReadResponse, OpenDmConversationRequest, OpenDmConversationResponse,
-    SearchUsersResponse, SendDmMessageRequest, SendDmMessageResponse, SendFriendRequestRequest,
-    SendFriendRequestResponse, UploadDmImageResponse, UserSearchResult,
+    ListFriendRequestsResponse, ListFriendsResponse, SearchUsersResponse, SendFriendRequestRequest,
+    SendFriendRequestResponse, UserSearchResult,
 };
 use reqwest::{Response, StatusCode};
 use serde::Serialize;
@@ -124,163 +120,6 @@ pub(crate) async fn delete_friend(friend_user_id: &str) -> Result<(), String> {
     }
 }
 
-/// Загружает личные диалоги.
-pub(crate) async fn list_dm_conversations() -> Result<Vec<DmConversationSummary>, String> {
-    authorized_json::<ListDmConversationsResponse>(
-        "GET",
-        "/direct-messages/conversations",
-        None::<&()>,
-    )
-    .await
-    .map(|response| response.conversations)
-}
-
-/// Открывает личный диалог с другом.
-pub(crate) async fn open_dm_conversation(
-    friend_user_id: String,
-) -> Result<DmConversationSummary, String> {
-    authorized_json::<OpenDmConversationResponse>(
-        "POST",
-        "/direct-messages/conversations",
-        Some(&OpenDmConversationRequest { friend_user_id }),
-    )
-    .await
-    .map(|response| response.conversation)
-}
-
-/// Загружает сообщения личного диалога.
-pub(crate) async fn list_dm_messages(
-    conversation_id: &str,
-    before_message_id: Option<&str>,
-) -> Result<ListDmMessagesResponse, String> {
-    let query = before_message_id
-        .map(|message_id| format!("?before_message_id={message_id}"))
-        .unwrap_or_default();
-    authorized_json::<ListDmMessagesResponse>(
-        "GET",
-        &format!("/direct-messages/conversations/{conversation_id}/messages{query}"),
-        None::<&()>,
-    )
-    .await
-}
-
-/// Помечает личный диалог прочитанным до указанного сообщения.
-pub(crate) async fn mark_dm_conversation_read(
-    conversation_id: &str,
-    last_read_message_id: String,
-) -> Result<MarkDmConversationReadResponse, String> {
-    authorized_json::<MarkDmConversationReadResponse>(
-        "POST",
-        &format!("/direct-messages/conversations/{conversation_id}/read"),
-        Some(&MarkDmConversationReadRequest {
-            last_read_message_id,
-        }),
-    )
-    .await
-}
-
-/// Отправляет личное сообщение.
-pub(crate) async fn send_dm_message(
-    conversation_id: &str,
-    body: String,
-    image_id: Option<String>,
-) -> Result<DmMessageSummary, String> {
-    authorized_json::<SendDmMessageResponse>(
-        "POST",
-        &format!("/direct-messages/conversations/{conversation_id}/messages"),
-        Some(&SendDmMessageRequest { body, image_id }),
-    )
-    .await
-    .map(|response| response.message)
-}
-
-/// Изменяет только текст собственного личного сообщения.
-pub(crate) async fn edit_dm_message(
-    conversation_id: &str,
-    message_id: &str,
-    body: String,
-) -> Result<DmMessageSummary, String> {
-    authorized_json::<EditDmMessageResponse>(
-        "PATCH",
-        &format!("/direct-messages/conversations/{conversation_id}/messages/{message_id}"),
-        Some(&EditDmMessageRequest { body }),
-    )
-    .await
-    .map(|response| response.message)
-}
-
-/// Загружает изображение для личного сообщения.
-pub(crate) async fn upload_dm_image(
-    conversation_id: &str,
-    bytes: Vec<u8>,
-) -> Result<DmImageAttachmentSummary, String> {
-    let path = format!("/direct-messages/conversations/{conversation_id}/images");
-    let response = authorized_bytes_response("POST", &path, Some(bytes)).await?;
-    if response.status().is_success() {
-        response
-            .json::<UploadDmImageResponse>()
-            .await
-            .map(|value| value.image)
-            .map_err(|_| "Не удалось прочитать ответ сервера.".to_owned())
-    } else if response.status() == StatusCode::PAYLOAD_TOO_LARGE {
-        // 413 приходит без тела ответа от nginx или axum, поэтому переводим его
-        // в понятное сообщение о превышении лимита размера изображения.
-        Err("Изображение слишком большое. Максимум — 8 МБ.".to_owned())
-    } else {
-        Err(auth_api::read_error(response).await)
-    }
-}
-
-/// Загружает байты изображения личного сообщения.
-pub(crate) async fn load_dm_image(
-    conversation_id: &str,
-    image_id: &str,
-) -> Result<Vec<u8>, String> {
-    let path = format!("/direct-messages/conversations/{conversation_id}/images/{image_id}");
-    let response = authorized_bytes_response("GET", &path, None).await?;
-    if response.status().is_success() {
-        response
-            .bytes()
-            .await
-            .map(|bytes| bytes.to_vec())
-            .map_err(|_| "Не удалось загрузить изображение.".to_owned())
-    } else {
-        Err(auth_api::read_error(response).await)
-    }
-}
-
-async fn authorized_bytes_response(
-    method: &str,
-    path: &str,
-    body: Option<Vec<u8>>,
-) -> Result<Response, String> {
-    let token = auth_api::fresh_access_token().await?;
-    let response = send_bytes(method, path, &token, body.clone()).await?;
-    if response.status() != StatusCode::UNAUTHORIZED {
-        return Ok(response);
-    }
-    let token = auth_api::refresh_access_token().await?;
-    send_bytes(method, path, &token, body).await
-}
-
-async fn send_bytes(
-    method: &str,
-    path: &str,
-    token: &str,
-    body: Option<Vec<u8>>,
-) -> Result<Response, String> {
-    let request = match method {
-        "GET" => auth_api::get(path),
-        _ => auth_api::post(path),
-    }
-    .header("Authorization", format!("Bearer {token}"));
-    request
-        .body(body.unwrap_or_default())
-        .send()
-        .await
-        .map_err(|_| NETWORK_ERROR_MESSAGE.to_owned())
-}
-
 async fn authorized_json<T>(
     method: &str,
     path: &str,
@@ -324,7 +163,6 @@ async fn send(
     let mut request = match method {
         "GET" => auth_api::get(path),
         "POST" => auth_api::post(path),
-        "PATCH" => auth_api::patch(path),
         "DELETE" => auth_api::delete(path),
         _ => return Err("Неподдерживаемый API-метод.".to_owned()),
     }

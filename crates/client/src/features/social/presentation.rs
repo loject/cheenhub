@@ -13,8 +13,9 @@ use crate::features::application_focus::application_is_focused;
 use crate::features::runtime::sleep_duration;
 use crate::features::text_chat::{ScrollCommand, capture_scroll_position};
 
-use super::api;
 use super::direct_message_state::DirectMessageState;
+use super::{api, realtime};
+use crate::features::realtime::RealtimeHandle;
 
 /// Состояние постраничной загрузки списка друзей.
 #[derive(Clone, Copy)]
@@ -32,10 +33,11 @@ pub(super) struct FriendsPageState {
 }
 
 pub(super) fn load_social_overview(
+    realtime: RealtimeHandle,
     mut friends_page: FriendsPageState,
     mut incoming: Signal<Vec<FriendRequestSummary>>,
     mut outgoing: Signal<Vec<FriendRequestSummary>>,
-    mut conversations: Signal<Vec<DmConversationSummary>>,
+    mut conversations: Signal<Option<Vec<DmConversationSummary>>>,
     mut status: Signal<String>,
     mut is_loading: Signal<bool>,
 ) {
@@ -49,7 +51,7 @@ pub(super) fn load_social_overview(
             let loaded_friends_page = api::list_friends(None).await?;
             let next_incoming = api::list_incoming_requests().await?;
             let next_outgoing = api::list_outgoing_requests().await?;
-            let next_conversations = api::list_dm_conversations().await?;
+            let next_conversations = realtime::list_dm_conversations(&realtime).await?;
             Ok::<_, String>((
                 loaded_friends_page,
                 next_incoming,
@@ -73,11 +75,12 @@ pub(super) fn load_social_overview(
                 friends_page.has_more.set(loaded_friends_page.has_more);
                 incoming.set(next_incoming);
                 outgoing.set(next_outgoing);
-                conversations.set(next_conversations);
+                conversations.set(Some(next_conversations));
                 status.set(String::new());
             }
             Err(error) => {
                 warn!(%error, "failed to load social overview");
+                conversations.set(None);
                 status.set(error);
             }
         }
@@ -127,6 +130,7 @@ pub(super) fn load_more_friends(mut friends_page: FriendsPageState, mut status: 
 }
 
 pub(super) fn load_messages(
+    realtime: RealtimeHandle,
     conversation_id: String,
     mut state: DirectMessageState,
     on_overview_changed: Callback<()>,
@@ -134,11 +138,12 @@ pub(super) fn load_messages(
     state.is_loading.set(true);
     state.status.set(String::new());
     spawn(async move {
-        match api::list_dm_messages(&conversation_id, None).await {
+        match realtime::list_dm_messages(&realtime, &conversation_id, None).await {
             Ok(response) => {
                 state.has_more.set(response.has_more);
                 let next_messages = response.messages;
                 mark_latest_message_read_if_focused(
+                    &realtime,
                     &conversation_id,
                     &next_messages,
                     on_overview_changed,
@@ -153,7 +158,11 @@ pub(super) fn load_messages(
     });
 }
 
-pub(super) fn load_older_messages(conversation_id: String, mut state: DirectMessageState) {
+pub(super) fn load_older_messages(
+    realtime: RealtimeHandle,
+    conversation_id: String,
+    mut state: DirectMessageState,
+) {
     if (state.is_loading_older)() || !(state.has_more)() {
         return;
     }
@@ -167,7 +176,9 @@ pub(super) fn load_older_messages(conversation_id: String, mut state: DirectMess
             Some(element) => capture_scroll_position(element).await,
             None => None,
         };
-        match api::list_dm_messages(&conversation_id, Some(&before_message_id)).await {
+        match realtime::list_dm_messages(&realtime, &conversation_id, Some(&before_message_id))
+            .await
+        {
             Ok(response) => {
                 let mut next = response.messages;
                 next.extend((state.messages)());
@@ -192,14 +203,18 @@ pub(super) fn load_older_messages(conversation_id: String, mut state: DirectMess
 }
 
 pub(super) fn refresh_messages(
+    realtime: RealtimeHandle,
     conversation_id: String,
     mut state: DirectMessageState,
     on_overview_changed: Callback<()>,
 ) {
     spawn(async move {
         let oldest_loaded_id = (state.messages)().first().map(|message| message.id.clone());
-        match fetch_loaded_dm_messages(&conversation_id, oldest_loaded_id.as_deref()).await {
+        match fetch_loaded_dm_messages(&realtime, &conversation_id, oldest_loaded_id.as_deref())
+            .await
+        {
             Ok(next_messages) => {
+                state.status.set(String::new());
                 debug!(
                     conversation_id = %conversation_id,
                     message_count = next_messages.len(),
@@ -213,6 +228,7 @@ pub(super) fn refresh_messages(
                 );
                 if (state.is_near_bottom)() && application_is_focused() {
                     mark_latest_message_read(
+                        &realtime,
                         &conversation_id,
                         &(state.messages)(),
                         on_overview_changed,
@@ -255,10 +271,11 @@ pub(super) fn push_message_with_motion(
 
 /// Перечитывает все открытые страницы истории: realtime-событие не содержит ID правки.
 async fn fetch_loaded_dm_messages(
+    realtime: &RealtimeHandle,
     conversation_id: &str,
     oldest_loaded_id: Option<&str>,
 ) -> Result<Vec<DmMessageSummary>, String> {
-    let mut response = api::list_dm_messages(conversation_id, None).await?;
+    let mut response = realtime::list_dm_messages(realtime, conversation_id, None).await?;
     let mut latest = response.messages;
     while response.has_more
         && oldest_loaded_id.is_some_and(|oldest| !latest.iter().any(|message| message.id == oldest))
@@ -266,7 +283,7 @@ async fn fetch_loaded_dm_messages(
         let Some(cursor) = latest.first().map(|message| message.id.clone()) else {
             break;
         };
-        response = api::list_dm_messages(conversation_id, Some(&cursor)).await?;
+        response = realtime::list_dm_messages(realtime, conversation_id, Some(&cursor)).await?;
         if response.messages.is_empty() {
             break;
         }
@@ -344,6 +361,7 @@ pub(super) fn relation_label(relation: Option<UserRelationStatus>) -> &'static s
 }
 
 async fn mark_latest_message_read_if_focused(
+    realtime: &RealtimeHandle,
     conversation_id: &str,
     messages: &[DmMessageSummary],
     on_overview_changed: Callback<()>,
@@ -355,10 +373,11 @@ async fn mark_latest_message_read_if_focused(
         );
         return;
     }
-    mark_latest_message_read(conversation_id, messages, on_overview_changed).await;
+    mark_latest_message_read(realtime, conversation_id, messages, on_overview_changed).await;
 }
 
 async fn mark_latest_message_read(
+    realtime: &RealtimeHandle,
     conversation_id: &str,
     messages: &[DmMessageSummary],
     on_overview_changed: Callback<()>,
@@ -366,7 +385,9 @@ async fn mark_latest_message_read(
     let Some(last_message) = messages.last() else {
         return;
     };
-    match api::mark_dm_conversation_read(conversation_id, last_message.id.clone()).await {
+    match realtime::mark_dm_conversation_read(realtime, conversation_id, last_message.id.clone())
+        .await
+    {
         Ok(read_update) => {
             debug!(
                 conversation_id = %conversation_id,

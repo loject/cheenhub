@@ -1,5 +1,12 @@
 //! Realtime-подписка на social-события.
 
+mod direct_messages;
+
+pub(crate) use direct_messages::{
+    edit_dm_message, list_dm_conversations, list_dm_messages, load_dm_image,
+    mark_dm_conversation_read, open_dm_conversation, send_dm_message, upload_dm_image,
+};
+
 use cheenhub_contracts::realtime::{
     DirectMessageCreated, RealtimeEnvelope, RealtimeKind, RealtimeModule, SocialChanged,
     SocialKind, SocialReady, SubscribeSocial,

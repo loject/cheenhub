@@ -2,19 +2,14 @@
 
 use std::rc::Rc;
 
-use cheenhub_contracts::{
-    realtime::SocialChangeReason,
-    rest::{DmConversationSummary, DmMessageSummary},
-};
+use cheenhub_contracts::rest::{DmConversationSummary, DmMessageSummary};
 use dioxus::prelude::*;
-use futures_util::StreamExt;
 
 use crate::features::app::components::workspace_split::{
     EMBEDDED_CHAT_DEFAULT_WORKSPACE_RATIO, clamp_embedded_chat_height, finish_embedded_chat_resize,
 };
 use crate::features::app::current_user::CurrentUserContext;
-use crate::features::application_focus::ApplicationFocusContext;
-use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
+use crate::features::realtime::RealtimeHandle;
 use crate::features::runtime::sleep_ms;
 use crate::features::text_chat::{
     CHAT_CONTENT_CLASS, ChatHistoryLoadingState, ChatMessageDateDivider, ScrollCommand,
@@ -26,14 +21,12 @@ use crate::features::voice_chat::{DirectCallHandle, VoiceConnectionHandle, Voice
 use super::direct_message_chat_platform;
 use super::direct_message_editing::use_direct_message_editing;
 use super::direct_message_group::{DirectMessageGroup, prepare_direct_message_groups};
+use super::direct_message_history::use_direct_message_history;
 use super::direct_message_scroll_button::DirectMessageScrollButton;
 use super::direct_message_sending::use_direct_message_operations;
 use super::direct_message_state::DirectMessageState;
 use super::direct_message_voice_surface::DirectMessageVoiceSurface;
-use super::presentation::{
-    load_messages, load_older_messages, push_message_with_motion, refresh_messages,
-};
-use super::realtime::subscribe_social_events;
+use super::presentation::{load_messages, load_older_messages, push_message_with_motion};
 use super::voice_target::direct_message_voice_target;
 use crate::features::message_composer::{MessageComposer, use_message_compose_state};
 
@@ -49,7 +42,6 @@ pub(crate) fn DirectMessageWorkspace(
     let direct_call = use_context::<DirectCallHandle>();
     let realtime = use_context::<RealtimeHandle>();
     let current_user = use_context::<CurrentUserContext>().require_user();
-    let application_focus = use_context::<ApplicationFocusContext>();
     let messages = use_signal(Vec::<DmMessageSummary>::new);
     let (on_start_edit, inline_edit) =
         use_direct_message_editing(conversation.id.clone(), current_user.id.clone(), messages);
@@ -64,7 +56,6 @@ pub(crate) fn DirectMessageWorkspace(
     let mut pending_scroll = use_signal(|| None::<ScrollCommand>);
     let virtual_layout = use_signal(VirtualChatLayout::default);
     let status = use_signal(String::new);
-    let mut focus_initialized = use_signal(|| false);
     let state = DirectMessageState {
         messages,
         appearing_message_ids,
@@ -148,60 +139,12 @@ pub(crate) fn DirectMessageWorkspace(
     let on_overview_changed = Callback::new(move |_| {
         on_overview_changed.call(());
     });
-    use_effect({
-        let conversation_id = conversation_id.clone();
-        move || {
-            debug!(%conversation_id, "loading keyed direct message workspace");
-            load_messages(conversation_id.clone(), state, on_overview_changed);
-        }
-    });
-    use_hook({
-        let realtime = realtime.clone();
-        let status_realtime = realtime.clone();
-        let conversation_id = conversation_id.clone();
-        move || {
-            let ready_conversation_id = conversation_id.clone();
-            spawn(async move {
-                let mut statuses = status_realtime.subscribe_connection_status();
-                let mut first_status = true;
-                while let Some(status) = statuses.next().await {
-                    if first_status {
-                        first_status = false;
-                        continue;
-                    }
-                    if matches!(status, RealtimeConnectionStatus::Connected(_)) {
-                        refresh_messages(ready_conversation_id.clone(), state, on_overview_changed);
-                    }
-                }
-            });
-            spawn(async move {
-                let mut events = subscribe_social_events(&realtime);
-                while let Some(event) = events.next().await {
-                    if event.reason == SocialChangeReason::DirectMessages
-                        && event
-                            .conversation_id
-                            .as_deref()
-                            .is_none_or(|changed_id| changed_id == conversation_id)
-                    {
-                        refresh_messages(conversation_id.clone(), state, on_overview_changed);
-                    }
-                }
-            });
-        }
-    });
-    use_effect({
-        let conversation_id = conversation_id.clone();
-        move || {
-            let focused = application_focus.is_focused();
-            if !*focus_initialized.peek() {
-                focus_initialized.set(true);
-                return;
-            }
-            if focused {
-                refresh_messages(conversation_id.clone(), state, on_overview_changed);
-            }
-        }
-    });
+    use_direct_message_history(
+        realtime.clone(),
+        conversation_id.clone(),
+        state,
+        on_overview_changed,
+    );
     use_effect(move || {
         let _message_count = messages.len();
         let Some(command) = pending_scroll() else {
@@ -269,6 +212,8 @@ pub(crate) fn DirectMessageWorkspace(
             });
         }
     });
+    let scroll_realtime = realtime.clone();
+    let retry_realtime = realtime.clone();
     rsx! {
         section {
             class: "room-workspace voice-shell relative flex min-h-0 flex-1 flex-col bg-[#08090b]",
@@ -402,13 +347,14 @@ pub(crate) fn DirectMessageWorkspace(
                                     && let Some(element) = list_element.cloned()
                                 {
                                     let conversation_id = conversation.id.clone();
+                                    let realtime = scroll_realtime.clone();
                                     spawn(async move {
                                         if element
                                             .get_scroll_offset()
                                             .await
                                             .is_ok_and(|offset| offset.y <= 48.0)
                                         {
-                                            load_older_messages(conversation_id, state);
+                                            load_older_messages(realtime, conversation_id, state);
                                         }
                                     });
                                 }
@@ -426,7 +372,8 @@ pub(crate) fn DirectMessageWorkspace(
                                             class: "mt-3 min-h-10 rounded-xl bg-red-400/10 px-4 text-[12px] font-medium text-red-100 transition-[background-color,color,transform] duration-150 hover:bg-red-400/15 hover:text-white active:scale-[0.96]",
                                             onclick: {
                                                 let conversation_id = conversation.id.clone();
-                                                move |_| load_messages(conversation_id.clone(), state, on_overview_changed)
+                                                let realtime = retry_realtime.clone();
+                                                move |_| load_messages(realtime.clone(), conversation_id.clone(), state, on_overview_changed)
                                             },
                                             "Повторить"
                                         }

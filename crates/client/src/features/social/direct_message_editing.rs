@@ -5,14 +5,16 @@ use dioxus::prelude::*;
 
 use crate::features::text_chat::InlineMessageEditState;
 
-use super::api;
+use super::realtime;
+use crate::features::realtime::RealtimeHandle;
 
-/// Подключает общий inline-редактор к REST API личных сообщений.
+/// Подключает общий inline-редактор к realtime-командам личных сообщений.
 pub(super) fn use_direct_message_editing(
     conversation_id: String,
     current_user_id: String,
     mut messages: Signal<Vec<DmMessageSummary>>,
 ) -> (Callback<String>, Option<InlineMessageEditState>) {
+    let realtime = use_context::<RealtimeHandle>();
     let mut editing_id = use_signal(|| None::<String>);
     let mut saving = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
@@ -58,10 +60,11 @@ pub(super) fn use_direct_message_editing(
         }
 
         let conversation_id = conversation_id.clone();
+        let realtime = realtime.clone();
         saving.set(true);
         error.set(None);
         spawn(async move {
-            match api::edit_dm_message(&conversation_id, &message_id, body).await {
+            match realtime::edit_dm_message(&realtime, &conversation_id, &message_id, body).await {
                 Ok(updated) => {
                     if let Some(existing) = messages
                         .write()

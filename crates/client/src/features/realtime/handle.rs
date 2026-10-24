@@ -417,7 +417,7 @@ fn decode_response<R: DeserializeOwned>(response: RealtimeEnvelope) -> Result<R,
         let rejected = serde_json::from_value::<Rejected>(response.payload).map_err(|error| {
             RealtimeError::new(format!("Failed to decode realtime rejection: {error}"))
         })?;
-        return Err(RealtimeError::new(rejected.message));
+        return Err(RealtimeError::rejected(rejected.message));
     }
     serde_json::from_value(response.payload)
         .map_err(|error| RealtimeError::new(format!("Failed to decode realtime response: {error}")))

@@ -1,5 +1,8 @@
 //! Экран друзей и личных сообщений.
 
+#[cfg(test)]
+mod tests;
+
 use cheenhub_contracts::{
     realtime::SocialChangeReason,
     rest::{DmConversationSummary, FriendRequestSummary, FriendSummary},
@@ -23,7 +26,7 @@ use super::friend_context_menu::FriendContextMenu;
 use super::friend_search_modal::FriendSearchModal;
 use super::friends_section::{FriendMenuRequest, FriendsSection};
 use super::presentation::{FriendsPageState, load_more_friends, load_social_overview};
-use super::realtime::{subscribe_social_events, subscribe_social_ready_events};
+use super::realtime::{self, subscribe_social_events, subscribe_social_ready_events};
 use super::requests_section::FriendRequestsSection;
 use super::voice_target::direct_message_voice_target;
 
@@ -43,7 +46,7 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
     };
     let incoming = use_signal(Vec::<FriendRequestSummary>::new);
     let outgoing = use_signal(Vec::<FriendRequestSummary>::new);
-    let mut conversations = use_signal(Vec::<DmConversationSummary>::new);
+    let mut conversations = use_signal(|| None::<Vec<DmConversationSummary>>);
     let mut selected_conversation = use_signal(|| None::<DmConversationSummary>);
     let mut status = use_signal(String::new);
     let is_loading = use_signal(|| false);
@@ -56,8 +59,10 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
     let mut loaded_route_conversation_id = use_signal(|| None::<String>);
     let mut retried_route_conversation_id = use_signal(|| None::<String>);
 
+    let overview_realtime = realtime.clone();
     let reload = use_callback(move |_| {
         load_social_overview(
+            overview_realtime.clone(),
             friends_page,
             incoming,
             outgoing,
@@ -81,17 +86,20 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
         voice_loader.load_direct_message_voice_rooms();
     });
 
+    let open_realtime = realtime.clone();
     let open_friend = use_callback(move |friend_user_id: String| {
+        let realtime = open_realtime.clone();
         status.set(String::new());
         spawn(async move {
-            match api::open_dm_conversation(friend_user_id).await {
+            match realtime::open_dm_conversation(&realtime, friend_user_id).await {
                 Ok(conversation) => {
                     let conversation_id = conversation.id.clone();
                     selected_conversation.set(Some(conversation));
                     loaded_route_conversation_id.set(Some(conversation_id.clone()));
                     navigator.push(Route::AppDirectMessage { conversation_id });
-                    if let Ok(next_conversations) = api::list_dm_conversations().await {
-                        conversations.set(next_conversations);
+                    if let Ok(next_conversations) = realtime::list_dm_conversations(&realtime).await
+                    {
+                        conversations.set(Some(next_conversations));
                     }
                 }
                 Err(error) => status.set(error),
@@ -130,26 +138,29 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
             return;
         }
 
-        let Some(conversation) = conversations()
-            .into_iter()
-            .find(|conversation| conversation.id == conversation_id)
-        else {
-            if loaded() && !is_loading() {
-                if retried_route_conversation_id().as_deref() != Some(conversation_id.as_str()) {
-                    info!(
-                        %conversation_id,
-                        "direct message route is missing from loaded overview; refreshing social state"
-                    );
-                    retried_route_conversation_id.set(Some(conversation_id.clone()));
-                    reload.call(());
-                    return;
-                }
-                warn!(
-                    %conversation_id,
-                    "saved direct message route is unavailable; opening friends"
-                );
-                navigator.replace(Route::AppFriends {});
+        let overview = conversations();
+        let action = direct_message_route_action(
+            &conversation_id,
+            overview.as_deref(),
+            is_loading(),
+            retried_route_conversation_id().as_deref() == Some(conversation_id.as_str()),
+        );
+        let index = match action {
+            DirectMessageRouteAction::Select(index) => index,
+            DirectMessageRouteAction::Wait => return,
+            DirectMessageRouteAction::Refresh => {
+                info!(%conversation_id, "direct message route is missing from loaded overview; refreshing social state");
+                retried_route_conversation_id.set(Some(conversation_id.clone()));
+                reload.call(());
+                return;
             }
+            DirectMessageRouteAction::Unavailable => {
+                warn!(%conversation_id, "saved direct message route is unavailable; opening friends");
+                navigator.replace(Route::AppFriends {});
+                return;
+            }
+        };
+        let Some(conversation) = overview.and_then(|items| items.into_iter().nth(index)) else {
             return;
         };
 
@@ -397,5 +408,40 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
                 }
             }
         }
+    }
+}
+
+enum DirectMessageRouteAction {
+    Wait,
+    Select(usize),
+    Refresh,
+    Unavailable,
+}
+
+/// Решает судьбу маршрута только по успешно полученному списку диалогов.
+///
+/// Отсутствующий обзор означает ожидание соединения или ошибку загрузки,
+/// поэтому сам по себе не доказывает отсутствие сохранённого диалога.
+fn direct_message_route_action(
+    conversation_id: &str,
+    overview: Option<&[DmConversationSummary]>,
+    loading: bool,
+    retried: bool,
+) -> DirectMessageRouteAction {
+    let Some(conversations) = overview else {
+        return DirectMessageRouteAction::Wait;
+    };
+    if let Some(index) = conversations
+        .iter()
+        .position(|item| item.id == conversation_id)
+    {
+        return DirectMessageRouteAction::Select(index);
+    }
+    if loading {
+        DirectMessageRouteAction::Wait
+    } else if retried {
+        DirectMessageRouteAction::Unavailable
+    } else {
+        DirectMessageRouteAction::Refresh
     }
 }

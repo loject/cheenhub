@@ -2,17 +2,17 @@
 
 use std::rc::Rc;
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as BASE64;
 use cheenhub_contracts::rest::DmImageAttachmentSummary;
 use dioxus::logger::tracing::warn;
 use dioxus::prelude::*;
+use futures_util::StreamExt;
 
 use crate::features::app::components::chat_image_viewer::{
     ChatImageViewerContext, ChatImageViewerImage,
 };
 
-use super::api;
+use super::realtime;
+use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 
 /// Показывает защищённо загруженное изображение личного сообщения.
 #[component]
@@ -21,6 +21,7 @@ pub(crate) fn DirectMessageImage(
     author_user_id: String,
     image: DmImageAttachmentSummary,
 ) -> Element {
+    let realtime = use_context::<RealtimeHandle>();
     let current_user =
         use_context::<crate::features::app::current_user::CurrentUserContext>().require_user();
     let viewer = use_context::<ChatImageViewerContext>();
@@ -33,11 +34,13 @@ pub(crate) fn DirectMessageImage(
     };
     let image_id = image.id.clone();
     let content_type = image.content_type.clone();
-    let loaded = use_resource(move || {
+    let image_realtime = realtime.clone();
+    let mut loaded = use_resource(move || {
         let conversation_id = conversation_id.clone();
         let image_id = image_id.clone();
+        let realtime = image_realtime.clone();
         async move {
-            let result = api::load_dm_image(&conversation_id, &image_id).await;
+            let result = realtime::load_dm_image(&realtime, &conversation_id, &image_id).await;
             if let Err(error) = &result {
                 warn!(
                     image_id = %image_id,
@@ -45,8 +48,21 @@ pub(crate) fn DirectMessageImage(
                     "failed to load direct-message image attachment"
                 );
             }
-            result.map(|bytes| BASE64.encode(bytes))
+            result
         }
+    });
+    use_hook(move || {
+        spawn(async move {
+            let mut statuses = realtime.subscribe_connection_status().skip(1);
+            while let Some(status) = statuses.next().await {
+                if matches!(status, RealtimeConnectionStatus::Connected(_))
+                    && !loaded.peek().as_ref().is_some_and(Result::is_ok)
+                {
+                    debug!("retrying direct message image after realtime reconnect");
+                    loaded.restart();
+                }
+            }
+        });
     });
     let preview = preview_geometry(image.width, image.height);
     let shell_styles = image_shell_styles(preview);

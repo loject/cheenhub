@@ -4,6 +4,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RealtimeError {
     message: String,
+    user_message: Option<String>,
 }
 
 impl RealtimeError {
@@ -11,7 +12,22 @@ impl RealtimeError {
     pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            user_message: None,
         }
+    }
+
+    /// Создаёт отказ сервера с текстом, предназначенным для пользователя.
+    pub(crate) fn rejected(message: impl Into<String>) -> Self {
+        let message = message.into();
+        Self {
+            user_message: Some(message.clone()),
+            message,
+        }
+    }
+
+    /// Возвращает пользовательский текст отказа; технические ошибки его не имеют.
+    pub(crate) fn user_message(&self) -> Option<&str> {
+        self.user_message.as_deref()
     }
 }
 
