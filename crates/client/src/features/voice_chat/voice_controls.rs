@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use dioxus::core::{Runtime, ScopeId};
 use dioxus::prelude::*;
 use futures_channel::mpsc;
 use futures_util::StreamExt;
@@ -95,6 +96,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
     let camera_room_id = target.room_id.clone();
     let camera_current_user_id = current_user_id.clone();
     let camera_participant_video = participant_video.clone();
+    let screen_sender_scope = voice.state.origin_scope();
     let screen_realtime_handle = realtime_handle.clone();
     let screen_server_id = target.server_id.clone();
     let screen_room_id = target.room_id.clone();
@@ -235,6 +237,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                             return;
                         }
                         let send_frame = screen_frame_sender_callback(
+                            screen_sender_scope,
                             screen_realtime_handle.clone(),
                             screen_server_id.clone(),
                             screen_room_id.clone(),
@@ -314,6 +317,7 @@ impl PendingScreenFrames {
 }
 
 fn screen_frame_sender_callback(
+    owner_scope: ScopeId,
     realtime: RealtimeHandle,
     server_id: String,
     room_id: String,
@@ -321,6 +325,7 @@ fn screen_frame_sender_callback(
     let pending = Rc::new(RefCell::new(PendingScreenFrames::default()));
     let (wake_sender, wake_receiver) = mpsc::channel(1);
     spawn_screen_frame_sender(
+        owner_scope,
         wake_receiver,
         Rc::clone(&pending),
         realtime,
@@ -336,32 +341,37 @@ fn screen_frame_sender_callback(
 }
 
 fn spawn_screen_frame_sender(
+    owner_scope: ScopeId,
     mut wake_receiver: mpsc::Receiver<()>,
     pending: Rc<RefCell<PendingScreenFrames>>,
     realtime: RealtimeHandle,
     server_id: String,
     room_id: String,
 ) {
-    spawn(async move {
-        while wake_receiver.next().await.is_some() {
-            loop {
-                let frame = pending.borrow_mut().take();
-                let Some(frame) = frame else {
-                    break;
-                };
-                if let Err(error) =
-                    realtime::send_screen_frame(&realtime, &server_id, &room_id, frame).await
-                {
-                    warn!(
-                        %error,
-                        server_id = %server_id,
-                        room_id = %room_id,
-                        "failed to send encoded screen frame"
-                    );
-                    break;
+    Runtime::current().in_scope(owner_scope, || {
+        spawn(async move {
+            debug!(%server_id, %room_id, "screen frame sender started on voice provider scope");
+            while wake_receiver.next().await.is_some() {
+                loop {
+                    let frame = pending.borrow_mut().take();
+                    let Some(frame) = frame else {
+                        break;
+                    };
+                    if let Err(error) =
+                        realtime::send_screen_frame(&realtime, &server_id, &room_id, frame).await
+                    {
+                        warn!(
+                            %error,
+                            server_id = %server_id,
+                            room_id = %room_id,
+                            "failed to send encoded screen frame"
+                        );
+                        break;
+                    }
                 }
             }
-        }
+            debug!(%server_id, %room_id, "screen frame sender stopped after capture callback closed");
+        });
     });
 }
 
@@ -372,3 +382,6 @@ fn control_icon_class(visible: bool) -> &'static str {
         "pointer-events-none absolute z-10 grid scale-[0.25] place-items-center opacity-0 blur-[4px] transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)]"
     }
 }
+
+#[cfg(test)]
+mod tests;
