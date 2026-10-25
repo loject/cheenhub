@@ -140,8 +140,11 @@ fn run_release_version(args: Vec<String>) -> XtaskResult<()> {
             commit_release_changes(&release.tag)?;
             ensure_clean_worktree("before creating the git tag")?;
             create_git_tag(&release.tag)?;
-            push_git_tag(&release.tag)?;
-            println!("Created and pushed git tag {}.", release.tag);
+            push_git_release(&release.tag)?;
+            println!(
+                "Created git tag {} and pushed main and the tag to origin.",
+                release.tag
+            );
         }
         "-h" | "--help" | "help" => {
             println!(
@@ -549,18 +552,23 @@ fn create_git_tag(tag: &str) -> XtaskResult<()> {
     Ok(())
 }
 
-fn push_git_tag(tag: &str) -> XtaskResult<()> {
-    println!("Pushing git tag {tag} to origin.");
-    checked_status(&mut push_git_tag_command(tag))?;
-    println!("Pushed git tag {tag} to origin.");
+fn push_git_release(tag: &str) -> XtaskResult<()> {
+    println!("Pushing main and git tag {tag} atomically to origin.");
+    checked_status(&mut push_git_release_command(tag))?;
+    println!("Pushed main and git tag {tag} to origin.");
     Ok(())
 }
 
-fn push_git_tag_command(tag: &str) -> Command {
+fn push_git_release_command(tag: &str) -> Command {
     let tag_ref = format!("refs/tags/{tag}");
     let mut command = Command::new("git");
     command
-        .args(["push", "origin"])
+        .args([
+            "push",
+            "--atomic",
+            "origin",
+            "refs/heads/main:refs/heads/main",
+        ])
         .arg(format!("{tag_ref}:{tag_ref}"));
     command
 }

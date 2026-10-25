@@ -770,7 +770,7 @@ command = "cargo"
 args = ["run", "-p", "xtask", "--", "release-version", "print-tag"]
 
 [tasks.create-git-tag]
-description = "Ask for a release tag, build the workspace, then create and push the git tag."
+description = "Ask for a release tag, build the workspace, then create the tag and atomically push main and the tag."
 command = "cargo"
 args = ["run", "-p", "xtask", "--", "release-version", "tag"]
 

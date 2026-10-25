@@ -1,8 +1,8 @@
-use super::{push_git_tag_command, release_target_from_tag, replace_workspace_version};
+use super::{push_git_release_command, release_target_from_tag, replace_workspace_version};
 
 #[test]
-fn pushes_only_the_created_tag_to_origin() {
-    let command = push_git_tag_command("v0.28.6");
+fn pushes_main_and_the_created_tag_to_origin_atomically() {
+    let command = push_git_release_command("v0.28.6");
     let arguments = command
         .get_args()
         .map(|argument| argument.to_string_lossy().into_owned())
@@ -11,7 +11,13 @@ fn pushes_only_the_created_tag_to_origin() {
     assert_eq!(command.get_program(), "git");
     assert_eq!(
         arguments,
-        ["push", "origin", "refs/tags/v0.28.6:refs/tags/v0.28.6"]
+        [
+            "push",
+            "--atomic",
+            "origin",
+            "refs/heads/main:refs/heads/main",
+            "refs/tags/v0.28.6:refs/tags/v0.28.6",
+        ]
     );
 }
 
