@@ -32,7 +32,7 @@ pub(crate) fn UserContextMenu(
             onclick: move |_| on_close.call(()),
         }
         div {
-            class: "user-menu fixed z-[1000] w-[240px] rounded-[18px] border border-zinc-800 bg-zinc-950/96 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,.65)] backdrop-blur-xl",
+            class: "user-menu fixed z-[1000] w-[240px] rounded-[18px] border border-zinc-800 bg-zinc-950/95 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,.65)] backdrop-blur-xl",
             style: pos_style,
             onclick: move |event| event.stop_propagation(),
 
