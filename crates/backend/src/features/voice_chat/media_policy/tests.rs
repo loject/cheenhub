@@ -1,6 +1,7 @@
 //! Проверки политики видеопубликаций и подсчёта активных видеоисточников.
 
 mod activity;
+mod screen_dimensions;
 pub(crate) mod support;
 
 use super::*;

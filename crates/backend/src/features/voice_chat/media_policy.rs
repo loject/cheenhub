@@ -299,18 +299,41 @@ impl VideoPublication {
                 self.block();
                 return VideoAdmission::Drop(VideoDropReason::InvalidVp9KeyFrame);
             };
-            let Some(preset) = allowed_presets.iter().copied().find(|preset| {
-                let spec = preset.spec();
-                Some(spec.source) == source_for_kind(self.key.kind)
-                    && spec.width == width
-                    && spec.height == height
-            }) else {
+            let Some(preset) = allowed_presets
+                .iter()
+                .copied()
+                .filter(|preset| {
+                    let spec = preset.spec();
+                    Some(spec.source) == source_for_kind(self.key.kind)
+                        && match spec.source {
+                            VideoStreamSource::ScreenShare => {
+                                width <= spec.width && height <= spec.height
+                            }
+                            VideoStreamSource::Camera => {
+                                width == spec.width && height == spec.height
+                            }
+                        }
+                })
+                .max_by_key(|preset| preset.spec().max_fps)
+            else {
                 self.block();
                 return VideoAdmission::Drop(VideoDropReason::UnsupportedResolution {
                     width,
                     height,
                 });
             };
+            if self.selected_preset != Some(preset) {
+                tracing::debug!(
+                    session_id = %self.key.session_id,
+                    room_id = %self.key.room_id,
+                    kind = ?self.key.kind,
+                    width,
+                    height,
+                    preset = ?preset,
+                    max_fps = preset.spec().max_fps,
+                    "accepted video publication dimensions within allowed preset"
+                );
+            }
             if self.selected_preset.is_none() {
                 self.selected_preset = Some(preset);
                 self.blocked_until = None;
