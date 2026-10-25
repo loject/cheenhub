@@ -21,7 +21,9 @@ use super::backend::{
     ScreenShareCodec, ScreenShareConfig, ScreenShareError, ScreenShareErrorKind,
     ScreenShareSession, ScreenShareStartRequest, fit_capture_preset,
 };
-use super::browser_capture::{first_video_track, log_selected_video_track, request_screen_stream};
+use super::browser_capture::{
+    first_video_track, log_selected_video_track, request_screen_stream, stop_screen_stream,
+};
 
 const KEY_FRAME_INTERVAL_SECONDS: u32 = 2;
 const UNSUPPORTED_SCREEN_SHARE_MESSAGE: &str = concat!(
@@ -57,6 +59,35 @@ struct BrowserScreenShareSession {
     closed: Rc<Cell<bool>>,
 }
 
+/// Освобождает полученный поток, если запуск сессии прервался.
+struct PendingBrowserCapture {
+    stream: web_sys::MediaStream,
+    transferred: bool,
+}
+
+impl Drop for PendingBrowserCapture {
+    fn drop(&mut self) {
+        if !self.transferred {
+            stop_screen_stream(&self.stream);
+            debug!("released browser screen sharing stream before session activation");
+        }
+    }
+}
+
+impl Drop for BrowserScreenShareSession {
+    fn drop(&mut self) {
+        if self.closed.replace(true) {
+            return;
+        }
+        self.frame_reader.stop();
+        self.track.stop();
+        if let Err(error) = self.encoder.close() {
+            warn!(%error, "failed to close screen sharing encoder on session drop");
+        }
+        debug!("released browser screen sharing capture on session drop");
+    }
+}
+
 impl ScreenShareSession for BrowserScreenShareSession {
     fn stop(&self) -> LocalBoxFuture<'static, Result<(), ScreenShareError>> {
         let encoder = self.encoder.handle();
@@ -88,16 +119,20 @@ async fn start_browser_session(
     }
     ensure_browser_screen_share_support()?;
 
-    let stream = request_screen_stream().await?;
-    let track = first_video_track(&stream)?;
-    log_selected_video_track(&track);
-    let frame_reader = match BrowserVideoFrameReader::from_stream(&track, &stream).await {
-        Ok(reader) => reader,
-        Err(error) => {
-            track.stop();
-            return Err(screen_share_video_encoding_error(error));
-        }
+    let mut pending_capture = PendingBrowserCapture {
+        stream: request_screen_stream().await?,
+        transferred: false,
     };
+    let track = first_video_track(&pending_capture.stream)?;
+    log_selected_video_track(&track);
+    let frame_reader =
+        match BrowserVideoFrameReader::from_stream(&track, &pending_capture.stream).await {
+            Ok(reader) => reader,
+            Err(error) => {
+                track.stop();
+                return Err(screen_share_video_encoding_error(error));
+            }
+        };
     let first_frame = match frame_reader.read().await {
         Ok(Some(frame)) => frame,
         Ok(None) => {
@@ -158,9 +193,14 @@ async fn start_browser_session(
     let frame_reader_handle = frame_reader.handle();
 
     let closed = Rc::new(Cell::new(false));
+    pending_capture.transferred = true;
     spawn_video_reader(
-        frame_reader,
-        first_frame,
+        BrowserCaptureFrames {
+            reader: frame_reader,
+            first_frame,
+            track: track.clone(),
+            stop_handle: frame_reader_handle.clone(),
+        },
         encoder.handle(),
         closed.clone(),
         callbacks,
@@ -213,9 +253,16 @@ fn ensure_browser_screen_share_support() -> Result<(), ScreenShareError> {
     Ok(())
 }
 
-fn spawn_video_reader(
+/// Данные источника кадров и средства его освобождения.
+struct BrowserCaptureFrames {
     reader: BrowserVideoFrameReader,
     first_frame: BrowserVideoFrame,
+    track: web_sys::MediaStreamTrack,
+    stop_handle: BrowserVideoFrameReaderHandle,
+}
+
+fn spawn_video_reader(
+    source: BrowserCaptureFrames,
     encoder: BrowserVideoEncoderHandle,
     closed: Rc<Cell<bool>>,
     callbacks: ScreenShareCallbacks,
@@ -223,6 +270,12 @@ fn spawn_video_reader(
     mut encoder_config: VideoEncoderConfig,
 ) {
     spawn_local(async move {
+        let BrowserCaptureFrames {
+            reader,
+            first_frame,
+            track,
+            stop_handle,
+        } = source;
         let mut first_frame = Some(first_frame);
         let mut frame_sequence = 0_u64;
         let mut frame_rate_gate = VideoFrameRateGate::new(encoder_config.frame_rate);
@@ -308,11 +361,13 @@ fn spawn_video_reader(
             frame.close();
         }
 
-        finish_browser_capture(&encoder, &closed, &callbacks);
+        finish_browser_capture(&track, &stop_handle, &encoder, &closed, &callbacks);
     });
 }
 
 fn finish_browser_capture(
+    track: &web_sys::MediaStreamTrack,
+    frame_reader: &BrowserVideoFrameReaderHandle,
     encoder: &BrowserVideoEncoderHandle,
     closed: &Rc<Cell<bool>>,
     callbacks: &ScreenShareCallbacks,
@@ -320,6 +375,9 @@ fn finish_browser_capture(
     if closed.replace(true) {
         return;
     }
+    frame_reader.stop();
+    track.stop();
+    debug!("released browser screen sharing track after frame reader ended");
     if let Err(error) = encoder.close() {
         warn!(%error, "failed to close screen sharing encoder after capture ended");
     }

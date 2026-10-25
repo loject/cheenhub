@@ -33,6 +33,16 @@ pub(super) async fn request_screen_stream() -> Result<MediaStream, ScreenShareEr
         .map_err(|_| ScreenShareError::new("Браузер вернул некорректный поток экрана."))
 }
 
+/// Останавливает все видеодорожки потока, включая незавершённый запуск.
+pub(super) fn stop_screen_stream(stream: &MediaStream) {
+    let tracks = stream.get_video_tracks();
+    for index in 0..tracks.length() {
+        if let Ok(track) = tracks.get(index).dyn_into::<web_sys::MediaStreamTrack>() {
+            track.stop();
+        }
+    }
+}
+
 pub(super) fn first_video_track(
     stream: &MediaStream,
 ) -> Result<web_sys::MediaStreamTrack, ScreenShareError> {
