@@ -42,6 +42,8 @@ pub(crate) fn VoiceParticipantTile(
     on_toggle_user_menu: EventHandler<(String, String, f64, f64)>,
 ) -> Element {
     use_avatar_seed(participant.user_id.clone());
+    let mut video_dimensions = use_signal(|| None::<(u32, u32)>);
+    let video_style = participant_video_style(video_dimensions());
     let speaking = speaking && participant.microphone_enabled;
     let screen_sharing = media == VoiceParticipantTileMedia::ScreenShare;
     let camera_on = matches!(media, VoiceParticipantTileMedia::Camera);
@@ -74,7 +76,7 @@ pub(crate) fn VoiceParticipantTile(
             "data-speaking": if speaking { "true" } else { "false" },
             "data-camera": if camera_on { "true" } else { "false" },
             "data-video": if video_on { "true" } else { "false" },
-            style: "--avatar-bg: rgba(24,24,27,.80);",
+            style: "--avatar-bg: rgba(24,24,27,.80); {video_style}",
             class: tile_class,
             oncontextmenu: {
                 let nickname = participant.nickname.clone();
@@ -90,11 +92,13 @@ pub(crate) fn VoiceParticipantTile(
                 ParticipantVideoCanvas {
                     user_id: participant.user_id.clone(),
                     source: ParticipantVideoSource::ScreenShare,
+                    on_dimensions: move |dimensions: (u32, u32)| video_dimensions.set(Some(dimensions)),
                 }
             } else if camera_on {
                 ParticipantVideoCanvas {
                     user_id: participant.user_id.clone(),
                     source: ParticipantVideoSource::Camera,
+                    on_dimensions: move |dimensions: (u32, u32)| video_dimensions.set(Some(dimensions)),
                 }
             }
             button {
@@ -166,3 +170,17 @@ pub(crate) fn VoiceParticipantTile(
         }
     }
 }
+
+fn participant_video_style(dimensions: Option<(u32, u32)>) -> String {
+    let Some((width, height)) = dimensions.filter(|(width, height)| *width > 0 && *height > 0)
+    else {
+        return String::new();
+    };
+    let height_per_width = 100.0 * f64::from(height) / f64::from(width);
+    format!(
+        "--participant-video-aspect-ratio: {width} / {height}; --participant-video-height: {height_per_width}cqw;"
+    )
+}
+
+#[cfg(test)]
+mod tests;

@@ -694,6 +694,7 @@ html,
 }
 
 .direct-call-participant-stage {
+  container-type: size;
   padding-bottom: calc(7.25rem + env(safe-area-inset-bottom, 0px));
 }
 
@@ -1287,10 +1288,10 @@ html,
   flex: none;
   min-width: 0;
   width: auto;
-  height: min(100cqh, 56.25cqw);
+  height: min(100cqh, var(--participant-video-height, 56.25cqw));
   max-width: 100cqw;
   max-height: 100cqh;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--participant-video-aspect-ratio, 16 / 9);
 }
 
 .participants-grid[data-focused="true"] > article[data-focused="true"] canvas {
@@ -7732,13 +7733,13 @@ html,
   align-self: center;
   justify-self: center;
   width: auto;
-  height: min(calc(100cqh - 8.5rem), 56.25cqw);
+  height: min(calc(100cqh - 8.5rem), var(--participant-video-height, 56.25cqw));
   max-width: 100cqw;
   max-height: 100%;
 }
 
 .participants-grid[data-focused="true"][data-count="1"] > article[data-focused="true"] {
-  height: min(100cqh, 56.25cqw);
+  height: min(100cqh, var(--participant-video-height, 56.25cqw));
 }
 
 .voice-focus-strip {
@@ -7771,13 +7772,14 @@ html,
   align-self: center;
   justify-self: center;
   width: auto;
-  height: min(calc(100cqh - 10rem), 56.25cqw);
+  height: min(calc(100cqh - 10rem), var(--participant-video-height, 56.25cqw));
+  aspect-ratio: var(--participant-video-aspect-ratio, 16 / 9);
   max-width: 100cqw;
   max-height: 100%;
 }
 
 .participants-grid[data-focused="true"][data-count="1"] > article[data-focused="true"] {
-  height: min(100cqh, 56.25cqw);
+  height: min(100cqh, var(--participant-video-height, 56.25cqw));
 }
 
 @media (max-width: 900px) {

@@ -46,6 +46,7 @@ pub(crate) fn DirectCallStage(
     let playback = use_context::<AudioPlaybackHandle>();
     let mut menu_position = use_signal(|| None::<(f64, f64)>);
     let mut peer_volume = use_signal(|| 100_u32);
+    let mut screen_dimensions = use_signal(|| None::<(u32, u32)>);
     let peer = participants
         .iter()
         .find(|participant| participant.user_id == peer_user_id);
@@ -80,6 +81,7 @@ pub(crate) fn DirectCallStage(
         .iter()
         .any(|user_id| user_id == &current_user_id);
     let stage_state = stage_state_content(&status, &peer_nickname);
+    let peer_card_style = screen_share_card_style(peer_source, screen_dimensions());
 
     rsx! {
         div {
@@ -116,6 +118,7 @@ pub(crate) fn DirectCallStage(
                 }
             } else {
                 article {
+                    style: peer_card_style,
                     class: if peer_speaking {
                         "direct-call-peer-card relative h-full max-h-[760px] min-h-[260px] w-full max-w-5xl overflow-hidden rounded-[24px] bg-zinc-900/72 shadow-[0_0_0_1px_rgba(96,165,250,.48),0_18px_54px_rgba(0,0,0,.28)] transition-[box-shadow,background-color] duration-200"
                     } else {
@@ -123,8 +126,14 @@ pub(crate) fn DirectCallStage(
                     },
                     if let Some(source) = peer_source {
                         ParticipantVideoCanvas {
+                            key: "{peer_user_id}-{source.label()}",
                             user_id: peer_user_id.clone(),
                             source,
+                            on_dimensions: move |dimensions: (u32, u32)| {
+                                if source == ParticipantVideoSource::ScreenShare {
+                                    screen_dimensions.set(Some(dimensions));
+                                }
+                            },
                         }
                         div { class: "pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-zinc-950/70 via-transparent to-zinc-950/20" }
                     } else {
@@ -214,6 +223,24 @@ pub(crate) fn DirectCallStage(
             }
         }
     }
+}
+
+fn screen_share_card_style(
+    source: Option<ParticipantVideoSource>,
+    dimensions: Option<(u32, u32)>,
+) -> String {
+    if source != Some(ParticipantVideoSource::ScreenShare) {
+        return String::new();
+    }
+    let (width, height) = dimensions
+        .filter(|(width, height)| *width > 0 && *height > 0)
+        .unwrap_or((16, 9));
+    let ratio = f64::from(width) / f64::from(height);
+    format!(
+        "aspect-ratio: {width} / {height}; width: min(100cqw, {}cqh, 1024px, {}px); height: auto; min-height: 0; max-height: none;",
+        100.0 * ratio,
+        760.0 * ratio,
+    )
 }
 
 fn stage_state_content(

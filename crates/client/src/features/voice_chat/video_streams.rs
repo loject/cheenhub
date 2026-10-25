@@ -1,6 +1,7 @@
 //! Общее состояние и renderer видеопотоков участников.
 
 mod backend;
+mod delivery;
 mod native;
 mod web;
 
@@ -9,7 +10,6 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use dioxus::core::{Runtime, ScopeId};
-use dioxus::dioxus_core::spawn_forever;
 use dioxus::prelude::*;
 use futures_channel::mpsc;
 use futures_util::StreamExt;
@@ -25,7 +25,7 @@ use super::realtime::InboundVideoFrame;
 const PARTICIPANT_VIDEO_RELEASE_TIMEOUT_MS: u32 = 1_500;
 
 type ParticipantVideoSubscribers =
-    Rc<RefCell<HashMap<ParticipantVideoKey, Vec<mpsc::UnboundedSender<ParticipantVideoFrame>>>>>;
+    Rc<RefCell<HashMap<ParticipantVideoKey, delivery::ParticipantVideoDelivery>>>;
 type ParticipantVideoGenerations = Rc<RefCell<HashMap<ParticipantVideoKey, u64>>>;
 type ParticipantVideoBlockedStreams = Rc<RefCell<HashSet<ParticipantVideoKey>>>;
 
@@ -187,13 +187,12 @@ impl ParticipantVideoHandle {
                 );
                 return;
             }
-            self.mark_live(key.clone());
-            let mut subscribers = self.subscribers.borrow_mut();
-            let Some(stream_subscribers) = subscribers.get_mut(&key) else {
-                return;
-            };
-            stream_subscribers
-                .retain(|subscriber| subscriber.unbounded_send(frame.clone()).is_ok());
+            self.subscribers
+                .borrow_mut()
+                .entry(key.clone())
+                .or_default()
+                .publish(frame);
+            self.mark_live(key);
         });
     }
 
@@ -202,6 +201,7 @@ impl ParticipantVideoHandle {
         let key = ParticipantVideoKey::new(source, user_id.to_owned());
         self.generations.borrow_mut().remove(&key);
         self.blocked_streams.borrow_mut().insert(key.clone());
+        self.subscribers.borrow_mut().remove(&key);
         let mut next_streams = (self.live_streams)();
         let previous_len = next_streams.len();
         next_streams
@@ -225,20 +225,18 @@ impl ParticipantVideoHandle {
         source: ParticipantVideoSource,
         user_id: String,
     ) -> mpsc::UnboundedReceiver<ParticipantVideoFrame> {
-        let (sender, receiver) = mpsc::unbounded();
         self.subscribers
             .borrow_mut()
             .entry(ParticipantVideoKey::new(source, user_id))
             .or_default()
-            .push(sender);
-
-        receiver
+            .subscribe()
     }
 
     /// Очищает индикаторы активных видеоисточников.
     pub(crate) fn clear(&self) {
         self.generations.borrow_mut().clear();
         self.blocked_streams.borrow_mut().clear();
+        self.subscribers.borrow_mut().clear();
         let mut live_streams = self.live_streams;
         live_streams.set(Vec::new());
     }
@@ -248,9 +246,10 @@ impl ParticipantVideoHandle {
         target_id: String,
         user_id: String,
         source: ParticipantVideoSource,
+        on_dimensions: backend::ParticipantVideoDimensionsCallback,
     ) -> Result<Rc<dyn ParticipantVideoRenderer>, backend::ParticipantVideoRenderError> {
         self.backend
-            .create_renderer(target_id, user_id, source.label())
+            .create_renderer(target_id, user_id, source.label(), on_dimensions)
     }
 
     fn mark_live(&self, key: ParticipantVideoKey) {
@@ -277,12 +276,19 @@ impl ParticipantVideoHandle {
         debug!(
             user_id = %key.user_id,
             source = key.source.label(),
+            owner_scope = ?self.owner_scope,
             "marked participant video stream as live"
         );
 
+        if key.source == ParticipantVideoSource::ScreenShare {
+            debug!(user_id = %key.user_id, "keeping static screen share live until explicit stop");
+            return;
+        }
+
         let generations = self.generations.clone();
         let blocked_streams = self.blocked_streams.clone();
-        spawn_forever(async move {
+        let subscribers = self.subscribers.clone();
+        Runtime::current().spawn(self.owner_scope, async move {
             let mut observed_generation = generation;
             loop {
                 sleep_ms(PARTICIPANT_VIDEO_RELEASE_TIMEOUT_MS).await;
@@ -294,6 +300,7 @@ impl ParticipantVideoHandle {
                     Some(_) => {
                         generations.borrow_mut().remove(&key);
                         blocked_streams.borrow_mut().insert(key.clone());
+                        subscribers.borrow_mut().remove(&key);
                         let mut next_streams = live_streams();
                         let previous_len = next_streams.len();
                         next_streams.retain(|activity| {
@@ -342,8 +349,15 @@ impl ParticipantVideoKey {
 }
 
 /// Рендерит декодированное видео одного источника участника.
+///
+/// `on_dimensions` получает отображаемые размеры первого кадра и последующих изменений
+/// разрешения; родитель может использовать их для сохранения пропорций плитки.
 #[component]
-pub(crate) fn ParticipantVideoCanvas(user_id: String, source: ParticipantVideoSource) -> Element {
+pub(crate) fn ParticipantVideoCanvas(
+    user_id: String,
+    source: ParticipantVideoSource,
+    on_dimensions: Option<EventHandler<(u32, u32)>>,
+) -> Element {
     let video = use_context::<ParticipantVideoHandle>();
     let target_id = use_hook({
         let source = source;
@@ -357,19 +371,28 @@ pub(crate) fn ParticipantVideoCanvas(user_id: String, source: ParticipantVideoSo
         move || {
             spawn(async move {
                 let mut frames = video.subscribe_stream(source, user_id.clone());
-                let renderer =
-                    match video.create_renderer(target_id.clone(), user_id.clone(), source) {
-                        Ok(renderer) => renderer,
-                        Err(error) => {
-                            warn!(
-                                %error,
-                                %user_id,
-                                source = source.label(),
-                                "failed to create participant video renderer"
-                            );
-                            return;
-                        }
-                    };
+                let on_dimensions = Rc::new(move |width, height| {
+                    if let Some(handler) = on_dimensions {
+                        handler.call((width, height));
+                    }
+                });
+                let renderer = match video.create_renderer(
+                    target_id.clone(),
+                    user_id.clone(),
+                    source,
+                    on_dimensions,
+                ) {
+                    Ok(renderer) => renderer,
+                    Err(error) => {
+                        warn!(
+                            %error,
+                            %user_id,
+                            source = source.label(),
+                            "failed to create participant video renderer"
+                        );
+                        return;
+                    }
+                };
 
                 while let Some(frame) = frames.next().await {
                     if frame.key_frame {
@@ -413,3 +436,6 @@ pub(crate) fn ParticipantVideoCanvas(user_id: String, source: ParticipantVideoSo
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

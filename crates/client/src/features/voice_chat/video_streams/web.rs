@@ -14,7 +14,8 @@ use wasm_bindgen_futures::spawn_local;
 
 use super::ParticipantVideoFrame;
 use super::backend::{
-    ParticipantVideoBackend, ParticipantVideoRenderError, ParticipantVideoRenderer,
+    ParticipantVideoBackend, ParticipantVideoDimensionsCallback, ParticipantVideoRenderError,
+    ParticipantVideoRenderer,
 };
 
 const VIDEO_CALLBACK_RELEASE_DELAY_MS: u32 = 250;
@@ -31,8 +32,9 @@ impl ParticipantVideoBackend for WebParticipantVideoBackend {
         target_id: String,
         user_id: String,
         source_label: &'static str,
+        on_dimensions: ParticipantVideoDimensionsCallback,
     ) -> Result<Rc<dyn ParticipantVideoRenderer>, ParticipantVideoRenderError> {
-        BrowserParticipantVideoRenderer::new(target_id, user_id, source_label)
+        BrowserParticipantVideoRenderer::new(target_id, user_id, source_label, on_dimensions)
             .map(|renderer| Rc::new(renderer) as Rc<dyn ParticipantVideoRenderer>)
     }
 }
@@ -53,6 +55,7 @@ impl BrowserParticipantVideoRenderer {
         target_id: String,
         user_id: String,
         source_label: &'static str,
+        on_dimensions: ParticipantVideoDimensionsCallback,
     ) -> Result<Self, ParticipantVideoRenderError> {
         let canvas = Rc::new(RefCell::new(None));
         let closed = Rc::new(Cell::new(false));
@@ -63,12 +66,29 @@ impl BrowserParticipantVideoRenderer {
         let output_source_label = source_label;
         let output_sequence = Rc::new(Cell::new(0_u64));
         let output_trace_sequence = output_sequence.clone();
+        let mut previous_dimensions = None;
         let output_closure = Closure::wrap(Box::new(move |frame: VideoFrame| {
             if output_closed.get() {
                 let _ = frame.close();
                 return;
             }
-            let canvas = match get_or_create_canvas(&output_canvas, &output_target_id) {
+            let dimensions = (frame.display_width(), frame.display_height());
+            if dimensions.0 > 0 && dimensions.1 > 0 && previous_dimensions != Some(dimensions) {
+                previous_dimensions = Some(dimensions);
+                debug!(
+                    sender_user_id = %output_user_id,
+                    source = output_source_label,
+                    width = dimensions.0,
+                    height = dimensions.1,
+                    "participant video display dimensions changed"
+                );
+                on_dimensions(dimensions.0, dimensions.1);
+            }
+            let canvas = match get_or_create_canvas(
+                &output_canvas,
+                &output_target_id,
+                output_source_label,
+            ) {
                 Ok(canvas) => canvas,
                 Err(error) => {
                     warn!(
@@ -262,7 +282,10 @@ fn encoded_video_chunk(frame: &ParticipantVideoFrame) -> Result<EncodedVideoChun
     EncodedVideoChunk::new(&init.into())
 }
 
-fn create_canvas_in_target(target_id: &str) -> Result<JsValue, ParticipantVideoRenderError> {
+fn create_canvas_in_target(
+    target_id: &str,
+    source_label: &str,
+) -> Result<JsValue, ParticipantVideoRenderError> {
     let window = web_sys::window().ok_or_else(|| {
         ParticipantVideoRenderError::new("Окно браузера недоступно для отображения видео.")
     })?;
@@ -277,7 +300,11 @@ fn create_canvas_in_target(target_id: &str) -> Result<JsValue, ParticipantVideoR
     set_property(
         canvas.as_ref(),
         "className",
-        &JsValue::from_str("absolute inset-0 h-full w-full bg-zinc-950 object-cover"),
+        &JsValue::from_str(if source_label == "screen_share" {
+            "absolute inset-0 h-full w-full bg-zinc-950 object-contain"
+        } else {
+            "absolute inset-0 h-full w-full bg-zinc-950 object-cover"
+        }),
     );
     target.append_child(&canvas).map_err(render_error)?;
 
@@ -287,12 +314,13 @@ fn create_canvas_in_target(target_id: &str) -> Result<JsValue, ParticipantVideoR
 fn get_or_create_canvas(
     canvas: &Rc<RefCell<Option<JsValue>>>,
     target_id: &str,
+    source_label: &str,
 ) -> Result<JsValue, ParticipantVideoRenderError> {
     if let Some(canvas) = canvas.borrow().as_ref() {
         return Ok(canvas.clone());
     }
 
-    let next_canvas = create_canvas_in_target(target_id)?;
+    let next_canvas = create_canvas_in_target(target_id, source_label)?;
     canvas.borrow_mut().replace(next_canvas.clone());
     Ok(next_canvas)
 }

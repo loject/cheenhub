@@ -8,6 +8,9 @@ use futures_util::future::LocalBoxFuture;
 
 use super::ParticipantVideoFrame;
 
+/// Получает ширину и высоту отображаемого кадра при изменении размеров потока.
+pub(crate) type ParticipantVideoDimensionsCallback = Rc<dyn Fn(u32, u32)>;
+
 /// Платформенно-независимая фабрика renderer'ов видео участника.
 pub(crate) trait ParticipantVideoBackend {
     /// Создает renderer, привязанный к целевому элементу, которым владеет Dioxus.
@@ -16,6 +19,7 @@ pub(crate) trait ParticipantVideoBackend {
         target_id: String,
         user_id: String,
         source_label: &'static str,
+        on_dimensions: ParticipantVideoDimensionsCallback,
     ) -> Result<Rc<dyn ParticipantVideoRenderer>, ParticipantVideoRenderError>;
 }
 

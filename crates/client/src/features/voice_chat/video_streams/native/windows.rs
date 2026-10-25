@@ -11,7 +11,8 @@ use futures_util::future::LocalBoxFuture;
 
 use super::super::ParticipantVideoFrame;
 use super::super::backend::{
-    ParticipantVideoBackend, ParticipantVideoRenderError, ParticipantVideoRenderer,
+    ParticipantVideoBackend, ParticipantVideoDimensionsCallback, ParticipantVideoRenderError,
+    ParticipantVideoRenderer,
 };
 
 /// Backend декодирования видео участников для Windows.
@@ -23,8 +24,9 @@ impl ParticipantVideoBackend for WindowsParticipantVideoBackend {
         target_id: String,
         user_id: String,
         source_label: &'static str,
+        on_dimensions: ParticipantVideoDimensionsCallback,
     ) -> Result<Rc<dyn ParticipantVideoRenderer>, ParticipantVideoRenderError> {
-        WindowsParticipantVideoRenderer::new(target_id, user_id, source_label)
+        WindowsParticipantVideoRenderer::new(target_id, user_id, source_label, on_dimensions)
             .map(|renderer| Rc::new(renderer) as Rc<dyn ParticipantVideoRenderer>)
     }
 }
@@ -51,6 +53,13 @@ enum CanvasMessage<'a> {
     Close,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum CanvasEvent {
+    Dimensions { width: u32, height: u32 },
+    Error(String),
+}
+
 const CANVAS_BRIDGE_SCRIPT: &str = r#"
 let canvas = null;
 let decoder = null;
@@ -74,11 +83,18 @@ try {
     const config = { codec: "vp09.00.10.08" };
     const support = await VideoDecoder.isConfigSupported(config);
     if (!support.supported) throw new Error("WebView не поддерживает VP9 WebCodecs.");
+    let previousWidth = 0;
+    let previousHeight = 0;
     decoder = new VideoDecoder({
         output: frame => {
             try {
                 const width = frame.displayWidth || frame.codedWidth;
                 const height = frame.displayHeight || frame.codedHeight;
+                if (previousWidth !== width || previousHeight !== height) {
+                    previousWidth = width;
+                    previousHeight = height;
+                    void dioxus.send({ width, height }).catch(() => {});
+                }
                 if (canvas.width !== width) canvas.width = width;
                 if (canvas.height !== height) canvas.height = height;
                 context.drawImage(frame, 0, 0, width, height);
@@ -135,6 +151,7 @@ impl WindowsParticipantVideoRenderer {
         target_id: String,
         user_id: String,
         source_label: &'static str,
+        on_dimensions: ParticipantVideoDimensionsCallback,
     ) -> Result<Self, ParticipantVideoRenderError> {
         let canvas_eval = document::eval(CANVAS_BRIDGE_SCRIPT);
         canvas_eval.send(&target_id).map_err(|error| {
@@ -174,7 +191,18 @@ impl WindowsParticipantVideoRenderer {
         let error_user_id = user_id.clone();
         let error_failed = canvas_failed.clone();
         spawn(async move {
-            while let Ok(error) = canvas_errors.recv::<String>().await {
+            while let Ok(event) = canvas_errors.recv::<CanvasEvent>().await {
+                let error = match event {
+                    CanvasEvent::Dimensions { width, height } => {
+                        if width > 0 && height > 0 {
+                            debug!(sender_user_id = %error_user_id, source = source_label, width, height,
+                                "participant video display dimensions changed");
+                            on_dimensions(width, height);
+                        }
+                        continue;
+                    }
+                    CanvasEvent::Error(error) => error,
+                };
                 if !error_failed.replace(true) {
                     warn!(
                         sender_user_id = %error_user_id,

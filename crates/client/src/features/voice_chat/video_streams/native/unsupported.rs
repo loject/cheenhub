@@ -3,7 +3,8 @@
 use std::rc::Rc;
 
 use super::super::backend::{
-    ParticipantVideoBackend, ParticipantVideoRenderError, ParticipantVideoRenderer,
+    ParticipantVideoBackend, ParticipantVideoDimensionsCallback, ParticipantVideoRenderError,
+    ParticipantVideoRenderer,
 };
 
 /// Backend видео участника, используемый без доступного платформенного renderer'а.
@@ -16,6 +17,7 @@ impl ParticipantVideoBackend for UnavailableParticipantVideoBackend {
         _target_id: String,
         _user_id: String,
         source_label: &'static str,
+        _on_dimensions: ParticipantVideoDimensionsCallback,
     ) -> Result<Rc<dyn ParticipantVideoRenderer>, ParticipantVideoRenderError> {
         Err(ParticipantVideoRenderError::new(format!(
             "Отображение {source_label} недоступно на этой платформе."
