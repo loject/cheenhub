@@ -25,6 +25,13 @@ pub(crate) trait ParticipantVideoBackend {
 
 /// Платформенный renderer одного видеопотока участника.
 pub(crate) trait ParticipantVideoRenderer {
+    /// Возвращает URL для штатного HTML video, если выводом управляет медиаплеер.
+    ///
+    /// Canvas renderer возвращает `None`; URL живёт до вызова `close`.
+    fn playback_url(&self) -> Option<String> {
+        None
+    }
+
     /// Асинхронно декодирует и отображает один VP9-кадр.
     fn decode(
         &self,

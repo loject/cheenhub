@@ -39,6 +39,7 @@ files = { "/usr/share/applications/ru.cheenhub.desktop" = "bundle/linux/ru.cheen
 section = "net"
 depends = [
     "libwebkit2gtk-4.1-0",
+    "gstreamer1.0-plugins-good",
     "libgtk-3-0",
     "libayatana-appindicator3-1",
     "libpulse0",

@@ -4,12 +4,16 @@ use std::rc::Rc;
 
 use super::backend::ParticipantVideoBackend;
 
+#[cfg(all(target_os = "linux", feature = "desktop", feature = "linux"))]
+mod linux;
+
 #[cfg(all(target_os = "windows", feature = "windows"))]
 mod windows;
 
 #[cfg(all(
     not(target_arch = "wasm32"),
-    not(all(target_os = "windows", feature = "windows"))
+    not(all(target_os = "windows", feature = "windows")),
+    not(all(target_os = "linux", feature = "desktop", feature = "linux"))
 ))]
 mod unsupported;
 
@@ -28,9 +32,15 @@ fn default_backend_platform() -> Rc<dyn ParticipantVideoBackend> {
     Rc::new(windows::WindowsParticipantVideoBackend)
 }
 
+#[cfg(all(target_os = "linux", feature = "desktop", feature = "linux"))]
+fn default_backend_platform() -> Rc<dyn ParticipantVideoBackend> {
+    Rc::new(linux::LinuxParticipantVideoBackend)
+}
+
 #[cfg(all(
     not(target_arch = "wasm32"),
-    not(all(target_os = "windows", feature = "windows"))
+    not(all(target_os = "windows", feature = "windows")),
+    not(all(target_os = "linux", feature = "desktop", feature = "linux"))
 ))]
 fn default_backend_platform() -> Rc<dyn ParticipantVideoBackend> {
     Rc::new(unsupported::UnavailableParticipantVideoBackend)

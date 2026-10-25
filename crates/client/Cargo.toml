@@ -84,7 +84,7 @@ windows = [
     "dep:nnnoiseless",
 ]
 # Linux-реализация desktop-клиента: PulseAudio API для ввода/вывода и Opus для голоса.
-linux = ["dep:ashpd", "dep:libpulse-binding", "dep:opus", "dep:nnnoiseless"]
+linux = ["dep:ashpd", "dep:axum", "dep:libpulse-binding", "dep:opus", "dep:nnnoiseless"]
 # macOS-реализация desktop-клиента: cpal для ввода/вывода аудио и Opus для декодирования голоса.
 macos = ["dep:cpal", "dep:opus"]
 microphone_worker = [
@@ -215,6 +215,7 @@ windows = { version = "0.61.3", optional = true, features = [
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"], optional = true }
 ashpd = { version = "=0.13.13", default-features = false, features = ["tokio", "global_shortcuts"], optional = true }
 libpulse-binding = { version = "2.30", optional = true }
 

@@ -1,6 +1,7 @@
 //! Общее состояние и renderer видеопотоков участников.
 
 mod backend;
+mod canvas;
 mod delivery;
 mod native;
 mod web;
@@ -12,14 +13,13 @@ use std::rc::Rc;
 use dioxus::core::{Runtime, ScopeId};
 use dioxus::prelude::*;
 use futures_channel::mpsc;
-use futures_util::StreamExt;
-use uuid::Uuid;
 
 use crate::features::camera::EncodedCameraFrame;
 use crate::features::runtime::sleep_ms;
 use crate::features::screen_share::EncodedScreenShareFrame;
 
 use self::backend::{ParticipantVideoBackend, ParticipantVideoRenderer};
+pub(crate) use self::canvas::ParticipantVideoCanvas;
 use super::realtime::InboundVideoFrame;
 
 const PARTICIPANT_VIDEO_RELEASE_TIMEOUT_MS: u32 = 1_500;
@@ -345,95 +345,6 @@ pub(super) struct ParticipantVideoKey {
 impl ParticipantVideoKey {
     fn new(source: ParticipantVideoSource, user_id: String) -> Self {
         Self { source, user_id }
-    }
-}
-
-/// Рендерит декодированное видео одного источника участника.
-///
-/// `on_dimensions` получает отображаемые размеры первого кадра и последующих изменений
-/// разрешения; родитель может использовать их для сохранения пропорций плитки.
-#[component]
-pub(crate) fn ParticipantVideoCanvas(
-    user_id: String,
-    source: ParticipantVideoSource,
-    on_dimensions: Option<EventHandler<(u32, u32)>>,
-) -> Element {
-    let video = use_context::<ParticipantVideoHandle>();
-    let target_id = use_hook({
-        let source = source;
-        move || format!("{}-{}", source.id_prefix(), Uuid::new_v4().simple())
-    });
-    let mut waiting_for_key_frame = use_signal(|| true);
-
-    use_hook({
-        let target_id = target_id.clone();
-        let user_id = user_id.clone();
-        move || {
-            spawn(async move {
-                let mut frames = video.subscribe_stream(source, user_id.clone());
-                let on_dimensions = Rc::new(move |width, height| {
-                    if let Some(handler) = on_dimensions {
-                        handler.call((width, height));
-                    }
-                });
-                let renderer = match video.create_renderer(
-                    target_id.clone(),
-                    user_id.clone(),
-                    source,
-                    on_dimensions,
-                ) {
-                    Ok(renderer) => renderer,
-                    Err(error) => {
-                        warn!(
-                            %error,
-                            %user_id,
-                            source = source.label(),
-                            "failed to create participant video renderer"
-                        );
-                        return;
-                    }
-                };
-
-                while let Some(frame) = frames.next().await {
-                    if frame.key_frame {
-                        waiting_for_key_frame.set(false);
-                    }
-                    let sender_user_id = frame.sender_user_id.clone();
-                    let sequence = frame.sequence;
-                    match renderer.decode(frame).await {
-                        Ok(()) => {}
-                        Err(error) => {
-                            warn!(
-                                %error,
-                                %sender_user_id,
-                                sequence,
-                                source = source.label(),
-                                "failed to render participant video frame"
-                            );
-                        }
-                    }
-                }
-
-                renderer.close();
-            })
-        }
-    });
-
-    rsx! {
-        div {
-            id: "{target_id}",
-            class: "absolute inset-0 z-0 h-full w-full overflow-hidden bg-zinc-950",
-            "aria-hidden": "true",
-            if waiting_for_key_frame() {
-                div {
-                    class: "pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-zinc-950/70",
-                    div {
-                        class: "h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-sky-300",
-                        "aria-hidden": "true",
-                    }
-                }
-            }
-        }
     }
 }
 
