@@ -63,6 +63,12 @@ enum CanvasEvent {
 const CANVAS_BRIDGE_SCRIPT: &str = r#"
 let canvas = null;
 let decoder = null;
+// NativeDioxusChannel.send возвращает void, поэтому ошибки доставки ловим синхронно.
+function sendEvent(event) {
+    try {
+        dioxus.send(event);
+    } catch (_) {}
+}
 try {
     const targetId = await dioxus.recv();
     let target = document.getElementById(targetId);
@@ -93,19 +99,19 @@ try {
                 if (previousWidth !== width || previousHeight !== height) {
                     previousWidth = width;
                     previousHeight = height;
-                    void dioxus.send({ width, height }).catch(() => {});
+                    sendEvent({ width, height });
                 }
                 if (canvas.width !== width) canvas.width = width;
                 if (canvas.height !== height) canvas.height = height;
                 context.drawImage(frame, 0, 0, width, height);
             } catch (error) {
-                void dioxus.send(String(error)).catch(() => {});
+                sendEvent(String(error));
             } finally {
                 frame.close();
             }
         },
         error: error => {
-            void dioxus.send(String(error)).catch(() => {});
+            sendEvent(String(error));
         },
     });
     decoder.configure(config);
@@ -208,7 +214,7 @@ impl WindowsParticipantVideoRenderer {
                         sender_user_id = %error_user_id,
                         source = source_label,
                         %error,
-                        "ошибка отрисовки кадра в canvas WebView"
+                        "отрисовка видео участника остановлена после ошибки canvas WebView"
                     );
                 }
             }

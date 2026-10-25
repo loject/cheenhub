@@ -1,6 +1,26 @@
 use super::{CanvasEvent, CanvasMessage};
 
 #[test]
+#[ignore = "Требуется Node.js в PATH; запускает JavaScript-мост с имитацией WebView."]
+fn canvas_bridge_renders_frames_with_synchronous_native_events() {
+    let output = std::process::Command::new("node")
+        .arg("--test")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/features/voice_chat/video_streams/native/windows/tests/canvas_bridge.cjs"
+        ))
+        .output()
+        .expect("Node.js должен быть установлен для проверки JavaScript-моста");
+
+    assert!(
+        output.status.success(),
+        "Проверка JavaScript-моста завершилась с ошибкой:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn canvas_events_preserve_dimensions_and_decoder_errors() {
     let event: CanvasEvent = serde_json::from_str(r#"{"width":2520,"height":1080}"#).unwrap();
     assert!(matches!(
