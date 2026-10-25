@@ -2,6 +2,7 @@ mod deletion;
 mod editing;
 mod friend_list;
 mod identity;
+mod non_friend_messages;
 mod search;
 
 use std::sync::Arc;

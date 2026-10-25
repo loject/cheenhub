@@ -42,7 +42,7 @@ pub(crate) async fn list_dm_conversations(
     })
 }
 
-/// Открывает личный диалог с другом.
+/// Открывает личный диалог с другим активным пользователем независимо от дружбы.
 ///
 /// Вызывающий транспорт обязан проверить сессию и активность аккаунта `user_id`.
 pub(crate) async fn open_dm_conversation(
@@ -52,18 +52,18 @@ pub(crate) async fn open_dm_conversation(
 ) -> Result<OpenDmConversationResponse, SocialError> {
     let friend_user_id = parse_id(&request.friend_user_id, "Пользователь не найден.")?;
     ensure_user_active(state, &friend_user_id).await?;
-    super::friendship_policy::ensure_accepted_friendship(
-        state,
-        user_id,
-        &friend_user_id,
-        "Писать можно только друзьям.",
-    )
-    .await?;
+    if *user_id == friend_user_id {
+        tracing::warn!(%user_id, "rejected direct dialog with self");
+        return Err(SocialError::BadRequest(
+            "Нельзя открыть личный диалог с собой.".to_owned(),
+        ));
+    }
     let conversation = state
         .social_store
         .get_or_create_conversation(user_id, &friend_user_id, Utc::now())
         .await
         .map_err(SocialError::Internal)?;
+    tracing::info!(%user_id, peer_user_id = %friend_user_id, conversation_id = %conversation.id, "opened direct message dialog");
     notify_social_changed(
         state,
         &[*user_id, friend_user_id],
@@ -209,13 +209,6 @@ pub(crate) async fn send_dm_message(
     let conversation = load_user_conversation(state, &conversation_id, user_id).await?;
     let friend_user_id = other_user_id(&conversation, user_id);
     ensure_user_active(state, &friend_user_id).await?;
-    super::friendship_policy::ensure_accepted_friendship(
-        state,
-        user_id,
-        &friend_user_id,
-        "Писать можно только друзьям.",
-    )
-    .await?;
     let image_id = request
         .image_id
         .as_deref()

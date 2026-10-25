@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use cheenhub_contracts::rest::{
     AuthUser, DmConversationSummary, DmImageAttachmentSummary, DmLastMessageSummary,
     DmMessageDeliveryStatus, DmMessageSummary, FriendRequestStatus, FriendRequestSummary,
-    FriendSummary, ListFriendRequestsResponse,
+    FriendSummary, ListFriendRequestsResponse, UserRelationStatus,
 };
 use chrono::Utc;
 use uuid::Uuid;
@@ -121,6 +121,12 @@ pub(super) async fn conversation_summaries(
         .into_iter()
         .map(|state| (state.conversation_id, state))
         .collect::<HashMap<_, _>>();
+    let relations = super::application::relation_statuses(
+        state,
+        current_user_id,
+        &friends.keys().copied().collect::<Vec<_>>(),
+    )
+    .await?;
 
     let mut summaries = Vec::with_capacity(conversations.len());
     for conversation in conversations {
@@ -137,6 +143,7 @@ pub(super) async fn conversation_summaries(
             friend,
             conversation,
             member_state,
+            relations.get(&friend_user_id).copied(),
         ));
     }
     Ok(summaries)
@@ -150,12 +157,14 @@ fn conversation_summary_from_parts(
     friend: AuthUser,
     conversation: DmConversation,
     member_state: ConversationMemberState,
+    relation: Option<UserRelationStatus>,
 ) -> DmConversationSummary {
     DmConversationSummary {
         id: conversation.id.to_string(),
         friend_user_id: friend.id,
         friend_nickname: friend.nickname,
         friend_avatar_url: friend.avatar_url,
+        relation,
         unread_count: normalize_unread_count(member_state.unread_count),
         last_read_message_id: member_state
             .last_read_message_id
@@ -175,6 +184,8 @@ pub(super) async fn conversation_summary(
 ) -> Result<DmConversationSummary, SocialError> {
     let friend_user_id = other_user_id(&conversation, current_user_id);
     let friend = auth_user(state, &ensure_user_exists(state, &friend_user_id).await?);
+    let relations =
+        super::application::relation_statuses(state, current_user_id, &[friend_user_id]).await?;
     let member_state = state
         .social_store
         .conversation_member_state(&conversation.id, current_user_id)
@@ -185,6 +196,7 @@ pub(super) async fn conversation_summary(
         friend,
         conversation,
         member_state,
+        relations.get(&friend_user_id).copied(),
     ))
 }
 

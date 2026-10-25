@@ -23,9 +23,8 @@ use crate::features::social::support::{
 };
 use crate::state::AppState;
 
-use friendship_policy::{
-    accepted_friendship_exists, ensure_accepted_friendship, relation_statuses,
-};
+pub(super) use friendship_policy::relation_statuses;
+use friendship_policy::{accepted_friendship_exists, ensure_accepted_friendship};
 
 pub(crate) use attachments::{
     attachment_summaries_by_conversation, attachment_summary, dm_image, upload_dm_image,

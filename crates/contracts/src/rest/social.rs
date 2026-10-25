@@ -158,6 +158,9 @@ pub struct DmConversationSummary {
     pub friend_nickname: String,
     /// URL аватара второго участника, если он настроен.
     pub friend_avatar_url: Option<String>,
+    /// Отношение к собеседнику; `None` означает отсутствие дружбы и активной заявки.
+    #[serde(default)]
+    pub relation: Option<UserRelationStatus>,
     /// Количество непрочитанных сообщений без UI-ограничения.
     pub unread_count: i64,
     /// Последнее прочитанное сообщение текущего пользователя.
@@ -231,7 +234,7 @@ pub struct ListDmConversationsResponse {
 /// Запрос на открытие диалога личных сообщений.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenDmConversationRequest {
-    /// Друг, с которым нужно открыть диалог.
+    /// Другой активный пользователь, с которым нужно открыть диалог; дружба не обязательна.
     pub friend_user_id: String,
 }
 

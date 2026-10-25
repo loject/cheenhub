@@ -37,6 +37,7 @@ fn known_conversation_remains_selectable_during_overview_refresh() {
         friend_user_id: "friend".to_owned(),
         friend_nickname: "Друг".to_owned(),
         friend_avatar_url: None,
+        relation: None,
         unread_count: 0,
         last_read_message_id: None,
         last_read_seq: 0,
