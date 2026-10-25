@@ -4,13 +4,13 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use dioxus::prelude::warn;
+use dioxus::prelude::{debug, warn};
 use futures_util::FutureExt;
 use futures_util::future::LocalBoxFuture;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::features::video_encoding::{
-    BrowserVideoEncoder, BrowserVideoEncoderHandle, BrowserVideoEncodingManager,
+    BrowserVideoEncoder, BrowserVideoEncoderHandle, BrowserVideoEncodingManager, BrowserVideoFrame,
     BrowserVideoFrameReader, BrowserVideoFrameReaderHandle, EncodedVideoFrame, VideoCodec,
     VideoEncoderConfig, VideoEncodingAcceleratorKind, VideoEncodingError, VideoEncodingManager,
     VideoFrameEncoder, VideoFrameRateGate,
@@ -19,11 +19,9 @@ use crate::features::video_encoding::{
 use super::backend::{
     EncodedScreenShareFrame, ScreenShareBackend, ScreenShareCallbacks, ScreenShareCaptureSource,
     ScreenShareCodec, ScreenShareConfig, ScreenShareError, ScreenShareErrorKind,
-    ScreenShareSession, ScreenShareStartRequest,
+    ScreenShareSession, ScreenShareStartRequest, fit_capture_preset,
 };
-use super::browser_capture::{
-    first_video_track, log_selected_video_track, request_screen_stream, video_track_settings,
-};
+use super::browser_capture::{first_video_track, log_selected_video_track, request_screen_stream};
 
 const KEY_FRAME_INTERVAL_SECONDS: u32 = 2;
 const UNSUPPORTED_SCREEN_SHARE_MESSAGE: &str = concat!(
@@ -69,6 +67,7 @@ impl ScreenShareSession for BrowserScreenShareSession {
             if closed.replace(true) {
                 return Ok(());
             }
+            debug!("browser screen sharing explicitly stopped; closing capture and encoder");
             frame_reader.stop();
             track.stop();
             encoder.close().map_err(screen_share_video_encoding_error)?;
@@ -92,17 +91,49 @@ async fn start_browser_session(
     let stream = request_screen_stream().await?;
     let track = first_video_track(&stream)?;
     log_selected_video_track(&track);
-    let settings = video_track_settings(&track);
-    let source_width = settings.width.unwrap_or(1280).max(1);
-    let source_height = settings.height.unwrap_or(720).max(1);
-    let preset = config.preset_for_capture(source_width, source_height);
+    let frame_reader = match BrowserVideoFrameReader::from_stream(&track, &stream).await {
+        Ok(reader) => reader,
+        Err(error) => {
+            track.stop();
+            return Err(screen_share_video_encoding_error(error));
+        }
+    };
+    let first_frame = match frame_reader.read().await {
+        Ok(Some(frame)) => frame,
+        Ok(None) => {
+            track.stop();
+            return Err(ScreenShareError::new(
+                "Демонстрация завершилась до получения изображения.",
+            ));
+        }
+        Err(error) => {
+            track.stop();
+            return Err(screen_share_video_encoding_error(error));
+        }
+    };
+    let (source_width, source_height) = first_frame.display_dimensions();
+    let preset = fit_capture_preset(
+        source_width,
+        source_height,
+        config.preset_for_capture(source_width, source_height),
+    );
+    debug!(
+        source_width,
+        source_height,
+        encoded_width = preset.width,
+        encoded_height = preset.height,
+        "browser screen sharing uses first video frame dimensions within selected quality"
+    );
     let encoder_config = VideoEncoderConfig::vp9(
         preset.width,
         preset.height,
         preset.max_fps,
         preset.bitrate_bps,
     );
-    ensure_video_encoder_available(&track, encoder_config.clone()).await?;
+    if let Err(error) = ensure_video_encoder_available(&track, encoder_config.clone()).await {
+        first_frame.close();
+        return Err(error);
+    }
 
     let output_on_frame = callbacks.on_frame.clone();
     let on_video_frame = Rc::new(move |frame: EncodedVideoFrame| {
@@ -112,21 +143,14 @@ async fn start_browser_session(
     let encoder = match manager
         .create_encoder(
             VideoEncodingAcceleratorKind::WebCodecs,
-            encoder_config,
+            encoder_config.clone(),
             on_video_frame,
         )
         .await
     {
         Ok(encoder) => encoder,
         Err(error) => {
-            track.stop();
-            return Err(screen_share_video_encoding_error(error));
-        }
-    };
-    let frame_reader = match BrowserVideoFrameReader::from_stream(&track, &stream).await {
-        Ok(reader) => reader,
-        Err(error) => {
-            let _ = encoder.close();
+            first_frame.close();
             track.stop();
             return Err(screen_share_video_encoding_error(error));
         }
@@ -134,17 +158,14 @@ async fn start_browser_session(
     let frame_reader_handle = frame_reader.handle();
 
     let closed = Rc::new(Cell::new(false));
-    let key_frame_interval_frames = preset
-        .max_fps
-        .saturating_mul(KEY_FRAME_INTERVAL_SECONDS)
-        .max(1);
     spawn_video_reader(
         frame_reader,
+        first_frame,
         encoder.handle(),
         closed.clone(),
         callbacks,
-        key_frame_interval_frames,
-        preset.max_fps,
+        config,
+        encoder_config,
     );
 
     Ok(Rc::new(BrowserScreenShareSession {
@@ -194,31 +215,89 @@ fn ensure_browser_screen_share_support() -> Result<(), ScreenShareError> {
 
 fn spawn_video_reader(
     reader: BrowserVideoFrameReader,
+    first_frame: BrowserVideoFrame,
     encoder: BrowserVideoEncoderHandle,
     closed: Rc<Cell<bool>>,
     callbacks: ScreenShareCallbacks,
-    key_frame_interval_frames: u32,
-    max_fps: u32,
+    config: ScreenShareConfig,
+    mut encoder_config: VideoEncoderConfig,
 ) {
     spawn_local(async move {
-        let frame_sequence = Rc::new(Cell::new(0_u64));
-        let mut frame_rate_gate = VideoFrameRateGate::new(max_fps);
+        let mut first_frame = Some(first_frame);
+        let mut frame_sequence = 0_u64;
+        let mut frame_rate_gate = VideoFrameRateGate::new(encoder_config.frame_rate);
         while !closed.get() {
-            let frame = match reader.read().await {
-                Ok(Some(frame)) => frame,
-                Ok(None) => break,
-                Err(error) => {
-                    warn!(%error, "failed to read screen sharing frame");
-                    (callbacks.on_error)(screen_share_video_encoding_error(error));
+            let frame = match first_frame.take() {
+                Some(frame) => frame,
+                None => match reader.read().await {
+                    Ok(Some(frame)) => frame,
+                    Ok(None) => {
+                        debug!(
+                            stopped = closed.get(),
+                            "browser screen sharing frame source ended"
+                        );
+                        break;
+                    }
+                    Err(error) => {
+                        if !closed.get() {
+                            warn!(%error, "failed to read screen sharing frame");
+                            (callbacks.on_error)(screen_share_video_encoding_error(error));
+                        }
+                        break;
+                    }
+                },
+            };
+            if closed.get() {
+                debug!("discarded screen sharing frame received after capture stopped");
+                frame.close();
+                break;
+            }
+            let (source_width, source_height) = frame.display_dimensions();
+            let preset = fit_capture_preset(
+                source_width,
+                source_height,
+                config.preset_for_capture(source_width, source_height),
+            );
+            let next_config = VideoEncoderConfig::vp9(
+                preset.width,
+                preset.height,
+                preset.max_fps,
+                preset.bitrate_bps,
+            );
+            if next_config != encoder_config {
+                debug!(
+                    source_width,
+                    source_height,
+                    encoded_width = next_config.width,
+                    encoded_height = next_config.height,
+                    "screen sharing video frame dimensions changed; updating encoder"
+                );
+                if let Err(error) = encoder.reconfigure(&next_config).await {
+                    if !closed.get() {
+                        warn!(%error, "failed to reconfigure screen sharing encoder");
+                        (callbacks.on_error)(screen_share_video_encoding_error(error));
+                    }
+                    frame.close();
                     break;
                 }
-            };
+                if closed.get() {
+                    frame.close();
+                    break;
+                }
+                frame_rate_gate = VideoFrameRateGate::new(next_config.frame_rate);
+                frame_sequence = 0;
+                encoder_config = next_config;
+            }
             if !frame_rate_gate.accept(frame.timestamp_us()) {
                 frame.close();
                 continue;
             }
-            let sequence = frame_sequence.get();
-            frame_sequence.set(sequence.saturating_add(1));
+            let sequence = frame_sequence;
+            frame_sequence = sequence.saturating_add(1);
+            let key_frame_interval_frames = encoder_config
+                .frame_rate
+                .saturating_mul(KEY_FRAME_INTERVAL_SECONDS)
+                .max(1);
             let key_frame = sequence.is_multiple_of(u64::from(key_frame_interval_frames));
             if let Err(error) = encoder.encode(&frame, key_frame) {
                 warn!(%error, "failed to encode screen sharing frame");

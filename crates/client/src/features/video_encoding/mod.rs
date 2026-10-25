@@ -22,5 +22,7 @@ pub(crate) use backend::{
 };
 #[allow(unused_imports)]
 pub(crate) use unsupported::UnsupportedVideoEncodingManager;
-pub(crate) use web::{BrowserVideoEncoder, BrowserVideoEncoderHandle, BrowserVideoEncodingManager};
+pub(crate) use web::{
+    BrowserVideoEncoder, BrowserVideoEncoderHandle, BrowserVideoEncodingManager, BrowserVideoFrame,
+};
 pub(crate) use web_frame_source::{BrowserVideoFrameReader, BrowserVideoFrameReaderHandle};

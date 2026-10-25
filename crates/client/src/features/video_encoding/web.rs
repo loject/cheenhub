@@ -1,6 +1,11 @@
 //! Браузерная реализация кодирования видео через WebCodecs.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
 
+mod frame;
+
+pub(crate) use frame::BrowserVideoFrame;
+use frame::VideoFrame;
+
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -163,6 +168,35 @@ impl VideoFrameEncoder for BrowserVideoEncoder {
 pub(crate) struct BrowserVideoEncoderHandle {
     encoder: VideoEncoder,
     trace_input_sequence: Rc<Cell<u64>>,
+    output_dimensions: Rc<Cell<(u32, u32)>>,
+}
+
+impl BrowserVideoEncoderHandle {
+    /// Дожидается старых кадров и применяет новые размеры и качество без сброса sequence.
+    ///
+    /// Первый кадр после успешного изменения конфигурации должен быть ключевым.
+    ///
+    /// # Errors
+    ///
+    /// Возвращает ошибку, если браузер остановил кодировщик или отклонил конфигурацию.
+    pub(crate) async fn reconfigure(
+        &self,
+        config: &VideoEncoderConfig,
+    ) -> Result<(), VideoEncodingError> {
+        let flushed = self.encoder.flush().map_err(video_error)?;
+        JsFuture::from(flushed).await.map_err(video_error)?;
+        self.encoder
+            .configure(&webcodecs_encoder_config(config))
+            .map_err(video_error)?;
+        self.output_dimensions.set((config.width, config.height));
+        debug!(
+            width = config.width,
+            height = config.height,
+            frame_rate = config.frame_rate,
+            "browser video encoder reconfigured after capture dimensions changed"
+        );
+        Ok(())
+    }
 }
 
 impl VideoFrameEncoder for BrowserVideoEncoderHandle {
@@ -173,8 +207,14 @@ impl VideoFrameEncoder for BrowserVideoEncoderHandle {
         self.trace_input_sequence
             .set(trace_sequence.saturating_add(1));
         if trace_sequence.is_multiple_of(15) {
+            let (source_width, source_height) = frame.display_dimensions();
+            let (encoded_width, encoded_height) = self.output_dimensions.get();
             debug!(
                 sequence = trace_sequence,
+                source_width,
+                source_height,
+                encoded_width,
+                encoded_height,
                 frame_age_ms = frame_age_ms(frame.timestamp_us()),
                 encode_queue_size = self.encoder.encode_queue_size(),
                 key_frame,
@@ -199,30 +239,6 @@ impl VideoFrameEncoder for BrowserVideoEncoderHandle {
     }
 }
 
-/// Браузерный входной видео-кадр.
-pub(crate) struct BrowserVideoFrame {
-    frame: VideoFrame,
-}
-
-impl BrowserVideoFrame {
-    /// Создает wrapper из значения, полученного из `ReadableStream`.
-    pub(crate) fn from_js_value(value: &JsValue) -> Self {
-        Self {
-            frame: value.unchecked_ref::<VideoFrame>().clone(),
-        }
-    }
-
-    /// Закрывает кадр и освобождает браузерный ресурс.
-    pub(crate) fn close(&self) {
-        let _ = self.frame.close();
-    }
-
-    /// Возвращает временную метку входного кадра в микросекундах.
-    pub(crate) fn timestamp_us(&self) -> u64 {
-        self.frame.timestamp().max(0.0).round() as u64
-    }
-}
-
 fn create_webcodecs_encoder(
     config: VideoEncoderConfig,
     on_frame: EncodedVideoFrameCallback,
@@ -231,8 +247,8 @@ fn create_webcodecs_encoder(
     let output_sequence = sequence.clone();
     let trace_input_sequence = Rc::new(Cell::new(0_u64));
     let codec = config.codec;
-    let width = config.width;
-    let height = config.height;
+    let output_dimensions = Rc::new(Cell::new((config.width, config.height)));
+    let callback_dimensions = output_dimensions.clone();
     let output_closure = Closure::wrap(Box::new(move |chunk: EncodedVideoChunk| {
         let byte_length = chunk.byte_length();
         let destination = Uint8Array::new_with_length(byte_length);
@@ -243,9 +259,13 @@ fn create_webcodecs_encoder(
         destination.copy_to(&mut bytes);
         let sequence = output_sequence.get();
         output_sequence.set(sequence.saturating_add(1));
+        let (width, height) = callback_dimensions.get();
         if sequence.is_multiple_of(15) {
             debug!(
                 sequence,
+                width,
+                height,
+                key_frame = chunk.chunk_type() == "key",
                 frame_age_ms = frame_age_ms(chunk.timestamp().max(0.0) as u64),
                 payload_bytes = byte_length,
                 "screen share latency trace: encoder output"
@@ -262,9 +282,13 @@ fn create_webcodecs_encoder(
             bytes,
         });
     }) as Box<dyn FnMut(EncodedVideoChunk)>);
+    let error_dimensions = output_dimensions.clone();
     let error_closure = Closure::wrap(Box::new(move |error: JsValue| {
+        let (width, height) = error_dimensions.get();
         warn!(
             error = %js_error_message(error),
+            width,
+            height,
             codec = ?codec,
             accelerator = "webcodecs",
             "browser video encoder failed"
@@ -291,6 +315,7 @@ fn create_webcodecs_encoder(
         handle: BrowserVideoEncoderHandle {
             encoder,
             trace_input_sequence,
+            output_dimensions,
         },
         _output_closure: output_closure,
         _error_closure: error_closure,
@@ -382,9 +407,8 @@ fn video_error(error: JsValue) -> VideoEncodingError {
 }
 
 fn js_error_message(error: JsValue) -> String {
-    error
-        .dyn_ref::<js_sys::Error>()
-        .map(js_sys::Error::message)
+    Reflect::get(&error, &JsValue::from_str("message"))
+        .ok()
         .and_then(|message| message.as_string())
         .filter(|message| !message.is_empty())
         .or_else(|| error.as_string())
@@ -405,6 +429,9 @@ extern "C" {
 
     #[wasm_bindgen(method, catch, js_name = configure)]
     fn configure(this: &VideoEncoder, config: &JsValue) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(method, catch, js_name = flush)]
+    fn flush(this: &VideoEncoder) -> Result<Promise, JsValue>;
 
     #[wasm_bindgen(method, catch, js_name = encode)]
     fn encode(this: &VideoEncoder, frame: &VideoFrame) -> Result<(), JsValue>;
@@ -440,15 +467,5 @@ extern "C" {
 
     #[wasm_bindgen(method, catch, js_name = copyTo)]
     fn copy_to(this: &EncodedVideoChunk, destination: &Uint8Array) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(js_name = VideoFrame)]
-    #[derive(Clone)]
-    type VideoFrame;
-
-    #[wasm_bindgen(method, catch, js_name = close)]
-    fn close(this: &VideoFrame) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(method, getter)]
-    fn timestamp(this: &VideoFrame) -> f64;
 
 }

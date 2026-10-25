@@ -102,6 +102,42 @@ impl Default for ScreenShareConfig {
     }
 }
 
+/// Вписывает источник в размеры выбранного пресета, сохраняя его пропорции.
+///
+/// Изображение не увеличивается; результат округляется до ближайшего пикселя.
+/// Нулевые размеры источника заменяются на один пиксель. Частота кадров и bitrate
+/// остаются параметрами выбранного пресета.
+pub(super) fn fit_capture_preset(
+    width: u32,
+    height: u32,
+    preset: VideoPresetSpec,
+) -> VideoPresetSpec {
+    let width = u64::from(width.max(1));
+    let height = u64::from(height.max(1));
+    let max_width = width.min(u64::from(preset.width));
+    let max_height = height.min(u64::from(preset.height));
+    let (encoded_width, encoded_height) = if max_width * height <= max_height * width {
+        (
+            max_width,
+            ((height * max_width + width / 2) / width)
+                .max(1)
+                .min(max_height),
+        )
+    } else {
+        (
+            ((width * max_height + height / 2) / height)
+                .max(1)
+                .min(max_width),
+            max_height,
+        )
+    };
+    VideoPresetSpec {
+        width: encoded_width as u32,
+        height: encoded_height as u32,
+        ..preset
+    }
+}
+
 #[cfg(test)]
 mod tests;
 
