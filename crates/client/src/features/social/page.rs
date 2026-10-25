@@ -20,6 +20,7 @@ use crate::features::realtime::RealtimeHandle;
 use crate::features::voice_chat::{DirectCallHeader, VoiceConnectionHandle};
 
 use super::api;
+use super::conversations_section::ConversationsSection;
 use super::direct_message_voice_button::DirectMessageVoiceButton;
 use super::direct_message_workspace::DirectMessageWorkspace;
 use super::friend_context_menu::FriendContextMenu;
@@ -129,15 +130,6 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
             return;
         };
 
-        let selected_matches_route = selected_conversation()
-            .as_ref()
-            .is_some_and(|conversation| conversation.id == conversation_id);
-        if selected_matches_route
-            && loaded_route_conversation_id().as_deref() == Some(conversation_id.as_str())
-        {
-            return;
-        }
-
         let overview = conversations();
         let action = direct_message_route_action(
             &conversation_id,
@@ -171,8 +163,12 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
             %conversation_id,
             "selecting direct message from route"
         );
-        selected_conversation.set(Some(conversation));
-        loaded_route_conversation_id.set(Some(conversation_id.clone()));
+        if selected_conversation.peek().as_ref() != Some(&conversation) {
+            selected_conversation.set(Some(conversation));
+        }
+        if loaded_route_conversation_id.peek().as_ref() != Some(&conversation_id) {
+            loaded_route_conversation_id.set(Some(conversation_id.clone()));
+        }
     });
 
     let delete_friend = use_callback(move |friend_user_id: String| {
@@ -304,6 +300,14 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
                         on_cancel: move |request_id| cancel_request.call(request_id),
                     }
 
+                    ConversationsSection {
+                        conversations: conversations(),
+                        selected_id: selected_conversation().map(|item| item.id),
+                        loading: is_loading(),
+                        on_select: move |conversation_id| { navigator.push(Route::AppDirectMessage { conversation_id }); },
+                        on_find_people: move |_| is_search_open.set(true),
+                        on_retry: move |_| reload.call(()),
+                    }
                     FriendsSection {
                         friends: (friends_page.friends)(),
                         current_user_id: current_user.id.clone(),
@@ -375,6 +379,7 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
                 if let Some(conversation) = selected_conversation() {
                     DirectMessageWorkspace {
                         key: "{conversation.id}",
+                        incoming_request_id: incoming().iter().find(|request| request.sender_user_id == conversation.friend_user_id).map(|request| request.id.clone()),
                         conversation,
                         on_overview_changed: move |_| reload.call(()),
                     }

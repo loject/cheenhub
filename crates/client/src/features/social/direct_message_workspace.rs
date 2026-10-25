@@ -18,6 +18,7 @@ use crate::features::text_chat::{
 };
 use crate::features::voice_chat::{DirectCallHandle, VoiceConnectionHandle, VoiceConnectionState};
 
+use super::conversation_notice::ConversationNotice;
 use super::direct_message_chat_platform;
 use super::direct_message_editing::use_direct_message_editing;
 use super::direct_message_group::{DirectMessageGroup, prepare_direct_message_groups};
@@ -36,6 +37,7 @@ const DIRECT_CALL_SURFACE_EXIT_MS: u32 = 160;
 #[component]
 pub(crate) fn DirectMessageWorkspace(
     conversation: DmConversationSummary,
+    incoming_request_id: Option<String>,
     on_overview_changed: EventHandler<()>,
 ) -> Element {
     let voice = use_context::<VoiceConnectionHandle>();
@@ -215,6 +217,12 @@ pub(crate) fn DirectMessageWorkspace(
     let scroll_realtime = realtime.clone();
     let retry_realtime = realtime.clone();
     rsx! {
+        ConversationNotice {
+            user_id: conversation.friend_user_id.clone(),
+            relation: conversation.relation,
+            incoming_request_id,
+            on_changed: on_overview_changed,
+        }
         section {
             class: "room-workspace voice-shell relative flex min-h-0 flex-1 flex-col bg-[#08090b]",
             style: "{workspace_style}",

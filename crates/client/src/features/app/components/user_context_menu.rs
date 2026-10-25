@@ -14,6 +14,7 @@ pub(crate) fn UserContextMenu(
     on_close: EventHandler<()>,
     on_volume_change: EventHandler<u32>,
     on_kick_voice: EventHandler<()>,
+    #[props(default)] actions: Option<Element>,
 ) -> Element {
     let top = y + 8.0;
     let pos_style = format!(
@@ -49,6 +50,7 @@ pub(crate) fn UserContextMenu(
             }
 
             if !is_self {
+                {actions}
                 div { class: "mx-1 my-1 border-t border-zinc-800/70" }
 
                 // Volume row

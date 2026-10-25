@@ -33,7 +33,7 @@ pub(crate) async fn list_dm_conversations(
     .map(|response| response.conversations)
 }
 
-/// Открывает диалог с другом, сохраняя серверную проверку дружбы.
+/// Открывает личный диалог с другим пользователем; дружба не обязательна.
 pub(crate) async fn open_dm_conversation(
     realtime: &RealtimeHandle,
     friend_user_id: String,

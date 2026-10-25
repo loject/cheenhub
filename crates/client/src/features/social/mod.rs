@@ -1,6 +1,8 @@
 //! Клиентская часть друзей и личных сообщений.
 
 pub(crate) mod api;
+mod conversation_notice;
+mod conversations_section;
 mod direct_message_chat_platform;
 mod direct_message_editing;
 mod direct_message_group;
@@ -16,10 +18,12 @@ mod direct_message_workspace;
 mod friend_context_menu;
 mod friend_search_modal;
 mod friends_section;
+mod open_direct_message_button;
 mod page;
 mod presentation;
 pub(crate) mod realtime;
 mod requests_section;
 mod voice_target;
 
+pub(crate) use open_direct_message_button::OpenDirectMessageButton;
 pub(crate) use page::SocialPage;

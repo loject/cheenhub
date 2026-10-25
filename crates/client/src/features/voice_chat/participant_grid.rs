@@ -5,10 +5,12 @@ use std::collections::HashMap;
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use dioxus::prelude::*;
 
+use crate::Route;
 use crate::features::app::components::user_context_menu::UserContextMenu;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::camera::{CameraHandle, CameraStatus};
+use crate::features::social::OpenDirectMessageButton;
 
 use super::participant_grid_data::{
     participant_grid_layout, participant_tiles, preferred_focus_tile_key,
@@ -51,6 +53,7 @@ pub(crate) fn VoiceParticipantGrid(
     on_retry: EventHandler<()>,
 ) -> Element {
     let mut open_user_menu = use_signal(|| None::<UserMenuState>);
+    let navigator = use_navigator();
     let mut focused_tile_key = use_signal(|| None::<String>);
     let mut user_volumes = use_signal(HashMap::<String, u32>::new);
     let playback = use_context::<AudioPlaybackHandle>();
@@ -227,6 +230,16 @@ pub(crate) fn VoiceParticipantGrid(
                     x: menu.x,
                     y: menu.y,
                     on_close: move |_| open_user_menu.set(None),
+                    actions: Some(rsx! {
+                        OpenDirectMessageButton {
+                            key: "{menu.user_id}",
+                            user_id: menu.user_id.clone(),
+                            on_open: move |conversation_id| {
+                                open_user_menu.set(None);
+                                navigator.push(Route::AppDirectMessage { conversation_id });
+                            },
+                        }
+                    }),
                     on_volume_change: move |vol: u32| {
                         user_volumes.write().insert(menu.user_id.clone(), vol);
                         playback.set_user_volume(&menu.user_id, vol);

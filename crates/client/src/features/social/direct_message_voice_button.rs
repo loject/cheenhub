@@ -1,6 +1,6 @@
 //! Кнопка входа в голосовой звонок личного диалога.
 
-use cheenhub_contracts::rest::DmConversationSummary;
+use cheenhub_contracts::rest::{DmConversationSummary, UserRelationStatus};
 use dioxus::prelude::*;
 
 use cheenhub_contracts::realtime::{DirectCallEndReason, DirectCallState};
@@ -37,7 +37,10 @@ pub(crate) fn DirectMessageVoiceButton(conversation: DmConversationSummary) -> E
             direct_call.state(),
             DirectCallUiState::Idle | DirectCallUiState::Error { call: None, .. }
         );
-    let label = if starting {
+    let friends = conversation.relation == Some(UserRelationStatus::Friends);
+    let label = if !friends && !incoming {
+        "Звонки доступны друзьям"
+    } else if starting {
         "Начинаем звонок..."
     } else if incoming {
         "Ответить"
@@ -60,7 +63,8 @@ pub(crate) fn DirectMessageVoiceButton(conversation: DmConversationSummary) -> E
         "Начать звонок"
     };
     let highlighted = incoming || ringing || active;
-    let disabled = busy || starting || active || ringing && !incoming || another_call_open;
+    let disabled =
+        !friends || busy || starting || active || ringing && !incoming || another_call_open;
     let action_call = direct_call.clone();
 
     if active || media_active {
@@ -77,7 +81,9 @@ pub(crate) fn DirectMessageVoiceButton(conversation: DmConversationSummary) -> E
                 "flex min-h-12 shrink-0 items-center gap-2 rounded-xl bg-zinc-900/80 px-3 text-[12px] font-medium text-zinc-200 shadow-[0_0_0_1px_rgba(255,255,255,.08)] transition-[scale,background-color,box-shadow,opacity] duration-150 ease-out active:scale-[0.96] disabled:cursor-wait disabled:opacity-70 max-[420px]:w-12 max-[420px]:justify-center max-[420px]:px-0"
             },
             "aria-label": label,
+            title: label,
             onclick: move |_| {
+                if !friends { return; }
                 if incoming {
                     action_call.accept();
                     return;
