@@ -44,11 +44,9 @@ fn playback_prefers_stereo_when_high_quality_formats_differ() {
 
 #[test]
 fn playback_retains_eight_bit_when_it_is_the_only_format() {
-    let selected = select_preferred_output_config(
-        [config_range(SampleFormat::U8, 2, 48_000)],
-        48_000,
-    )
-    .unwrap();
+    let selected =
+        select_preferred_output_config([config_range(SampleFormat::U8, 2, 48_000)], 48_000)
+            .unwrap();
 
     assert_eq!(selected.sample_format(), SampleFormat::U8);
 }

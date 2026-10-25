@@ -205,7 +205,10 @@ fn select_preferred_output_config(
                 range.channels() >= 2,
                 quality,
             );
-            Some((rank, range.with_sample_rate(cpal::SampleRate(sample_rate_hz))))
+            Some((
+                rank,
+                range.with_sample_rate(cpal::SampleRate(sample_rate_hz)),
+            ))
         })
         .max_by_key(|(rank, _)| *rank)
         .map(|(_, config)| config)
