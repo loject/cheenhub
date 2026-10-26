@@ -7,6 +7,7 @@ use crate::Route;
 use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::api;
 use crate::features::app::current_user::CurrentUserContext;
+use crate::features::app::workspace_route::server_room_target;
 use crate::features::server_settings::ServerSettingsScope;
 use crate::features::voice_chat::VoiceConnectionHandle;
 
@@ -41,7 +42,6 @@ use super::sidebar_menu_dismiss_layer::SidebarMenuDismissLayer;
 pub(crate) fn ServerRoomsScope(
     server: ServerSummary,
     active: bool,
-    requested_room_id: Option<String>,
     on_state_change: EventHandler<(String, ServerShellState)>,
     on_open_modal: EventHandler<AppModal>,
     on_server_removed: EventHandler<String>,
@@ -149,24 +149,31 @@ pub(crate) fn ServerRoomsScope(
         voice_loader.watch_server_voice_rooms(voice_load_server_id.clone());
     });
 
-    let requested_room_id_for_sync = requested_room_id.clone();
     let sync_server_id = server_id.clone();
+    let room_selection_router = router();
     use_effect(move || {
+        let (route_active, route_room_id) =
+            server_room_target(&room_selection_router.current::<Route>(), &sync_server_id);
         let Some(Ok(current_rooms)) = room_load_resource.read().clone() else {
             return;
         };
 
         let next_active_room_id = resolve_active_room_id(
             &current_rooms,
-            requested_room_id_for_sync.as_deref(),
+            route_room_id.as_deref(),
             active_room_id().as_deref(),
         );
         if active_room_id() != next_active_room_id {
+            debug!(
+                server_id = %sync_server_id,
+                room_id = ?next_active_room_id,
+                "synchronizing selected server room from route"
+            );
             active_room_id.set(next_active_room_id.clone());
         }
 
         // Обновляем глобальный контекст активной комнаты для фильтрации уведомлений.
-        if active {
+        if route_active {
             active_room_ctx.set(next_active_room_id.clone());
         }
 
@@ -176,8 +183,8 @@ pub(crate) fn ServerRoomsScope(
         };
 
         synchronize_room_workspace(
-            active,
-            requested_room_id_for_sync.as_deref(),
+            route_active,
+            route_room_id.as_deref(),
             &sync_server_id,
             &room_id,
             &navigator,
@@ -185,7 +192,7 @@ pub(crate) fn ServerRoomsScope(
             active_workspace,
         );
 
-        if active
+        if route_active
             && reported_room_id().as_deref() != Some(room_id.as_str())
             && let Some(room) = active_room(&current_rooms, Some(room_id.as_str()))
         {

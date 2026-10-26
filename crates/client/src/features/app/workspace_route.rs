@@ -74,3 +74,29 @@ impl AppWorkspaceRoute {
         matches!(self, Self::Friends | Self::DirectMessage { .. })
     }
 }
+
+/// Возвращает выбранный сервер только для серверных маршрутов.
+///
+/// Социальные разделы и настройки хоста не должны сохранять подсветку сервера.
+pub(crate) fn active_server_for_route(route: &Route) -> Option<String> {
+    AppWorkspaceRoute::from_route(route)
+        .and_then(|workspace| workspace.server_id().map(ToOwned::to_owned))
+}
+
+/// Определяет активность сервера и запрошенную комнату из текущего маршрута.
+///
+/// Для другого сервера, друзей и настроек хоста возвращает неактивное состояние.
+pub(crate) fn server_room_target(route: &Route, server_id: &str) -> (bool, Option<String>) {
+    let workspace = AppWorkspaceRoute::from_route(route);
+    let active = workspace
+        .as_ref()
+        .and_then(|workspace| workspace.server_id())
+        == Some(server_id);
+    let room_id = workspace
+        .filter(|_| active)
+        .and_then(|workspace| workspace.room_id().map(ToOwned::to_owned));
+    (active, room_id)
+}
+
+#[cfg(test)]
+mod tests;

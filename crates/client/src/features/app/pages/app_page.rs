@@ -27,7 +27,7 @@ pub(crate) fn AppPage() -> Element {
     crate::features::developer_mode::use_developer_mode_provider();
     let navigator = use_navigator();
     let toast = use_context::<ToastHandle>();
-    let route = use_route::<Route>();
+    let workspace_router = router();
     let user = use_signal(|| None);
     let mut loading_profile = use_signal(|| false);
     let mut profile_error = use_signal(|| None::<String>);
@@ -99,6 +99,7 @@ pub(crate) fn AppPage() -> Element {
             return;
         };
 
+        let route = workspace_router.current::<Route>();
         match route.clone() {
             Route::AppHome {} => {
                 let saved_route = workspace_route_storage::load(&current_user.id);

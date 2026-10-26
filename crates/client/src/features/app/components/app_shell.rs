@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 use crate::Route;
 use crate::features::app::active_room::ActiveRoomContext;
 use crate::features::app::api;
-use crate::features::app::workspace_route::AppWorkspaceRoute;
+use crate::features::app::workspace_route::{AppWorkspaceRoute, active_server_for_route};
 use crate::features::host_settings::{
     HostDashboardPage, HostEmailSettingsPage, HostLogsPage, HostOwnersPage, HostSystemSettingsPage,
     api as host_settings_api,
@@ -86,10 +86,11 @@ pub(crate) fn AppShell() -> Element {
         || host_email_settings_active
         || host_logs_active;
     let workspace = AppWorkspaceRoute::from_route(&route).unwrap_or(AppWorkspaceRoute::Friends);
-    let route_active_server_id = workspace.server_id().map(ToOwned::to_owned);
     let servers = use_server_registry();
     use_context_provider(move || servers);
-    let mut active_server_id = use_signal(|| route_active_server_id.clone());
+    let selection_router = router();
+    let active_server_id =
+        use_memo(move || active_server_for_route(&selection_router.current::<Route>()));
     let mut loaded_servers = use_signal(|| false);
     let mut is_loading_servers = use_signal(|| false);
     let mut server_load_attempt = use_signal(|| 0_u32);
@@ -134,17 +135,6 @@ pub(crate) fn AppShell() -> Element {
         active_room.set_conversation_id(workspace.conversation_id().map(ToOwned::to_owned));
     });
 
-    let route_active_server_id_for_sync = route_active_server_id.clone();
-    use_effect(move || {
-        let Some(route_server_id) = route_active_server_id_for_sync.clone() else {
-            return;
-        };
-
-        if active_server_id().as_deref() != Some(route_server_id.as_str()) {
-            active_server_id.set(Some(route_server_id));
-        }
-    });
-
     use_effect(move || {
         let attempt = server_load_attempt();
         if started_server_load_attempt() == Some(attempt) {
@@ -181,9 +171,9 @@ pub(crate) fn AppShell() -> Element {
         });
     });
 
-    let route_active_server_id_for_retry = route_active_server_id.clone();
+    let retry_router = router();
     use_effect(move || {
-        let Some(server_id) = route_active_server_id_for_retry.clone() else {
+        let Some(server_id) = active_server_for_route(&retry_router.current::<Route>()) else {
             if retried_server_route().is_some() {
                 retried_server_route.set(None);
             }
@@ -265,7 +255,6 @@ pub(crate) fn AppShell() -> Element {
         shell_state.set(next_shell_state);
         server_status.set(String::new());
         if active_server_id().as_deref() == Some(removed_server_id.as_str()) {
-            active_server_id.set(None);
             navigator.replace(Route::AppFriends {});
         }
         app_modal.set(None);
@@ -299,9 +288,6 @@ pub(crate) fn AppShell() -> Element {
                     let next_shell_state =
                         saved_server_shell_state(&shell_state_by_server(), &server_id)
                             .unwrap_or_else(default_server_shell_state);
-                    // Маршрут обновляется асинхронно для уже смонтированной оболочки.
-                    // Выбираем сервер до навигации, чтобы его рабочая область не осталась скрытой.
-                    active_server_id.set(Some(server_id.clone()));
                     shell_state.set(next_shell_state);
                     navigator.push(Route::AppServer { server_id });
                 },
@@ -361,11 +347,6 @@ pub(crate) fn AppShell() -> Element {
                         key: "{server.id}",
                         active: !host_settings_active && !social_workspace_active
                             && active_server_id().as_deref() == Some(server.id.as_str()),
-                        requested_room_id: if active_server_id().as_deref() == Some(server.id.as_str()) {
-                            workspace.room_id().map(ToOwned::to_owned)
-                        } else {
-                            None
-                        },
                         server,
                         on_state_change: move |(server_id, next_state): (String, ServerShellState)| {
                             let mut next_states = shell_state_by_server();
@@ -406,7 +387,6 @@ pub(crate) fn AppShell() -> Element {
                     on_joined_server: move |server: ServerSummary| {
                         shell_state.set(default_server_shell_state());
                         let server_id = server.id.clone();
-                        active_server_id.set(Some(server_id.clone()));
                         servers.upsert(server);
                         server_status.set(String::new());
                         is_add_server_open.set(false);
@@ -420,7 +400,6 @@ pub(crate) fn AppShell() -> Element {
                     on_created: move |server: ServerSummary| {
                         shell_state.set(default_server_shell_state());
                         let server_id = server.id.clone();
-                        active_server_id.set(Some(server_id.clone()));
                         servers.upsert(server);
                         server_status.set(String::new());
                         navigator.push(Route::AppServer { server_id });

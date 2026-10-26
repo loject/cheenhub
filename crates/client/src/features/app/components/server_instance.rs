@@ -11,7 +11,6 @@ use super::server_rooms_scope::ServerRoomsScope;
 pub(crate) fn ServerInstance(
     server: ServerSummary,
     active: bool,
-    requested_room_id: Option<String>,
     on_state_change: EventHandler<(String, ServerShellState)>,
     on_open_modal: EventHandler<AppModal>,
     on_server_removed: EventHandler<String>,
@@ -25,7 +24,6 @@ pub(crate) fn ServerInstance(
             ServerRoomsScope {
                 server,
                 active,
-                requested_room_id,
                 on_state_change,
                 on_open_modal,
                 on_server_removed,
