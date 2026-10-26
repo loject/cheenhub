@@ -9566,6 +9566,8 @@ dependencies = [
  "ed25519-dalek",
  "getrandom 0.4.3",
  "rand_core 0.10.1",
+ "serde",
+ "serde_json",
  "url",
 ]
 

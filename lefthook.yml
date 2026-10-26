@@ -1,0 +1,13 @@
+pre-commit:
+  jobs:
+    - name: rustfmt
+      run: cargo fmt --all -- --check
+    - name: clippy
+      run: cargo clippy --workspace --all-targets -- -D warnings
+    - name: tests
+      run: cargo test --workspace --all-targets
+
+pre-push:
+  jobs:
+    - name: coverage-regression
+      run: cargo run --quiet -p xtask -- coverage-gate check

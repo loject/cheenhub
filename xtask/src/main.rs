@@ -12,6 +12,7 @@ type XtaskResult<T> = Result<T, String>;
 
 const ROOT_MANIFEST: &str = "Cargo.toml";
 
+mod coverage_gate;
 mod dev_env;
 mod edge_contract;
 mod ensure_cargo_cli;
@@ -31,6 +32,7 @@ fn run() -> XtaskResult<()> {
     };
 
     match command.as_str() {
+        "coverage-gate" => coverage_gate::run(args.collect()),
         "dev-env" => dev_env::run(args.collect()),
         "edge-contract" => edge_contract::run(args.collect()),
         "ensure-cargo-cli" => ensure_cargo_cli::run(args.collect()),
@@ -44,7 +46,7 @@ fn run() -> XtaskResult<()> {
 
 fn print_usage() -> XtaskResult<()> {
     println!(
-        "Usage:\n  cargo run -p xtask -- dev-env ensure [--file <path>]\n  cargo run -p xtask -- edge-contract [--image <local-nginx-image>]\n  cargo run -p xtask -- ensure-cargo-cli <crate> <binary> <version>\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag [<release-tag>]\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>\n  cargo run -p xtask -- release-artifacts publish <release-tag> <asset-dir>"
+        "Usage:\n  cargo run -p xtask -- coverage-gate <check|record>\n  cargo run -p xtask -- dev-env ensure [--file <path>]\n  cargo run -p xtask -- edge-contract [--image <local-nginx-image>]\n  cargo run -p xtask -- ensure-cargo-cli <crate> <binary> <version>\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag [<release-tag>]\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>\n  cargo run -p xtask -- release-artifacts publish <release-tag> <asset-dir>"
     );
     Ok(())
 }
