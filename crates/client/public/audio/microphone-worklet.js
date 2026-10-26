@@ -1,9 +1,24 @@
+const MAX_IN_FLIGHT_PCM_MS = 500;
+const DROP_WARNING_INTERVAL_FRAMES = 5 * sampleRate;
+
 class CheenHubMicrophoneCapture extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const frameCount = options?.processorOptions?.frameCount ?? 480;
     this.frameCount = Math.max(128, Math.floor(frameCount));
+    this.maxInFlightChunks = Math.max(1, Math.floor((sampleRate * MAX_IN_FLIGHT_PCM_MS) / (this.frameCount * 1000)));
     this.diagnosticsEnabled = Boolean(options?.processorOptions?.diagnosticsEnabled);
+    this.backpressureEnabled = false;
+    this.inFlightChunks = 0;
+    this.droppedChunks = 0;
+    this.lastDropReportFrame = 0;
+    this.port.onmessage = (event) => {
+      if (event.data?.kind === "enable-backpressure") {
+        this.backpressureEnabled = true;
+      } else if (event.data?.kind === "pcm-consumed") {
+        this.inFlightChunks = Math.max(0, this.inFlightChunks - 1);
+      }
+    };
     this.samples = new Float32Array(this.frameCount);
     this.offset = 0;
     this.nextChunkFrame = 0;
@@ -85,6 +100,22 @@ class CheenHubMicrophoneCapture extends AudioWorkletProcessor {
   }
 
   postChunk() {
+    if (this.backpressureEnabled && this.inFlightChunks >= this.maxInFlightChunks) {
+      this.droppedChunks += 1;
+      if (this.absoluteFrame - this.lastDropReportFrame >= DROP_WARNING_INTERVAL_FRAMES) {
+        this.port.postMessage({
+          kind: "overrun",
+          droppedChunks: this.droppedChunks,
+          inFlightChunks: this.inFlightChunks,
+        });
+        this.droppedChunks = 0;
+        this.lastDropReportFrame = this.absoluteFrame;
+      }
+      // Старые сэмплы больше не нужны: следующий блок запишется поверх них.
+      this.offset = 0;
+      return;
+    }
+
     const chunk = this.samples;
     const timestampUs = Math.round((this.nextChunkFrame * 1_000_000) / sampleRate);
     const postStartedAtUs = this.diagnosticsEnabled ? this.nowUs() : 0;
@@ -95,6 +126,9 @@ class CheenHubMicrophoneCapture extends AudioWorkletProcessor {
       },
       [chunk.buffer],
     );
+    if (this.backpressureEnabled) {
+      this.inFlightChunks += 1;
+    }
     if (this.diagnosticsEnabled) {
       this.profilePostElapsedUs += this.elapsedUs(postStartedAtUs);
     }

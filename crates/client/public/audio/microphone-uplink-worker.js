@@ -2,7 +2,6 @@ import { recordPcmInputProfile, emitSendProfile } from "./microphone-uplink-diag
 
 const TRANSPORT_WEBTRANSPORT = "webtransport";
 const TRANSPORT_WEBSOCKET = "websocket";
-const MAX_PCM_AGE_MS = 960;
 const MAX_ENCODER_QUEUE_FRAMES = 32;
 const MAX_WEBSOCKET_BUFFERED_BYTES = 64 * 1024;
 const WARNING_INTERVAL_MS = 5_000;
@@ -63,7 +62,6 @@ async function start(config) {
     processor.set_denoise_enabled(Boolean(config.denoiseEnabled));
     transport = await connectRealtime(config, wasm);
     const encoder = createEncoder(config, processor, transport);
-    const startedWallMs = Date.now();
     active = {
       port: config.workletPort,
       encoder,
@@ -72,9 +70,6 @@ async function start(config) {
       sampleRateHz: config.sampleRateHz,
       denoiseRevision: config.denoiseRevision,
       bitrateBps: config.bitrateBps,
-      startedWallMs,
-      lastChunkWallMs: startedWallMs,
-      lastTimestampUs: null,
       lastLevelMs: 0,
       lastLevelActive: false,
       sendPending: false,
@@ -105,6 +100,7 @@ async function start(config) {
     };
     active.port.onmessage = (event) => handleWorkletMessage(event.data, active);
     active.port.start();
+    active.port.postMessage({ kind: "enable-backpressure" });
     post("ready", { transport: transport.kind });
     post("status", { message: "microphone uplink worker started", transport: transport.kind });
   } catch (error) {
@@ -181,6 +177,15 @@ function handleWorkletMessage(data, current) {
     return;
   }
 
+  if (data?.kind === "overrun") {
+    post("warning", {
+      message: "microphone worklet dropped PCM while uplink worker was busy",
+      droppedPcm: data.droppedChunks,
+      inFlightChunks: data.inFlightChunks,
+    });
+    return;
+  }
+
   if (data?.kind === "profile") {
     if (current.diagnosticsEnabled) {
       self.postMessage({ ...data, kind: "worklet-profile" });
@@ -188,25 +193,20 @@ function handleWorkletMessage(data, current) {
     return;
   }
 
+  const samples = data?.samples;
+  if (!(samples instanceof Float32Array) || samples.length === 0) {
+    return;
+  }
+
   try {
-    const samples = data?.samples;
-    if (!(samples instanceof Float32Array) || samples.length === 0) {
-      return;
-    }
     const timestampUs = Math.max(0, Math.floor(Number(data.timestampUs) || 0));
     const nowMs = Date.now();
 
     recordPcmInputProfile(current, samples.length, nowMs, post);
 
-    if (shouldRebaseAfterCapturePause(current, timestampUs, nowMs)) {
-      current.startedWallMs = nowMs - timestampUs / 1000;
-    }
-    current.lastChunkWallMs = nowMs;
-    current.lastTimestampUs = timestampUs;
-    const pcmAgeMs = nowMs - (current.startedWallMs + timestampUs / 1000);
-    if (pcmAgeMs > MAX_PCM_AGE_MS || current.encoder.encodeQueueSize >= MAX_ENCODER_QUEUE_FRAMES) {
+    if (current.encoder.encodeQueueSize >= MAX_ENCODER_QUEUE_FRAMES) {
       current.droppedPcm += 1;
-      warnAboutDrops(current, pcmAgeMs, pcmAgeMs > MAX_PCM_AGE_MS ? "pcm_age" : "encoder_queue");
+      warnAboutDrops(current, "encoder_queue");
       return;
     }
 
@@ -228,16 +228,14 @@ function handleWorkletMessage(data, current) {
     audio.close();
   } catch (error) {
     post("warning", { message: "failed to process microphone worker chunk", detail: errorMessage(error) });
+  } finally {
+    // Подтверждаем и обработанный, и пропущенный PCM, чтобы захват мог продолжиться.
+    try {
+      current.port.postMessage({ kind: "pcm-consumed" });
+    } catch (error) {
+      post("warning", { message: "failed to acknowledge microphone PCM", detail: errorMessage(error) });
+    }
   }
-}
-
-function shouldRebaseAfterCapturePause(current, timestampUs, nowMs) {
-  if (current.lastTimestampUs === null) {
-    return false;
-  }
-  const wallGapMs = nowMs - current.lastChunkWallMs;
-  const audioGapMs = (timestampUs - current.lastTimestampUs) / 1000;
-  return wallGapMs > 500 && audioGapMs < 100;
 }
 
 function emitLevel(current, processed, nowMs) {
@@ -279,7 +277,7 @@ function handleEncodedChunk(chunk, processor, transport) {
     }
     emitSendProfile(current, nowMs, post);
     current.droppedEncoded += 1;
-    warnAboutDrops(current, 0, sendPending ? "send_pending" : "transport_backpressure");
+    warnAboutDrops(current, sendPending ? "send_pending" : "transport_backpressure");
     return;
   }
   try {
@@ -319,7 +317,7 @@ function handleEncodedChunk(chunk, processor, transport) {
   }
 }
 
-function warnAboutDrops(current, pcmAgeMs, dropReason) {
+function warnAboutDrops(current, dropReason) {
   const nowMs = Date.now();
   if (current.lastWarningMs && nowMs - current.lastWarningMs < WARNING_INTERVAL_MS) {
     return;
@@ -330,7 +328,6 @@ function warnAboutDrops(current, pcmAgeMs, dropReason) {
     dropReason,
     droppedPcm: current.droppedPcm,
     droppedEncoded: current.droppedEncoded,
-    pcmAgeMs: Math.max(0, Math.round(pcmAgeMs)),
     encoderQueueSize: current.encoder.encodeQueueSize,
   });
   current.droppedPcm = 0;
