@@ -17,7 +17,7 @@ if [[ ! -x "${adb_bin}" ]]; then
     exit 1
 fi
 
-cargo run -p xtask -- ensure-cargo-cli dioxus-cli dx 0.8.0-alpha.1
+cargo run -p xtask -- ensure-cargo-cli dioxus-cli dx 0.8.0-alpha.3
 
 if [[ ! -f "${production_env}" ]]; then
     printf 'Не найден %s с production JWT-конфигурацией.\n' "${production_env}" >&2

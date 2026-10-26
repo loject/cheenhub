@@ -22,7 +22,7 @@ pub(crate) fn Modal(
     rsx! {
         div { class: "fixed inset-0 z-[1100] flex items-center justify-center bg-black/65 px-4 py-6 backdrop-blur-sm",
             onkeydown: move |event| {
-                if event.key() == Key::Escape && !close_disabled {
+                if event.key() == Key::Named(NamedKey::Escape) && !close_disabled {
                     event.stop_propagation();
                     on_close.call(());
                 }

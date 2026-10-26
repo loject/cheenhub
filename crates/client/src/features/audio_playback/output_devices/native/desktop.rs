@@ -49,12 +49,18 @@ fn enumerate_audio_output_devices_blocking() -> AudioOutputDevicesResult {
         }
     };
 
-    let default_output_name = host
-        .default_output_device()
-        .and_then(|device| device.name().ok());
+    let default_output_name = host.default_output_device().and_then(|device| {
+        device
+            .description()
+            .map(|description| description.name().to_owned())
+            .ok()
+    });
     let mut audio_outputs = Vec::new();
     for device in devices {
-        let label = match device.name() {
+        let label = match device
+            .description()
+            .map(|description| description.name().to_owned())
+        {
             Ok(name) => name,
             Err(error) => {
                 debug!(

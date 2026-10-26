@@ -23,7 +23,7 @@ impl RuntimeSwitch {
     pub(crate) fn store(&self, enabled: bool, _ordering: Ordering) {
         let _ = self
             .0
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |old| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |old| {
                 Some(((old >> 2).wrapping_add(1) << 2) | u64::from(enabled))
             });
     }
@@ -51,7 +51,7 @@ impl RuntimeSwitch {
     pub(crate) fn restore(&self, snapshot: u64) {
         let _ = self
             .0
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |old| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |old| {
                 Some(((old >> 2).wrapping_add(1) << 2) | (snapshot & 3))
             });
     }

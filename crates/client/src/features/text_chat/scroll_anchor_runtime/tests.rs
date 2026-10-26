@@ -1,7 +1,7 @@
 use std::{cell::Cell, future::Future, pin::Pin};
 
+use dioxus::html::geometry::{PixelsRect, PixelsSize};
 use dioxus::html::{MountedResult, RenderedElementBacking};
-use dioxus::prelude::dioxus_elements::geometry::{PixelsRect, PixelsSize};
 use futures_util::FutureExt;
 
 use super::*;

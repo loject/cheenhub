@@ -72,7 +72,7 @@ pub(super) fn FriendSearchModal(
                             placeholder: "Никнейм пользователя",
                             oninput: move |event| query.set(event.value()),
                             onkeydown: move |event| {
-                                if event.key() == Key::Enter {
+                                if event.key() == Key::Named(NamedKey::Enter) {
                                     event.prevent_default();
                                     run_search.call(());
                                 }

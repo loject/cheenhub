@@ -177,27 +177,30 @@ fn leaving_the_call_discards_buffered_screen_frames() {
 
 #[test]
 fn stream_expiry_updates_state_without_hoisting_the_provider_signal() {
-    let warnings = Arc::new(Mutex::new(Vec::new()));
-    let _subscriber = tracing::subscriber::set_default(SignalWarnings(warnings.clone()));
-    let mut dom = VirtualDom::new(scenario_app);
-    let mut scenario = dom.in_scope(ScopeId::ROOT, || VideoOwnerScenario {
-        visible: Signal::new(true),
-        generations: Rc::new(RefCell::new(Weak::new())),
+    crate::tests::native::with_runtime(async {
+        let warnings = Arc::new(Mutex::new(Vec::new()));
+        let _subscriber = tracing::subscriber::set_default(SignalWarnings(warnings.clone()));
+        let mut dom = VirtualDom::new(scenario_app);
+        let mut scenario = dom.in_scope(ScopeId::ROOT, || VideoOwnerScenario {
+            visible: Signal::new(true),
+            generations: Rc::new(RefCell::new(Weak::new())),
+        });
+        dom.provide_root_context(scenario.clone());
+        dom.rebuild_in_place();
+        let generations = scenario.generations.borrow().upgrade().unwrap();
+        dom.render_immediate_to_vec();
+        crate::tests::native::wait_until(&mut dom, || generations.borrow().is_empty()).await;
+        assert!(
+            generations.borrow().is_empty(),
+            "expiry task must clear the inactive stream"
+        );
+
+        dom.in_scope(ScopeId::ROOT, || scenario.visible.set(false));
+        dom.render_immediate_to_vec();
+
+        assert!(
+            warnings.lock().unwrap().is_empty(),
+            "expiry must not access the provider signal from the root scope"
+        );
     });
-    dom.provide_root_context(scenario.clone());
-    dom.rebuild_in_place();
-    let generations = scenario.generations.borrow().upgrade().unwrap();
-    dom.render_immediate_to_vec();
-    assert!(
-        generations.borrow().is_empty(),
-        "expiry task must clear the inactive stream"
-    );
-
-    dom.in_scope(ScopeId::ROOT, || scenario.visible.set(false));
-    dom.render_immediate_to_vec();
-
-    assert!(
-        warnings.lock().unwrap().is_empty(),
-        "expiry must not access the provider signal from the root scope"
-    );
 }

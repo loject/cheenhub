@@ -200,7 +200,7 @@ fn owner_list(
                 for owner in owners {
                     HostOwnerRow {
                         key: "{owner.user_id}",
-                        owner: owner.clone(),
+                        host_owner: owner.clone(),
                         can_revoke: !owner.is_current_user && owners.len() > 1,
                         is_revoking: revoking_owners.contains(&owner.user_id),
                         on_revoke,

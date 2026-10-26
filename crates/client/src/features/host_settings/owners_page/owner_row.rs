@@ -11,12 +11,13 @@ use crate::features::app::components::avatar::UserAvatar;
 /// Показывает профиль владельца и действие отзыва прав, если оно доступно.
 #[component]
 pub(super) fn HostOwnerRow(
-    owner: HostOwnerSummary,
+    host_owner: HostOwnerSummary,
     can_revoke: bool,
     /// Отзыв прав этой строки ожидает ответ сервера; родитель снимает флаг при любом результате.
     is_revoking: bool,
     on_revoke: EventHandler<String>,
 ) -> Element {
+    let owner = host_owner;
     let mut confirm = use_signal(|| false);
 
     let granted_line = match owner.granted_by_nickname.as_deref() {

@@ -49,7 +49,7 @@ pub(super) fn PinnedMessagesPanel(
         div {
             class: "relative z-30 shrink-0 border-b border-white/[0.06] bg-[#0d1016]",
             onkeydown: move |event| {
-                if event.key() == Key::Escape {
+                if event.key() == Key::Named(NamedKey::Escape) {
                     expanded.set(false);
                     action_menu_id.set(None);
                 }

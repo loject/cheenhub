@@ -9,11 +9,7 @@ use dioxus_sdk_storage::{LocalStorage, StorageBacking};
 
 #[test]
 fn toggling_idle_enabled_microphone_saves_mute_for_next_application_launch() {
-    let directory = std::env::temp_dir().join(format!(
-        "cheenhub-microphone-preference-{}",
-        uuid::Uuid::new_v4()
-    ));
-    dioxus_sdk_storage::set_directory(directory.clone());
+    let directory = crate::tests::native::storage_directory();
     let dom = VirtualDom::new(|| rsx! {});
     dom.in_scope(ScopeId::ROOT, || {
         let microphone = MicrophoneHandle::for_test();

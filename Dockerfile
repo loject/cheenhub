@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM rust:1.97.1-bookworm AS source
+FROM rust:1.99.1-bookworm AS source
 WORKDIR /app
 
 FROM source AS backend-builder
@@ -27,8 +27,8 @@ RUN --mount=type=cache,id=cheenhub-cargo-registry,target=/usr/local/cargo/regist
     --mount=type=cache,id=cheenhub-dioxus-cli-target,target=/tmp/dioxus-cli-target,sharing=locked \
     rustup target add wasm32-unknown-unknown \
     && CARGO_TARGET_DIR=/tmp/cargo-make-target cargo install cargo-make --version 0.37.24 --locked \
-    && CARGO_TARGET_DIR=/tmp/wasm-bindgen-cli-target cargo install wasm-bindgen-cli --version 0.2.128 --locked \
-    && CARGO_TARGET_DIR=/tmp/dioxus-cli-target cargo install dioxus-cli --version 0.8.0-alpha.1 --locked
+    && CARGO_TARGET_DIR=/tmp/wasm-bindgen-cli-target cargo install wasm-bindgen-cli --version 0.2.129 --locked \
+    && CARGO_TARGET_DIR=/tmp/dioxus-cli-target cargo install dioxus-cli --version 0.8.0-alpha.3 --locked
 
 FROM web-tools AS web-builder
 COPY .cargo ./.cargo

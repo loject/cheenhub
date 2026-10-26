@@ -10,7 +10,8 @@ use anyhow::{Context, anyhow, bail};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use ed25519_dalek::SigningKey;
-use rand_core::OsRng;
+use getrandom::SysRng;
+use rand_core::UnwrapErr;
 
 const PRIVATE_KEY_ENV: &str = "JWT_ED25519_PRIVATE_KEY_BASE64";
 const BACKEND_KEY_ID_ENV: &str = "JWT_KEY_ID";
@@ -39,7 +40,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn print_generated_keys() {
-    let signing_key = SigningKey::generate(&mut OsRng);
+    let signing_key = SigningKey::generate(&mut UnwrapErr(SysRng));
     let private_key = STANDARD.encode(signing_key.to_bytes());
     let public_key = STANDARD.encode(signing_key.verifying_key().to_bytes());
 
@@ -69,7 +70,7 @@ fn ensure_local_env(env_path: &Path, default_key_id: &str) -> anyhow::Result<()>
         .with_context(|| format!("failed to read local env file {}", env_path.display()))?;
     let private_key = env_value(&content, PRIVATE_KEY_ENV)
         .and_then(|value| signing_key_from_base64(&value))
-        .unwrap_or_else(|| SigningKey::generate(&mut OsRng));
+        .unwrap_or_else(|| SigningKey::generate(&mut UnwrapErr(SysRng)));
     let private_key_base64 = STANDARD.encode(private_key.to_bytes());
     let public_key_base64 = STANDARD.encode(private_key.verifying_key().to_bytes());
     let key_id = env_value(&content, BACKEND_KEY_ID_ENV)

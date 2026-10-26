@@ -21,7 +21,7 @@ pub(super) fn EmojiPicker(
             style: format!("{position_style} margin: 0; right: auto; bottom: auto; width: min(320px, calc(100dvw - 24px)); max-height: calc(100dvh - 24px);"),
             class: "message-emoji-picker fixed z-50 flex flex-col gap-3 overflow-y-auto rounded-2xl border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-[0_16px_50px_rgba(0,0,0,0.5)] [&:not(:popover-open)]:hidden",
             role: "dialog", "aria-label": "Выбор эмодзи",
-            onkeydown: move |event| { if event.key() == Key::Escape { event.stop_propagation(); on_close.call(()); } },
+            onkeydown: move |event| { if event.key() == Key::Named(NamedKey::Escape) { event.stop_propagation(); on_close.call(()); } },
             div { class: "flex items-center justify-between gap-2",
                 p { class: "text-sm font-medium", "Эмодзи" }
                 button { r#type: "button", class: "rounded-lg px-2 py-1 text-zinc-400 hover:bg-white/5 hover:text-white", "aria-label": "Закрыть выбор эмодзи", popovertarget: id.clone(), popovertargetaction: "hide", onclick: move |_| on_close.call(()),

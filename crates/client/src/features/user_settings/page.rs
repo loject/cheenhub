@@ -88,7 +88,7 @@ pub(crate) fn UserSettingsPage(
     rsx! {
         div { class: "fixed inset-0 z-[100] flex items-stretch justify-center bg-black/70 p-0 backdrop-blur-sm md:items-center md:p-3",
             onkeydown: move |event| {
-                if event.key() == Key::Escape {
+                if event.key() == Key::Named(NamedKey::Escape) {
                     event.stop_propagation();
                     debug!("closing user settings with Escape");
                     on_close.call(());

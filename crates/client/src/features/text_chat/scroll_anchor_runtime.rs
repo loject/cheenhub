@@ -3,7 +3,7 @@
 use std::{collections::HashMap, rc::Rc};
 
 use cheenhub_contracts::realtime::TextChatMessage;
-use dioxus::prelude::dioxus_elements::geometry::PixelsVector2D;
+use dioxus::html::geometry::PixelsVector2D;
 use dioxus::prelude::*;
 
 use super::scroll::{ScrollCommand, apply_scroll_command};

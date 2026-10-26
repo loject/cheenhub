@@ -63,7 +63,7 @@ pub(super) fn HostOwnerGrantForm(on_granted: EventHandler<HostOwnersResponse>) -
                     disabled: is_granting(),
                     oninput: move |event| input.set(event.value()),
                     onkeydown: move |event| {
-                        if event.key() == Key::Enter {
+                        if event.key() == Key::Named(NamedKey::Enter) {
                             event.prevent_default();
                             submit.call(());
                         }

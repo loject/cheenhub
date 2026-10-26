@@ -15,7 +15,7 @@ async fn serves_https_with_hsts_and_shuts_down() {
     let cert_path = directory.join("cert.pem");
     let key_path = directory.join("key.pem");
     fs::write(&cert_path, certificate.cert.pem()).unwrap();
-    fs::write(&key_path, certificate.key_pair.serialize_pem()).unwrap();
+    fs::write(&key_path, certificate.signing_key.serialize_pem()).unwrap();
     let app = Router::new().route("/health", get(|| async { "ok" }));
     let listener = start(
         SocketAddr::from(([127, 0, 0, 1], 0)),
@@ -57,7 +57,7 @@ async fn rejects_non_matching_certificate_and_key() {
     let cert_path = directory.join("cert.pem");
     let key_path = directory.join("key.pem");
     fs::write(&cert_path, first.cert.pem()).unwrap();
-    fs::write(&key_path, second.key_pair.serialize_pem()).unwrap();
+    fs::write(&key_path, second.signing_key.serialize_pem()).unwrap();
 
     let result = start(
         SocketAddr::from(([127, 0, 0, 1], 0)),

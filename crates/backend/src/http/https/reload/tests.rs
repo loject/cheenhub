@@ -37,7 +37,7 @@ fn new_pair() -> (Vec<u8>, Vec<u8>) {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
     (
         cert.cert.pem().into_bytes(),
-        cert.key_pair.serialize_pem().into_bytes(),
+        cert.signing_key.serialize_pem().into_bytes(),
     )
 }
 

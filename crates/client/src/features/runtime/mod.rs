@@ -9,6 +9,11 @@ mod web;
 
 use std::time::Duration;
 
+/// Создаёт HTTP-клиент с прежним набором доверенных корневых сертификатов.
+pub(crate) fn http_client() -> reqwest::Client {
+    native::http_client()
+}
+
 /// Асинхронно ожидает указанное количество миллисекунд на текущей платформе.
 pub(crate) async fn sleep_ms(milliseconds: u32) {
     native::sleep_duration(Duration::from_millis(u64::from(milliseconds))).await;

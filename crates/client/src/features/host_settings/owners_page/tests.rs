@@ -1,7 +1,7 @@
 //! Регрессии загрузки владельцев и состояния строк в Dioxus runtime.
 
 use super::*;
-use dioxus::dioxus_core::{DynamicNode, ElementId, Mutation, TemplateNode, VNode};
+use dioxus::dioxus_core::{DynamicNode, ElementId, MountedVNode, Mutation};
 use std::cell::RefCell;
 
 mod support;
@@ -48,47 +48,52 @@ fn pump(dom: &mut VirtualDom) {
     }
 }
 
-fn static_text(nodes: &[TemplateNode], out: &mut String) {
-    for node in nodes {
-        match node {
-            TemplateNode::Text { text } => out.push_str(text),
-            TemplateNode::Element { children, .. } => static_text(children, out),
-            _ => {}
+fn node_text(dom: &VirtualDom, node: MountedVNode<'_>, out: &mut String) {
+    for (op, _) in node.template().decoded_ops().enumerate() {
+        if let Some(text) = node.template().static_text(op) {
+            out.push_str(text.text());
         }
     }
-}
-
-fn node_text(dom: &VirtualDom, node: &VNode, out: &mut String) {
-    static_text(node.template.roots(), out);
-    for (index, dynamic) in node.dynamic_nodes.iter().enumerate() {
-        match dynamic {
+    for slot in node.dynamic_anchors().flat_map(|anchor| anchor.nodes()) {
+        match &*slot {
             DynamicNode::Text(text) => out.push_str(&text.value),
-            DynamicNode::Fragment(children) => {
-                for child in children {
+            DynamicNode::Fragment(_) => {
+                for child in node.mounted_fragment_children(slot, dom) {
                     node_text(dom, child, out);
                 }
             }
             DynamicNode::Component(component) => {
-                if let Some(scope) = component.mounted_scope(index, node, dom) {
-                    node_text(dom, scope.root_node(), out);
+                if let Some(child) = component
+                    .mounted_scope(slot, node, dom)
+                    .and_then(|scope| scope.try_mounted_root_node())
+                {
+                    node_text(dom, child, out);
                 }
             }
-            _ => {}
         }
     }
 }
 
 fn text(dom: &VirtualDom) -> String {
     let mut out = String::new();
-    node_text(dom, dom.base_scope().root_node(), &mut out);
+    node_text(
+        dom,
+        dom.base_scope().try_mounted_root_node().unwrap(),
+        &mut out,
+    );
     out
 }
 
 fn clicks(edits: &[Mutation]) -> Vec<ElementId> {
+    let mut current = None;
     edits
         .iter()
         .filter_map(|edit| match edit {
-            Mutation::NewEventListener { name, id } if name == "click" => Some(*id),
+            Mutation::SetId { id } | Mutation::PushId { id } => {
+                current = Some(*id);
+                None
+            }
+            Mutation::NewEventListener { name } if name == "click" => current,
             _ => None,
         })
         .collect()

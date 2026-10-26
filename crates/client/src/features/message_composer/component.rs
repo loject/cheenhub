@@ -1,6 +1,5 @@
 //! Единый компонент ввода текста, вложений и эмодзи.
 
-use dioxus::dioxus_core::current_scope_id;
 use dioxus::prelude::*;
 use std::{cell::Cell, rc::Rc};
 
@@ -26,7 +25,7 @@ pub(crate) fn MessageComposer(
     let mut state = state;
     let mut input_element = use_signal(|| None::<Rc<MountedData>>);
     let mut refocus_requested = use_signal(|| false);
-    let picker_id = use_hook(|| format!("message-emojis-{}", current_scope_id().0));
+    let picker_id = use_hook(|| format!("message-emojis-{}", uuid::Uuid::new_v4()));
     let mut emoji_button = use_signal(|| None::<Rc<MountedData>>);
     let mut picker_style = use_signal(|| {
         String::from("top: max(12px, calc(100dvh - 396px)); left: max(12px, calc(100dvw - 344px));")
@@ -174,7 +173,7 @@ pub(crate) fn MessageComposer(
                                     }
                                 });
                             }
-                            if event.key() == Key::Enter && !event.modifiers().shift() && !event.is_composing() {
+                            if event.key() == Key::Named(NamedKey::Enter) && !event.modifiers().shift() && !event.is_composing() {
                                 event.prevent_default();
                                 submit.call(());
                             }

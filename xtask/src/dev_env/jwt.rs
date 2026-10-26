@@ -2,7 +2,8 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::SigningKey;
-use rand_core::OsRng;
+use getrandom::SysRng;
+use rand_core::UnwrapErr;
 
 use super::env_file::EnvFile;
 use crate::XtaskResult;
@@ -26,7 +27,7 @@ pub(super) fn ensure(env: &mut EnvFile) -> XtaskResult<()> {
     let signing = if let Some(encoded) = &private {
         decode_signing_key(encoded)?
     } else {
-        SigningKey::generate(&mut OsRng)
+        SigningKey::generate(&mut UnwrapErr(SysRng))
     };
     let expected_public = signing.verifying_key().to_bytes();
     if let Some(encoded) = &public {

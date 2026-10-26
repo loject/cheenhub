@@ -49,7 +49,7 @@ pub(crate) fn ScreenShareSourcePicker(
             role: "presentation",
             onclick: move |_| on_close.call(()),
             onkeydown: move |event| {
-                if event.key() == Key::Escape {
+                if event.key() == Key::Named(NamedKey::Escape) {
                     on_close.call(());
                 }
             },

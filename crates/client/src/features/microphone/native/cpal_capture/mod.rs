@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, mpsc};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, SampleRate, Stream, StreamConfig, SupportedStreamConfig};
+use cpal::{SampleFormat, Stream, StreamConfig, SupportedStreamConfig};
 use dioxus::prelude::{debug, info, warn};
 use futures_util::FutureExt;
 
@@ -120,7 +120,7 @@ async fn start_cpal_session(
     }
     let stream_config = supported_config.config();
     let input_channels = stream_config.channels.max(1);
-    let input_sample_rate_hz = stream_config.sample_rate.0;
+    let input_sample_rate_hz = stream_config.sample_rate;
     let frame_samples = frame_samples(config.sample_rate_hz);
 
     let (pcm_sender, pcm_receiver) = mpsc::sync_channel(INPUT_BACKLOG_WARN_CHUNKS * 2);
@@ -229,7 +229,10 @@ fn find_input_device(
 ) -> Result<Option<cpal::Device>, MicrophoneError> {
     let devices = host.input_devices().map_err(cpal_error)?;
     for (ordinal, device) in devices.enumerate() {
-        let name = match device.name() {
+        let name = match device
+            .description()
+            .map(|description| description.name().to_owned())
+        {
             Ok(name) => name,
             Err(error) => {
                 debug!(
@@ -251,7 +254,7 @@ fn select_input_config(
     device: &cpal::Device,
     config: &MicrophoneConfig,
 ) -> Result<SupportedStreamConfig, MicrophoneError> {
-    let target_rate = SampleRate(config.sample_rate_hz);
+    let target_rate = config.sample_rate_hz;
     let supported_configs = device.supported_input_configs().map_err(cpal_error)?;
     config::select(supported_configs, target_rate, u16::from(config.channels)).ok_or_else(|| {
         MicrophoneError::new(format!(
@@ -277,49 +280,49 @@ fn build_input_stream(
     };
     let stream = match sample_format {
         SampleFormat::F32 => device.build_input_stream(
-            stream_config,
+            *stream_config,
             capture_callback::<f32>(input_channels, pcm_sender, closed),
             err_fn,
             None,
         ),
         SampleFormat::F64 => device.build_input_stream(
-            stream_config,
+            *stream_config,
             capture_callback::<f64>(input_channels, pcm_sender, closed),
             err_fn,
             None,
         ),
         SampleFormat::I8 => device.build_input_stream(
-            stream_config,
+            *stream_config,
             capture_callback::<i8>(input_channels, pcm_sender, closed),
             err_fn,
             None,
         ),
         SampleFormat::I16 => device.build_input_stream(
-            stream_config,
+            *stream_config,
             capture_callback::<i16>(input_channels, pcm_sender, closed),
             err_fn,
             None,
         ),
         SampleFormat::I32 => device.build_input_stream(
-            stream_config,
+            *stream_config,
             capture_callback::<i32>(input_channels, pcm_sender, closed),
             err_fn,
             None,
         ),
         SampleFormat::U8 => device.build_input_stream(
-            stream_config,
+            *stream_config,
             capture_callback::<u8>(input_channels, pcm_sender, closed),
             err_fn,
             None,
         ),
         SampleFormat::U16 => device.build_input_stream(
-            stream_config,
+            *stream_config,
             capture_callback::<u16>(input_channels, pcm_sender, closed),
             err_fn,
             None,
         ),
         SampleFormat::U32 => device.build_input_stream(
-            stream_config,
+            *stream_config,
             capture_callback::<u32>(input_channels, pcm_sender, closed),
             err_fn,
             None,

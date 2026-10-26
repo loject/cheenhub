@@ -12,7 +12,7 @@ use serde_json::json;
 
 fn signed_token(overrides: serde_json::Value) -> (String, GoogleJwks) {
     let private_key =
-        RsaPrivateKey::new(&mut rand_core::OsRng, 2048).expect("test rsa key should generate");
+        RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).expect("test rsa key should generate");
     let public_key = private_key.to_public_key();
     let header = json!({"alg": "RS256", "kid": "test-key", "typ": "JWT"});
     let mut claims = json!({

@@ -1,7 +1,7 @@
 //! Проверки обновления постоянного toast без потери пользовательского состояния.
 
 use super::*;
-use crate::features::application_focus::ApplicationFocusProvider;
+use crate::features::application_focus::ApplicationFocusContext;
 use crate::features::toast::{
     UpdateAvailableToastActions, UpdateAvailableToastContent, UpdateToastDeferralOption,
 };
@@ -11,7 +11,9 @@ thread_local! {
 }
 
 fn app() -> Element {
-    rsx! { ApplicationFocusProvider { Probe {} } }
+    let focused = use_signal(|| true);
+    use_context_provider(|| ApplicationFocusContext::new(focused));
+    rsx! { Probe {} }
 }
 
 #[component]

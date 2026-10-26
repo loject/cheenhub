@@ -5,13 +5,13 @@ use base64::{
     engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
 };
 use chrono::{DateTime, Utc};
+use rsa::sha2::Sha256;
 use rsa::{
     BigUint, RsaPublicKey,
     pkcs1v15::{Signature, VerifyingKey},
     signature::Verifier,
 };
 use serde::Deserialize;
-use sha2::Sha256;
 
 const GOOGLE_ISSUERS: [&str; 2] = ["https://accounts.google.com", "accounts.google.com"];
 

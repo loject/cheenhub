@@ -1,6 +1,6 @@
 //! Выбор формата native-захвата без зависимости от порядка перечисления CPAL.
 
-use cpal::{SampleFormat, SampleRate, SupportedStreamConfig, SupportedStreamConfigRange};
+use cpal::{SampleFormat, SupportedStreamConfig, SupportedStreamConfigRange};
 
 /// Выбирает наиболее точный поддерживаемый PCM на заданной частоте.
 ///
@@ -8,7 +8,7 @@ use cpal::{SampleFormat, SampleRate, SupportedStreamConfig, SupportedStreamConfi
 /// каналы преобразуются в mono существующим capture callback.
 pub(super) fn select(
     configs: impl IntoIterator<Item = SupportedStreamConfigRange>,
-    target_rate: SampleRate,
+    target_rate: u32,
     channels: u16,
 ) -> Option<SupportedStreamConfig> {
     configs

@@ -22,7 +22,7 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  RUST_TOOLCHAIN: '1.97.1'
+  RUST_TOOLCHAIN: '1.99.1'
   CHEENHUB_BASE_URL: ${{ inputs.base_url || vars.CHEENHUB_BASE_URL || 'https://cheenhub.ru' }}
   CHEENHUB_REALTIME_CERT_SHA256: ${{ vars.CHEENHUB_REALTIME_CERT_SHA256 || '' }}
 
@@ -54,14 +54,14 @@ jobs:
       - name: Cache Rust build outputs
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: native-linux-1.97.1
+          shared-key: native-linux-1.99.1
 
       - name: Install Dioxus build tools
         shell: bash
         run: |
           cargo install --locked cargo-make --version 0.37.24
-          cargo install --locked wasm-bindgen-cli --version 0.2.127
-          cargo install --locked dioxus-cli --version 0.8.0-alpha.1
+          cargo install --locked wasm-bindgen-cli --version 0.2.129
+          cargo install --locked dioxus-cli --version 0.8.0-alpha.3
 
       - name: Resolve application version
         id: version

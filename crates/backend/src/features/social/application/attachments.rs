@@ -201,7 +201,7 @@ fn validate_image(
         .map_err(|_| SocialError::BadRequest("Не удалось прочитать изображение.".to_owned()))?;
     let (width, height) = decoded.dimensions();
     let id = Uuid::new_v4();
-    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let digest = hex::encode(Sha256::digest(&bytes));
     Ok(NewStoredImage {
         id,
         owner_user_id,

@@ -1,7 +1,7 @@
 //! Обновление предупреждения и доступного действия после изменения дружбы.
 
 use super::*;
-use dioxus::dioxus_core::{DynamicNode, TemplateNode, VNode};
+use dioxus::dioxus_core::{DynamicNode, MountedVNode};
 use futures_util::FutureExt;
 
 fn app() -> Element {
@@ -24,36 +24,37 @@ fn pump(dom: &mut VirtualDom) {
 }
 
 fn text(dom: &VirtualDom) -> String {
-    fn static_text(nodes: &[TemplateNode], output: &mut String) {
-        for node in nodes {
-            match node {
-                TemplateNode::Text { text } => output.push_str(text),
-                TemplateNode::Element { children, .. } => static_text(children, output),
-                _ => {}
+    fn visit(dom: &VirtualDom, node: MountedVNode<'_>, output: &mut String) {
+        for (op, _) in node.template().decoded_ops().enumerate() {
+            if let Some(text) = node.template().static_text(op) {
+                output.push_str(text.text());
             }
         }
-    }
-    fn visit(dom: &VirtualDom, node: &VNode, output: &mut String) {
-        static_text(node.template.roots(), output);
-        for (index, dynamic) in node.dynamic_nodes.iter().enumerate() {
-            match dynamic {
+        for slot in node.dynamic_anchors().flat_map(|anchor| anchor.nodes()) {
+            match &*slot {
                 DynamicNode::Text(text) => output.push_str(&text.value),
-                DynamicNode::Fragment(children) => {
-                    for child in children {
+                DynamicNode::Fragment(_) => {
+                    for child in node.mounted_fragment_children(slot, dom) {
                         visit(dom, child, output);
                     }
                 }
                 DynamicNode::Component(component) => {
-                    if let Some(scope) = component.mounted_scope(index, node, dom) {
-                        visit(dom, scope.root_node(), output);
+                    if let Some(child) = component
+                        .mounted_scope(slot, node, dom)
+                        .and_then(|scope| scope.try_mounted_root_node())
+                    {
+                        visit(dom, child, output);
                     }
                 }
-                _ => {}
             }
         }
     }
     let mut output = String::new();
-    visit(dom, dom.base_scope().root_node(), &mut output);
+    visit(
+        dom,
+        dom.base_scope().try_mounted_root_node().unwrap(),
+        &mut output,
+    );
     output
 }
 

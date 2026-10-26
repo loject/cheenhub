@@ -10,9 +10,9 @@ use reqwest::StatusCode;
 use rsa::RsaPrivateKey;
 use rsa::pkcs1v15::SigningKey;
 use rsa::pkcs8::DecodePrivateKey;
+use rsa::sha2::Sha256;
 use rsa::signature::{SignatureEncoding, Signer};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
 use tokio::sync::Mutex;
 
 use crate::features::push_notifications::domain::PushPayload;

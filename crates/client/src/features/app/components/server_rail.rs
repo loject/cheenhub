@@ -126,7 +126,7 @@ pub(crate) fn ServerRail(
                         div {
                             class: "absolute left-[calc(100%+12px)] top-0 z-[100] w-[min(280px,calc(100vw-100px))]",
                             onclick: move |event| event.stop_propagation(),
-                            onkeydown: move |event| { if event.key() == Key::Escape { show_load_error.set(false); } },
+                            onkeydown: move |event| { if event.key() == Key::Named(NamedKey::Escape) { show_load_error.set(false); } },
                             ServerListError { is_loading, on_retry: on_retry_servers }
                         }
                     }

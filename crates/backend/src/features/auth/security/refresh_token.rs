@@ -2,13 +2,14 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use rand_core::{OsRng, RngCore};
+use getrandom::SysRng;
+use rand_core::{Rng, UnwrapErr};
 use sha2::{Digest, Sha256};
 
 /// Генерирует новый непрозрачный refresh-токен.
 pub(crate) fn generate() -> String {
     let mut bytes = [0_u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    UnwrapErr(SysRng).fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 

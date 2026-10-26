@@ -44,7 +44,7 @@ pub(crate) fn delete(path: &str) -> reqwest::RequestBuilder {
 }
 
 fn request(method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-    let request = reqwest::Client::new().request(method, url(path));
+    let request = crate::features::runtime::http_client().request(method, url(path));
     let Some(user_agent) = native::client_user_agent() else {
         return request;
     };

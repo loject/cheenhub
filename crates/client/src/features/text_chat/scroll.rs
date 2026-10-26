@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use dioxus::prelude::dioxus_elements::geometry::PixelsVector2D;
+use dioxus::html::geometry::PixelsVector2D;
 use dioxus::prelude::*;
 
 const BOTTOM_SCROLL_THRESHOLD: f64 = 24.0;

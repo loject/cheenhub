@@ -52,12 +52,12 @@ version = "1.0.0"
 version = "0.2.2"
 
 [dependencies.dioxus]
-version = "=0.8.0-alpha.1"
+version = "=0.8.0-alpha.3"
 default-features = false
 features = ["signals", "hooks", "macro", "logger", "launch"]
 
 [dependencies.dioxus-signals]
-version = "=0.8.0-alpha.1"
+version = "=0.8.0-alpha.3"
 features = ["serialize"]
 
 [dependencies.futures-util]

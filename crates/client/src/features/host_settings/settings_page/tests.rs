@@ -28,33 +28,36 @@ fn Settings() -> Element {
 
 #[test]
 fn loaded_level_is_selected_after_initial_loading_render() {
-    let mut dom = VirtualDom::new(delayed_settings_app);
-    dom.rebuild_in_place();
-    dom.in_scope(ScopeId::ROOT, || {
-        let mut loaded = LOADED.with_borrow(|slot| slot.unwrap());
-        loaded.set(Some(HostLogSettingsResponse {
-            min_level: Some(HostLogLevel::Debug),
-            updated_at: None,
-        }));
+    crate::tests::native::with_runtime(async {
+        crate::tests::native::storage_directory();
+        let mut dom = VirtualDom::new(delayed_settings_app);
+        dom.rebuild_in_place();
+        dom.in_scope(ScopeId::ROOT, || {
+            let mut loaded = LOADED.with_borrow(|slot| slot.unwrap());
+            loaded.set(Some(HostLogSettingsResponse {
+                min_level: Some(HostLogLevel::Debug),
+                updated_at: None,
+            }));
+        });
+
+        let mutations = dom.render_immediate_to_vec();
+        let startup_disabled = mutations
+            .edits
+            .iter()
+            .filter_map(|edit| match edit {
+                Mutation::SetAttribute {
+                    name,
+                    value: AttributeValue::Bool(value),
+                    ..
+                } if name == "disabled" => Some(*value),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            startup_disabled,
+            vec![false, true],
+            "loaded debug must enable startup reset and disable unchanged save"
+        );
     });
-
-    let mutations = dom.render_immediate_to_vec();
-    let startup_disabled = mutations
-        .edits
-        .iter()
-        .filter_map(|edit| match edit {
-            Mutation::SetAttribute {
-                name: "disabled",
-                value: AttributeValue::Bool(value),
-                ..
-            } => Some(*value),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        startup_disabled,
-        vec![false, true],
-        "loaded debug must enable startup reset and disable unchanged save"
-    );
 }

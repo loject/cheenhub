@@ -36,7 +36,7 @@ pub(super) fn RoomContextMenu(
             style: position,
             onclick: move |event| event.stop_propagation(),
             onkeydown: move |event| {
-                if event.key() == Key::Escape {
+                if event.key() == Key::Named(NamedKey::Escape) {
                     event.stop_propagation();
                     on_close.call(());
                 }
@@ -63,11 +63,11 @@ pub(super) fn RoomContextMenu(
                     },
                     onkeydown: move |event| {
                         let next = match event.key() {
-                            Key::ArrowDown => (index + 1) % count,
-                            Key::ArrowUp => (index + count - 1) % count,
-                            Key::Home => 0,
-                            Key::End => count - 1,
-                            Key::Tab => { on_close.call(()); return; }
+                            Key::Named(NamedKey::ArrowDown) => (index + 1) % count,
+                            Key::Named(NamedKey::ArrowUp) => (index + count - 1) % count,
+                            Key::Named(NamedKey::Home) => 0,
+                            Key::Named(NamedKey::End) => count - 1,
+                            Key::Named(NamedKey::Tab) => { on_close.call(()); return; }
                             _ => return,
                         };
                         event.prevent_default();

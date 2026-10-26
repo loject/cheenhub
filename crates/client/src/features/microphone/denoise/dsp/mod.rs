@@ -57,7 +57,7 @@ impl StreamProcessor {
         self.scratch.copy_from_slice(samples);
         let mut total = 0.0;
         let mut count = 0_u32;
-        for frame in self.scratch.chunks_exact_mut(480) {
+        for frame in self.scratch.as_chunks_mut::<480>().0 {
             if let Some(probability) = self.processor.process(frame)? {
                 total += probability;
                 count += 1;

@@ -1,7 +1,8 @@
 //! Согласование параметров PostgreSQL с существующим DATABASE_URL.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use rand_core::{OsRng, RngCore};
+use getrandom::SysRng;
+use rand_core::{Rng, UnwrapErr};
 use url::Url;
 
 use super::env_file::EnvFile;
@@ -20,7 +21,7 @@ pub(super) fn ensure(env: &mut EnvFile) -> XtaskResult<()> {
         Some(value) => value,
         None => {
             let mut bytes = [0_u8; 32];
-            OsRng.fill_bytes(&mut bytes);
+            UnwrapErr(SysRng).fill_bytes(&mut bytes);
             let generated = URL_SAFE_NO_PAD.encode(bytes);
             env.set("POSTGRES_PASSWORD", &generated)?;
             generated

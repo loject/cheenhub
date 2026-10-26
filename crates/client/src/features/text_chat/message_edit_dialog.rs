@@ -98,11 +98,11 @@ pub(crate) fn RoomMessageInlineEditor(
                     class: "chat-inline-editor-input max-h-[38dvh] min-h-[54px] w-full min-w-0 resize-y overflow-y-auto rounded-lg border border-white/10 bg-[#090f18]/80 px-3 py-2.5 text-left text-[14px] leading-[22px] text-zinc-100 outline-none transition-[border-color,background-color,box-shadow] duration-200 placeholder:text-zinc-600 focus:border-blue-400/60 focus:bg-[#0d1521] focus:ring-[3px] focus:ring-blue-500/10 disabled:cursor-wait disabled:opacity-60",
                     oninput: move |event| draft.set(event.value()),
                     onkeydown: move |event| {
-                        if event.key() == Key::Escape && !saving {
+                        if event.key() == Key::Named(NamedKey::Escape) && !saving {
                             event.prevent_default();
                             event.stop_propagation();
                             on_cancel.call(());
-                        } else if event.key() == Key::Enter
+                        } else if event.key() == Key::Named(NamedKey::Enter)
                             && (event.modifiers().ctrl() || event.modifiers().meta())
                             && !event.is_composing()
                         {

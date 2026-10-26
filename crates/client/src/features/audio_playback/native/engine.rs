@@ -99,7 +99,7 @@ pub(super) fn create_engine(
     let sample_format = supported_config.sample_format();
     let stream_config = supported_config.config();
     let channels = stream_config.channels.max(1);
-    let actual_sample_rate_hz = stream_config.sample_rate.0;
+    let actual_sample_rate_hz = stream_config.sample_rate;
     let mixer = new_mixer(output_gain);
     let stream = build_output_stream(
         &device,
@@ -134,9 +134,13 @@ fn output_device(host: &cpal::Host, device_id: Option<&str>) -> Result<cpal::Dev
     };
 
     let mut devices = host.output_devices().map_err(cpal_error)?;
-    if let Some(device) =
-        devices.find(|device| device.name().map(|name| name == device_id).unwrap_or(false))
-    {
+    if let Some(device) = devices.find(|device| {
+        device
+            .description()
+            .map(|description| description.name().to_owned())
+            .map(|name| name == device_id)
+            .unwrap_or(false)
+    }) {
         return Ok(device);
     }
 
@@ -169,7 +173,7 @@ fn select_output_config(
     let default_config = device.default_output_config().map_err(cpal_error)?;
     warn!(
         requested_sample_rate_hz = sample_rate_hz,
-        fallback_sample_rate_hz = default_config.sample_rate().0,
+        fallback_sample_rate_hz = default_config.sample_rate(),
         "native output device does not support requested sample rate; using default cpal config with resampling"
     );
     Ok(default_config)
@@ -182,8 +186,7 @@ fn select_preferred_output_config(
     configs
         .into_iter()
         .filter_map(|range| {
-            if range.min_sample_rate().0 > sample_rate_hz
-                || range.max_sample_rate().0 < sample_rate_hz
+            if range.min_sample_rate() > sample_rate_hz || range.max_sample_rate() < sample_rate_hz
             {
                 return None;
             }
@@ -205,10 +208,7 @@ fn select_preferred_output_config(
                 range.channels() >= 2,
                 quality,
             );
-            Some((
-                rank,
-                range.with_sample_rate(cpal::SampleRate(sample_rate_hz)),
-            ))
+            Some((rank, range.with_sample_rate(sample_rate_hz)))
         })
         .max_by_key(|(rank, _)| *rank)
         .map(|(_, config)| config)
@@ -231,7 +231,7 @@ fn build_output_stream(
     };
     let stream = match sample_format {
         SampleFormat::F32 => device.build_output_stream(
-            stream_config,
+            *stream_config,
             output_callback::<f32>(
                 channels,
                 source_sample_rate_hz,
@@ -242,7 +242,7 @@ fn build_output_stream(
             None,
         ),
         SampleFormat::F64 => device.build_output_stream(
-            stream_config,
+            *stream_config,
             output_callback::<f64>(
                 channels,
                 source_sample_rate_hz,
@@ -253,7 +253,7 @@ fn build_output_stream(
             None,
         ),
         SampleFormat::I8 => device.build_output_stream(
-            stream_config,
+            *stream_config,
             output_callback::<i8>(
                 channels,
                 source_sample_rate_hz,
@@ -264,7 +264,7 @@ fn build_output_stream(
             None,
         ),
         SampleFormat::I16 => device.build_output_stream(
-            stream_config,
+            *stream_config,
             output_callback::<i16>(
                 channels,
                 source_sample_rate_hz,
@@ -275,7 +275,7 @@ fn build_output_stream(
             None,
         ),
         SampleFormat::I32 => device.build_output_stream(
-            stream_config,
+            *stream_config,
             output_callback::<i32>(
                 channels,
                 source_sample_rate_hz,
@@ -286,7 +286,7 @@ fn build_output_stream(
             None,
         ),
         SampleFormat::U8 => device.build_output_stream(
-            stream_config,
+            *stream_config,
             output_callback::<u8>(
                 channels,
                 source_sample_rate_hz,
@@ -297,7 +297,7 @@ fn build_output_stream(
             None,
         ),
         SampleFormat::U16 => device.build_output_stream(
-            stream_config,
+            *stream_config,
             output_callback::<u16>(
                 channels,
                 source_sample_rate_hz,
@@ -308,7 +308,7 @@ fn build_output_stream(
             None,
         ),
         SampleFormat::U32 => device.build_output_stream(
-            stream_config,
+            *stream_config,
             output_callback::<u32>(
                 channels,
                 source_sample_rate_hz,

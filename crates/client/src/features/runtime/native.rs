@@ -2,6 +2,30 @@
 
 use std::time::Duration;
 
+/// Сохраняет WebPKI roots после смены TLS-defaults в Reqwest 0.13.
+///
+/// Android verifier требует отдельного Kotlin-компонента; встроенные корни
+/// сохраняют рабочую HTTPS-проверку на всех native-платформах без него.
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .tls_certs_only(
+            webpki_root_certs::TLS_SERVER_ROOT_CERTS
+                .iter()
+                .map(|certificate| {
+                    reqwest::Certificate::from_der(certificate).expect("valid bundled WebPKI root")
+                }),
+        )
+        .build()
+        .expect("native HTTP client with WebPKI roots")
+}
+
+/// В браузере HTTPS проверяется сетевым стеком браузера.
+#[cfg(target_arch = "wasm32")]
+pub(super) fn http_client() -> reqwest::Client {
+    reqwest::Client::new()
+}
+
 #[cfg(all(
     target_os = "windows",
     feature = "desktop",

@@ -26,12 +26,14 @@ dashmap.workspace = true
 dotenvy.workspace = true
 ed25519-dalek.workspace = true
 futures-util.workspace = true
+getrandom.workspace = true
 http.workspace = true
+hex.workspace = true
 image.workspace = true
 lettre.workspace = true
 rand_core.workspace = true
 rcgen.workspace = true
-reqwest = { workspace = true, features = ["rustls-tls"] }
+reqwest = { workspace = true, features = ["rustls", "form", "query"] }
 quinn.workspace = true
 rsa.workspace = true
 rustls.workspace = true

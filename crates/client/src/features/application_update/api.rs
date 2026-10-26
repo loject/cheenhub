@@ -41,7 +41,7 @@ struct GithubReleaseAsset {
 
 /// Проверяет последний стабильный релиз CheenHub на GitHub.
 pub(crate) async fn check_latest_release() -> Result<UpdateCheckOutcome, String> {
-    let response = reqwest::Client::new()
+    let response = crate::features::runtime::http_client()
         .get(GITHUB_LATEST_RELEASE_URL)
         .header(reqwest::header::USER_AGENT, download::USER_AGENT)
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
@@ -96,7 +96,7 @@ pub(crate) async fn check_latest_release() -> Result<UpdateCheckOutcome, String>
 pub(crate) async fn list_previous_releases(
     current_version: &str,
 ) -> Result<Vec<AvailableUpdate>, String> {
-    let response = reqwest::Client::new()
+    let response = crate::features::runtime::http_client()
         .get(GITHUB_RELEASES_URL)
         .header(reqwest::header::USER_AGENT, download::USER_AGENT)
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")

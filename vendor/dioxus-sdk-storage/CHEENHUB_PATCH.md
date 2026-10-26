@@ -6,7 +6,7 @@ Commit и путь подтверждены исходным `.cargo_vcs_info.js
 Лицензии MIT / Apache-2.0 сохранены из корня этого commit.
 
 Изменён только Cargo.toml: зависимости `dioxus` и `dioxus-signals`
-закреплены на `=0.8.0-alpha.1`; default features Dioxus выключены,
+закреплены на `=0.8.0-alpha.3`; default features Dioxus выключены,
 а необходимые `signals`, `hooks`, `macro`, `logger`, `launch` включены явно.
 Rust-исходники, API и формат хранения оставлены без изменений.
 Опубликованная версия SDK 0.7 иначе использует несовместимый тип Signal 0.7.

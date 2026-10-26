@@ -136,3 +136,6 @@ fn App() -> Element {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

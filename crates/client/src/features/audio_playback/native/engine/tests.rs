@@ -1,5 +1,5 @@
 use super::*;
-use cpal::{SampleRate, SupportedBufferSize, SupportedStreamConfigRange};
+use cpal::{SupportedBufferSize, SupportedStreamConfigRange};
 
 fn config_range(
     sample_format: SampleFormat,
@@ -8,8 +8,8 @@ fn config_range(
 ) -> SupportedStreamConfigRange {
     SupportedStreamConfigRange::new(
         channels,
-        SampleRate(rate),
-        SampleRate(rate),
+        rate,
+        rate,
         SupportedBufferSize::Unknown,
         sample_format,
     )

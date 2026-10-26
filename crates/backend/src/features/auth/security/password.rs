@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use argon2::{
     Algorithm, Argon2, Params, Version,
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
+    password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash},
 };
 
 /// Возвращает настроенный экземпляр Argon2id с явными параметрами стоимости.
@@ -24,9 +24,8 @@ fn argon2() -> Argon2<'static> {
 
 /// Хеширует обычный пароль с помощью Argon2id.
 pub(crate) fn hash_password(password: &str) -> anyhow::Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
     Ok(argon2()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map_err(|error| anyhow::anyhow!("failed to hash password: {error}"))?
         .to_string())
 }

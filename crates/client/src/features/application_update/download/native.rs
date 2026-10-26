@@ -149,7 +149,7 @@ pub(crate) async fn download_update_asset(
         "downloading application update asset"
     );
 
-    let mut response = reqwest::Client::new()
+    let mut response = crate::features::runtime::http_client()
         .get(&asset.download_url)
         .header(reqwest::header::USER_AGENT, USER_AGENT)
         .header(reqwest::header::ACCEPT, "application/octet-stream")
@@ -209,7 +209,7 @@ pub(crate) async fn download_update_asset(
         )
     })?;
 
-    let actual_digest = format!("{:x}", hasher.finalize());
+    let actual_digest = hex::encode(hasher.finalize());
     if let Some(expected_digest) = asset.digest.as_deref() {
         let expected_digest = expected_digest.strip_prefix("sha256:").ok_or_else(|| {
             format!("GitHub вернул неподдерживаемый формат контрольной суммы: {expected_digest}.")
