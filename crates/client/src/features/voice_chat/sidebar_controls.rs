@@ -1,29 +1,38 @@
 //! Sidebar voice connection controls.
 
+#[cfg(test)]
+mod tests;
+
 use std::rc::Rc;
 
 use dioxus::prelude::*;
 
+use crate::Route;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::camera::{CameraHandle, CameraStatus};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::realtime::RealtimeHandle;
+use crate::features::server_registry::ServerRegistry;
 
 use super::direct_call_state::DirectCallHandle;
-use super::state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTargetKind};
+use super::state::{
+    VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget, VoiceRoomTargetKind,
+};
 use super::video_streams::{ParticipantVideoFrame, ParticipantVideoHandle, ParticipantVideoSource};
 use super::{microphone_uplink, realtime};
 
 /// Renders animated sidebar voice controls for the active voice connection.
 #[component]
 pub(crate) fn SidebarVoiceControls() -> Element {
+    let navigator = use_navigator();
     let voice = use_context::<VoiceConnectionHandle>();
     let direct_call = use_context::<DirectCallHandle>();
     let microphone = use_context::<MicrophoneHandle>();
     let camera = use_context::<CameraHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
     let realtime_handle = use_context::<RealtimeHandle>();
+    let server_registry = use_context::<ServerRegistry>();
     let current_user_id = use_context::<CurrentUserContext>().require_user().id;
     let participant_video = use_context::<ParticipantVideoHandle>();
     let output_muted = playback.is_muted();
@@ -37,6 +46,14 @@ pub(crate) fn SidebarVoiceControls() -> Element {
         .as_ref()
         .map(|target| target.room_name.clone())
         .unwrap_or_else(|| "Нет активной комнаты".to_owned());
+    let server_name = target
+        .as_ref()
+        .filter(|target| target.kind == VoiceRoomTargetKind::Server)
+        .map(|target| {
+            server_registry
+                .name(&target.server_id)
+                .unwrap_or_else(|| "Сервер".to_owned())
+        });
     let status = match &state {
         VoiceConnectionState::Disconnected => "не подключен",
         VoiceConnectionState::Connecting { .. } => "подключаемся",
@@ -113,9 +130,17 @@ pub(crate) fn SidebarVoiceControls() -> Element {
     let target_for_microphone = target.clone();
     let target_for_camera = target.clone();
     let leave_target = target.clone();
+    let navigation_target = target.clone();
     let direct_call_target = target
         .as_ref()
         .is_some_and(|target| target.kind == VoiceRoomTargetKind::DirectMessage);
+    let navigation_label = if direct_call_target {
+        format!("Открыть личный диалог: {room_name}")
+    } else if let Some(server_name) = server_name.as_deref() {
+        format!("Открыть голосовую комнату: {room_name} — {server_name}")
+    } else {
+        format!("Открыть голосовую комнату: {room_name}")
+    };
     let leave_label = if direct_call_target {
         "Завершить звонок"
     } else {
@@ -134,7 +159,26 @@ pub(crate) fn SidebarVoiceControls() -> Element {
         div { class: "sidebar-voice-presence", "data-sidebar-voice-open": if visible { "true" } else { "false" },
             div { class: "sidebar-voice-presence-inner relative mb-2 rounded-[20px] border border-zinc-800 bg-zinc-900/80 p-2.5",
                 div { class: "mb-2 flex items-start gap-2",
-                    div { class: "min-w-0 flex-1",
+                    button {
+                        r#type: "button",
+                        disabled: navigation_target.is_none(),
+                        class: "group min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left transition-colors duration-150 hover:bg-zinc-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:cursor-default",
+                        "aria-label": navigation_label,
+                        onclick: move |_| {
+                            let Some(target) = navigation_target.as_ref() else {
+                                return;
+                            };
+                            info!(
+                                server_id = %target.server_id,
+                                room_id = %target.room_id,
+                                target_kind = ?target.kind,
+                                "opening active voice target from sidebar"
+                            );
+                            navigator.push(route_for_voice_target(target));
+                        },
+                        if let Some(server_name) = server_name {
+                            div { class: "truncate text-[10px] text-zinc-500", "{server_name}" }
+                        }
                         div { class: "truncate text-[11px] font-medium text-zinc-100", "{room_name}" }
                         div { class: "mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-500",
                             svg { class: "h-3.5 w-3.5 shrink-0 text-zinc-600", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
@@ -288,5 +332,17 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                 }
             }
         }
+    }
+}
+
+fn route_for_voice_target(target: &VoiceRoomTarget) -> Route {
+    match target.kind {
+        VoiceRoomTargetKind::Server => Route::AppServerRoom {
+            server_id: target.server_id.clone(),
+            room_id: target.room_id.clone(),
+        },
+        VoiceRoomTargetKind::DirectMessage => Route::AppDirectMessage {
+            conversation_id: target.server_id.clone(),
+        },
     }
 }

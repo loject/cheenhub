@@ -50,6 +50,11 @@ impl ServerRegistry {
         self.data.read().servers.clone()
     }
 
+    /// Возвращает имя сервера без копирования всего реестра.
+    pub(crate) fn name(self, server_id: &str) -> Option<String> {
+        self.data.read().name(server_id)
+    }
+
     /// Возвращает актуальные права пользователя на указанном сервере.
     pub(crate) fn permissions(self, server_id: &str) -> ServerPermissions {
         self.data
@@ -117,6 +122,13 @@ struct RegistryData {
 }
 
 impl RegistryData {
+    fn name(&self, server_id: &str) -> Option<String> {
+        self.servers
+            .iter()
+            .find(|server| server.id == server_id)
+            .map(|server| server.name.clone())
+    }
+
     fn update_roles(&mut self, server_id: &str, roles: Vec<ServerRoleSummary>) -> bool {
         let Some(server) = self
             .servers
@@ -159,6 +171,20 @@ mod tests {
             roles: vec![role("old")],
             member_role_ids: vec!["old".to_owned()],
         }
+    }
+
+    #[test]
+    fn server_name_lookup_returns_only_the_requested_name() {
+        let mut first = server("one");
+        first.name = "Первый".to_owned();
+        let mut second = server("two");
+        second.name = "Второй".to_owned();
+        let registry = RegistryData {
+            servers: vec![first, second],
+        };
+
+        assert_eq!(registry.name("two"), Some("Второй".to_owned()));
+        assert_eq!(registry.name("missing"), None);
     }
 
     #[test]
