@@ -4,6 +4,11 @@ use chrono::{Duration, Utc};
 
 use super::{DirectCall, DirectCallStoreError, InMemoryDirectCallStore};
 
+#[test]
+fn store_error_keeps_expired_call_payload_small() {
+    assert!(std::mem::size_of::<DirectCallStoreError>() <= 32);
+}
+
 fn call(caller_user_id: uuid::Uuid, callee_user_id: uuid::Uuid) -> DirectCall {
     let now = Utc::now();
     DirectCall {

@@ -72,7 +72,7 @@ pub(crate) enum DirectCallStoreError {
     /// Операция не соответствует текущему состоянию звонка.
     InvalidState,
     /// Приглашение истекло во время операции.
-    Expired(DirectCall),
+    Expired(Box<DirectCall>),
 }
 
 impl InMemoryDirectCallStore {
@@ -117,7 +117,7 @@ impl InMemoryDirectCallStore {
             return Err(DirectCallStoreError::InvalidState);
         }
         if calls[index].expires_at <= now {
-            return Err(DirectCallStoreError::Expired(calls.remove(index)));
+            return Err(DirectCallStoreError::Expired(Box::new(calls.remove(index))));
         }
         if accept {
             calls[index].answered_at = Some(now);
@@ -145,7 +145,7 @@ impl InMemoryDirectCallStore {
             return Err(DirectCallStoreError::InvalidState);
         }
         if calls[index].expires_at <= now {
-            return Err(DirectCallStoreError::Expired(calls.remove(index)));
+            return Err(DirectCallStoreError::Expired(Box::new(calls.remove(index))));
         }
         Ok(calls.remove(index))
     }
