@@ -30,6 +30,7 @@ async fn insert_presence(
         .voice_presence_store
         .join(VoicePresence {
             microphone_enabled: true,
+            output_muted: false,
             realtime_stream_id,
             session_id: Uuid::new_v4(),
             target_kind,

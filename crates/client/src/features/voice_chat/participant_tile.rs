@@ -149,6 +149,9 @@ pub(crate) fn VoiceParticipantTile(
                         if !participant.microphone_enabled {
                             super::microphone_muted_badge::MicrophoneMutedBadge {}
                         }
+                        if participant.output_muted {
+                            super::output_muted_badge::OutputMutedBadge {}
+                        }
                         if speaking {
                             span { class: "h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,.12)]" }
                             span { class: "sr-only", "Говорит" }

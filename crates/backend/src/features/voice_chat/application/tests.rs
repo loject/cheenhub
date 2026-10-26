@@ -29,6 +29,7 @@ mod join;
 mod microphone;
 mod network_quality;
 mod nickname;
+mod output;
 
 pub(super) fn state() -> AppState {
     AppState {

@@ -62,6 +62,8 @@ pub enum VoiceChatKind {
     ParticipantNetworkQualityUpdated,
     /// Изменить явный выбор микрофона текущего голосового присутствия.
     SetMicrophoneState,
+    /// Сообщить, что пользователь отключил или включил входящее воспроизведение.
+    SetOutputState,
 }
 
 /// Полезная нагрузка запроса на присоединение к комнате с поддержкой голоса.
@@ -384,6 +386,9 @@ pub struct VoiceRoomParticipant {
     /// Разрешил ли пользователь свой микрофон; тишина и ошибки устройства не меняют выбор.
     #[serde(default = "microphone_enabled_by_default")]
     pub microphone_enabled: bool,
+    /// Отключил ли пользователь входящее воспроизведение; старые клиенты считаются слышащими.
+    #[serde(default)]
+    pub output_muted: bool,
     /// Стабильный идентификатор пользователя.
     pub user_id: String,
     /// Снимок имени пользователя.
@@ -401,6 +406,15 @@ pub struct SetVoiceMicrophoneState {
     pub room_id: String,
     /// Включён ли микрофон по выбору пользователя, независимо от VAD, PTT и capture-ошибок.
     pub microphone_enabled: bool,
+}
+
+/// Изменение состояния входящего воспроизведения для присутствия отправляющего realtime-потока.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetVoiceOutputState {
+    /// UUID комнаты; запрос от предыдущей комнаты должен быть отклонён.
+    pub room_id: String,
+    /// Выключено ли входящее воспроизведение по выбору пользователя.
+    pub output_muted: bool,
 }
 
 fn microphone_enabled_by_default() -> bool {

@@ -81,6 +81,7 @@ async fn failed_post_join_lookup_removes_rejected_presence() {
         .voice_presence_store
         .join(VoicePresence {
             microphone_enabled: true,
+            output_muted: false,
             realtime_stream_id: stream_id,
             session_id: uuid::Uuid::new_v4(),
             target_kind: target.kind,
@@ -136,6 +137,7 @@ async fn deleted_join_target_still_notifies_replaced_room() {
         .await;
     let old = VoicePresence {
         microphone_enabled: true,
+        output_muted: false,
         realtime_stream_id: old_stream,
         session_id: uuid::Uuid::new_v4(),
         target_kind: VoicePresenceTargetKind::Server,
@@ -157,6 +159,7 @@ async fn deleted_join_target_still_notifies_replaced_room() {
         .voice_presence_store
         .join(VoicePresence {
             microphone_enabled: true,
+            output_muted: false,
             realtime_stream_id: stream_id,
             session_id: uuid::Uuid::new_v4(),
             target_kind: target.kind,

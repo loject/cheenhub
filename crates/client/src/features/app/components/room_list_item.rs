@@ -64,9 +64,14 @@ pub(super) fn RoomListItem(
                                 class: "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-zinc-950 bg-zinc-800 text-[9px] font-bold text-zinc-100 ring-1 ring-zinc-800".to_owned(),
                                 avatar_seed: Some(participant.user_id.clone()),
                               }
-                              if !participant.microphone_enabled {
-                                span { class: "absolute -bottom-0.5 -right-0.5",
-                                    crate::features::voice_chat::MicrophoneMutedBadge { compact: true }
+                              if !participant.microphone_enabled || participant.output_muted {
+                                span { class: "absolute -bottom-0.5 -right-0.5 flex items-center gap-0.5",
+                                    if !participant.microphone_enabled {
+                                        crate::features::voice_chat::MicrophoneMutedBadge { compact: true }
+                                    }
+                                    if participant.output_muted {
+                                        crate::features::voice_chat::OutputMutedBadge { compact: true }
+                                    }
                                 }
                               }
                             }
@@ -96,6 +101,9 @@ pub(super) fn RoomListItem(
                                     }
                                     if !participant.microphone_enabled {
                                         crate::features::voice_chat::MicrophoneMutedBadge {}
+                                    }
+                                    if participant.output_muted {
+                                        crate::features::voice_chat::OutputMutedBadge {}
                                     }
                                 }
                             }

@@ -27,6 +27,35 @@ fn voice_microphone_choice_defaults_for_legacy_peers_and_preserves_explicit_mute
 mod direct_messages;
 
 #[test]
+fn output_muted_defaults_for_legacy_participants_and_round_trips_updates() {
+    let legacy = serde_json::json!({
+        "user_id": "participant", "nickname": "Участник", "avatar_url": null, "joined_at": "",
+    });
+    let participant: VoiceRoomParticipant = serde_json::from_value(legacy.clone()).unwrap();
+    assert!(!participant.output_muted);
+
+    let mut muted = legacy;
+    muted["output_muted"] = serde_json::json!(true);
+    let participant: VoiceRoomParticipant = serde_json::from_value(muted).unwrap();
+    assert!(participant.output_muted);
+
+    let request = SetVoiceOutputState {
+        room_id: "room".to_owned(),
+        output_muted: true,
+    };
+    let envelope = RealtimeEnvelope::new(
+        RealtimeModule::VoiceChat,
+        RealtimeKind::VoiceChat(VoiceChatKind::SetOutputState),
+        Some(Uuid::new_v4()),
+        request.clone(),
+    )
+    .unwrap();
+    assert!(envelope.has_matching_module_kind());
+    let decoded: SetVoiceOutputState = serde_json::from_value(envelope.payload).unwrap();
+    assert_eq!(decoded, request);
+}
+
+#[test]
 fn typing_kinds_resolve_to_their_owning_module() {
     // Оба модуля используют одинаковое имя вида `start_typing`, поэтому
     // проверка пары модуль/вид не должна путать комнату с личным диалогом.
@@ -379,6 +408,7 @@ fn voice_room_snapshot_with_audio_bitrate_round_trips() {
         room_id: Uuid::new_v4().to_string(),
         participants: vec![VoiceRoomParticipant {
             microphone_enabled: true,
+            output_muted: false,
             user_id: Uuid::new_v4().to_string(),
             nickname: "voice_user".to_owned(),
             avatar_url: None,
@@ -438,6 +468,7 @@ fn avatar_fields_round_trip_in_realtime_payloads() {
 
     let participant = VoiceRoomParticipant {
         microphone_enabled: true,
+        output_muted: false,
         user_id: Uuid::new_v4().to_string(),
         nickname: "voice_user".to_owned(),
         avatar_url: Some("http://localhost/api/images/avatar".to_owned()),

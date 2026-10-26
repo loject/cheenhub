@@ -51,9 +51,9 @@ pub use voice_chat::{
     LeaveVoiceRoom, ListDirectCalls, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
     MicrophoneUplinkBound, MicrophoneUplinkGrantIssued, ParticipantNetworkQualityUpdated,
     PublishVoiceNetworkQuality, RespondDirectCall, ServerAudioBitrate, ServerVoiceRoomsSnapshot,
-    SetVoiceMicrophoneState, StartDirectCall, StopVoiceVideoStream, VoiceChatKind,
-    VoiceNetworkTargetKind, VoiceRoomParticipant, VoiceRoomSnapshot, VoiceVideoStreamEnded,
-    VoiceVideoStreamSource,
+    SetVoiceMicrophoneState, SetVoiceOutputState, StartDirectCall, StopVoiceVideoStream,
+    VoiceChatKind, VoiceNetworkTargetKind, VoiceRoomParticipant, VoiceRoomSnapshot,
+    VoiceVideoStreamEnded, VoiceVideoStreamSource,
 };
 
 #[cfg(test)]

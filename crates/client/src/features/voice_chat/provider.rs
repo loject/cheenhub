@@ -102,6 +102,12 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         microphone.clone(),
         realtime.clone(),
     );
+    super::output_state::use_output_state_publication(
+        state,
+        join_generation.clone(),
+        playback.clone(),
+        realtime.clone(),
+    );
     use_voice_network_quality_runtime(
         state,
         current_user.id.clone(),

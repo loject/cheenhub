@@ -51,6 +51,8 @@ pub(crate) struct InMemoryVoicePresenceStore {
 pub(crate) struct VoicePresence {
     /// Явный выбор микрофона, действующий до выхода или замены присутствия.
     pub(crate) microphone_enabled: bool,
+    /// Отключено ли входящее воспроизведение по выбору пользователя.
+    pub(crate) output_muted: bool,
     /// Поток realtime-модуля, которому принадлежит это присутствие и который используется для очистки при отключении.
     pub(crate) realtime_stream_id: Uuid,
     /// Аутентифицированная сессия WebTransport, получающая медиадатаграммы.
@@ -123,6 +125,22 @@ impl InMemoryVoicePresenceStore {
     ) -> Option<(VoicePresenceTarget, bool)> {
         self.presence
             .set_microphone_enabled(stream_id, user_id, room_id, enabled)
+            .await
+    }
+
+    /// Атомарно обновляет входящий звук активного владельца realtime-потока.
+    ///
+    /// Возвращает цель и признак изменения; `None` означает отсутствие
+    /// соответствующего присутствия или несовпадение его владельца и комнаты.
+    pub(crate) async fn set_output_muted(
+        &self,
+        stream_id: &Uuid,
+        user_id: &Uuid,
+        room_id: &Uuid,
+        output_muted: bool,
+    ) -> Option<(VoicePresenceTarget, bool)> {
+        self.presence
+            .set_output_muted(stream_id, user_id, room_id, output_muted)
             .await
     }
 

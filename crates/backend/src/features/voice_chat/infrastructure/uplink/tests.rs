@@ -110,6 +110,7 @@ async fn leaving_presence_revokes_bound_uplink() {
     store
         .join(VoicePresence {
             microphone_enabled: true,
+            output_muted: false,
             realtime_stream_id,
             session_id: presence_session_id,
             target_kind: VoicePresenceTargetKind::Server,

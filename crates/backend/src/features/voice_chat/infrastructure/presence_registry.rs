@@ -295,6 +295,31 @@ impl PresenceRegistry {
         Some((current.target(), changed))
     }
 
+    /// Меняет выбор входящего звука только у владельца активного присутствия.
+    ///
+    /// Проверка потока, пользователя и комнаты атомарна с обновлением. Повторное
+    /// значение не пересоздаёт запись и не требует рассылки нового снимка.
+    pub(super) async fn set_output_muted(
+        &self,
+        stream_id: &Uuid,
+        user_id: &Uuid,
+        room_id: &Uuid,
+        output_muted: bool,
+    ) -> Option<(VoicePresenceTarget, bool)> {
+        let mut state = self.state.lock().await;
+        let current = state.by_stream.get(stream_id)?.clone();
+        if current.user_id != *user_id || current.room_id != *room_id {
+            return None;
+        }
+        let changed = current.output_muted != output_muted;
+        if changed {
+            let mut updated = (*current).clone();
+            updated.output_muted = output_muted;
+            self.replace_canonical_presence(&mut state, Arc::new(updated));
+        }
+        Some((current.target(), changed))
+    }
+
     /// Обновляет никнейм присутствующего пользователя и возвращает затронутую цель.
     pub(super) async fn update_user_nickname(
         &self,

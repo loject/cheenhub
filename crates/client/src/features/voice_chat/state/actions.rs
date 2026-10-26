@@ -82,6 +82,7 @@ pub(super) fn ensure_current_user_present(
 
     participants.push(VoiceRoomParticipant {
         microphone_enabled,
+        output_muted: false,
         user_id: user.id.clone(),
         nickname: user.nickname.clone(),
         avatar_url: user.avatar_url.clone(),

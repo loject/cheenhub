@@ -21,6 +21,7 @@ mod direct_calls;
 mod fanout;
 mod microphone;
 mod network_quality;
+mod output;
 mod permissions;
 mod presence;
 mod uplink;
@@ -41,6 +42,7 @@ pub(crate) use network_quality::publish_network_quality;
 use network_quality::{
     authorize_network_quality_publication_at, prepare_network_quality_broadcast,
 };
+pub(crate) use output::set_output_state;
 pub(crate) use presence::{disconnect_realtime_stream, remove_deleted_server};
 pub(crate) use uplink::{bind_microphone_uplink, issue_microphone_uplink_grant};
 pub(crate) use video::stop_video_stream;
@@ -68,6 +70,7 @@ pub(crate) async fn join_room(
         .voice_presence_store
         .join(VoicePresence {
             microphone_enabled: request.microphone_enabled,
+            output_muted: false,
             realtime_stream_id,
             session_id,
             target_kind: target.kind,
@@ -136,6 +139,7 @@ pub(crate) async fn join_direct_message_room(
         .voice_presence_store
         .join(VoicePresence {
             microphone_enabled: request.microphone_enabled,
+            output_muted: false,
             realtime_stream_id,
             session_id,
             target_kind: target.kind,

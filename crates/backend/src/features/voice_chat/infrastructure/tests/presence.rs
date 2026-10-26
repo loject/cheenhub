@@ -21,6 +21,7 @@ fn presence(
 ) -> VoicePresence {
     VoicePresence {
         microphone_enabled: true,
+        output_muted: false,
         realtime_stream_id,
         session_id,
         target_kind: VoicePresenceTargetKind::Server,

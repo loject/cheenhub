@@ -31,6 +31,7 @@ fn current_user() -> AuthUser {
 fn participant(user_id: &str) -> VoiceRoomParticipant {
     VoiceRoomParticipant {
         microphone_enabled: true,
+        output_muted: false,
         user_id: user_id.to_owned(),
         nickname: user_id.to_owned(),
         avatar_url: None,

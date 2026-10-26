@@ -152,6 +152,7 @@ async fn direct_message_user_ids(
 pub(super) fn participant_summary(presence: &VoicePresence) -> VoiceRoomParticipant {
     VoiceRoomParticipant {
         microphone_enabled: presence.microphone_enabled,
+        output_muted: presence.output_muted,
         user_id: presence.user_id.to_string(),
         nickname: presence.nickname.clone(),
         avatar_url: presence.avatar_url.clone(),

@@ -39,6 +39,7 @@ pub(crate) fn screen_datagram(room_id: Uuid) -> MediaDatagram {
 pub(crate) fn presence(session_id: Uuid, room_id: Uuid) -> VoicePresence {
     VoicePresence {
         microphone_enabled: true,
+        output_muted: false,
         realtime_stream_id: Uuid::new_v4(),
         session_id,
         target_kind: VoicePresenceTargetKind::Server,
