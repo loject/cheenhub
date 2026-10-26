@@ -1,12 +1,13 @@
 //! Провайдер signaling и глобального интерфейса личного звонка.
 
 use dioxus::prelude::*;
+use futures_channel::mpsc;
 use futures_util::StreamExt;
 
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::audio_playback::{AudioPlaybackHandle, NotificationSound};
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
-use crate::features::runtime::sleep_ms;
+use crate::features::toast::ToastHandle;
 
 use super::active_voice_notification_controls::ActiveVoiceNotificationControls;
 use super::direct_call_notification_platform::{
@@ -14,9 +15,9 @@ use super::direct_call_notification_platform::{
     show_incoming_call_notification, subscribe_incoming_call_notification_action_wakeups,
     take_pending_incoming_call_notification_action,
 };
-use super::direct_call_prompt::DirectCallPrompt;
 use super::direct_call_realtime;
 use super::direct_call_state::{DirectCallHandle, DirectCallUiState};
+use super::direct_call_toast::{DirectCallToast, DirectCallToastAction};
 use super::state::VoiceConnectionHandle;
 
 /// Предоставляет signaling личного звонка поверх готового голосового media-контекста.
@@ -38,10 +39,48 @@ pub(super) fn DirectCallProvider(children: Element) -> Element {
         current_user.id,
     );
     let context = direct_call.clone();
-    let mut displayed_incoming_call = use_signal(|| None);
-    let mut prompt_exiting = use_signal(|| false);
-    let prompt_generation = use_signal(|| 0_u64);
+    let toasts = use_context::<ToastHandle>();
+    let mut incoming_toast_state = use_signal(IncomingCallToastState::default);
     use_context_provider(move || context.clone());
+
+    // Обрабатываем действия toast в области владения сигналами DirectCallProvider.
+    // ToastProvider получает только канал, без ссылок на дочерние Dioxus Signals.
+    let action_call = direct_call.clone();
+    let mut action_state = incoming_toast_state;
+    let action_toasts = toasts;
+    let incoming_toast_action_sender = use_hook(move || {
+        let (sender, mut receiver) = mpsc::unbounded::<(String, DirectCallToastAction)>();
+        spawn(async move {
+            while let Some((call_id, action)) = receiver.next().await {
+                if !action_call
+                    .incoming_call()
+                    .is_some_and(|incoming| incoming.call_id == call_id)
+                {
+                    continue;
+                }
+
+                match action {
+                    DirectCallToastAction::Accept => {
+                        debug!(call_id = %call_id, "accepting incoming direct call from toast");
+                        action_call.accept();
+                    }
+                    DirectCallToastAction::Decline => {
+                        debug!(call_id = %call_id, "declining incoming direct call from toast");
+                        action_call.decline();
+                    }
+                    DirectCallToastAction::Ignore => {
+                        let mut state = action_state.peek().cloned();
+                        if state.ignore(&call_id) {
+                            action_state.set(state);
+                            action_toasts.dismiss_custom(&incoming_toast_key(&call_id));
+                            info!(call_id = %call_id, "ignored incoming direct call toast locally");
+                        }
+                    }
+                }
+            }
+        });
+        sender
+    });
 
     let event_realtime = realtime.clone();
     let event_handle = direct_call.clone();
@@ -113,43 +152,109 @@ pub(super) fn DirectCallProvider(children: Element) -> Element {
         last_incoming_call_id.set(incoming_call_id);
     });
 
-    let prompt_call = direct_call.clone();
+    let incoming_toast_call = direct_call.clone();
     use_effect(move || {
-        let incoming_call = prompt_call.incoming_call();
-        let generation = prompt_generation.peek().wrapping_add(1);
-        let mut prompt_generation = prompt_generation;
-        prompt_generation.set(generation);
+        let incoming_call = incoming_toast_call.incoming_call();
+        let busy = incoming_toast_call.busy();
+        let error = incoming_call
+            .as_ref()
+            .and_then(|call| incoming_toast_call.error_for_conversation(&call.conversation_id));
+        let mut state = incoming_toast_state.peek().cloned();
+        let transition = state.sync(incoming_call.as_ref().map(|call| call.call_id.as_str()));
 
-        if let Some(call) = incoming_call {
-            displayed_incoming_call.set(Some(call));
-            prompt_exiting.set(false);
-            return;
+        if let Some(previous_key) = transition.dismiss {
+            toasts.dismiss_custom(&previous_key);
         }
-        if displayed_incoming_call.peek().is_none() || *prompt_exiting.peek() {
-            return;
-        }
-
-        prompt_exiting.set(true);
-        spawn(async move {
-            sleep_ms(150).await;
-            if *prompt_generation.peek() == generation {
-                displayed_incoming_call.set(None);
-                prompt_exiting.set(false);
+        if let Some(call) = incoming_call
+            && state.should_display(&call.call_id)
+        {
+            let call_id = call.call_id.clone();
+            let key = incoming_toast_key(&call_id);
+            let sender = incoming_toast_action_sender.clone();
+            if transition.show {
+                debug!(call_id = %call_id, "showing incoming direct call toast");
             }
-        });
+            // В родительский ToastProvider передаём только данные и канал действий.
+            // Dioxus Signals остаются в области DirectCallProvider.
+            toasts.custom(key, move || {
+                let action_sender = sender.clone();
+                let action_id = call_id.clone();
+                rsx! {
+                    DirectCallToast {
+                        call: call.clone(),
+                        busy,
+                        error: error.clone(),
+                        on_action: move |action: DirectCallToastAction| {
+                            if action_sender.unbounded_send((action_id.clone(), action)).is_err() {
+                                debug!(call_id = %action_id, "incoming direct call toast action receiver closed");
+                            }
+                        },
+                    }
+                }
+            });
+        }
+
+        incoming_toast_state.set(state);
     });
 
     rsx! {
         ActiveVoiceNotificationControls {}
         {children}
-        if let Some(call) = displayed_incoming_call() {
-            DirectCallPrompt {
-                call,
-                exiting: prompt_exiting(),
-            }
-        }
     }
 }
+
+/// Локальное состояние показа и игнорирования входящего звонка.
+#[derive(Clone, Default)]
+struct IncomingCallToastState {
+    shown_call_id: Option<String>,
+    ignored_call_id: Option<String>,
+}
+
+/// Изменения, которые нужно применить к глобальным уведомлениям.
+#[derive(Default)]
+struct IncomingCallToastTransition {
+    dismiss: Option<String>,
+    show: bool,
+}
+
+impl IncomingCallToastState {
+    fn sync(&mut self, incoming_call_id: Option<&str>) -> IncomingCallToastTransition {
+        if self.shown_call_id.as_deref() == incoming_call_id {
+            return IncomingCallToastTransition::default();
+        }
+
+        let dismiss = self
+            .shown_call_id
+            .take()
+            .map(|call_id| incoming_toast_key(&call_id));
+        self.shown_call_id = incoming_call_id.map(str::to_owned);
+        let show = incoming_call_id
+            .is_some_and(|call_id| self.ignored_call_id.as_deref() != Some(call_id));
+
+        IncomingCallToastTransition { dismiss, show }
+    }
+
+    /// Разрешает показ или обновление уведомления только для текущего неигнорированного звонка.
+    fn should_display(&self, call_id: &str) -> bool {
+        self.shown_call_id.as_deref() == Some(call_id)
+            && self.ignored_call_id.as_deref() != Some(call_id)
+    }
+
+    fn ignore(&mut self, call_id: &str) -> bool {
+        if self.shown_call_id.as_deref() != Some(call_id) {
+            return false;
+        }
+        self.ignored_call_id = Some(call_id.to_owned());
+        true
+    }
+}
+
+fn incoming_toast_key(call_id: &str) -> String {
+    format!("incoming:{call_id}")
+}
+
+#[cfg(test)]
+mod tests;
 
 async fn apply_pending_incoming_call_notification_action(direct_call: DirectCallHandle) {
     let Some(incoming_call) = direct_call.incoming_call() else {

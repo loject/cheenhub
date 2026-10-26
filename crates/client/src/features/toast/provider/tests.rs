@@ -88,3 +88,55 @@ fn ordinary_messages_do_not_evict_update_notification() {
         );
     });
 }
+
+#[test]
+fn repeated_custom_event_keeps_its_identity() {
+    let mut dom = VirtualDom::new(app);
+    dom.rebuild_in_place();
+    dom.in_scope(ScopeId::ROOT, || {
+        let handle = HANDLE.get().unwrap();
+        handle.custom("incoming:call-1", || rsx! { div { "Первый" } });
+        let first_id = handle.toasts.peek()[0].id;
+
+        handle.custom("incoming:call-1", || rsx! { div { "Повтор" } });
+
+        assert_eq!(handle.toasts.peek().len(), 1);
+        assert_eq!(handle.toasts.peek()[0].id, first_id);
+    });
+}
+
+#[test]
+fn custom_event_remains_visible_without_countdown_or_eviction() {
+    let mut dom = VirtualDom::new(app);
+    dom.rebuild_in_place();
+    dom.in_scope(ScopeId::ROOT, || {
+        let handle = HANDLE.get().unwrap();
+        handle.custom("incoming:call-1", || rsx! { div { "Звонок" } });
+
+        assert!(!handle.toasts.peek()[0].countdown_active());
+        for _ in 0..MAX_TOASTS {
+            handle.info("Обычное сообщение");
+        }
+
+        assert!(handle.toasts.peek().iter().any(|toast| {
+            matches!(&toast.payload, ToastPayload::Custom(custom) if custom.key == "incoming:call-1")
+        }));
+    });
+}
+
+#[test]
+fn dismiss_custom_event_only_closes_matching_key() {
+    let mut dom = VirtualDom::new(app);
+    dom.rebuild_in_place();
+    dom.in_scope(ScopeId::ROOT, || {
+        let handle = HANDLE.get().unwrap();
+        handle.custom("incoming:call-1", || rsx! { div { "Первый" } });
+        handle.custom("incoming:call-2", || rsx! { div { "Второй" } });
+
+        handle.dismiss_custom("incoming:call-1");
+
+        let toasts = handle.toasts.peek();
+        assert!(toasts[0].exiting);
+        assert!(!toasts[1].exiting);
+    });
+}

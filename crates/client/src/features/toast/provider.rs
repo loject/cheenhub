@@ -1,5 +1,7 @@
 //! Провайдер контекста toast-уведомлений.
 
+use std::rc::Rc;
+
 use dioxus::prelude::*;
 
 use super::update_available::UpdateAvailableToast;
@@ -18,6 +20,8 @@ pub(crate) enum ToastKind {
     Info,
     /// Постоянное уведомление о доступном обновлении приложения.
     UpdateAvailable,
+    /// Постоянное уведомление с интерфейсом, предоставленным вызывающим модулем.
+    Custom,
 }
 
 impl ToastKind {
@@ -26,8 +30,7 @@ impl ToastKind {
             Self::Success => "bg-emerald-400",
             Self::Warning => "bg-amber-400",
             Self::Error => "bg-red-400",
-            Self::Info => "bg-blue-400",
-            Self::UpdateAvailable => "bg-blue-400",
+            Self::Info | Self::UpdateAvailable | Self::Custom => "bg-blue-400",
         }
     }
 
@@ -38,32 +41,40 @@ impl ToastKind {
             Self::Error => "Не получилось",
             Self::Info => "Информация",
             Self::UpdateAvailable => "Обновление доступно",
+            Self::Custom => "Уведомление",
         }
     }
 
     fn live_region(self) -> &'static str {
         match self {
             Self::Error | Self::Warning => "assertive",
-            Self::Success | Self::Info | Self::UpdateAvailable => "polite",
+            Self::Success | Self::Info | Self::UpdateAvailable | Self::Custom => "polite",
         }
     }
 
     fn role(self) -> &'static str {
         match self {
             Self::Error | Self::Warning => "alert",
-            Self::Success | Self::Info | Self::UpdateAvailable => "status",
+            Self::Success | Self::Info | Self::UpdateAvailable | Self::Custom => "status",
         }
     }
 
     fn persistent(self) -> bool {
-        matches!(self, Self::UpdateAvailable)
+        matches!(self, Self::UpdateAvailable | Self::Custom)
     }
+}
+
+#[derive(Clone)]
+struct CustomToastEvent {
+    key: String,
+    render: Rc<dyn Fn() -> Element>,
 }
 
 #[derive(Clone)]
 enum ToastPayload {
     Message(String),
     UpdateAvailable(UpdateAvailableToast),
+    Custom(CustomToastEvent),
 }
 
 #[derive(Clone)]
@@ -156,6 +167,45 @@ impl ToastHandle {
     /// Показывает информационное сообщение.
     pub(crate) fn info(&self, message: impl Into<String>) {
         self.push_message(ToastKind::Info, message.into(), false);
+    }
+
+    /// Показывает постоянное уведомление с пользовательским содержимым.
+    ///
+    /// Повторный вызов с тем же ключом обновляет активное уведомление без смены его идентификатора.
+    pub(crate) fn custom(&self, key: impl Into<String>, render: impl Fn() -> Element + 'static) {
+        let custom = CustomToastEvent {
+            key: key.into(),
+            render: Rc::new(render),
+        };
+        let mut toasts = self.toasts;
+        let mut current = toasts.peek().clone();
+        if let Some(existing) = current.iter_mut().find(|toast| {
+            matches!(&toast.payload, ToastPayload::Custom(previous)
+                if previous.key == custom.key)
+                && !toast.exiting
+        }) {
+            existing.payload = ToastPayload::Custom(custom);
+            toasts.set(current);
+            return;
+        }
+        self.push(ToastKind::Custom, ToastPayload::Custom(custom), false);
+    }
+
+    /// Закрывает пользовательское уведомление по ключу, сохраняя анимацию выхода.
+    pub(crate) fn dismiss_custom(&self, key: &str) {
+        let ids: Vec<u64> = self
+            .toasts
+            .peek()
+            .iter()
+            .filter_map(|toast| {
+                matches!(&toast.payload, ToastPayload::Custom(custom) if custom.key == key)
+                    .then_some(toast.id)
+            })
+            .collect();
+        let mut toasts = self.toasts;
+        for id in ids {
+            super::timer::begin_dismiss_toast(&mut toasts, id);
+        }
     }
 
     /// Показывает постоянное уведомление о доступном обновлении.
@@ -261,6 +311,15 @@ fn render_toast(toast: Toast, toasts: Signal<Vec<Toast>>, application_focused: b
         ToastPayload::UpdateAvailable(update) => {
             update_view::render_update_available_toast(toast, update, toasts)
         }
+        ToastPayload::Custom(custom) => rsx! {
+            article {
+                key: "{toast.id}",
+                role: toast.kind.role(),
+                "aria-live": toast.kind.live_region(),
+                class: toast_class(toast.exiting),
+                {(custom.render)()}
+            }
+        },
     }
 }
 

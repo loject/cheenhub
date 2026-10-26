@@ -627,12 +627,6 @@ html,
   padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
 }
 
-#app-shell .direct-call-prompt {
-  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-  padding-left: max(1rem, env(safe-area-inset-left, 0px));
-  padding-right: max(1rem, env(safe-area-inset-right, 0px));
-}
-
 .voice-control-button {
   flex: 0 0 auto;
   min-width: 3rem;
@@ -698,23 +692,6 @@ html,
   padding-bottom: calc(7.25rem + env(safe-area-inset-bottom, 0px));
 }
 
-.direct-call-prompt {
-  animation: direct-call-backdrop-in 180ms ease-out both;
-}
-
-.direct-call-prompt-card {
-  animation: direct-call-card-in 320ms cubic-bezier(0.2, 0, 0, 1) both;
-}
-
-.direct-call-prompt-exit {
-  pointer-events: none;
-  animation: direct-call-backdrop-out 150ms ease-in both;
-}
-
-.direct-call-prompt-card-exit {
-  animation: direct-call-card-out 150ms ease-in both;
-}
-
 .direct-call-surface {
   transform-origin: top center;
   animation: direct-call-surface-in 300ms cubic-bezier(0.2, 0, 0, 1) both;
@@ -723,53 +700,6 @@ html,
 .direct-call-surface-exit {
   pointer-events: none;
   animation: direct-call-surface-out 160ms ease-in both;
-}
-
-.direct-call-avatar {
-  animation:
-      direct-call-avatar-in 360ms 80ms cubic-bezier(0.2, 0, 0, 1) both;
-}
-
-/* Волны звонка: обёртка вокруг аватара, псевдоэлементы расходятся наружу. */
-
-.direct-call-ringing-halo {
-  position: relative;
-}
-
-.direct-call-ringing-halo::before,
-  .direct-call-ringing-halo::after {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: 9999px;
-  border: 1.5px solid rgba(96, 165, 250, 0.38);
-  opacity: 0;
-  pointer-events: none;
-  animation: direct-call-ring-wave 2.4s cubic-bezier(0.2, 0, 0, 1) infinite;
-}
-
-.direct-call-ringing-halo::after {
-  animation-delay: 1.2s;
-}
-
-.direct-call-accept-pulse {
-  animation: direct-call-accept-glow 2.4s ease-in-out infinite;
-}
-
-.direct-call-enter-segment {
-  animation: direct-call-segment-in 320ms 40ms ease-out both;
-}
-
-.direct-call-enter-segment-copy {
-  animation-delay: 140ms;
-}
-
-.direct-call-enter-segment-actions {
-  animation-delay: 240ms;
-}
-
-.direct-call-status-enter {
-  animation: direct-call-status-in 200ms ease-out both;
 }
 
 .voice-controls-panel {
@@ -823,54 +753,6 @@ html,
   }
 }
 
-@keyframes direct-call-backdrop-in {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes direct-call-card-in {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 12px, 0) scale(0.98);
-    filter: blur(4px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-    filter: blur(0);
-  }
-}
-
-@keyframes direct-call-backdrop-out {
-  from {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes direct-call-card-out {
-  from {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-    filter: blur(0);
-  }
-
-  to {
-    opacity: 0;
-    transform: translate3d(0, -8px, 0) scale(0.99);
-    filter: blur(4px);
-  }
-}
-
 @keyframes direct-call-stage-in {
   from {
     opacity: 0;
@@ -910,74 +792,6 @@ html,
     opacity: 0;
     transform: translate3d(0, -12px, 0);
     filter: blur(4px);
-  }
-}
-
-@keyframes direct-call-avatar-in {
-  from {
-    opacity: 0;
-    transform: scale(0.94);
-    filter: blur(4px);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-    filter: blur(0);
-  }
-}
-
-@keyframes direct-call-ring-wave {
-  0% {
-    opacity: 0.5;
-    transform: scale(1);
-  }
-
-  60%,
-    100% {
-    opacity: 0;
-    transform: scale(1.55);
-  }
-}
-
-@keyframes direct-call-accept-glow {
-  0%,
-    100% {
-    box-shadow:
-        0 0 0 0 rgba(96, 165, 250, 0),
-        0 12px 32px rgba(37, 99, 235, 0.22);
-  }
-
-  50% {
-    box-shadow:
-        0 0 0 6px rgba(96, 165, 250, 0.14),
-        0 12px 32px rgba(37, 99, 235, 0.3);
-  }
-}
-
-@keyframes direct-call-segment-in {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 10px, 0);
-    filter: blur(4px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-    filter: blur(0);
-  }
-}
-
-@keyframes direct-call-status-in {
-  from {
-    opacity: 0;
-    transform: translate3d(0, -8px, 0);
-  }
-
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -1686,10 +1500,6 @@ html,
 
   #app-shell .user-avatar {
     display: none;
-  }
-
-  #app-shell .direct-call-prompt .user-avatar {
-    display: flex;
   }
 
   #app-shell .chat-message-group {
@@ -3038,10 +2848,6 @@ html,
   width: 500px;
 }
 
-.w-\[520px\] {
-  width: 520px;
-}
-
 .w-\[76px\] {
   width: 76px;
 }
@@ -3461,6 +3267,10 @@ html,
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.grid-cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .grid-cols-4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -3812,10 +3622,6 @@ html,
 
 .rounded-\[24px\] {
   border-radius: 24px;
-}
-
-.rounded-\[32px\] {
-  border-radius: 32px;
 }
 
 .rounded-full {
@@ -4317,10 +4123,6 @@ html,
   background-color: rgb(0 0 0 / 0.25);
 }
 
-.bg-black\/55 {
-  background-color: rgb(0 0 0 / 0.55);
-}
-
 .bg-black\/65 {
   background-color: rgb(0 0 0 / 0.65);
 }
@@ -4381,8 +4183,9 @@ html,
   background-color: rgb(59 130 246 / 0.045);
 }
 
-.bg-blue-500\/\[0\.13\] {
-  background-color: rgb(59 130 246 / 0.13);
+.bg-blue-600 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(37 99 235 / var(--tw-bg-opacity, 1));
 }
 
 .bg-blue-950\/20 {
@@ -5216,10 +5019,6 @@ html,
   font-size: 28px;
 }
 
-.text-\[30px\] {
-  font-size: 30px;
-}
-
 .text-\[38px\] {
   font-size: 38px;
 }
@@ -5870,21 +5669,9 @@ html,
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
-.shadow-\[0_0_0_1px_rgba\(255\2c 255\2c 255\2c \.10\)\2c 0_18px_45px_rgba\(0\2c 0\2c 0\2c \.34\)\] {
-  --tw-shadow: 0 0 0 1px rgba(255,255,255,.10),0 18px 45px rgba(0,0,0,.34);
-  --tw-shadow-colored: 0 0 0 1px var(--tw-shadow-color), 0 18px 45px var(--tw-shadow-color);
-  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
-}
-
 .shadow-\[0_0_0_1px_rgba\(255\2c 255\2c 255\2c \.10\)\2c 0_18px_50px_rgba\(0\2c 0\2c 0\2c \.30\)\] {
   --tw-shadow: 0 0 0 1px rgba(255,255,255,.10),0 18px 50px rgba(0,0,0,.30);
   --tw-shadow-colored: 0 0 0 1px var(--tw-shadow-color), 0 18px 50px var(--tw-shadow-color);
-  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
-}
-
-.shadow-\[0_0_0_1px_rgba\(255\2c 255\2c 255\2c \.10\)\2c 0_28px_90px_rgba\(0\2c 0\2c 0\2c \.58\)\] {
-  --tw-shadow: 0 0 0 1px rgba(255,255,255,.10),0 28px 90px rgba(0,0,0,.58);
-  --tw-shadow-colored: 0 0 0 1px var(--tw-shadow-color), 0 28px 90px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
@@ -6154,12 +5941,6 @@ html,
 
 .shadow-\[0_12px_32px_rgba\(0\2c 0\2c 0\2c \.36\)\] {
   --tw-shadow: 0 12px 32px rgba(0,0,0,.36);
-  --tw-shadow-colored: 0 12px 32px var(--tw-shadow-color);
-  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
-}
-
-.shadow-\[0_12px_32px_rgba\(37\2c 99\2c 235\2c \.22\)\] {
-  --tw-shadow: 0 12px 32px rgba(37,99,235,.22);
   --tw-shadow-colored: 0 12px 32px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
@@ -6484,11 +6265,6 @@ html,
 
 .blur-3xl {
   --tw-blur: blur(64px);
-  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
-}
-
-.blur-\[110px\] {
-  --tw-blur: blur(110px);
   filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
 }
 
@@ -7527,27 +7303,15 @@ html,
 @media (prefers-reduced-motion: reduce) {
   .chat-message,
   .chat-message-removing,
-  .direct-call-prompt,
-  .direct-call-prompt-card,
   .direct-call-surface,
   .direct-call-surface-exit,
   .direct-call-stage,
-  .direct-call-avatar,
-  .direct-call-accept-pulse,
-  .direct-call-enter-segment,
-  .direct-call-status-enter,
   .voice-controls-panel,
   .voice-empty-state,
   .participants-grid > article,
   .participants-grid[data-focused="true"] > article[data-focused="true"],
   .voice-focus-strip {
     animation: none;
-  }
-
-  .direct-call-ringing-halo::before,
-  .direct-call-ringing-halo::after {
-    animation: none;
-    opacity: 0;
   }
 
   .direct-call-header .animate-pulse {
@@ -8336,6 +8100,11 @@ html,
     background-color: rgb(239 246 255 / var(--tw-bg-opacity, 1));
   }
 
+  .hover\:bg-blue-500:hover {
+    --tw-bg-opacity: 1;
+    background-color: rgb(59 130 246 / var(--tw-bg-opacity, 1));
+  }
+
   .hover\:bg-blue-500\/10:hover {
     background-color: rgb(59 130 246 / 0.1);
   }
@@ -8405,6 +8174,10 @@ html,
 
   .hover\:bg-red-500\/20:hover {
     background-color: rgb(239 68 68 / 0.2);
+  }
+
+  .hover\:bg-red-500\/25:hover {
+    background-color: rgb(239 68 68 / 0.25);
   }
 
   .hover\:bg-rose-950\/60:hover {
@@ -9346,10 +9119,6 @@ html,
   .sm\:text-6xl {
     font-size: 3.75rem;
     line-height: 1;
-  }
-
-  .min-\[640px\]\:items-center {
-    align-items: center;
   }
 }
 
