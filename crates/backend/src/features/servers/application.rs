@@ -26,6 +26,7 @@ mod invite_settings;
 mod members_settings;
 mod own_invites;
 mod profile;
+mod role_management;
 mod role_settings;
 mod support;
 mod system_account_settings;

@@ -35,6 +35,7 @@ mod invite_settings;
 mod invites;
 mod members_settings;
 mod own_invite_links;
+mod role_management;
 mod rooms_and_list;
 mod rooms_write_access;
 mod server_deletion;

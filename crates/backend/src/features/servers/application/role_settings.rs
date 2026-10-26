@@ -13,16 +13,29 @@ use crate::features::servers::domain::ServerRole;
 use crate::features::servers::error::ServerError;
 use crate::state::AppState;
 
-use super::support::{owned_server, parse_server_id};
+use super::role_management::role_management_scope;
+use super::support::{parse_server_id, server_for_member_or_owner, user_has_server_permission};
 
-/// Lists roles for a server owned by the current user.
+/// Возвращает роли владельцу или участнику с правом управления ролями.
 pub(crate) async fn list_server_roles(
     state: &AppState,
-    owner_user_id: &Uuid,
+    actor_user_id: &Uuid,
     request: ListServerRoles,
 ) -> Result<ServerRoleList, ServerError> {
     let server_id = parse_server_id(request.server_id)?;
-    let server = owned_server(state, &server_id, owner_user_id).await?;
+    let server = server_for_member_or_owner(state, &server_id, actor_user_id).await?;
+    if !user_has_server_permission(
+        state,
+        &server,
+        actor_user_id,
+        ServerRolePermission::ManageRoles,
+    )
+    .await?
+    {
+        return Err(ServerError::NotFound(
+            "Сервер не найден или недоступен.".to_owned(),
+        ));
+    }
     let roles = ensure_server_roles(state, &server.id).await?;
     let member_count = active_member_count(state, &server.id).await?;
 
@@ -38,16 +51,20 @@ pub(crate) async fn list_server_roles(
     })
 }
 
-/// Saves roles for a server owned by the current user.
+/// Сохраняет роли владельцем или участником с правом управления нижестоящими ролями.
 pub(crate) async fn save_server_roles(
     state: &AppState,
-    owner_user_id: &Uuid,
+    actor_user_id: &Uuid,
     request: SaveServerRoles,
 ) -> Result<ServerRolesSaved, ServerError> {
     let server_id = parse_server_id(request.server_id)?;
-    let server = owned_server(state, &server_id, owner_user_id).await?;
+    let server = server_for_member_or_owner(state, &server_id, actor_user_id).await?;
     let existing_roles = ensure_server_roles(state, &server.id).await?;
-    let roles = normalize_role_drafts(&server.id, existing_roles, request.roles)?;
+    let scope = role_management_scope(state, &server, actor_user_id, &existing_roles).await?;
+    let roles = normalize_role_drafts(&server.id, existing_roles.clone(), request.roles)?;
+    if let Some(scope) = scope {
+        scope.validate_role_changes(&existing_roles, &roles)?;
+    }
     let saved_roles = state
         .server_store
         .replace_server_roles(&server.id, roles)

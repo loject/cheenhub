@@ -1,4 +1,4 @@
-//! Server member settings application flows.
+//! Операции управления участниками сервера.
 
 use std::collections::{HashMap, HashSet};
 
@@ -10,29 +10,43 @@ use cheenhub_contracts::realtime::{
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
-use crate::features::servers::domain::{ServerInvite, ServerInviteUse, ServerMember};
+use crate::features::servers::domain::{
+    Server, ServerInvite, ServerInviteUse, ServerMember, ServerRole,
+};
 use crate::features::servers::error::ServerError;
 use crate::state::AppState;
 
-use super::support::{owned_server, parse_server_id};
+use super::role_management::{RoleManagementScope, role_management_scope};
+use super::support::{owned_server, parse_server_id, server_for_member_or_owner, user_role_ids};
 
 const MIN_EXCLUSION_SECONDS: u64 = 60;
 const MAX_EXCLUSION_SECONDS: u64 = 60 * 60 * 24 * 365 * 100;
 
-/// Lists active server members for a server owned by the current user.
+/// Возвращает участников владельцу или участнику с правом управления ролями.
 pub(crate) async fn list_server_members(
     state: &AppState,
-    owner_user_id: &Uuid,
+    actor_user_id: &Uuid,
     request: ListServerMembers,
 ) -> Result<ServerMemberList, ServerError> {
     let server_id = parse_server_id(request.server_id)?;
-    let server = owned_server(state, &server_id, owner_user_id).await?;
+    let server = server_for_member_or_owner(state, &server_id, actor_user_id).await?;
+    let roles = state
+        .server_store
+        .list_server_roles(&server.id)
+        .await
+        .map_err(ServerError::Internal)?;
+    let scope = role_management_scope(state, &server, actor_user_id, &roles).await?;
     let members = state
         .server_store
         .list_active_server_members(&server.id)
         .await
         .map_err(ServerError::Internal)?;
-    let invite_codes = invite_codes_by_member(state, &server.id).await?;
+    // Сведения о приглашениях остаются доступны только владельцу.
+    let invite_codes = if scope.is_none() {
+        invite_codes_by_member(state, &server.id).await?
+    } else {
+        HashMap::new()
+    };
     let user_ids = members.iter().map(|member| member.user_id).collect();
     let users = users_by_id(state, user_ids).await?;
     let member_roles = state
@@ -61,10 +75,10 @@ pub(crate) async fn list_server_members(
     })
 }
 
-/// Assigns a custom role to a server member.
+/// Назначает роль владельцем или управляющим с соблюдением иерархии.
 pub(crate) async fn assign_server_member_role(
     state: &AppState,
-    owner_user_id: &Uuid,
+    actor_user_id: &Uuid,
     request: AssignServerMemberRole,
 ) -> Result<ServerMemberRoleAssigned, ServerError> {
     let server_id = parse_server_id(request.server_id)?;
@@ -72,7 +86,7 @@ pub(crate) async fn assign_server_member_role(
         .map_err(|_| ServerError::BadRequest("Пользователь не найден.".to_owned()))?;
     let role_id = Uuid::parse_str(&request.role_id)
         .map_err(|_| ServerError::BadRequest("Роль не найдена.".to_owned()))?;
-    let server = owned_server(state, &server_id, owner_user_id).await?;
+    let server = server_for_member_or_owner(state, &server_id, actor_user_id).await?;
 
     if state
         .server_store
@@ -91,9 +105,10 @@ pub(crate) async fn assign_server_member_role(
         .list_server_roles(&server.id)
         .await
         .map_err(ServerError::Internal)?;
+    let scope = role_management_scope(state, &server, actor_user_id, &roles).await?;
     let role = roles
         .iter()
-        .find(|r| r.id == role_id)
+        .find(|role| role.id == role_id)
         .ok_or_else(|| ServerError::BadRequest("Роль не найдена.".to_owned()))?;
 
     if role.kind != ServerRoleKind::Custom {
@@ -101,10 +116,22 @@ pub(crate) async fn assign_server_member_role(
             "Нельзя вручную назначать системные роли.".to_owned(),
         ));
     }
+    if let Some(scope) = scope.as_ref() {
+        validate_manager_role_change(
+            state,
+            &server,
+            actor_user_id,
+            &target_user_id,
+            role,
+            &roles,
+            scope,
+        )
+        .await?;
+    }
 
     state
         .server_store
-        .assign_server_member_role(&server.id, &target_user_id, &role_id, owner_user_id)
+        .assign_server_member_role(&server.id, &target_user_id, &role_id, actor_user_id)
         .await
         .map_err(ServerError::Internal)?;
 
@@ -122,10 +149,10 @@ pub(crate) async fn assign_server_member_role(
     })
 }
 
-/// Revokes a custom role from a server member.
+/// Отзывает роль владельцем или управляющим с соблюдением иерархии.
 pub(crate) async fn revoke_server_member_role(
     state: &AppState,
-    owner_user_id: &Uuid,
+    actor_user_id: &Uuid,
     request: RevokeServerMemberRole,
 ) -> Result<ServerMemberRoleRevoked, ServerError> {
     let server_id = parse_server_id(request.server_id)?;
@@ -133,22 +160,35 @@ pub(crate) async fn revoke_server_member_role(
         .map_err(|_| ServerError::BadRequest("Пользователь не найден.".to_owned()))?;
     let role_id = Uuid::parse_str(&request.role_id)
         .map_err(|_| ServerError::BadRequest("Роль не найдена.".to_owned()))?;
-    let server = owned_server(state, &server_id, owner_user_id).await?;
+    let server = server_for_member_or_owner(state, &server_id, actor_user_id).await?;
 
     let roles = state
         .server_store
         .list_server_roles(&server.id)
         .await
         .map_err(ServerError::Internal)?;
+    let scope = role_management_scope(state, &server, actor_user_id, &roles).await?;
     let role = roles
         .iter()
-        .find(|r| r.id == role_id)
+        .find(|role| role.id == role_id)
         .ok_or_else(|| ServerError::BadRequest("Роль не найдена.".to_owned()))?;
 
     if role.kind != ServerRoleKind::Custom {
         return Err(ServerError::BadRequest(
             "Нельзя забирать системные роли.".to_owned(),
         ));
+    }
+    if let Some(scope) = scope.as_ref() {
+        validate_manager_role_change(
+            state,
+            &server,
+            actor_user_id,
+            &target_user_id,
+            role,
+            &roles,
+            scope,
+        )
+        .await?;
     }
 
     state
@@ -171,7 +211,60 @@ pub(crate) async fn revoke_server_member_role(
     })
 }
 
-/// Kicks an active member from a server owned by the current user.
+/// Запрещает управляющему изменять роли равных и вышестоящих участников.
+async fn validate_manager_role_change(
+    state: &AppState,
+    server: &Server,
+    actor_user_id: &Uuid,
+    target_user_id: &Uuid,
+    role: &ServerRole,
+    roles: &[ServerRole],
+    scope: &RoleManagementScope,
+) -> Result<(), ServerError> {
+    if target_user_id == actor_user_id
+        || target_user_id == &server.owner_user_id
+        || !scope.can_manage_role(role)
+        || role
+            .permissions
+            .iter()
+            .any(|permission| !scope.allowed_permissions.contains(permission))
+    {
+        return Err(role_assignment_denied());
+    }
+
+    if state
+        .server_store
+        .find_active_server_member(&server.id, target_user_id)
+        .await
+        .map_err(ServerError::Internal)?
+        .is_none()
+    {
+        return Err(role_assignment_denied());
+    }
+
+    let assigned_ids = user_role_ids(state, &server.id, target_user_id).await?;
+    let highest_target_position = roles
+        .iter()
+        .filter(|candidate| {
+            candidate.kind == ServerRoleKind::Member || assigned_ids.contains(&candidate.id)
+        })
+        .map(|candidate| candidate.position)
+        .min();
+    if highest_target_position.is_none_or(|position| position <= scope.highest_role_position) {
+        return Err(role_assignment_denied());
+    }
+
+    Ok(())
+}
+
+fn role_assignment_denied() -> ServerError {
+    ServerError::BadRequest(
+        "Можно назначать и отзывать только обычные роли ниже своей наивысшей роли у нижестоящих участников."
+            .to_owned(),
+    )
+}
+
+/// Исключает участника по решению владельца сервера.
 pub(crate) async fn kick_server_member(
     state: &AppState,
     owner_user_id: &Uuid,
