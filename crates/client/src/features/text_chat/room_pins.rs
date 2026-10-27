@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use futures_util::StreamExt;
 
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
+use crate::features::server_registry::ServerRegistry;
 
 use super::pins::{self, RoomPinEvent};
 use super::pins_panel::PinPreview;
@@ -14,6 +15,8 @@ use super::pins_panel::PinPreview;
 pub(super) struct RoomPinsTarget {
     /// Realtime-подключение для запросов.
     pub(super) realtime: RealtimeHandle,
+    /// Реестр ролей авторов сообщений.
+    pub(super) registry: ServerRegistry,
     /// Сервер комнаты.
     pub(super) server_id: String,
     /// Идентификатор комнаты.
@@ -90,6 +93,15 @@ impl RoomPinsState {
             .collect()
     }
 
+    /// Авторы закреплений, включая ещё не встреченных в текущей странице истории.
+    pub(super) fn author_ids(self) -> Vec<String> {
+        self.pins
+            .read()
+            .iter()
+            .map(|pin| pin.message.author_user_id.clone())
+            .collect()
+    }
+
     /// Список данных, не привязанных к контрактам серверной комнаты.
     pub(super) fn previews(self) -> Vec<PinPreview> {
         self.pins.read().iter().map(PinPreview::from).collect()
@@ -127,6 +139,7 @@ impl RoomPinsState {
             let mut attempts = 0;
             loop {
                 let revision = *self.revision.peek();
+                let generation = target.registry.author_role_generation(&target.server_id);
                 let result = pins::load_pins(
                     &target.realtime,
                     target.server_id.clone(),
@@ -152,6 +165,17 @@ impl RoomPinsState {
                     Ok(snapshot) => {
                         debug!(server_id = %target.server_id, room_id = %target.room_id,
                             count = snapshot.messages.len(), "loaded room message pins");
+                        let authors = snapshot
+                            .messages
+                            .iter()
+                            .map(|pin| pin.message.author_user_id.clone())
+                            .collect::<Vec<_>>();
+                        target.registry.absorb_author_roles(
+                            &target.server_id,
+                            generation,
+                            &authors,
+                            &snapshot.author_role_ids,
+                        );
                         self.pins.set(snapshot.messages);
                         self.limit.set(snapshot.limit);
                     }

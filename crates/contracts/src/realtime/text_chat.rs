@@ -14,6 +14,12 @@ pub enum TextChatKind {
     LoadRoomHistory,
     /// Ответ с историей сообщений комнаты.
     RoomHistory,
+    /// Разрешить роли отдельных авторов в доступной текстовой комнате.
+    ResolveAuthorRoles,
+    /// Ответ с текущими назначениями запрошенных авторов.
+    AuthorRolesResolved,
+    /// Сигнал об изменении ролей авторов сервера для обновления кэша.
+    AuthorRolesChanged,
     /// Отправить сообщение в комнату.
     SendMessage,
     /// Подтверждает, что сообщение принято для рассылки и сохранения.
@@ -88,6 +94,29 @@ pub struct RoomHistory {
     pub messages: Vec<TextChatMessage>,
     /// Доступны ли более старые сообщения до этой страницы.
     pub has_more: bool,
+    /// Текущие роли уникальных авторов сообщений этой страницы.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub author_role_ids: std::collections::HashMap<String, Vec<String>>,
+}
+
+/// Запрос ролей только выбранных авторов доступной текстовой комнаты.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolveAuthorRoles {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Идентификатор текстовой комнаты для проверки права чтения.
+    pub room_id: String,
+    /// Не более 100 идентификаторов авторов на один запрос.
+    pub author_user_ids: Vec<String>,
+}
+
+/// Текущие роли активных авторов, которые присутствуют в запрошенной выборке.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthorRolesResolved {
+    /// Идентификатор сервера.
+    pub server_id: String,
+    /// Назначения только активных авторов; отсутствующие считаются без ролей.
+    pub author_role_ids: std::collections::HashMap<String, Vec<String>>,
 }
 
 /// Полезная нагрузка запроса для отправки сообщения в комнату.
@@ -278,6 +307,9 @@ pub struct PinnedMessages {
     pub messages: Vec<PinnedTextMessage>,
     /// Максимальное количество закреплений в комнате.
     pub limit: u32,
+    /// Текущие роли уникальных авторов закреплённых сообщений.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub author_role_ids: std::collections::HashMap<String, Vec<String>>,
 }
 
 /// Подтверждение добавления закрепления.

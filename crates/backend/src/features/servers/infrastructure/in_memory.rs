@@ -429,6 +429,14 @@ impl ServerStore for InMemoryServerStore {
         super::in_memory_roles::list_server_member_roles(&self.state, server_id)
     }
 
+    async fn active_member_role_ids_for_users(
+        &self,
+        server_id: &Uuid,
+        user_ids: &[Uuid],
+    ) -> anyhow::Result<std::collections::HashMap<Uuid, Vec<Uuid>>> {
+        super::in_memory_roles::active_member_role_ids_for_users(&self.state, server_id, user_ids)
+    }
+
     async fn assign_server_member_role(
         &self,
         server_id: &Uuid,

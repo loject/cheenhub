@@ -1,5 +1,6 @@
 //! In-memory role storage helpers.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use uuid::Uuid;
@@ -46,6 +47,36 @@ pub(super) fn list_server_member_roles(
         .filter(|(sid, _, _, _)| *sid == *server_id)
         .map(|(_, uid, rid, _)| (*uid, *rid))
         .collect())
+}
+
+pub(super) fn active_member_role_ids_for_users(
+    state: &Mutex<InMemoryState>,
+    server_id: &Uuid,
+    user_ids: &[Uuid],
+) -> anyhow::Result<HashMap<Uuid, Vec<Uuid>>> {
+    let requested = user_ids.iter().copied().collect::<HashSet<_>>();
+    if requested.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let state = state.lock().map_err(|_| poisoned())?;
+    let mut result = state
+        .members
+        .iter()
+        .filter(|member| {
+            member.server_id == *server_id
+                && member.left_at.is_none()
+                && requested.contains(&member.user_id)
+        })
+        .map(|member| (member.user_id, Vec::new()))
+        .collect::<HashMap<_, _>>();
+    for (assigned_server, user_id, role_id, _) in &state.member_roles {
+        if assigned_server == server_id
+            && let Some(roles) = result.get_mut(user_id)
+        {
+            roles.push(*role_id);
+        }
+    }
+    Ok(result)
 }
 
 pub(super) fn assign_server_member_role(

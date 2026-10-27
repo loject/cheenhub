@@ -11,6 +11,37 @@ use crate::features::auth::infrastructure::system_account;
 use crate::features::servers::domain::{Server, ServerAccess, ServerSystemAccount};
 use crate::features::servers::infrastructure::entities::{server_members, servers};
 
+/// Атомарно создаёт сервер вместе с принадлежащим ему системным аккаунтом.
+pub(super) async fn insert_server(
+    database: &DatabaseConnection,
+    owner_user_id: &Uuid,
+    name: String,
+) -> anyhow::Result<Server> {
+    let now = Utc::now();
+    let transaction = database.begin().await?;
+    let model = servers::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        owner_user_id: Set(*owner_user_id),
+        name: Set(name),
+        avatar_image_id: Set(None),
+        audio_bitrate_bps: Set(cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS as i32),
+        created_at: Set(now),
+        updated_at: Set(now),
+    }
+    .insert(&transaction)
+    .await?;
+    system_account::insert(
+        &transaction,
+        model.id,
+        model.name.clone(),
+        model.avatar_image_id,
+        now,
+    )
+    .await?;
+    transaction.commit().await?;
+    Ok(model.into())
+}
+
 pub(super) async fn list_servers(
     database: &DatabaseConnection,
     user_id: &Uuid,

@@ -40,6 +40,7 @@ mod rooms_and_list;
 mod rooms_write_access;
 mod server_deletion;
 mod server_profile;
+mod server_role_snapshot;
 mod voice_settings;
 
 fn state() -> AppState {

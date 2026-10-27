@@ -1,5 +1,6 @@
 //! Text chat client feature.
 
+mod author_role_resolution;
 mod compose;
 mod history;
 mod history_loading_state;

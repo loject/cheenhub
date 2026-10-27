@@ -30,13 +30,30 @@ pub(crate) async fn list_pinned_messages(
         .list_pinned_messages(&server_id, &room_id)
         .await
         .map_err(TextChatApplicationError::Internal)?;
-    let messages = summaries(state, &pins).await?;
+    let (messages, deleted_authors) = summaries(state, &pins).await?;
+    let author_ids = pins
+        .iter()
+        .filter(|pin| !deleted_authors[&pin.message.author_user_id])
+        .map(|pin| pin.message.author_user_id)
+        .collect::<Vec<_>>();
+    let author_role_ids = if author_ids.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        let server = state
+            .server_store
+            .find_server(&server_id)
+            .await
+            .map_err(TextChatApplicationError::Internal)?
+            .ok_or_else(|| TextChatApplicationError::NotFound("Сервер не найден.".to_owned()))?;
+        super::author_roles::author_role_ids(state, &server, &author_ids).await?
+    };
     tracing::debug!(%server_id, %room_id, count = messages.len(), "listed pinned room messages");
     Ok(PinnedMessages {
         server_id: request.server_id,
         room_id: request.room_id,
         messages,
         limit: PIN_LIMIT as u32,
+        author_role_ids,
     })
 }
 
@@ -81,13 +98,10 @@ pub(crate) async fn pin_message(
             ));
         }
     };
-    let pinned = summaries(state, &[pin])
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| {
-            TextChatApplicationError::Internal(anyhow::anyhow!("saved message pin vanished"))
-        })?;
+    let (summarized, _) = summaries(state, &[pin]).await?;
+    let pinned = summarized.into_iter().next().ok_or_else(|| {
+        TextChatApplicationError::Internal(anyhow::anyhow!("saved message pin vanished"))
+    })?;
     tracing::debug!(%server_id, %room_id, %message_id, %user_id, "pinned room message");
     if let Err(error) = fanout_pin_change(
         state,
@@ -175,7 +189,13 @@ async fn require_pin_permission(
 async fn summaries(
     state: &AppState,
     pins: &[PinnedMessage],
-) -> Result<Vec<PinnedTextMessage>, TextChatApplicationError> {
+) -> Result<
+    (
+        Vec<PinnedTextMessage>,
+        std::collections::HashMap<Uuid, bool>,
+    ),
+    TextChatApplicationError,
+> {
     let avatars = image_application::avatar_urls_by_user_ids(
         state,
         pins.iter().map(|pin| pin.message.author_user_id),
@@ -187,7 +207,7 @@ async fn summaries(
         .map(|pin| pin.message.clone())
         .collect::<Vec<_>>();
     let deleted = history_authors::deleted_authors(state, &messages).await?;
-    Ok(pins
+    let summaries = pins
         .iter()
         .map(|pin| {
             let mut message = message_summary(
@@ -204,7 +224,8 @@ async fn summaries(
                 pinned_at: pin.pinned_at.to_rfc3339(),
             }
         })
-        .collect())
+        .collect::<Vec<_>>();
+    Ok((summaries, deleted))
 }
 
 async fn fanout_pin_change<T: Serialize>(

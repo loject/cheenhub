@@ -205,7 +205,7 @@ pub(crate) async fn leave(
     state: &AppState,
     access_token: &str,
     server_id: String,
-) -> Result<(), ServerError> {
+) -> Result<Uuid, ServerError> {
     let user = auth_application::me(state, access_token)
         .await
         .map_err(map_auth_error)?;
@@ -244,7 +244,8 @@ pub(crate) async fn leave(
         .server_store
         .leave_server(&server.id, &user_id)
         .await
-        .map_err(ServerError::Internal)
+        .map_err(ServerError::Internal)?;
+    Ok(user_id)
 }
 
 /// Возвращает комнаты, доступные на сервере для текущего пользователя.

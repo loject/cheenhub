@@ -275,6 +275,14 @@ pub(crate) trait ServerStore: Send + Sync {
     async fn list_server_member_roles(&self, server_id: &Uuid)
     -> anyhow::Result<Vec<(Uuid, Uuid)>>;
 
+    /// Возвращает назначения только запрошенных активных участников сервера.
+    /// Включает участников без пользовательских ролей с пустым списком.
+    async fn active_member_role_ids_for_users(
+        &self,
+        server_id: &Uuid,
+        user_ids: &[Uuid],
+    ) -> anyhow::Result<std::collections::HashMap<Uuid, Vec<Uuid>>>;
+
     /// Назначает пользовательскую роль участнику сервера. Идемпотентно.
     async fn assign_server_member_role(
         &self,

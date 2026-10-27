@@ -193,6 +193,7 @@ async fn load_refresh(
     let mut cursor = None;
     let mut cursors = HashSet::new();
     loop {
+        let generation = target.registry.author_role_generation(&target.server_id);
         let mut request = realtime::load_room_history(
             &target.realtime,
             target.server_id.clone(),
@@ -215,6 +216,7 @@ async fn load_refresh(
                 Either::Right((result, _)) => break result?,
             }
         };
+        target.absorb_author_roles(generation, &history);
         let Some(next_cursor) = refresh.push_page(history) else {
             return Ok(refresh);
         };

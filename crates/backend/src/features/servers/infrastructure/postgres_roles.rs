@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::features::servers::domain::ServerRole;
 use crate::features::servers::infrastructure::entities::{
-    server_member_roles, server_role_permissions, server_roles,
+    server_member_roles, server_members, server_role_permissions, server_roles,
 };
 use crate::features::servers::infrastructure::postgres_conversions::{
     role_kind_as_str, role_permission_as_str, role_permission_from_str, server_role_from_model,
@@ -64,6 +64,40 @@ pub(super) async fn list_server_member_roles(
         .into_iter()
         .map(|row| (row.user_id, row.role_id))
         .collect())
+}
+
+pub(super) async fn active_member_role_ids_for_users(
+    database: &DatabaseConnection,
+    server_id: &Uuid,
+    user_ids: &[Uuid],
+) -> anyhow::Result<HashMap<Uuid, Vec<Uuid>>> {
+    if user_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let active = server_members::Entity::find()
+        .filter(server_members::Column::ServerId.eq(*server_id))
+        .filter(server_members::Column::UserId.is_in(user_ids.iter().copied()))
+        .filter(server_members::Column::LeftAt.is_null())
+        .all(database)
+        .await?;
+    let mut result = active
+        .into_iter()
+        .map(|member| (member.user_id, Vec::new()))
+        .collect::<HashMap<_, _>>();
+    if result.is_empty() {
+        return Ok(result);
+    }
+    let assignments = server_member_roles::Entity::find()
+        .filter(server_member_roles::Column::ServerId.eq(*server_id))
+        .filter(server_member_roles::Column::UserId.is_in(result.keys().copied()))
+        .all(database)
+        .await?;
+    for assignment in assignments {
+        if let Some(roles) = result.get_mut(&assignment.user_id) {
+            roles.push(assignment.role_id);
+        }
+    }
+    Ok(result)
 }
 
 pub(super) async fn assign_server_member_role(

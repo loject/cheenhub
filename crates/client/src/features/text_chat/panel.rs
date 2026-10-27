@@ -17,6 +17,7 @@ use crate::features::typing::{
     TypingIndicator, TypingTarget, TypingTransport, use_typing_notifier, use_typing_participants,
 };
 
+use super::author_role_resolution::{AuthorRolesTarget, use_author_role_resolution};
 use super::compose::use_room_message_operations;
 use super::history::{
     HistoryState, HistoryTarget, load_initial_history, load_initial_history_when_connected,
@@ -39,11 +40,13 @@ use super::{
 #[component]
 pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) -> Element {
     let realtime = use_context::<RealtimeHandle>();
-    let permissions = use_context::<ServerRegistry>().permissions(&server_id);
+    let registry = use_context::<ServerRegistry>();
+    let permissions = registry.permissions(&server_id);
     let current_user = use_context::<CurrentUserContext>().require_user();
     let room_compose_state = use_context::<MessageComposeState>();
     let pins_target = RoomPinsTarget {
         realtime: realtime.clone(),
+        registry,
         server_id: server_id.clone(),
         room_id: room.id.clone(),
     };
@@ -55,6 +58,16 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let mut edit_error = use_signal(|| None::<String>);
     let mut appearing_message_ids = use_signal(Vec::<String>::new);
     let mut removing_message_ids = use_signal(Vec::<String>::new);
+    use_author_role_resolution(
+        AuthorRolesTarget {
+            realtime: realtime.clone(),
+            registry,
+            server_id: server_id.clone(),
+            room_id: room.id.clone(),
+        },
+        messages,
+        pins_state,
+    );
     let initial_loading = use_signal(|| true);
     let older_loading = use_signal(|| false);
     let history_error = use_signal(|| None::<String>);
@@ -90,11 +103,13 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let older_realtime = realtime.clone();
     let history_target = HistoryTarget {
         realtime: history_realtime,
+        registry,
         server_id: history_server_id,
         room_id: history_room_id,
     };
     let older_target = HistoryTarget {
         realtime: older_realtime,
+        registry,
         server_id: older_server_id,
         room_id: older_room_id,
     };
@@ -298,11 +313,13 @@ pub(crate) fn ChatRoomPanel(server_id: String, room: ActiveRoom, compact: bool) 
     let list_pins_target = pins_target.clone();
     let navigation_target = HistoryTarget {
         realtime: realtime.clone(),
+        registry,
         server_id: server_id.clone(),
         room_id: room.id.clone(),
     };
     let retry_target = HistoryTarget {
         realtime: realtime.clone(),
+        registry,
         server_id: server_id.clone(),
         room_id: room.id.clone(),
     };

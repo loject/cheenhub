@@ -169,7 +169,16 @@ pub(crate) async fn leave(
     Path(server_id): Path<String>,
 ) -> Result<StatusCode, ServerError> {
     let token = bearer_token(&headers)?;
-    application::leave(&state, token, server_id).await?;
+    let departed_user_id = application::leave(&state, token, server_id.clone()).await?;
+    let server_uuid = uuid::Uuid::parse_str(&server_id)
+        .map_err(|_| ServerError::BadRequest("Сервер не найден.".to_owned()))?;
+    crate::features::servers::realtime::fanout_author_roles_changed(
+        &state,
+        &server_uuid,
+        Some(departed_user_id),
+        None,
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 

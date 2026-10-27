@@ -149,6 +149,7 @@ async fn seek_older_pages(
         if !visited.insert(cursor.clone()) {
             return Err("Не удалось продолжить загрузку истории. Попробуй ещё раз.".to_owned());
         }
+        let generation = target.registry.author_role_generation(&target.server_id);
         let page = realtime::load_room_history(
             &target.realtime,
             target.server_id.clone(),
@@ -161,6 +162,7 @@ async fn seek_older_pages(
                 %cursor, %error, "failed to load pinned message history page");
             "Не удалось загрузить старые сообщения. Проверь соединение и повтори.".to_owned()
         })?;
+        target.absorb_author_roles(generation, &page);
         let next = next_cursor(message_id, &cursor, &page.messages, page.has_more)?;
         let has_more = page.has_more;
         pages.push(page.messages);

@@ -60,6 +60,7 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
         match result {
             Ok(response) => {
                 let response_server_id = response.server_id.clone();
+                server_registry.set_members(&response_server_id, &response.members);
                 if let Some(member) = response
                     .members
                     .iter()
@@ -263,10 +264,11 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
                                                                     })
                                                                     .collect(),
                                                             ));
-                                                            if current_user.require_user().id == uid
-                                                                && let Some(member) = members().unwrap_or_default().iter().find(|member| member.id == uid)
-                                                            {
-                                                                server_registry.set_member_roles(&response.server_id, member.role_ids.clone());
+                                                            if let Some(member) = members().unwrap_or_default().iter().find(|member| member.id == uid) {
+                                                                server_registry.set_user_roles(&response.server_id, &uid, &member.role_ids, member.is_owner);
+                                                                if current_user.require_user().id == uid {
+                                                                    server_registry.set_member_roles(&response.server_id, member.role_ids.clone());
+                                                                }
                                                             }
                                                             info!(user_id = %uid, role_id = %rid, "revoked role");
                                                         }
@@ -291,10 +293,11 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
                                                                     })
                                                                     .collect(),
                                                             ));
-                                                            if current_user.require_user().id == uid
-                                                                && let Some(member) = members().unwrap_or_default().iter().find(|member| member.id == uid)
-                                                            {
-                                                                server_registry.set_member_roles(&response.server_id, member.role_ids.clone());
+                                                            if let Some(member) = members().unwrap_or_default().iter().find(|member| member.id == uid) {
+                                                                server_registry.set_user_roles(&response.server_id, &uid, &member.role_ids, member.is_owner);
+                                                                if current_user.require_user().id == uid {
+                                                                    server_registry.set_member_roles(&response.server_id, member.role_ids.clone());
+                                                                }
                                                             }
                                                             info!(user_id = %uid, role_id = %rid, "assigned role");
                                                         }
@@ -373,6 +376,7 @@ pub(crate) fn ServerMembersSettingsSection(server_id: String, server_name: Strin
                                                 .filter(|member| member.id != response.user_id)
                                                 .collect(),
                                         ));
+                                        server_registry.remove_user_roles(&response.server_id, &response.user_id);
                                         pending_kick.set(None);
                                         is_kicking.set(false);
                                         info!(

@@ -44,6 +44,19 @@ pub enum ServerKind {
     ServerMemberRoleRevoked,
 }
 
+/// Событие об изменении назначений авторов или самой палитры ролей сервера.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthorRolesChanged {
+    /// Сервер, для которого нужно пересмотреть кэш.
+    pub server_id: String,
+    /// Только затронутый пользователь; None означает весь сервер.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    /// Новая палитра при сохранении ролей; иначе палитра не изменилась.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<ServerRoleEntry>>,
+}
+
 /// Полезная нагрузка запроса для загрузки участников сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListServerMembers {

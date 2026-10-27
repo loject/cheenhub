@@ -3,7 +3,7 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use cheenhub_contracts::realtime::TextChatMessage;
+use cheenhub_contracts::realtime::{RoomHistory, TextChatMessage};
 use dioxus::prelude::*;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
@@ -11,6 +11,7 @@ use futures_util::future::{Either, select};
 
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 use crate::features::runtime::sleep_duration;
+use crate::features::server_registry::ServerRegistry;
 
 use super::messages::prepend_messages;
 use super::realtime;
@@ -22,8 +23,26 @@ pub(super) const INITIAL_HISTORY_TIMEOUT: Duration = Duration::from_secs(12);
 #[derive(Clone)]
 pub(super) struct HistoryTarget {
     pub(super) realtime: RealtimeHandle,
+    pub(super) registry: ServerRegistry,
     pub(super) server_id: String,
     pub(super) room_id: String,
+}
+
+impl HistoryTarget {
+    /// Применяет назначения авторов страницы, если за время запроса роли не изменились.
+    pub(super) fn absorb_author_roles(&self, generation: u64, history: &RoomHistory) {
+        let author_ids = history
+            .messages
+            .iter()
+            .map(|message| message.author_user_id.clone())
+            .collect::<Vec<_>>();
+        self.registry.absorb_author_roles(
+            &self.server_id,
+            generation,
+            &author_ids,
+            &history.author_role_ids,
+        );
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -56,8 +75,9 @@ pub(super) fn load_initial_history(target: HistoryTarget, state: HistoryState) {
 async fn load_initial_history_async(target: HistoryTarget, mut state: HistoryState) {
     state.initial_loading.set(true);
     state.history_error.set(None);
-    let server_id = target.server_id;
-    let room_id = target.room_id;
+    let server_id = target.server_id.clone();
+    let room_id = target.room_id.clone();
+    let generation = target.registry.author_role_generation(&server_id);
     let history_request =
         realtime::load_room_history(&target.realtime, server_id.clone(), room_id.clone(), None)
             .boxed_local();
@@ -72,6 +92,7 @@ async fn load_initial_history_async(target: HistoryTarget, mut state: HistorySta
                 has_more = history.has_more,
                 "loaded initial text chat history"
             );
+            target.absorb_author_roles(generation, &history);
             state.messages.set(history.messages);
             state.appearing_message_ids.set(Vec::new());
             state.has_more.set(history.has_more);
@@ -169,15 +190,17 @@ pub(super) fn load_older_history(target: HistoryTarget, mut state: HistoryState)
             None => None,
         };
 
+        let generation = target.registry.author_role_generation(&target.server_id);
         match realtime::load_room_history(
             &target.realtime,
-            target.server_id,
-            target.room_id,
+            target.server_id.clone(),
+            target.room_id.clone(),
             Some(before_message_id),
         )
         .await
         {
             Ok(history) => {
+                target.absorb_author_roles(generation, &history);
                 prepend_messages(&mut state.messages, history.messages);
                 state.has_more.set(history.has_more);
                 if let Some((offset_y, height)) = before_scroll {

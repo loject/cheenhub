@@ -20,7 +20,8 @@ pub(super) async fn server_summary(
     is_member: bool,
 ) -> ServerSummary {
     let is_owner = server.owner_user_id == *user_id;
-    let (roles, member_role_ids) = fetch_role_data(state, &server.id, user_id).await;
+    let (roles, member_role_ids) =
+        fetch_role_data(state, server, user_id, is_member || is_owner).await;
     ServerSummary {
         id: server.id.to_string(),
         name: server.name.clone(),
@@ -36,10 +37,11 @@ pub(super) async fn server_summary(
 
 async fn fetch_role_data(
     state: &AppState,
-    server_id: &Uuid,
+    server: &Server,
     user_id: &Uuid,
+    include_user_assignments: bool,
 ) -> (Vec<ServerRoleSummary>, Vec<String>) {
-    let roles = match state.server_store.list_server_roles(server_id).await {
+    let roles = match state.server_store.list_server_roles(&server.id).await {
         Ok(roles) => roles
             .into_iter()
             .map(|role| ServerRoleSummary {
@@ -49,17 +51,31 @@ async fn fetch_role_data(
                 kind: role.kind,
                 permissions: role.permissions,
             })
-            .filter(|role| role.kind != ServerRoleKind::Owner)
-            .collect(),
-        Err(_) => Vec::new(),
+            .collect::<Vec<_>>(),
+        Err(error) => {
+            tracing::warn!(server_id = %server.id, %error, "failed to load server roles for summary");
+            Vec::new()
+        }
     };
-    let member_role_ids = match state.server_store.list_server_member_roles(server_id).await {
-        Ok(pairs) => pairs
-            .into_iter()
-            .filter(|(uid, _)| uid == user_id)
-            .map(|(_, rid)| rid.to_string())
-            .collect(),
-        Err(_) => Vec::new(),
+    let member_role_ids = if include_user_assignments {
+        match state
+            .server_store
+            .active_member_role_ids_for_users(&server.id, &[*user_id])
+            .await
+        {
+            Ok(assignments) => assignments
+                .get(user_id)
+                .into_iter()
+                .flatten()
+                .map(ToString::to_string)
+                .collect(),
+            Err(error) => {
+                tracing::warn!(server_id = %server.id, %error, "failed to load current user's roles for summary");
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
     };
     (roles, member_role_ids)
 }

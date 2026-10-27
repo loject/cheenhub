@@ -354,3 +354,177 @@ async fn member_with_selected_role_can_write() {
 
     assert_eq!(accepted.message.body, "editor message");
 }
+
+#[tokio::test]
+async fn role_changes_do_not_embed_colors_in_new_or_reloaded_messages() {
+    use cheenhub_contracts::realtime::ServerRoleKind;
+
+    let state = state();
+    let owner = registered_user(&state, "color_owner", "color-owner@example.com").await;
+    let member = registered_user(&state, "color_member", "color-member@example.com").await;
+    let owner_id = Uuid::parse_str(&owner.user.id).unwrap();
+    let member_id = Uuid::parse_str(&member.user.id).unwrap();
+    let (server_id, room_id) = create_server_room(
+        &state,
+        &owner_id,
+        "Colors",
+        "general",
+        ServerRoomKind::TextAndVoice,
+    )
+    .await;
+    let server_uuid = Uuid::parse_str(&server_id).unwrap();
+    join_server(&state, &server_uuid, &member_id).await;
+
+    let higher = Uuid::new_v4();
+    let lower = Uuid::new_v4();
+    let roles = [
+        (Uuid::new_v4(), ServerRoleKind::Owner, 0, "#facc15"),
+        (higher, ServerRoleKind::Custom, 1, "#ef4444"),
+        (lower, ServerRoleKind::Custom, 2, "#22c55e"),
+        (Uuid::new_v4(), ServerRoleKind::Member, 3, "#94a3b8"),
+    ]
+    .into_iter()
+    .map(|(id, kind, position, color)| ServerRole {
+        id,
+        server_id: server_uuid,
+        name: format!("Role {position}"),
+        color: color.to_owned(),
+        kind,
+        position,
+        permissions: Vec::new(),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    })
+    .collect();
+    state
+        .server_store
+        .replace_server_roles(&server_uuid, roles)
+        .await
+        .unwrap();
+    assign_role(&state, &server_uuid, &member_id, &lower).await;
+    assign_role(&state, &server_uuid, &member_id, &higher).await;
+
+    let accepted = send_message(
+        &state,
+        &member.user,
+        &member_id,
+        SendMessage {
+            server_id: server_id.clone(),
+            room_id: room_id.clone(),
+            body: "hello".to_owned(),
+            attachment_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        serde_json::to_value(&accepted.message)
+            .unwrap()
+            .get("author_role_color")
+            .is_none()
+    );
+
+    tokio::task::yield_now().await;
+    let load = || LoadRoomHistory {
+        server_id: server_id.clone(),
+        room_id: room_id.clone(),
+        before_message_id: None,
+    };
+    let history = load_room_history(&state, &owner_id, load()).await.unwrap();
+    assert!(
+        serde_json::to_value(&history.messages[0])
+            .unwrap()
+            .get("author_role_color")
+            .is_none()
+    );
+
+    state
+        .server_store
+        .revoke_server_member_role(&server_uuid, &member_id, &higher)
+        .await
+        .unwrap();
+    let updated = load_room_history(&state, &owner_id, load()).await.unwrap();
+    assert!(
+        serde_json::to_value(&updated.messages[0])
+            .unwrap()
+            .get("author_role_color")
+            .is_none()
+    );
+
+    state
+        .server_store
+        .revoke_server_member_role(&server_uuid, &member_id, &lower)
+        .await
+        .unwrap();
+    let base = load_room_history(&state, &owner_id, load()).await.unwrap();
+    assert!(
+        serde_json::to_value(&base.messages[0])
+            .unwrap()
+            .get("author_role_color")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn owner_role_color_is_not_embedded_in_message() {
+    use cheenhub_contracts::realtime::ServerRoleKind;
+
+    let state = state();
+    let owner = registered_user(&state, "colored_owner", "colored-owner@example.com").await;
+    let owner_id = Uuid::parse_str(&owner.user.id).unwrap();
+    let (server_id, room_id) = create_server_room(
+        &state,
+        &owner_id,
+        "Owner colors",
+        "general",
+        ServerRoomKind::TextAndVoice,
+    )
+    .await;
+    let server_uuid = Uuid::parse_str(&server_id).unwrap();
+    let custom_id = Uuid::new_v4();
+    let roles = [
+        (Uuid::new_v4(), ServerRoleKind::Owner, 0, "#facc15"),
+        (custom_id, ServerRoleKind::Custom, 1, "#ef4444"),
+        (Uuid::new_v4(), ServerRoleKind::Member, 2, "#94a3b8"),
+    ]
+    .into_iter()
+    .map(|(id, kind, position, color)| ServerRole {
+        id,
+        server_id: server_uuid,
+        name: format!("Role {position}"),
+        color: color.to_owned(),
+        kind,
+        position,
+        permissions: Vec::new(),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    })
+    .collect();
+    state
+        .server_store
+        .replace_server_roles(&server_uuid, roles)
+        .await
+        .unwrap();
+    assign_role(&state, &server_uuid, &owner_id, &custom_id).await;
+
+    let accepted = send_message(
+        &state,
+        &owner.user,
+        &owner_id,
+        SendMessage {
+            server_id,
+            room_id,
+            body: "owner".to_owned(),
+            attachment_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        serde_json::to_value(&accepted.message)
+            .unwrap()
+            .get("author_role_color")
+            .is_none()
+    );
+}

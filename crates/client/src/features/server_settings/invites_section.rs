@@ -7,6 +7,7 @@ use super::invites_data::{InviteLink, InviteStatus, invite_from_realtime};
 use super::realtime;
 use crate::features::clipboard::copy_text;
 use crate::features::realtime::RealtimeHandle;
+use crate::features::server_registry::ServerRegistry;
 use crate::features::toast::ToastHandle;
 
 #[derive(Clone, PartialEq)]
@@ -23,6 +24,7 @@ struct MemberMenuState {
 #[component]
 pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: String) -> Element {
     let realtime_handle = use_context::<RealtimeHandle>();
+    let server_registry = use_context::<ServerRegistry>();
     let toast = use_context::<ToastHandle>();
     let mut invites = use_signal(|| None::<Vec<InviteLink>>);
     let mut invite_load_processed = use_signal(|| false);
@@ -385,6 +387,7 @@ pub(crate) fn ServerInvitesSettingsSection(server_id: String, server_name: Strin
                                                     })
                                                     .collect::<Vec<_>>(),
                                             ));
+                                            server_registry.remove_user_roles(&response.server_id, &response.user_id);
                                             pending_action.set(None);
                                             toast.warning(format!("{kicked_member_name} исключен с сервера."));
                                             info!(

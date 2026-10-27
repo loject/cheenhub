@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 
 use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 use crate::features::app::current_user::CurrentUserContext;
+use crate::features::server_registry::ServerRegistry;
 
 use super::message_date::full_message_datetime;
 use super::message_edit_dialog::InlineMessageEditState;
@@ -37,6 +38,9 @@ pub(crate) fn ChatMessageGroup(
     use_avatar_seed(first_message.author_user_id.clone());
     let current_user = use_context::<CurrentUserContext>().require_user();
     let is_own_group = first_message.author_user_id == current_user.id;
+    let nickname_color = use_context::<ServerRegistry>()
+        .role_color(&server_id, &first_message.author_user_id)
+        .unwrap_or_else(|| if is_own_group { "#8cb8fa" } else { "#f0f2f6" }.to_owned());
     let sent_time = message_time(&first_message.created_at);
     let sent_datetime = full_message_datetime(&first_message.created_at);
 
@@ -56,7 +60,9 @@ pub(crate) fn ChatMessageGroup(
             div {
                 class: "chat-message-content min-w-0",
                 div { class: "mb-1 flex items-center gap-2 px-2",
-                    span { class: if is_own_group { "truncate text-[13.5px] font-semibold tracking-[-0.012em] text-[#8cb8fa]" } else { "truncate text-[13.5px] font-semibold tracking-[-0.012em] text-[#f0f2f6]" },
+                    span {
+                        class: "truncate text-[13.5px] font-semibold tracking-[-0.012em]",
+                        style: "color: {nickname_color};",
                         "{first_message.author_nickname}"
                     }
                     if is_own_group {

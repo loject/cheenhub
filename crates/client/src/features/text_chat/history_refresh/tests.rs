@@ -28,6 +28,7 @@ fn page(ids: &[&str], has_more: bool) -> RoomHistory {
         room_id: "room".to_owned(),
         messages: messages(ids),
         has_more,
+        author_role_ids: Default::default(),
     }
 }
 
@@ -87,7 +88,8 @@ fn reconnect_uses_actual_timestamp_order_across_timezones() {
             server_id: "server".to_owned(),
             room_id: "room".to_owned(),
             messages: vec![newer],
-            has_more: true
+            has_more: true,
+            author_role_ids: Default::default(),
         }),
         Some("03".to_owned())
     );

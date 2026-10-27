@@ -24,6 +24,7 @@ fn voice_microphone_choice_defaults_for_legacy_peers_and_preserves_explicit_mute
     assert!(!direct.microphone_enabled);
 }
 
+mod author_roles;
 mod direct_messages;
 
 #[test]
@@ -512,6 +513,23 @@ fn avatar_fields_round_trip_in_realtime_payloads() {
         serde_json::from_str(&serde_json::to_string(&participant).expect("participant serializes"))
             .expect("participant decodes");
     assert_eq!(decoded.avatar_url, participant.avatar_url);
+}
+
+#[test]
+fn message_serialization_does_not_embed_author_role_metadata() {
+    let legacy = serde_json::json!({
+        "id": "message", "server_id": "server", "room_id": "room",
+        "author_user_id": "user", "author_nickname": "Автор",
+        "author_avatar_url": null, "body": "Привет", "attachments": [],
+        "created_at": "2026-10-26T00:00:00Z",
+        "author_role_color": "#22c55e"
+    });
+    let message: TextChatMessage = serde_json::from_value(legacy).unwrap();
+    let encoded = serde_json::to_value(message).unwrap();
+
+    assert_eq!(encoded["author_user_id"], "user");
+    assert!(encoded.get("author_role_color").is_none());
+    assert!(encoded.get("role_ids").is_none());
 }
 
 #[test]

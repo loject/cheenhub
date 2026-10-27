@@ -3,10 +3,10 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use cheenhub_contracts::realtime::{
-    ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
-    EditMessage, EditMessageAccepted, LoadChatImage, LoadRoomHistory, MessageDeletedPayload,
-    RealtimeEnvelope, RealtimeKind, RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted,
-    TextChatKind, TextChatMessage, UploadChatImage,
+    AuthorRolesResolved, ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage,
+    DeleteMessageAccepted, EditMessage, EditMessageAccepted, LoadChatImage, LoadRoomHistory,
+    MessageDeletedPayload, RealtimeEnvelope, RealtimeKind, RealtimeModule, ResolveAuthorRoles,
+    RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage, UploadChatImage,
 };
 use futures_channel::mpsc;
 use futures_util::StreamExt;
@@ -39,6 +39,26 @@ pub(crate) async fn load_room_history(
                 server_id,
                 room_id,
                 before_message_id,
+            },
+        )
+        .await
+}
+
+/// Запрашивает роли не более 100 авторов, допущенных к чтению комнаты.
+pub(crate) async fn resolve_author_roles(
+    realtime: &RealtimeHandle,
+    server_id: String,
+    room_id: String,
+    author_user_ids: Vec<String>,
+) -> Result<AuthorRolesResolved, RealtimeError> {
+    realtime
+        .request_one_shot(
+            RealtimeModule::TextChat,
+            RealtimeKind::TextChat(TextChatKind::ResolveAuthorRoles),
+            ResolveAuthorRoles {
+                server_id,
+                room_id,
+                author_user_ids,
             },
         )
         .await

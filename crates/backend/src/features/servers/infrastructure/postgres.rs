@@ -36,31 +36,7 @@ impl PostgresServerStore {
 #[async_trait]
 impl ServerStore for PostgresServerStore {
     async fn insert_server(&self, owner_user_id: &Uuid, name: String) -> anyhow::Result<Server> {
-        let now = Utc::now();
-        let transaction = self.database.begin().await?;
-        let model = servers::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            owner_user_id: Set(*owner_user_id),
-            name: Set(name),
-            avatar_image_id: Set(None),
-            audio_bitrate_bps: Set(cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS as i32),
-            created_at: Set(now),
-            updated_at: Set(now),
-        }
-        .insert(&transaction)
-        .await?;
-
-        crate::features::auth::infrastructure::system_account::insert(
-            &transaction,
-            model.id,
-            model.name.clone(),
-            model.avatar_image_id,
-            now,
-        )
-        .await?;
-        transaction.commit().await?;
-
-        Ok(model.into())
+        super::postgres_system_accounts::insert_server(&self.database, owner_user_id, name).await
     }
 
     async fn count_servers(&self) -> anyhow::Result<u64> {
@@ -465,6 +441,15 @@ impl ServerStore for PostgresServerStore {
         server_id: &Uuid,
     ) -> anyhow::Result<Vec<(Uuid, Uuid)>> {
         postgres_roles::list_server_member_roles(&self.database, server_id).await
+    }
+
+    async fn active_member_role_ids_for_users(
+        &self,
+        server_id: &Uuid,
+        user_ids: &[Uuid],
+    ) -> anyhow::Result<std::collections::HashMap<Uuid, Vec<Uuid>>> {
+        super::postgres_roles::active_member_role_ids_for_users(&self.database, server_id, user_ids)
+            .await
     }
 
     async fn assign_server_member_role(

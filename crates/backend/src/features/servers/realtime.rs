@@ -1,9 +1,10 @@
 //! Realtime-адаптер управления серверами.
 
 use cheenhub_contracts::realtime::{
-    AssignServerMemberRole, KickServerInviteMember, KickServerMember, ListServerInvites,
-    ListServerMembers, ListServerRoles, RealtimeEnvelope, RealtimeKind, RealtimeModule,
-    RejectionCode, RevokeServerInvite, RevokeServerMemberRole, SaveServerRoles, ServerKind,
+    AssignServerMemberRole, AuthorRolesChanged, KickServerInviteMember, KickServerMember,
+    ListServerInvites, ListServerMembers, ListServerRoles, RealtimeEnvelope, RealtimeKind,
+    RealtimeModule, RejectionCode, RevokeServerInvite, RevokeServerMemberRole, SaveServerRoles,
+    ServerKind, ServerRoleEntry, TextChatKind,
 };
 use uuid::Uuid;
 
@@ -43,6 +44,34 @@ pub(crate) async fn server_recipients(
     }
 
     recipients
+}
+
+/// Оповещает активные подключения сервера, не отправляя карту назначений всех участников.
+pub(crate) async fn fanout_author_roles_changed(
+    state: &AppState,
+    server_id: &Uuid,
+    user_id: Option<Uuid>,
+    roles: Option<Vec<ServerRoleEntry>>,
+) {
+    let recipients = server_recipients(state, RealtimeModule::TextChat, server_id).await;
+    let stream_ids = recipients
+        .iter()
+        .map(|recipient| recipient.stream_id)
+        .collect::<Vec<_>>();
+    state
+        .realtime_hub
+        .fanout_to_streams(
+            RealtimeModule::TextChat,
+            server_id,
+            RealtimeKind::TextChat(TextChatKind::AuthorRolesChanged),
+            &stream_ids,
+            AuthorRolesChanged {
+                server_id: server_id.to_string(),
+                user_id: user_id.map(|id| id.to_string()),
+                roles,
+            },
+        )
+        .await;
 }
 
 /// Обрабатывает один конверт модуля управления серверами.
@@ -109,6 +138,8 @@ pub(crate) async fn handle(
             let payload: KickServerInviteMember = decode_payload(&envelope)?;
             match application::kick_server_invite_member(state, user_id, payload).await {
                 Ok(response) => {
+                    let server_id = Uuid::parse_str(&response.server_id)?;
+                    let member_id = Uuid::parse_str(&response.user_id)?;
                     write_envelope(
                         send,
                         RealtimeModule::Server,
@@ -116,7 +147,9 @@ pub(crate) async fn handle(
                         Some(request_id),
                         response,
                     )
-                    .await
+                    .await?;
+                    fanout_author_roles_changed(state, &server_id, Some(member_id), None).await;
+                    Ok(())
                 }
                 Err(error) => reject_server_error(send, Some(request_id), error).await,
             }
@@ -126,6 +159,8 @@ pub(crate) async fn handle(
             let payload: KickServerMember = decode_payload(&envelope)?;
             match application::kick_server_member(state, user_id, payload).await {
                 Ok(response) => {
+                    let server_id = Uuid::parse_str(&response.server_id)?;
+                    let member_id = Uuid::parse_str(&response.user_id)?;
                     write_envelope(
                         send,
                         RealtimeModule::Server,
@@ -133,7 +168,9 @@ pub(crate) async fn handle(
                         Some(request_id),
                         response,
                     )
-                    .await
+                    .await?;
+                    fanout_author_roles_changed(state, &server_id, Some(member_id), None).await;
+                    Ok(())
                 }
                 Err(error) => reject_server_error(send, Some(request_id), error).await,
             }
@@ -160,6 +197,8 @@ pub(crate) async fn handle(
             let payload: SaveServerRoles = decode_payload(&envelope)?;
             match application::save_server_roles(state, user_id, payload).await {
                 Ok(response) => {
+                    let server_id = Uuid::parse_str(&response.server_id)?;
+                    let roles = response.roles.clone();
                     write_envelope(
                         send,
                         RealtimeModule::Server,
@@ -167,7 +206,9 @@ pub(crate) async fn handle(
                         Some(request_id),
                         response,
                     )
-                    .await
+                    .await?;
+                    fanout_author_roles_changed(state, &server_id, None, Some(roles)).await;
+                    Ok(())
                 }
                 Err(error) => reject_server_error(send, Some(request_id), error).await,
             }
@@ -177,6 +218,8 @@ pub(crate) async fn handle(
             let payload: AssignServerMemberRole = decode_payload(&envelope)?;
             match application::assign_server_member_role(state, user_id, payload).await {
                 Ok(response) => {
+                    let server_id = Uuid::parse_str(&response.server_id)?;
+                    let member_id = Uuid::parse_str(&response.user_id)?;
                     write_envelope(
                         send,
                         RealtimeModule::Server,
@@ -184,7 +227,9 @@ pub(crate) async fn handle(
                         Some(request_id),
                         response,
                     )
-                    .await
+                    .await?;
+                    fanout_author_roles_changed(state, &server_id, Some(member_id), None).await;
+                    Ok(())
                 }
                 Err(error) => reject_server_error(send, Some(request_id), error).await,
             }
@@ -194,6 +239,8 @@ pub(crate) async fn handle(
             let payload: RevokeServerMemberRole = decode_payload(&envelope)?;
             match application::revoke_server_member_role(state, user_id, payload).await {
                 Ok(response) => {
+                    let server_id = Uuid::parse_str(&response.server_id)?;
+                    let member_id = Uuid::parse_str(&response.user_id)?;
                     write_envelope(
                         send,
                         RealtimeModule::Server,
@@ -201,7 +248,9 @@ pub(crate) async fn handle(
                         Some(request_id),
                         response,
                     )
-                    .await
+                    .await?;
+                    fanout_author_roles_changed(state, &server_id, Some(member_id), None).await;
+                    Ok(())
                 }
                 Err(error) => reject_server_error(send, Some(request_id), error).await,
             }

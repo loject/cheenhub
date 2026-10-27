@@ -15,10 +15,10 @@ pub use control::{
 pub use envelope::{RealtimeEnvelope, RealtimeKind, RealtimeModule};
 pub use network::{NetworkKind, Ping, Pong};
 pub use server::{
-    AssignServerMemberRole, KickServerInviteMember, KickServerMember, ListServerInvites,
-    ListServerMembers, ListServerRoles, RevokeServerInvite, RevokeServerMemberRole,
-    SaveServerRoles, ServerInviteJoinedMember, ServerInviteLink, ServerInviteList,
-    ServerInviteMemberKicked, ServerInviteRevoked, ServerKind, ServerMemberEntry,
+    AssignServerMemberRole, AuthorRolesChanged, KickServerInviteMember, KickServerMember,
+    ListServerInvites, ListServerMembers, ListServerRoles, RevokeServerInvite,
+    RevokeServerMemberRole, SaveServerRoles, ServerInviteJoinedMember, ServerInviteLink,
+    ServerInviteList, ServerInviteMemberKicked, ServerInviteRevoked, ServerKind, ServerMemberEntry,
     ServerMemberKicked, ServerMemberList, ServerMemberRoleAssigned, ServerMemberRoleRevoked,
     ServerRoleDraft, ServerRoleEntry, ServerRoleKind, ServerRoleList, ServerRolePermission,
     ServerRoleSummary, ServerRolesSaved,
@@ -35,12 +35,12 @@ pub use social::{
     UploadDirectMessageImageAccepted,
 };
 pub use text_chat::{
-    ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage, DeleteMessageAccepted,
-    EditMessage, EditMessageAccepted, ListPinnedMessages, LoadChatImage, LoadRoomHistory,
-    MessageDeletedPayload, PinMessage, PinMessageAccepted, PinnedMessages, PinnedTextMessage,
-    RoomHistory, SendMessage, SendMessageAccepted, StartTyping, StopTyping,
-    TextChatImageAttachment, TextChatKind, TextChatMessage, TypingChanged, TypingSnapshot,
-    TypingSnapshotRequest, UnpinMessage, UnpinMessageAccepted, UploadChatImage,
+    AuthorRolesResolved, ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage,
+    DeleteMessageAccepted, EditMessage, EditMessageAccepted, ListPinnedMessages, LoadChatImage,
+    LoadRoomHistory, MessageDeletedPayload, PinMessage, PinMessageAccepted, PinnedMessages,
+    PinnedTextMessage, ResolveAuthorRoles, RoomHistory, SendMessage, SendMessageAccepted,
+    StartTyping, StopTyping, TextChatImageAttachment, TextChatKind, TextChatMessage, TypingChanged,
+    TypingSnapshot, TypingSnapshotRequest, UnpinMessage, UnpinMessageAccepted, UploadChatImage,
 };
 pub use typing::TypingAuthor;
 pub use voice_chat::{

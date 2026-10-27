@@ -2,8 +2,7 @@
 
 use cheenhub_contracts::realtime::{
     DeleteMessage, DeleteMessageAccepted, LoadRoomHistory, MessageDeletedPayload, RealtimeKind,
-    RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted, TextChatImageAttachment,
-    TextChatKind, TextChatMessage,
+    RealtimeModule, RoomHistory, SendMessage, SendMessageAccepted, TextChatKind, TextChatMessage,
 };
 use cheenhub_contracts::rest::AuthUser;
 use cheenhub_contracts::rest::ServerRoomKind;
@@ -18,11 +17,16 @@ use crate::features::text_chat::validation;
 use crate::state::AppState;
 
 mod attachments;
+mod author_roles;
 mod edits;
 mod history_authors;
+mod message_summary;
 mod pins;
 
+use message_summary::message_summary;
+
 pub(crate) use attachments::{chat_image, upload_chat_image};
+pub(crate) use author_roles::resolve_author_roles;
 pub(crate) use edits::edit_message;
 pub(crate) use pins::{list_pinned_messages, pin_message, unpin_message};
 
@@ -83,6 +87,23 @@ pub(crate) async fn load_room_history(
     }
 
     let deleted_authors = history_authors::deleted_authors(state, &page.messages).await?;
+    let author_ids = page
+        .messages
+        .iter()
+        .filter(|message| !deleted_authors[&message.author_user_id])
+        .map(|message| message.author_user_id)
+        .collect::<Vec<_>>();
+    let author_role_ids = if author_ids.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        let server = state
+            .server_store
+            .find_server(&server_id)
+            .await
+            .map_err(TextChatApplicationError::Internal)?
+            .ok_or_else(|| TextChatApplicationError::NotFound("Сервер не найден.".to_owned()))?;
+        author_roles::author_role_ids(state, &server, &author_ids).await?
+    };
 
     Ok(RoomHistory {
         server_id: server_id.to_string(),
@@ -101,6 +122,7 @@ pub(crate) async fn load_room_history(
             })
             .collect(),
         has_more: page.has_more,
+        author_role_ids,
     })
 }
 
@@ -455,32 +477,6 @@ async fn load_message_attachments(
     }
 
     Ok(attachments)
-}
-
-fn message_summary(message: &TextMessage, author_avatar_url: Option<String>) -> TextChatMessage {
-    TextChatMessage {
-        id: message.id.to_string(),
-        server_id: message.server_id.to_string(),
-        room_id: message.room_id.to_string(),
-        author_user_id: message.author_user_id.to_string(),
-        author_nickname: message.author_nickname.clone(),
-        author_avatar_url,
-        body: message.body.clone(),
-        attachments: message
-            .attachments
-            .iter()
-            .map(|attachment| TextChatImageAttachment {
-                id: attachment.id.to_string(),
-                content_type: attachment.content_type.clone(),
-                byte_size: attachment.byte_size,
-                width: attachment.width,
-                height: attachment.height,
-            })
-            .collect(),
-        delivery_status: None,
-        created_at: message.created_at.to_rfc3339(),
-        edited_at: message.edited_at.as_ref().map(|value| value.to_rfc3339()),
-    }
 }
 
 #[cfg(test)]

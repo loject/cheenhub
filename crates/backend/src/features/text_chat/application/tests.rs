@@ -15,6 +15,7 @@ use crate::realtime::hub::RealtimeHub;
 use crate::state::AppState;
 
 mod attachments;
+mod author_roles;
 mod deletion;
 mod edits;
 mod history;
