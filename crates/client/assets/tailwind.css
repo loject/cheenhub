@@ -1996,6 +1996,10 @@ html,
   top: 100%;
 }
 
+.right-1 {
+  right: 0.25rem;
+}
+
 .z-0 {
   z-index: 0;
 }
@@ -5487,6 +5491,11 @@ html,
 .text-zinc-950 {
   --tw-text-opacity: 1;
   color: rgb(9 9 11 / var(--tw-text-opacity, 1));
+}
+
+.text-sky-950 {
+  --tw-text-opacity: 1;
+  color: rgb(8 47 73 / var(--tw-text-opacity, 1));
 }
 
 .underline {
