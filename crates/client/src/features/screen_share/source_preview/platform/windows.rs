@@ -198,7 +198,7 @@ fn enumerate_monitors() -> Result<Vec<Monitor>, PreviewLoadError> {
         )
         .as_bool()
         {
-            return Err(platform_error(windows::core::Error::from_win32()));
+            return Err(platform_error(windows::core::Error::from_thread()));
         }
     }
     Ok(monitors)

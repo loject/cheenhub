@@ -40,7 +40,7 @@ pub(super) fn find_monitor(source_id: &str) -> Result<HMONITOR, String> {
     if !success {
         return Err(format!(
             "не удалось перечислить мониторы Windows: {}",
-            windows::core::Error::from_win32()
+            windows::core::Error::from_thread()
         ));
     }
     search

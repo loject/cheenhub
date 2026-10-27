@@ -363,11 +363,7 @@ jobs:
       - name: Install Dioxus CLI
         shell: bash
         run: |
-          if command -v dx >/dev/null 2>&1 && dx --version | grep -F "dioxus ${DIOXUS_CLI_VERSION}" >/dev/null; then
-            dx --version
-          else
-            cargo install dioxus-cli --version "${DIOXUS_CLI_VERSION}" --locked
-          fi
+          cargo run --quiet -p xtask -- ensure-cargo-cli dioxus-cli dx "${DIOXUS_CLI_VERSION}"
 
       - name: Validate release version
         shell: bash
@@ -460,11 +456,7 @@ jobs:
       - name: Install Dioxus CLI
         shell: bash
         run: |
-          if command -v dx >/dev/null 2>&1 && dx --version | grep -F "dioxus ${DIOXUS_CLI_VERSION}" >/dev/null; then
-            dx --version
-          else
-            cargo install dioxus-cli --version "${DIOXUS_CLI_VERSION}" --locked
-          fi
+          cargo run --quiet -p xtask -- ensure-cargo-cli dioxus-cli dx "${DIOXUS_CLI_VERSION}"
 
       - name: Configure Android release signing
         env:

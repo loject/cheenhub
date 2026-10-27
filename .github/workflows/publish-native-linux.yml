@@ -61,7 +61,7 @@ jobs:
         run: |
           cargo install --locked cargo-make --version 0.37.24
           cargo install --locked wasm-bindgen-cli --version 0.2.129
-          cargo install --locked dioxus-cli --version 0.8.0-alpha.3
+          cargo run --quiet -p xtask -- ensure-cargo-cli dioxus-cli dx 0.8.0-alpha.3
 
       - name: Resolve application version
         id: version
