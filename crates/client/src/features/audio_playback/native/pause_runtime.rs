@@ -61,7 +61,9 @@ impl AudioPlaybackHandle {
         };
         let gain = inner
             .user_volumes
-            .get(sender_user_id)
+            .get(crate::features::audio_playback::tracks::playback_owner(
+                sender_user_id,
+            ))
             .copied()
             .unwrap_or(1.0);
         debug!(%sender_user_id, tail_samples = tail.len(), pause_wait_us, queued_samples,

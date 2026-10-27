@@ -109,6 +109,7 @@ fn run_encoder_worker(
     let ptt = config.activation_mode == super::super::backend::MicrophoneActivationMode::PushToTalk;
     let mut pending_epoch = None;
     let mut encoder = create_encoder(&config)?;
+    let track_id = uuid::Uuid::new_v4();
     let mut detector = VoiceActivityDetector::new(config.clone());
     let mut denoiser = super::super::denoise::Processor::new();
     let mut denoiser_enabled_last_frame = false;
@@ -225,6 +226,7 @@ fn run_encoder_worker(
                 f32::from_bits(input_gain_bits.load(Ordering::Relaxed)),
                 monitor.as_ref().zip(pending_epoch),
                 PcmFrame {
+                    track_id,
                     samples: frame,
                     speech_probability,
                     sequence,
@@ -295,6 +297,7 @@ fn create_encoder(config: &MicrophoneConfig) -> Result<Encoder, MicrophoneError>
 }
 
 struct PcmFrame {
+    track_id: uuid::Uuid,
     samples: Vec<f32>,
     speech_probability: Option<f32>,
     sequence: u64,
@@ -315,6 +318,7 @@ fn handle_pcm_frame(
     pcm: PcmFrame,
 ) -> Result<(), MicrophoneError> {
     let PcmFrame {
+        track_id,
         samples: mut frame,
         speech_probability,
         sequence,
@@ -374,6 +378,7 @@ fn handle_pcm_frame(
     send_event(
         event_sender,
         NativeMicrophoneEvent::Frame(EncodedMicrophoneFrame {
+            track_id,
             permission: Some(permission),
             sequence,
             timestamp_us,

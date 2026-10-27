@@ -34,6 +34,7 @@ fn pending_voice_frame_resets_drop_summary_after_take() {
 
 fn frame(sequence: u64) -> EncodedMicrophoneFrame {
     EncodedMicrophoneFrame {
+        track_id: uuid::Uuid::new_v4(),
         permission: None,
         sequence,
         timestamp_us: sequence * 10_000,

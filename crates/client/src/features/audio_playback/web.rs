@@ -23,7 +23,7 @@ mod web_voice_playback;
 use self::browser_diagnostics::{
     AudioPlaybackDiagnostics, DecodeInputTiming, diagnostics_enabled, elapsed_us_since,
 };
-use self::browser_helpers::{apply_output_device_to_context, js_error_message, stop_audio_source};
+use self::browser_helpers::{apply_output_device_to_context, js_error_message};
 use self::jitter_buffer::JitterBuffer;
 use self::playback_pipeline::{SenderPlayback, create_sender_playback, encoded_audio_chunk};
 use self::playback_schedule::ScheduledAudioSource;
@@ -55,6 +55,7 @@ pub(crate) struct AudioPlaybackHandle {
 }
 
 pub(super) struct AudioPlaybackInner {
+    tracks: super::tracks::PlaybackTracks,
     pub(in crate::features::audio_playback::web) context: Option<AudioContext>,
     pub(in crate::features::audio_playback::web) muted: bool,
     pub(in crate::features::audio_playback::web) senders: HashMap<String, SenderPlayback>,
@@ -108,8 +109,10 @@ impl AudioPlaybackHandle {
         let mut inner = self.inner.borrow_mut();
         inner.user_volumes.insert(sender_user_id.to_owned(), gain);
         let effective_gain = gain * inner.output_gain;
-        if let Some(sender) = inner.senders.get(sender_user_id) {
-            sender.gain_node.gain().set_value(effective_gain as f32);
+        for (key, sender) in &inner.senders {
+            if super::tracks::playback_owner(key) == sender_user_id {
+                sender.gain_node.gain().set_value(effective_gain as f32);
+            }
         }
     }
 
@@ -138,7 +141,7 @@ impl AudioPlaybackHandle {
         for (sender_user_id, sender) in &inner.senders {
             let sender_gain = inner
                 .user_volumes
-                .get(sender_user_id)
+                .get(super::tracks::playback_owner(sender_user_id))
                 .copied()
                 .unwrap_or(1.0);
             sender
@@ -208,48 +211,6 @@ impl AudioPlaybackHandle {
         (self.selected_output_device_id)()
     }
 
-    /// Stops playback state for one sender.
-    pub(crate) fn stop_sender(&self, sender_user_id: &str) {
-        let (sender, sources) = {
-            let mut inner = self.inner.borrow_mut();
-            let sender = inner.senders.remove(sender_user_id);
-            if let Some(sender) = &sender {
-                sender.pause.cancel();
-            }
-            inner.jitter_buffers.remove(sender_user_id);
-            inner.jitter_warning_at_ms.remove(sender_user_id);
-            inner.decoder_queue_warning_at_ms.remove(sender_user_id);
-            inner.playback_schedule_warning_at.remove(sender_user_id);
-            inner.diagnostics.remove_sender(sender_user_id);
-            let sources = inner
-                .scheduled_sources
-                .remove(sender_user_id)
-                .unwrap_or_default();
-            inner.scheduled_until.remove(sender_user_id);
-            (sender, sources)
-        };
-
-        for scheduled in sources {
-            if let Err(error) = stop_audio_source(&scheduled.source) {
-                warn!(
-                    error = %js_error_message(error),
-                    %sender_user_id,
-                    "failed to stop scheduled audio source"
-                );
-            }
-        }
-
-        if let Some(sender) = sender
-            && let Err(error) = sender.decoder.close()
-        {
-            warn!(
-                error = %js_error_message(error),
-                %sender_user_id,
-                "failed to close audio decoder"
-            );
-        }
-    }
-
     /// Stops all active playback state.
     pub(crate) fn stop_all(&self) {
         self.stop_connection_signal_loop();
@@ -279,7 +240,7 @@ impl AudioPlaybackHandle {
     pub(super) fn decode_voice_frame(&self, frame: VoiceFrame) -> Result<(), JsValue> {
         let should_record_diagnostics = diagnostics_enabled();
         let started_at = should_record_diagnostics.then(Instant::now);
-        let sender_user_id = frame.sender_user_id.clone();
+        let sender_user_id = frame.playback_key();
         let sequence = frame.sequence;
         let timestamp_us = frame.timestamp_us;
         let payload_bytes = frame.bytes.len();
@@ -298,7 +259,7 @@ impl AudioPlaybackHandle {
             if !inner.senders.contains_key(&sender_user_id) {
                 let initial_gain = inner
                     .user_volumes
-                    .get(&sender_user_id)
+                    .get(&frame.sender_user_id)
                     .copied()
                     .unwrap_or(1.0)
                     * inner.output_gain;
@@ -307,6 +268,7 @@ impl AudioPlaybackHandle {
                     context.clone(),
                     self.inner.clone(),
                     initial_gain,
+                    frame.audio_channels,
                 )?;
                 inner.senders.insert(sender_user_id.clone(), sender);
             }
@@ -423,6 +385,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
         output_volume_percent,
         jitter_buffer_us,
         inner: Rc::new(RefCell::new(AudioPlaybackInner {
+            tracks: super::tracks::PlaybackTracks::default(),
             context: None,
             muted: false,
             senders: HashMap::new(),

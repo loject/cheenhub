@@ -27,7 +27,14 @@ impl AudioPlaybackHandle {
             return;
         }
 
-        let sender_user_id = frame.sender_user_id.clone();
+        let Some(admission) = self.inner.borrow_mut().tracks.admit(&frame) else {
+            return;
+        };
+        if let Some(previous) = admission.replaced {
+            self.stop_playback_key(&previous);
+            debug!(track_id = %frame.track_id, source = ?frame.audio_source, "replaced inbound audio track");
+        }
+        let sender_user_id = admission.key;
         let sequence = frame.sequence;
         let duration_us = frame.duration_us;
         let outcome = {

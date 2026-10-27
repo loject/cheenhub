@@ -14,6 +14,7 @@ use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
 /// Целевая комната локального video capture.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct LocalVideoTarget {
+    audio_track_id: Option<uuid::Uuid>,
     server_id: String,
     room_id: String,
     stream_was_live: bool,
@@ -69,6 +70,7 @@ pub(super) fn reconcile_screen_share_target(
     target_room_signal: &mut Signal<Option<LocalVideoTarget>>,
     active_target: &VoiceRoomTarget,
 ) {
+    let audio_track_id = screen_share.audio_track_id();
     let status = match screen_share.status() {
         ScreenShareStatus::Live => LocalCaptureStatus::Live,
         ScreenShareStatus::Starting => LocalCaptureStatus::Starting,
@@ -85,6 +87,14 @@ pub(super) fn reconcile_screen_share_target(
         "stopping screen sharing capture after active voice room changed",
         move || screen_share.stop(),
     );
+    if let Some(track_id) = audio_track_id
+        && let Some(mut target) = target_room_signal()
+        && target.matches(active_target)
+        && target.audio_track_id != Some(track_id)
+    {
+        target.audio_track_id = Some(track_id);
+        target_room_signal.set(Some(target));
+    }
 }
 
 /// Освобождает локальный видеопоток и сообщает об остановке другим участникам.
@@ -115,6 +125,7 @@ pub(super) fn release_local_video_target(
                     &runtime.realtime,
                     &target.server_id,
                     &target.room_id,
+                    target.audio_track_id,
                 )
                 .await
             }
@@ -199,6 +210,7 @@ fn reconcile_local_video_target(
 impl LocalVideoTarget {
     fn from_voice_target(target: &VoiceRoomTarget, stream_was_live: bool) -> Self {
         Self {
+            audio_track_id: None,
             server_id: target.server_id.clone(),
             room_id: target.room_id.clone(),
             stream_was_live,

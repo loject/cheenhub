@@ -58,7 +58,14 @@ impl AudioPlaybackHandle {
             return;
         }
 
-        let sender_user_id = frame.sender_user_id.clone();
+        let Some(admission) = self.inner.borrow_mut().tracks.admit(&frame) else {
+            return;
+        };
+        if let Some(previous) = admission.replaced {
+            self.stop_playback_key(&previous);
+            debug!(track_id = %frame.track_id, source = ?frame.audio_source, "replaced inbound audio track");
+        }
+        let sender_user_id = admission.key;
         let sequence = frame.sequence;
         let duration_us = frame.duration_us;
         let outcome = {
@@ -241,7 +248,7 @@ impl AudioPlaybackHandle {
     }
 
     fn decode_voice_frame(&self, frame: VoiceFrame) -> Result<(), String> {
-        let sender_user_id = frame.sender_user_id;
+        let sender_user_id = frame.playback_key();
         let sequence = frame.sequence;
         let duration_us = frame.duration_us;
         let (mixer, compression_rate, backlog_samples) = {
@@ -257,7 +264,7 @@ impl AudioPlaybackHandle {
             decoded.truncate(samples);
             let gain = inner
                 .user_volumes
-                .get(&sender_user_id)
+                .get(&frame.sender_user_id)
                 .copied()
                 .unwrap_or(1.0);
             let mixer = inner

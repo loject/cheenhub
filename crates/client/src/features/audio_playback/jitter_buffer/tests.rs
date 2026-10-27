@@ -115,6 +115,9 @@ fn preserves_half_millisecond_target_delay() {
 
 fn frame(sequence: u64) -> VoiceFrame {
     VoiceFrame {
+        track_id: uuid::Uuid::nil(),
+        audio_source: cheenhub_contracts::media::MediaAudioSource::Microphone,
+        audio_channels: 1,
         sender_user_id: "sender".to_owned(),
         sequence,
         timestamp_us: sequence.saturating_mul(10_000),

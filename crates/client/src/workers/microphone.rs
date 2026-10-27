@@ -14,7 +14,7 @@ use crate::microphone_core::{
     duration_us, rms_level,
 };
 
-const MICROPHONE_WORKER_ABI_VERSION: u32 = 8;
+const MICROPHONE_WORKER_ABI_VERSION: u32 = 9;
 
 /// Возвращает версию ABI worker микрофона.
 #[wasm_bindgen]
@@ -61,6 +61,7 @@ pub struct MicrophoneWorkerProcessor {
     sample_rate_hz: u32,
     input_gain: f32,
     room_id: Uuid,
+    track_id: Uuid,
     sequence: u64,
 }
 
@@ -135,6 +136,7 @@ impl MicrophoneWorkerProcessor {
             sample_rate_hz,
             input_gain,
             room_id,
+            track_id: Uuid::new_v4(),
             sequence: 0,
         })
     }
@@ -216,6 +218,9 @@ impl MicrophoneWorkerProcessor {
         duration_us: f64,
     ) -> Result<Uint8Array, JsValue> {
         let datagram = MediaDatagram {
+            track_id: self.track_id,
+            audio_source: Some(cheenhub_contracts::media::MediaAudioSource::Microphone),
+            audio_channels: 1,
             kind: MediaDatagramKind::VoiceFrame,
             codec: MediaCodec::Opus,
             flags: 0,

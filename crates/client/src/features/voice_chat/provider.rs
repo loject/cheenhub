@@ -8,9 +8,7 @@ use dioxus::prelude::*;
 use futures_util::StreamExt;
 
 use crate::features::app::current_user::CurrentUserContext;
-use crate::features::audio_playback::{
-    AudioPlaybackHandle, NotificationSound, PlaybackCodec, VoiceFrame,
-};
+use crate::features::audio_playback::{AudioPlaybackHandle, NotificationSound};
 use crate::features::camera::{CameraHandle, CameraStatus};
 use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::network::NetworkQualityHandle;
@@ -94,6 +92,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         microphone: microphone.clone(),
         current_user: current_user.clone(),
     });
+    super::screen_audio::use_screen_audio(screen_share.clone(), realtime.clone(), handle.clone());
     let context_handle = handle.clone();
     use_context_provider(move || context_handle.clone());
     super::microphone_state::use_microphone_state_publication(
@@ -171,38 +170,13 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             }
         })
     });
-    let datagram_realtime = realtime.clone();
-    let datagram_playback = playback.clone();
-    let datagram_current_user_id = current_user.id.clone();
-    let datagram_handle = handle.clone();
-    use_hook(move || {
-        spawn(async move {
-            let mut frames = realtime::subscribe_voice_frames(&datagram_realtime);
-            while let Some(frame) = frames.next().await {
-                if !voice_audio_focused() {
-                    continue;
-                }
-                let current = state();
-                let Some(target) = current.active_target() else {
-                    continue;
-                };
-                if frame.room_id != target.room_id
-                    || frame.sender_user_id == datagram_current_user_id
-                {
-                    continue;
-                }
-                datagram_handle.mark_user_speaking(frame.sender_user_id.clone());
-                datagram_playback.play_voice_frame(VoiceFrame {
-                    sender_user_id: frame.sender_user_id,
-                    sequence: frame.sequence,
-                    timestamp_us: frame.timestamp_us,
-                    duration_us: frame.duration_us,
-                    codec: PlaybackCodec::Opus,
-                    bytes: frame.bytes,
-                });
-            }
-        })
-    });
+    super::inbound_audio::use_inbound_audio(
+        realtime.clone(),
+        playback.clone(),
+        current_user.id.clone(),
+        handle.clone(),
+        voice_audio_focused,
+    );
     let screen_datagram_realtime = realtime.clone();
     let screen_datagram_current_user_id = current_user.id.clone();
     let screen_datagram_video = participant_video.clone();
@@ -247,6 +221,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let video_ended_realtime = realtime.clone();
     let video_ended_current_user_id = current_user.id.clone();
     let video_ended_participant_video = participant_video.clone();
+    let video_ended_playback = playback.clone();
     use_hook(move || {
         spawn(async move {
             let mut events = realtime::subscribe_video_stream_ended(&video_ended_realtime);
@@ -265,6 +240,9 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                     participant_source_from_contract(event.source),
                     &event.sender_user_id,
                 );
+                if let Some(track_id) = event.audio_track_id {
+                    video_ended_playback.stop_system_audio(&event.sender_user_id, track_id);
+                }
             }
         })
     });

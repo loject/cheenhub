@@ -1,6 +1,11 @@
 //! Voice chat realtime helpers.
 
+mod screen_audio;
+mod video_lifecycle;
 mod voice_frames;
+pub(crate) use screen_audio::send_screen_audio_frame;
+
+pub(crate) use video_lifecycle::{send_camera_stream_stopped, send_screen_stream_stopped};
 
 /// Отправка голосового кадра с проверкой разрешения исходного capture.
 pub(crate) use voice_frames::send_voice_frame;
@@ -11,8 +16,8 @@ use cheenhub_contracts::realtime::{
     DirectMessageVoiceRoomsSnapshot, IssueMicrophoneUplinkGrant, JoinDirectMessageVoiceRoom,
     JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom, LeaveVoiceRoom,
     ListDirectMessageVoiceRooms, ListServerVoiceRooms, MicrophoneUplinkGrantIssued, RealtimeKind,
-    RealtimeModule, ServerVoiceRoomsSnapshot, StopVoiceVideoStream, VoiceChatKind,
-    VoiceRoomSnapshot, VoiceVideoStreamSource,
+    RealtimeModule, ServerVoiceRoomsSnapshot, VoiceChatKind, VoiceRoomSnapshot,
+    VoiceVideoStreamSource,
 };
 use futures_channel::mpsc;
 use futures_util::StreamExt;
@@ -25,7 +30,6 @@ use crate::features::camera::{CameraCodec, EncodedCameraFrame};
 
 use super::video_fragments::{self, OutboundVideoFrame};
 
-#[path = "realtime_decode.rs"]
 pub(super) mod realtime_decode;
 
 /// Inbound relayed voice frame.
@@ -35,6 +39,12 @@ pub(crate) struct InboundVoiceFrame {
     pub(crate) room_id: String,
     /// Authenticated sender identifier.
     pub(crate) sender_user_id: String,
+    /// UUID отдельной дорожки; nil у legacy-микрофона.
+    pub(crate) track_id: Uuid,
+    /// Назначение принятого аудио.
+    pub(crate) audio_source: cheenhub_contracts::media::MediaAudioSource,
+    /// Число каналов принятого Opus-потока.
+    pub(crate) audio_channels: u8,
     /// Sender-local packet sequence.
     pub(crate) sequence: u64,
     /// Capture or encode timestamp in microseconds.
@@ -67,6 +77,8 @@ pub(crate) struct InboundVideoFrame {
 /// Входящее событие остановки видеопотока участника.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InboundVideoStreamEnded {
+    /// UUID завершённого системного аудио, если отправитель указал конкретный захват.
+    pub(crate) audio_track_id: Option<Uuid>,
     /// Идентификатор сервера.
     pub(crate) server_id: String,
     /// Идентификатор целевой комнаты.
@@ -416,30 +428,6 @@ pub(crate) async fn send_camera_frame(
     .await
 }
 
-/// Сообщает о локальной остановке демонстрации экрана.
-pub(crate) async fn send_screen_stream_stopped(
-    realtime: &RealtimeHandle,
-    server_id: &str,
-    room_id: &str,
-) -> Result<(), RealtimeError> {
-    send_video_stream_stopped(
-        realtime,
-        server_id,
-        room_id,
-        VoiceVideoStreamSource::ScreenShare,
-    )
-    .await
-}
-
-/// Сообщает о локальной остановке камеры.
-pub(crate) async fn send_camera_stream_stopped(
-    realtime: &RealtimeHandle,
-    server_id: &str,
-    room_id: &str,
-) -> Result<(), RealtimeError> {
-    send_video_stream_stopped(realtime, server_id, room_id, VoiceVideoStreamSource::Camera).await
-}
-
 async fn send_video_frame(
     realtime: &RealtimeHandle,
     room_id: &str,
@@ -458,23 +446,4 @@ async fn send_video_frame(
     }
 
     Ok(())
-}
-
-async fn send_video_stream_stopped(
-    realtime: &RealtimeHandle,
-    server_id: &str,
-    room_id: &str,
-    source: VoiceVideoStreamSource,
-) -> Result<(), RealtimeError> {
-    realtime
-        .send_reliable(
-            RealtimeModule::VoiceChat,
-            RealtimeKind::VoiceChat(VoiceChatKind::StopVideoStream),
-            StopVoiceVideoStream {
-                server_id: server_id.to_owned(),
-                room_id: room_id.to_owned(),
-                source,
-            },
-        )
-        .await
 }

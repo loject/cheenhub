@@ -4,8 +4,36 @@ use uuid::Uuid;
 
 use super::MediaDatagramHeader;
 
+#[test]
+fn relay_preserves_track_metadata_and_opus_when_replacing_sender() {
+    let mut packet = MediaDatagram::decode(&encoded_datagram(
+        MediaDatagramKind::VoiceFrame,
+        MediaCodec::Opus,
+    ))
+    .unwrap();
+    packet.track_id = Uuid::new_v4();
+    packet.audio_source = Some(cheenhub_contracts::media::MediaAudioSource::System);
+    packet.audio_channels = 2;
+    let bytes = Bytes::from(packet.encode().unwrap());
+    let sender = Uuid::new_v4();
+
+    let header = MediaDatagramHeader::decode(&bytes).unwrap();
+    assert_eq!(
+        header.payload(&bytes).unwrap().as_ptr(),
+        bytes[82..].as_ptr()
+    );
+    let relayed = header.into_relay_bytes(bytes, sender).unwrap();
+    let decoded = MediaDatagram::decode(&relayed).unwrap();
+
+    packet.sender_user_id = sender;
+    assert_eq!(decoded, packet);
+}
+
 fn encoded_datagram(kind: MediaDatagramKind, codec: MediaCodec) -> Vec<u8> {
     MediaDatagram {
+        track_id: uuid::Uuid::nil(),
+        audio_source: None,
+        audio_channels: 0,
         kind,
         codec,
         flags: 3,
@@ -81,10 +109,10 @@ fn header_parser_rejects_truncated_and_invalid_header_values() {
     );
 
     let mut unknown_version = bytes.clone();
-    unknown_version[4] = 2;
+    unknown_version[4] = 99;
     assert_eq!(
         MediaDatagramHeader::decode(&unknown_version),
-        Err(MediaDatagramError::UnknownVersion(2))
+        Err(MediaDatagramError::UnknownVersion(99))
     );
 
     let mut unknown_kind = bytes.clone();

@@ -195,6 +195,7 @@ fn voice_video_stream_ended_envelope_round_trips() {
         RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded),
         None,
         VoiceVideoStreamEnded {
+            audio_track_id: None,
             server_id: Uuid::new_v4().to_string(),
             room_id: Uuid::new_v4().to_string(),
             user_id: Uuid::new_v4().to_string(),
@@ -214,6 +215,39 @@ fn voice_video_stream_ended_envelope_round_trips() {
         RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded)
     );
     assert!(decoded.has_matching_module_kind());
+}
+
+#[test]
+fn screen_end_preserves_audio_track_identity() {
+    let track_id = Uuid::new_v4();
+    let ended = VoiceVideoStreamEnded {
+        audio_track_id: Some(track_id),
+        server_id: Uuid::new_v4().to_string(),
+        room_id: Uuid::new_v4().to_string(),
+        user_id: Uuid::new_v4().to_string(),
+        source: VoiceVideoStreamSource::ScreenShare,
+    };
+
+    let decoded: VoiceVideoStreamEnded =
+        serde_json::from_value(serde_json::to_value(&ended).unwrap()).unwrap();
+
+    assert_eq!(decoded, ended);
+}
+
+#[test]
+fn legacy_screen_end_does_not_identify_or_stop_audio() {
+    let decoded: VoiceVideoStreamEnded = serde_json::from_value(serde_json::json!({
+        "server_id": "server", "room_id": "room", "user_id": "user", "source": "screen_share"
+    }))
+    .unwrap();
+
+    assert_eq!(decoded.audio_track_id, None);
+    assert!(
+        serde_json::to_value(decoded)
+            .unwrap()
+            .get("audio_track_id")
+            .is_none()
+    );
 }
 
 #[test]

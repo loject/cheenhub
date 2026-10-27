@@ -9,6 +9,10 @@ use futures_util::FutureExt;
 use futures_util::future::LocalBoxFuture;
 use wasm_bindgen_futures::spawn_local;
 
+mod audio;
+mod audio_bindings;
+use audio::BrowserScreenAudio;
+
 use crate::features::video_encoding::{
     BrowserVideoEncoder, BrowserVideoEncoderHandle, BrowserVideoEncodingManager, BrowserVideoFrame,
     BrowserVideoFrameReader, BrowserVideoFrameReaderHandle, EncodedVideoFrame, VideoCodec,
@@ -53,6 +57,7 @@ impl ScreenShareBackend for BrowserScreenShareBackend {
 }
 
 struct BrowserScreenShareSession {
+    audio: Option<Rc<BrowserScreenAudio>>,
     encoder: BrowserVideoEncoder,
     track: web_sys::MediaStreamTrack,
     frame_reader: BrowserVideoFrameReaderHandle,
@@ -76,6 +81,9 @@ impl Drop for PendingBrowserCapture {
 
 impl Drop for BrowserScreenShareSession {
     fn drop(&mut self) {
+        if let Some(audio) = &self.audio {
+            audio.stop();
+        }
         if self.closed.replace(true) {
             return;
         }
@@ -89,7 +97,15 @@ impl Drop for BrowserScreenShareSession {
 }
 
 impl ScreenShareSession for BrowserScreenShareSession {
+    fn take_audio_frames(
+        &self,
+    ) -> Option<futures_channel::mpsc::Receiver<super::backend::EncodedScreenAudioFrame>> {
+        self.audio.as_ref()?.take_frames()
+    }
     fn stop(&self) -> LocalBoxFuture<'static, Result<(), ScreenShareError>> {
+        if let Some(audio) = &self.audio {
+            audio.stop();
+        }
         let encoder = self.encoder.handle();
         let track = self.track.clone();
         let frame_reader = self.frame_reader.clone();
@@ -124,6 +140,8 @@ async fn start_browser_session(
         transferred: false,
     };
     let track = first_video_track(&pending_capture.stream)?;
+    let selected_audio =
+        super::browser_capture::selected_system_audio(&pending_capture.stream, &track);
     log_selected_video_track(&track);
     let frame_reader =
         match BrowserVideoFrameReader::from_stream(&track, &pending_capture.stream).await {
@@ -147,6 +165,8 @@ async fn start_browser_session(
         }
     };
     let (source_width, source_height) = first_frame.display_dimensions();
+    let capture_anchor = web_time::Instant::now();
+    let capture_timestamp_us = first_frame.timestamp_us();
     let preset = fit_capture_preset(
         source_width,
         source_height,
@@ -192,10 +212,41 @@ async fn start_browser_session(
     };
     let frame_reader_handle = frame_reader.handle();
 
+    let audio = if let Some(audio_track) = selected_audio {
+        use futures_util::future::{Either, select};
+        let capture = BrowserScreenAudio::start(
+            audio_track.clone(),
+            track.clone(),
+            callbacks.clone(),
+            capture_timestamp_us,
+            capture_anchor,
+        )
+        .boxed_local();
+        let timeout = crate::features::runtime::sleep_ms(2_000).boxed_local();
+        let result = match select(capture, timeout).await {
+            Either::Left((result, _)) => result,
+            Either::Right(_) => Err(ScreenShareError::new(
+                "Истекло время включения звука демонстрации.",
+            )),
+        };
+        match result {
+            Ok(audio) => Some(audio),
+            Err(error) => {
+                audio_track.stop();
+                warn!(%error, "screen sharing continues without system audio");
+                (callbacks.on_audio_state)(super::backend::ScreenShareAudioState::Unavailable);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let closed = Rc::new(Cell::new(false));
     pending_capture.transferred = true;
     spawn_video_reader(
         BrowserCaptureFrames {
+            audio: audio.clone(),
             reader: frame_reader,
             first_frame,
             track: track.clone(),
@@ -209,6 +260,7 @@ async fn start_browser_session(
     );
 
     Ok(Rc::new(BrowserScreenShareSession {
+        audio,
         encoder,
         track,
         frame_reader: frame_reader_handle,
@@ -255,6 +307,7 @@ fn ensure_browser_screen_share_support() -> Result<(), ScreenShareError> {
 
 /// Данные источника кадров и средства его освобождения.
 struct BrowserCaptureFrames {
+    audio: Option<Rc<BrowserScreenAudio>>,
     reader: BrowserVideoFrameReader,
     first_frame: BrowserVideoFrame,
     track: web_sys::MediaStreamTrack,
@@ -271,6 +324,7 @@ fn spawn_video_reader(
 ) {
     spawn_local(async move {
         let BrowserCaptureFrames {
+            audio,
             reader,
             first_frame,
             track,
@@ -361,6 +415,9 @@ fn spawn_video_reader(
             frame.close();
         }
 
+        if let Some(audio) = &audio {
+            audio.stop();
+        }
         finish_browser_capture(&track, &stop_handle, &encoder, &closed, &callbacks);
     });
 }

@@ -18,6 +18,9 @@ pub(crate) fn sized_key_frame(
     height: u32,
 ) -> MediaDatagram {
     MediaDatagram {
+        track_id: uuid::Uuid::nil(),
+        audio_source: None,
+        audio_channels: 0,
         kind,
         codec: MediaCodec::Vp9,
         flags: cheenhub_contracts::media::MEDIA_DATAGRAM_FLAG_KEY_FRAME,

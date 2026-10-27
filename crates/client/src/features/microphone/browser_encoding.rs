@@ -42,6 +42,7 @@ pub(super) fn create_encoder(
 ) -> Result<BrowserEncoder, MicrophoneError> {
     let sequence = Rc::new(Cell::new(0_u64));
     let output_sequence = sequence.clone();
+    let track_id = uuid::Uuid::new_v4();
     let sample_rate_hz = config.sample_rate_hz;
     let channels = config.channels;
     let output_diagnostics = Rc::new(MicrophoneEncoderOutputDiagnostics::new());
@@ -66,6 +67,7 @@ pub(super) fn create_encoder(
         output_sequence.set(sequence.saturating_add(1));
         let on_frame_started_at = diagnostics_enabled.then(Instant::now);
         on_frame(EncodedMicrophoneFrame {
+            track_id,
             permission: None,
             sequence,
             timestamp_us,

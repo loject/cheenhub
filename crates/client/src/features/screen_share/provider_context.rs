@@ -19,10 +19,12 @@ pub(crate) fn ScreenShareProvider(children: Element) -> Element {
     let status = use_signal(|| ScreenShareStatus::Idle);
     let session = use_signal(|| None::<Rc<dyn ScreenShareSession>>);
     let generation = use_signal(|| 0);
+    let audio_state = use_signal(super::backend::ScreenShareAudioState::default);
     let picker_open = use_signal(|| false);
     let toast = use_context::<ToastHandle>();
     let backend = default_backend();
     let handle = ScreenShareHandle {
+        audio_state,
         provider_scope: current_scope_id(),
         status,
         session,

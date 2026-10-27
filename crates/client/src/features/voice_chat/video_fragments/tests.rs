@@ -59,6 +59,9 @@ fn fragmented_video_datagram(fragment: FragmentFixture<'_>) -> MediaDatagram {
     payload.extend_from_slice(fragment.bytes);
 
     MediaDatagram {
+        track_id: uuid::Uuid::nil(),
+        audio_source: None,
+        audio_channels: 0,
         kind: fragment.kind,
         codec: MediaCodec::Vp9,
         flags: fragment.flags | MEDIA_DATAGRAM_FLAG_FRAGMENTED,

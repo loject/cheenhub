@@ -50,6 +50,9 @@ pub(super) fn video_frame_datagrams(
     };
     if frame.bytes.len() <= VIDEO_FRAME_FRAGMENT_BYTES {
         return Ok(vec![MediaDatagram {
+            track_id: uuid::Uuid::nil(),
+            audio_source: None,
+            audio_channels: 0,
             kind,
             codec,
             flags,
@@ -103,6 +106,9 @@ pub(super) fn video_frame_datagrams(
             payload.extend_from_slice(chunk);
 
             Ok(MediaDatagram {
+                track_id: uuid::Uuid::nil(),
+                audio_source: None,
+                audio_channels: 0,
                 kind,
                 codec,
                 flags: flags | MEDIA_DATAGRAM_FLAG_FRAGMENTED,

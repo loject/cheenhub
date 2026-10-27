@@ -12,125 +12,42 @@ use super::super::infrastructure::{MediaRouteSnapshot, VoicePresenceTargetKind};
 use super::super::media_policy::{VideoAdmission, VideoDropReason};
 use crate::state::AppState;
 
-const MEDIA_DATAGRAM_HEADER_LEN: usize = 64;
 const MEDIA_DATAGRAM_SENDER_USER_ID_START: usize = 44;
 const MEDIA_DATAGRAM_SENDER_USER_ID_END: usize = 60;
 
-/// Заголовок wire-медиадатаграммы, разобранный без копирования payload.
-///
-/// Парсер проверяет сигнатуру, версию, значения kind/codec и объявленную длину.
-/// Дополнительные trailing bytes принимаются, как и в текущем owned decoder.
+/// Заголовок общего медиаконтракта с серверной операцией замены sender ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct MediaDatagramHeader {
-    /// Вид медиадатаграммы.
-    pub(crate) kind: MediaDatagramKind,
-    /// Кодек закодированной полезной нагрузки.
-    pub(crate) codec: MediaCodec,
-    /// Флаги wire-заголовка.
-    pub(crate) flags: u8,
-    /// Локальная для отправителя последовательность пакетов.
-    pub(crate) sequence: u64,
-    /// Временная метка захвата или кодирования в микросекундах.
-    pub(crate) timestamp_us: u64,
-    /// Длительность кадра в микросекундах.
-    pub(crate) duration_us: u32,
-    /// Идентификатор целевой комнаты.
-    pub(crate) room_id: Uuid,
-    /// Sender ID, полученный из недоверенного wire-заголовка.
-    pub(crate) sender_user_id: Uuid,
-    /// Объявленная заголовком длина payload.
-    pub(crate) payload_len: usize,
-    /// Полная длина датаграммы, объявленная wire-заголовком.
-    wire_len: usize,
+pub(crate) struct MediaDatagramHeader(cheenhub_contracts::media::MediaDatagramHeader);
+
+impl std::ops::Deref for MediaDatagramHeader {
+    type Target = cheenhub_contracts::media::MediaDatagramHeader;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl MediaDatagramHeader {
-    /// Разбирает один wire-заголовок без копирования payload.
+    /// Проверяет v1/v2 общим parser без копирования payload.
     ///
     /// # Errors
-    ///
-    /// Возвращает ошибку для неверной сигнатуры, неподдерживаемой версии, kind,
-    /// codec или усечённой датаграммы.
+    /// Возвращает ошибку wire-формата или метаданных дорожки.
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, MediaDatagramError> {
-        if bytes.len() < MEDIA_DATAGRAM_HEADER_LEN {
-            return Err(MediaDatagramError::Truncated);
-        }
-        if &bytes[..4] != b"CHUB" {
-            return Err(MediaDatagramError::BadMagic);
-        }
-        if bytes[4] != 1 {
-            return Err(MediaDatagramError::UnknownVersion(bytes[4]));
-        }
-
-        let kind = match bytes[5] {
-            1 => MediaDatagramKind::VoiceFrame,
-            2 => MediaDatagramKind::ScreenFrame,
-            3 => MediaDatagramKind::CameraFrame,
-            value => return Err(MediaDatagramError::UnknownKind(value)),
-        };
-        let codec = match bytes[6] {
-            1 => MediaCodec::Opus,
-            2 => MediaCodec::Vp9,
-            value => return Err(MediaDatagramError::UnknownCodec(value)),
-        };
-
-        let payload_len = u32::from_be_bytes(copy_array(&bytes[60..64])) as usize;
-        let wire_len = MEDIA_DATAGRAM_HEADER_LEN
-            .checked_add(payload_len)
-            .ok_or(MediaDatagramError::PayloadTooLarge(payload_len))?;
-        if bytes.len() < wire_len {
-            return Err(MediaDatagramError::Truncated);
-        }
-
-        Ok(Self {
-            kind,
-            codec,
-            flags: bytes[7],
-            sequence: u64::from_be_bytes(copy_array(&bytes[8..16])),
-            timestamp_us: u64::from_be_bytes(copy_array(&bytes[16..24])),
-            duration_us: u32::from_be_bytes(copy_array(&bytes[24..28])),
-            room_id: Uuid::from_bytes(copy_array(&bytes[28..44])),
-            sender_user_id: Uuid::from_bytes(copy_array(&bytes[44..60])),
-            payload_len,
-            wire_len,
-        })
+        cheenhub_contracts::media::MediaDatagramHeader::decode(bytes).map(Self)
     }
 
-    /// Возвращает объявленный payload как slice исходного wire-буфера.
+    /// Подставляет аутентифицированного отправителя, сохраняя версию и дорожку.
     ///
     /// # Errors
-    ///
-    /// Возвращает `Truncated`, если буфер короче объявленной датаграммы.
-    pub(crate) fn payload(self, bytes: &[u8]) -> Result<&[u8], MediaDatagramError> {
-        if bytes.len() < self.wire_len {
-            return Err(MediaDatagramError::Truncated);
-        }
-        Ok(&bytes[MEDIA_DATAGRAM_HEADER_LEN..self.wire_len])
-    }
-
-    /// Возвращает длину заголовка вместе с объявленным payload.
-    pub(crate) fn wire_len(self) -> usize {
-        self.wire_len
-    }
-
-    /// Переписывает sender ID и ретранслирует исходный buffer.
-    ///
-    /// При уникальном владении используется существующая allocation; shared
-    /// buffer копируется один раз. Буфер усекается по объявленной длине, как и
-    /// прежний decode/encode relay.
-    ///
-    /// # Errors
-    ///
-    /// Возвращает `Truncated`, если buffer короче объявленной датаграммы.
+    /// Возвращает `Truncated`, если исходный буфер короче объявленной длины.
     pub(super) fn into_relay_bytes(
         self,
         bytes: Bytes,
         authenticated_user_id: Uuid,
     ) -> Result<Bytes, MediaDatagramError> {
-        if bytes.len() < self.wire_len {
+        if bytes.len() < self.wire_len() {
             return Err(MediaDatagramError::Truncated);
         }
-
         let mut bytes = match bytes.try_into_mut() {
             Ok(bytes) => bytes,
             Err(bytes) => BytesMut::from(bytes.as_ref()),
@@ -140,12 +57,6 @@ impl MediaDatagramHeader {
             .copy_from_slice(authenticated_user_id.as_bytes());
         Ok(bytes.freeze())
     }
-}
-
-fn copy_array<const N: usize>(slice: &[u8]) -> [u8; N] {
-    let mut array = [0; N];
-    array.copy_from_slice(slice);
-    array
 }
 
 /// Ретранслирует WebTransport voice и video datagrams исходным `Bytes`.
@@ -192,6 +103,8 @@ pub(crate) async fn handle_webtransport_frame_bytes(
         %user_id,
         room_id = %header.room_id,
         media_kind,
+        track_id = %header.track_id,
+        audio_source = ?header.audio_source,
         sequence = header.sequence,
         timestamp_us = header.timestamp_us,
         duration_us = header.duration_us,
@@ -214,7 +127,10 @@ pub(crate) async fn handle_webtransport_frame_bytes(
     let recipients = route.recipients;
 
     let is_presence_session = presence.session_id == session_id;
-    let is_bound_microphone_uplink = if is_presence_session || !allow_microphone_uplink {
+    let is_bound_microphone_uplink = if is_presence_session
+        || !allow_microphone_uplink
+        || header.audio_source == Some(cheenhub_contracts::media::MediaAudioSource::System)
+    {
         false
     } else {
         state

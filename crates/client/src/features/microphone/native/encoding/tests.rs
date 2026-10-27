@@ -96,6 +96,7 @@ fn queued_encoded_frame_is_rejected_after_session_stops() {
     let closed = Arc::new(AtomicBool::new(false));
     let capture_closed = closed.clone();
     let frame = EncodedMicrophoneFrame {
+        track_id: uuid::Uuid::new_v4(),
         permission: Some(super::super::super::frame_permission::FramePermission(
             Arc::new(move || !capture_closed.load(Ordering::Acquire)),
         )),

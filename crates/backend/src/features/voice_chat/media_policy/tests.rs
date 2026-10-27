@@ -145,6 +145,9 @@ fn sustained_fps_violation_blocks_until_later_key_frame() {
 
 fn video_datagram(sequence: u64, key_frame: bool, width: u32, height: u32) -> MediaDatagram {
     MediaDatagram {
+        track_id: uuid::Uuid::nil(),
+        audio_source: None,
+        audio_channels: 0,
         kind: MediaDatagramKind::CameraFrame,
         codec: MediaCodec::Vp9,
         flags: if key_frame {

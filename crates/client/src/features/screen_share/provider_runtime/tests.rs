@@ -13,11 +13,15 @@ fn runtime_error_is_not_replaced_by_following_capture_end() {
         let status = Signal::new(ScreenShareStatus::Live);
         let callbacks = super::screen_share_callbacks(
             Rc::new(|_| {}),
-            Signal::new(None),
-            status,
-            Signal::new(1),
-            1,
-            ScopeId::ROOT,
+            super::CaptureRuntime {
+                session: Signal::new(None),
+                status,
+                generation: Signal::new(1),
+                start_generation: 1,
+                provider_scope: ScopeId::ROOT,
+                audio_state: Signal::new(Default::default()),
+                on_warning: Rc::new(|_| {}),
+            },
         );
         (callbacks, status)
     });

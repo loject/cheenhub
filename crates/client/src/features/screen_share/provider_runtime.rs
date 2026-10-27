@@ -12,28 +12,38 @@ use super::backend::{
     ScreenShareSession, ScreenShareStatus,
 };
 
+/// Сигналы и владелец одной попытки запуска демонстрации.
+pub(super) struct CaptureRuntime {
+    /// Активная сессия для завершения при событии захвата.
+    pub(super) session: Signal<Option<Rc<dyn ScreenShareSession>>>,
+    /// Состояние видеодемонстрации.
+    pub(super) status: Signal<ScreenShareStatus>,
+    /// Текущее поколение владельца захвата.
+    pub(super) generation: Signal<u64>,
+    /// Поколение, которому принадлежат callback.
+    pub(super) start_generation: u64,
+    /// Scope, переживающий управляющие кнопки.
+    pub(super) provider_scope: ScopeId,
+    /// Состояние системного аудио текущего захвата.
+    pub(super) audio_state: Signal<super::backend::ScreenShareAudioState>,
+    /// Продуктовые сообщения об ограничениях или сбое звука.
+    pub(super) on_warning: Rc<dyn Fn(&str)>,
+}
+
 pub(super) fn screen_share_callbacks(
     on_frame: ScreenShareFrameCallback,
-    session: Signal<Option<Rc<dyn ScreenShareSession>>>,
-    status: Signal<ScreenShareStatus>,
-    generation: Signal<u64>,
-    start_generation: u64,
-    provider_scope: ScopeId,
+    runtime: CaptureRuntime,
 ) -> ScreenShareCallbacks {
     let (events, receiver) = mpsc::unbounded();
-    spawn_screen_share_callback_relay(
-        receiver,
-        on_frame,
-        session,
-        status,
-        generation,
-        start_generation,
-        provider_scope,
-    );
+    spawn_screen_share_callback_relay(receiver, on_frame, runtime);
 
     let ended_events = events.clone();
     let error_events = events.clone();
+    let audio_events = events.clone();
     ScreenShareCallbacks {
+        on_audio_state: Rc::new(move |state| {
+            let _ = audio_events.unbounded_send(ScreenShareCallbackEvent::Audio(state));
+        }),
         on_frame: Rc::new(move |frame| {
             let _ = events.unbounded_send(ScreenShareCallbackEvent::Frame(frame));
         }),
@@ -49,16 +59,32 @@ pub(super) fn screen_share_callbacks(
 fn spawn_screen_share_callback_relay(
     mut receiver: mpsc::UnboundedReceiver<ScreenShareCallbackEvent>,
     on_frame: ScreenShareFrameCallback,
-    mut session: Signal<Option<Rc<dyn ScreenShareSession>>>,
-    mut status: Signal<ScreenShareStatus>,
-    mut generation: Signal<u64>,
-    start_generation: u64,
-    provider_scope: ScopeId,
+    runtime: CaptureRuntime,
 ) {
+    let CaptureRuntime {
+        mut session,
+        mut status,
+        mut generation,
+        start_generation,
+        provider_scope,
+        mut audio_state,
+        on_warning,
+    } = runtime;
     Runtime::current().in_scope(provider_scope, || {
         spawn(async move {
             while let Some(event) = receiver.next().await {
                 match event {
+                    ScreenShareCallbackEvent::Audio(next) => {
+                        if generation() != start_generation { continue; }
+                        match &next {
+                            super::backend::ScreenShareAudioState::Live { own_audio_restricted: false, .. } =>
+                                on_warning("В системный звук могут попасть голоса собеседников."),
+                            super::backend::ScreenShareAudioState::Unavailable =>
+                                on_warning("Не удалось включить звук демонстрации. Экран передаётся без звука."),
+                            _ => {}
+                        }
+                        audio_state.set(next);
+                    }
                     ScreenShareCallbackEvent::Frame(frame) => {
                         if generation() == start_generation {
                             on_frame(frame);
@@ -72,6 +98,7 @@ fn spawn_screen_share_callback_relay(
                             continue;
                         }
                         let ended_generation_value = next_generation(&mut generation);
+                        audio_state.set(super::backend::ScreenShareAudioState::Off);
                         session.set(None);
                         status.set(ScreenShareStatus::Idle);
                         info!(
@@ -85,6 +112,7 @@ fn spawn_screen_share_callback_relay(
                             continue;
                         }
                         let error_generation_value = next_generation(&mut generation);
+                        audio_state.set(super::backend::ScreenShareAudioState::Off);
                         session.set(None);
                         status.set(status_from_runtime_error(error.clone()));
                         warn!(
@@ -101,6 +129,7 @@ fn spawn_screen_share_callback_relay(
 }
 
 enum ScreenShareCallbackEvent {
+    Audio(super::backend::ScreenShareAudioState),
     Frame(EncodedScreenShareFrame),
     Ended,
     Error(ScreenShareError),

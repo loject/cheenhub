@@ -79,6 +79,8 @@ async fn handle_room_media_frame(
         %user_id,
         room_id = %datagram.room_id,
         media_kind,
+        track_id = %datagram.track_id,
+        audio_source = ?datagram.audio_source,
         sequence = datagram.sequence,
         timestamp_us = datagram.timestamp_us,
         duration_us = datagram.duration_us,
@@ -100,7 +102,10 @@ async fn handle_room_media_frame(
     let presence = route.presence;
     let recipients = route.recipients;
     let is_presence_session = presence.session_id == session_id;
-    let is_bound_microphone_uplink = if is_presence_session || !allow_microphone_uplink {
+    let is_bound_microphone_uplink = if is_presence_session
+        || !allow_microphone_uplink
+        || datagram.audio_source == Some(cheenhub_contracts::media::MediaAudioSource::System)
+    {
         false
     } else {
         state

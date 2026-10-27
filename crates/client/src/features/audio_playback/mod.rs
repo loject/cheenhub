@@ -7,6 +7,7 @@ mod output_devices;
 mod playout_timing;
 mod storage;
 mod time_scale;
+mod tracks;
 #[cfg(all(
     not(target_arch = "wasm32"),
     not(any(

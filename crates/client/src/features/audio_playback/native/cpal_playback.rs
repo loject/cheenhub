@@ -39,6 +39,7 @@ pub(crate) struct AudioPlaybackHandle {
 }
 
 struct AudioPlaybackInner {
+    tracks: crate::features::audio_playback::tracks::PlaybackTracks,
     muted: bool,
     engine: Option<NativePlaybackEngine>,
     decoders: HashMap<String, Decoder>,
@@ -55,6 +56,18 @@ struct AudioPlaybackInner {
 }
 
 impl AudioPlaybackHandle {
+    /// Останавливает системное аудио участника вместе с его демонстрацией.
+    pub(crate) fn stop_system_audio(&self, sender_user_id: &str, track_id: uuid::Uuid) {
+        let key = self.inner.borrow_mut().tracks.stop_source(
+            sender_user_id,
+            cheenhub_contracts::media::MediaAudioSource::System,
+            track_id,
+        );
+        if let Some(key) = key {
+            self.stop_playback_key(&key);
+            debug!(%sender_user_id, "stopped screen sharing audio playback");
+        }
+    }
     /// Возвращает, отключено ли входящее воспроизведение.
     pub(crate) fn is_muted(&self) -> bool {
         (self.muted)()
@@ -84,13 +97,26 @@ impl AudioPlaybackHandle {
     /// Устанавливает громкость воспроизведения для каждого пользователя (0-200, где 100 = 100%).
     pub(crate) fn set_user_volume(&self, sender_user_id: &str, volume_percent: u32) {
         let gain = gain_from_percent(volume_percent);
-        let mixer = {
+        let (mixer, keys) = {
             let mut inner = self.inner.borrow_mut();
             inner.user_volumes.insert(sender_user_id.to_owned(), gain);
-            inner.engine.as_ref().map(|engine| engine.mixer.clone())
+            let keys = inner
+                .jitter_buffers
+                .keys()
+                .filter(|key| {
+                    crate::features::audio_playback::tracks::playback_owner(key) == sender_user_id
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            (
+                inner.engine.as_ref().map(|engine| engine.mixer.clone()),
+                keys,
+            )
         };
         if let Some(mixer) = mixer {
-            update_sender_gain(&mixer, sender_user_id, gain);
+            for key in keys {
+                update_sender_gain(&mixer, &key, gain);
+            }
         }
     }
 
@@ -192,6 +218,25 @@ impl AudioPlaybackHandle {
     /// Останавливает состояние воспроизведения одного отправителя.
     #[allow(dead_code)]
     pub(crate) fn stop_sender(&self, sender_user_id: &str) {
+        let keys = self
+            .inner
+            .borrow()
+            .jitter_buffers
+            .keys()
+            .filter(|key| {
+                key.as_str() == sender_user_id
+                    || crate::features::audio_playback::tracks::playback_owner(key)
+                        == sender_user_id
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        self.inner.borrow_mut().tracks.remove_sender(sender_user_id);
+        for key in keys {
+            self.stop_playback_key(&key);
+        }
+    }
+
+    fn stop_playback_key(&self, sender_user_id: &str) {
         let mixer = {
             let mut inner = self.inner.borrow_mut();
             inner.decoders.remove(sender_user_id);
@@ -214,6 +259,7 @@ impl AudioPlaybackHandle {
         let mixer = {
             let mut inner = self.inner.borrow_mut();
             inner.decoders.clear();
+            inner.tracks.clear();
             inner.time_compressors.clear();
             for pause in inner.playback_pauses.drain().map(|(_, pause)| pause) {
                 pause.cancel();
@@ -235,6 +281,7 @@ impl AudioPlaybackHandle {
         let mixer = {
             let mut inner = self.inner.borrow_mut();
             inner.decoders.clear();
+            inner.tracks.clear();
             inner.time_compressors.clear();
             for pause in inner.playback_pauses.drain().map(|(_, pause)| pause) {
                 pause.cancel();
@@ -321,6 +368,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
     let jitter_buffer_us = use_signal(move || jitter_buffer_us_value);
     let inner = use_hook(move || {
         Rc::new(RefCell::new(AudioPlaybackInner {
+            tracks: crate::features::audio_playback::tracks::PlaybackTracks::default(),
             muted: false,
             engine: None,
             decoders: HashMap::new(),

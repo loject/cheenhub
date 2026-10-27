@@ -21,6 +21,7 @@ impl ScreenShareBackend for UnavailableScreenShareBackend {
         callbacks: ScreenShareCallbacks,
     ) -> LocalBoxFuture<'static, Result<Rc<dyn ScreenShareSession>, ScreenShareError>> {
         let ScreenShareCallbacks {
+            on_audio_state: _on_audio_state,
             on_frame: _on_frame,
             on_ended: _on_ended,
             on_error: _on_error,

@@ -30,6 +30,7 @@ mod microphone;
 mod network_quality;
 mod nickname;
 mod output;
+mod video;
 
 pub(super) fn state() -> AppState {
     AppState {
@@ -364,6 +365,7 @@ async fn joined_user_can_stop_video_stream() {
         session_id,
         &user_id,
         StopVoiceVideoStream {
+            audio_track_id: None,
             server_id,
             room_id,
             source: VoiceVideoStreamSource::Camera,
@@ -402,6 +404,7 @@ async fn stop_video_stream_rejects_stale_session() {
         uuid::Uuid::new_v4(),
         &user_id,
         StopVoiceVideoStream {
+            audio_track_id: None,
             server_id,
             room_id,
             source: VoiceVideoStreamSource::ScreenShare,

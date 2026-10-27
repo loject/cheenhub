@@ -150,6 +150,8 @@ pub(crate) struct MicrophoneCallbacks {
 /// One encoded microphone frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EncodedMicrophoneFrame {
+    /// UUID текущего захвата; сохраняется при live-изменении gain, VAD и bitrate.
+    pub(crate) track_id: uuid::Uuid,
     /// Разрешение исходного capture; `None` для кадров без отзываемого gate.
     pub(crate) permission: Option<super::frame_permission::FramePermission>,
     /// Sender-local frame sequence.

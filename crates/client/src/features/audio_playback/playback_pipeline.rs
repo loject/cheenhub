@@ -59,6 +59,7 @@ pub(super) fn create_sender_playback(
     context: AudioContext,
     inner: Rc<RefCell<AudioPlaybackInner>>,
     initial_gain: f64,
+    channels: u8,
 ) -> Result<SenderPlayback, JsValue> {
     let gain_node = context.create_gain()?;
     gain_node.gain().set_value(initial_gain as f32);
@@ -127,7 +128,7 @@ pub(super) fn create_sender_playback(
     Reflect::set(&init, &JsValue::from_str("output"), output_closure.as_ref())?;
     Reflect::set(&init, &JsValue::from_str("error"), error_closure.as_ref())?;
     let decoder = AudioDecoder::new(&init.into())?;
-    decoder.configure(&decoder_config())?;
+    decoder.configure(&decoder_config(channels))?;
 
     Ok(SenderPlayback {
         decoder,
@@ -157,11 +158,15 @@ pub(super) fn encoded_audio_chunk(frame: &VoiceFrame) -> Result<EncodedAudioChun
     EncodedAudioChunk::new(&init.into())
 }
 
-fn decoder_config() -> JsValue {
+fn decoder_config(channels: u8) -> JsValue {
     let object = Object::new();
     set_property(&object, "codec", &JsValue::from_str("opus"));
     set_property(&object, "sampleRate", &JsValue::from_f64(48_000.0));
-    set_property(&object, "numberOfChannels", &JsValue::from_f64(1.0));
+    set_property(
+        &object,
+        "numberOfChannels",
+        &JsValue::from_f64(f64::from(channels)),
+    );
     object.into()
 }
 

@@ -40,6 +40,15 @@ pub(crate) async fn stop_video_stream(
         ));
     }
 
+    if request.audio_track_id.is_some_and(|id| id.is_nil())
+        || (request.audio_track_id.is_some()
+            && request.source != VoiceVideoStreamSource::ScreenShare)
+    {
+        return Err(VoiceChatApplicationError::BadRequest(
+            "Аудиодорожка не соответствует демонстрации экрана.".to_owned(),
+        ));
+    }
+
     state
         .voice_presence_store
         .remove_video_source(session_id, room_id, media_kind_for_source(request.source))
@@ -50,6 +59,7 @@ pub(crate) async fn stop_video_stream(
         %session_id,
         %user_id,
         source = ?request.source,
+        audio_track_id = ?request.audio_track_id,
         "removed stopped voice video source from host activity"
     );
 
@@ -80,6 +90,7 @@ pub(crate) async fn stop_video_stream(
             RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded),
             &stream_ids,
             VoiceVideoStreamEnded {
+                audio_track_id: request.audio_track_id,
                 server_id: server_id.to_string(),
                 room_id: room_id.to_string(),
                 user_id: user_id.to_string(),

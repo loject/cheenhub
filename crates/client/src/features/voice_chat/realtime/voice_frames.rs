@@ -29,6 +29,9 @@ pub(crate) async fn send_voice_frame(
         MicrophoneCodec::Opus => MediaCodec::Opus,
     };
     let datagram = MediaDatagram {
+        track_id: frame.track_id,
+        audio_source: Some(cheenhub_contracts::media::MediaAudioSource::Microphone),
+        audio_channels: frame.channels,
         kind: MediaDatagramKind::VoiceFrame,
         codec,
         flags: 0,

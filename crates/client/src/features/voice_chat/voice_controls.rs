@@ -52,6 +52,12 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
     let camera_live = matches!(camera_status, CameraStatus::Live);
     let camera_starting = matches!(camera_status, CameraStatus::Starting);
     let screen_share_live = matches!(screen_share_status, ScreenShareStatus::Live);
+    let screen_audio_live = screen_share.audio_track_id().is_some();
+    let screen_audio_label = if screen_audio_live {
+        "Со звуком"
+    } else {
+        "Без звука"
+    };
     let screen_share_starting = matches!(screen_share_status, ScreenShareStatus::Starting);
     let microphone_level_height =
         (microphone_level.rms / microphone_level.threshold.max(0.001)).clamp(0.08, 1.0) * 100.0;
@@ -75,6 +81,11 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
         ScreenShareStatus::Live => "Остановить демонстрацию экрана",
         ScreenShareStatus::PermissionDenied => "Доступ к экрану запрещен",
         ScreenShareStatus::Error(_) => "Демонстрация экрана недоступна",
+    };
+    let screen_share_aria_label = if screen_share_live {
+        format!("{screen_share_label}. {screen_audio_label}")
+    } else {
+        screen_share_label.to_owned()
     };
     let toggle_microphone = microphone.clone();
     let toggle_camera = camera.clone();
@@ -232,7 +243,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                     } else {
                         "voice-control-button group relative flex h-14 w-14 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-200 transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-[180ms] hover:-translate-y-0.5 hover:border-zinc-700 hover:bg-zinc-900 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
                     },
-                    "aria-label": screen_share_label,
+                    "aria-label": "{screen_share_aria_label}",
                     onclick: move |_| {
                         if !media_controls_enabled {
                             return;
@@ -258,7 +269,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                             send_frame(frame);
                         }));
                     },
-                    span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "{screen_share_label}" }
+                    span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "{screen_share_aria_label}" }
                     span { class: control_icon_class(!screen_share_live),
                         svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
                             rect { x: "3", y: "4", width: "18", height: "12", rx: "2" }
@@ -270,6 +281,20 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                             rect { x: "3", y: "4", width: "18", height: "12", rx: "2" }
                             rect { x: "9", y: "8", width: "6", height: "5", rx: "1" }
                             path { stroke_linecap: "round", d: "M8 20h8m-4-4v4" }
+                        }
+                    }
+                    if screen_share_live {
+                        span {
+                            class: if screen_audio_live { "absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-sky-300 text-sky-950 shadow-sm" } else { "absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 shadow-sm" },
+                            "aria-hidden": "true",
+                            svg { class: "h-3 w-3", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
+                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5 6 9H3v6h3l5 4V5Z" }
+                                if screen_audio_live {
+                                    path { stroke_linecap: "round", d: "M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" }
+                                } else {
+                                    path { stroke_linecap: "round", d: "m16 9 5 6m0-6-5 6" }
+                                }
+                            }
                         }
                     }
                 }

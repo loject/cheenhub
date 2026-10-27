@@ -11,6 +11,49 @@ use futures_util::future::LocalBoxFuture;
 /// Callback, вызываемый для каждого закодированного кадра экрана.
 pub(crate) type ScreenShareFrameCallback = Rc<dyn Fn(EncodedScreenShareFrame)>;
 
+/// Состояние реально захваченного звука демонстрации, независимо от микрофона.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) enum ScreenShareAudioState {
+    /// Пользователь не выбрал звук либо источник не является целым экраном.
+    #[default]
+    Off,
+    /// Браузер захватывает системный звук выбранного экрана.
+    Live {
+        /// UUID текущего захвата аудио.
+        track_id: uuid::Uuid,
+        /// Браузер подтвердил исключение звука страницы CheenHub.
+        own_audio_restricted: bool,
+    },
+    /// Захват или кодирование звука недоступны; видео может продолжать работать.
+    Unavailable,
+}
+
+/// Закодированный Opus-кадр системного звука текущей демонстрации.
+#[derive(Clone)]
+pub(crate) struct EncodedScreenAudioFrame {
+    /// UUID захвата, общий для всех его кадров.
+    pub(crate) track_id: uuid::Uuid,
+    /// Последовательность Opus-кадров этой дорожки.
+    pub(crate) sequence: u64,
+    /// Время захвата в микросекундах на шкале демонстрации.
+    pub(crate) timestamp_us: u64,
+    /// Длительность Opus-кадра в микросекундах.
+    pub(crate) duration_us: u32,
+    /// Число каналов кодировщика: один или два.
+    pub(crate) channels: u8,
+    /// Сырой Opus без дополнительной сетевой упаковки.
+    pub(crate) bytes: Vec<u8>,
+    /// Флаг закрытия исходного захвата, проверяемый перед отложенной отправкой.
+    pub(super) closed: Rc<std::cell::Cell<bool>>,
+}
+
+impl EncodedScreenAudioFrame {
+    /// Проверяет, что исходный захват ещё не остановлен.
+    pub(crate) fn can_send(&self) -> bool {
+        !self.closed.get()
+    }
+}
+
 /// Callback, вызываемый, когда источник захвата завершается вне управления приложения.
 pub(crate) type ScreenShareEndedCallback = Rc<dyn Fn()>;
 
@@ -144,6 +187,8 @@ mod tests;
 /// Callback'и демонстрации экрана, предоставленные владеющей функцией.
 #[derive(Clone)]
 pub(crate) struct ScreenShareCallbacks {
+    /// Изменение состояния системного звука, включая отсутствие аудиодорожки.
+    pub(crate) on_audio_state: Rc<dyn Fn(ScreenShareAudioState)>,
     /// Encoded frame callback.
     pub(crate) on_frame: ScreenShareFrameCallback,
     /// Capture-ended callback.
@@ -190,6 +235,15 @@ pub(crate) enum ScreenShareStatus {
 
 /// Активная сессия демонстрации экрана.
 pub(crate) trait ScreenShareSession {
+    /// Передаёт единственному отправителю ограниченную очередь системного аудио.
+    ///
+    /// `None` означает отсутствие аудио или уже полученную очередь. Нативный захват
+    /// системного звука пока не поддерживается этим контрактом по умолчанию.
+    fn take_audio_frames(
+        &self,
+    ) -> Option<futures_channel::mpsc::Receiver<EncodedScreenAudioFrame>> {
+        None
+    }
     /// Stops capture and releases backend resources.
     fn stop(&self) -> LocalBoxFuture<'static, Result<(), ScreenShareError>>;
 }

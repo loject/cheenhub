@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn stopping_capture_revokes_an_already_queued_audio_frame() {
+    let closed = Rc::new(std::cell::Cell::new(false));
+    let frame = EncodedScreenAudioFrame {
+        track_id: uuid::Uuid::new_v4(),
+        sequence: 0,
+        timestamp_us: 0,
+        duration_us: 20_000,
+        channels: 2,
+        bytes: vec![1],
+        closed: closed.clone(),
+    };
+    assert!(frame.can_send());
+
+    closed.set(true);
+
+    assert!(!frame.can_send());
+}
+
+#[test]
 fn selects_720p_for_hd_source() {
     let spec = ScreenShareConfig::default().preset_for_capture(1366, 768);
     assert_eq!((spec.width, spec.height, spec.max_fps), (1280, 720, 30));

@@ -51,6 +51,7 @@ pub(super) fn video_stream_ended(envelope: RealtimeEnvelope) -> Option<InboundVi
 
     let event = serde_json::from_value::<VoiceVideoStreamEnded>(envelope.payload).ok()?;
     Some(InboundVideoStreamEnded {
+        audio_track_id: event.audio_track_id,
         server_id: event.server_id,
         room_id: event.room_id,
         sender_user_id: event.user_id,
@@ -67,6 +68,11 @@ pub(super) fn voice_frame(bytes: &[u8]) -> Option<InboundVoiceFrame> {
     Some(InboundVoiceFrame {
         room_id: datagram.room_id.to_string(),
         sender_user_id: datagram.sender_user_id.to_string(),
+        track_id: datagram.track_id,
+        audio_source: datagram
+            .audio_source
+            .unwrap_or(cheenhub_contracts::media::MediaAudioSource::Microphone),
+        audio_channels: datagram.audio_channels.max(1),
         sequence: datagram.sequence,
         timestamp_us: datagram.timestamp_us,
         duration_us: datagram.duration_us,
@@ -105,8 +111,4 @@ pub(super) fn video_frame_from_datagram(datagram: MediaDatagram) -> InboundVideo
 }
 
 #[cfg(test)]
-// Модуль подключается через `#[path = "realtime_decode.rs"]` из `realtime.rs`, поэтому каталог
-// дочернего модуля вычисляется относительно `voice_chat/`. Без явного пути компилятор ищет
-// `voice_chat/tests.rs` вместо `voice_chat/realtime_decode/tests.rs`.
-#[path = "realtime_decode/tests.rs"]
 mod tests;

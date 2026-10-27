@@ -22,6 +22,8 @@ use super::source_preview;
 /// Контекстный хэндл, используемый функциями, которым нужен захват экрана.
 #[derive(Clone)]
 pub(crate) struct ScreenShareHandle {
+    /// Состояние реально захваченного аудио текущей демонстрации.
+    pub(super) audio_state: Signal<super::backend::ScreenShareAudioState>,
     pub(super) provider_scope: ScopeId,
     pub(super) status: Signal<ScreenShareStatus>,
     pub(super) session: Signal<Option<Rc<dyn ScreenShareSession>>>,
@@ -33,6 +35,25 @@ pub(crate) struct ScreenShareHandle {
 }
 
 impl ScreenShareHandle {
+    /// Возвращает UUID реально активного системного звука демонстрации.
+    pub(crate) fn audio_track_id(&self) -> Option<uuid::Uuid> {
+        match (self.audio_state)() {
+            super::backend::ScreenShareAudioState::Live { track_id, .. } => Some(track_id),
+            _ => None,
+        }
+    }
+
+    /// Проверяет активность UUID без подписки фонового отправителя на Dioxus signal.
+    pub(crate) fn audio_track_is_active(&self, track_id: uuid::Uuid) -> bool {
+        matches!(&*self.audio_state.peek(), super::backend::ScreenShareAudioState::Live { track_id: active, .. } if *active == track_id)
+    }
+
+    /// Забирает очередь аудио текущей сессии; чтение подписывает resource на смену сессии.
+    pub(crate) fn take_audio_frames(
+        &self,
+    ) -> Option<futures_channel::mpsc::Receiver<super::backend::EncodedScreenAudioFrame>> {
+        self.session.read().as_ref()?.take_audio_frames()
+    }
     /// Запускает демонстрацию экрана с конфигурацией по умолчанию.
     pub(crate) fn start(&self, on_frame: ScreenShareFrameCallback) {
         self.start_request(
@@ -81,6 +102,8 @@ impl ScreenShareHandle {
         let mut generation = self.generation;
         let toast = self.toast;
         let provider_scope = self.provider_scope;
+        let mut audio_state = self.audio_state;
+        audio_state.set(super::backend::ScreenShareAudioState::Off);
         let start_generation = next_generation(&mut generation);
         status.set(ScreenShareStatus::Starting);
 
@@ -89,14 +112,10 @@ impl ScreenShareHandle {
         Runtime::current().in_scope(provider_scope, || {
             spawn(async move {
             debug!("screen sharing lifecycle task started");
-            let callbacks = screen_share_callbacks(
-                on_frame.clone(),
-                session,
-                status,
-                generation,
-                start_generation,
-                provider_scope,
-            );
+            let callbacks = screen_share_callbacks(on_frame.clone(), super::provider_runtime::CaptureRuntime {
+                session, status, generation, start_generation, provider_scope, audio_state,
+                on_warning: Rc::new(move |message| toast.warning(message.to_owned())),
+            });
             debug!("calling screen sharing backend start");
             match backend.start(request, callbacks).await {
                 Ok(next_session) => {
@@ -132,6 +151,8 @@ impl ScreenShareHandle {
 
     /// Stops the active screen sharing session.
     pub(crate) fn stop(&self) {
+        let mut audio_state = self.audio_state;
+        audio_state.set(super::backend::ScreenShareAudioState::Off);
         let mut generation = self.generation;
         let stop_generation = next_generation(&mut generation);
         let Some(active_session) = self.session.peek().clone() else {

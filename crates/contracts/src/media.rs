@@ -2,9 +2,22 @@
 
 use uuid::Uuid;
 
+mod header;
+
+pub use header::MediaDatagramHeader;
+
 const MAGIC: &[u8; 4] = b"CHUB";
-const VERSION: u8 = 1;
-const HEADER_LEN: usize = 64;
+const LEGACY_HEADER_LEN: usize = 64;
+const TRACK_HEADER_LEN: usize = 82;
+
+/// Назначение аудиодорожки; не заменяет серверную проверку права публикации.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MediaAudioSource {
+    /// Микрофон с независимым mute и обработкой речи.
+    Microphone = 1,
+    /// Системный звук, связанный с демонстрацией целого экрана.
+    System = 2,
+}
 
 /// Флаг медиадатаграммы, когда закодированная полезная нагрузка является независимо декодируемым ключевым кадром.
 pub const MEDIA_DATAGRAM_FLAG_KEY_FRAME: u8 = 0b0000_0001;
@@ -24,7 +37,7 @@ pub const VOICE_AUDIO_BITRATE_MAX_BPS: u32 = 96_000;
 /// Вид медиадатаграммы.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MediaDatagramKind {
-    /// Закодированный аудиокадр микрофона.
+    /// Закодированный кадр аудиодорожки микрофона или системного звука.
     VoiceFrame = 1,
     /// Закодированный видеокадр демонстрации экрана.
     ScreenFrame = 2,
@@ -71,7 +84,7 @@ pub struct MediaDatagram {
     pub codec: MediaCodec,
     /// Флаги, специфичные для кодека.
     pub flags: u8,
-    /// Локальная для отправителя последовательность пакетов.
+    /// Последовательность пакетов в пределах одной дорожки отправителя.
     pub sequence: u64,
     /// Временная метка захвата или кодирования в микросекундах.
     pub timestamp_us: u64,
@@ -81,18 +94,40 @@ pub struct MediaDatagram {
     pub room_id: Uuid,
     /// Идентификатор аутентифицированного отправителя, назначенный сервером для ретранслируемых кадров.
     pub sender_user_id: Uuid,
+    /// UUID захвата, общий для пакетов одной дорожки; nil обозначает legacy-пакет v1.
+    pub track_id: Uuid,
+    /// Назначение аудио v2; `None` для видео и legacy-пакетов v1.
+    pub audio_source: Option<MediaAudioSource>,
+    /// Число каналов аудио v2 (1 или 2); ноль для видео и legacy-пакетов v1.
+    pub audio_channels: u8,
     /// Сырая закодированная медиа-полезная нагрузка.
     pub payload: Vec<u8>,
 }
 
 impl MediaDatagram {
-    /// Кодирует эту медиадатаграмму в ее бинарный wire-формат.
+    /// Кодирует v2 для именованной дорожки и v1 для legacy-пакета с nil UUID.
+    ///
+    /// # Errors
+    /// Возвращает ошибку при некорректных метаданных дорожки или слишком большом payload.
     pub fn encode(&self) -> Result<Vec<u8>, MediaDatagramError> {
+        validate_track(
+            self.kind,
+            self.codec,
+            self.track_id,
+            self.audio_source,
+            self.audio_channels,
+        )?;
+        let tracked = !self.track_id.is_nil();
+        let header_len = if tracked {
+            TRACK_HEADER_LEN
+        } else {
+            LEGACY_HEADER_LEN
+        };
         let payload_len = u32::try_from(self.payload.len())
             .map_err(|_| MediaDatagramError::PayloadTooLarge(self.payload.len()))?;
-        let mut bytes = Vec::with_capacity(HEADER_LEN + self.payload.len());
+        let mut bytes = Vec::with_capacity(header_len + self.payload.len());
         bytes.extend_from_slice(MAGIC);
-        bytes.push(VERSION);
+        bytes.push(if tracked { 2 } else { 1 });
         bytes.push(self.kind as u8);
         bytes.push(self.codec as u8);
         bytes.push(self.flags);
@@ -102,48 +137,35 @@ impl MediaDatagram {
         bytes.extend_from_slice(self.room_id.as_bytes());
         bytes.extend_from_slice(self.sender_user_id.as_bytes());
         bytes.extend_from_slice(&payload_len.to_be_bytes());
+        if tracked {
+            bytes.extend_from_slice(self.track_id.as_bytes());
+            bytes.push(self.audio_source.map_or(0, |source| source as u8));
+            bytes.push(self.audio_channels);
+        }
         bytes.extend_from_slice(&self.payload);
 
         Ok(bytes)
     }
 
-    /// Декодирует одну бинарную медиадатаграмму.
+    /// Декодирует v1/v2; legacy-аудио получает nil UUID, `None` и ноль каналов.
+    ///
+    /// # Errors
+    /// Возвращает ошибку заголовка, метаданных или усечённой полезной нагрузки.
     pub fn decode(bytes: &[u8]) -> Result<Self, MediaDatagramError> {
-        if bytes.len() < HEADER_LEN {
-            return Err(MediaDatagramError::Truncated);
-        }
-        if &bytes[..4] != MAGIC {
-            return Err(MediaDatagramError::BadMagic);
-        }
-        if bytes[4] != VERSION {
-            return Err(MediaDatagramError::UnknownVersion(bytes[4]));
-        }
-        let kind = MediaDatagramKind::from_u8(bytes[5])?;
-        let codec = MediaCodec::from_u8(bytes[6])?;
-        let flags = bytes[7];
-        let sequence = u64::from_be_bytes(copy_array(&bytes[8..16]));
-        let timestamp_us = u64::from_be_bytes(copy_array(&bytes[16..24]));
-        let duration_us = u32::from_be_bytes(copy_array(&bytes[24..28]));
-        let room_id = Uuid::from_bytes(copy_array(&bytes[28..44]));
-        let sender_user_id = Uuid::from_bytes(copy_array(&bytes[44..60]));
-        let payload_len = u32::from_be_bytes(copy_array(&bytes[60..64])) as usize;
-        let expected_len = HEADER_LEN
-            .checked_add(payload_len)
-            .ok_or(MediaDatagramError::PayloadTooLarge(payload_len))?;
-        if bytes.len() < expected_len {
-            return Err(MediaDatagramError::Truncated);
-        }
-
+        let header = MediaDatagramHeader::decode(bytes)?;
         Ok(Self {
-            kind,
-            codec,
-            flags,
-            sequence,
-            timestamp_us,
-            duration_us,
-            room_id,
-            sender_user_id,
-            payload: bytes[HEADER_LEN..expected_len].to_vec(),
+            kind: header.kind,
+            codec: header.codec,
+            flags: header.flags,
+            sequence: header.sequence,
+            timestamp_us: header.timestamp_us,
+            duration_us: header.duration_us,
+            room_id: header.room_id,
+            sender_user_id: header.sender_user_id,
+            track_id: header.track_id,
+            audio_source: header.audio_source,
+            audio_channels: header.audio_channels,
+            payload: header.payload(bytes)?.to_vec(),
         })
     }
 }
@@ -161,6 +183,8 @@ pub enum MediaDatagramError {
     UnknownKind(u8),
     /// Кодек датаграммы не поддерживается.
     UnknownCodec(u8),
+    /// UUID, назначение или число каналов не соответствует виду медиадорожки.
+    InvalidTrack,
     /// Длина полезной нагрузки не помещается в wire-формат или локальное выделение.
     PayloadTooLarge(usize),
 }
@@ -180,6 +204,7 @@ impl std::fmt::Display for MediaDatagramError {
             Self::UnknownCodec(codec) => {
                 write!(formatter, "media datagram codec {codec} is unknown")
             }
+            Self::InvalidTrack => write!(formatter, "media datagram track metadata is invalid"),
             Self::PayloadTooLarge(size) => {
                 write!(
                     formatter,
@@ -191,6 +216,27 @@ impl std::fmt::Display for MediaDatagramError {
 }
 
 impl std::error::Error for MediaDatagramError {}
+
+fn validate_track(
+    kind: MediaDatagramKind,
+    codec: MediaCodec,
+    track_id: Uuid,
+    source: Option<MediaAudioSource>,
+    channels: u8,
+) -> Result<(), MediaDatagramError> {
+    let valid = if track_id.is_nil() {
+        source.is_none() && channels == 0
+    } else if kind == MediaDatagramKind::VoiceFrame {
+        codec == MediaCodec::Opus && source.is_some() && matches!(channels, 1 | 2)
+    } else {
+        source.is_none() && channels == 0
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(MediaDatagramError::InvalidTrack)
+    }
+}
 
 fn copy_array<const N: usize>(slice: &[u8]) -> [u8; N] {
     let mut array = [0; N];

@@ -30,6 +30,8 @@ pub(crate) struct AudioPlaybackHandle {
 }
 
 impl AudioPlaybackHandle {
+    /// Завершает системную дорожку на платформе без воспроизведения.
+    pub(crate) fn stop_system_audio(&self, _sender_user_id: &str, _track_id: uuid::Uuid) {}
     /// Возвращает, отключено ли входящее воспроизведение.
     pub(crate) fn is_muted(&self) -> bool {
         (self.muted)()
