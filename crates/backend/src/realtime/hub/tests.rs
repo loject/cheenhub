@@ -9,7 +9,7 @@ use dashmap::DashMap;
 use serde::{Serialize, Serializer};
 use uuid::Uuid;
 
-use super::{RealtimeHub, RealtimeSession, RealtimeStream};
+use super::{RealtimeHub, RealtimeStream};
 use crate::realtime::sink::{DatagramSink, EnvelopeSink, WebSocketOutbound};
 
 struct CountingPayload(Arc<AtomicUsize>);
@@ -19,15 +19,6 @@ impl Serialize for CountingPayload {
         self.0.fetch_add(1, Ordering::SeqCst);
         serializer.serialize_str("one serialization")
     }
-}
-
-#[test]
-fn session_registry_is_sharded_by_session_id() {
-    fn assert_sharded_registry(_: &DashMap<Uuid, RealtimeSession>) {}
-
-    let hub = RealtimeHub::default();
-
-    assert_sharded_registry(&hub.sessions);
 }
 
 #[tokio::test]
@@ -200,6 +191,103 @@ async fn revoked_sessions_emit_offline_once() {
     let _ = events.try_recv().expect("online transition");
 
     assert_eq!(hub.disconnect_user_sessions(&user_id).await, 1);
+    assert!(
+        !events
+            .try_recv()
+            .expect("offline transition")
+            .activity
+            .online
+    );
+    assert!(events.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn session_registry_revokes_one_auth_session_without_offlining_its_other_session() {
+    let registry = super::session_registry::SessionRegistry::default();
+    let user_id = Uuid::new_v4();
+    let first_auth_session_id = Uuid::new_v4();
+    let second_auth_session_id = Uuid::new_v4();
+    let first_session_id = Uuid::new_v4();
+    let second_session_id = Uuid::new_v4();
+    let mut events = registry.subscribe_activity().await;
+
+    for (session_id, auth_session_id) in [
+        (first_session_id, first_auth_session_id),
+        (second_session_id, second_auth_session_id),
+    ] {
+        let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+        registry
+            .register_session(
+                session_id,
+                user_id,
+                auth_session_id,
+                DatagramSink::websocket(sender),
+            )
+            .await;
+    }
+    assert!(
+        events
+            .try_recv()
+            .expect("online transition")
+            .activity
+            .online
+    );
+    assert!(events.try_recv().is_err());
+
+    assert_eq!(
+        registry
+            .disconnect_auth_session(&first_auth_session_id)
+            .await,
+        1
+    );
+    assert!(registry.get(&first_session_id).is_none());
+    assert!(registry.get(&second_session_id).is_some());
+    assert!(registry.activity_for_user(user_id).await.online);
+    assert!(events.try_recv().is_err());
+
+    registry.unregister_session(second_session_id).await;
+    assert!(!registry.activity_for_user(user_id).await.online);
+    assert!(
+        !events
+            .try_recv()
+            .expect("offline transition")
+            .activity
+            .online
+    );
+    assert!(events.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn session_registry_ignores_duplicate_registration_for_presence_counting() {
+    let registry = super::session_registry::SessionRegistry::default();
+    let user_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4();
+    let auth_session_id = Uuid::new_v4();
+    let mut events = registry.subscribe_activity().await;
+
+    for _ in 0..2 {
+        let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+        registry
+            .register_session(
+                session_id,
+                user_id,
+                auth_session_id,
+                DatagramSink::websocket(sender),
+            )
+            .await;
+    }
+    assert!(registry.get(&session_id).is_some());
+    assert!(
+        events
+            .try_recv()
+            .expect("online transition")
+            .activity
+            .online
+    );
+    assert!(events.try_recv().is_err());
+
+    registry.unregister_session(session_id).await;
+    assert!(!registry.activity_for_user(user_id).await.online);
     assert!(
         !events
             .try_recv()
