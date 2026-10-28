@@ -65,6 +65,30 @@ pub(crate) fn routes() -> Router<AppState> {
             post(transport::handlers::start_google_oauth),
         )
         .route(
+            "/browser/desktop/start",
+            post(transport::browser_handoff::start),
+        )
+        .route(
+            "/browser/desktop/poll",
+            post(transport::browser_handoff::poll),
+        )
+        .route(
+            "/browser/desktop/cancel",
+            post(transport::browser_handoff::cancel),
+        )
+        .route(
+            "/browser/desktop/complete",
+            post(transport::browser_handoff::complete),
+        )
+        .route(
+            "/browser/desktop/{attempt_id}",
+            get(transport::browser_handoff::details),
+        )
+        .route(
+            "/browser/desktop/{attempt_id}/approve",
+            post(transport::browser_handoff::approve),
+        )
+        .route(
             "/oauth/google/desktop/start",
             post(transport::desktop_oauth::start),
         )

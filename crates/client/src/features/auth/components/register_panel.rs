@@ -4,9 +4,9 @@ use cheenhub_contracts::rest::RegisterRequest;
 use dioxus::prelude::*;
 
 use crate::Route;
-use crate::features::auth::api;
 use crate::features::auth::components::text_input::TextInput;
 use crate::features::auth::{LegalAcceptanceAction, LegalAcceptanceFields};
+use crate::features::auth::{api, browser_handoff};
 
 #[component]
 pub(crate) fn RegisterPanel() -> Element {
@@ -155,7 +155,7 @@ pub(crate) fn RegisterPanel() -> Element {
                                 match api::register(request).await {
                                     Ok(_) => {
                                         info!("email registration succeeded");
-                                        let _ = navigator.replace(Route::AppHome {});
+                                        let _ = navigator.replace(browser_handoff::after_login_route());
                                     }
                                     Err(error) => {
                                         warn!(%error, "email registration failed");

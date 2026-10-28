@@ -85,6 +85,37 @@ impl OAuthStore for InMemoryAuthStore {
         super::super::in_memory_oauth::delete_oauth_account(&self.state, provider, user_id)
     }
 
+    async fn insert_browser_handoff(
+        &self,
+        code_hash: String,
+        _now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> anyhow::Result<Uuid> {
+        super::super::in_memory_oauth_handoff::insert_browser(&self.state, code_hash, expires_at)
+    }
+
+    async fn find_browser_handoff(
+        &self,
+        attempt_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<OAuthHandoff>> {
+        super::super::in_memory_oauth_handoff::find_browser(&self.state, attempt_id, now)
+    }
+
+    async fn approve_browser_handoff(
+        &self,
+        attempt_id: &Uuid,
+        user_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        super::super::in_memory_oauth_handoff::approve_browser(
+            &self.state,
+            attempt_id,
+            user_id,
+            now,
+        )
+    }
+
     async fn insert_oauth_handoff(
         &self,
         code_hash: String,

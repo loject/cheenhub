@@ -1,5 +1,6 @@
 //! Транспортный HTTP-слой аутентификации.
 
+pub(crate) mod browser_handoff;
 pub(crate) mod desktop_oauth;
 pub(crate) mod desktop_result;
 pub(crate) mod handlers;

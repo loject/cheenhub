@@ -90,6 +90,44 @@ impl OAuthStore for PostgresAuthStore {
         super::super::postgres_oauth::delete_oauth_account(&self.database, provider, user_id).await
     }
 
+    async fn insert_browser_handoff(
+        &self,
+        code_hash: String,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> anyhow::Result<Uuid> {
+        super::super::postgres_oauth_handoff::insert_browser(
+            &self.database,
+            code_hash,
+            now,
+            expires_at,
+        )
+        .await
+    }
+
+    async fn find_browser_handoff(
+        &self,
+        attempt_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<OAuthHandoff>> {
+        super::super::postgres_oauth_handoff::find_browser(&self.database, attempt_id, now).await
+    }
+
+    async fn approve_browser_handoff(
+        &self,
+        attempt_id: &Uuid,
+        user_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool> {
+        super::super::postgres_oauth_handoff::approve_browser(
+            &self.database,
+            attempt_id,
+            user_id,
+            now,
+        )
+        .await
+    }
+
     async fn insert_oauth_handoff(
         &self,
         code_hash: String,

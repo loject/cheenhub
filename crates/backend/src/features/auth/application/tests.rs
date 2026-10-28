@@ -3,6 +3,7 @@
 mod account_deletion;
 mod atomicity;
 mod avatar;
+mod browser_handoff;
 mod desktop_oauth;
 mod legal;
 mod nickname;

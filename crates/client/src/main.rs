@@ -10,9 +10,9 @@ mod update_mode;
 
 use routes::{
     AppDirectMessage, AppFriends, AppHome, AppHostEmailSettings, AppHostLogs, AppHostOwners,
-    AppHostSettings, AppHostSystemSettings, AppServer, AppServerRoom, ForgotPassword, Invite,
-    Landing, Login, NotFound, OAuthCallback, PersonalDataConsent, PrivacyPolicy, Register,
-    ResetPassword, RestoreAccount, Terms,
+    AppHostSettings, AppHostSystemSettings, AppServer, AppServerRoom, BrowserDesktopConfirm,
+    ForgotPassword, Invite, Landing, Login, NotFound, OAuthCallback, PersonalDataConsent,
+    PrivacyPolicy, Register, ResetPassword, RestoreAccount, Terms,
 };
 
 use crate::features::application_focus::ApplicationFocusProvider;
@@ -68,6 +68,8 @@ enum Route {
     Login { password_reset: Option<String> },
     #[route("/register")]
     Register {},
+    #[route("/auth/desktop?:attempt")]
+    BrowserDesktopConfirm { attempt: Option<String> },
     #[route("/legal/terms?:return_to")]
     Terms { return_to: Option<String> },
     #[route("/legal/privacy?:return_to")]

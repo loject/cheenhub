@@ -3,6 +3,7 @@
 use crate::Route;
 use crate::features::auth::OAuthRegistrationForm;
 use crate::features::auth::api::{self, OAuthCompletion};
+use crate::features::auth::browser_handoff;
 use dioxus::prelude::*;
 
 /// Получает результат браузерного входа и показывает локальную форму регистрации.
@@ -36,7 +37,7 @@ pub(crate) fn OAuthCallback(
                 result,
                 Ok(OAuthCompletion::Authenticated(_) | OAuthCompletion::Linked)
             ) {
-                let _ = navigator.replace(Route::AppHome {});
+                let _ = navigator.replace(browser_handoff::after_login_route());
             }
             result
         }
@@ -49,7 +50,7 @@ pub(crate) fn OAuthCallback(
                     Some(Ok(OAuthCompletion::RegistrationRequired(registration))) => rsx! {
                         OAuthRegistrationForm {
                             registration,
-                            on_complete: move |_| { let _ = navigator.replace(Route::AppHome {}); },
+                            on_complete: move |_| { let _ = navigator.replace(browser_handoff::after_login_route()); },
                             on_restart: move |_| { let _ = navigator.replace(Route::Login { password_reset: None }); },
                         }
                     },

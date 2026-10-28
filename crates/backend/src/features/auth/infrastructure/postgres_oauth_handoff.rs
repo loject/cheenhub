@@ -5,7 +5,7 @@ use crate::features::auth::infrastructure::entities::{oauth_handoffs, oauth_regi
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
-    Set, TransactionTrait,
+    Set, TransactionTrait, sea_query::Expr,
 };
 use uuid::Uuid;
 
@@ -60,6 +60,64 @@ pub(super) async fn consume(
 ) -> anyhow::Result<bool> {
     super::postgres_desktop_oauth::consume_handoff(database, handoff_id, now).await
 }
+/// Сохраняет короткоживущую browser-попытку в существующей таблице handoff.
+pub(super) async fn insert_browser(
+    database: &DatabaseConnection,
+    code_hash: String,
+    now: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+) -> anyhow::Result<Uuid> {
+    let id = Uuid::new_v4();
+    oauth_handoffs::ActiveModel {
+        id: Set(id),
+        code_hash: Set(code_hash),
+        kind: Set("browser_pending".to_owned()),
+        user_id: Set(None),
+        registration_intent_id: Set(None),
+        created_at: Set(now),
+        expires_at: Set(expires_at),
+        consumed_at: Set(None),
+    }
+    .insert(database)
+    .await?;
+    Ok(id)
+}
+
+/// Читает действующую browser-попытку без персональных данных.
+pub(super) async fn find_browser(
+    database: &DatabaseConnection,
+    id: &Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Option<OAuthHandoff>> {
+    Ok(oauth_handoffs::Entity::find_by_id(*id)
+        .filter(oauth_handoffs::Column::Kind.is_in(["browser_pending", "browser_ready"]))
+        .filter(oauth_handoffs::Column::ConsumedAt.is_null())
+        .filter(oauth_handoffs::Column::ExpiresAt.gt(now))
+        .one(database)
+        .await?
+        .map(Into::into))
+}
+
+/// Устанавливает подтверждённого пользователя только в ожидающей строке.
+pub(super) async fn approve_browser(
+    database: &DatabaseConnection,
+    id: &Uuid,
+    user_id: &Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    Ok(oauth_handoffs::Entity::update_many()
+        .col_expr(oauth_handoffs::Column::Kind, Expr::value("browser_ready"))
+        .col_expr(oauth_handoffs::Column::UserId, Expr::value(*user_id))
+        .filter(oauth_handoffs::Column::Id.eq(*id))
+        .filter(oauth_handoffs::Column::Kind.eq("browser_pending"))
+        .filter(oauth_handoffs::Column::ConsumedAt.is_null())
+        .filter(oauth_handoffs::Column::ExpiresAt.gt(now))
+        .exec(database)
+        .await?
+        .rows_affected
+        == 1)
+}
+
 pub(super) async fn insert_registration_intent(
     database: &DatabaseConnection,
     provider: String,

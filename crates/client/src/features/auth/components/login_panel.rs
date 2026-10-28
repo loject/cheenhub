@@ -4,10 +4,11 @@ use cheenhub_contracts::rest::LoginRequest;
 use dioxus::prelude::*;
 
 use crate::Route;
-use crate::features::auth::api;
+use crate::features::auth::components::browser_login_button::BrowserLoginButton;
 use crate::features::auth::components::provider_button::ProviderButton;
 use crate::features::auth::components::text_input::TextInput;
 use crate::features::auth::domain::AuthProvider;
+use crate::features::auth::{api, browser_handoff};
 
 #[component]
 pub(crate) fn LoginPanel(password_reset_succeeded: bool) -> Element {
@@ -25,6 +26,8 @@ pub(crate) fn LoginPanel(password_reset_succeeded: bool) -> Element {
                 h2 { class: "text-2xl font-semibold tracking-[-0.04em] text-zinc-50", "Войти в CheenHub" }
                 p { class: "mt-1.5 text-[13px] leading-5 text-zinc-500", "Используй email и пароль или внешний аккаунт." }
             }
+
+            BrowserLoginButton {}
 
             form {
                 class: "space-y-4",
@@ -45,7 +48,7 @@ pub(crate) fn LoginPanel(password_reset_succeeded: bool) -> Element {
                         match api::login(request).await {
                             Ok(_) => {
                                 info!("password login succeeded");
-                                let _ = navigator.replace(Route::AppHome {});
+                                let _ = navigator.replace(browser_handoff::after_login_route());
                             }
                             Err(error) => {
                                 warn!(%error, "password login failed");

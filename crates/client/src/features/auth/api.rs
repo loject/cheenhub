@@ -37,6 +37,15 @@ pub(crate) async fn login(request: LoginRequest) -> Result<AuthUser, String> {
     save_response(response, &key)
 }
 
+/// Проверяет подпись JWT перед сохранением сессии, полученной через системный браузер.
+#[cfg(all(feature = "desktop", any(target_os = "linux", target_os = "windows")))]
+pub(crate) async fn save_browser_auth_response(response: AuthResponse) -> Result<AuthUser, String> {
+    let key = jwt::load_verification_key()
+        .await
+        .map_err(|error| error.to_string())?;
+    save_response(response, &key)
+}
+
 /// Запрашивает письмо для сброса пароля для учетной записи.
 pub(crate) async fn request_password_reset(request: PasswordResetRequest) -> Result<(), String> {
     post_empty("/auth/password-reset/request", &request).await

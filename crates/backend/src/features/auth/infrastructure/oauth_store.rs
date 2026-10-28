@@ -58,6 +58,29 @@ pub(crate) trait OAuthStore: Send + Sync {
     /// Удаляет привязанный OAuth-аккаунт пользователя.
     async fn delete_oauth_account(&self, provider: &str, user_id: &Uuid) -> anyhow::Result<bool>;
 
+    /// Создаёт ожидающую одноразовую передачу входа из веб-сессии в desktop.
+    async fn insert_browser_handoff(
+        &self,
+        code_hash: String,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> anyhow::Result<Uuid>;
+
+    /// Возвращает доступную browser-попытку по публичному идентификатору.
+    async fn find_browser_handoff(
+        &self,
+        attempt_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<Option<OAuthHandoff>>;
+
+    /// Атомарно подтверждает ожидающую browser-попытку от имени веб-пользователя.
+    async fn approve_browser_handoff(
+        &self,
+        attempt_id: &Uuid,
+        user_id: &Uuid,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<bool>;
+
     /// Вставляет краткоживущий OAuth-handoff для фронтенда.
     async fn insert_oauth_handoff(
         &self,

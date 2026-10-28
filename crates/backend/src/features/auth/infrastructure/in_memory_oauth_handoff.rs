@@ -85,6 +85,78 @@ pub(super) fn consume(
     }
     Ok(true)
 }
+/// Создаёт ожидание подтверждения в браузере без привязки к Google.
+pub(super) fn insert_browser(
+    state: &Mutex<InMemoryState>,
+    code_hash: String,
+    expires_at: DateTime<Utc>,
+) -> anyhow::Result<Uuid> {
+    let mut state = state.lock().map_err(|_| super::in_memory::poisoned())?;
+    let id = Uuid::new_v4();
+    state.oauth_handoffs.push(InMemoryOAuthHandoff {
+        id,
+        code_hash,
+        kind: "browser_pending".to_owned(),
+        user_id: None,
+        registration_intent_id: None,
+        expires_at,
+        consumed_at: None,
+    });
+    Ok(id)
+}
+
+/// Возвращает только действующие передачи входа из веб-сессии.
+pub(super) fn find_browser(
+    state: &Mutex<InMemoryState>,
+    id: &Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Option<OAuthHandoff>> {
+    let state = state.lock().map_err(|_| super::in_memory::poisoned())?;
+    Ok(state
+        .oauth_handoffs
+        .iter()
+        .find(|row| {
+            row.id == *id
+                && matches!(row.kind.as_str(), "browser_pending" | "browser_ready")
+                && row.consumed_at.is_none()
+                && row.expires_at > now
+        })
+        .map(|row| OAuthHandoff {
+            id: row.id,
+            kind: row.kind.clone(),
+            user_id: row.user_id,
+            registration_intent_id: None,
+        }))
+}
+
+/// Атомарно подтверждает попытку, если аккаунт активен и она ещё ожидает.
+pub(super) fn approve_browser(
+    state: &Mutex<InMemoryState>,
+    id: &Uuid,
+    user_id: &Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    let mut state = state.lock().map_err(|_| super::in_memory::poisoned())?;
+    if !state
+        .users
+        .iter()
+        .any(|user| user.account.id == *user_id && user.deletion.is_none())
+    {
+        return Ok(false);
+    }
+    let Some(row) = state.oauth_handoffs.iter_mut().find(|row| {
+        row.id == *id
+            && row.kind == "browser_pending"
+            && row.consumed_at.is_none()
+            && row.expires_at > now
+    }) else {
+        return Ok(false);
+    };
+    row.kind = "browser_ready".to_owned();
+    row.user_id = Some(*user_id);
+    Ok(true)
+}
+
 pub(super) fn insert_registration_intent(
     state: &Mutex<InMemoryState>,
     provider: String,

@@ -36,7 +36,7 @@ pub(crate) async fn run_desktop_oauth_cleanup(store: Arc<PostgresAuthStore>) {
         if removed > 0 {
             info!(
                 removed,
-                "Удалены истёкшие desktop OAuth попытки, state и handoff"
+                "Удалены истёкшие desktop OAuth и browser-handoff попытки"
             );
         }
     }

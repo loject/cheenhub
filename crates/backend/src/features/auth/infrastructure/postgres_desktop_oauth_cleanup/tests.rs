@@ -122,6 +122,28 @@ async fn cleanup_removes_expired_desktop_data_and_preserves_live_and_web_flows()
         )
         .await
         .unwrap();
+    let expired_browser = store
+        .insert_browser_handoff(
+            refresh_token::hash(&refresh_token::generate()),
+            now,
+            now + Duration::minutes(5),
+        )
+        .await
+        .unwrap();
+    let live_browser = store
+        .insert_browser_handoff(
+            refresh_token::hash(&refresh_token::generate()),
+            now,
+            now + Duration::minutes(5),
+        )
+        .await
+        .unwrap();
+    oauth_handoffs::Entity::update_many()
+        .col_expr(oauth_handoffs::Column::ExpiresAt, Expr::value(cutoff))
+        .filter(oauth_handoffs::Column::Id.eq(expired_browser))
+        .exec(&database)
+        .await
+        .unwrap();
     // Проверяем, что после очистки не остаётся даже ещё действующего state desktop-потока.
     assert!(cleanup(&database, cutoff).await.unwrap() >= 5);
     for id in expired_attempts {
@@ -151,6 +173,20 @@ async fn cleanup_removes_expired_desktop_data_and_preserves_live_and_web_flows()
                 .is_none()
         );
     }
+    assert!(
+        oauth_handoffs::Entity::find_by_id(expired_browser)
+            .one(&database)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        oauth_handoffs::Entity::find_by_id(live_browser)
+            .one(&database)
+            .await
+            .unwrap()
+            .is_some()
+    );
     let live = live_attempt.unwrap();
     assert!(
         attempts::Entity::find_by_id(live.id)

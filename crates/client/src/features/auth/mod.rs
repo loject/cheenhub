@@ -2,6 +2,9 @@
 
 pub(crate) mod account_deletion_api;
 pub(crate) mod api;
+pub(crate) mod browser_handoff;
+#[cfg(all(feature = "desktop", any(target_os = "linux", target_os = "windows")))]
+pub(crate) mod browser_login;
 mod components;
 pub(crate) mod desktop_oauth;
 mod domain;

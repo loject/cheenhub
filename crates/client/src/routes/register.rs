@@ -2,12 +2,11 @@
 
 use dioxus::prelude::*;
 
-use crate::Route;
 use crate::features::auth::RegisterPage;
-use crate::features::auth::api;
 use crate::features::auth::guest_guard::{
     GuestAuthGuardDecision, GuestAuthPage, decide_guest_auth_guard,
 };
+use crate::features::auth::{api, browser_handoff};
 
 #[component]
 pub(crate) fn Register() -> Element {
@@ -21,7 +20,7 @@ pub(crate) fn Register() -> Element {
                 target = "/app",
                 "redirecting authenticated user away from guest auth page"
             );
-            let _ = navigator.replace(Route::AppHome {});
+            let _ = navigator.replace(browser_handoff::after_login_route());
         }
     });
 

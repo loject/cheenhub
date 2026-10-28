@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 mod account_deletion;
 mod avatar;
+mod browser_handoff;
 mod desktop_oauth;
 mod google;
 mod google_native;
@@ -39,6 +40,10 @@ pub(crate) use account_deletion::{
     delete_current_user, restore_account, run_account_deletion_worker,
 };
 pub(crate) use avatar::update_current_user_avatar;
+pub(crate) use browser_handoff::{
+    approve_browser_handoff, browser_handoff_details, cancel_browser_handoff,
+    complete_browser_handoff, poll_browser_handoff, start_browser_handoff,
+};
 pub(crate) use desktop_oauth::{cancel_desktop_oauth, poll_desktop_oauth, start_desktop_oauth};
 pub(crate) use google_native::{complete_google_native_auth, start_google_native_auth};
 pub(crate) use linked_accounts::{linked_accounts, unlink_google};

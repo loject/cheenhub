@@ -3,12 +3,11 @@
 use dioxus::prelude::*;
 use dioxus::router::Navigator;
 
-use crate::Route;
-use crate::features::auth::api;
 use crate::features::auth::components::arrow_right_icon::ArrowRightIcon;
 use crate::features::auth::domain::AuthProvider;
 use crate::features::auth::google_sign_in;
 use crate::features::auth::{DesktopGoogleButton, OAuthRegistrationForm, desktop_oauth};
+use crate::features::auth::{api, browser_handoff};
 use cheenhub_contracts::rest::OAuthFlow;
 
 #[component]
@@ -23,7 +22,7 @@ pub(crate) fn ProviderButton(provider: AuthProvider) -> Element {
         return rsx! {
             OAuthRegistrationForm {
                 registration: details,
-                on_complete: move |_| { let _ = navigator.replace(Route::AppHome {}); },
+                on_complete: move |_| { let _ = navigator.replace(browser_handoff::after_login_route()); },
                 on_restart: move |_| {
                     registration.set(None);
                     status.set(String::new());
@@ -131,7 +130,7 @@ fn finish_google_sign_in(
     match completion {
         api::OAuthCompletion::Authenticated(_) | api::OAuthCompletion::Linked => {
             info!("Google sign-in succeeded");
-            let _ = navigator.replace(Route::AppHome {});
+            let _ = navigator.replace(browser_handoff::after_login_route());
             Ok(())
         }
         api::OAuthCompletion::RegistrationRequired(details) => {

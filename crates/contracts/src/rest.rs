@@ -1,6 +1,7 @@
 //! Общие контракты REST API.
 
 pub mod auth;
+pub mod browser_desktop_auth;
 pub mod desktop_oauth;
 pub mod error;
 pub mod host_settings;
@@ -17,6 +18,10 @@ pub use auth::{
     OAuthStartResponse, PasswordResetConfirmRequest, PasswordResetRequest, RefreshRequest,
     RegisterRequest, SessionClientInfo, SessionDeviceKind, UnlinkProviderRequest,
     UpdateCurrentUserRequest,
+};
+pub use browser_desktop_auth::{
+    BrowserDesktopAuthDetailsResponse, BrowserDesktopAuthPollResponse, BrowserDesktopAuthRequest,
+    BrowserDesktopAuthStartResponse,
 };
 pub use desktop_oauth::{
     GoogleDesktopAuthPollResponse, GoogleDesktopAuthRequest, GoogleDesktopAuthStartResponse,

@@ -15,7 +15,7 @@ impl PostgresAuthStore {
         Self { database }
     }
 
-    /// Удаляет порцию истёкших desktop-попыток вместе с их временными OAuth-записями.
+    /// Удаляет порцию истёкших desktop OAuth и browser-handoff вместе с временными данными.
     pub(crate) async fn cleanup_desktop_oauth(&self, now: DateTime<Utc>) -> anyhow::Result<u64> {
         super::postgres_desktop_oauth_cleanup::cleanup(&self.database, now).await
     }

@@ -5,6 +5,7 @@ pub(super) mod arrow_right_icon;
 pub(super) mod auth_header;
 pub(super) mod auth_hero;
 pub(super) mod auth_metric;
+pub(super) mod browser_login_button;
 pub(super) mod desktop_google_button;
 pub(super) mod forgot_password_panel;
 pub(super) mod legal_acceptance_fields;

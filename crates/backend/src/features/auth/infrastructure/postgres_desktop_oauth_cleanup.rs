@@ -1,4 +1,4 @@
-//! Удаление истёкших desktop-попыток и принадлежащих им временных OAuth-записей.
+//! Удаление истёкших desktop OAuth и browser-handoff без затрагивания веб-входа.
 
 use chrono::{DateTime, Utc};
 use sea_orm::{
@@ -11,7 +11,7 @@ use super::entities::{desktop_oauth_attempts as attempts, oauth_handoffs, oauth_
 #[cfg(test)]
 mod tests;
 
-/// Удаляет ограниченную порцию истёкших попыток, не затрагивая браузерные потоки.
+/// Удаляет ограниченные порции истёкших desktop и browser-попыток.
 pub(super) async fn cleanup(
     database: &DatabaseConnection,
     now: DateTime<Utc>,
@@ -25,23 +25,40 @@ pub(super) async fn cleanup(
         .lock_exclusive()
         .all(&transaction)
         .await?;
-    if expired.is_empty() {
+    let expired_browser = oauth_handoffs::Entity::find()
+        .filter(oauth_handoffs::Column::Kind.is_in(["browser_pending", "browser_ready"]))
+        .filter(oauth_handoffs::Column::ExpiresAt.lte(now))
+        .order_by_asc(oauth_handoffs::Column::ExpiresAt)
+        .order_by_asc(oauth_handoffs::Column::Id)
+        .limit(500)
+        .lock_exclusive()
+        .all(&transaction)
+        .await?;
+    if expired.is_empty() && expired_browser.is_empty() {
         transaction.commit().await?;
         return Ok(0);
     }
-    // Удаление state каскадно удаляет попытку и личность. Живой state не остаётся
-    // без desktop-маркера, поэтому поздний callback не превратится в браузерный вход.
-    oauth_states::Entity::delete_many()
-        .filter(oauth_states::Column::Id.is_in(expired.iter().map(|row| row.oauth_state_id)))
-        .exec(&transaction)
-        .await?;
-    let handoff_ids: Vec<_> = expired.iter().filter_map(|row| row.handoff_id).collect();
-    if !handoff_ids.is_empty() {
+    if !expired.is_empty() {
+        // Удаление state каскадно удаляет desktop-попытку и проверенную личность.
+        // Поздний callback не сможет стать обычным браузерным входом.
+        oauth_states::Entity::delete_many()
+            .filter(oauth_states::Column::Id.is_in(expired.iter().map(|row| row.oauth_state_id)))
+            .exec(&transaction)
+            .await?;
+        let handoff_ids: Vec<_> = expired.iter().filter_map(|row| row.handoff_id).collect();
+        if !handoff_ids.is_empty() {
+            oauth_handoffs::Entity::delete_many()
+                .filter(oauth_handoffs::Column::Id.is_in(handoff_ids))
+                .exec(&transaction)
+                .await?;
+        }
+    }
+    if !expired_browser.is_empty() {
         oauth_handoffs::Entity::delete_many()
-            .filter(oauth_handoffs::Column::Id.is_in(handoff_ids))
+            .filter(oauth_handoffs::Column::Id.is_in(expired_browser.iter().map(|row| row.id)))
             .exec(&transaction)
             .await?;
     }
     transaction.commit().await?;
-    Ok(expired.len() as u64)
+    Ok((expired.len() + expired_browser.len()) as u64)
 }
