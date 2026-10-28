@@ -28,11 +28,12 @@ pub use social::{
     DirectMessageCreated, DirectMessageHistory, DirectMessageImageLoaded,
     DirectMessageTypingChanged, DirectMessageTypingSnapshot, DirectMessageTypingSnapshotRequest,
     EditDirectMessage, EditDirectMessageAccepted, ListDirectMessageConversations,
-    LoadDirectMessageHistory, LoadDirectMessageImage, MarkDirectMessageRead,
+    ListSocialEntries, LoadDirectMessageHistory, LoadDirectMessageImage, MarkDirectMessageRead,
     MarkDirectMessageReadAccepted, OpenDirectMessageConversation, PresenceChanged,
-    SendDirectMessage, SendDirectMessageAccepted, SocialChangeReason, SocialChanged, SocialKind,
-    SocialReady, StartDirectMessageTyping, StopDirectMessageTyping, SubscribeSocial,
-    UploadDirectMessageImage, UploadDirectMessageImageAccepted,
+    SendDirectMessage, SendDirectMessageAccepted, SocialChangeReason, SocialChanged, SocialEntries,
+    SocialKind, SocialListEntrySummary, SocialReady, StartDirectMessageTyping,
+    StopDirectMessageTyping, SubscribeSocial, UploadDirectMessageImage,
+    UploadDirectMessageImageAccepted,
 };
 pub use text_chat::{
     AuthorRolesResolved, ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage,
