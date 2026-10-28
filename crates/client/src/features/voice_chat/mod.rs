@@ -51,5 +51,7 @@ pub(crate) use microphone_muted_badge::MicrophoneMutedBadge;
 pub(crate) use output_muted_badge::OutputMutedBadge;
 pub(crate) use provider::VoiceConnectionProvider;
 pub(crate) use sidebar_controls::SidebarVoiceControls;
-pub(crate) use state::{VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget};
+pub(crate) use state::{
+    VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget, VoiceRoomTargetKind,
+};
 pub(crate) use surface::VoiceRoomSurface;

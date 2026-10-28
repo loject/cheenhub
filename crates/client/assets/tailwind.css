@@ -1820,6 +1820,10 @@ html,
   bottom: -0.125rem;
 }
 
+.-bottom-1 {
+  bottom: -0.25rem;
+}
+
 .-left-3 {
   left: -0.75rem;
 }
@@ -1830,6 +1834,10 @@ html,
 
 .-right-0\.5 {
   right: -0.125rem;
+}
+
+.-right-1 {
+  right: -0.25rem;
 }
 
 .-top-3 {
@@ -1924,6 +1932,10 @@ html,
   right: 0px;
 }
 
+.right-1 {
+  right: 0.25rem;
+}
+
 .right-2 {
   right: 0.5rem;
 }
@@ -1994,10 +2006,6 @@ html,
 
 .top-full {
   top: 100%;
-}
-
-.right-1 {
-  right: 0.25rem;
 }
 
 .z-0 {
@@ -5421,6 +5429,11 @@ html,
   color: rgb(125 211 252 / var(--tw-text-opacity, 1));
 }
 
+.text-sky-950 {
+  --tw-text-opacity: 1;
+  color: rgb(8 47 73 / var(--tw-text-opacity, 1));
+}
+
 .text-violet-300 {
   --tw-text-opacity: 1;
   color: rgb(196 181 253 / var(--tw-text-opacity, 1));
@@ -5491,11 +5504,6 @@ html,
 .text-zinc-950 {
   --tw-text-opacity: 1;
   color: rgb(9 9 11 / var(--tw-text-opacity, 1));
-}
-
-.text-sky-950 {
-  --tw-text-opacity: 1;
-  color: rgb(8 47 73 / var(--tw-text-opacity, 1));
 }
 
 .underline {
@@ -6095,6 +6103,12 @@ html,
 .shadow-\[0_28px_90px_rgba\(0\2c 0\2c 0\2c 0\.55\)\] {
   --tw-shadow: 0 28px 90px rgba(0,0,0,0.55);
   --tw-shadow-colored: 0 28px 90px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+.shadow-\[0_2px_8px_rgba\(16\2c 185\2c 129\2c 0\.35\)\] {
+  --tw-shadow: 0 2px 8px rgba(16,185,129,0.35);
+  --tw-shadow-colored: 0 2px 8px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 

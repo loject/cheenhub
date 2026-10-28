@@ -5,9 +5,11 @@ use dioxus::prelude::*;
 use dioxus_sdk_storage::{LocalStorage, use_storage};
 
 use crate::features::landing::components::logo_icon::LogoIcon;
+use crate::features::voice_chat::{VoiceConnectionHandle, VoiceRoomTargetKind};
 
 use super::server_list_error::ServerListError;
 use super::server_rail_button::ServerRailButton;
+use super::voice_connected_badge::VoiceConnectedBadge;
 use crate::features::landing::components::download_dropdown::DownloadDropdown;
 
 /// Renders the server switcher rail.
@@ -31,6 +33,14 @@ pub(crate) fn ServerRail(
     on_retry_host_access: EventHandler<()>,
     on_add_server: EventHandler<()>,
 ) -> Element {
+    let voice = use_context::<VoiceConnectionHandle>();
+    let connected_target = voice.state().connected_target();
+    let direct_call_connected = connected_target
+        .as_ref()
+        .is_some_and(|target| target.kind == VoiceRoomTargetKind::DirectMessage);
+    let connected_server_id = connected_target.and_then(|target| {
+        (target.kind == VoiceRoomTargetKind::Server).then_some(target.server_id)
+    });
     let mut show_load_error = use_signal(|| false);
     let mut show_empty_server_hint =
         use_storage::<LocalStorage, bool>("cheenhub.app.show_empty_server_hint".to_owned(), || {
@@ -42,9 +52,9 @@ pub(crate) fn ServerRail(
         "space-y-2 overflow-y-auto pb-3"
     };
     let logo_class = if social_active {
-        "mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-400/35 bg-blue-500/15 text-blue-100 shadow-[0_0_0_1px_rgba(59,130,246,0.12)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px"
+        "relative mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-400/35 bg-blue-500/15 text-blue-100 shadow-[0_0_0_1px_rgba(59,130,246,0.12)] transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px"
     } else {
-        "mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-100 text-zinc-950 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-blue-400/30 hover:bg-blue-50"
+        "relative mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-100 text-zinc-950 transition-[background,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-blue-400/30 hover:bg-blue-50"
     };
     let rail_class = if download_menu_open() {
         "server-rail relative z-[1000] flex w-[76px] shrink-0 flex-col overflow-visible border-r border-zinc-800/80 bg-zinc-950/85 p-3 backdrop-blur-xl"
@@ -62,9 +72,21 @@ pub(crate) fn ServerRail(
             button {
                 r#type: "button",
                 class: logo_class,
-                "aria-label": "Друзья и личные сообщения",
+                "aria-label": if direct_call_connected {
+                    "Друзья и личные сообщения — активный голосовой звонок"
+                } else {
+                    "Друзья и личные сообщения"
+                },
+                title: if direct_call_connected {
+                    "Активный голосовой звонок в личных сообщениях"
+                } else {
+                    "Друзья и личные сообщения"
+                },
                 onclick: move |_| on_open_social.call(()),
                 LogoIcon { class_name: "h-7 w-7" }
+                if direct_call_connected {
+                    VoiceConnectedBadge {}
+                }
             }
             div { class: list_class,
                 if is_loading {
@@ -106,6 +128,7 @@ pub(crate) fn ServerRail(
                         ServerRailButton {
                             server: server.clone(),
                             active: active_server_id.as_deref() == Some(server.id.as_str()),
+                            voice_connected: connected_server_id.as_deref() == Some(server.id.as_str()),
                             on_select_server
                         }
                     }

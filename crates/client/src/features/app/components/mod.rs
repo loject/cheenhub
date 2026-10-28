@@ -52,4 +52,5 @@ mod server_rooms_sidebar_styles;
 mod server_rooms_state;
 pub(crate) mod sidebar_menu_dismiss_layer;
 pub(crate) mod user_context_menu;
+mod voice_connected_badge;
 pub(crate) mod workspace_split;

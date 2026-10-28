@@ -488,3 +488,41 @@ fn manual_leave_clears_recovery_target_while_disconnected() {
         assert_eq!(handle.take_remembered_room(), None);
     });
 }
+
+#[test]
+fn connected_target_identifies_server_and_direct_message_calls() {
+    let server = VoiceRoomTarget::server("server-1".into(), "room-1".into(), "Общая".into());
+    let direct_message = VoiceRoomTarget::direct_message("dm-1".into(), "Друг".into());
+
+    for target in [server, direct_message] {
+        let state = VoiceConnectionState::Connected {
+            target: target.clone(),
+            participants: vec![],
+        };
+
+        assert_eq!(state.connected_target(), Some(target));
+    }
+}
+
+#[test]
+fn connected_target_ignores_unconfirmed_and_ended_calls() {
+    let target = VoiceRoomTarget::server("server-1".into(), "room-1".into(), "Общая".into());
+    let states = [
+        VoiceConnectionState::Disconnected,
+        VoiceConnectionState::Connecting {
+            target: target.clone(),
+        },
+        VoiceConnectionState::Disconnecting {
+            target: target.clone(),
+            participants: vec![],
+        },
+        VoiceConnectionState::Error {
+            target: Some(target),
+            message: "Не удалось подключиться".into(),
+        },
+    ];
+
+    for state in states {
+        assert_eq!(state.connected_target(), None);
+    }
+}

@@ -35,6 +35,17 @@ impl VoiceConnectionState {
         }
     }
 
+    /// Возвращает цель только после подтверждённого подключения к голосу.
+    ///
+    /// Во время входа, выхода и ошибки цель может сохраняться в состоянии,
+    /// но пользователь уже не считается подключённым для индикаторов интерфейса.
+    pub(crate) fn connected_target(&self) -> Option<VoiceRoomTarget> {
+        match self {
+            Self::Connected { target, .. } => Some(target.clone()),
+            _ => None,
+        }
+    }
+
     /// Возвращает активную цель, когда состояние привязано к комнате.
     pub(crate) fn active_target(&self) -> Option<VoiceRoomTarget> {
         match self {
