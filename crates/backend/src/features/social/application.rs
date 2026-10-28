@@ -4,6 +4,7 @@ mod attachments;
 mod direct_messages;
 mod friend_list;
 mod friendship_policy;
+mod social_list;
 
 use cheenhub_contracts::realtime::SocialChangeReason;
 use cheenhub_contracts::rest::{
@@ -34,6 +35,7 @@ pub(crate) use direct_messages::{
     open_dm_conversation, send_dm_message,
 };
 pub(crate) use friend_list::list_friends;
+pub(crate) use social_list::list_social_entries;
 
 const USER_SEARCH_LIMIT: u64 = 20;
 

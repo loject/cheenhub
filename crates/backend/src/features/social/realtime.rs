@@ -1,6 +1,7 @@
 //! Realtime-адаптер друзей и личных сообщений.
 
 mod direct_messages;
+mod social_list;
 
 #[cfg(test)]
 mod tests;
@@ -42,6 +43,9 @@ pub(crate) async fn handle(
             | SocialKind::UploadDirectMessageImage
             | SocialKind::LoadDirectMessageImage,
         ) => direct_messages::handle(state, user_id, send, envelope).await,
+        RealtimeKind::Social(SocialKind::ListSocialEntries) => {
+            social_list::handle(state, user_id, send, envelope).await
+        }
         RealtimeKind::Social(SocialKind::Subscribe) => {
             let request_id = require_request_id(&envelope)?;
             tracing::debug!(%user_id, "subscribed social realtime stream");

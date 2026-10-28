@@ -5,20 +5,25 @@ mod in_memory;
 mod in_memory_friend_list;
 mod in_memory_friendships;
 mod in_memory_message_counts;
+mod in_memory_read_state;
+mod in_memory_social_list;
 mod postgres;
 mod postgres_conversions;
 mod postgres_friend_list;
 mod postgres_friendships;
 mod postgres_message_counts;
 mod postgres_read_state;
+mod postgres_social_list;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+use crate::features::auth::infrastructure::AuthStore;
 use crate::features::social::domain::{
     ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage,
     DmMessagesPerMinute, FriendListCursor, FriendListEntry, Friendship, FriendshipStatus,
+    SocialListCursor, SocialListEntry,
 };
 
 pub(crate) use in_memory::InMemorySocialStore;
@@ -49,6 +54,14 @@ pub(crate) struct FriendListPage {
     /// Элементы текущей страницы.
     pub(crate) entries: Vec<FriendListEntry>,
     /// Есть ли элементы после текущей страницы.
+    pub(crate) has_more: bool,
+}
+
+/// Страница объединённого списка после серверной фильтрации и сортировки.
+pub(crate) struct SocialListPage {
+    /// Элементы страницы без повторяющихся пользователей.
+    pub(crate) entries: Vec<SocialListEntry>,
+    /// Истина, если после страницы остаются другие подходящие пользователи.
     pub(crate) has_more: bool,
 }
 
@@ -102,6 +115,20 @@ pub(crate) trait SocialStore: Send + Sync {
         cursor: Option<&FriendListCursor>,
         limit: usize,
     ) -> anyhow::Result<FriendListPage>;
+
+    /// Выбирает страницу объединённых друзей и собеседников с поиском по никнейму.
+    ///
+    /// PostgreSQL выполняет ограниченное read-only объединение с публичными данными
+    /// пользователей непосредственно в SQL. In-memory-реализация использует
+    /// переданный auth-каталог лишь для разрешения никнеймов в локальном режиме.
+    async fn social_list_page(
+        &self,
+        user_id: &Uuid,
+        normalized_query: &str,
+        cursor: Option<&SocialListCursor>,
+        limit: usize,
+        users: &dyn AuthStore,
+    ) -> anyhow::Result<SocialListPage>;
 
     /// Возвращает входящие заявки пользователя.
     async fn incoming_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>>;

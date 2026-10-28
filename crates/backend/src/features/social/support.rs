@@ -159,7 +159,7 @@ pub(super) async fn conversation_summaries(
 ///
 /// Вынесено отдельно от `conversation_summary`, чтобы пакетная и одиночная сборки
 /// гарантированно строили одинаковую структуру ответа.
-fn conversation_summary_from_parts(
+pub(super) fn conversation_summary_from_parts(
     friend: AuthUser,
     conversation: DmConversation,
     member_state: ConversationMemberState,
@@ -419,7 +419,7 @@ fn request_status(status: FriendshipStatus) -> FriendRequestStatus {
     }
 }
 
-fn default_member_state(
+pub(super) fn default_member_state(
     conversation: &DmConversation,
     current_user_id: &Uuid,
 ) -> ConversationMemberState {

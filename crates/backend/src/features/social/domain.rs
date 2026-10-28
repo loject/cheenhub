@@ -82,6 +82,32 @@ pub(crate) struct FriendListCursor {
     pub(crate) friend_user_id: Uuid,
 }
 
+/// Позиция в общем списке друзей и личных собеседников.
+#[derive(Debug, Clone)]
+pub(crate) struct SocialListCursor {
+    /// Время последнего неудалённого сообщения, если оно существует.
+    pub(crate) last_message_created_at: Option<DateTime<Utc>>,
+    /// Нормализованный никнейм для разрешения равных временных отметок.
+    pub(crate) nickname_key: String,
+    /// UUID собеседника для окончательного разрешения совпадений.
+    pub(crate) user_id: Uuid,
+}
+
+/// Строка социальной выборки после объединения друзей и собеседников.
+#[derive(Debug, Clone)]
+pub(crate) struct SocialListEntry {
+    /// Идентификатор собеседника.
+    pub(crate) user_id: Uuid,
+    /// Нормализованный никнейм, по которому выполнялись поиск и сортировка.
+    pub(crate) nickname_key: String,
+    /// Существующий диалог, отсутствующий у друзей без переписки.
+    pub(crate) conversation: Option<DmConversation>,
+    /// Состояние прочтения диалога текущим пользователем.
+    pub(crate) read_state: Option<ConversationMemberState>,
+    /// Последнее неудалённое сообщение, определяющее порядок.
+    pub(crate) last_message: Option<DmMessage>,
+}
+
 /// Диалог личных сообщений.
 #[derive(Debug, Clone)]
 pub(crate) struct DmConversation {

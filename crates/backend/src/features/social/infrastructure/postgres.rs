@@ -9,9 +9,11 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
+use crate::features::auth::infrastructure::AuthStore;
 use crate::features::social::domain::{
     ConversationMemberState, ConversationReadUpdate, DmConversation, DmMessage,
-    DmMessagesPerMinute, FriendListCursor, Friendship, FriendshipStatus, ordered_pair,
+    DmMessagesPerMinute, FriendListCursor, Friendship, FriendshipStatus, SocialListCursor,
+    ordered_pair,
 };
 use crate::features::social::infrastructure::entities::{
     self as friendships, conversation_member_states, conversation_read_checkpoints,
@@ -21,8 +23,8 @@ use crate::features::social::infrastructure::postgres_read_state::{
     ensure_member_state, increment_unread,
 };
 use crate::features::social::infrastructure::{
-    DM_HISTORY_LIMIT, DmMessagePage, FriendListPage, SocialStore, normalize_unread_count,
-    unread_count_after_read,
+    DM_HISTORY_LIMIT, DmMessagePage, FriendListPage, SocialListPage, SocialStore,
+    normalize_unread_count, unread_count_after_read,
 };
 
 /// Postgres-хранилище социальных данных.
@@ -116,6 +118,24 @@ impl SocialStore for PostgresSocialStore {
         limit: usize,
     ) -> anyhow::Result<FriendListPage> {
         super::postgres_friend_list::friend_list_page(&self.database, user_id, cursor, limit).await
+    }
+
+    async fn social_list_page(
+        &self,
+        user_id: &Uuid,
+        normalized_query: &str,
+        cursor: Option<&SocialListCursor>,
+        limit: usize,
+        _users: &dyn AuthStore,
+    ) -> anyhow::Result<SocialListPage> {
+        super::postgres_social_list::social_list_page(
+            &self.database,
+            user_id,
+            normalized_query,
+            cursor,
+            limit,
+        )
+        .await
     }
 
     async fn conversation_by_id(

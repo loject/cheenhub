@@ -1,6 +1,7 @@
 //! Проверки команд ЛС через общий realtime-обработчик.
 
 mod direct_messages;
+mod social_list;
 
 use super::*;
 use crate::features::auth::email::tests::TestAuthMailer;

@@ -4,6 +4,7 @@ mod friend_list;
 mod identity;
 mod non_friend_messages;
 mod search;
+mod social_list;
 
 use std::sync::Arc;
 
@@ -17,8 +18,8 @@ use cheenhub_contracts::rest::{
 
 use super::{
     accept_friend_request, dm_image, list_dm_conversations, list_dm_messages, list_friends,
-    mark_dm_conversation_read, open_dm_conversation, search_users, send_dm_message,
-    send_friend_request, upload_dm_image,
+    list_social_entries, mark_dm_conversation_read, open_dm_conversation, search_users,
+    send_dm_message, send_friend_request, upload_dm_image,
 };
 use crate::features::auth::application as auth_application;
 use crate::features::auth::email::tests::TestAuthMailer;
