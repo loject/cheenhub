@@ -1,6 +1,14 @@
 use super::*;
 
 #[test]
+fn decodes_incoming_call_ringtone_to_audible_pcm() {
+    let samples = incoming_call_ringtone_samples().expect("incoming-call ringtone must decode");
+
+    assert!(samples.len() > usize::try_from(AUDIO_SAMPLE_RATE_HZ / 100).unwrap());
+    assert!(samples.iter().any(|sample| sample.abs() > 0.01));
+}
+
+#[test]
 fn decodes_all_notification_assets() {
     let sounds = [
         NotificationSound::MessageReceived,

@@ -19,7 +19,71 @@ pub(super) struct ConnectionSignalLoopState {
     generation: u64,
 }
 
+/// Состояние циклического рингтона и отмены незавершённой загрузки звука.
+#[derive(Default)]
+pub(super) struct IncomingCallRingState {
+    source: Option<AudioBufferSourceNode>,
+    gain: Option<GainNode>,
+    generation: u64,
+}
+
+impl IncomingCallRingState {
+    fn begin(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.generation
+    }
+
+    fn cancel(&mut self) -> (Option<AudioBufferSourceNode>, Option<GainNode>) {
+        self.generation = self.generation.wrapping_add(1);
+        (self.source.take(), self.gain.take())
+    }
+
+    fn is_current(&self, generation: u64) -> bool {
+        self.generation == generation
+    }
+
+    pub(super) fn update_output_gain(&self, output_gain: f32) {
+        if let Some(gain) = &self.gain {
+            gain.gain().set_value(output_gain * 0.5);
+        }
+    }
+}
+
 impl AudioPlaybackHandle {
+    /// Запускает циклический рингтон независимо от mute входящего голоса.
+    pub(crate) fn start_incoming_call_ring(&self) {
+        self.stop_incoming_call_ring();
+        let generation = self.inner.borrow_mut().incoming_call_ring.begin();
+        let handle = self.clone();
+        spawn_local(async move {
+            if let Err(error) = handle.play_incoming_call_ring_async(generation).await {
+                warn!(error = %js_error_message(error), "failed to start browser incoming-call ringtone");
+            }
+        });
+    }
+
+    /// Останавливает рингтон и отменяет запуск, ожидающий загрузки WAV.
+    pub(crate) fn stop_incoming_call_ring(&self) {
+        let (source, gain) = self.inner.borrow_mut().incoming_call_ring.cancel();
+        if let Some(source) = source {
+            if let (Some(gain), Ok(context)) = (gain, self.context()) {
+                let now = context.current_time();
+                let end = now + 0.015;
+                let parameter = gain.gain();
+                let _ = parameter.cancel_scheduled_values(now);
+                let _ = parameter.set_value_at_time(parameter.value(), now);
+                let _ = parameter.linear_ramp_to_value_at_time(0.0, end);
+                if let Err(error) = stop_audio_source_at(&source, end) {
+                    warn!(error = %js_error_message(error), "failed to fade browser incoming-call ringtone");
+                } else {
+                    debug!(fade_ms = 15, "stopping browser incoming-call ringtone");
+                }
+            } else if let Err(error) = stop_audio_source(&source) {
+                warn!(error = %js_error_message(error), "failed to stop browser incoming-call ringtone");
+            }
+        }
+    }
+
     /// Проигрывает короткий системный звук уведомления.
     pub(crate) fn play_notification_sound(&self, sound: NotificationSound) {
         if self.is_muted() {
@@ -89,6 +153,39 @@ impl AudioPlaybackHandle {
                 warn!(error = %js_error_message(error), "failed to stop connection signal loop");
             }
         }
+    }
+
+    async fn play_incoming_call_ring_async(&self, generation: u64) -> Result<(), JsValue> {
+        let context = self.context()?;
+        JsFuture::from(context.resume()?).await?;
+        let buffer =
+            fetch_audio_buffer(&context, "/audio/notifications/cheenhub_incoming_call.wav").await?;
+        if !self
+            .inner
+            .borrow()
+            .incoming_call_ring
+            .is_current(generation)
+        {
+            debug!("ignored obsolete browser incoming-call ringtone load");
+            return Ok(());
+        }
+
+        let source = context.create_buffer_source()?;
+        let gain = context.create_gain()?;
+        source.set_buffer(Some(&buffer));
+        source.set_loop(true);
+        gain.gain()
+            .set_value(self.inner.borrow().output_gain as f32 * 0.5);
+        source.connect_with_audio_node(&gain)?;
+        gain.connect_with_audio_node(&context.destination())?;
+        source.start()?;
+        {
+            let mut inner = self.inner.borrow_mut();
+            inner.incoming_call_ring.source = Some(source);
+            inner.incoming_call_ring.gain = Some(gain);
+        }
+        debug!("started browser incoming-call ringtone loop");
+        Ok(())
     }
 
     async fn play_notification_sound_async(&self, sound: NotificationSound) -> Result<(), JsValue> {
@@ -192,9 +289,16 @@ async fn fetch_notification_buffer(
     context: &web_sys::AudioContext,
     sound: NotificationSound,
 ) -> Result<web_sys::AudioBuffer, JsValue> {
+    fetch_audio_buffer(context, sound.asset_path()).await
+}
+
+async fn fetch_audio_buffer(
+    context: &web_sys::AudioContext,
+    path: &str,
+) -> Result<web_sys::AudioBuffer, JsValue> {
     let window =
         web_sys::window().ok_or_else(|| JsValue::from_str("Browser window is unavailable."))?;
-    let response = JsFuture::from(window.fetch_with_str(sound.asset_path()))
+    let response = JsFuture::from(window.fetch_with_str(path))
         .await?
         .dyn_into::<Response>()?;
     if !response.ok() {

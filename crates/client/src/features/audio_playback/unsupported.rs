@@ -183,6 +183,14 @@ impl AudioPlaybackHandle {
         }
     }
 
+    /// Отмечает отсутствие воспроизведения рингтона на неподдерживаемой платформе.
+    pub(crate) fn start_incoming_call_ring(&self) {
+        debug!("skipped incoming-call ringtone without native playback backend");
+    }
+
+    /// Останавливает отсутствующий рингтон.
+    pub(crate) fn stop_incoming_call_ring(&self) {}
+
     /// Останавливает отсутствующий повторяющийся сигнал соединения.
     pub(crate) fn stop_connection_signal_loop(&self) {}
 

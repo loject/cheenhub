@@ -27,7 +27,7 @@ use self::browser_helpers::{apply_output_device_to_context, js_error_message};
 use self::jitter_buffer::JitterBuffer;
 use self::playback_pipeline::{SenderPlayback, create_sender_playback, encoded_audio_chunk};
 use self::playback_schedule::ScheduledAudioSource;
-use self::web_notifications::ConnectionSignalLoopState;
+use self::web_notifications::{ConnectionSignalLoopState, IncomingCallRingState};
 use super::backend::VoiceFrame;
 use super::output_devices::AudioOutputDevice;
 use super::storage;
@@ -71,6 +71,7 @@ pub(super) struct AudioPlaybackInner {
         HashMap<String, Vec<ScheduledAudioSource>>,
     pub(in crate::features::audio_playback::web) scheduled_until: HashMap<String, f64>,
     pub(in crate::features::audio_playback::web) connection_signal_loop: ConnectionSignalLoopState,
+    pub(in crate::features::audio_playback::web) incoming_call_ring: IncomingCallRingState,
     /// Значения усиления для каждого пользователя (0.0–2.0, по умолчанию 1.0).
     /// Сохраняется, чтобы громкость, заданная до первого фрейма, применялась при первом создании отправителя.
     pub(in crate::features::audio_playback::web) user_volumes: HashMap<String, f64>,
@@ -138,6 +139,9 @@ impl AudioPlaybackHandle {
         let next_gain = gain_from_percent(volume_percent);
         let mut inner = self.inner.borrow_mut();
         inner.output_gain = next_gain;
+        inner
+            .incoming_call_ring
+            .update_output_gain(next_gain as f32);
         for (sender_user_id, sender) in &inner.senders {
             let sender_gain = inner
                 .user_volumes
@@ -400,6 +404,7 @@ pub(crate) fn AudioPlaybackProvider(children: Element) -> Element {
             scheduled_sources: HashMap::new(),
             scheduled_until: HashMap::new(),
             connection_signal_loop: ConnectionSignalLoopState::default(),
+            incoming_call_ring: IncomingCallRingState::default(),
             user_volumes: HashMap::new(),
             output_gain,
         })),

@@ -1,4 +1,15 @@
-use super::connection_loop_start_time;
+use super::{IncomingCallRingState, connection_loop_start_time};
+
+#[test]
+fn cancelled_incoming_call_ring_rejects_pending_audio_load() {
+    let mut state = IncomingCallRingState::default();
+
+    let pending_generation = state.begin();
+    assert!(state.is_current(pending_generation));
+    let _ = state.cancel();
+
+    assert!(!state.is_current(pending_generation));
+}
 
 #[test]
 fn loop_starts_after_lost_sample_finishes() {

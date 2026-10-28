@@ -48,7 +48,7 @@ depends = [
 
 [android]
 identifier = "ru.cheenhub"
-min_sdk = 24
+min_sdk = 26
 target_sdk = 36
 compile_sdk = 36
 foreground_service_types = ["microphone", "mediaPlayback", "camera", "mediaProjection"]

@@ -3,6 +3,89 @@
 use super::*;
 
 #[test]
+fn backgrounding_active_call_shows_system_notification_once() {
+    assert!(should_show_incoming_call_notification(
+        Some("call-1"),
+        Some("call-1"),
+        true,
+        false,
+        false,
+    ));
+    assert!(!should_show_incoming_call_notification(
+        Some("call-1"),
+        Some("call-1"),
+        false,
+        false,
+        false,
+    ));
+    assert!(!should_show_incoming_call_notification(
+        Some("call-1"),
+        Some("call-1"),
+        true,
+        false,
+        true,
+    ));
+}
+
+#[test]
+fn incoming_call_ring_starts_once_and_stops_when_call_ends() {
+    let mut ring = IncomingCallRingState::default();
+
+    let started = ring.sync(Some("call-1"), true, false);
+    let repeated = ring.sync(Some("call-1"), true, false);
+    let ended = ring.sync(None, true, false);
+
+    assert_eq!(started.start.as_deref(), Some("call-1"));
+    assert!(!started.stop);
+    assert_eq!(repeated.start, None);
+    assert!(!repeated.stop);
+    assert_eq!(ended.start, None);
+    assert!(ended.stop);
+}
+
+#[test]
+fn ignored_incoming_call_ring_stays_stopped_after_recovery() {
+    let mut ring = IncomingCallRingState::default();
+    ring.sync(Some("call-1"), true, false);
+
+    let ignored = ring.sync(Some("call-1"), true, true);
+    let recovered = ring.sync(Some("call-1"), true, true);
+    let next = ring.sync(Some("call-2"), true, false);
+
+    assert!(ignored.stop);
+    assert_eq!(ignored.start, None);
+    assert!(!recovered.stop);
+    assert_eq!(recovered.start, None);
+    assert_eq!(next.start.as_deref(), Some("call-2"));
+}
+
+#[test]
+fn incoming_call_ring_pauses_and_resumes_with_activity_visibility() {
+    let mut ring = IncomingCallRingState::default();
+    ring.sync(Some("call-1"), true, false);
+
+    let backgrounded = ring.sync(Some("call-1"), false, false);
+    let still_backgrounded = ring.sync(Some("call-1"), false, false);
+    let foregrounded = ring.sync(Some("call-1"), true, false);
+
+    assert!(backgrounded.stop);
+    assert_eq!(backgrounded.start, None);
+    assert!(!still_backgrounded.stop);
+    assert_eq!(foregrounded.start.as_deref(), Some("call-1"));
+}
+
+#[test]
+fn incoming_call_ring_switches_to_next_call_without_overlap() {
+    let mut ring = IncomingCallRingState::default();
+    ring.sync(Some("call-1"), true, false);
+
+    let next = ring.sync(Some("call-2"), true, false);
+
+    assert!(next.stop);
+    assert_eq!(next.start.as_deref(), Some("call-2"));
+}
+
+#[test]
 fn repeated_ringing_event_does_not_show_second_toast() {
     let mut state = IncomingCallToastState::default();
 

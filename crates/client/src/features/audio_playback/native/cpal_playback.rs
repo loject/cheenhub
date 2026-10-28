@@ -88,7 +88,7 @@ impl AudioPlaybackHandle {
 
         info!(muted, "native audio playback mute state changed");
         if changed_to_muted {
-            self.stop_all();
+            self.stop_voice_playback();
         } else {
             self.resume();
         }

@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn clearing_voice_senders_preserves_incoming_call_ringtone() {
+    let mixer = new_mixer(1.0);
+    queue_sender_samples(&mixer, "peer-user", vec![0.6], 1.0, 1);
+    queue_then_loop_sender_samples(
+        &mixer,
+        "notification:incoming-call",
+        Vec::new(),
+        vec![0.25, 0.5],
+        1.0,
+        1.0,
+    );
+
+    clear_voice_senders(&mixer);
+    let mut state = mixer.lock().expect("mixer lock");
+
+    assert!(!state.senders.contains_key("peer-user"));
+    assert!(state.senders.contains_key("notification:incoming-call"));
+    assert_eq!(state.next_sample(), 0.25);
+    assert_eq!(state.next_sample(), 0.5);
+    assert_eq!(state.next_sample(), 0.25);
+}
+
+#[test]
 fn mixer_sums_senders_and_saturates_output() {
     let mut mixer = MixerState {
         senders: HashMap::from([

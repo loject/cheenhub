@@ -1,6 +1,6 @@
 //! Воспроизведение коротких WAV-уведомлений на Windows, Linux и macOS.
 
-use dioxus::prelude::{debug, warn};
+use dioxus::prelude::{debug, info, warn};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::features::audio_playback::NotificationSound;
@@ -36,6 +36,10 @@ const CONNECTION_RESTORED: &[u8] =
 const CONNECTION_SIGNAL_LOOP: &[u8] =
     include_bytes!("../../../../public/audio/notifications/cheenhub_signal_loop.wav");
 const CONNECTION_SIGNAL_LOOP_SENDER_ID: &str = "notification:connection-signal-loop";
+const INCOMING_CALL_RINGTONE: &[u8] =
+    include_bytes!("../../../../public/audio/notifications/cheenhub_incoming_call.wav");
+const INCOMING_CALL_RING_SENDER_ID: &str = "notification:incoming-call";
+const INCOMING_CALL_RING_FADE_MS: u32 = 15;
 static NEXT_NOTIFICATION_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
 
 impl AudioPlaybackHandle {
@@ -131,6 +135,61 @@ impl AudioPlaybackHandle {
         );
     }
 
+    /// Запускает повторяющийся рингтон входящего личного звонка.
+    ///
+    /// В отличие от голосового воспроизведения, рингтон работает и при mute входящего голоса.
+    pub(crate) fn start_incoming_call_ring(&self) {
+        if let Err(error) = self.ensure_engine() {
+            warn!(%error, "failed to initialize native incoming-call ringtone playback");
+            return;
+        }
+        let samples = match incoming_call_ringtone_samples() {
+            Ok(samples) => samples,
+            Err(error) => {
+                warn!(%error, "failed to decode native incoming-call ringtone");
+                return;
+            }
+        };
+        let Some(mixer) = self
+            .inner
+            .borrow()
+            .engine
+            .as_ref()
+            .map(|engine| engine.mixer.clone())
+        else {
+            warn!("native incoming-call ringtone mixer is unavailable");
+            return;
+        };
+        let sample_count = samples.len();
+        queue_then_loop_sender_samples(
+            &mixer,
+            INCOMING_CALL_RING_SENDER_ID,
+            Vec::new(),
+            samples,
+            0.5,
+            0.5,
+        );
+        info!(sample_count, "started native incoming-call ringtone loop");
+    }
+
+    /// Останавливает рингтон входящего звонка с коротким затуханием.
+    pub(crate) fn stop_incoming_call_ring(&self) {
+        let mixer = self
+            .inner
+            .borrow()
+            .engine
+            .as_ref()
+            .map(|engine| engine.mixer.clone());
+        if let Some(mixer) = mixer {
+            let fade_samples = (AUDIO_SAMPLE_RATE_HZ * INCOMING_CALL_RING_FADE_MS / 1_000) as usize;
+            fade_out_sender(&mixer, INCOMING_CALL_RING_SENDER_ID, fade_samples);
+            debug!(
+                fade_ms = INCOMING_CALL_RING_FADE_MS,
+                "stopping native incoming-call ringtone"
+            );
+        }
+    }
+
     /// Останавливает повторяющийся сигнал потери соединения.
     pub(crate) fn stop_connection_signal_loop(&self) {
         let mixer = self
@@ -148,6 +207,15 @@ impl AudioPlaybackHandle {
             );
         }
     }
+}
+
+fn incoming_call_ringtone_samples() -> Result<Vec<f32>, String> {
+    let wav = decode_pcm_wav(INCOMING_CALL_RINGTONE)?;
+    let samples = resample_linear(wav.samples, wav.sample_rate_hz, AUDIO_SAMPLE_RATE_HZ);
+    if samples.is_empty() {
+        return Err("Incoming-call ringtone contains no audio samples.".to_owned());
+    }
+    Ok(samples)
 }
 
 fn notification_sender_id(sound: NotificationSound) -> String {

@@ -5,7 +5,7 @@ use futures_channel::mpsc;
 use futures_util::StreamExt;
 
 use crate::features::app::current_user::CurrentUserContext;
-use crate::features::audio_playback::{AudioPlaybackHandle, NotificationSound};
+use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 use crate::features::toast::ToastHandle;
 
@@ -73,7 +73,8 @@ pub(super) fn DirectCallProvider(children: Element) -> Element {
                         if state.ignore(&call_id) {
                             action_state.set(state);
                             action_toasts.dismiss_custom(&incoming_toast_key(&call_id));
-                            info!(call_id = %call_id, "ignored incoming direct call toast locally");
+                            clear_incoming_call_notification(call_id.clone());
+                            info!(call_id = %call_id, "ignored incoming direct call toast and notification locally");
                         }
                     }
                 }
@@ -128,28 +129,79 @@ pub(super) fn DirectCallProvider(children: Element) -> Element {
         });
     });
 
-    let incoming_sound_playback = playback.clone();
+    // Android передаёт видимость Activity через lifecycle; на остальных платформах она постоянна.
+    let mut activity_visible = use_signal(|| true);
+    use_hook(move || {
+        spawn(async move {
+            let mut updates = crate::features::runtime::lifecycle::subscribe_visibility();
+            while let Some(visible) = updates.next().await {
+                activity_visible.set(visible);
+            }
+        })
+    });
+
+    let ringing_playback = playback.clone();
+    let ringing_call = direct_call.clone();
+    let mut incoming_ring_state = use_signal(IncomingCallRingState::default);
+    use_effect(move || {
+        let incoming_call_id = ringing_call.incoming_call().map(|call| call.call_id);
+        let ignored_call_id = incoming_toast_state().ignored_call_id;
+        let ignored = incoming_call_id.is_some() && incoming_call_id == ignored_call_id;
+        let mut state = incoming_ring_state.peek().cloned();
+        let transition = state.sync(incoming_call_id.as_deref(), activity_visible(), ignored);
+
+        if transition.stop {
+            ringing_playback.stop_incoming_call_ring();
+            debug!("stopped incoming direct-call ringtone");
+        }
+        if let Some(call_id) = transition.start {
+            ringing_playback.start_incoming_call_ring();
+            info!(%call_id, "started incoming direct-call ringtone");
+        }
+        incoming_ring_state.set(state);
+    });
+    let cleanup_playback = playback.clone();
+    use_drop(move || cleanup_playback.stop_incoming_call_ring());
+
     let incoming_sound_call = direct_call.clone();
     let mut last_incoming_call_id = use_signal(|| None::<String>);
+    let mut last_notification_visibility = use_signal(|| true);
     use_effect(move || {
         let incoming_call = incoming_sound_call.incoming_call();
         let incoming_call_id = incoming_call.as_ref().map(|call| call.call_id.clone());
-        if let Some(previous_call_id) = last_incoming_call_id.peek().as_ref()
+        let previous_call_id = last_incoming_call_id.peek().clone();
+        let was_visible = *last_notification_visibility.peek();
+        let visible = activity_visible();
+        let ignored = incoming_call_id.is_some()
+            && incoming_call_id == incoming_toast_state().ignored_call_id;
+
+        if let Some(previous_call_id) = previous_call_id.as_ref()
             && incoming_call_id.as_ref() != Some(previous_call_id)
         {
             clear_incoming_call_notification(previous_call_id.clone());
         }
-        if incoming_call_id.is_some() && incoming_call_id != *last_incoming_call_id.peek() {
-            incoming_sound_playback.play_notification_sound(NotificationSound::MessageReceived);
-            if let Some(call) = incoming_call {
-                show_incoming_call_notification(
-                    call.call_id,
-                    call.conversation_id,
-                    call.caller_nickname,
-                );
-            }
+        if visible
+            && !was_visible
+            && let Some(call_id) = incoming_call_id.as_ref()
+        {
+            clear_incoming_call_notification(call_id.clone());
+        }
+        if should_show_incoming_call_notification(
+            incoming_call_id.as_deref(),
+            previous_call_id.as_deref(),
+            was_visible,
+            visible,
+            ignored,
+        ) && let Some(call) = incoming_call
+        {
+            show_incoming_call_notification(
+                call.call_id,
+                call.conversation_id,
+                call.caller_nickname,
+            );
         }
         last_incoming_call_id.set(incoming_call_id);
+        last_notification_visibility.set(visible);
     });
 
     let incoming_toast_call = direct_call.clone();
@@ -203,6 +255,40 @@ pub(super) fn DirectCallProvider(children: Element) -> Element {
     }
 }
 
+/// Текущий вызов, для которого запущен внутренний рингтон.
+#[derive(Clone, Default)]
+struct IncomingCallRingState {
+    ringing_call_id: Option<String>,
+}
+
+/// Действия над аудио после смены вызова, игнорирования или видимости.
+#[derive(Default)]
+struct IncomingCallRingTransition {
+    stop: bool,
+    start: Option<String>,
+}
+
+impl IncomingCallRingState {
+    fn sync(
+        &mut self,
+        incoming_call_id: Option<&str>,
+        visible: bool,
+        ignored: bool,
+    ) -> IncomingCallRingTransition {
+        let desired_call_id = incoming_call_id.filter(|_| visible && !ignored);
+        if self.ringing_call_id.as_deref() == desired_call_id {
+            return IncomingCallRingTransition::default();
+        }
+
+        let stop = self.ringing_call_id.take().is_some();
+        self.ringing_call_id = desired_call_id.map(str::to_owned);
+        IncomingCallRingTransition {
+            stop,
+            start: self.ringing_call_id.clone(),
+        }
+    }
+}
+
 /// Локальное состояние показа и игнорирования входящего звонка.
 #[derive(Clone, Default)]
 struct IncomingCallToastState {
@@ -247,6 +333,18 @@ impl IncomingCallToastState {
         self.ignored_call_id = Some(call_id.to_owned());
         true
     }
+}
+
+fn should_show_incoming_call_notification(
+    incoming_call_id: Option<&str>,
+    previous_call_id: Option<&str>,
+    was_visible: bool,
+    visible: bool,
+    ignored: bool,
+) -> bool {
+    incoming_call_id.is_some()
+        && !ignored
+        && (incoming_call_id != previous_call_id || (was_visible && !visible))
 }
 
 fn incoming_toast_key(call_id: &str) -> String {

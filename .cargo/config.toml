@@ -7,6 +7,10 @@ incremental = false
 [target.wasm32-unknown-unknown]
 rustflags = ["--cfg=web_sys_unstable_apis"]
 
+# Android NDK: статическая C++ runtime требует явной линковки libc++abi.
+[target.'cfg(target_os = "android")']
+rustflags = ["-C", "link-arg=-lc++abi"]
+
 [env]
 CMAKE_POLICY_VERSION_MINIMUM = "3.5"
 VPX_LIB_DIR = { value = "crates/client/vendor/libvpx/windows-x64", relative = true }
