@@ -221,6 +221,7 @@ async fn main() -> anyhow::Result<()> {
         oauth_registration_lifetime_minutes: config.oauth_registration_lifetime_minutes,
         password_reset_token_lifetime_minutes: config.password_reset_token_lifetime_minutes,
     };
+    features::social::presence::spawn_presence_updates(state.clone()).await;
     let app = http::router(state.clone());
     features::host_settings::log_settings::restore(&state).await;
     let host_activity_monitor = Arc::new(

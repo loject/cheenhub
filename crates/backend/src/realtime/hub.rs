@@ -15,7 +15,10 @@ use uuid::Uuid;
 use super::sink::{DatagramSink, EnvelopeSink, PreparedEnvelope};
 
 mod disconnect;
+mod session_activity;
 pub(crate) use disconnect::DisconnectReason;
+use session_activity::SessionActivityRegistry;
+pub(crate) use session_activity::{SessionActivity, SessionActivityChange};
 
 const SLOW_DATAGRAM_FANOUT_WARN_AFTER: Duration = Duration::from_millis(40);
 const SLOW_DATAGRAM_FANOUT_WARNING_INTERVAL: Duration = Duration::from_secs(5);
@@ -33,6 +36,8 @@ pub(crate) struct RealtimeHub {
     sessions: DashMap<Uuid, RealtimeSession>,
     /// Время последнего предупреждения для ограничения повторяющихся логов.
     last_slow_datagram_fanout_warning_at: Mutex<Option<Instant>>,
+    /// Счётчик активных сессий и уведомления об их изменениях.
+    session_activity: Mutex<SessionActivityRegistry>,
 }
 
 /// Зарегистрированный надёжный поток одного realtime-модуля.
@@ -139,6 +144,7 @@ impl RealtimeHub {
         auth_session_id: Uuid,
         datagrams: DatagramSink,
     ) -> watch::Receiver<Option<DisconnectReason>> {
+        let mut activity = self.session_activity.lock().await;
         let receiver = match self.sessions.entry(session_id) {
             dashmap::Entry::Occupied(session) => session.get().disconnect.subscribe(),
             dashmap::Entry::Vacant(session) => {
@@ -150,6 +156,7 @@ impl RealtimeHub {
                     datagrams,
                     disconnect,
                 });
+                activity.connected(user_id);
                 receiver
             }
         };
@@ -159,7 +166,10 @@ impl RealtimeHub {
 
     /// Удаляет аутентифицированную сессию WebTransport.
     pub(crate) async fn unregister_session(&self, session_id: Uuid) {
-        self.sessions.remove(&session_id);
+        let mut activity = self.session_activity.lock().await;
+        if let Some((_, session)) = self.sessions.remove(&session_id) {
+            activity.disconnected(session.user_id);
+        }
         debug!(%session_id, "unregistered realtime session");
     }
 
@@ -207,6 +217,7 @@ impl RealtimeHub {
         reason: DisconnectReason,
         context: &'static str,
     ) -> usize {
+        let mut activity = self.session_activity.lock().await;
         let mut disconnected = 0;
         self.sessions.retain(|_, session| {
             if !matches(session) {
@@ -214,6 +225,7 @@ impl RealtimeHub {
             }
 
             disconnected += 1;
+            activity.disconnected(session.user_id);
             let _ = session.disconnect.send(Some(reason));
             false
         });

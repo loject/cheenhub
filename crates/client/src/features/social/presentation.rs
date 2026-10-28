@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use cheenhub_contracts::realtime::TextChatMessage;
+use cheenhub_contracts::realtime::{PresenceChanged, TextChatMessage};
 use cheenhub_contracts::rest::{
     DmConversationSummary, DmMessageSummary, FriendRequestSummary, FriendSummary,
     UserRelationStatus,
@@ -30,6 +30,23 @@ pub(super) struct FriendsPageState {
     pub(super) is_loading_more: Signal<bool>,
     /// Версия состояния, для которой разрешено применять ответы запросов.
     pub(super) generation: Signal<u64>,
+}
+
+/// Применяет точное изменение присутствия к загруженному другу.
+///
+/// Неизвестные идентификаторы игнорируются: список пополняет загрузка страниц.
+pub(super) fn apply_friend_presence(
+    friends: &mut [FriendSummary],
+    event: &PresenceChanged,
+) -> bool {
+    let Some(friend) = friends
+        .iter_mut()
+        .find(|friend| friend.user_id == event.user_id)
+    else {
+        return false;
+    };
+    friend.presence = event.presence.clone();
+    true
 }
 
 pub(super) fn load_social_overview(

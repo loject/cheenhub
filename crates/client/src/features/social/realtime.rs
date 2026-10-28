@@ -2,14 +2,17 @@
 
 mod direct_messages;
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) use direct_messages::{
     edit_dm_message, list_dm_conversations, list_dm_messages, load_dm_image,
     mark_dm_conversation_read, open_dm_conversation, send_dm_message, upload_dm_image,
 };
 
 use cheenhub_contracts::realtime::{
-    DirectMessageCreated, RealtimeEnvelope, RealtimeKind, RealtimeModule, SocialChanged,
-    SocialKind, SocialReady, SubscribeSocial,
+    DirectMessageCreated, PresenceChanged, RealtimeEnvelope, RealtimeKind, RealtimeModule,
+    SocialChanged, SocialKind, SocialReady, SubscribeSocial,
 };
 use dioxus::prelude::{debug, info, warn};
 use futures_channel::mpsc;
@@ -112,6 +115,25 @@ pub(crate) fn subscribe_social_events(
     receiver
 }
 
+/// Подписывается на изменения присутствия друзей текущего пользователя.
+pub(crate) fn subscribe_presence_events(
+    realtime: &RealtimeHandle,
+) -> mpsc::UnboundedReceiver<PresenceChanged> {
+    let mut events = realtime.subscribe_events();
+    let (sender, receiver) = mpsc::unbounded();
+    dioxus::prelude::spawn(async move {
+        while let Some(envelope) = events.next().await {
+            let Some(event) = decode_presence_event(envelope) else {
+                continue;
+            };
+            if sender.unbounded_send(event).is_err() {
+                break;
+            }
+        }
+    });
+    receiver
+}
+
 /// Подписывается на точные события новых личных сообщений текущего пользователя.
 pub(crate) fn subscribe_direct_message_events(
     realtime: &RealtimeHandle,
@@ -143,6 +165,21 @@ fn decode_social_event(envelope: RealtimeEnvelope) -> Option<SocialChanged> {
             serde_json::from_value::<SocialChanged>(envelope.payload).ok()
         }
         _ => None,
+    }
+}
+
+fn decode_presence_event(envelope: RealtimeEnvelope) -> Option<PresenceChanged> {
+    if envelope.module != RealtimeModule::Social
+        || envelope.kind != RealtimeKind::Social(SocialKind::PresenceChanged)
+    {
+        return None;
+    }
+    match serde_json::from_value(envelope.payload) {
+        Ok(event) => Some(event),
+        Err(error) => {
+            warn!(%error, "failed to decode friend presence realtime event");
+            None
+        }
     }
 }
 

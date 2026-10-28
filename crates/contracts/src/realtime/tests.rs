@@ -311,6 +311,45 @@ fn server_invites_envelope_round_trips() {
 }
 
 #[test]
+fn social_presence_event_preserves_online_and_last_seen() {
+    use crate::presence::UserPresence;
+
+    let user_id = Uuid::new_v4().to_string();
+    for (presence, expected) in [
+        (
+            UserPresence::Online,
+            serde_json::json!({"status": "online"}),
+        ),
+        (
+            UserPresence::Offline {
+                last_seen_at: Some("2026-10-28T12:30:00Z".to_owned()),
+            },
+            serde_json::json!({"status": "offline", "last_seen_at": "2026-10-28T12:30:00Z"}),
+        ),
+        (
+            UserPresence::Offline { last_seen_at: None },
+            serde_json::json!({"status": "offline", "last_seen_at": null}),
+        ),
+    ] {
+        let payload = PresenceChanged {
+            user_id: user_id.clone(),
+            presence: presence.clone(),
+        };
+        let envelope = RealtimeEnvelope::new(
+            RealtimeModule::Social,
+            RealtimeKind::Social(SocialKind::PresenceChanged),
+            None,
+            payload.clone(),
+        )
+        .expect("presence event serializes");
+        assert!(envelope.has_matching_module_kind());
+        assert_eq!(envelope.payload["presence"], expected);
+        let decoded: PresenceChanged = serde_json::from_value(envelope.payload).unwrap();
+        assert_eq!(decoded, payload);
+    }
+}
+
+#[test]
 fn social_changed_envelope_round_trips() {
     let envelope = RealtimeEnvelope::new(
         RealtimeModule::Social,

@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::presence::UserPresence;
+
 /// Отношение найденного пользователя к текущему пользователю.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -63,6 +65,9 @@ pub struct FriendSummary {
     pub last_message: Option<DmLastMessageSummary>,
     /// Временная метка начала дружбы в формате RFC3339.
     pub friends_since: String,
+    /// Присутствие друга на момент формирования ответа.
+    #[serde(default)]
+    pub presence: UserPresence,
 }
 
 /// Компактный preview последнего личного сообщения.

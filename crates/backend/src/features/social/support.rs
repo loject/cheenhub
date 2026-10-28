@@ -57,6 +57,11 @@ pub(super) async fn friend_summaries(
             SocialError::NotFound("Пользователь больше не существует.".to_owned())
         })?;
         let friend = auth_user(state, friend);
+        let activity = state
+            .realtime_hub
+            .session_activity_for_user(entry.friend_user_id)
+            .await;
+        let presence = super::presence::public_presence(activity);
         summaries.push(FriendSummary {
             user_id: friend.id,
             nickname: friend.nickname,
@@ -70,6 +75,7 @@ pub(super) async fn friend_summaries(
                 created_at: message.created_at.to_rfc3339(),
             }),
             friends_since: entry.friendship.updated_at.to_rfc3339(),
+            presence,
         });
     }
     Ok(summaries)

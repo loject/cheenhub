@@ -145,6 +145,63 @@ fn rejection(envelope: RealtimeEnvelope, code: RejectionCode) {
     assert_eq!(rejected.code, code);
 }
 
+#[tokio::test]
+async fn presence_updates_reach_friends_but_not_unrelated_users() {
+    use crate::features::social::presence::notify_presence_change;
+    use crate::realtime::hub::{SessionActivity, SessionActivityChange};
+
+    let pair = pair().await;
+    let unrelated = register(&pair.state, "unrelated_rt", "unrelated-rt@example.com").await;
+    let (friend_sender, mut friend_receiver) = mpsc::channel(4);
+    let (unrelated_sender, mut unrelated_receiver) = mpsc::channel(4);
+    for (user, sender) in [
+        (&pair.bob, friend_sender),
+        (&unrelated.user, unrelated_sender),
+    ] {
+        pair.state
+            .realtime_hub
+            .register_stream(
+                Uuid::new_v4(),
+                RealtimeModule::Social,
+                id(user),
+                EnvelopeSink::websocket(sender),
+            )
+            .await;
+    }
+
+    notify_presence_change(
+        &pair.state,
+        SessionActivityChange {
+            user_id: id(&pair.alice),
+            activity: SessionActivity {
+                online: true,
+                last_seen_at: None,
+            },
+        },
+    )
+    .await;
+
+    let WebSocketOutbound::PreparedEnvelope(text) = friend_receiver
+        .try_recv()
+        .expect("friend should receive presence")
+    else {
+        panic!("expected a prepared presence envelope");
+    };
+    let envelope: RealtimeEnvelope = serde_json::from_str(text.as_str()).unwrap();
+    assert_eq!(
+        envelope.kind,
+        RealtimeKind::Social(SocialKind::PresenceChanged)
+    );
+    let payload: cheenhub_contracts::realtime::PresenceChanged =
+        serde_json::from_value(envelope.payload).unwrap();
+    assert_eq!(payload.user_id, pair.alice.id);
+    assert_eq!(
+        payload.presence,
+        cheenhub_contracts::presence::UserPresence::Online
+    );
+    assert!(unrelated_receiver.try_recv().is_err());
+}
+
 fn state() -> AppState {
     AppState {
         auth_store: Arc::new(InMemoryAuthStore::default()),

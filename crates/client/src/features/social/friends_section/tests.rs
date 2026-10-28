@@ -24,6 +24,7 @@ fn message_preview_marks_own_message_and_image_only_message() {
             created_at: "2026-09-10T00:00:00Z".to_owned(),
         }),
         friends_since: "2026-06-30T00:00:00Z".to_owned(),
+        presence: cheenhub_contracts::presence::UserPresence::default(),
     };
     assert_eq!(friend_message_preview(&friend, "current-user"), "Вы: Ответ");
 

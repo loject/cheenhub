@@ -1,6 +1,6 @@
 //! Секция друзей на social-экране.
 
-use cheenhub_contracts::rest::FriendSummary;
+use cheenhub_contracts::{presence::UserPresence, rest::FriendSummary};
 use dioxus::prelude::*;
 
 use crate::features::app::components::avatar::UserAvatar;
@@ -53,12 +53,13 @@ pub(super) fn FriendsSection(
                 }
             } else {
                 div { class: "mt-2 space-y-1",
-                    for (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname, preview) in friends.into_iter().map(|friend| {
+                    for (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname, preview, online) in friends.into_iter().map(|friend| {
                         let open_friend_user_id = friend.user_id.clone();
                         let menu_friend_user_id = friend.user_id.clone();
                         let menu_friend_nickname = friend.nickname.clone();
                         let preview = friend_message_preview(&friend, &current_user_id);
-                        (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname, preview)
+                        let online = matches!(friend.presence, UserPresence::Online);
+                        (friend, open_friend_user_id, menu_friend_user_id, menu_friend_nickname, preview, online)
                     }) {
                         button {
                             key: "{friend.user_id}",
@@ -94,7 +95,20 @@ pub(super) fn FriendsSection(
                                 avatar_seed: Some(friend.user_id.clone()),
                             }
                             span { class: "min-w-0 flex-1",
-                                span { class: "block truncate text-[13px] font-medium text-zinc-100", "{friend.nickname}" }
+                                span { class: "flex min-w-0 items-center gap-2",
+                                    span { class: "min-w-0 flex-1 truncate text-[13px] font-medium text-zinc-100", "{friend.nickname}" }
+                                    if online {
+                                        span { class: "flex shrink-0 items-center gap-1 text-[10px] text-emerald-400",
+                                            span { class: "h-1.5 w-1.5 rounded-full bg-emerald-400" }
+                                            "В сети"
+                                        }
+                                    } else {
+                                        span { class: "flex shrink-0 items-center gap-1 text-[10px] text-zinc-500",
+                                            span { class: "h-1.5 w-1.5 rounded-full bg-zinc-600" }
+                                            "Не в сети"
+                                        }
+                                    }
+                                }
                                 span { class: "block truncate text-[11px] text-zinc-500", "{preview}" }
                             }
                             if friend.unread_count > 0 {

@@ -143,6 +143,74 @@ async fn stream_registry_filters_module_and_ignores_duplicate_registration() {
 }
 
 #[tokio::test]
+async fn presence_remains_online_until_last_session_closes() {
+    let hub = RealtimeHub::default();
+    let user_id = Uuid::new_v4();
+    let first_session_id = Uuid::new_v4();
+    let second_session_id = Uuid::new_v4();
+    let mut events = hub.subscribe_session_activity().await;
+    assert!(!hub.session_activity_for_user(user_id).await.online);
+
+    for session_id in [first_session_id, second_session_id] {
+        let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+        hub.register_session(
+            session_id,
+            user_id,
+            Uuid::new_v4(),
+            DatagramSink::websocket(sender),
+        )
+        .await;
+    }
+    assert!(hub.session_activity_for_user(user_id).await.online);
+    let online = events.try_recv().expect("first connection emits online");
+    assert_eq!(online.user_id, user_id);
+    assert!(online.activity.online);
+    assert!(events.try_recv().is_err());
+
+    hub.unregister_session(first_session_id).await;
+    assert!(hub.session_activity_for_user(user_id).await.online);
+    assert!(events.try_recv().is_err());
+
+    let before_disconnect = chrono::Utc::now();
+    hub.unregister_session(second_session_id).await;
+    let offline = events.try_recv().expect("last connection emits offline");
+    assert!(!offline.activity.online);
+    assert!(
+        offline
+            .activity
+            .last_seen_at
+            .is_some_and(|at| at >= before_disconnect)
+    );
+    assert!(!hub.session_activity_for_user(user_id).await.online);
+}
+
+#[tokio::test]
+async fn revoked_sessions_emit_offline_once() {
+    let hub = RealtimeHub::default();
+    let user_id = Uuid::new_v4();
+    let mut events = hub.subscribe_session_activity().await;
+    let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+    hub.register_session(
+        Uuid::new_v4(),
+        user_id,
+        Uuid::new_v4(),
+        DatagramSink::websocket(sender),
+    )
+    .await;
+    let _ = events.try_recv().expect("online transition");
+
+    assert_eq!(hub.disconnect_user_sessions(&user_id).await, 1);
+    assert!(
+        !events
+            .try_recv()
+            .expect("offline transition")
+            .activity
+            .online
+    );
+    assert!(events.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn datagram_fanout_sends_only_to_requested_sessions() {
     let hub = RealtimeHub::default();
     let selected_session_id = Uuid::new_v4();

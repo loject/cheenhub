@@ -29,10 +29,10 @@ pub use social::{
     DirectMessageTypingChanged, DirectMessageTypingSnapshot, DirectMessageTypingSnapshotRequest,
     EditDirectMessage, EditDirectMessageAccepted, ListDirectMessageConversations,
     LoadDirectMessageHistory, LoadDirectMessageImage, MarkDirectMessageRead,
-    MarkDirectMessageReadAccepted, OpenDirectMessageConversation, SendDirectMessage,
-    SendDirectMessageAccepted, SocialChangeReason, SocialChanged, SocialKind, SocialReady,
-    StartDirectMessageTyping, StopDirectMessageTyping, SubscribeSocial, UploadDirectMessageImage,
-    UploadDirectMessageImageAccepted,
+    MarkDirectMessageReadAccepted, OpenDirectMessageConversation, PresenceChanged,
+    SendDirectMessage, SendDirectMessageAccepted, SocialChangeReason, SocialChanged, SocialKind,
+    SocialReady, StartDirectMessageTyping, StopDirectMessageTyping, SubscribeSocial,
+    UploadDirectMessageImage, UploadDirectMessageImageAccepted,
 };
 pub use text_chat::{
     AuthorRolesResolved, ChatImageLoadedResponse, ChatImageUploadResponse, DeleteMessage,

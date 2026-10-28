@@ -26,8 +26,12 @@ use super::direct_message_workspace::DirectMessageWorkspace;
 use super::friend_context_menu::FriendContextMenu;
 use super::friend_search_modal::FriendSearchModal;
 use super::friends_section::{FriendMenuRequest, FriendsSection};
-use super::presentation::{FriendsPageState, load_more_friends, load_social_overview};
-use super::realtime::{self, subscribe_social_events, subscribe_social_ready_events};
+use super::presentation::{
+    FriendsPageState, apply_friend_presence, load_more_friends, load_social_overview,
+};
+use super::realtime::{
+    self, subscribe_presence_events, subscribe_social_events, subscribe_social_ready_events,
+};
 use super::requests_section::FriendRequestsSection;
 use super::voice_target::direct_message_voice_target;
 
@@ -219,6 +223,17 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
             while ready.next().await.is_some() {
                 debug!("refreshing social state after realtime subscription became active");
                 reload.call(());
+            }
+        });
+
+        let presence_realtime = realtime.clone();
+        spawn(async move {
+            let mut receiver = subscribe_presence_events(&presence_realtime);
+            let mut friends = friends_page.friends;
+            while let Some(event) = receiver.next().await {
+                if apply_friend_presence(&mut friends.write(), &event) {
+                    debug!(user_id = %event.user_id, "updated friend presence from realtime");
+                }
             }
         });
 

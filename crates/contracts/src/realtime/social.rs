@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::typing::TypingAuthor;
+use crate::presence::UserPresence;
 
 mod direct_messages;
 
@@ -54,6 +55,8 @@ pub enum SocialKind {
     Ready,
     /// У текущего пользователя изменились друзья, заявки или личные сообщения.
     Changed,
+    /// Изменилось присутствие одного из друзей пользователя.
+    PresenceChanged,
     /// Получатель получил новое личное сообщение.
     DirectMessageCreated,
     /// Участник подтвердил прочтение личного диалога.
@@ -83,6 +86,15 @@ pub struct SocialChanged {
     pub reason: SocialChangeReason,
     /// Идентификатор личного диалога, если изменение относится к ЛС.
     pub conversation_id: Option<String>,
+}
+
+/// Изменение присутствия друга, доставляемое только его друзьям.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PresenceChanged {
+    /// Идентификатор пользователя, присутствие которого изменилось.
+    pub user_id: String,
+    /// Новое присутствие пользователя.
+    pub presence: UserPresence,
 }
 
 /// Realtime-событие нового личного сообщения для получателя.

@@ -1,6 +1,43 @@
-use cheenhub_contracts::rest::DmMessageSummary;
+use cheenhub_contracts::{
+    presence::UserPresence,
+    realtime::PresenceChanged,
+    rest::{DmMessageSummary, FriendSummary},
+};
 
-use super::merge_direct_messages;
+use super::{apply_friend_presence, merge_direct_messages};
+
+#[test]
+fn presence_event_updates_only_the_matching_friend() {
+    let friend = |user_id: &str| FriendSummary {
+        user_id: user_id.to_owned(),
+        nickname: user_id.to_owned(),
+        avatar_url: None,
+        unread_count: 3,
+        last_message: None,
+        friends_since: "2026-10-20T00:00:00Z".to_owned(),
+        presence: UserPresence::Offline { last_seen_at: None },
+    };
+    let mut friends = vec![friend("alice"), friend("bob")];
+    let changed = PresenceChanged {
+        user_id: "bob".to_owned(),
+        presence: UserPresence::Online,
+    };
+
+    assert!(apply_friend_presence(&mut friends, &changed));
+    assert_eq!(
+        friends[0].presence,
+        UserPresence::Offline { last_seen_at: None }
+    );
+    assert_eq!(friends[1].presence, UserPresence::Online);
+    assert_eq!(friends[1].unread_count, 3);
+    assert!(!apply_friend_presence(
+        &mut friends,
+        &PresenceChanged {
+            user_id: "unknown".to_owned(),
+            presence: UserPresence::Online,
+        },
+    ));
+}
 
 fn message(id: &str, seq: i64, body: &str) -> DmMessageSummary {
     DmMessageSummary {
