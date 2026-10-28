@@ -8,8 +8,6 @@ use chrono::{DateTime, Utc};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use super::RealtimeHub;
-
 /// Снимок активности транспортных сессий пользователя в текущем процессе.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SessionActivity {
@@ -92,21 +90,5 @@ impl SessionActivityRegistry {
                 activity: self.snapshot(user_id),
             });
         }
-    }
-}
-
-impl RealtimeHub {
-    /// Подписывает потребителя на изменения активности транспортных сессий.
-    ///
-    /// При переполнении очереди получатель должен обновить свой снимок.
-    pub(crate) async fn subscribe_session_activity(
-        &self,
-    ) -> broadcast::Receiver<SessionActivityChange> {
-        self.session_activity.lock().await.subscribe()
-    }
-
-    /// Возвращает активность сессий пользователя без проверки права её просмотра.
-    pub(crate) async fn session_activity_for_user(&self, user_id: Uuid) -> SessionActivity {
-        self.session_activity.lock().await.snapshot(user_id)
     }
 }

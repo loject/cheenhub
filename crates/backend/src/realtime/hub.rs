@@ -9,16 +9,17 @@ use futures_util::future::join_all;
 use serde::Serialize;
 use tokio::sync::{Mutex, watch};
 use tokio::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 use super::sink::{DatagramSink, EnvelopeSink, PreparedEnvelope};
 
 mod disconnect;
 mod session_activity;
+mod session_registry;
 pub(crate) use disconnect::DisconnectReason;
-use session_activity::SessionActivityRegistry;
 pub(crate) use session_activity::{SessionActivity, SessionActivityChange};
+use session_registry::SessionRegistry;
 
 const SLOW_DATAGRAM_FANOUT_WARN_AFTER: Duration = Duration::from_millis(40);
 const SLOW_DATAGRAM_FANOUT_WARNING_INTERVAL: Duration = Duration::from_secs(5);
@@ -32,12 +33,10 @@ const SLOW_DATAGRAM_FANOUT_WARNING_INTERVAL: Duration = Duration::from_secs(5);
 pub(crate) struct RealtimeHub {
     /// Надёжные потоки по их идентификаторам, независимо от транспорта.
     streams: DashMap<Uuid, RealtimeStream>,
-    /// Активные транспортные сессии по идентификатору подключения.
-    sessions: DashMap<Uuid, RealtimeSession>,
+    /// Единый реестр транспортных сессий и их присутствия.
+    sessions: SessionRegistry,
     /// Время последнего предупреждения для ограничения повторяющихся логов.
     last_slow_datagram_fanout_warning_at: Mutex<Option<Instant>>,
-    /// Счётчик активных сессий и уведомления об их изменениях.
-    session_activity: Mutex<SessionActivityRegistry>,
 }
 
 /// Зарегистрированный надёжный поток одного realtime-модуля.
@@ -54,24 +53,6 @@ struct RealtimeStream {
     user_id: Uuid,
     /// Абстракция отправки конвертов через WebTransport или WebSocket.
     send: EnvelopeSink,
-}
-
-/// Активная транспортная сессия для датаграмм и управления отключением.
-///
-/// Не определяет участие пользователя в голосовых комнатах: это состояние
-/// принадлежит модулю голосового чата.
-#[derive(Clone)]
-struct RealtimeSession {
-    /// Идентификатор транспортного подключения.
-    id: Uuid,
-    /// Аутентифицированный пользователь, которому принадлежит сессия.
-    user_id: Uuid,
-    /// Идентификатор auth-сессии для адресного отзыва подключения.
-    auth_session_id: Uuid,
-    /// Канал отправки ненадёжных датаграмм по выбранному транспорту.
-    datagrams: DatagramSink,
-    /// Сигнал закрытия транспорта с причиной отключения.
-    disconnect: watch::Sender<Option<DisconnectReason>>,
 }
 
 /// Результат доставки одной датаграммы одному получателю.
@@ -144,53 +125,24 @@ impl RealtimeHub {
         auth_session_id: Uuid,
         datagrams: DatagramSink,
     ) -> watch::Receiver<Option<DisconnectReason>> {
-        let mut activity = self.session_activity.lock().await;
-        let receiver = match self.sessions.entry(session_id) {
-            dashmap::Entry::Occupied(session) => session.get().disconnect.subscribe(),
-            dashmap::Entry::Vacant(session) => {
-                let (disconnect, receiver) = watch::channel(None);
-                session.insert(RealtimeSession {
-                    id: session_id,
-                    user_id,
-                    auth_session_id,
-                    datagrams,
-                    disconnect,
-                });
-                activity.connected(user_id);
-                receiver
-            }
-        };
-        debug!(%session_id, %user_id, %auth_session_id, "registered realtime session");
-        receiver
+        self.sessions
+            .register_session(session_id, user_id, auth_session_id, datagrams)
+            .await
     }
 
-    /// Удаляет аутентифицированную сессию WebTransport.
+    /// Удаляет аутентифицированную realtime-сессию.
     pub(crate) async fn unregister_session(&self, session_id: Uuid) {
-        let mut activity = self.session_activity.lock().await;
-        if let Some((_, session)) = self.sessions.remove(&session_id) {
-            activity.disconnected(session.user_id);
-        }
-        debug!(%session_id, "unregistered realtime session");
+        self.sessions.unregister_session(session_id).await;
     }
 
     /// Завершает все realtime-транспорты, связанные с одной auth-сессией.
     pub(crate) async fn disconnect_auth_session(&self, auth_session_id: &Uuid) -> usize {
-        self.disconnect_matching(
-            |session| session.auth_session_id == *auth_session_id,
-            DisconnectReason::AuthSessionRevoked,
-            "revoked auth session",
-        )
-        .await
+        self.sessions.disconnect_auth_session(auth_session_id).await
     }
 
     /// Завершает все realtime-транспорты активных auth-сессий пользователя.
     pub(crate) async fn disconnect_user_sessions(&self, user_id: &Uuid) -> usize {
-        self.disconnect_matching(
-            |session| session.user_id == *user_id,
-            DisconnectReason::AuthSessionRevoked,
-            "revoked user sessions",
-        )
-        .await
+        self.sessions.disconnect_user_sessions(user_id).await
     }
 
     /// Завершает все активные realtime-транспорты при остановке процесса.
@@ -199,48 +151,19 @@ impl RealtimeHub {
     /// плановом рестарте по коду закрытия и сразу переподключились, не дожидаясь
     /// истечения ping-таймаута. Возвращает количество закрытых транспортов.
     pub(crate) async fn disconnect_all_sessions(&self) -> usize {
-        self.disconnect_matching(
-            |_| true,
-            DisconnectReason::ServiceRestarting,
-            "process exit",
-        )
-        .await
+        self.sessions.disconnect_all_sessions().await
     }
 
-    /// Закрывает транспорты, отобранные фильтром, одной причиной.
-    ///
-    /// Сессии удаляются из реестра сразу, чтобы fanout больше не пытался писать
-    /// в закрываемые транспорты.
-    async fn disconnect_matching(
+    /// Подписывает потребителя на изменения активности транспортных сессий.
+    pub(crate) async fn subscribe_session_activity(
         &self,
-        matches: impl Fn(&RealtimeSession) -> bool,
-        reason: DisconnectReason,
-        context: &'static str,
-    ) -> usize {
-        let mut activity = self.session_activity.lock().await;
-        let mut disconnected = 0;
-        self.sessions.retain(|_, session| {
-            if !matches(session) {
-                return true;
-            }
+    ) -> tokio::sync::broadcast::Receiver<SessionActivityChange> {
+        self.sessions.subscribe_activity().await
+    }
 
-            disconnected += 1;
-            activity.disconnected(session.user_id);
-            let _ = session.disconnect.send(Some(reason));
-            false
-        });
-        let remaining = self.sessions.len();
-        if disconnected > 0 {
-            info!(
-                %reason,
-                realtime_session_count = disconnected,
-                "disconnected realtime transports"
-            );
-        } else {
-            debug!(%reason, "no realtime transports matched disconnect request");
-        }
-        debug!(remaining_sessions = remaining, removed_sessions = disconnected, %context, "realtime session registry updated after disconnect request");
-        disconnected
+    /// Возвращает активность сессий пользователя без проверки права её просмотра.
+    pub(crate) async fn session_activity_for_user(&self, user_id: Uuid) -> SessionActivity {
+        self.sessions.activity_for_user(user_id).await
     }
 
     /// Отправляет сырую датаграмму активным сессиям из снимка, кроме источника.
@@ -260,11 +183,7 @@ impl RealtimeHub {
         let sessions = session_ids
             .iter()
             .filter(|session_id| **session_id != excluded_session_id)
-            .filter_map(|session_id| {
-                self.sessions
-                    .get(session_id)
-                    .map(|entry| entry.value().clone())
-            })
+            .filter_map(|session_id| self.sessions.get(session_id))
             .collect::<Vec<_>>();
         let recipient_count = sessions.len();
 
