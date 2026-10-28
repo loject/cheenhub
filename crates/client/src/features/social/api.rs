@@ -1,7 +1,7 @@
 //! REST API клиента для друзей и заявок.
 
 use cheenhub_contracts::rest::{
-    ListFriendRequestsResponse, ListFriendsResponse, SearchUsersResponse, SendFriendRequestRequest,
+    ListFriendRequestsResponse, SearchUsersResponse, SendFriendRequestRequest,
     SendFriendRequestResponse, UserSearchResult,
 };
 use reqwest::{Response, StatusCode};
@@ -11,18 +11,6 @@ use serde::de::DeserializeOwned;
 use crate::features::auth::api as auth_api;
 
 const NETWORK_ERROR_MESSAGE: &str = "Не удалось связаться с сервером.";
-
-/// Загружает друзей текущего пользователя.
-pub(crate) async fn list_friends(cursor: Option<&str>) -> Result<ListFriendsResponse, String> {
-    const PAGE_SIZE: u32 = 50;
-
-    let mut path = format!("/friends?limit={PAGE_SIZE}");
-    if let Some(cursor) = cursor {
-        path.push_str("&cursor=");
-        path.push_str(&encode_query(cursor));
-    }
-    authorized_json::<ListFriendsResponse>("GET", &path, None::<&()>).await
-}
 
 /// Загружает входящие заявки.
 pub(crate) async fn list_incoming_requests()

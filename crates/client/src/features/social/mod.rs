@@ -2,7 +2,6 @@
 
 pub(crate) mod api;
 mod conversation_notice;
-mod conversations_section;
 mod direct_message_chat_platform;
 mod direct_message_editing;
 mod direct_message_group;
@@ -17,12 +16,13 @@ mod direct_message_voice_surface;
 mod direct_message_workspace;
 mod friend_context_menu;
 mod friend_search_modal;
-mod friends_section;
 mod open_direct_message_button;
 mod page;
 mod presentation;
 pub(crate) mod realtime;
 mod requests_section;
+mod social_entries_section;
+mod social_list_state;
 mod voice_target;
 
 pub(crate) use open_direct_message_button::OpenDirectMessageButton;

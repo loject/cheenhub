@@ -4,8 +4,8 @@
 mod tests;
 
 use cheenhub_contracts::{
-    realtime::SocialChangeReason,
-    rest::{DmConversationSummary, FriendRequestSummary, FriendSummary},
+    realtime::{SocialChangeReason, SocialListEntrySummary},
+    rest::{DmConversationSummary, FriendRequestSummary},
 };
 use dioxus::prelude::*;
 use futures_util::StreamExt;
@@ -20,19 +20,19 @@ use crate::features::realtime::RealtimeHandle;
 use crate::features::voice_chat::{DirectCallHeader, VoiceConnectionHandle};
 
 use super::api;
-use super::conversations_section::ConversationsSection;
 use super::direct_message_voice_button::DirectMessageVoiceButton;
 use super::direct_message_workspace::DirectMessageWorkspace;
 use super::friend_context_menu::FriendContextMenu;
 use super::friend_search_modal::FriendSearchModal;
-use super::friends_section::{FriendMenuRequest, FriendsSection};
-use super::presentation::{
-    FriendsPageState, apply_friend_presence, load_more_friends, load_social_overview,
-};
+use super::presentation::load_social_overview;
 use super::realtime::{
     self, subscribe_presence_events, subscribe_social_events, subscribe_social_ready_events,
 };
 use super::requests_section::FriendRequestsSection;
+use super::social_entries_section::{FriendMenuRequest, SocialEntriesSection};
+use super::social_list_state::{
+    SocialListPageState, load_more_social_list, load_social_list, record_social_presence,
+};
 use super::voice_target::direct_message_voice_target;
 
 /// Рендерит рабочую область друзей и личных сообщений.
@@ -42,16 +42,21 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
     let navigator = use_navigator();
     let realtime = use_context::<RealtimeHandle>();
     let voice = use_context::<VoiceConnectionHandle>();
-    let friends_page = FriendsPageState {
-        friends: use_signal(Vec::<FriendSummary>::new),
+    let social_list = SocialListPageState {
+        entries: use_signal(|| None::<Vec<SocialListEntrySummary>>),
+        presence_overrides: use_signal(std::collections::HashMap::new),
+        query: use_signal(String::new),
         next_cursor: use_signal(|| None::<String>),
         has_more: use_signal(|| false),
+        is_loading: use_signal(|| false),
         is_loading_more: use_signal(|| false),
+        error: use_signal(|| None::<String>),
         generation: use_signal(|| 0),
     };
     let incoming = use_signal(Vec::<FriendRequestSummary>::new);
     let outgoing = use_signal(Vec::<FriendRequestSummary>::new);
     let mut conversations = use_signal(|| None::<Vec<DmConversationSummary>>);
+    let overview_generation = use_signal(|| 0_u64);
     let mut selected_conversation = use_signal(|| None::<DmConversationSummary>);
     let mut status = use_signal(String::new);
     let is_loading = use_signal(|| false);
@@ -66,9 +71,10 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
 
     let overview_realtime = realtime.clone();
     let reload = use_callback(move |_| {
+        load_social_list(overview_realtime.clone(), social_list, false);
         load_social_overview(
             overview_realtime.clone(),
-            friends_page,
+            overview_generation,
             incoming,
             outgoing,
             conversations,
@@ -77,8 +83,16 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
         );
     });
 
+    let more_realtime = realtime.clone();
     let load_more = use_callback(move |_| {
-        load_more_friends(friends_page, status);
+        load_more_social_list(more_realtime.clone(), social_list);
+    });
+
+    let search_realtime = realtime.clone();
+    let mut search_query = social_list.query;
+    let search_social = use_callback(move |query: String| {
+        search_query.set(query);
+        load_social_list(search_realtime.clone(), social_list, true);
     });
 
     let voice_loader = voice.clone();
@@ -106,6 +120,7 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
                     {
                         conversations.set(Some(next_conversations));
                     }
+                    load_social_list(realtime.clone(), social_list, false);
                 }
                 Err(error) => status.set(error),
             }
@@ -229,10 +244,9 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
         let presence_realtime = realtime.clone();
         spawn(async move {
             let mut receiver = subscribe_presence_events(&presence_realtime);
-            let mut friends = friends_page.friends;
             while let Some(event) = receiver.next().await {
-                if apply_friend_presence(&mut friends.write(), &event) {
-                    debug!(user_id = %event.user_id, "updated friend presence from realtime");
+                if record_social_presence(social_list, &event) {
+                    debug!(user_id = %event.user_id, "updated friend presence in unified list");
                 }
             }
         });
@@ -315,27 +329,27 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
                         on_cancel: move |request_id| cancel_request.call(request_id),
                     }
 
-                    ConversationsSection {
-                        conversations: conversations(),
-                        selected_id: selected_conversation().map(|item| item.id),
-                        loading: is_loading(),
-                        on_select: move |conversation_id| { navigator.push(Route::AppDirectMessage { conversation_id }); },
-                        on_find_people: move |_| is_search_open.set(true),
-                        on_retry: move |_| reload.call(()),
-                    }
-                    FriendsSection {
-                        friends: (friends_page.friends)(),
+                    SocialEntriesSection {
+                        entries: (social_list.entries)(),
                         current_user_id: current_user.id.clone(),
-                        is_loading: is_loading(),
-                        has_more: (friends_page.has_more)(),
-                        is_loading_more: is_loading() || (friends_page.is_loading_more)(),
-                        on_search: move |_| is_search_open.set(true),
+                        selected_conversation_id: selected_conversation().map(|item| item.id),
+                        query: (social_list.query)(),
+                        loading: (social_list.is_loading)(),
+                        loading_more: (social_list.is_loading_more)(),
+                        has_more: (social_list.has_more)(),
+                        error: (social_list.error)(),
+                        on_query_change: move |query| search_social.call(query),
+                        on_find_people: move |_| is_search_open.set(true),
                         on_open_friend: move |friend_user_id| {
                             friend_menu.set(None);
                             open_friend.call(friend_user_id);
                         },
+                        on_select_conversation: move |conversation_id| {
+                            navigator.push(Route::AppDirectMessage { conversation_id });
+                        },
                         on_open_menu: move |menu| friend_menu.set(Some(menu)),
                         on_load_more: move |_| load_more.call(()),
+                        on_retry: move |_| reload.call(()),
                     }
                 }
                 AppSidebarFooter {

@@ -1,6 +1,7 @@
 //! Realtime-подписка на social-события.
 
 mod direct_messages;
+mod social_list;
 
 #[cfg(test)]
 mod tests;
@@ -9,6 +10,7 @@ pub(crate) use direct_messages::{
     edit_dm_message, list_dm_conversations, list_dm_messages, load_dm_image,
     mark_dm_conversation_read, open_dm_conversation, send_dm_message, upload_dm_image,
 };
+pub(crate) use social_list::list_social_entries;
 
 use cheenhub_contracts::realtime::{
     DirectMessageCreated, PresenceChanged, RealtimeEnvelope, RealtimeKind, RealtimeModule,
