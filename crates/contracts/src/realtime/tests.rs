@@ -26,6 +26,7 @@ fn voice_microphone_choice_defaults_for_legacy_peers_and_preserves_explicit_mute
 
 mod author_roles;
 mod direct_messages;
+mod social_list;
 
 #[test]
 fn output_muted_defaults_for_legacy_participants_and_round_trips_updates() {

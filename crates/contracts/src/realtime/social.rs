@@ -10,8 +10,10 @@ use super::typing::TypingAuthor;
 use crate::presence::UserPresence;
 
 mod direct_messages;
+mod social_list;
 
 pub use direct_messages::*;
+pub use social_list::*;
 
 /// Тип realtime-сообщения social-модуля.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -69,6 +71,10 @@ pub enum SocialKind {
     DirectMessageTypingSnapshot,
     /// Событие о начале или завершении набора сообщения в личном диалоге.
     DirectMessageTypingChanged,
+    /// Запросить страницу объединённого списка друзей и личных собеседников.
+    ListSocialEntries,
+    /// Вернуть страницу списка в ответ на `ListSocialEntries`.
+    SocialEntries,
 }
 
 /// Пустой запрос подписки на social-события.
