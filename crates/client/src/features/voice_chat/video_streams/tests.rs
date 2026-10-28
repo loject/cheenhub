@@ -139,6 +139,79 @@ fn static_screen_remains_visible_without_new_frames_until_explicit_stop() {
     });
 }
 
+fn participant_session(
+    user_id: &str,
+    joined_at: &str,
+) -> cheenhub_contracts::realtime::VoiceRoomParticipant {
+    cheenhub_contracts::realtime::VoiceRoomParticipant {
+        microphone_enabled: true,
+        output_muted: false,
+        user_id: user_id.to_owned(),
+        nickname: "Участник".to_owned(),
+        avatar_url: None,
+        joined_at: joined_at.to_owned(),
+    }
+}
+
+#[test]
+fn departed_participant_releases_stale_screen_share() {
+    let dom = VirtualDom::new(|| rsx! {});
+    let handle = video_handle(&dom);
+    dom.in_scope(ScopeId::ROOT, || {
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
+        handle.reconcile_participants(
+            &[participant_session("peer", "2026-10-28T09:00:00Z")],
+            &[],
+            "self",
+        );
+    });
+
+    assert!(
+        handle
+            .live_user_ids(ParticipantVideoSource::ScreenShare)
+            .is_empty()
+    );
+}
+
+#[test]
+fn replaced_participant_session_releases_stale_screen_share() {
+    let dom = VirtualDom::new(|| rsx! {});
+    let handle = video_handle(&dom);
+    dom.in_scope(ScopeId::ROOT, || {
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
+        handle.reconcile_participants(
+            &[participant_session("peer", "2026-10-28T09:00:00Z")],
+            &[participant_session("peer", "2026-10-28T09:01:00Z")],
+            "self",
+        );
+    });
+
+    assert!(
+        handle
+            .live_user_ids(ParticipantVideoSource::ScreenShare)
+            .is_empty()
+    );
+}
+
+#[test]
+fn unchanged_participant_session_keeps_static_screen_share() {
+    let dom = VirtualDom::new(|| rsx! {});
+    let handle = video_handle(&dom);
+    dom.in_scope(ScopeId::ROOT, || {
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
+        handle.reconcile_participants(
+            &[participant_session("peer", "2026-10-28T09:00:00Z")],
+            &[participant_session("peer", "2026-10-28T09:00:00Z")],
+            "self",
+        );
+    });
+
+    assert_eq!(
+        handle.live_user_ids(ParticipantVideoSource::ScreenShare),
+        vec!["peer"],
+    );
+}
+
 #[test]
 fn explicit_stop_discards_buffered_frames_and_restart_waits_for_a_fresh_key_frame() {
     let dom = VirtualDom::new(|| rsx! {});

@@ -219,6 +219,37 @@ impl ParticipantVideoHandle {
         );
     }
 
+    /// Сбрасывает видео участников, чьё голосовое присутствие завершилось или сменило сессию.
+    ///
+    /// Сохраняет неподвижную демонстрацию при неизменном `joined_at`: отсутствие
+    /// кадров само по себе не означает завершение захвата экрана.
+    pub(crate) fn reconcile_participants(
+        &self,
+        previous: &[cheenhub_contracts::realtime::VoiceRoomParticipant],
+        current: &[cheenhub_contracts::realtime::VoiceRoomParticipant],
+        current_user_id: &str,
+    ) {
+        for participant in previous {
+            if participant.user_id == current_user_id {
+                continue;
+            }
+            let still_same_session = current.iter().any(|next| {
+                next.user_id == participant.user_id && next.joined_at == participant.joined_at
+            });
+            if still_same_session {
+                continue;
+            }
+
+            self.release_stream(ParticipantVideoSource::Camera, &participant.user_id);
+            self.release_stream(ParticipantVideoSource::ScreenShare, &participant.user_id);
+            debug!(
+                user_id = %participant.user_id,
+                new_session = current.iter().any(|next| next.user_id == participant.user_id),
+                "cleared participant video sources after voice presence changed"
+            );
+        }
+    }
+
     /// Подписывает плитку участника на один видеопоток.
     pub(crate) fn subscribe_stream(
         &self,

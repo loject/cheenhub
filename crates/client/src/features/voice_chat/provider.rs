@@ -118,10 +118,25 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
 
     let snapshot_realtime = realtime.clone();
     let snapshot_handle = handle.clone();
+    let snapshot_video = participant_video.clone();
+    let snapshot_current_user_id = current_user.id.clone();
     use_hook(move || {
         spawn(async move {
             let mut snapshots = realtime::subscribe_voice_chat(&snapshot_realtime);
             while let Some(snapshot) = snapshots.next().await {
+                if let VoiceConnectionState::Connected {
+                    target,
+                    participants,
+                } = snapshot_handle.state()
+                    && target.server_id == snapshot.server_id
+                    && target.room_id == snapshot.room_id
+                {
+                    snapshot_video.reconcile_participants(
+                        &participants,
+                        &snapshot.participants,
+                        &snapshot_current_user_id,
+                    );
+                }
                 snapshot_handle.apply_snapshot(snapshot);
             }
         })
