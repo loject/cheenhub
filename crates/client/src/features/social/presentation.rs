@@ -2,10 +2,9 @@
 
 use std::time::Duration;
 
-use cheenhub_contracts::realtime::{PresenceChanged, TextChatMessage};
+use cheenhub_contracts::realtime::TextChatMessage;
 use cheenhub_contracts::rest::{
-    DmConversationSummary, DmMessageSummary, FriendRequestSummary, FriendSummary,
-    UserRelationStatus,
+    DmConversationSummary, DmMessageSummary, FriendRequestSummary, UserRelationStatus,
 };
 use dioxus::prelude::*;
 
@@ -17,79 +16,39 @@ use super::direct_message_state::DirectMessageState;
 use super::{api, realtime};
 use crate::features::realtime::RealtimeHandle;
 
-/// Состояние постраничной загрузки списка друзей.
-#[derive(Clone, Copy)]
-pub(super) struct FriendsPageState {
-    /// Уже загруженные друзья.
-    pub(super) friends: Signal<Vec<FriendSummary>>,
-    /// Курсор следующей страницы.
-    pub(super) next_cursor: Signal<Option<String>>,
-    /// Есть ли следующая страница.
-    pub(super) has_more: Signal<bool>,
-    /// Выполняется ли запрос следующей страницы.
-    pub(super) is_loading_more: Signal<bool>,
-    /// Версия состояния, для которой разрешено применять ответы запросов.
-    pub(super) generation: Signal<u64>,
-}
-
-/// Применяет точное изменение присутствия к загруженному другу.
+/// Обновляет заявки и полный каталог диалогов для сохранённых маршрутов ЛС.
 ///
-/// Неизвестные идентификаторы игнорируются: список пополняет загрузка страниц.
-pub(super) fn apply_friend_presence(
-    friends: &mut [FriendSummary],
-    event: &PresenceChanged,
-) -> bool {
-    let Some(friend) = friends
-        .iter_mut()
-        .find(|friend| friend.user_id == event.user_id)
-    else {
-        return false;
-    };
-    friend.presence = event.presence.clone();
-    true
-}
-
+/// Боковая панель загружает единый список отдельно через `load_social_list`.
 pub(super) fn load_social_overview(
     realtime: RealtimeHandle,
-    mut friends_page: FriendsPageState,
+    mut generation: Signal<u64>,
     mut incoming: Signal<Vec<FriendRequestSummary>>,
     mut outgoing: Signal<Vec<FriendRequestSummary>>,
     mut conversations: Signal<Option<Vec<DmConversationSummary>>>,
     mut status: Signal<String>,
     mut is_loading: Signal<bool>,
 ) {
-    let request_generation = (friends_page.generation)().wrapping_add(1);
-    friends_page.generation.set(request_generation);
-    friends_page.is_loading_more.set(false);
+    let request_generation = generation().wrapping_add(1);
+    generation.set(request_generation);
     is_loading.set(true);
     status.set(String::new());
     spawn(async move {
         let result = async {
-            let loaded_friends_page = api::list_friends(None).await?;
             let next_incoming = api::list_incoming_requests().await?;
             let next_outgoing = api::list_outgoing_requests().await?;
             let next_conversations = realtime::list_dm_conversations(&realtime).await?;
-            Ok::<_, String>((
-                loaded_friends_page,
-                next_incoming,
-                next_outgoing,
-                next_conversations,
-            ))
+            Ok::<_, String>((next_incoming, next_outgoing, next_conversations))
         }
         .await;
-
-        if (friends_page.generation)() != request_generation {
-            debug!(request_generation, "ignored stale social overview response");
+        if generation() != request_generation {
+            debug!(
+                request_generation,
+                "ignored outdated direct conversation overview"
+            );
             return;
         }
-
         match result {
-            Ok((loaded_friends_page, next_incoming, next_outgoing, next_conversations)) => {
-                friends_page.friends.set(loaded_friends_page.friends);
-                friends_page
-                    .next_cursor
-                    .set(loaded_friends_page.next_cursor);
-                friends_page.has_more.set(loaded_friends_page.has_more);
+            Ok((next_incoming, next_outgoing, next_conversations)) => {
                 incoming.set(next_incoming);
                 outgoing.set(next_outgoing);
                 conversations.set(Some(next_conversations));
@@ -102,47 +61,6 @@ pub(super) fn load_social_overview(
             }
         }
         is_loading.set(false);
-    });
-}
-
-pub(super) fn load_more_friends(mut friends_page: FriendsPageState, mut status: Signal<String>) {
-    if (friends_page.is_loading_more)() || !(friends_page.has_more)() {
-        return;
-    }
-    let Some(cursor) = (friends_page.next_cursor)() else {
-        friends_page.has_more.set(false);
-        return;
-    };
-
-    let request_generation = (friends_page.generation)();
-    friends_page.is_loading_more.set(true);
-    spawn(async move {
-        let result = api::list_friends(Some(&cursor)).await;
-        if (friends_page.generation)() != request_generation {
-            debug!(request_generation, "ignored stale friends page response");
-            return;
-        }
-        match result {
-            Ok(page) => {
-                let mut loaded = (friends_page.friends)();
-                for friend in page.friends {
-                    if !loaded.iter().any(|saved| saved.user_id == friend.user_id) {
-                        loaded.push(friend);
-                    }
-                }
-                let loaded_count = loaded.len();
-                friends_page.friends.set(loaded);
-                friends_page.next_cursor.set(page.next_cursor);
-                friends_page.has_more.set(page.has_more);
-                status.set(String::new());
-                debug!(loaded_count, "loaded next friends page");
-            }
-            Err(error) => {
-                warn!(%error, "failed to load next friends page");
-                status.set(error);
-            }
-        }
-        friends_page.is_loading_more.set(false);
     });
 }
 

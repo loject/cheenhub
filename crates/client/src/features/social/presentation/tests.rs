@@ -1,42 +1,104 @@
 use cheenhub_contracts::{
-    presence::UserPresence,
-    realtime::PresenceChanged,
-    rest::{DmMessageSummary, FriendSummary},
+    presence::UserPresence, realtime::PresenceChanged, rest::DmMessageSummary,
 };
 
-use super::{apply_friend_presence, merge_direct_messages};
+use super::merge_direct_messages;
 
 #[test]
-fn presence_event_updates_only_the_matching_friend() {
-    let friend = |user_id: &str| FriendSummary {
+fn unified_social_presence_updates_friends_only() {
+    use crate::features::social::social_list_state::apply_social_presence;
+    use cheenhub_contracts::realtime::SocialListEntrySummary;
+    use cheenhub_contracts::rest::UserRelationStatus;
+
+    let entry = |user_id: &str, relation| SocialListEntrySummary {
         user_id: user_id.to_owned(),
         nickname: user_id.to_owned(),
         avatar_url: None,
-        unread_count: 3,
+        relation,
+        presence: None,
+        conversation: None,
         last_message: None,
-        friends_since: "2026-10-20T00:00:00Z".to_owned(),
-        presence: UserPresence::Offline { last_seen_at: None },
     };
-    let mut friends = vec![friend("alice"), friend("bob")];
-    let changed = PresenceChanged {
-        user_id: "bob".to_owned(),
-        presence: UserPresence::Online,
-    };
-
-    assert!(apply_friend_presence(&mut friends, &changed));
-    assert_eq!(
-        friends[0].presence,
-        UserPresence::Offline { last_seen_at: None }
-    );
-    assert_eq!(friends[1].presence, UserPresence::Online);
-    assert_eq!(friends[1].unread_count, 3);
-    assert!(!apply_friend_presence(
-        &mut friends,
+    let mut entries = vec![
+        entry("alice", Some(UserRelationStatus::Friends)),
+        entry("bob", None),
+    ];
+    assert!(apply_social_presence(
+        &mut entries,
         &PresenceChanged {
-            user_id: "unknown".to_owned(),
+            user_id: "alice".to_owned(),
             presence: UserPresence::Online,
-        },
+        }
     ));
+    assert_eq!(entries[0].presence, Some(UserPresence::Online));
+    assert!(!apply_social_presence(
+        &mut entries,
+        &PresenceChanged {
+            user_id: "bob".to_owned(),
+            presence: UserPresence::Online,
+        }
+    ));
+    assert!(entries[1].presence.is_none());
+}
+
+#[test]
+fn next_social_page_appends_without_duplicate_users() {
+    use crate::features::social::social_list_state::merge_social_entries;
+    use cheenhub_contracts::realtime::SocialListEntrySummary;
+
+    let entry = |user_id: &str| SocialListEntrySummary {
+        user_id: user_id.to_owned(),
+        nickname: user_id.to_owned(),
+        avatar_url: None,
+        relation: None,
+        presence: None,
+        conversation: None,
+        last_message: None,
+    };
+    let merged = merge_social_entries(vec![entry("alice")], vec![entry("alice"), entry("bob")]);
+    assert_eq!(
+        merged
+            .iter()
+            .map(|entry| entry.user_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["alice", "bob"]
+    );
+}
+
+#[test]
+fn presence_event_during_fetch_wins_over_older_page_snapshot() {
+    use crate::features::social::social_list_state::apply_presence_overrides;
+    use cheenhub_contracts::realtime::SocialListEntrySummary;
+    use cheenhub_contracts::rest::UserRelationStatus;
+    use std::collections::HashMap;
+
+    let entry = |user_id: &str, relation, presence| SocialListEntrySummary {
+        user_id: user_id.to_owned(),
+        nickname: user_id.to_owned(),
+        avatar_url: None,
+        relation,
+        presence,
+        conversation: None,
+        last_message: None,
+    };
+    let mut page = vec![
+        entry(
+            "friend",
+            Some(UserRelationStatus::Friends),
+            Some(UserPresence::Offline { last_seen_at: None }),
+        ),
+        entry("stranger", None, None),
+    ];
+    let received_during_fetch = HashMap::from([
+        ("friend".to_owned(), UserPresence::Online),
+        ("stranger".to_owned(), UserPresence::Online),
+    ]);
+    apply_presence_overrides(&mut page, &received_during_fetch);
+    assert_eq!(page[0].presence, Some(UserPresence::Online));
+    assert!(
+        page[1].presence.is_none(),
+        "нельзя раскрывать присутствие не-друзей"
+    );
 }
 
 fn message(id: &str, seq: i64, body: &str) -> DmMessageSummary {

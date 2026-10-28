@@ -6,6 +6,24 @@ use cheenhub_contracts::{
 use super::decode_presence_event;
 
 #[test]
+fn disconnected_social_list_returns_readable_error() {
+    use dioxus::prelude::*;
+    use futures_util::FutureExt;
+
+    let dom = VirtualDom::new(|| rsx! {});
+    dom.in_scope(ScopeId::ROOT, || {
+        let realtime = crate::features::realtime::create_handle();
+        let result = super::list_social_entries(&realtime, None, None)
+            .now_or_never()
+            .expect("отключённый запрос завершается сразу");
+        assert_eq!(
+            result.unwrap_err(),
+            "Не удалось загрузить список друзей и диалогов. Проверь соединение и повтори попытку."
+        );
+    });
+}
+
+#[test]
 fn presence_event_decodes_from_social_stream_and_keeps_last_seen() {
     let payload = PresenceChanged {
         user_id: "friend".to_owned(),
