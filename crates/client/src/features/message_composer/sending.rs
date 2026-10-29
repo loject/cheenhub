@@ -19,6 +19,32 @@ impl Drop for SendingGuard {
     }
 }
 
+/// Выделяет первую часть текста в пределах лимита Unicode-символов.
+///
+/// Предпочитает границы абзацев и слов; остаток сохраняет исходные символы
+/// для возможной повторной отправки после ошибки.
+pub(super) fn split_first_part(body: &str, max_chars: usize) -> (&str, &str) {
+    let body = body.trim_start();
+    let Some((limit_byte, _)) = body.char_indices().nth(max_chars.max(1)) else {
+        return (body, "");
+    };
+    let prefix = &body[..limit_byte];
+    let boundary = prefix
+        .rfind("\n\n")
+        .map(|index| index + 2)
+        .or_else(|| prefix.rfind('\n').map(|index| index + 1))
+        .or_else(|| {
+            prefix
+                .char_indices()
+                .rev()
+                .find(|(_, character)| character.is_whitespace())
+                .map(|(index, character)| index + character.len_utf8())
+        })
+        .filter(|&index| !prefix[..index].trim().is_empty())
+        .unwrap_or(limit_byte);
+    (&body[..boundary], &body[boundary..])
+}
+
 pub(super) fn submit_message(
     mut state: MessageComposeState,
     operations: MessageOperations,
@@ -60,15 +86,36 @@ pub(super) fn submit_message(
             },
             None => None,
         };
-        match operations.send.call((body, image_id)).await {
-            Ok(()) => {
-                state.draft.set(String::new());
-                state.pending_attachment.set(None);
-                debug!("message composer send completed");
+        let mut remaining = body.as_str();
+        let mut image_id = image_id;
+        let mut sent_parts = 0_usize;
+        loop {
+            let (part, rest) = split_first_part(remaining, operations.max_body_chars);
+            if part.trim().is_empty() && image_id.is_none() {
+                break;
             }
-            Err(error) => {
-                warn!(%error, "message composer send failed");
-                state.status.set(error);
+            match operations
+                .send
+                .call((part.trim().to_owned(), image_id.clone()))
+                .await
+            {
+                Ok(()) => {
+                    sent_parts += 1;
+                    if image_id.take().is_some() {
+                        state.pending_attachment.set(None);
+                    }
+                    remaining = rest.trim_start();
+                    state.draft.set(remaining.to_owned());
+                    if remaining.is_empty() {
+                        debug!(sent_parts, "message composer send completed");
+                        break;
+                    }
+                }
+                Err(error) => {
+                    warn!(%error, sent_parts, remaining_chars = remaining.chars().count(), "message composer send stopped");
+                    state.status.set(error);
+                    break;
+                }
             }
         }
         state.is_sending.set(false);

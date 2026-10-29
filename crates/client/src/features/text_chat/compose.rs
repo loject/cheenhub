@@ -71,6 +71,7 @@ pub(super) fn use_room_message_operations(
     MessageOperations {
         upload,
         send,
+        max_body_chars: 2000,
         typing,
     }
 }

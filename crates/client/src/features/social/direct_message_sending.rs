@@ -51,6 +51,7 @@ pub(super) fn use_direct_message_operations(
     MessageOperations {
         upload,
         send,
+        max_body_chars: 4000,
         typing,
     }
 }
