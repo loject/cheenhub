@@ -30,7 +30,7 @@ pub(crate) fn Hero() -> Element {
                     span { class: "text-zinc-400", "связь для игр." }
                 }
                 p { class: "a3 mx-auto mt-5 max-w-xl text-center text-[15px] leading-relaxed text-zinc-500",
-                    "Заходи в голосовой канал, зови друзей и общайся без VPN."
+                    "Заходи в голосовую комнату, зови друзей и общайся без VPN."
                     br { class: "hidden sm:inline" }
                     "Свой сервер — для локального голосового чата в LAN."
                 }
