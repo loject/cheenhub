@@ -16,6 +16,8 @@ pub(crate) struct MessageOperations {
     pub(crate) upload: Callback<PendingImageAttachment, MessageOperation<String>>,
     /// Создаёт сообщение и уведомляет владельца списка сообщений.
     pub(crate) send: Callback<(String, Option<String>), MessageOperation<()>>,
+    /// Максимальная длина одного сообщения в Unicode-символах по правилам сервера.
+    pub(crate) max_body_chars: usize,
     /// Сообщает чату о наборе текста для индикатора у других участников.
     ///
     /// Форма не знает про realtime: чат передает готовый обратный вызов, который
