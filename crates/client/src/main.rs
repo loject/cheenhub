@@ -46,6 +46,8 @@ fn main() {
         return;
     }
 
+    features::diagnostics::initialize();
+
     match features::single_instance::prepare() {
         Ok(true) => {}
         Ok(false) => return,
