@@ -18,6 +18,8 @@ use crate::realtime::protocol::{
 };
 use crate::state::AppState;
 
+mod room_invites;
+
 /// Handles one voice chat module envelope.
 pub(crate) async fn handle(
     state: &AppState,
@@ -215,6 +217,13 @@ pub(crate) async fn handle(
                 Err(error) => reject_application_error(send, Some(request_id), error).await,
             }
         }
+        RealtimeKind::VoiceChat(
+            VoiceChatKind::ListVoiceRoomInviteCandidates
+            | VoiceChatKind::SendVoiceRoomInvite
+            | VoiceChatKind::RespondVoiceRoomInvite
+            | VoiceChatKind::CancelVoiceRoomInvite
+            | VoiceChatKind::ListVoiceRoomInvites,
+        ) => room_invites::handle(state, user, user_id, realtime_stream_id, send, envelope).await,
         RealtimeKind::VoiceChat(VoiceChatKind::KickVoiceMember) => {
             let request_id = require_request_id(&envelope)?;
             let payload: KickVoiceMember = decode_payload(&envelope)?;

@@ -27,6 +27,7 @@ use super::notification_sounds::{
     ConnectionNotificationSoundState, ToggleNotificationSoundState, VoiceNotificationSoundState,
 };
 use super::realtime;
+use super::room_invite_provider::RoomInviteProvider;
 use super::state::{
     VoiceConnectionHandle, VoiceConnectionParts, VoiceConnectionState, VoiceMediaSession,
     VoiceRoomTarget, VoiceRoomTargetKind,
@@ -473,7 +474,9 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
 
     rsx! {
         DirectCallProvider {
-            {children}
+            RoomInviteProvider {
+                {children}
+            }
         }
         VoiceSessionDialogs {}
         if let Some(room_name) = kicked_from_room() {

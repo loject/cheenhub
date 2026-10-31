@@ -16,7 +16,7 @@ use crate::features::social::infrastructure::SocialStore;
 use crate::features::text_chat::infrastructure::{ChatAttachmentObjectStore, TextChatStore};
 use crate::features::typing::infrastructure::InMemoryTypingStore;
 use crate::features::voice_chat::infrastructure::{
-    InMemoryDirectCallStore, InMemoryVoicePresenceStore,
+    InMemoryDirectCallStore, InMemoryVoicePresenceStore, InMemoryVoiceRoomInviteStore,
 };
 use crate::realtime::hub::RealtimeHub;
 use crate::telemetry::HostLogHub;
@@ -50,6 +50,8 @@ pub(crate) struct AppState {
     pub(crate) image_processing_queue: Arc<Semaphore>,
     /// Активное присутствие в голосовых комнатах.
     pub(crate) voice_presence_store: Arc<InMemoryVoicePresenceStore>,
+    /// Приглашения в серверные голосовые комнаты.
+    pub(crate) voice_room_invite_store: Arc<InMemoryVoiceRoomInviteStore>,
     /// Незавершённые приглашения и активные личные звонки.
     pub(crate) direct_call_store: Arc<InMemoryDirectCallStore>,
     /// Оперативное состояние набора сообщения в комнатах и личных диалогах.

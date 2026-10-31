@@ -16,6 +16,9 @@ mod direct_calls;
 mod network_quality_rate_limit;
 mod presence_index;
 mod presence_registry;
+mod room_invites;
+#[cfg(test)]
+mod room_invites_tests;
 mod uplink;
 
 pub(crate) use direct_calls::{
@@ -23,6 +26,9 @@ pub(crate) use direct_calls::{
 };
 pub(crate) use presence_index::MediaRouteSnapshot;
 use presence_registry::PresenceRegistry;
+pub(crate) use room_invites::{
+    InMemoryVoiceRoomInviteStore, VoiceRoomInvite, VoiceRoomInviteStoreError,
+};
 pub(crate) use uplink::{
     ConsumeMicrophoneUplinkGrantError, MicrophoneUplinkBinding, MicrophoneUplinkGrant,
 };
