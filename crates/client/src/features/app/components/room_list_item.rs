@@ -6,12 +6,14 @@ use dioxus::prelude::*;
 
 use super::avatar::UserAvatar;
 use super::server_rooms_state::{room_icon, room_icon_class};
+use crate::features::voice_chat::VoiceConnectionHandle;
 
 #[cfg(test)]
 mod tests;
 
 #[component]
 pub(super) fn RoomListItem(
+    server_id: String,
     room: ServerRoomSummary,
     is_active: bool,
     can_manage_rooms: bool,
@@ -21,6 +23,37 @@ pub(super) fn RoomListItem(
     on_select: EventHandler<()>,
     on_menu: EventHandler<(f64, f64)>,
 ) -> Element {
+    let voice = use_context::<VoiceConnectionHandle>();
+    let mut participants_expanded = use_signal(|| false);
+    let mut was_connected = use_signal(|| false);
+    let effect_server_id = server_id.clone();
+    let effect_room_id = room.id.clone();
+
+    use_effect(move || {
+        let connected = voice
+            .state()
+            .is_connected_room(&effect_server_id, &effect_room_id);
+        let previously_connected = was_connected();
+        if connected == previously_connected {
+            return;
+        }
+
+        was_connected.set(connected);
+        let expanded = expanded_after_connection_change(
+            participants_expanded(),
+            previously_connected,
+            connected,
+        );
+        if expanded != participants_expanded() {
+            participants_expanded.set(expanded);
+            debug!(
+                server_id = %effect_server_id,
+                room_id = %effect_room_id,
+                "expanded voice room participants after local join"
+            );
+        }
+    });
+
     let room_name_class = room_name_class(compact_when_settings_active);
     let room_actions_class = room_actions_class(compact_when_settings_active);
     let show_voice_participants =
@@ -44,7 +77,7 @@ pub(super) fn RoomListItem(
                 on_menu.call((point.x, point.y));
             },
             "data-active": if is_active { "true" } else { "false" },
-            class: "group relative flex w-full items-center justify-between rounded-lg border border-transparent px-2.5 py-2 text-left text-zinc-400 transition-[background,border-color,color,transform,opacity] duration-150 hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-100 data-[active=true]:border-accent/25 data-[active=true]:bg-accent/10 data-[active=true]:text-zinc-100",
+            class: "group relative flex w-full flex-wrap items-center justify-between rounded-lg border border-transparent px-2.5 py-2 text-left text-zinc-400 transition-[background,border-color,color,transform,opacity] duration-150 hover:border-zinc-800 hover:bg-zinc-900 hover:text-zinc-100 data-[active=true]:border-accent/25 data-[active=true]:bg-accent/10 data-[active=true]:text-zinc-100",
             button {
                 r#type: "button",
                 class: "flex min-w-0 flex-1 items-center gap-2 text-left",
@@ -58,7 +91,9 @@ pub(super) fn RoomListItem(
                     button {
                         r#type: "button",
                         class: "flex items-center -space-x-1 rounded-full",
-                        "aria-label": "Показать участников голосовой комнаты",
+                        "aria-label": if participants_expanded() { "Свернуть участников голосовой комнаты" } else { "Раскрыть участников голосовой комнаты" },
+                        "aria-expanded": if participants_expanded() { "true" } else { "false" },
+                        onclick: move |_| participants_expanded.set(!participants_expanded()),
                         for participant in visible_voice_participants {
                             span { key: "{voice_participant_key(&participant)}", class: "relative inline-flex",
                               UserAvatar {
@@ -86,12 +121,12 @@ pub(super) fn RoomListItem(
                         }
                     }
                     div {
-                        class: "pointer-events-none absolute right-0 top-7 z-50 hidden w-56 rounded-lg border border-zinc-800 bg-zinc-950 p-2 shadow-2xl shadow-black/40 group-hover/voice-tooltip:block group-focus-within/voice-tooltip:block",
+                        class: if participants_expanded() { "hidden" } else { "pointer-events-none absolute right-0 top-7 z-50 hidden w-56 rounded-lg border border-zinc-800 bg-zinc-950 p-2 shadow-2xl shadow-black/40 group-hover/voice-tooltip:block group-focus-within/voice-tooltip:block" },
                         div { class: "mb-1 px-1 text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500",
                             "В голосе"
                         }
                         div { class: "max-h-56 space-y-1 overflow-y-auto",
-                            for participant in voice_participants {
+                            for participant in voice_participants.clone() {
                                 div { key: "{voice_participant_key(&participant)}", class: "flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1",
                                     UserAvatar {
                                         nickname: participant.nickname.clone(),
@@ -139,8 +174,37 @@ pub(super) fn RoomListItem(
                 }
 
             }
+            if show_voice_participants && participants_expanded() {
+                div { class: "basis-full space-y-0.5 pl-5 pt-1",
+                    for participant in voice_participants {
+                        div { key: "{voice_participant_key(&participant)}", class: "flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-zinc-300",
+                            UserAvatar {
+                                nickname: participant.nickname.clone(),
+                                avatar_url: participant.avatar_url.clone(),
+                                class: "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-bold text-zinc-100".to_owned(),
+                                avatar_seed: Some(participant.user_id.clone()),
+                            }
+                            span { class: "min-w-0 truncate text-[12px]", "{participant.nickname}" }
+                            if !participant.microphone_enabled {
+                                crate::features::voice_chat::MicrophoneMutedBadge {}
+                            }
+                            if participant.output_muted {
+                                crate::features::voice_chat::OutputMutedBadge {}
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
+}
+
+fn expanded_after_connection_change(
+    currently_expanded: bool,
+    previously_connected: bool,
+    connected: bool,
+) -> bool {
+    currently_expanded || (!previously_connected && connected)
 }
 
 /// Возвращает стабильный ключ конкретной голосовой сессии для обоих списков участников.

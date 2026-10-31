@@ -108,6 +108,7 @@ pub(super) fn RoomSidebarList(
                             for room in rooms.iter().cloned() {
                                 RoomListItem {
                                     key: "{room.id}",
+                                    server_id: server_id.clone(),
                                     room: room.clone(),
                                     is_active: matches!(active_workspace, Some(ServerWorkspace::Room(ref id)) if id == &room.id),
                                     can_manage_rooms,
