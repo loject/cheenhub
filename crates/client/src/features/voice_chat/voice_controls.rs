@@ -18,6 +18,7 @@ use crate::features::screen_share::{
 
 use super::android_output_route_button::AndroidOutputRouteButton;
 use super::direct_call_state::DirectCallHandle;
+use super::room_invite_picker::RoomInvitePicker;
 use super::state::{
     VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget, VoiceRoomTargetKind,
 };
@@ -306,6 +307,13 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                                 }
                             }
                         }
+                    }
+                }
+                if target.kind == VoiceRoomTargetKind::Server {
+                    RoomInvitePicker {
+                        server_id: target.server_id.clone(),
+                        room_id: target.room_id.clone(),
+                        enabled: media_controls_enabled,
                     }
                 }
                 button {

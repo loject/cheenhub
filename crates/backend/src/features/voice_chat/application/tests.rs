@@ -30,6 +30,7 @@ mod microphone;
 mod network_quality;
 mod nickname;
 mod output;
+mod room_invites;
 mod uplink;
 mod video;
 
@@ -62,6 +63,9 @@ pub(super) fn state() -> AppState {
         ),
         image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
         voice_presence_store: Arc::new(InMemoryVoicePresenceStore::default()),
+        voice_room_invite_store: Arc::new(
+            crate::features::voice_chat::infrastructure::InMemoryVoiceRoomInviteStore::default(),
+        ),
         direct_call_store: Arc::new(InMemoryDirectCallStore::default()),
         realtime_hub: Arc::new(RealtimeHub::default()),
         auth_keys: AuthKeys::generate_for_tests(),

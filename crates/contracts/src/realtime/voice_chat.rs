@@ -2,8 +2,20 @@
 
 use serde::{Deserialize, Serialize};
 
+mod invitations;
 mod multi_device;
+mod video_stream;
+pub use invitations::{
+    CancelVoiceRoomInvite, ListVoiceRoomInviteCandidates, ListVoiceRoomInvites,
+    RespondVoiceRoomInvite, SendVoiceRoomInvite, VoiceRoomInviteCandidate,
+    VoiceRoomInviteCandidatesSnapshot, VoiceRoomInviteLifecycleEvent, VoiceRoomInviteResponse,
+    VoiceRoomInviteSnapshot, VoiceRoomInviteStatus, VoiceRoomInvitesSnapshot,
+};
 pub use multi_device::{VoiceDeviceKind, VoicePresenceEvicted, VoicePresenceEvictionReason};
+pub use video_stream::{StopVoiceVideoStream, VoiceVideoStreamEnded, VoiceVideoStreamSource};
+
+#[cfg(test)]
+mod invitation_contract_tests;
 
 /// Виды сообщений модуля присутствия в голосовом чате.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -31,6 +43,22 @@ pub enum VoiceChatKind {
     DirectCallsSnapshot,
     /// Адресное событие изменения состояния личного звонка.
     DirectCallLifecycleEvent,
+    /// Запросить участников сервера, доступных для приглашения в текущую голосовую комнату.
+    ListVoiceRoomInviteCandidates,
+    /// Снимок участников, доступных для приглашения.
+    VoiceRoomInviteCandidatesSnapshot,
+    /// Пригласить участника сервера в голосовую комнату.
+    SendVoiceRoomInvite,
+    /// Принять или отклонить приглашение.
+    RespondVoiceRoomInvite,
+    /// Отменить отправленное приглашение.
+    CancelVoiceRoomInvite,
+    /// Запросить актуальные приглашения пользователя.
+    ListVoiceRoomInvites,
+    /// Снимок актуальных приглашений пользователя.
+    VoiceRoomInvitesSnapshot,
+    /// Адресное событие изменения приглашения.
+    VoiceRoomInviteLifecycleEvent,
     /// Исключить одного участника из голосовой комнаты.
     KickVoiceMember,
     /// Загрузить снимки присутствия участников в активных голосовых комнатах для одного сервера.
@@ -383,49 +411,6 @@ pub struct ListServerVoiceRooms {
 /// Полезная нагрузка запроса на загрузку активных голосовых звонков личных диалогов.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListDirectMessageVoiceRooms;
-
-/// Источник видеопотока голосовой комнаты.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum VoiceVideoStreamSource {
-    /// Видео с камеры участника.
-    Camera,
-    /// Демонстрация экрана участника.
-    ScreenShare,
-}
-
-/// Полезная нагрузка сообщения об остановке локального видеопотока.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StopVoiceVideoStream {
-    /// UUID системного аудио завершённого захвата; `None` не останавливает аудиодорожки.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub audio_track_id: Option<uuid::Uuid>,
-    /// Идентификатор сервера.
-    pub server_id: String,
-    /// Идентификатор комнаты.
-    pub room_id: String,
-    /// Остановленный источник видео.
-    pub source: VoiceVideoStreamSource,
-}
-
-/// Событие остановки видеопотока участника голосовой комнаты.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct VoiceVideoStreamEnded {
-    /// UUID подключения; отсутствие поля означает старый сервер.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub session_id: String,
-    /// UUID остановленного системного аудио; отсутствие поля сохраняет legacy-семантику видео.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub audio_track_id: Option<uuid::Uuid>,
-    /// Идентификатор сервера.
-    pub server_id: String,
-    /// Идентификатор комнаты.
-    pub room_id: String,
-    /// Пользователь, остановивший видеопоток.
-    pub user_id: String,
-    /// Остановленный источник видео.
-    pub source: VoiceVideoStreamSource,
-}
 
 /// Снимки активных голосовых комнат одного сервера.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

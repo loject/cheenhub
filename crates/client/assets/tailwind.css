@@ -1880,6 +1880,10 @@ html,
   bottom: calc(100% + 12px);
 }
 
+.bottom-\[calc\(100\%\+14px\)\] {
+  bottom: calc(100% + 14px);
+}
+
 .bottom-\[calc\(100\%\+8px\)\] {
   bottom: calc(100% + 8px);
 }
@@ -2058,6 +2062,10 @@ html,
 
 .z-\[30\] {
   z-index: 30;
+}
+
+.z-\[60\] {
+  z-index: 60;
 }
 
 .z-\[70\] {
@@ -2568,6 +2576,10 @@ html,
   max-height: 16rem;
 }
 
+.max-h-72 {
+  max-height: 18rem;
+}
+
 .max-h-80 {
   max-height: 20rem;
 }
@@ -2808,6 +2820,10 @@ html,
   width: 2rem;
 }
 
+.w-80 {
+  width: 20rem;
+}
+
 .w-9 {
   width: 2.25rem;
 }
@@ -3036,6 +3052,10 @@ html,
 
 .max-w-\[calc\(100vw-16px\)\] {
   max-width: calc(100vw - 16px);
+}
+
+.max-w-\[calc\(100vw-32px\)\] {
+  max-width: calc(100vw - 32px);
 }
 
 .max-w-\[min\(18rem\2c calc\(100vw-2rem\)\)\] {
@@ -8171,6 +8191,10 @@ html,
 
   .hover\:bg-amber-400\/20:hover {
     background-color: rgb(251 191 36 / 0.2);
+  }
+
+  .hover\:bg-amber-500\/10:hover {
+    background-color: rgb(245 158 11 / 0.1);
   }
 
   .hover\:bg-amber-500\/15:hover {

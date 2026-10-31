@@ -78,6 +78,9 @@ fn state_with_store(server_store: Arc<InMemoryServerStore>) -> AppState {
         voice_presence_store: Arc::new(
             crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore::default(),
         ),
+        voice_room_invite_store: Arc::new(
+            crate::features::voice_chat::infrastructure::InMemoryVoiceRoomInviteStore::default(),
+        ),
         direct_call_store: Arc::new(
             crate::features::voice_chat::infrastructure::InMemoryDirectCallStore::default(),
         ),
