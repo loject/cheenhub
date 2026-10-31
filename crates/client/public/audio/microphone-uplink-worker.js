@@ -44,7 +44,7 @@ async function start(config) {
   try {
     const wasm = await import(config.wasmBindgenUrl);
     await wasm.default({ module_or_path: config.wasmUrl });
-    if (wasm.microphone_worker_abi_version() < 9) {
+    if (wasm.microphone_worker_abi_version() < 12) {
       throw new Error("microphone worker wasm ABI is too old");
     }
 
@@ -57,6 +57,7 @@ async function start(config) {
       config.vadReleaseDelayUs,
       config.inputGain,
       config.roomId,
+      config.senderSessionId,
     );
     processor.set_activation_config(config.activationMode, config.vadThreshold, config.neuralThreshold, config.vadActivationDelayUs, config.vadReleaseDelayUs);
     processor.set_denoise_enabled(Boolean(config.denoiseEnabled));
@@ -447,7 +448,7 @@ function validateStartConfig(config) {
   }
   for (const field of [
     "wasmBindgenUrl", "wasmUrl", "realtimeUrl", "realtimeWebsocketUrl",
-    "accessToken", "uplinkGrant", "roomId",
+    "accessToken", "uplinkGrant", "roomId", "senderSessionId",
   ]) {
     if (typeof config[field] !== "string" || config[field].length === 0) {
       throw new Error(`microphone worker start message is missing ${field}`);

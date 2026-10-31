@@ -1,5 +1,6 @@
 //! Инфраструктура присутствия голосового чата.
 
+use cheenhub_contracts::realtime::VoiceDeviceKind;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 #[cfg(test)]
@@ -57,6 +58,12 @@ pub(crate) struct VoicePresence {
     pub(crate) realtime_stream_id: Uuid,
     /// Аутентифицированная сессия WebTransport, получающая медиадатаграммы.
     pub(crate) session_id: Uuid,
+    /// Auth-сессия устройства: разные вкладки одной сессии требуют подтверждения замены.
+    pub(crate) auth_session_id: Uuid,
+    /// Тип устройства, показываемый рядом с отдельным голосовым подключением.
+    pub(crate) device_kind: VoiceDeviceKind,
+    /// Максимальная версия медиапротокола этого подключения.
+    pub(crate) voice_protocol_version: u8,
     /// Тип цели голосового присутствия.
     pub(crate) target_kind: VoicePresenceTargetKind,
     /// Сервер, содержащий присоединенную комнату.
@@ -80,6 +87,15 @@ pub(crate) enum VoicePresenceTargetKind {
     Server,
     /// Голосовой звонок личного диалога.
     DirectMessage,
+}
+
+/// Причина, по которой переход между голосовыми устройствами требует подтверждения.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VoiceJoinConflict {
+    /// Другое устройство уже находится в иной голосовой цели либо в личном звонке.
+    DeviceTransitionConfirmationRequired,
+    /// Другая вкладка с той же auth-сессией уже владеет голосовым присутствием.
+    SameAuthSessionConfirmationRequired,
 }
 
 /// Ключ цели голосового присутствия.
@@ -144,7 +160,22 @@ impl InMemoryVoicePresenceStore {
             .await
     }
 
-    /// Заменяет присутствие одного пользователя или realtime-потока и возвращает удаленные записи.
+    /// Атомарно подключает устройство либо сообщает о необходимости подтверждения.
+    /// При отказе состояние комнат и их read indexes не изменяется.
+    pub(crate) async fn try_join(
+        &self,
+        presence: VoicePresence,
+        confirm_disconnect_other_devices: bool,
+    ) -> Result<Vec<VoicePresence>, VoiceJoinConflict> {
+        let removed = self
+            .presence
+            .try_join(presence, confirm_disconnect_other_devices)
+            .await?;
+        Ok(self.remove_presence(removed).await)
+    }
+
+    /// Совместимость с прежними фикстурами присутствия.
+    #[cfg(test)]
     pub(crate) async fn join(&self, presence: VoicePresence) -> Vec<VoicePresence> {
         let removed = self.presence.join(presence).await;
         self.revoke_microphone_uplinks_for(&removed).await;
@@ -244,7 +275,8 @@ impl InMemoryVoicePresenceStore {
         self.presence.server_room_participants(server_id).await
     }
 
-    /// Возвращает активное присутствие одного пользователя в одной комнате.
+    /// Возвращает присутствие пользователя для регрессионных тестов.
+    #[cfg(test)]
     pub(crate) fn room_presence_for_user(
         &self,
         target_kind: VoicePresenceTargetKind,
@@ -255,7 +287,8 @@ impl InMemoryVoicePresenceStore {
             .room_presence_for_user(target_kind, room_id, user_id)
     }
 
-    /// Возвращает присутствие отправителя и получателей из одного снимка комнаты.
+    /// Прежний поиск по пользователю, сохранённый только для регрессионных фикстур.
+    #[cfg(test)]
     pub(crate) fn media_route(
         &self,
         target_kind: VoicePresenceTargetKind,
@@ -263,6 +296,18 @@ impl InMemoryVoicePresenceStore {
         user_id: &Uuid,
     ) -> Option<MediaRouteSnapshot> {
         self.presence.media_route(target_kind, room_id, user_id)
+    }
+
+    /// Возвращает маршрут строго конкретной транспортной сессии отправителя.
+    pub(crate) fn media_route_for_session(
+        &self,
+        target_kind: VoicePresenceTargetKind,
+        room_id: &Uuid,
+        session_id: &Uuid,
+        user_id: &Uuid,
+    ) -> Option<MediaRouteSnapshot> {
+        self.presence
+            .media_route_for_session(target_kind, room_id, session_id, user_id)
     }
 
     /// Возвращает присутствие, принадлежащее указанному realtime-потоку и пользователю.

@@ -113,9 +113,65 @@ fn preserves_half_millisecond_target_delay() {
     assert_eq!(sequences(&ready.ready_frames), vec![0]);
 }
 
+#[test]
+fn new_capture_epoch_resets_short_existing_microphone_sequence() {
+    let mut buffer = JitterBuffer::default();
+    let old_epoch = 7_u64 << 32;
+    let new_epoch = 8_u64 << 32;
+    buffer.push(frame(old_epoch + 23), 1_000_000);
+    buffer.drain_ready(1_120_000, TEST_TARGET_PLAYOUT_DELAY_US);
+
+    assert_eq!(
+        buffer.push(frame(new_epoch), 1_130_000),
+        JitterBufferPush::Reset {
+            previous_expected_sequence: old_epoch + 24,
+            pending_frames: 1,
+        },
+    );
+    let ready = buffer.drain_ready(1_250_000, TEST_TARGET_PLAYOUT_DELAY_US);
+    assert_eq!(sequences(&ready.ready_frames), vec![new_epoch]);
+}
+
+#[test]
+fn late_previous_capture_epoch_is_rejected_after_restart() {
+    let mut buffer = JitterBuffer::default();
+    let old_epoch = 7_u64 << 32;
+    let new_epoch = 8_u64 << 32;
+    buffer.push(frame(old_epoch + 23), 1_000_000);
+    buffer.drain_ready(1_120_000, TEST_TARGET_PLAYOUT_DELAY_US);
+    buffer.push(frame(new_epoch), 1_130_000);
+
+    assert_eq!(
+        buffer.push(frame(old_epoch + 24), 1_140_000),
+        JitterBufferPush::DroppedStale {
+            expected_sequence: new_epoch,
+        },
+    );
+}
+
+#[test]
+fn packets_within_one_capture_epoch_still_reorder_normally() {
+    let mut buffer = JitterBuffer::default();
+    let epoch = 9_u64 << 32;
+
+    buffer.push(frame(epoch + 1), 1_000_000);
+    buffer.push(frame(epoch), 1_020_000);
+    let ready = buffer.drain_ready(1_140_000, TEST_TARGET_PLAYOUT_DELAY_US);
+
+    assert_eq!(sequences(&ready.ready_frames), vec![epoch, epoch + 1]);
+    assert_eq!(
+        buffer.push(frame(epoch), 1_150_000),
+        JitterBufferPush::DroppedStale {
+            expected_sequence: epoch + 2,
+        },
+    );
+}
+
 fn frame(sequence: u64) -> VoiceFrame {
     VoiceFrame {
         track_id: uuid::Uuid::nil(),
+        voice_session_id: None,
+        session_track: false,
         audio_source: cheenhub_contracts::media::MediaAudioSource::Microphone,
         audio_channels: 1,
         sender_user_id: "sender".to_owned(),

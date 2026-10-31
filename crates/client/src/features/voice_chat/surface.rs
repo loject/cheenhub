@@ -35,19 +35,22 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
         }
         _ => VoiceParticipantGridStatus::Empty,
     };
-    let mut speaking_user_ids = if is_active_room {
-        voice.speaking_user_ids()
+    let mut speaking_sessions = if is_active_room {
+        voice.speaking_sessions()
     } else {
         Vec::new()
     };
     let microphone_live = matches!(microphone.status(), MicrophoneStatus::Live);
-    if is_active_room && microphone_live && microphone.level_active() {
+    if is_active_room
+        && microphone_live
+        && microphone.level_active()
+        && let Some(session_id) = voice.outbound_session_id_for(&server_id, &room.id)
+    {
         let current_user_id = voice.current_user_id().to_owned();
-        if !speaking_user_ids
-            .iter()
-            .any(|user_id| user_id == &current_user_id)
-        {
-            speaking_user_ids.push(current_user_id);
+        if !speaking_sessions.iter().any(|(user_id, source_session)| {
+            user_id == &current_user_id && *source_session == Some(session_id)
+        }) {
+            speaking_sessions.push((current_user_id, Some(session_id)));
         }
     }
     let can_join = room.kind != ServerRoomKind::Text;
@@ -71,7 +74,7 @@ pub(crate) fn VoiceRoomSurface(server_id: String, room: ActiveRoom) -> Element {
                     server_id: server_id.clone(),
                     room_id: room.id.clone(),
                     participants,
-                    speaking_user_ids,
+                    speaking_sessions,
                     status: grid_status,
                     can_kick_voice: permissions.can_kick_voice,
                     on_retry: move |_| voice.join(retry_target.clone()),

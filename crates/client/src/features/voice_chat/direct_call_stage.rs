@@ -2,6 +2,7 @@
 
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use dioxus::prelude::*;
+use uuid::Uuid;
 
 use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::components::user_context_menu::UserContextMenu;
@@ -56,24 +57,14 @@ pub(crate) fn DirectCallStage(
     let peer_avatar_url = peer
         .and_then(|participant| participant.avatar_url.clone())
         .or(peer_avatar_url);
-    let camera_user_ids = video.live_user_ids(ParticipantVideoSource::Camera);
-    let screen_user_ids = video.live_user_ids(ParticipantVideoSource::ScreenShare);
-    let peer_source = if screen_user_ids
+    let camera_tracks = video.live_tracks(ParticipantVideoSource::Camera);
+    let screen_tracks = video.live_tracks(ParticipantVideoSource::ScreenShare);
+    let peer_video = matching_peer_video(peer, &peer_user_id, &screen_tracks, &camera_tracks);
+    let peer_source = peer_video.map(|(source, _)| source);
+    let peer_track_id = peer_video.map(|(_, track_id)| track_id).unwrap_or_default();
+    let local_camera_live = camera_tracks
         .iter()
-        .any(|user_id| user_id == &peer_user_id)
-    {
-        Some(ParticipantVideoSource::ScreenShare)
-    } else if camera_user_ids
-        .iter()
-        .any(|user_id| user_id == &peer_user_id)
-    {
-        Some(ParticipantVideoSource::Camera)
-    } else {
-        None
-    };
-    let local_camera_live = camera_user_ids
-        .iter()
-        .any(|user_id| user_id == &current_user_id);
+        .any(|(user_id, track_id)| user_id == &current_user_id && track_id.is_nil());
     let peer_speaking = speaking_user_ids
         .iter()
         .any(|user_id| user_id == &peer_user_id);
@@ -126,9 +117,10 @@ pub(crate) fn DirectCallStage(
                     },
                     if let Some(source) = peer_source {
                         ParticipantVideoCanvas {
-                            key: "{peer_user_id}-{source.label()}",
+                            key: "{peer_user_id}-{source.label()}-{peer_track_id}",
                             user_id: peer_user_id.clone(),
                             source,
+                            track_id: peer_track_id,
                             on_dimensions: move |dimensions: (u32, u32)| {
                                 if source == ParticipantVideoSource::ScreenShare {
                                     screen_dimensions.set(Some(dimensions));
@@ -192,6 +184,7 @@ pub(crate) fn DirectCallStage(
                     }
                     VoiceNetworkQualityIndicator {
                         participant_user_id: peer_user_id.clone(),
+                        participant_session_id: peer.map(|participant| participant.session_id.clone()).unwrap_or_default(),
                         participant_name: peer_nickname.clone(),
                     }
                 }
@@ -200,6 +193,7 @@ pub(crate) fn DirectCallStage(
                         ParticipantVideoCanvas {
                             user_id: current_user_id,
                             source: ParticipantVideoSource::Camera,
+                            track_id: Uuid::nil(),
                         }
                         span { class: "absolute bottom-2 left-2 z-10 rounded-lg bg-zinc-950/78 px-2 py-1 text-[10px] font-semibold text-zinc-200 backdrop-blur-lg", "Вы" }
                     }
@@ -223,6 +217,34 @@ pub(crate) fn DirectCallStage(
             }
         }
     }
+}
+
+/// Выбирает только дорожку текущей голосовой сессии собеседника.
+fn matching_peer_video(
+    peer: Option<&VoiceRoomParticipant>,
+    peer_user_id: &str,
+    screen_tracks: &[(String, Uuid)],
+    camera_tracks: &[(String, Uuid)],
+) -> Option<(ParticipantVideoSource, Uuid)> {
+    let peer = peer?;
+    let session_id = if peer.session_id.is_empty() {
+        None
+    } else {
+        Some(Uuid::parse_str(&peer.session_id).ok()?)
+    };
+    let matching = |tracks: &[(String, Uuid)]| {
+        tracks
+            .iter()
+            .find(|(user_id, track_id)| {
+                user_id == peer_user_id && session_id.is_none_or(|id| *track_id == id)
+            })
+            .map(|(_, track_id)| *track_id)
+    };
+    matching(screen_tracks)
+        .map(|track_id| (ParticipantVideoSource::ScreenShare, track_id))
+        .or_else(|| {
+            matching(camera_tracks).map(|track_id| (ParticipantVideoSource::Camera, track_id))
+        })
 }
 
 fn screen_share_card_style(

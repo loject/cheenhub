@@ -44,6 +44,9 @@ async fn queued_participant_fanouts_preserve_concurrent_microphone_changes() {
                 server_id: server_id.clone(),
                 room_id: room_id.clone(),
                 microphone_enabled: true,
+                voice_protocol_version: 4,
+                device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+                confirm_disconnect_other_devices: false,
             },
         )
         .await
@@ -116,6 +119,9 @@ async fn participant_fanout_does_not_publish_a_previously_captured_microphone_ch
             server_id: server_id.clone(),
             room_id: room_id.clone(),
             microphone_enabled: true,
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -169,6 +175,9 @@ async fn microphone_change_rejects_foreign_stream_user_room_and_disconnected_pre
             server_id: server_id.clone(),
             room_id: room_id.clone(),
             microphone_enabled: true,
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -243,17 +252,26 @@ async fn replaced_stream_cannot_unmute_new_presence_for_same_user() {
     let (user, user_id) = registered_user(&state).await;
     let stream_id = Uuid::new_v4();
     let (server_id, room_id) = create_room(&state, &user_id, "voice", ServerRoomKind::Voice).await;
+    let auth_session_id = Uuid::new_v4();
     for (stream, enabled) in [(stream_id, true), (Uuid::new_v4(), false)] {
-        join_room(
+        let session_id = Uuid::new_v4();
+        state
+            .realtime_hub
+            .register_test_session_with_id(session_id, user_id, auth_session_id)
+            .await;
+        super::super::join_room(
             &state,
             stream,
-            Uuid::new_v4(),
+            session_id,
             &user,
             &user_id,
             JoinVoiceRoom {
                 server_id: server_id.clone(),
                 room_id: room_id.clone(),
                 microphone_enabled: enabled,
+                voice_protocol_version: 5,
+                device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+                confirm_disconnect_other_devices: true,
             },
         )
         .await
@@ -302,6 +320,9 @@ async fn microphone_request_updates_presence_and_fans_out_snapshot() {
             server_id: server_id.clone(),
             room_id: room_id.clone(),
             microphone_enabled: true,
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await

@@ -1,7 +1,23 @@
-use super::{IndicatorDisclosureState, NetworkQualityTone, format_rtt, reading_tone, status_label};
+use super::{
+    IndicatorDisclosureState, NetworkQualityTone, format_rtt, is_local_voice_session, reading_tone,
+    status_label,
+};
 use crate::features::voice_chat::network_quality::{
     NetworkQualityFreshness, VoiceNetworkQualityReading,
 };
+
+#[test]
+fn another_voice_session_of_same_account_is_not_the_local_network_endpoint() {
+    assert!(is_local_voice_session(
+        "same", "device-a", "same", "device-a"
+    ));
+    assert!(!is_local_voice_session(
+        "same", "device-b", "same", "device-a"
+    ));
+    assert!(!is_local_voice_session(
+        "other", "device-a", "same", "device-a"
+    ));
+}
 
 #[test]
 fn formats_live_and_stale_network_readings() {

@@ -27,6 +27,9 @@ async fn output_mute_updates_presence_and_fans_out_only_when_changed() {
             server_id: server_id.clone(),
             room_id: room_id.clone(),
             microphone_enabled: true,
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -120,6 +123,9 @@ async fn output_state_rejects_foreign_stream_user_or_room() {
             server_id,
             room_id: room_id.clone(),
             microphone_enabled: true,
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await

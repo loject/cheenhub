@@ -1,7 +1,9 @@
 //! Разбор и ретрансляция сырых WebTransport-медиадатаграмм.
 
 use bytes::{Bytes, BytesMut};
-use cheenhub_contracts::media::{MediaCodec, MediaDatagramError, MediaDatagramKind};
+use cheenhub_contracts::media::{
+    MediaAudioSource, MediaCodec, MediaDatagram, MediaDatagramError, MediaDatagramKind,
+};
 use cheenhub_contracts::video_presets::{
     BASE_CAMERA_VIDEO_PRESETS, BASE_SCREEN_SHARE_VIDEO_PRESETS,
 };
@@ -59,6 +61,113 @@ impl MediaDatagramHeader {
     }
 }
 
+/// Проверяет видеодорожку и подставляет ID аутентифицированной сессии для legacy-клиента.
+/// У новых клиентов некорректный track ID запрещён; подмена не должна обходить FPS policy.
+pub(super) fn authorized_video_header(
+    mut header: MediaDatagramHeader,
+    presence_session_id: Uuid,
+    voice_protocol_version: u8,
+) -> Option<MediaDatagramHeader> {
+    if header.track_id != presence_session_id {
+        if voice_protocol_version >= 5 {
+            return None;
+        }
+        header.0.track_id = presence_session_id;
+    }
+    Some(header)
+}
+
+/// Проверяет принадлежность микрофона v5 аутентифицированной голосовой сессии.
+/// Старые клиенты сохраняют собственные UUID захватов, системный звук независим.
+pub(super) fn authorized_audio_track(
+    audio_source: Option<MediaAudioSource>,
+    track_id: Uuid,
+    presence_session_id: Uuid,
+    voice_protocol_version: u8,
+) -> bool {
+    if voice_protocol_version < 5 {
+        return true;
+    }
+    match audio_source {
+        Some(MediaAudioSource::Microphone) => track_id == presence_session_id,
+        Some(MediaAudioSource::System) => true,
+        None => false,
+    }
+}
+
+/// Привязывает legacy-микрофон к аутентифицированной голосовой сессии.
+///
+/// Для v1 заполняет отсутствующие метаданные mono-микрофона; v2 сохраняет
+/// число каналов. Системный звук имеет независимую дорожку.
+pub(super) fn normalize_legacy_microphone_datagram(
+    datagram: &mut MediaDatagram,
+    presence_session_id: Uuid,
+    voice_protocol_version: u8,
+) -> bool {
+    if voice_protocol_version >= 5
+        || datagram.kind != MediaDatagramKind::VoiceFrame
+        || datagram.codec != MediaCodec::Opus
+        || datagram.audio_source == Some(MediaAudioSource::System)
+    {
+        return false;
+    }
+    let changed = datagram.track_id != presence_session_id
+        || datagram.audio_source != Some(MediaAudioSource::Microphone);
+    if changed {
+        if datagram.audio_source.is_none() {
+            datagram.audio_channels = 1;
+        }
+        datagram.track_id = presence_session_id;
+        datagram.audio_source = Some(MediaAudioSource::Microphone);
+    }
+    changed
+}
+
+/// Готовит пакет для fanout, сохраняя zero-copy для подтверждённых дорожек.
+///
+/// У legacy-видео и микрофона переписывает UUID дорожки и при необходимости
+/// конвертирует v1 в v2; во всех других случаях меняет только sender ID.
+pub(super) fn prepare_relay_bytes(
+    header: MediaDatagramHeader,
+    bytes: Bytes,
+    authenticated_user_id: Uuid,
+    presence_session_id: Uuid,
+    voice_protocol_version: u8,
+) -> Result<Bytes, MediaDatagramError> {
+    // v3 — формат серверной ретрансляции. Клиент не может назначить себе сессию.
+    if header.voice_session_id.is_some() {
+        return Err(MediaDatagramError::InvalidTrack);
+    }
+    let legacy_video = voice_protocol_version < 5
+        && matches!(
+            header.kind,
+            MediaDatagramKind::ScreenFrame | MediaDatagramKind::CameraFrame
+        )
+        && header.track_id != presence_session_id;
+    let legacy_microphone = voice_protocol_version < 5
+        && header.kind == MediaDatagramKind::VoiceFrame
+        && header.codec == MediaCodec::Opus
+        && header.audio_source != Some(MediaAudioSource::System)
+        && (header.track_id != presence_session_id
+            || header.audio_source != Some(MediaAudioSource::Microphone));
+    if !legacy_video && !legacy_microphone {
+        return header.into_relay_bytes(bytes, authenticated_user_id);
+    }
+
+    let mut datagram = MediaDatagram::decode(&bytes)?;
+    if legacy_video {
+        datagram.track_id = presence_session_id;
+    } else {
+        normalize_legacy_microphone_datagram(
+            &mut datagram,
+            presence_session_id,
+            voice_protocol_version,
+        );
+    }
+    datagram.sender_user_id = authenticated_user_id;
+    datagram.encode().map(Bytes::from)
+}
+
 /// Ретранслирует WebTransport voice и video datagrams исходным `Bytes`.
 ///
 /// VP9 encoded bytes проходят существующую admission policy через borrowed
@@ -113,7 +222,16 @@ pub(crate) async fn handle_webtransport_frame_bytes(
         "received voice room media datagram"
     );
 
-    let Some(route) = active_media_route_for_user(state, &header.room_id, &user_id) else {
+    let Some(route) = active_media_route_for_transport(
+        state,
+        &header.room_id,
+        &session_id,
+        &user_id,
+        allow_microphone_uplink,
+        header.audio_source,
+    )
+    .await
+    else {
         debug!(
             %session_id,
             %user_id,
@@ -125,37 +243,37 @@ pub(crate) async fn handle_webtransport_frame_bytes(
     };
     let presence = route.presence;
     let recipients = route.recipients;
-
-    let is_presence_session = presence.session_id == session_id;
-    let is_bound_microphone_uplink = if is_presence_session
-        || !allow_microphone_uplink
-        || header.audio_source == Some(cheenhub_contracts::media::MediaAudioSource::System)
+    let legacy_recipients = route.legacy_recipients;
+    let modern_recipients = route.modern_recipients;
+    if media_kind == "voice"
+        && !authorized_audio_track(
+            header.audio_source,
+            header.track_id,
+            presence.session_id,
+            presence.voice_protocol_version,
+        )
     {
-        false
-    } else {
-        state
-            .voice_presence_store
-            .microphone_uplink_is_bound(
-                &session_id,
-                &user_id,
-                &header.room_id,
-                &presence.session_id,
-            )
-            .await
-    };
-    if !is_presence_session && !is_bound_microphone_uplink {
-        debug!(
-            %session_id,
+        debug!(%session_id, %user_id, track_id = %header.track_id,
             expected_session_id = %presence.session_id,
-            %user_id,
-            room_id = %header.room_id,
-            media_kind,
-            "dropping media datagram from unauthorized session"
-        );
+            "dropping voice datagram with mismatched authenticated session");
         return;
     }
 
     if let Some(allowed_video_presets) = allowed_video_presets {
+        let Some(authorized_header) =
+            authorized_video_header(header, presence.session_id, presence.voice_protocol_version)
+        else {
+            debug!(
+                %session_id,
+                %user_id,
+                room_id = %header.room_id,
+                track_id = %header.track_id,
+                expected_track_id = %presence.session_id,
+                media_kind,
+                "dropping video datagram with track ID not matching authenticated session"
+            );
+            return;
+        };
         let admission = {
             let payload = match header.payload(&bytes) {
                 Ok(payload) => payload,
@@ -166,7 +284,12 @@ pub(crate) async fn handle_webtransport_frame_bytes(
             };
             state
                 .voice_presence_store
-                .inspect_video_payload(session_id, &header, payload, allowed_video_presets)
+                .inspect_video_payload(
+                    session_id,
+                    &authorized_header,
+                    payload,
+                    allowed_video_presets,
+                )
                 .await
         };
         if !video_admission_allows_fanout(
@@ -185,7 +308,14 @@ pub(crate) async fn handle_webtransport_frame_bytes(
         return;
     }
 
-    let bytes = match header.into_relay_bytes(bytes, user_id) {
+    let prepared = prepare_relay_bytes(
+        header,
+        bytes,
+        user_id,
+        presence.session_id,
+        presence.voice_protocol_version,
+    );
+    let bytes = match prepared {
         Ok(bytes) => bytes,
         Err(error) => {
             warn!(
@@ -199,10 +329,14 @@ pub(crate) async fn handle_webtransport_frame_bytes(
             return;
         }
     };
-    state
-        .realtime_hub
-        .fanout_datagram_to_sessions_except(&recipients, presence.session_id, bytes)
-        .await;
+    super::fanout::fanout_relay_bytes(
+        state,
+        &legacy_recipients,
+        &modern_recipients,
+        presence.session_id,
+        bytes,
+    )
+    .await;
 }
 
 /// Проверяет, должна ли существующая video policy передать кадр дальше.
@@ -265,23 +399,57 @@ pub(super) fn video_admission_allows_fanout(
     false
 }
 
+/// Определяет голосовую сессию только по аутентифицированному транспорту.
+///
+/// Отдельному microphone worker разрешается использовать лишь его серверную
+/// привязку к основной голосовой сессии; для видео и системного аудио это запрещено.
+pub(super) async fn active_media_route_for_transport(
+    state: &AppState,
+    room_id: &Uuid,
+    transport_session_id: &Uuid,
+    user_id: &Uuid,
+    allow_microphone_uplink: bool,
+    audio_source: Option<MediaAudioSource>,
+) -> Option<MediaRouteSnapshot> {
+    if let Some(route) =
+        active_media_route_for_session(state, room_id, transport_session_id, user_id)
+    {
+        return Some(route);
+    }
+    if !allow_microphone_uplink || audio_source != Some(MediaAudioSource::Microphone) {
+        return None;
+    }
+    let presence_session_id = state
+        .voice_presence_store
+        .microphone_uplink_presence_session(transport_session_id, user_id, room_id)
+        .await?;
+    active_media_route_for_session(state, room_id, &presence_session_id, user_id)
+}
+
 /// Ищет media route с presence и recipients из одной версии room snapshot.
 ///
 /// Сначала проверяется серверная комната, затем комната личного звонка с тем
 /// же идентификатором. `None` означает, что пользователь не состоит ни в одной
 /// из поддерживаемых целей.
-pub(super) fn active_media_route_for_user(
+pub(super) fn active_media_route_for_session(
     state: &AppState,
     room_id: &Uuid,
+    sender_session_id: &Uuid,
     user_id: &Uuid,
 ) -> Option<MediaRouteSnapshot> {
     state
         .voice_presence_store
-        .media_route(VoicePresenceTargetKind::Server, room_id, user_id)
+        .media_route_for_session(
+            VoicePresenceTargetKind::Server,
+            room_id,
+            sender_session_id,
+            user_id,
+        )
         .or_else(|| {
-            state.voice_presence_store.media_route(
+            state.voice_presence_store.media_route_for_session(
                 VoicePresenceTargetKind::DirectMessage,
                 room_id,
+                sender_session_id,
                 user_id,
             )
         })

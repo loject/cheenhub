@@ -14,6 +14,9 @@ use crate::features::realtime::{RealtimeError, create_handle};
 use super::actions::JoinedVoiceRoom;
 use super::{VoiceConnectionHandle, VoiceConnectionParts, VoiceConnectionState, VoiceRoomTarget};
 
+mod media_encoding;
+mod regressions;
+
 const CURRENT_USER_ID: &str = "current-user";
 const PEER_USER_ID: &str = "peer-user";
 
@@ -32,6 +35,9 @@ fn participant(user_id: &str) -> VoiceRoomParticipant {
     VoiceRoomParticipant {
         microphone_enabled: true,
         output_muted: false,
+        session_id: uuid::Uuid::new_v4().to_string(),
+        voice_protocol_version: 5,
+        device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
         user_id: user_id.to_owned(),
         nickname: user_id.to_owned(),
         avatar_url: None,
@@ -47,6 +53,7 @@ fn snapshot(
         server_id: target.server_id.clone(),
         room_id: target.room_id.clone(),
         participants,
+        self_session_id: None,
         audio_bitrate_bps: None,
     }
 }
@@ -66,9 +73,14 @@ fn voice_handle_with_generation(
     let handle = VoiceConnectionHandle::new(VoiceConnectionParts {
         state: Signal::new(state),
         kicked_from_room: Signal::new(None),
+        join_confirmation: Signal::new(None),
+        eviction_notice: Signal::new(None),
+        pending_eviction: Rc::new(RefCell::new(None)),
+        disconnected_presence: Rc::new(RefCell::new(None)),
         speaking_users: Signal::new(Vec::new()),
         room_snapshots: Signal::new(Vec::new()),
         remembered_room: Signal::new(None),
+        media_session: Signal::new(None),
         speaking_generations: Rc::new(RefCell::new(HashMap::new())),
         join_generation,
         realtime: create_handle(),
@@ -96,7 +108,7 @@ fn with_dioxus_runtime<T>(body: impl FnOnce() -> T) -> T {
 }
 
 #[test]
-fn participants_changed_confirms_join_while_connecting() {
+fn participants_changed_from_another_device_cannot_confirm_in_flight_join() {
     with_dioxus_runtime(|| {
         let target =
             VoiceRoomTarget::direct_message("conversation-1".to_owned(), "Лиса".to_owned());
@@ -109,12 +121,10 @@ fn participants_changed_confirms_join_while_connecting() {
             vec![participant(CURRENT_USER_ID), participant(PEER_USER_ID)],
         ));
 
-        let participants = connected_participant_ids(&handle.state())
-            .expect("participants changed event should confirm the in-flight join");
-        assert_eq!(
-            participants,
-            vec![CURRENT_USER_ID.to_owned(), PEER_USER_ID.to_owned()]
-        );
+        assert!(matches!(
+            handle.state(),
+            VoiceConnectionState::Connecting { .. }
+        ));
     });
 }
 
@@ -126,16 +136,19 @@ fn late_join_response_does_not_overwrite_fresher_participants_changed() {
         let (handle, _microphone) = voice_handle(VoiceConnectionState::Connecting {
             target: target.clone(),
         });
-
+        let self_session_id = uuid::Uuid::new_v4().to_string();
+        let mut self_participant = participant(CURRENT_USER_ID);
+        self_participant.session_id = self_session_id.clone();
         handle.apply_snapshot(snapshot(
             &target,
-            vec![participant(CURRENT_USER_ID), participant(PEER_USER_ID)],
+            vec![self_participant, participant(PEER_USER_ID)],
         ));
         handle.complete_join(
             &target,
             ACTIVE_JOIN_GENERATION,
             JoinedVoiceRoom {
                 snapshot: snapshot(&target, vec![participant(CURRENT_USER_ID)]),
+                self_session_id,
                 audio_bitrate_bps: 48_000,
             },
         );
@@ -160,18 +173,24 @@ fn late_join_response_applies_server_bitrate_without_touching_participants() {
         let (handle, microphone) = voice_handle(VoiceConnectionState::Connecting {
             target: target.clone(),
         });
-
+        let self_session_id = uuid::Uuid::new_v4().to_string();
+        let mut self_participant = participant(CURRENT_USER_ID);
+        self_participant.session_id = self_session_id.clone();
         handle.apply_snapshot(snapshot(
             &target,
-            vec![participant(CURRENT_USER_ID), participant(PEER_USER_ID)],
+            vec![self_participant, participant(PEER_USER_ID)],
         ));
-        assert!(connected_participant_ids(&handle.state()).is_some());
+        assert!(matches!(
+            handle.state(),
+            VoiceConnectionState::Connecting { .. }
+        ));
 
         handle.complete_join(
             &target,
             ACTIVE_JOIN_GENERATION,
             JoinedVoiceRoom {
                 snapshot: snapshot(&target, vec![participant(CURRENT_USER_ID)]),
+                self_session_id,
                 audio_bitrate_bps: 48_000,
             },
         );
@@ -198,11 +217,15 @@ fn successful_join_response_completes_connecting_state() {
             target: target.clone(),
         });
 
+        let self_session_id = uuid::Uuid::new_v4().to_string();
+        let mut own = participant(CURRENT_USER_ID);
+        own.session_id = self_session_id.clone();
         handle.complete_join(
             &target,
             ACTIVE_JOIN_GENERATION,
             JoinedVoiceRoom {
-                snapshot: snapshot(&target, vec![participant(CURRENT_USER_ID)]),
+                snapshot: snapshot(&target, vec![own]),
+                self_session_id,
                 audio_bitrate_bps: 48_000,
             },
         );
@@ -236,6 +259,7 @@ fn join_response_for_other_target_is_fully_ignored() {
             ACTIVE_JOIN_GENERATION,
             JoinedVoiceRoom {
                 snapshot: snapshot(&stale_target, vec![participant(CURRENT_USER_ID)]),
+                self_session_id: uuid::Uuid::new_v4().to_string(),
                 audio_bitrate_bps: 48_000,
             },
         );
@@ -275,6 +299,7 @@ fn stale_join_generation_is_fully_ignored_even_for_same_room() {
             1,
             JoinedVoiceRoom {
                 snapshot: snapshot(&target, vec![participant(CURRENT_USER_ID)]),
+                self_session_id: uuid::Uuid::new_v4().to_string(),
                 audio_bitrate_bps: 48_000,
             },
         );
@@ -307,6 +332,7 @@ fn current_join_generation_applies_bitrate_to_connected_room() {
             ACTIVE_JOIN_GENERATION,
             JoinedVoiceRoom {
                 snapshot: snapshot(&target, vec![participant(CURRENT_USER_ID)]),
+                self_session_id: uuid::Uuid::new_v4().to_string(),
                 audio_bitrate_bps: 48_000,
             },
         );
@@ -343,6 +369,130 @@ fn stale_join_generation_failure_is_ignored_for_same_room() {
             handle.state(),
             VoiceConnectionState::Connecting { .. }
         ));
+    });
+}
+
+#[test]
+fn device_conflict_is_exposed_for_confirmation() {
+    with_dioxus_runtime(|| {
+        let target = VoiceRoomTarget::server("server".into(), "room".into(), "Общая".into());
+        let (handle, _) = voice_handle(VoiceConnectionState::Connecting {
+            target: target.clone(),
+        });
+        handle.apply_join_failure(
+            &target,
+            ACTIVE_JOIN_GENERATION,
+            RealtimeError::rejected(
+                cheenhub_contracts::realtime::RejectionCode::VoiceDeviceConfirmationRequired,
+                "Требуется подтверждение",
+            ),
+        );
+
+        let confirmation = (handle.join_confirmation)().expect("ожидается окно подтверждения");
+        assert_eq!(confirmation.target, target);
+        assert!(!confirmation.same_auth_session);
+    });
+}
+
+#[test]
+fn eviction_affects_only_the_authenticated_voice_session() {
+    use cheenhub_contracts::realtime::{
+        VoiceNetworkTargetKind, VoicePresenceEvicted, VoicePresenceEvictionReason,
+    };
+    with_dioxus_runtime(|| {
+        let target = VoiceRoomTarget::server("server".into(), "room".into(), "Общая".into());
+        let own_session_id = uuid::Uuid::new_v4();
+        let mut own = participant(CURRENT_USER_ID);
+        own.session_id = own_session_id.to_string();
+        let (handle, _) = voice_handle(VoiceConnectionState::Connected {
+            target: target.clone(),
+            participants: vec![own],
+        });
+        let mut media_session = handle.media_session;
+        media_session.set(Some(super::VoiceMediaSession {
+            target: target.clone(),
+            session_id: own_session_id,
+        }));
+        let mut event = VoicePresenceEvicted {
+            session_id: uuid::Uuid::new_v4().to_string(),
+            joined_at: "2026-01-01T00:00:00Z".to_owned(),
+            target_kind: VoiceNetworkTargetKind::Server,
+            server_id: target.server_id.clone(),
+            room_id: target.room_id.clone(),
+            reason: VoicePresenceEvictionReason::SameAuthSessionTakeover,
+        };
+        handle.apply_eviction(event.clone());
+        assert!(matches!(
+            handle.state(),
+            VoiceConnectionState::Connected { .. }
+        ));
+        assert_eq!((handle.eviction_notice)(), None);
+
+        event.session_id = own_session_id.to_string();
+        handle.apply_eviction(event);
+        assert!(matches!(handle.state(), VoiceConnectionState::Disconnected));
+        assert_eq!((handle.media_session)(), None);
+        assert_eq!(
+            (handle.eviction_notice)(),
+            Some(VoicePresenceEvictionReason::SameAuthSessionTakeover)
+        );
+    });
+}
+
+#[test]
+fn eviction_received_during_join_cancels_matching_join_confirmation() {
+    use cheenhub_contracts::realtime::{
+        VoiceNetworkTargetKind, VoicePresenceEvicted, VoicePresenceEvictionReason,
+    };
+    with_dioxus_runtime(|| {
+        let target = VoiceRoomTarget::server("server".into(), "room".into(), "Общая".into());
+        let (handle, _) = voice_handle(VoiceConnectionState::Connecting {
+            target: target.clone(),
+        });
+        let session_id = uuid::Uuid::new_v4().to_string();
+        handle.apply_eviction(VoicePresenceEvicted {
+            session_id: session_id.clone(),
+            joined_at: "2026-01-01T00:00:00Z".to_owned(),
+            target_kind: VoiceNetworkTargetKind::Server,
+            server_id: target.server_id.clone(),
+            room_id: target.room_id.clone(),
+            reason: VoicePresenceEvictionReason::AnotherDeviceTransition,
+        });
+        let mut own = participant(CURRENT_USER_ID);
+        own.session_id = session_id.clone();
+        handle.complete_join(
+            &target,
+            ACTIVE_JOIN_GENERATION,
+            JoinedVoiceRoom {
+                snapshot: snapshot(&target, vec![own]),
+                self_session_id: session_id,
+                audio_bitrate_bps: 48_000,
+            },
+        );
+        assert!(matches!(handle.state(), VoiceConnectionState::Disconnected));
+        assert_eq!((handle.media_session)(), None);
+        assert_eq!(
+            (handle.eviction_notice)(),
+            Some(VoicePresenceEvictionReason::AnotherDeviceTransition)
+        );
+    });
+}
+
+#[test]
+fn snapshot_without_own_session_does_not_keep_same_user_connected() {
+    with_dioxus_runtime(|| {
+        let target = VoiceRoomTarget::server("server".into(), "room".into(), "Общая".into());
+        let (handle, _) = voice_handle(VoiceConnectionState::Connected {
+            target: target.clone(),
+            participants: vec![participant(CURRENT_USER_ID)],
+        });
+        let mut media_session = handle.media_session;
+        media_session.set(Some(super::VoiceMediaSession {
+            target: target.clone(),
+            session_id: uuid::Uuid::new_v4(),
+        }));
+        handle.apply_snapshot(snapshot(&target, vec![participant(CURRENT_USER_ID)]));
+        assert!(matches!(handle.state(), VoiceConnectionState::Disconnected));
     });
 }
 

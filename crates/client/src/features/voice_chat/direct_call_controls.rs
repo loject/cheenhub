@@ -105,6 +105,7 @@ pub(crate) fn DirectCallControls(
         "voice-control-button direct-call-control relative flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-950/65 text-zinc-200 shadow-[0_0_0_1px_rgba(255,255,255,.08)] transition-[scale,background-color,box-shadow] duration-[180ms] active:scale-[0.96]"
     };
     let toggle_microphone = microphone.clone();
+    let toggle_microphone_voice = voice.clone();
     let microphone_realtime = realtime_handle.clone();
     let microphone_server_id = target.server_id.clone();
     let microphone_room_id = target.room_id.clone();
@@ -114,6 +115,9 @@ pub(crate) fn DirectCallControls(
     let camera_room_id = target.room_id.clone();
     let camera_user_id = current_user_id.clone();
     let camera_video = participant_video.clone();
+    let camera_voice = voice.clone();
+    let inline_screen_voice = voice.clone();
+    let menu_screen_voice = voice.clone();
     let toggle_screen_share_handle = screen_share.clone();
     let screen_share_realtime = realtime_handle.clone();
     let screen_share_server_id = target.server_id.clone();
@@ -147,6 +151,7 @@ pub(crate) fn DirectCallControls(
                                 microphone_realtime.clone(),
                                 microphone_server_id.clone(),
                                 microphone_room_id.clone(),
+                                Some(toggle_microphone_voice.clone()),
                             );
                         }
                     },
@@ -167,10 +172,14 @@ pub(crate) fn DirectCallControls(
                         let send_room_id = camera_room_id.clone();
                         let local_user_id = camera_user_id.clone();
                         let local_video = camera_video.clone();
+                        let send_voice = camera_voice.clone();
                         toggle_camera.toggle(Rc::new(move |frame| {
                             let frame_realtime = send_realtime.clone();
                             let frame_server_id = send_server_id.clone();
                             let frame_room_id = send_room_id.clone();
+                            let Some(media_encoding) = send_voice.outbound_session_id_for(&frame_server_id, &frame_room_id) else {
+                                return;
+                            };
                             local_video.publish_frame(
                                 ParticipantVideoSource::Camera,
                                 ParticipantVideoFrame::from_local_camera(
@@ -185,6 +194,7 @@ pub(crate) fn DirectCallControls(
                                     &frame_server_id,
                                     &frame_room_id,
                                     frame,
+                                    media_encoding,
                                 ).await {
                                     warn!(%error, server_id = %frame_server_id, room_id = %frame_room_id, "failed to send encoded direct-call camera frame");
                                 }
@@ -207,6 +217,7 @@ pub(crate) fn DirectCallControls(
                             let screen_share_realtime = screen_share_realtime.clone();
                             let screen_share_server_id = screen_share_server_id.clone();
                             let screen_share_room_id = screen_share_room_id.clone();
+                            let send_voice = inline_screen_voice.clone();
                             move |_| {
                                 debug!(room_id = %screen_share_room_id, "toggling direct-call screen share from primary controls");
                                 toggle_screen_share(
@@ -214,6 +225,7 @@ pub(crate) fn DirectCallControls(
                                     screen_share_realtime.clone(),
                                     screen_share_server_id.clone(),
                                     screen_share_room_id.clone(),
+                                    send_voice.clone(),
                                 );
                             }
                         },
@@ -250,6 +262,7 @@ pub(crate) fn DirectCallControls(
                                         screen_share_realtime.clone(),
                                         screen_share_server_id.clone(),
                                         screen_share_room_id.clone(),
+                                        menu_screen_voice.clone(),
                                     );
                                 },
                             )}
@@ -306,17 +319,22 @@ fn toggle_screen_share(
     realtime_handle: RealtimeHandle,
     server_id: String,
     room_id: String,
+    voice: VoiceConnectionHandle,
 ) {
     screen_share.toggle(Rc::new(move |frame| {
         let frame_realtime = realtime_handle.clone();
         let frame_server_id = server_id.clone();
         let frame_room_id = room_id.clone();
+        let Some(media_encoding) = voice.outbound_session_id_for(&frame_server_id, &frame_room_id) else {
+            return;
+        };
         spawn(async move {
             if let Err(error) = realtime::send_screen_frame(
                 &frame_realtime,
                 &frame_server_id,
                 &frame_room_id,
                 frame,
+                media_encoding,
             ).await {
                 warn!(%error, server_id = %frame_server_id, room_id = %frame_room_id, "failed to send encoded direct-call screen frame");
             }

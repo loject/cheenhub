@@ -57,15 +57,29 @@ struct AudioPlaybackInner {
 
 impl AudioPlaybackHandle {
     /// Останавливает системное аудио участника вместе с его демонстрацией.
-    pub(crate) fn stop_system_audio(&self, sender_user_id: &str, track_id: uuid::Uuid) {
-        let key = self.inner.borrow_mut().tracks.stop_source(
-            sender_user_id,
-            cheenhub_contracts::media::MediaAudioSource::System,
-            track_id,
-        );
-        if let Some(key) = key {
+    pub(crate) fn stop_system_audio(
+        &self,
+        sender_user_id: &str,
+        session_id: uuid::Uuid,
+        track_id: uuid::Uuid,
+    ) {
+        let keys = {
+            let mut inner = self.inner.borrow_mut();
+            [Some(session_id), None]
+                .into_iter()
+                .filter_map(|voice_session_id| {
+                    inner.tracks.stop_source(
+                        sender_user_id,
+                        cheenhub_contracts::media::MediaAudioSource::System,
+                        voice_session_id,
+                        track_id,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        for key in keys {
             self.stop_playback_key(&key);
-            debug!(%sender_user_id, "stopped screen sharing audio playback");
+            debug!(%sender_user_id, %session_id, "stopped screen sharing audio playback");
         }
     }
     /// Возвращает, отключено ли входящее воспроизведение.
@@ -213,6 +227,36 @@ impl AudioPlaybackHandle {
     /// Возвращает текущий идентификатор предпочитаемого устройства вывода.
     pub(crate) fn output_device_id(&self) -> Option<String> {
         (self.selected_output_device_id)()
+    }
+
+    /// Останавливает только микрофон ушедшей голосовой сессии.
+    pub(crate) fn stop_microphone_session(&self, sender_user_id: &str, session_id: uuid::Uuid) {
+        let key = self
+            .inner
+            .borrow_mut()
+            .tracks
+            .stop_microphone_session(sender_user_id, session_id);
+        if let Some(key) = key {
+            self.stop_playback_key(&key);
+        }
+    }
+
+    /// Сбрасывает декодер и разрешает новый вход с прежним UUID микрофона.
+    pub(crate) fn reactivate_microphone_session(
+        &self,
+        sender_user_id: &str,
+        session_id: uuid::Uuid,
+    ) {
+        let key = crate::features::audio_playback::tracks::playback_key(
+            sender_user_id,
+            cheenhub_contracts::media::MediaAudioSource::Microphone,
+            session_id,
+        );
+        self.stop_playback_key(&key);
+        self.inner
+            .borrow_mut()
+            .tracks
+            .reactivate_microphone_session(sender_user_id, session_id);
     }
 
     /// Останавливает состояние воспроизведения одного отправителя.

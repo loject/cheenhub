@@ -23,7 +23,7 @@ use super::browser_diagnostics::{
     WorkletProcessorProfileTiming, enabled as microphone_diagnostics_enabled,
 };
 use super::browser_errors::js_error_message;
-use super::core::{apply_input_gain, duration_us};
+use super::core::{apply_input_gain, duration_us, new_microphone_capture_sequence};
 use super::vad::{VoiceActivityDetector, rms_level};
 
 const MICROPHONE_ENCODER_QUEUE_WARN_FRAMES: u32 = 8;
@@ -40,7 +40,7 @@ pub(super) fn create_encoder(
     config: &MicrophoneConfig,
     on_frame: MicrophoneFrameCallback,
 ) -> Result<BrowserEncoder, MicrophoneError> {
-    let sequence = Rc::new(Cell::new(0_u64));
+    let sequence = Rc::new(Cell::new(new_microphone_capture_sequence()));
     let output_sequence = sequence.clone();
     let track_id = uuid::Uuid::new_v4();
     let sample_rate_hz = config.sample_rate_hz;

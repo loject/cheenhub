@@ -4,10 +4,13 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use cheenhub_contracts::realtime::VoiceRoomParticipant;
+use cheenhub_contracts::realtime::{
+    VoicePresenceEvicted, VoicePresenceEvictionReason, VoiceRoomParticipant,
+};
 use cheenhub_contracts::rest::AuthUser;
 use dioxus::prelude::*;
 use futures_util::future::{Either, FutureExt, select};
+use uuid::Uuid;
 
 use crate::features::microphone::MicrophoneHandle;
 use crate::features::realtime::RealtimeHandle;
@@ -18,12 +21,15 @@ use super::room_presence::VoiceRoomParticipants;
 use super::speaking::{self, SpeakingUserActivity};
 
 mod actions;
+mod eviction;
 mod join;
+mod media;
 mod rooms;
 mod status;
 mod target;
 
 use actions::{join_target, leave_target};
+use eviction::VoiceDisconnectionCandidate;
 pub(crate) use target::{VoiceRoomTarget, VoiceRoomTargetKind};
 
 const JOIN_RESPONSE_TIMEOUT_MS: u32 = 12_000;
@@ -61,6 +67,22 @@ pub(crate) enum VoiceConnectionState {
     },
 }
 
+/// Конфликт устройств, для которого пользователь может подтвердить повторный вход.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VoiceJoinConfirmation {
+    pub(crate) target: VoiceRoomTarget,
+    pub(crate) same_auth_session: bool,
+}
+
+/// Подтверждённый сервером источник исходящих медиадатаграмм.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VoiceMediaSession {
+    /// Цель входа, для которой действителен UUID подключения.
+    pub(crate) target: VoiceRoomTarget,
+    /// UUID основного голосового подключения, а не отдельного microphone worker.
+    pub(crate) session_id: Uuid,
+}
+
 /// Context handle used by voice chat UI surfaces.
 #[derive(Clone)]
 pub(crate) struct VoiceConnectionHandle {
@@ -68,10 +90,16 @@ pub(crate) struct VoiceConnectionHandle {
     pub(crate) state: Signal<VoiceConnectionState>,
     /// Room name the user was kicked from, set when a kick is detected.
     pub(crate) kicked_from_room: Signal<Option<String>>,
+    pub(crate) join_confirmation: Signal<Option<VoiceJoinConfirmation>>,
+    pub(crate) eviction_notice: Signal<Option<VoicePresenceEvictionReason>>,
+    pending_eviction: Rc<RefCell<Option<VoicePresenceEvicted>>>,
+    disconnected_presence: Rc<RefCell<Option<VoiceDisconnectionCandidate>>>,
     speaking_users: Signal<Vec<SpeakingUserActivity>>,
     room_snapshots: Signal<Vec<VoiceRoomParticipants>>,
     /// Комната, в которой пользователь был до последнего обрыва realtime.
     remembered_room: Signal<Option<VoiceRoomTarget>>,
+    /// UUID активной медиасессии доступен только после ответа join.
+    media_session: Signal<Option<VoiceMediaSession>>,
     speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
     /// Поколение текущей операции join; ответы старых операций игнорируются.
     join_generation: Rc<Cell<u64>>,
@@ -86,12 +114,22 @@ pub(super) struct VoiceConnectionParts {
     pub(super) state: Signal<VoiceConnectionState>,
     /// Название комнаты, из которой исключили пользователя.
     pub(super) kicked_from_room: Signal<Option<String>>,
+    /// Конфликт входа, требующий подтверждения отключения устройства.
+    pub(super) join_confirmation: Signal<Option<VoiceJoinConfirmation>>,
+    /// Уведомление о вытеснении именно этого голосового подключения.
+    pub(super) eviction_notice: Signal<Option<VoicePresenceEvictionReason>>,
+    /// Вытеснение, пришедшее до ответа сервера с UUID голосовой сессии.
+    pub(super) pending_eviction: Rc<RefCell<Option<VoicePresenceEvicted>>>,
+    /// Завершённая сессия, для которой ещё может прийти точная причина вытеснения.
+    pub(super) disconnected_presence: Rc<RefCell<Option<VoiceDisconnectionCandidate>>>,
     /// Сигналы активности речи участников.
     pub(super) speaking_users: Signal<Vec<SpeakingUserActivity>>,
     /// Кэш снимков участников комнат.
     pub(super) room_snapshots: Signal<Vec<VoiceRoomParticipants>>,
     /// Комната, в которой пользователь был до последнего обрыва realtime.
     pub(super) remembered_room: Signal<Option<VoiceRoomTarget>>,
+    /// Подтверждённое основное голосовое подключение.
+    pub(super) media_session: Signal<Option<VoiceMediaSession>>,
     /// Поколения таймеров активности речи.
     pub(super) speaking_generations: Rc<RefCell<HashMap<String, u64>>>,
     /// Счётчик поколений join-операций для отброса устаревших ответов.
@@ -110,9 +148,14 @@ impl VoiceConnectionHandle {
         Self {
             state: parts.state,
             kicked_from_room: parts.kicked_from_room,
+            join_confirmation: parts.join_confirmation,
+            eviction_notice: parts.eviction_notice,
+            pending_eviction: parts.pending_eviction,
+            disconnected_presence: parts.disconnected_presence,
             speaking_users: parts.speaking_users,
             room_snapshots: parts.room_snapshots,
             remembered_room: parts.remembered_room,
+            media_session: parts.media_session,
             speaking_generations: parts.speaking_generations,
             join_generation: parts.join_generation,
             realtime: parts.realtime,
@@ -142,12 +185,18 @@ impl VoiceConnectionHandle {
         speaking::user_ids(self.speaking_users)
     }
 
+    /// Возвращает независимые метки речи голосовых сессий.
+    pub(crate) fn speaking_sessions(&self) -> Vec<(String, Option<Uuid>)> {
+        speaking::sessions(self.speaking_users)
+    }
+
     /// Marks one user as speaking until no new voice frame refreshes the marker.
-    pub(crate) fn mark_user_speaking(&self, user_id: String) {
+    pub(crate) fn mark_user_speaking(&self, user_id: String, session_id: Option<Uuid>) {
         speaking::mark_user_speaking(
             self.speaking_users,
             self.speaking_generations.clone(),
             user_id,
+            session_id,
         );
     }
 
@@ -176,10 +225,18 @@ impl VoiceConnectionHandle {
 
     /// Joins one room, leaving the previous room first when needed.
     pub(crate) fn join(&self, target: VoiceRoomTarget) {
+        self.join_with_confirmation(target, false);
+    }
+
+    fn join_with_confirmation(&self, target: VoiceRoomTarget, confirmed: bool) {
         let current = self.state();
         if current.is_connected_to(&target) || current.is_connecting_to(&target) {
             return;
         }
+        self.disconnected_presence.borrow_mut().take();
+        self.clear_media_session();
+        let mut join_confirmation = self.join_confirmation;
+        join_confirmation.set(None);
 
         let previous = if matches!(&current, VoiceConnectionState::Disconnecting { .. }) {
             info!(
@@ -245,6 +302,7 @@ impl VoiceConnectionHandle {
                 &realtime,
                 &target,
                 handle.microphone.voice_enabled_untracked(),
+                confirmed,
             );
             match select(
                 join.boxed_local(),
@@ -286,6 +344,8 @@ impl VoiceConnectionHandle {
         // Инвалидируем текущую join-операцию, чтобы ответ отменённого входа
         // не мог примениться после leave.
         self.next_join_generation();
+        self.disconnected_presence.borrow_mut().take();
+        self.clear_media_session();
         let current = self.state();
         let Some(target) = current.active_target() else {
             let mut state = self.state;
@@ -352,46 +412,54 @@ impl VoiceConnectionHandle {
         let mut state = self.state;
         state.set(match current {
             VoiceConnectionState::Connecting { target } => {
-                // Свежий snapshot с текущим пользователем — серверное подтверждение join,
-                // даже если ответ на сам запрос входа ещё не вернулся.
-                // Остаточный edge case: VoiceRoomSnapshot не содержит generation/revision
-                // операции, поэтому запоздалый ParticipantsChanged от предыдущего presence
-                // в той же комнате (после leave и быстрого rejoin) неотличим от свежего
-                // и может ошибочно подтвердить join. Корректно закрыть это можно только
-                // идентификатором операции на уровне протокола/backend.
-                if snapshot
-                    .participants
-                    .iter()
-                    .any(|participant| participant.user_id == *current_user_id)
-                {
-                    info!(
-                        target_kind = ?target.kind,
-                        server_id = %target.server_id,
-                        room_id = %target.room_id,
-                        participants = snapshot.participants.len(),
-                        "participants changed event confirmed voice room join"
-                    );
-                    VoiceConnectionState::Connected {
-                        target,
-                        participants: snapshot.participants,
-                    }
-                } else {
-                    VoiceConnectionState::Connecting { target }
-                }
+                // Presence другого устройства того же аккаунта не подтверждает наш join.
+                // Сохраняем список в кэше; вход завершает только ответ с UUID сессии.
+                VoiceConnectionState::Connecting { target }
             }
-            VoiceConnectionState::Connected { target, .. } => {
-                if snapshot
+            VoiceConnectionState::Connected {
+                target,
+                participants,
+            } => {
+                let session_id = self.media_session_id_for(&target).map(|id| id.to_string());
+                let has_session_ids = snapshot
                     .participants
                     .iter()
-                    .any(|p| &p.user_id == current_user_id)
-                {
+                    .any(|participant| !participant.session_id.is_empty());
+                let own_present = if has_session_ids {
+                    session_id.as_ref().map_or_else(
+                        || {
+                            snapshot
+                                .participants
+                                .iter()
+                                .any(|p| &p.user_id == current_user_id)
+                        },
+                        |id| snapshot.participants.iter().any(|p| &p.session_id == id),
+                    )
+                } else {
+                    snapshot
+                        .participants
+                        .iter()
+                        .any(|p| &p.user_id == current_user_id)
+                };
+                if own_present {
                     VoiceConnectionState::Connected {
                         target,
                         participants: snapshot.participants,
                     }
                 } else {
-                    let mut kicked = self.kicked_from_room;
-                    kicked.set(Some(target.room_name.clone()));
+                    self.remember_disconnected_presence(&target, &participants);
+                    self.clear_media_session();
+                    if snapshot
+                        .participants
+                        .iter()
+                        .any(|p| &p.user_id == current_user_id)
+                    {
+                        let mut notice = self.eviction_notice;
+                        notice.set(Some(VoicePresenceEvictionReason::AnotherDeviceTransition));
+                    } else {
+                        let mut kicked = self.kicked_from_room;
+                        kicked.set(Some(target.room_name.clone()));
+                    }
                     VoiceConnectionState::Disconnected
                 }
             }

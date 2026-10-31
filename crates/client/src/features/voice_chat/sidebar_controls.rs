@@ -151,9 +151,11 @@ pub(crate) fn SidebarVoiceControls() -> Element {
     } else {
         "flex min-h-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-300 transition-[background-color,border-color,color,transform,opacity] duration-150 hover:-translate-y-px hover:border-red-500/35 hover:bg-red-500/10 hover:text-red-200 active:scale-[0.96] disabled:cursor-wait disabled:opacity-60"
     };
+    let toggle_microphone_voice = voice.clone();
     let camera_realtime_handle = realtime_handle.clone();
     let camera_current_user_id = current_user_id.clone();
     let camera_participant_video = participant_video.clone();
+    let camera_voice = voice.clone();
 
     rsx! {
         div { class: "sidebar-voice-presence", "data-sidebar-voice-open": if visible { "true" } else { "false" },
@@ -206,6 +208,7 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                                 realtime_handle.clone(),
                                 target.server_id.clone(),
                                 target.room_id.clone(),
+                                Some(toggle_microphone_voice.clone()),
                             );
                         },
                         if microphone_enabled {
@@ -262,10 +265,14 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                             let send_realtime = camera_realtime_handle.clone();
                             let local_user_id = camera_current_user_id.clone();
                             let local_video = camera_participant_video.clone();
+                            let send_voice = camera_voice.clone();
                             toggle_camera.toggle(Rc::new(move |frame| {
                                 let frame_realtime = send_realtime.clone();
                                 let frame_server_id = target.server_id.clone();
                                 let frame_room_id = target.room_id.clone();
+                                let Some(media_encoding) = send_voice.outbound_session_id_for(&frame_server_id, &frame_room_id) else {
+                                    return;
+                                };
                                 local_video.publish_frame(
                                     ParticipantVideoSource::Camera,
                                     ParticipantVideoFrame::from_local_camera(
@@ -280,6 +287,7 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                                         &frame_server_id,
                                         &frame_room_id,
                                         frame,
+                                        media_encoding,
                                     )
                                     .await
                                     {

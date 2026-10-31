@@ -217,6 +217,9 @@ async fn deleting_server_removes_only_its_voice_presence() {
                     Uuid::new_v4()
                 },
                 session_id,
+                auth_session_id: Uuid::new_v4(),
+                device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+                voice_protocol_version: 4,
                 target_kind: kind,
                 server_id: target_server_id,
                 room_id: target_room_id,

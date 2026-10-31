@@ -2,6 +2,7 @@
 
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use dioxus::prelude::*;
+use uuid::Uuid;
 
 use crate::features::app::components::avatar::{UserAvatar, use_avatar_seed};
 
@@ -37,6 +38,7 @@ pub(crate) fn VoiceParticipantTile(
     focused: bool,
     speaking: bool,
     media: VoiceParticipantTileMedia,
+    track_id: Uuid,
     on_toggle_focus: EventHandler<()>,
     on_open_user_menu: EventHandler<(String, String, f64, f64)>,
     on_toggle_user_menu: EventHandler<(String, String, f64, f64)>,
@@ -92,12 +94,14 @@ pub(crate) fn VoiceParticipantTile(
                 ParticipantVideoCanvas {
                     user_id: participant.user_id.clone(),
                     source: ParticipantVideoSource::ScreenShare,
+                    track_id,
                     on_dimensions: move |dimensions: (u32, u32)| video_dimensions.set(Some(dimensions)),
                 }
             } else if camera_on {
                 ParticipantVideoCanvas {
                     user_id: participant.user_id.clone(),
                     source: ParticipantVideoSource::Camera,
+                    track_id,
                     on_dimensions: move |dimensions: (u32, u32)| video_dimensions.set(Some(dimensions)),
                 }
             }
@@ -131,6 +135,7 @@ pub(crate) fn VoiceParticipantTile(
             }
             VoiceNetworkQualityIndicator {
                 participant_user_id: participant.user_id.clone(),
+                participant_session_id: participant.session_id.clone(),
                 participant_name: participant.nickname.clone(),
             }
             if !screen_sharing && !camera_on {

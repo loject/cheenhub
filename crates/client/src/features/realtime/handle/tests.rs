@@ -21,6 +21,7 @@ fn rejected_response_exposes_server_message_for_the_user() {
     let error = super::decode_response::<()>(response).unwrap_err();
 
     assert_eq!(error.user_message(), Some("Писать можно только друзьям."));
+    assert_eq!(error.rejection_code(), Some(RejectionCode::BadRequest));
 }
 
 #[test]

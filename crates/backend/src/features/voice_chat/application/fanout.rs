@@ -46,6 +46,7 @@ pub(super) async fn room_snapshot(
         server_id: target.route_id().to_string(),
         room_id: target.room_id.to_string(),
         participants,
+        self_session_id: None,
         audio_bitrate_bps: None,
     }
 }
@@ -154,6 +155,9 @@ pub(super) fn participant_summary(presence: &VoicePresence) -> VoiceRoomParticip
         microphone_enabled: presence.microphone_enabled,
         output_muted: presence.output_muted,
         user_id: presence.user_id.to_string(),
+        session_id: presence.session_id.to_string(),
+        voice_protocol_version: presence.voice_protocol_version,
+        device_kind: presence.device_kind,
         nickname: presence.nickname.clone(),
         avatar_url: presence.avatar_url.clone(),
         joined_at: presence.joined_at.to_rfc3339(),

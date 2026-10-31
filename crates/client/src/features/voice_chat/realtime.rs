@@ -2,6 +2,8 @@
 
 mod screen_audio;
 mod video_lifecycle;
+mod voice_evictions;
+pub(crate) use voice_evictions::subscribe_voice_evictions;
 mod voice_frames;
 pub(crate) use screen_audio::send_screen_audio_frame;
 
@@ -41,6 +43,8 @@ pub(crate) struct InboundVoiceFrame {
     pub(crate) sender_user_id: String,
     /// UUID отдельной дорожки; nil у legacy-микрофона.
     pub(crate) track_id: Uuid,
+    /// Подтверждённый сервером UUID голосовой сессии для v3.
+    pub(crate) voice_session_id: Option<Uuid>,
     /// Назначение принятого аудио.
     pub(crate) audio_source: cheenhub_contracts::media::MediaAudioSource,
     /// Число каналов принятого Opus-потока.
@@ -62,6 +66,8 @@ pub(crate) struct InboundVideoFrame {
     pub(crate) room_id: String,
     /// Идентификатор аутентифицированного отправителя.
     pub(crate) sender_user_id: String,
+    /// UUID конкретной голосовой сессии, публикующей видео.
+    pub(crate) track_id: Uuid,
     /// Локальная для отправителя последовательность пакетов.
     pub(crate) sequence: u64,
     /// Временная метка захвата или кодирования в микросекундах.
@@ -85,9 +91,13 @@ pub(crate) struct InboundVideoStreamEnded {
     pub(crate) room_id: String,
     /// Идентификатор пользователя, остановившего видеопоток.
     pub(crate) sender_user_id: String,
+    /// UUID голосовой сессии, остановившей конкретный видеопоток.
+    pub(crate) session_id: Uuid,
     /// Остановленный источник видео.
     pub(crate) source: VoiceVideoStreamSource,
 }
+
+pub(crate) use super::voice_call_platform::voice_device_kind;
 
 /// Joins one voice-capable room.
 pub(crate) async fn join_room(
@@ -95,6 +105,7 @@ pub(crate) async fn join_room(
     server_id: String,
     room_id: String,
     microphone_enabled: bool,
+    confirm_disconnect_other_devices: bool,
 ) -> Result<VoiceRoomSnapshot, RealtimeError> {
     realtime
         .request(
@@ -102,6 +113,9 @@ pub(crate) async fn join_room(
             RealtimeKind::VoiceChat(VoiceChatKind::JoinVoiceRoom),
             JoinVoiceRoom {
                 microphone_enabled,
+                confirm_disconnect_other_devices,
+                voice_protocol_version: 6,
+                device_kind: voice_device_kind(),
                 server_id,
                 room_id,
             },
@@ -129,6 +143,7 @@ pub(crate) async fn join_direct_message_room(
     realtime: &RealtimeHandle,
     conversation_id: String,
     microphone_enabled: bool,
+    confirm_disconnect_other_devices: bool,
 ) -> Result<VoiceRoomSnapshot, RealtimeError> {
     realtime
         .request(
@@ -136,6 +151,9 @@ pub(crate) async fn join_direct_message_room(
             RealtimeKind::VoiceChat(VoiceChatKind::JoinDirectMessageVoiceRoom),
             JoinDirectMessageVoiceRoom {
                 microphone_enabled,
+                confirm_disconnect_other_devices,
+                voice_protocol_version: 6,
+                device_kind: voice_device_kind(),
                 conversation_id,
             },
         )
@@ -378,6 +396,7 @@ pub(crate) async fn send_screen_frame(
     _server_id: &str,
     room_id: &str,
     frame: EncodedScreenShareFrame,
+    sender_session_id: Uuid,
 ) -> Result<(), RealtimeError> {
     let codec = match frame.codec {
         ScreenShareCodec::Vp9 => MediaCodec::Vp9,
@@ -396,6 +415,7 @@ pub(crate) async fn send_screen_frame(
         codec,
         frame,
         "screen",
+        sender_session_id,
     )
     .await
 }
@@ -406,6 +426,7 @@ pub(crate) async fn send_camera_frame(
     _server_id: &str,
     room_id: &str,
     frame: EncodedCameraFrame,
+    sender_session_id: Uuid,
 ) -> Result<(), RealtimeError> {
     let codec = match frame.codec {
         CameraCodec::Vp9 => MediaCodec::Vp9,
@@ -424,6 +445,7 @@ pub(crate) async fn send_camera_frame(
         codec,
         frame,
         "camera",
+        sender_session_id,
     )
     .await
 }
@@ -435,10 +457,13 @@ async fn send_video_frame(
     codec: MediaCodec,
     frame: OutboundVideoFrame,
     label: &str,
+    sender_session_id: Uuid,
 ) -> Result<(), RealtimeError> {
     let room_id =
         Uuid::parse_str(room_id).map_err(|_| RealtimeError::new("Voice room id is invalid."))?;
-    for datagram in video_fragments::video_frame_datagrams(room_id, kind, codec, frame)? {
+    for datagram in
+        video_fragments::video_frame_datagrams(room_id, kind, codec, frame, sender_session_id)?
+    {
         let bytes = datagram.encode().map_err(|error| {
             RealtimeError::new(format!("Failed to encode {label} frame: {error}"))
         })?;

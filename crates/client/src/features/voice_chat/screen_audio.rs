@@ -38,6 +38,12 @@ pub(super) fn use_screen_audio(
                 if !still_in_room {
                     break;
                 }
+                if voice
+                    .outbound_session_id_for(&target.server_id, &target.room_id)
+                    .is_none()
+                {
+                    break;
+                }
                 let track_id = frame.track_id;
                 if let Err(error) =
                     super::realtime::send_screen_audio_frame(&realtime, &target.room_id, frame)

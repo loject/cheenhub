@@ -18,6 +18,10 @@ pub(crate) struct MediaRouteSnapshot {
     pub(crate) presence: Arc<VoicePresence>,
     /// Неизменяемый список сессий участников из той же версии комнаты.
     pub(crate) recipients: Arc<[Uuid]>,
+    /// Получатели старого media wire-формата v1/v2.
+    pub(crate) legacy_recipients: Arc<[Uuid]>,
+    /// Получатели v3 с аутентифицированным UUID голосовой сессии.
+    pub(crate) modern_recipients: Arc<[Uuid]>,
 }
 
 /// Индекс неизменяемых снимков комнат и присутствия realtime-потоков.
@@ -47,14 +51,19 @@ struct RoomKey {
 /// список сессий из одного состояния комнаты.
 #[derive(Default)]
 struct RoomPresenceSnapshot {
-    /// Активное присутствие каждого пользователя комнаты.
-    by_user: HashMap<Uuid, Arc<VoicePresence>>,
+    /// Отдельное присутствие каждой физической транспортной сессии.
+    by_session: HashMap<Uuid, Arc<VoicePresence>>,
     /// Сессии участников в порядке присоединения.
     recipients: Arc<[Uuid]>,
+    /// Старые клиенты, не поддерживающие media v3.
+    legacy_recipients: Arc<[Uuid]>,
+    /// Новые клиенты, понимающие media v3.
+    modern_recipients: Arc<[Uuid]>,
 }
 
 impl PresenceReadIndex {
-    /// Возвращает присутствие и получателей из одного атомарного чтения комнаты.
+    /// Прежний поиск по пользователю для регрессионных тестов.
+    #[cfg(test)]
     pub(super) fn media_route(
         &self,
         target_kind: VoicePresenceTargetKind,
@@ -68,14 +77,45 @@ impl PresenceReadIndex {
             })?;
             room_entry.value().load_full()
         };
-        let presence = snapshot.by_user.get(user_id)?.clone();
+        let presence = snapshot
+            .by_session
+            .values()
+            .find(|presence| presence.user_id == *user_id)?
+            .clone();
         Some(MediaRouteSnapshot {
             presence,
-            recipients: snapshot.recipients.clone(),
+            recipients: Arc::clone(&snapshot.recipients),
+            legacy_recipients: Arc::clone(&snapshot.legacy_recipients),
+            modern_recipients: Arc::clone(&snapshot.modern_recipients),
         })
     }
 
-    /// Возвращает присутствие из снимка одной комнаты.
+    /// Авторизует медиапакет только для указанного физического подключения.
+    pub(super) fn media_route_for_session(
+        &self,
+        target_kind: VoicePresenceTargetKind,
+        room_id: &Uuid,
+        session_id: &Uuid,
+        user_id: &Uuid,
+    ) -> Option<MediaRouteSnapshot> {
+        let snapshot = {
+            let entry = self.rooms.get(&RoomKey {
+                target_kind,
+                room_id: *room_id,
+            })?;
+            entry.value().load_full()
+        };
+        let presence = snapshot.by_session.get(session_id)?.clone();
+        (presence.user_id == *user_id).then_some(MediaRouteSnapshot {
+            presence,
+            recipients: Arc::clone(&snapshot.recipients),
+            legacy_recipients: Arc::clone(&snapshot.legacy_recipients),
+            modern_recipients: Arc::clone(&snapshot.modern_recipients),
+        })
+    }
+
+    /// Возвращает присутствие из снимка комнаты для регрессионных тестов.
+    #[cfg(test)]
     pub(super) fn for_room_user(
         &self,
         target_kind: VoicePresenceTargetKind,
@@ -89,7 +129,11 @@ impl PresenceReadIndex {
             })?;
             room_entry.value().load_full()
         };
-        snapshot.by_user.get(user_id).cloned()
+        snapshot
+            .by_session
+            .values()
+            .find(|presence| presence.user_id == *user_id)
+            .cloned()
     }
 
     /// Возвращает присутствие realtime-потока, если оно принадлежит пользователю.
@@ -127,11 +171,13 @@ impl PresenceReadIndex {
         drop(room_entry);
 
         let snapshot = room_slot.load();
-        let mut by_user = snapshot.by_user.clone();
-        by_user.insert(presence.user_id, presence);
+        let mut by_session = snapshot.by_session.clone();
+        by_session.insert(presence.session_id, presence);
         room_slot.store(Arc::new(RoomPresenceSnapshot {
-            by_user,
+            by_session,
             recipients: Arc::clone(&snapshot.recipients),
+            legacy_recipients: Arc::clone(&snapshot.legacy_recipients),
+            modern_recipients: Arc::clone(&snapshot.modern_recipients),
         }));
     }
 
@@ -146,24 +192,36 @@ impl PresenceReadIndex {
             target_kind,
             room_id,
         };
-        let mut by_user = HashMap::new();
+        let mut by_session = HashMap::new();
         let mut recipients = Vec::new();
         for presence in presences {
-            by_user.insert(presence.user_id, Arc::clone(&presence));
-            recipients.push((presence.joined_at, presence.session_id));
+            by_session.insert(presence.session_id, Arc::clone(&presence));
+            recipients.push((
+                presence.joined_at,
+                presence.session_id,
+                presence.voice_protocol_version,
+            ));
         }
-        recipients.sort_unstable_by_key(|(joined_at, session_id)| (*joined_at, *session_id));
+        recipients.sort_unstable_by_key(|(joined_at, session_id, _)| (*joined_at, *session_id));
+        let mut all = Vec::with_capacity(recipients.len());
+        let mut legacy = Vec::new();
+        let mut modern = Vec::new();
+        for (_, session_id, protocol_version) in recipients {
+            all.push(session_id);
+            if protocol_version >= 6 {
+                modern.push(session_id);
+            } else {
+                legacy.push(session_id);
+            }
+        }
         let snapshot = Arc::new(RoomPresenceSnapshot {
-            by_user,
-            recipients: Arc::from(
-                recipients
-                    .into_iter()
-                    .map(|(_, session_id)| session_id)
-                    .collect::<Vec<_>>(),
-            ),
+            by_session,
+            recipients: Arc::from(all),
+            legacy_recipients: Arc::from(legacy),
+            modern_recipients: Arc::from(modern),
         });
 
-        if snapshot.by_user.is_empty() {
+        if snapshot.by_session.is_empty() {
             if let Some(slot) = self.rooms.get(&key).map(|entry| Arc::clone(entry.value())) {
                 slot.store(snapshot);
                 self.rooms.remove(&key);

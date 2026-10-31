@@ -7,17 +7,61 @@ use dioxus::prelude::{debug, warn};
 
 impl AudioPlaybackHandle {
     /// Останавливает дорожку системного звука вместе с демонстрацией экрана.
-    pub(crate) fn stop_system_audio(&self, sender_user_id: &str, track_id: uuid::Uuid) {
-        let key = self.inner.borrow_mut().tracks.stop_source(
-            sender_user_id,
-            cheenhub_contracts::media::MediaAudioSource::System,
-            track_id,
-        );
-        if let Some(key) = key {
+    pub(crate) fn stop_system_audio(
+        &self,
+        sender_user_id: &str,
+        session_id: uuid::Uuid,
+        track_id: uuid::Uuid,
+    ) {
+        let keys = {
+            let mut inner = self.inner.borrow_mut();
+            [Some(session_id), None]
+                .into_iter()
+                .filter_map(|voice_session_id| {
+                    inner.tracks.stop_source(
+                        sender_user_id,
+                        cheenhub_contracts::media::MediaAudioSource::System,
+                        voice_session_id,
+                        track_id,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        for key in keys {
             self.stop_playback_key(&key);
-            debug!(%sender_user_id, "stopped screen sharing audio playback");
+            debug!(%sender_user_id, %session_id, "stopped screen sharing audio playback");
         }
     }
+    /// Останавливает только микрофон ушедшей голосовой сессии.
+    pub(crate) fn stop_microphone_session(&self, sender_user_id: &str, session_id: uuid::Uuid) {
+        let key = self
+            .inner
+            .borrow_mut()
+            .tracks
+            .stop_microphone_session(sender_user_id, session_id);
+        if let Some(key) = key {
+            self.stop_playback_key(&key);
+        }
+    }
+
+    /// Закрывает прежний декодер и разрешает звук повторно вошедшей сессии.
+    pub(crate) fn reactivate_microphone_session(
+        &self,
+        sender_user_id: &str,
+        session_id: uuid::Uuid,
+    ) {
+        let key = tracks::playback_key(
+            sender_user_id,
+            cheenhub_contracts::media::MediaAudioSource::Microphone,
+            session_id,
+        );
+        self.stop_playback_key(&key);
+        self.inner
+            .borrow_mut()
+            .tracks
+            .reactivate_microphone_session(sender_user_id, session_id);
+    }
+
     /// Останавливает все дорожки участника либо одну внутреннюю очередь.
     pub(crate) fn stop_sender(&self, sender_user_id: &str) {
         let keys = self

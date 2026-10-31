@@ -9,8 +9,8 @@ use cheenhub_contracts::realtime::{
 use cheenhub_contracts::rest::{RegisterRequest, ServerRoomKind};
 
 use super::{
-    VoiceChatApplicationError, bind_microphone_uplink, issue_microphone_uplink_grant, join_room,
-    leave_room, list_server_voice_rooms, stop_video_stream,
+    VoiceChatApplicationError, bind_microphone_uplink, issue_microphone_uplink_grant,
+    join_room as application_join_room, leave_room, list_server_voice_rooms, stop_video_stream,
 };
 use crate::features::auth::application as auth_application;
 use crate::features::auth::infrastructure::InMemoryAuthStore;
@@ -30,6 +30,7 @@ mod microphone;
 mod network_quality;
 mod nickname;
 mod output;
+mod uplink;
 mod video;
 
 pub(super) fn state() -> AppState {
@@ -131,6 +132,38 @@ pub(super) async fn create_room(
     (server.id.to_string(), room.id.to_string())
 }
 
+/// Подключает фикстуру голосового запроса к реальному реестру транспортов.
+pub(super) async fn join_room(
+    state: &AppState,
+    stream_id: uuid::Uuid,
+    session_id: uuid::Uuid,
+    user: &cheenhub_contracts::rest::AuthUser,
+    user_id: &uuid::Uuid,
+    request: JoinVoiceRoom,
+) -> Result<cheenhub_contracts::realtime::VoiceRoomSnapshot, VoiceChatApplicationError> {
+    state
+        .realtime_hub
+        .register_test_session_with_id(session_id, *user_id, session_id)
+        .await;
+    application_join_room(state, stream_id, session_id, user, user_id, request).await
+}
+
+/// Фикстура входа в голосовой звонок личного диалога с живым транспортом.
+pub(super) async fn join_direct_message_room(
+    state: &AppState,
+    stream_id: uuid::Uuid,
+    session_id: uuid::Uuid,
+    user: &cheenhub_contracts::rest::AuthUser,
+    user_id: &uuid::Uuid,
+    request: cheenhub_contracts::realtime::JoinDirectMessageVoiceRoom,
+) -> Result<cheenhub_contracts::realtime::VoiceRoomSnapshot, VoiceChatApplicationError> {
+    state
+        .realtime_hub
+        .register_test_session_with_id(session_id, *user_id, session_id)
+        .await;
+    super::join_direct_message_room(state, stream_id, session_id, user, user_id, request).await
+}
+
 #[tokio::test]
 async fn user_can_join_and_leave_voice_room() {
     let state = state();
@@ -148,6 +181,9 @@ async fn user_can_join_and_leave_voice_room() {
             microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -184,6 +220,9 @@ async fn text_room_rejects_voice_join() {
             microphone_enabled: true,
             server_id,
             room_id,
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -209,6 +248,9 @@ async fn user_can_leave_after_room_becomes_text_only() {
             microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -260,6 +302,9 @@ async fn joining_new_room_replaces_previous_presence() {
             microphone_enabled: true,
             server_id: first_server_id.clone(),
             room_id: first_room_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -274,6 +319,9 @@ async fn joining_new_room_replaces_previous_presence() {
             microphone_enabled: true,
             server_id: second_server_id.clone(),
             room_id: second_room_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -315,6 +363,9 @@ async fn member_can_list_active_voice_room_participants_for_server() {
             microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -354,6 +405,9 @@ async fn joined_user_can_stop_video_stream() {
             microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -393,6 +447,9 @@ async fn stop_video_stream_rejects_stale_session() {
             microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -434,6 +491,9 @@ async fn active_presence_session_can_bind_one_worker_with_one_time_grant() {
             microphone_enabled: true,
             server_id,
             room_id: room_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -490,6 +550,9 @@ async fn stale_session_cannot_issue_microphone_uplink_grant() {
             microphone_enabled: true,
             server_id,
             room_id: room_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await

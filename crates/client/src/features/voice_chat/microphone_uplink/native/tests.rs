@@ -21,6 +21,7 @@ fn toggling_idle_enabled_microphone_saves_mute_for_next_application_launch() {
             create_handle(),
             uuid::Uuid::new_v4().to_string(),
             uuid::Uuid::new_v4().to_string(),
+            None,
         );
 
         assert!(!microphone.voice_enabled());
