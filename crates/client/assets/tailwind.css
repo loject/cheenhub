@@ -8149,6 +8149,10 @@ html,
     background-color: rgb(59 130 246 / 0.15);
   }
 
+  .hover\:bg-accent\/20:hover {
+    background-color: rgb(59 130 246 / 0.2);
+  }
+
   .hover\:bg-accent\/5:hover {
     background-color: rgb(59 130 246 / 0.05);
   }
