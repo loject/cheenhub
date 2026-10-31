@@ -246,13 +246,19 @@ fn ensure_github_release_exists(release_tag: &str) -> XtaskResult<()> {
     }
 
     let notes = "Новый релиз.";
-    let output = command_output(
-        Command::new("gh")
-            .args(["release", "create", release_tag])
-            .args(["--title", release_tag])
-            .args(["--notes", notes])
-            .arg("--verify-tag"),
-    )?;
+    let mut command = Command::new("gh");
+    command
+        .args(["release", "create", release_tag])
+        .args(["--title", release_tag])
+        .args(["--notes", notes])
+        .arg("--verify-tag");
+    if release_tag
+        .rsplit_once("-rc.")
+        .is_some_and(|(_, number)| number.parse::<u64>().is_ok_and(|number| number > 0))
+    {
+        command.args(["--prerelease", "--latest=false"]);
+    }
+    let output = command_output(&mut command)?;
     if output.status.success() {
         println!("Created GitHub release {release_tag}.");
         return Ok(());

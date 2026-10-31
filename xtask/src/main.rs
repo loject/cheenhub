@@ -176,10 +176,18 @@ fn release_target_from_args(args: &[String]) -> XtaskResult<ReleaseTarget> {
 
 fn prompt_release_target() -> XtaskResult<ReleaseTarget> {
     let workspace = Workspace::read(Path::new(ROOT_MANIFEST))?;
-    let (major, minor, patch) = parse_release_version(&workspace.version)?;
-    let minor_version = format!("{major}.{}.0", minor + 1);
+    let (major, minor, patch, rc_number) = parse_release_version(&workspace.version)?;
+    let minor_version = if rc_number.is_some() {
+        format!("{major}.{minor}.{patch}")
+    } else {
+        format!("{major}.{}.0", minor + 1)
+    };
     let patch_version = format!("{major}.{minor}.{}", patch + 1);
     let major_version = format!("{}.0.0", major + 1);
+    let rc_version = match rc_number {
+        Some(number) => format!("{major}.{minor}.{patch}-rc.{}", number + 1),
+        None => format!("{major}.{}.0-rc.1", minor + 1),
+    };
 
     println!(
         "Current release tag: {}",
@@ -198,7 +206,8 @@ fn prompt_release_target() -> XtaskResult<ReleaseTarget> {
         release_tag_from_version(&major_version)
     );
     println!("  4) Custom");
-    print!("Release type [1-4]: ");
+    println!("  5) Minor RC -> {}", release_tag_from_version(&rc_version));
+    print!("Release type [1-5]: ");
     io::stdout()
         .flush()
         .map_err(|error| format!("failed to flush release type prompt: {error}"))?;
@@ -213,8 +222,9 @@ fn prompt_release_target() -> XtaskResult<ReleaseTarget> {
         "2" | "patch" => release_target_from_tag(&patch_version),
         "3" | "major" => release_target_from_tag(&major_version),
         "4" | "custom" => prompt_custom_release_target(),
+        "5" | "rc" | "minor-rc" => release_target_from_tag(&rc_version),
         value => Err(format!(
-            "unknown release type {value:?}; expected 1/minor, 2/patch, 3/major, or 4/custom."
+            "unknown release type {value:?}; expected 1/minor, 2/patch, 3/major, 4/custom, or 5/minor-rc."
         )),
     }
 }
@@ -233,19 +243,33 @@ fn prompt_custom_release_target() -> XtaskResult<ReleaseTarget> {
     release_target_from_tag(&tag)
 }
 
-fn parse_release_version(version: &str) -> XtaskResult<(u64, u64, u64)> {
-    let mut components = version.split('.');
+fn parse_release_version(version: &str) -> XtaskResult<(u64, u64, u64, Option<u64>)> {
+    let (base_version, rc_number) = match version.split_once("-rc.") {
+        Some((base, number)) => {
+            let number = number.parse::<u64>().map_err(|error| {
+                format!("invalid release candidate number in {version:?}: {error}")
+            })?;
+            if number == 0 {
+                return Err(format!(
+                    "release candidate number must be positive in {version:?}."
+                ));
+            }
+            (base, Some(number))
+        }
+        None => (version, None),
+    };
+    let mut components = base_version.split('.');
     let major = parse_release_component("major", components.next(), version)?;
     let minor = parse_release_component("minor", components.next(), version)?;
     let patch = parse_release_component("patch", components.next(), version)?;
 
     if components.next().is_some() {
         return Err(format!(
-            "workspace release version must use major.minor.patch format, got {version:?}."
+            "workspace release version must use major.minor.patch with an optional -rc.N suffix, got {version:?}."
         ));
     }
 
-    Ok((major, minor, patch))
+    Ok((major, minor, patch, rc_number))
 }
 
 fn parse_release_component(name: &str, component: Option<&str>, version: &str) -> XtaskResult<u64> {
