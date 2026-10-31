@@ -7,6 +7,9 @@ use dioxus::prelude::*;
 use super::avatar::UserAvatar;
 use super::server_rooms_state::{room_icon, room_icon_class};
 
+#[cfg(test)]
+mod tests;
+
 #[component]
 pub(super) fn RoomListItem(
     room: ServerRoomSummary,
@@ -57,7 +60,7 @@ pub(super) fn RoomListItem(
                         class: "flex items-center -space-x-1 rounded-full",
                         "aria-label": "Показать участников голосовой комнаты",
                         for participant in visible_voice_participants {
-                            span { key: "{participant.user_id}", class: "relative inline-flex",
+                            span { key: "{voice_participant_key(&participant)}", class: "relative inline-flex",
                               UserAvatar {
                                 nickname: participant.nickname.clone(),
                                 avatar_url: participant.avatar_url.clone(),
@@ -89,7 +92,7 @@ pub(super) fn RoomListItem(
                         }
                         div { class: "max-h-56 space-y-1 overflow-y-auto",
                             for participant in voice_participants {
-                                div { key: "{participant.user_id}", class: "flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1",
+                                div { key: "{voice_participant_key(&participant)}", class: "flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1",
                                     UserAvatar {
                                         nickname: participant.nickname.clone(),
                                         avatar_url: participant.avatar_url.clone(),
@@ -138,6 +141,11 @@ pub(super) fn RoomListItem(
             }
         }
     }
+}
+
+/// Возвращает стабильный ключ конкретной голосовой сессии для обоих списков участников.
+fn voice_participant_key(participant: &VoiceRoomParticipant) -> String {
+    format!("{}:{}", participant.user_id, participant.session_id)
 }
 
 fn room_name_class(compact_when_settings_active: bool) -> &'static str {
