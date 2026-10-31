@@ -146,6 +146,8 @@ impl ScreenShareSourceTab {
 /// Состояние загрузки списка экранов.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ScreenShareSourcePickerState {
+    /// Источник будет выбран в системном окне браузера.
+    Browser,
     /// Список экранов загружается.
     Loading,
     /// Список экранов успешно загружен, включая допустимый пустой список.
@@ -157,8 +159,8 @@ pub(crate) enum ScreenShareSourcePickerState {
 /// Подтверждённые пользователем параметры демонстрации.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ScreenShareSelection {
-    /// Идентификатор выбранного экрана.
-    pub(crate) source_id: String,
+    /// Идентификатор монитора, либо `None` для системного выбора браузера.
+    pub(crate) source_id: Option<String>,
     /// Выбранное разрешение.
     pub(crate) resolution: ScreenShareResolution,
     /// Выбранная частота кадров.
@@ -166,6 +168,15 @@ pub(crate) struct ScreenShareSelection {
 }
 
 impl ScreenShareSelection {
+    /// Создаёт параметры по умолчанию для системного окна выбора источника.
+    pub(crate) fn browser_default() -> Self {
+        Self {
+            source_id: None,
+            resolution: ScreenShareResolution::default(),
+            frame_rate: ScreenShareFrameRate::default(),
+        }
+    }
+
     /// Выбирает основной экран или первый доступный экран с качеством по умолчанию.
     pub(crate) fn default_for(sources: &[ScreenShareSource]) -> Option<Self> {
         let source = sources
@@ -174,7 +185,7 @@ impl ScreenShareSelection {
             .or_else(|| sources.first())?;
 
         Some(Self {
-            source_id: source.id.clone(),
+            source_id: Some(source.id.clone()),
             resolution: ScreenShareResolution::default(),
             frame_rate: ScreenShareFrameRate::default(),
         })
@@ -186,7 +197,9 @@ impl ScreenShareSelection {
         sources: &[ScreenShareSource],
     ) -> Option<Self> {
         if let Some(current) = current
-            && sources.iter().any(|source| source.id == current.source_id)
+            && sources
+                .iter()
+                .any(|source| current.source_id.as_deref() == Some(source.id.as_str()))
         {
             return Some(current.clone());
         }
@@ -236,7 +249,9 @@ impl ScreenShareSelection {
 
     /// Формирует доступное пользователю описание подтверждаемого выбора.
     pub(crate) fn confirmation_summary(&self, sources: &[ScreenShareSource]) -> Option<String> {
-        let source = sources.iter().find(|source| source.id == self.source_id)?;
+        let source = sources
+            .iter()
+            .find(|source| self.source_id.as_deref() == Some(source.id.as_str()))?;
 
         Some(format!(
             "{} · {}×{} · {}, {} · Без звука",

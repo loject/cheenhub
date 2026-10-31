@@ -59,7 +59,7 @@ impl ScreenShareHandle {
         self.start_request(
             ScreenShareStartRequest {
                 config: ScreenShareConfig::default(),
-                source: ScreenShareCaptureSource::PlatformDefault,
+                source: ScreenShareCaptureSource::PlatformDefault { target: None },
             },
             on_frame,
         );
@@ -181,9 +181,16 @@ impl ScreenShareHandle {
         });
     }
 
+    /// Сообщает UI, что качество выбирается перед системным окном браузера.
+    pub(super) fn supports_platform_quality_picker(&self) -> bool {
+        self.backend.supports_platform_quality_picker()
+    }
+
     /// Toggles screen sharing capture.
     pub(crate) fn toggle(&self, on_frame: ScreenShareFrameCallback) {
-        match screen_share_control_intent(source_preview::selection_available(), &self.status()) {
+        let picker_available =
+            source_preview::selection_available() || self.supports_platform_quality_picker();
+        match screen_share_control_intent(picker_available, &self.status()) {
             ScreenShareControlIntent::OpenPicker => {
                 *self.pending_on_frame.borrow_mut() = Some(on_frame);
                 let mut picker_open = self.picker_open;

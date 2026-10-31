@@ -90,8 +90,11 @@ pub(crate) struct ScreenShareTargetQuality {
 /// Источник, который должен использовать backend захвата.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ScreenShareCaptureSource {
-    /// Источник выбирается платформенным API.
-    PlatformDefault,
+    /// Источник выбирается платформенным API, качество задаётся отдельно.
+    PlatformDefault {
+        /// Необязательное качество передаваемого видео.
+        target: Option<ScreenShareTargetQuality>,
+    },
     /// Источник выбран в собственном picker'е приложения.
     Selected {
         /// Идентификатор физического монитора.
@@ -111,6 +114,31 @@ pub(crate) struct ScreenShareStartRequest {
 }
 
 impl ScreenShareConfig {
+    /// Возвращает разрешённый пресет для точного качества, выбранного отправителем.
+    ///
+    /// Разрешение должно соответствовать одному из разрешённых профилей, а FPS
+    /// может быть ниже его максимума. Bitrate остаётся в рамках этого профиля.
+    pub(crate) fn preset_for_target(
+        &self,
+        target: &ScreenShareTargetQuality,
+    ) -> Option<VideoPresetSpec> {
+        self.allowed_presets
+            .iter()
+            .copied()
+            .map(VideoPresetId::spec)
+            .find(|preset| {
+                preset.source == VideoStreamSource::ScreenShare
+                    && preset.width == target.width
+                    && preset.height == target.height
+                    && target.max_fps > 0
+                    && target.max_fps <= preset.max_fps
+            })
+            .map(|preset| VideoPresetSpec {
+                max_fps: target.max_fps,
+                ..preset
+            })
+    }
+
     /// Выбирает лучший разрешённый пресет для размеров источника.
     pub(crate) fn preset_for_capture(&self, width: u32, height: u32) -> VideoPresetSpec {
         self.allowed_presets
@@ -250,6 +278,11 @@ pub(crate) trait ScreenShareSession {
 
 /// Backend захвата экрана.
 pub(crate) trait ScreenShareBackend {
+    /// Позволяет выбрать качество до системного выбора источника в браузере.
+    fn supports_platform_quality_picker(&self) -> bool {
+        false
+    }
+
     /// Запускает захват и вызывает `on_frame` для каждого закодированного кадра.
     fn start(
         &self,

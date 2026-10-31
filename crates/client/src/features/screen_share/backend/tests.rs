@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+fn browser_quality_target_keeps_selected_frame_rate_and_bitrate() {
+    let config = ScreenShareConfig::default();
+    let target = ScreenShareTargetQuality {
+        width: 1_280,
+        height: 720,
+        max_fps: 15,
+    };
+
+    let preset = config
+        .preset_for_target(&target)
+        .expect("доступный профиль");
+
+    assert_eq!(
+        (
+            preset.width,
+            preset.height,
+            preset.max_fps,
+            preset.bitrate_bps
+        ),
+        (1_280, 720, 15, 1_500_000)
+    );
+}
+
+#[test]
+fn browser_quality_target_rejects_unavailable_combination() {
+    let config = ScreenShareConfig::default();
+    let target = ScreenShareTargetQuality {
+        width: 1_920,
+        height: 1_080,
+        max_fps: 30,
+    };
+
+    assert!(config.preset_for_target(&target).is_none());
+}
+
+#[test]
 fn stopping_capture_revokes_an_already_queued_audio_frame() {
     let closed = Rc::new(std::cell::Cell::new(false));
     let frame = EncodedScreenAudioFrame {
