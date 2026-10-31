@@ -121,7 +121,7 @@ async fn start_cpal_session(
     let stream_config = supported_config.config();
     let input_channels = stream_config.channels.max(1);
     let input_sample_rate_hz = stream_config.sample_rate;
-    let frame_samples = frame_samples(config.sample_rate_hz);
+    let frame_samples = frame_samples(config.sample_rate_hz, config.frame_duration_us);
 
     let (pcm_sender, pcm_receiver) = mpsc::sync_channel(INPUT_BACKLOG_WARN_CHUNKS * 2);
     let (event_sender, event_receiver) = futures_channel::mpsc::unbounded();

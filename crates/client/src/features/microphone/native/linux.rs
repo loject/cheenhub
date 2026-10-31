@@ -148,7 +148,7 @@ impl MicrophoneBackend for PulseMicrophoneBackend {
                 .await
                 .map_err(|_| MicrophoneError::new("Запуск микрофона прерван."))??;
             spawn_event_relay(event_receiver, callbacks);
-            let samples = frame_samples(config.sample_rate_hz);
+            let samples = frame_samples(config.sample_rate_hz, config.frame_duration_us);
             spawn_encoder_worker(
                 config,
                 super::pcm::Input {

@@ -14,12 +14,10 @@ use web_sys::{
 use super::backend::MicrophoneError;
 use super::browser_errors::js_error_message;
 
-const MICROPHONE_WORKLET_URL: &str = "/audio/microphone-worklet.js?v=4";
+const MICROPHONE_WORKLET_URL: &str = "/audio/microphone-worklet.js?v=5";
 const WORKLET_PROCESSOR_NAME: &str = "cheenhub-microphone-capture";
-const WORKLET_CHUNK_MS: u32 = 10;
-
-pub(super) fn worklet_chunk_ms() -> u32 {
-    WORKLET_CHUNK_MS
+pub(super) fn worklet_chunk_ms(frame_duration_us: u32) -> u32 {
+    frame_duration_us / 1_000
 }
 
 pub(super) fn browser_media_diagnostics_enabled() -> bool {
@@ -50,12 +48,16 @@ pub(super) async fn load_worklet_module(context: &AudioContext) -> Result<(), Mi
 pub(super) fn create_worklet_node(
     context: &AudioContext,
     sample_rate_hz: u32,
+    frame_duration_us: u32,
 ) -> Result<AudioWorkletNode, MicrophoneError> {
     let processor_options = Object::new();
     set_property(
         &processor_options,
         "frameCount",
-        &JsValue::from_f64(f64::from(worklet_frame_count(sample_rate_hz))),
+        &JsValue::from_f64(f64::from(worklet_frame_count(
+            sample_rate_hz,
+            frame_duration_us,
+        ))),
     )?;
     set_property(
         &processor_options,
@@ -101,8 +103,8 @@ pub(super) fn connect_capture_graph(
     Ok(())
 }
 
-fn worklet_frame_count(sample_rate_hz: u32) -> u32 {
-    (sample_rate_hz / (1_000 / WORKLET_CHUNK_MS)).max(128)
+pub(super) fn worklet_frame_count(sample_rate_hz: u32, frame_duration_us: u32) -> u32 {
+    ((u64::from(sample_rate_hz) * u64::from(frame_duration_us)) / 1_000_000).max(128) as u32
 }
 
 fn output_channel_count() -> Array {
