@@ -3082,6 +3082,10 @@ html,
   flex-shrink: 0;
 }
 
+.basis-full {
+  flex-basis: 100%;
+}
+
 .origin-bottom {
   transform-origin: bottom;
 }
@@ -4885,6 +4889,10 @@ html,
 
 .pl-3 {
   padding-left: 0.75rem;
+}
+
+.pl-5 {
+  padding-left: 1.25rem;
 }
 
 .pr-1 {
