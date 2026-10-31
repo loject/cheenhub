@@ -4,7 +4,10 @@ use super::super::page::UserSettingsSection;
 
 /// Возвращает `true`, если раздел относится к браузерному клиенту.
 pub(super) fn is_section_available(section: UserSettingsSection) -> bool {
-    section != UserSettingsSection::System
+    !matches!(
+        section,
+        UserSettingsSection::System | UserSettingsSection::Diagnostics
+    )
 }
 
 /// Не позволяет браузерному клиенту открыть недоступный системный раздел.

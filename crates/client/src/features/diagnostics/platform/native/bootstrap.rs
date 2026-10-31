@@ -80,7 +80,7 @@ pub(super) fn initialize() {
     }
 }
 
-fn archive_directory() -> Option<PathBuf> {
+pub(super) fn archive_directory() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);

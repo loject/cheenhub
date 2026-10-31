@@ -177,3 +177,64 @@ fn export_caps_number_of_complete_lines() {
     assert_eq!(std::fs::read_to_string(path).unwrap().lines().count(), 3);
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn export_cannot_overwrite_active_archive() {
+    let directory = test_directory();
+    let path = directory.join("client.0.jsonl");
+    let original = event("2026-10-30T10:00:00Z", "INFO", "runtime", "preserved");
+    std::fs::write(&path, &original).unwrap();
+
+    let result = export_logs(
+        &directory,
+        &path,
+        &LogFilter::default(),
+        ExportLimits::default(),
+    );
+    assert!(result.is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn export_replaces_hardlink_without_modifying_archive() {
+    let directory = test_directory();
+    let archive = directory.join("client.0.jsonl");
+    let alias = directory.join("export.jsonl");
+    let original = event("2026-10-30T10:00:00Z", "INFO", "runtime", "preserved");
+    std::fs::write(&archive, &original).unwrap();
+    std::fs::hard_link(&archive, &alias).unwrap();
+
+    let filter = LogFilter {
+        level: Some("ERROR".to_owned()),
+        ..LogFilter::default()
+    };
+    export_logs(&directory, &alias, &filter, ExportLimits::default()).unwrap();
+    assert_eq!(std::fs::read_to_string(&archive).unwrap(), original);
+    assert_eq!(std::fs::read_to_string(&alias).unwrap(), "");
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn export_cannot_overwrite_archive_through_symlink() {
+    let directory = test_directory();
+    let archive = directory.join("client.0.jsonl");
+    let alias = directory.join("export.jsonl");
+    let original = event("2026-10-30T10:00:00Z", "INFO", "runtime", "preserved");
+    std::fs::write(&archive, &original).unwrap();
+    std::os::unix::fs::symlink(&archive, &alias).unwrap();
+
+    assert!(
+        export_logs(
+            &directory,
+            &alias,
+            &LogFilter::default(),
+            ExportLimits::default()
+        )
+        .is_err()
+    );
+    assert_eq!(std::fs::read_to_string(&archive).unwrap(), original);
+    std::fs::remove_dir_all(directory).unwrap();
+}
