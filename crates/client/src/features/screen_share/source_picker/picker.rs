@@ -15,23 +15,42 @@ pub(crate) fn ScreenShareSourcePicker(
     on_retry: EventHandler<()>,
     on_confirm: EventHandler<ScreenShareSelection>,
 ) -> Element {
+    let browser_mode = matches!(state, ScreenShareSourcePickerState::Browser);
     let sources = match &state {
         ScreenShareSourcePickerState::Ready(sources) => sources.clone(),
-        ScreenShareSourcePickerState::Loading | ScreenShareSourcePickerState::Error(_) => {
-            Vec::new()
-        }
+        ScreenShareSourcePickerState::Browser
+        | ScreenShareSourcePickerState::Loading
+        | ScreenShareSourcePickerState::Error(_) => Vec::new(),
     };
     let error = match &state {
         ScreenShareSourcePickerState::Error(message) => Some(message.clone()),
-        ScreenShareSourcePickerState::Loading | ScreenShareSourcePickerState::Ready(_) => None,
+        ScreenShareSourcePickerState::Browser
+        | ScreenShareSourcePickerState::Loading
+        | ScreenShareSourcePickerState::Ready(_) => None,
     };
     let loading = matches!(state, ScreenShareSourcePickerState::Loading);
     let mut selection = use_signal(|| None::<ScreenShareSelection>);
     let mut active_tab = use_signal(ScreenShareSourceTab::default);
     let mut quality_adjustment = use_signal(|| None::<ScreenShareQualityAdjustment>);
-    let effective_selection = ScreenShareSelection::normalized_for(selection().as_ref(), &sources);
+    let effective_selection = if browser_mode {
+        Some(
+            selection()
+                .filter(|value| value.source_id.is_none())
+                .unwrap_or_else(ScreenShareSelection::browser_default),
+        )
+    } else {
+        ScreenShareSelection::normalized_for(selection().as_ref(), &sources)
+    };
     let selected_tab = active_tab();
-    let confirmation_summary = if selected_tab == ScreenShareSourceTab::Screens {
+    let confirmation_summary = if browser_mode {
+        effective_selection.as_ref().map(|value| {
+            format!(
+                "{} · {}",
+                value.resolution.title(),
+                value.frame_rate.title()
+            )
+        })
+    } else if selected_tab == ScreenShareSourceTab::Screens {
         effective_selection
             .as_ref()
             .and_then(|value| value.confirmation_summary(&sources))
@@ -72,7 +91,11 @@ pub(crate) fn ScreenShareSourcePicker(
                         p {
                             id: "screen-share-source-picker-description",
                             class: "mt-1 text-[12px] leading-5 text-zinc-400",
-                            "Выберите экран и качество изображения. Звук компьютера передаваться не будет."
+                            if browser_mode {
+                                "Настройте качество изображения. Источник демонстрации выберете в следующем окне браузера."
+                            } else {
+                                "Выберите экран и качество изображения."
+                            }
                         }
                     }
                     button {
@@ -88,9 +111,10 @@ pub(crate) fn ScreenShareSourcePicker(
                 }
 
                 div { class: "min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6",
-                    div {
-                        class: "mb-5 flex w-fit rounded-xl border border-zinc-800 bg-zinc-900/60 p-1",
-                        role: "tablist",
+                    if !browser_mode {
+                        div {
+                            class: "mb-5 flex w-fit rounded-xl border border-zinc-800 bg-zinc-900/60 p-1",
+                            role: "tablist",
                         "aria-label": "Тип источника демонстрации",
                         button {
                             r#type: "button",
@@ -122,6 +146,7 @@ pub(crate) fn ScreenShareSourcePicker(
                             },
                             "Окна"
                         }
+                    }
                     }
 
                     if selected_tab == ScreenShareSourceTab::Windows {
@@ -171,7 +196,7 @@ pub(crate) fn ScreenShareSourcePicker(
                                 "Повторить"
                             }
                         }
-                    } else if sources.is_empty() {
+                    } else if sources.is_empty() && !browser_mode {
                         div { class: "flex min-h-64 flex-col items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/35 px-6 py-10 text-center", role: "status",
                             div { class: "flex size-11 items-center justify-center rounded-full bg-zinc-800 text-zinc-300",
                                 svg { class: "size-5", fill: "none", stroke: "currentColor", stroke_width: "1.8", view_box: "0 0 24 24", "aria-hidden": "true",
@@ -189,12 +214,18 @@ pub(crate) fn ScreenShareSourcePicker(
                             }
                         }
                     } else {
-                        div {
-                            class: "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3",
-                            role: "radiogroup",
-                            "aria-label": "Экран для демонстрации",
-                            for source in sources.iter().cloned() {
-                                {source_button(source, effective_selection.as_ref(), selection)}
+                        if browser_mode {
+                            div { class: "rounded-xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-[12px] leading-5 text-blue-100",
+                                "После выбора качества браузер предложит указать экран, окно или вкладку для демонстрации."
+                            }
+                        } else {
+                            div {
+                                class: "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3",
+                                role: "radiogroup",
+                                "aria-label": "Экран для демонстрации",
+                                for source in sources.iter().cloned() {
+                                    {source_button(source, effective_selection.as_ref(), selection)}
+                                }
                             }
                         }
 
@@ -268,11 +299,17 @@ pub(crate) fn ScreenShareSourcePicker(
 
                 footer { class: "flex shrink-0 flex-col gap-3 border-t border-zinc-800 bg-zinc-950/95 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6",
                     div { class: "min-w-0",
-                        p { class: "flex items-center gap-1.5 text-[12px] font-medium text-amber-200",
-                            svg { class: "size-3.5 shrink-0", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                                path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5 6 9H3v6h3l5 4V5Zm5.5 5.5 4 4m0-4-4 4" }
+                        if browser_mode {
+                            p { class: "text-[11px] leading-5 text-zinc-400",
+                                "Звук зависит от выбранного источника и возможностей браузера."
                             }
-                            "Без звука"
+                        } else {
+                            p { class: "flex items-center gap-1.5 text-[12px] font-medium text-amber-200",
+                                svg { class: "size-3.5 shrink-0", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
+                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5 6 9H3v6h3l5 4V5Zm5.5 5.5 4 4m0-4-4 4" }
+                                }
+                                "Без звука"
+                            }
                         }
                         if let Some(summary) = confirmation_summary {
                             p { class: "mt-1 truncate text-[11px] text-zinc-500", "{summary}" }
@@ -292,7 +329,7 @@ pub(crate) fn ScreenShareSourcePicker(
                             class: "h-10 rounded-lg bg-blue-500 px-5 text-[13px] font-semibold text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300",
                             onclick: move |_| {
                                 if let Some(value) = confirm_selection.clone() {
-                                    info!(source_id = %value.source_id, resolution = ?value.resolution, frame_rate = ?value.frame_rate, "screen share source selection confirmed");
+                                    info!(source_id = ?value.source_id, resolution = ?value.resolution, frame_rate = ?value.frame_rate, "screen share source selection confirmed");
                                     on_confirm.call(value);
                                 }
                             },
@@ -310,7 +347,8 @@ fn source_button(
     current: Option<&ScreenShareSelection>,
     mut selection: Signal<Option<ScreenShareSelection>>,
 ) -> Element {
-    let selected = current.is_some_and(|value| value.source_id == source.id);
+    let selected =
+        current.is_some_and(|value| value.source_id.as_deref() == Some(source.id.as_str()));
     let resolution = current.map_or_else(ScreenShareResolution::default, |value| value.resolution);
     let frame_rate = current.map_or_else(ScreenShareFrameRate::default, |value| value.frame_rate);
     let source_id = source.id.clone();
@@ -339,7 +377,7 @@ fn source_button(
                 "group overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/45 text-left transition hover:border-zinc-700 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             },
             onclick: move |_| selection.set(Some(ScreenShareSelection {
-                source_id: source_id.clone(),
+                source_id: Some(source_id.clone()),
                 resolution,
                 frame_rate,
             })),

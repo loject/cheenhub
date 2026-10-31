@@ -4,6 +4,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use cheenhub_contracts::video_presets::VideoPresetSpec;
 use dioxus::prelude::{debug, warn};
 use futures_util::FutureExt;
 use futures_util::future::LocalBoxFuture;
@@ -23,7 +24,7 @@ use crate::features::video_encoding::{
 use super::backend::{
     EncodedScreenShareFrame, ScreenShareBackend, ScreenShareCallbacks, ScreenShareCaptureSource,
     ScreenShareCodec, ScreenShareConfig, ScreenShareError, ScreenShareErrorKind,
-    ScreenShareSession, ScreenShareStartRequest, fit_capture_preset,
+    ScreenShareSession, ScreenShareStartRequest, ScreenShareTargetQuality, fit_capture_preset,
 };
 use super::browser_capture::{
     first_video_track, log_selected_video_track, request_screen_stream, stop_screen_stream,
@@ -39,18 +40,25 @@ const UNSUPPORTED_SCREEN_SHARE_MESSAGE: &str = concat!(
 pub(crate) struct BrowserScreenShareBackend;
 
 impl ScreenShareBackend for BrowserScreenShareBackend {
+    fn supports_platform_quality_picker(&self) -> bool {
+        true
+    }
+
     fn start(
         &self,
         request: ScreenShareStartRequest,
         callbacks: ScreenShareCallbacks,
     ) -> LocalBoxFuture<'static, Result<Rc<dyn ScreenShareSession>, ScreenShareError>> {
         async move {
-            if matches!(request.source, ScreenShareCaptureSource::Selected { .. }) {
-                return Err(ScreenShareError::new(
-                    "Выбор физического монитора недоступен в browser backend.",
-                ));
-            }
-            start_browser_session(request.config, callbacks).await
+            let target = match request.source {
+                ScreenShareCaptureSource::PlatformDefault { target } => target,
+                ScreenShareCaptureSource::Selected { .. } => {
+                    return Err(ScreenShareError::new(
+                        "Выбор физического монитора недоступен в browser backend.",
+                    ));
+                }
+            };
+            start_browser_session(request.config, target, callbacks).await
         }
         .boxed_local()
     }
@@ -126,6 +134,7 @@ impl ScreenShareSession for BrowserScreenShareSession {
 
 async fn start_browser_session(
     config: ScreenShareConfig,
+    target: Option<ScreenShareTargetQuality>,
     callbacks: ScreenShareCallbacks,
 ) -> Result<Rc<dyn ScreenShareSession>, ScreenShareError> {
     if config.codec != ScreenShareCodec::Vp9 {
@@ -134,6 +143,22 @@ async fn start_browser_session(
         ));
     }
     ensure_browser_screen_share_support()?;
+    let selected_preset = match target {
+        Some(target) => {
+            let preset = config.preset_for_target(&target).ok_or_else(|| {
+                ScreenShareError::new("Выбранное качество демонстрации недоступно.")
+            })?;
+            debug!(
+                width = preset.width,
+                height = preset.height,
+                fps = preset.max_fps,
+                bitrate_bps = preset.bitrate_bps,
+                "browser screen share quality selected"
+            );
+            Some(preset)
+        }
+        None => None,
+    };
 
     let mut pending_capture = PendingBrowserCapture {
         stream: request_screen_stream().await?,
@@ -170,7 +195,7 @@ async fn start_browser_session(
     let preset = fit_capture_preset(
         source_width,
         source_height,
-        config.preset_for_capture(source_width, source_height),
+        selected_preset.unwrap_or_else(|| config.preset_for_capture(source_width, source_height)),
     );
     debug!(
         source_width,
@@ -256,6 +281,7 @@ async fn start_browser_session(
         closed.clone(),
         callbacks,
         config,
+        selected_preset,
         encoder_config,
     );
 
@@ -320,6 +346,7 @@ fn spawn_video_reader(
     closed: Rc<Cell<bool>>,
     callbacks: ScreenShareCallbacks,
     config: ScreenShareConfig,
+    selected_preset: Option<VideoPresetSpec>,
     mut encoder_config: VideoEncoderConfig,
 ) {
     spawn_local(async move {
@@ -363,7 +390,8 @@ fn spawn_video_reader(
             let preset = fit_capture_preset(
                 source_width,
                 source_height,
-                config.preset_for_capture(source_width, source_height),
+                selected_preset
+                    .unwrap_or_else(|| config.preset_for_capture(source_width, source_height)),
             );
             let next_config = VideoEncoderConfig::vp9(
                 preset.width,

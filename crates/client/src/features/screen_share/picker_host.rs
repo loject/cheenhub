@@ -16,15 +16,19 @@ pub(super) fn ScreenSharePickerHost(mut open: Signal<bool>) -> Element {
     let screen_share = use_context::<ScreenShareHandle>();
     let screen_share_for_close = screen_share.clone();
     let mut previews = use_resource(source_preview::load_previews);
-    let picker_state = match previews.state().cloned() {
-        UseResourceState::Pending => ScreenShareSourcePickerState::Loading,
-        UseResourceState::Ready | UseResourceState::Stopped | UseResourceState::Paused => {
-            match previews.read().clone() {
-                None => ScreenShareSourcePickerState::Loading,
-                Some(Ok(previews)) => ScreenShareSourcePickerState::Ready(
-                    previews.into_iter().map(source_from_preview).collect(),
-                ),
-                Some(Err(error)) => ScreenShareSourcePickerState::Error(error.to_string()),
+    let picker_state = if screen_share.supports_platform_quality_picker() {
+        ScreenShareSourcePickerState::Browser
+    } else {
+        match previews.state().cloned() {
+            UseResourceState::Pending => ScreenShareSourcePickerState::Loading,
+            UseResourceState::Ready | UseResourceState::Stopped | UseResourceState::Paused => {
+                match previews.read().clone() {
+                    None => ScreenShareSourcePickerState::Loading,
+                    Some(Ok(previews)) => ScreenShareSourcePickerState::Ready(
+                        previews.into_iter().map(source_from_preview).collect(),
+                    ),
+                    Some(Err(error)) => ScreenShareSourcePickerState::Error(error.to_string()),
+                }
             }
         }
     };
@@ -43,7 +47,7 @@ pub(super) fn ScreenSharePickerHost(mut open: Signal<bool>) -> Element {
             },
             on_confirm: move |selection: ScreenShareSelection| {
                 info!(
-                    source_id = %selection.source_id,
+                    source_id = ?selection.source_id,
                     resolution = ?selection.resolution,
                     frame_rate = ?selection.frame_rate,
                     "screen share source selection accepted"

@@ -20,7 +20,7 @@ fn default_prefers_primary_source_even_when_it_is_not_first() {
 
     let selection = ScreenShareSelection::default_for(&sources).expect("есть экран");
 
-    assert_eq!(selection.source_id, "primary");
+    assert_eq!(selection.source_id.as_deref(), Some("primary"));
     assert_eq!(selection.resolution, ScreenShareResolution::P720);
     assert_eq!(selection.frame_rate, ScreenShareFrameRate::Fps30);
 }
@@ -34,7 +34,7 @@ fn default_uses_first_source_when_primary_is_absent() {
 
     let selection = ScreenShareSelection::default_for(&sources).expect("есть экран");
 
-    assert_eq!(selection.source_id, "first");
+    assert_eq!(selection.source_id.as_deref(), Some("first"));
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn default_is_absent_without_sources() {
 fn normalization_preserves_valid_selection() {
     let sources = [source("first", "Экран 1", false)];
     let current = ScreenShareSelection {
-        source_id: "first".to_owned(),
+        source_id: Some("first".to_owned()),
         resolution: ScreenShareResolution::P1080,
         frame_rate: ScreenShareFrameRate::Fps15,
     };
@@ -61,7 +61,7 @@ fn normalization_preserves_valid_selection() {
 fn normalization_moves_quality_to_new_default_source() {
     let sources = [source("primary", "Основной экран", true)];
     let current = ScreenShareSelection {
-        source_id: "disconnected".to_owned(),
+        source_id: Some("disconnected".to_owned()),
         resolution: ScreenShareResolution::P1080,
         frame_rate: ScreenShareFrameRate::Fps15,
     };
@@ -69,7 +69,7 @@ fn normalization_moves_quality_to_new_default_source() {
     let selection =
         ScreenShareSelection::normalized_for(Some(&current), &sources).expect("есть новый экран");
 
-    assert_eq!(selection.source_id, "primary");
+    assert_eq!(selection.source_id.as_deref(), Some("primary"));
     assert_eq!(selection.resolution, ScreenShareResolution::P1080);
     assert_eq!(selection.frame_rate, ScreenShareFrameRate::Fps15);
 }
@@ -78,7 +78,7 @@ fn normalization_moves_quality_to_new_default_source() {
 fn confirmation_names_source_resolution_quality_and_silent_capture() {
     let sources = [source("primary", "Основной экран", true)];
     let selection = ScreenShareSelection {
-        source_id: "primary".to_owned(),
+        source_id: Some("primary".to_owned()),
         resolution: ScreenShareResolution::P1080,
         frame_rate: ScreenShareFrameRate::Fps15,
     };
@@ -92,7 +92,7 @@ fn confirmation_names_source_resolution_quality_and_silent_capture() {
 #[test]
 fn confirmation_is_absent_for_a_stale_source() {
     let selection = ScreenShareSelection {
-        source_id: "missing".to_owned(),
+        source_id: Some("missing".to_owned()),
         resolution: ScreenShareResolution::P720,
         frame_rate: ScreenShareFrameRate::Fps30,
     };
@@ -103,7 +103,7 @@ fn confirmation_is_absent_for_a_stale_source() {
 #[test]
 fn selecting_1080p_reduces_frame_rate_and_explains_the_change() {
     let mut selection = ScreenShareSelection {
-        source_id: "primary".to_owned(),
+        source_id: Some("primary".to_owned()),
         resolution: ScreenShareResolution::P720,
         frame_rate: ScreenShareFrameRate::Fps30,
     };
@@ -121,7 +121,7 @@ fn selecting_1080p_reduces_frame_rate_and_explains_the_change() {
 #[test]
 fn selecting_30_fps_reduces_resolution_and_explains_the_change() {
     let mut selection = ScreenShareSelection {
-        source_id: "primary".to_owned(),
+        source_id: Some("primary".to_owned()),
         resolution: ScreenShareResolution::P1080,
         frame_rate: ScreenShareFrameRate::Fps15,
     };
@@ -139,7 +139,7 @@ fn selecting_30_fps_reduces_resolution_and_explains_the_change() {
 #[test]
 fn compatible_quality_change_does_not_show_an_adjustment() {
     let mut selection = ScreenShareSelection {
-        source_id: "primary".to_owned(),
+        source_id: Some("primary".to_owned()),
         resolution: ScreenShareResolution::P720,
         frame_rate: ScreenShareFrameRate::Fps30,
     };
@@ -155,7 +155,7 @@ fn compatible_quality_change_does_not_show_an_adjustment() {
 #[test]
 fn windows_tab_never_allows_confirmation() {
     let selection = ScreenShareSelection {
-        source_id: "primary".to_owned(),
+        source_id: Some("primary".to_owned()),
         resolution: ScreenShareResolution::P720,
         frame_rate: ScreenShareFrameRate::Fps30,
     };

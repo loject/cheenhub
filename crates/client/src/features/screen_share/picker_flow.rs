@@ -37,12 +37,18 @@ pub(super) fn capture_source_from_selection(
     selection: &ScreenShareSelection,
 ) -> ScreenShareCaptureSource {
     let (width, height) = selection.resolution.dimensions();
-    ScreenShareCaptureSource::Selected {
-        source_id: selection.source_id.clone(),
-        target: ScreenShareTargetQuality {
-            width,
-            height,
-            max_fps: selection.frame_rate.max_fps(),
+    let target = ScreenShareTargetQuality {
+        width,
+        height,
+        max_fps: selection.frame_rate.max_fps(),
+    };
+    match &selection.source_id {
+        Some(source_id) => ScreenShareCaptureSource::Selected {
+            source_id: source_id.clone(),
+            target,
+        },
+        None => ScreenShareCaptureSource::PlatformDefault {
+            target: Some(target),
         },
     }
 }
