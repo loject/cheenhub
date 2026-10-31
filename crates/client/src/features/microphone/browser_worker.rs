@@ -20,7 +20,7 @@ use super::browser_errors::js_error_message;
 
 mod control;
 
-const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=17";
+const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=18";
 const MICROPHONE_WORKER_WASM_BINDGEN_URL: &str = "/workers/microphone/microphone_worker.js?v=11";
 const MICROPHONE_WORKER_WASM_URL: &str = "/workers/microphone/microphone_worker_bg.wasm?v=11";
 const WORKER_START_TIMEOUT_MS: u32 = 10_000;
@@ -296,6 +296,11 @@ fn start_message(
         &message,
         "sampleRateHz",
         JsValue::from_f64(f64::from(sample_rate_hz)),
+    )?;
+    set_property(
+        &message,
+        "frameDurationUs",
+        JsValue::from_f64(f64::from(config.frame_duration_us)),
     )?;
     set_property(
         &message,

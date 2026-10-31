@@ -142,3 +142,31 @@ test('worker_releases_slot_when_processing_throws', () => {
   assert.equal(acknowledged[0].kind, 'pcm-consumed');
   assert.equal(notifications.at(-1).kind, 'warning');
 });
+
+test('worklet_defaults_to_twenty_millisecond_pcm_frames', () => {
+  const { processor, messages } = createWorklet(null);
+  sendFrame(processor, 480);
+  assert.equal(messages.length, 0);
+  sendFrame(processor, 480);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].samples.length, 960);
+});
+
+test('worker_opus_encoder_respects_twenty_and_ten_millisecond_frames', () => {
+  const { context } = createWorker();
+  const twenty = vm.runInContext('encoderConfig(48000, 1, 96000, 20000)', context);
+  const ten = vm.runInContext('encoderConfig(48000, 1, 96000, 10000)', context);
+  assert.equal(twenty.opus.frameDuration, 20000);
+  assert.equal(ten.opus.frameDuration, 10000);
+});
+
+test('worker_bitrate_change_preserves_twenty_millisecond_frames', () => {
+  const { context } = createWorker();
+  const frameDurations = [];
+  context.current.sampleRateHz = 48000;
+  context.current.bitrateBps = 64000;
+  context.current.frameDurationUs = 20000;
+  context.current.encoder.configure = config => frameDurations.push(config.opus.frameDuration);
+  vm.runInContext('active = current; setBitrate(96000)', context);
+  assert.deepEqual(frameDurations, [20000]);
+});

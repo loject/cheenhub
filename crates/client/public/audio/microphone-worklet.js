@@ -4,7 +4,7 @@ const DROP_WARNING_INTERVAL_FRAMES = 5 * sampleRate;
 class CheenHubMicrophoneCapture extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    const frameCount = options?.processorOptions?.frameCount ?? 480;
+    const frameCount = options?.processorOptions?.frameCount ?? Math.round(sampleRate / 50);
     this.frameCount = Math.max(128, Math.floor(frameCount));
     this.maxInFlightChunks = Math.max(1, Math.floor((sampleRate * MAX_IN_FLIGHT_PCM_MS) / (this.frameCount * 1000)));
     this.diagnosticsEnabled = Boolean(options?.processorOptions?.diagnosticsEnabled);

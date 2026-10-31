@@ -69,6 +69,7 @@ async function start(config) {
       processor,
       transport,
       sampleRateHz: config.sampleRateHz,
+      frameDurationUs: config.frameDurationUs ?? 20_000,
       denoiseRevision: config.denoiseRevision,
       bitrateBps: config.bitrateBps,
       lastLevelMs: 0,
@@ -137,7 +138,7 @@ function setBitrate(value) {
     return;
   }
   current.bitrateBps = bitrateBps;
-  current.encoder.configure(encoderConfig(current.sampleRateHz, 1, bitrateBps));
+  current.encoder.configure(encoderConfig(current.sampleRateHz, 1, bitrateBps, current.frameDurationUs));
 }
 
 function setInputGain(value) {
@@ -154,11 +155,11 @@ function createEncoder(config, processor, transport) {
     output: (chunk) => handleEncodedChunk(chunk, processor, transport),
     error: (error) => failActive(`microphone worker encoder failed: ${errorMessage(error)}`),
   });
-  encoder.configure(encoderConfig(config.sampleRateHz, config.channels, config.bitrateBps));
+  encoder.configure(encoderConfig(config.sampleRateHz, config.channels, config.bitrateBps, config.frameDurationUs));
   return encoder;
 }
 
-function encoderConfig(sampleRateHz, channels, bitrateBps) {
+function encoderConfig(sampleRateHz, channels, bitrateBps, frameDurationUs = 20_000) {
   return {
     codec: "opus",
     sampleRate: sampleRateHz,
@@ -168,7 +169,7 @@ function encoderConfig(sampleRateHz, channels, bitrateBps) {
       useinbandfec: true,
       usedtx: true,
       application: "voip",
-      frameDuration: 10_000,
+      frameDuration: frameDurationUs,
     },
   };
 }
@@ -453,6 +454,9 @@ function validateStartConfig(config) {
     if (typeof config[field] !== "string" || config[field].length === 0) {
       throw new Error(`microphone worker start message is missing ${field}`);
     }
+  }
+  if (![10_000, 20_000].includes(config.frameDurationUs ?? 20_000)) {
+    throw new Error("unsupported microphone frame duration");
   }
 }
 

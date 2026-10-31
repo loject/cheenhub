@@ -16,7 +16,6 @@ use super::super::backend::{
 use super::super::core::new_microphone_capture_sequence;
 use super::super::vad::{VoiceActivityDetector, rms_level};
 
-const OPUS_FRAME_DURATION_US: u32 = 10_000;
 const MAX_OPUS_PACKET_BYTES: usize = 4_000;
 
 /// Запускает поток преобразования mono PCM в Opus и отправки событий capture-сессии.
@@ -112,7 +111,7 @@ fn run_encoder_worker(
     let mut encoder = create_encoder(&config)?;
     let track_id = uuid::Uuid::new_v4();
     let mut detector = VoiceActivityDetector::new(config.clone());
-    let mut denoiser = super::super::denoise::Processor::new();
+    let mut denoiser = super::super::denoise::StreamProcessor::new();
     let mut denoiser_enabled_last_frame = false;
     let mut denoise_warning_sent = false;
     let mut denoise_revision = None;
@@ -129,7 +128,7 @@ fn run_encoder_worker(
         if !super::pcm::accepts_epoch(chunk.epoch, epoch, ptt) {
             pending.clear();
             if detector.is_active() {
-                detector.update_with_speech(0.0, None, OPUS_FRAME_DURATION_US, false);
+                detector.update_with_speech(0.0, None, config.frame_duration_us, false);
                 send_event(
                     &mut event_sender,
                     NativeMicrophoneEvent::Level(MicrophoneLevel {
@@ -243,7 +242,7 @@ fn run_encoder_worker(
 }
 
 fn apply_denoising(
-    denoiser: &mut super::super::denoise::Processor,
+    denoiser: &mut super::super::denoise::StreamProcessor,
     frame: &mut [f32],
     enabled: bool,
     enabled_last_frame: &mut bool,
@@ -253,10 +252,10 @@ fn apply_denoising(
         return (None, false);
     }
     if !*enabled_last_frame {
-        *denoiser = super::super::denoise::Processor::new();
+        *denoiser = super::super::denoise::StreamProcessor::new();
     }
     *enabled_last_frame = true;
-    match denoiser.process(frame) {
+    match denoiser.process(frame, true) {
         Ok(speech_probability) => (speech_probability, false),
         Err(_) => {
             *enabled_last_frame = false;
@@ -330,7 +329,8 @@ fn handle_pcm_frame(
     apply_input_gain(&mut frame, input_gain);
     let rms = rms_level(&frame);
     let previous_active = detector.is_active();
-    let active = detector.update_with_speech(rms, speech_probability, OPUS_FRAME_DURATION_US, held);
+    let active =
+        detector.update_with_speech(rms, speech_probability, config.frame_duration_us, held);
     if active != previous_active {
         debug!(
             rms,
@@ -383,7 +383,7 @@ fn handle_pcm_frame(
             permission: Some(permission),
             sequence,
             timestamp_us,
-            duration_us: OPUS_FRAME_DURATION_US,
+            duration_us: config.frame_duration_us,
             codec: MicrophoneCodec::Opus,
             sample_rate_hz: config.sample_rate_hz,
             channels: config.channels,
@@ -418,8 +418,8 @@ fn apply_input_gain(samples: &mut [f32], input_gain: f32) {
     }
 }
 
-pub(super) fn frame_samples(sample_rate_hz: u32) -> usize {
-    ((u64::from(sample_rate_hz) * u64::from(OPUS_FRAME_DURATION_US)) / 1_000_000).max(1) as usize
+pub(super) fn frame_samples(sample_rate_hz: u32, frame_duration_us: u32) -> usize {
+    ((u64::from(sample_rate_hz) * u64::from(frame_duration_us)) / 1_000_000).max(1) as usize
 }
 
 fn timestamp_us(sample_index: u64, sample_rate_hz: u32) -> u64 {

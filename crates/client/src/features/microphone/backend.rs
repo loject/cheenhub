@@ -80,6 +80,8 @@ pub(crate) struct MicrophoneConfig {
     pub(crate) channels: u8,
     /// Target encoder bitrate in bits per second.
     pub(crate) bitrate_bps: u32,
+    /// Длительность одного кадра Opus в микросекундах: 10 000 или 20 000.
+    pub(crate) frame_duration_us: u32,
     /// Audio activation mode used before encoding.
     pub(crate) activation_mode: MicrophoneActivationMode,
     /// Живые параметры gate текущей сессии; `None` сохраняет стартовую конфигурацию.
@@ -116,6 +118,7 @@ impl Default for MicrophoneConfig {
             sample_rate_hz: 48_000,
             channels: 1,
             bitrate_bps: cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS,
+            frame_duration_us: 20_000,
             activation_mode: MicrophoneActivationMode::VoiceActivated,
             activation_live: None,
             push_to_talk_key: super::push_to_talk::PushToTalkKey::default(),

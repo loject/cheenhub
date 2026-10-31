@@ -1,15 +1,60 @@
 use super::*;
 
 #[test]
-fn frame_size_matches_ten_milliseconds_at_supported_rates() {
-    assert_eq!(frame_samples(48_000), 480);
-    assert_eq!(frame_samples(24_000), 240);
-    assert_eq!(frame_samples(16_000), 160);
+fn default_frame_duration_is_twenty_milliseconds_at_supported_rates() {
+    let config = MicrophoneConfig::default();
+    assert_eq!(config.frame_duration_us, 20_000);
+    assert_eq!(frame_samples(48_000, config.frame_duration_us), 960);
+    assert_eq!(frame_samples(24_000, config.frame_duration_us), 480);
+    assert_eq!(frame_samples(16_000, config.frame_duration_us), 320);
+}
+
+#[test]
+fn ten_millisecond_frame_duration_remains_supported() {
+    assert_eq!(frame_samples(48_000, 10_000), 480);
+    assert_eq!(frame_samples(24_000, 10_000), 240);
+    assert_eq!(frame_samples(16_000, 10_000), 160);
+}
+
+#[test]
+fn opus_encoder_accepts_both_configured_frame_durations() {
+    for frame_duration_us in [20_000, 10_000] {
+        let config = MicrophoneConfig {
+            frame_duration_us,
+            ..MicrophoneConfig::default()
+        };
+        let mut encoder = create_encoder(&config).expect("Opus encoder should initialize");
+        let samples = frame_samples(config.sample_rate_hz, frame_duration_us);
+        let pcm = (0..samples)
+            .map(|index| (index as f32 * 0.017).sin() * 0.1)
+            .collect::<Vec<_>>();
+        let encoded = encoder
+            .encode_vec_float(&pcm, MAX_OPUS_PACKET_BYTES)
+            .expect("Opus should encode the selected frame duration");
+        assert!(!encoded.is_empty());
+    }
+}
+
+#[test]
+fn native_denoiser_accepts_twenty_millisecond_pcm_without_disabling() {
+    let mut processor = super::super::super::denoise::StreamProcessor::new();
+    let mut was_enabled = false;
+    let mut frame = vec![0.25_f32; 960];
+
+    let (probability, failed) = apply_denoising(&mut processor, &mut frame, true, &mut was_enabled);
+
+    assert!(!failed, "20 ms PCM must not disable RNNoise");
+    assert_eq!(
+        probability.is_some(),
+        super::super::super::denoise::Processor::available()
+    );
+    assert!(was_enabled);
+    assert!(frame.iter().all(|sample| sample.is_finite()));
 }
 
 #[test]
 fn failed_denoising_returns_the_original_captured_pcm() {
-    let mut processor = super::super::super::denoise::Processor::new();
+    let mut processor = super::super::super::denoise::StreamProcessor::new();
     let original = vec![f32::NAN; 481];
 
     let mut passed_through = original.clone();
@@ -32,7 +77,7 @@ fn failed_denoising_returns_the_original_captured_pcm() {
 
 #[test]
 fn disabling_then_reenabling_denoising_resets_the_processor() {
-    let mut processor = super::super::super::denoise::Processor::new();
+    let mut processor = super::super::super::denoise::StreamProcessor::new();
     let mut was_enabled = true;
     let mut bypassed_frame = vec![0.25; 481];
 
@@ -55,7 +100,7 @@ fn disabling_then_reenabling_denoising_resets_the_processor() {
 
 #[test]
 fn failed_denoising_bypasses_pcm_and_warns_once_until_disabled() {
-    let mut processor = super::super::super::denoise::Processor::new();
+    let mut processor = super::super::super::denoise::StreamProcessor::new();
     let mut was_enabled = false;
     let mut warning_sent = false;
 

@@ -179,8 +179,12 @@ async fn start_browser_session(
         return Err(error);
     }
 
-    let browser_encoder_config =
-        encoder_config(sample_rate_hz, config.channels, config.bitrate_bps);
+    let browser_encoder_config = encoder_config(
+        sample_rate_hz,
+        config.channels,
+        config.bitrate_bps,
+        config.frame_duration_us,
+    );
     verify_encoder_support(&context, &browser_encoder_config).await?;
     let stream = request_stream_or_close_context(&context, config.clone()).await?;
     let track = first_track_or_cleanup(&stream, &context).await?;
@@ -201,7 +205,7 @@ async fn start_browser_session(
             return Err(microphone_error(error));
         }
     };
-    let worklet = match create_worklet_node(&context, sample_rate_hz) {
+    let worklet = match create_worklet_node(&context, sample_rate_hz, config.frame_duration_us) {
         Ok(worklet) => worklet,
         Err(error) => {
             stop_media_stream(&stream);
@@ -314,7 +318,7 @@ async fn start_browser_session(
 
     info!(
         sample_rate_hz,
-        chunk_ms = worklet_chunk_ms(),
+        chunk_ms = worklet_chunk_ms(config.frame_duration_us),
         output_connected = worklet_output_connected(),
         "browser microphone audio worklet capture started"
     );
@@ -367,6 +371,11 @@ fn validate_config(config: &MicrophoneConfig) -> Result<(), MicrophoneError> {
     }
     if config.channels != 1 {
         return Err(MicrophoneError::new("Поддерживается только моно микрофон."));
+    }
+    if !matches!(config.frame_duration_us, 10_000 | 20_000) {
+        return Err(MicrophoneError::new(
+            "Неподдерживаемая длительность кадра микрофона.",
+        ));
     }
     Ok(())
 }
