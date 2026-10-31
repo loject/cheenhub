@@ -1,10 +1,13 @@
 //! Realtime client error types.
 
+use cheenhub_contracts::realtime::RejectionCode;
+
 /// Realtime client error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RealtimeError {
     message: String,
     user_message: Option<String>,
+    rejection_code: Option<RejectionCode>,
 }
 
 impl RealtimeError {
@@ -13,16 +16,23 @@ impl RealtimeError {
         Self {
             message: message.into(),
             user_message: None,
+            rejection_code: None,
         }
     }
 
     /// Создаёт отказ сервера с текстом, предназначенным для пользователя.
-    pub(crate) fn rejected(message: impl Into<String>) -> Self {
+    pub(crate) fn rejected(code: RejectionCode, message: impl Into<String>) -> Self {
         let message = message.into();
         Self {
             user_message: Some(message.clone()),
             message,
+            rejection_code: Some(code),
         }
+    }
+
+    /// Код типизированного серверного отказа, если ответ был отклонён сервером.
+    pub(crate) fn rejection_code(&self) -> Option<RejectionCode> {
+        self.rejection_code
     }
 
     /// Возвращает пользовательский текст отказа; технические ошибки его не имеют.

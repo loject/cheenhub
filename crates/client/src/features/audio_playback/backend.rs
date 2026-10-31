@@ -20,8 +20,12 @@ pub(crate) enum PlaybackCodec {
 pub(crate) struct VoiceFrame {
     /// Authenticated sender identifier.
     pub(crate) sender_user_id: String,
-    /// UUID захвата; nil обозначает микрофон legacy-клиента.
+    /// UUID захвата либо подтверждённой голосовой сессии нового протокола.
     pub(crate) track_id: uuid::Uuid,
+    /// Серверная голосовая сессия владельца; отсутствует у старых медиадатаграмм.
+    pub(crate) voice_session_id: Option<uuid::Uuid>,
+    /// Микрофонная дорожка удостоверена сервером как отдельная голосовая сессия.
+    pub(crate) session_track: bool,
     /// Назначение дорожки с независимым декодером и буфером.
     pub(crate) audio_source: cheenhub_contracts::media::MediaAudioSource,
     /// Число каналов исходного Opus-потока: один или два.
@@ -42,7 +46,12 @@ pub(crate) struct VoiceFrame {
 impl VoiceFrame {
     /// Возвращает внутренний ключ дорожки, отделяя её декодер от других дорожек владельца.
     pub(super) fn playback_key(&self) -> String {
-        super::tracks::playback_key(&self.sender_user_id, self.audio_source, self.track_id)
+        super::tracks::playback_key_for(
+            &self.sender_user_id,
+            self.audio_source,
+            self.voice_session_id,
+            self.track_id,
+        )
     }
 }
 

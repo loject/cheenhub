@@ -10,12 +10,15 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
+mod fanout;
 mod relay;
 #[cfg(test)]
 mod tests;
 
 pub(crate) use relay::{MediaDatagramHeader, handle_webtransport_frame_bytes};
-use relay::{active_media_route_for_user, video_admission_allows_fanout};
+use relay::{
+    active_media_route_for_transport, authorized_audio_track, video_admission_allows_fanout,
+};
 
 /// Обрабатывает одну декодированную медиадатаграмму голоса.
 pub(crate) async fn handle_voice_frame(
@@ -89,7 +92,16 @@ async fn handle_room_media_frame(
         "received voice room media datagram"
     );
 
-    let Some(route) = active_media_route_for_user(state, &datagram.room_id, &user_id) else {
+    let Some(route) = active_media_route_for_transport(
+        state,
+        &datagram.room_id,
+        &session_id,
+        &user_id,
+        allow_microphone_uplink,
+        datagram.audio_source,
+    )
+    .await
+    else {
         debug!(
             %session_id,
             %user_id,
@@ -101,36 +113,51 @@ async fn handle_room_media_frame(
     };
     let presence = route.presence;
     let recipients = route.recipients;
-    let is_presence_session = presence.session_id == session_id;
-    let is_bound_microphone_uplink = if is_presence_session
-        || !allow_microphone_uplink
-        || datagram.audio_source == Some(cheenhub_contracts::media::MediaAudioSource::System)
+    let legacy_recipients = route.legacy_recipients;
+    let modern_recipients = route.modern_recipients;
+    if media_kind == "voice"
+        && !authorized_audio_track(
+            datagram.audio_source,
+            datagram.track_id,
+            presence.session_id,
+            presence.voice_protocol_version,
+        )
     {
-        false
-    } else {
-        state
-            .voice_presence_store
-            .microphone_uplink_is_bound(
-                &session_id,
-                &user_id,
-                &datagram.room_id,
-                &presence.session_id,
-            )
-            .await
-    };
-    if !is_presence_session && !is_bound_microphone_uplink {
-        debug!(
-            %session_id,
+        debug!(%session_id, %user_id, track_id = %datagram.track_id,
             expected_session_id = %presence.session_id,
-            %user_id,
-            room_id = %datagram.room_id,
-            media_kind,
-            "dropping media datagram from unauthorized session"
-        );
+            "dropping voice datagram with mismatched authenticated session");
         return;
     }
-
+    if relay::normalize_legacy_microphone_datagram(
+        &mut datagram,
+        presence.session_id,
+        presence.voice_protocol_version,
+    ) {
+        debug!(
+            %session_id,
+            %user_id,
+            authenticated_voice_session_id = %presence.session_id,
+            "дорожка legacy-микрофона привязана к голосовой сессии"
+        );
+    }
     if let Some(allowed_video_presets) = allowed_video_presets {
+        if datagram.track_id != presence.session_id {
+            if presence.voice_protocol_version >= 5 {
+                debug!(
+                    %session_id,
+                    %user_id,
+                    room_id = %datagram.room_id,
+                    track_id = %datagram.track_id,
+                    expected_track_id = %presence.session_id,
+                    media_kind,
+                    "dropping video datagram with track ID not matching authenticated session"
+                );
+                return;
+            }
+            // Старые клиенты публиковали захват вместо UUID сессии.
+            // Нормализуем до admission policy, чтобы нельзя было обойти её сменой track ID.
+            datagram.track_id = presence.session_id;
+        }
         let admission = state
             .voice_presence_store
             .inspect_video_datagram(session_id, &datagram, allowed_video_presets)
@@ -166,8 +193,12 @@ async fn handle_room_media_frame(
             return;
         }
     };
-    state
-        .realtime_hub
-        .fanout_datagram_to_sessions_except(&recipients, presence.session_id, bytes)
-        .await;
+    fanout::fanout_relay_bytes(
+        state,
+        &legacy_recipients,
+        &modern_recipients,
+        presence.session_id,
+        bytes,
+    )
+    .await;
 }

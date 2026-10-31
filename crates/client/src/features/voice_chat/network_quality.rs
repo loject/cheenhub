@@ -16,7 +16,9 @@ use crate::features::{network::NetworkQualityHandle, runtime::sleep_ms};
 
 use super::network_quality_publication::NetworkQualityPublicationState;
 use super::realtime::realtime_decode::participant_network_quality;
-use super::state::{VoiceConnectionState, VoiceRoomTarget, VoiceRoomTargetKind};
+use super::state::{
+    VoiceConnectionHandle, VoiceConnectionState, VoiceRoomTarget, VoiceRoomTargetKind,
+};
 
 const FRESH_FOR_MS: u64 = 1_500;
 const UNSTABLE_AFTER_MS: u64 = 3_000;
@@ -53,7 +55,7 @@ struct VoiceNetworkSample {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct VoiceNetworkQualityState {
     target_key: Option<String>,
-    samples: HashMap<String, VoiceNetworkSample>,
+    samples: HashMap<(String, String), VoiceNetworkSample>,
 }
 
 /// Общий хендл сетевых метрик текущего голосового общения.
@@ -82,13 +84,19 @@ impl VoiceNetworkQualityHandle {
     }
 
     /// Записывает локально измеренный RTT текущего пользователя.
-    pub(crate) fn record_local(&mut self, user_id: String, rtt_ms: u32, now_ms: u64) {
-        self.record(user_id, rtt_ms, now_ms);
+    pub(crate) fn record_local(
+        &mut self,
+        user_id: String,
+        session_id: String,
+        rtt_ms: u32,
+        now_ms: u64,
+    ) {
+        self.record(user_id, session_id, rtt_ms, now_ms);
     }
 
     /// Применяет полученное от сервера измерение участника.
     pub(crate) fn apply_update(&mut self, update: ParticipantNetworkQualityUpdated, now_ms: u64) {
-        self.record(update.user_id, update.rtt_ms, now_ms);
+        self.record(update.user_id, update.session_id, update.rtt_ms, now_ms);
     }
 
     /// Продвигает общие часы, чтобы UI обновил состояние свежести без нового события.
@@ -102,25 +110,20 @@ impl VoiceNetworkQualityHandle {
     }
 
     /// Возвращает состояние сетевой метрики указанного участника.
-    pub(crate) fn reading_for(&self, user_id: &str) -> VoiceNetworkQualityReading {
+    pub(crate) fn reading_for(
+        &self,
+        user_id: &str,
+        session_id: &str,
+    ) -> VoiceNetworkQualityReading {
         let state = self.state.read();
         let now_ms = *self.clock_ms.read();
-        match state.samples.get(user_id) {
-            Some(sample) => VoiceNetworkQualityReading {
-                rtt_ms: Some(sample.rtt_ms),
-                freshness: freshness_for_age(now_ms.saturating_sub(sample.received_at_ms)),
-            },
-            None => VoiceNetworkQualityReading {
-                rtt_ms: None,
-                freshness: NetworkQualityFreshness::Measuring,
-            },
-        }
+        reading_for_session(&state.samples, user_id, session_id, now_ms)
     }
 
-    fn record(&mut self, user_id: String, rtt_ms: u32, now_ms: u64) {
+    fn record(&mut self, user_id: String, session_id: String, rtt_ms: u32, now_ms: u64) {
         self.clock_ms.set(now_ms);
         self.state.write().samples.insert(
-            user_id,
+            (user_id, session_id),
             VoiceNetworkSample {
                 rtt_ms,
                 received_at_ms: now_ms,
@@ -128,9 +131,9 @@ impl VoiceNetworkQualityHandle {
         );
     }
 
-    fn retain_active_participants(&mut self, active_user_ids: &HashSet<String>) {
+    fn retain_active_participants(&mut self, active_sessions: &HashSet<(String, String)>) {
         self.state.with_mut(|state| {
-            retain_active_samples(&mut state.samples, active_user_ids);
+            retain_active_samples(&mut state.samples, active_sessions);
         });
     }
 }
@@ -145,6 +148,7 @@ pub(super) fn use_voice_network_quality_handle() -> VoiceNetworkQualityHandle {
 /// Запускает получение и публикацию метрик для текущей голосовой цели.
 pub(super) fn use_voice_network_quality_runtime(
     state: Signal<VoiceConnectionState>,
+    voice: VoiceConnectionHandle,
     current_user_id: String,
     realtime: RealtimeHandle,
     network_quality: NetworkQualityHandle,
@@ -159,18 +163,25 @@ pub(super) fn use_voice_network_quality_runtime(
     });
 
     let participant_current_user_id = current_user_id.clone();
+    let participant_voice = voice.clone();
     let mut participant_quality = handle;
     use_effect(move || {
-        let VoiceConnectionState::Connected { participants, .. } = state() else {
+        let VoiceConnectionState::Connected {
+            target,
+            participants,
+        } = state()
+        else {
             participant_quality.clear();
             return;
         };
-        let mut active_user_ids = participants
+        let mut active_sessions = participants
             .into_iter()
-            .map(|participant| participant.user_id)
+            .map(|participant| (participant.user_id, participant.session_id))
             .collect::<HashSet<_>>();
-        active_user_ids.insert(participant_current_user_id.clone());
-        participant_quality.retain_active_participants(&active_user_ids);
+        if let Some(session_id) = participant_voice.media_session_id_for(&target) {
+            active_sessions.insert((participant_current_user_id.clone(), session_id.to_string()));
+        }
+        participant_quality.retain_active_participants(&active_sessions);
     });
 
     let event_realtime = realtime.clone();
@@ -191,6 +202,7 @@ pub(super) fn use_voice_network_quality_runtime(
     });
 
     let publish_realtime = realtime.clone();
+    let publish_voice = voice;
     let mut publish_quality = handle;
     use_hook(move || {
         spawn(async move {
@@ -211,7 +223,11 @@ pub(super) fn use_voice_network_quality_runtime(
                     sleep_ms(RUNTIME_TICK_MS).await;
                     continue;
                 };
-                let next_target_key = target_key(&target);
+                let Some(session_id) = publish_voice.media_session_id_for(&target) else {
+                    sleep_ms(RUNTIME_TICK_MS).await;
+                    continue;
+                };
+                let next_target_key = format!("{}:{session_id}", target_key(&target));
                 if active_target_key.as_deref() != Some(next_target_key.as_str()) {
                     publish_quality.activate_target(next_target_key.clone(), timestamp_ms);
                     active_target_key = Some(next_target_key);
@@ -237,6 +253,7 @@ pub(super) fn use_voice_network_quality_runtime(
                 if last_observed_sample_at != Some(sample.received_at_ms) {
                     publish_quality.record_local(
                         current_user_id.clone(),
+                        session_id.to_string(),
                         rtt_ms,
                         sample.received_at_ms,
                     );
@@ -339,6 +356,36 @@ pub(crate) fn now_ms() -> u64 {
         .min(u128::from(u64::MAX)) as u64
 }
 
+fn reading_for_session(
+    samples: &HashMap<(String, String), VoiceNetworkSample>,
+    user_id: &str,
+    session_id: &str,
+    now_ms: u64,
+) -> VoiceNetworkQualityReading {
+    let exact = samples.get(&(user_id.to_owned(), session_id.to_owned()));
+    let legacy = if session_id.is_empty() {
+        let mut owned = samples.iter().filter(|((owner, _), _)| owner == user_id);
+        let first = owned.next();
+        if owned.next().is_none() {
+            first.map(|(_, sample)| sample)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    match exact.or(legacy) {
+        Some(sample) => VoiceNetworkQualityReading {
+            rtt_ms: Some(sample.rtt_ms),
+            freshness: freshness_for_age(now_ms.saturating_sub(sample.received_at_ms)),
+        },
+        None => VoiceNetworkQualityReading {
+            rtt_ms: None,
+            freshness: NetworkQualityFreshness::Measuring,
+        },
+    }
+}
+
 fn freshness_for_age(age_ms: u64) -> NetworkQualityFreshness {
     if age_ms < FRESH_FOR_MS {
         NetworkQualityFreshness::Fresh
@@ -364,10 +411,13 @@ fn sample_is_newer_than_target(sample_received_at_ms: u64, target_activated_at_m
 }
 
 fn retain_active_samples(
-    samples: &mut HashMap<String, VoiceNetworkSample>,
-    active_user_ids: &HashSet<String>,
+    samples: &mut HashMap<(String, String), VoiceNetworkSample>,
+    active_sessions: &HashSet<(String, String)>,
 ) {
-    samples.retain(|user_id, _| active_user_ids.contains(user_id));
+    samples.retain(|(user_id, session_id), _| {
+        active_sessions.contains(&(user_id.clone(), session_id.clone()))
+            || active_sessions.contains(&(user_id.clone(), String::new()))
+    });
 }
 
 #[cfg(test)]

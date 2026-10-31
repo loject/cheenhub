@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use dioxus::prelude::*;
+use uuid::Uuid;
 
 use super::participant_tile::VoiceParticipantTileMedia;
 
@@ -18,6 +19,8 @@ pub(super) struct ParticipantTileEntry {
     pub(super) speaking: bool,
     /// Тип медиа, отображаемого в тайле.
     pub(super) media: VoiceParticipantTileMedia,
+    /// UUID видеодорожки этой плитки; nil у локального preview и аватара.
+    pub(super) track_id: Uuid,
 }
 
 /// Расчетные параметры flex-сетки участников.
@@ -69,46 +72,61 @@ pub(super) fn preferred_focus_tile_key(tiles: &[ParticipantTileEntry]) -> Option
 /// Собирает рендеримые тайлы участников с учетом доступных медиа.
 pub(super) fn participant_tiles(
     participants: &[VoiceRoomParticipant],
-    speaking_user_ids: &[String],
-    camera_user_ids: &[String],
-    screen_user_ids: &[String],
+    speaking_sessions: &[(String, Option<Uuid>)],
+    camera_tracks: &[(String, Uuid)],
+    screen_tracks: &[(String, Uuid)],
     current_user_id: &str,
+    current_session_id: Option<Uuid>,
     local_camera_live: bool,
 ) -> Vec<ParticipantTileEntry> {
     let mut tiles = Vec::new();
     for participant in participants {
-        let speaking = speaking_user_ids
-            .iter()
-            .any(|user_id| user_id == &participant.user_id);
-        let screen_sharing = screen_user_ids
-            .iter()
-            .any(|user_id| user_id == &participant.user_id);
-        let local_camera = participant.user_id == current_user_id && local_camera_live;
-        let remote_camera = participant.user_id != current_user_id
-            && camera_user_ids
-                .iter()
-                .any(|user_id| user_id == &participant.user_id);
-        let camera_on = local_camera || remote_camera;
+        let speaking = speaking_sessions.iter().any(|(user_id, session_id)| {
+            user_id == &participant.user_id
+                && session_id.is_none_or(|id| id.to_string() == participant.session_id)
+        });
+        let local_session = participant.user_id == current_user_id
+            && current_session_id.is_some_and(|id| {
+                participant.session_id.is_empty() || id.to_string() == participant.session_id
+            });
+        let track_for = |tracks: &[(String, Uuid)]| {
+            tracks.iter().find_map(|(user_id, track_id)| {
+                (user_id == &participant.user_id
+                    && if track_id.is_nil() {
+                        local_session
+                    } else {
+                        participant.session_id.is_empty()
+                            || track_id.to_string() == participant.session_id
+                    })
+                .then_some(*track_id)
+            })
+        };
+        let screen_track = track_for(screen_tracks);
+        let camera_track = track_for(camera_tracks)
+            .or_else(|| (local_session && local_camera_live).then_some(Uuid::nil()));
 
-        if screen_sharing {
+        if let Some(track_id) = screen_track {
             tiles.push(tile_entry(
                 participant,
                 speaking,
                 VoiceParticipantTileMedia::ScreenShare,
+                track_id,
             ));
         }
-        if camera_on {
+        if let Some(track_id) = camera_track {
             tiles.push(tile_entry(
                 participant,
                 speaking,
                 VoiceParticipantTileMedia::Camera,
+                track_id,
             ));
         }
-        if !screen_sharing && !camera_on {
+        if screen_track.is_none() && camera_track.is_none() {
             tiles.push(tile_entry(
                 participant,
                 speaking,
                 VoiceParticipantTileMedia::Avatar,
+                Uuid::nil(),
             ));
         }
     }
@@ -149,6 +167,7 @@ fn tile_entry(
     participant: &VoiceRoomParticipant,
     speaking: bool,
     media: VoiceParticipantTileMedia,
+    track_id: Uuid,
 ) -> ParticipantTileEntry {
     let suffix = match media {
         VoiceParticipantTileMedia::Avatar => "avatar",
@@ -157,9 +176,16 @@ fn tile_entry(
     };
 
     ParticipantTileEntry {
-        key: format!("{}-{suffix}", participant.user_id),
+        key: format!(
+            "{}-{}-{suffix}",
+            participant.user_id, participant.session_id
+        ),
         participant: participant.clone(),
         speaking,
         media,
+        track_id,
     }
 }
+
+#[cfg(test)]
+mod tests;

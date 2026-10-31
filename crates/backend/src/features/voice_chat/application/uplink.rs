@@ -9,7 +9,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use super::{VoiceChatApplicationError, parse_id};
-use crate::features::voice_chat::application::presence::active_presence_for_user;
+use crate::features::voice_chat::application::presence::active_presence_for_session;
 use crate::features::voice_chat::infrastructure::{
     ConsumeMicrophoneUplinkGrantError, MicrophoneUplinkGrant,
 };
@@ -25,20 +25,8 @@ pub(crate) async fn issue_microphone_uplink_grant(
     request: IssueMicrophoneUplinkGrant,
 ) -> Result<MicrophoneUplinkGrantIssued, VoiceChatApplicationError> {
     let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
-    let Some(presence) = active_presence_for_user(state, &room_id, user_id) else {
-        warn!(%session_id, %user_id, %room_id, "отклонена выдача microphone uplink grant вне активной комнаты");
-        return Err(VoiceChatApplicationError::Unauthorized(
-            "Сначала войдите в голосовую комнату.".to_owned(),
-        ));
-    };
-    if presence.session_id != session_id {
-        warn!(
-            %session_id,
-            expected_session_id = %presence.session_id,
-            %user_id,
-            %room_id,
-            "отклонена выдача microphone uplink grant устаревшей сессии"
-        );
+    if active_presence_for_session(state, &room_id, &session_id, user_id).is_none() {
+        warn!(%session_id, %user_id, %room_id, "отклонена выдача microphone uplink grant вне активного присутствия этой сессии");
         return Err(VoiceChatApplicationError::Unauthorized(
             "Текущая сессия не владеет голосовым присутствием.".to_owned(),
         ));
@@ -94,8 +82,14 @@ pub(crate) async fn bind_microphone_uplink(
             VoiceChatApplicationError::Unauthorized(message.to_owned())
         })?;
 
-    let presence = active_presence_for_user(state, &binding.room_id, user_id);
-    if presence.as_ref().map(|entry| entry.session_id) != Some(binding.presence_session_id) {
+    if active_presence_for_session(
+        state,
+        &binding.room_id,
+        &binding.presence_session_id,
+        user_id,
+    )
+    .is_none()
+    {
         warn!(
             %session_id,
             %user_id,

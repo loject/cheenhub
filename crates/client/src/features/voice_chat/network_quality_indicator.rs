@@ -8,6 +8,7 @@ use super::network_quality::{
     NetworkQualityFreshness, VoiceNetworkQualityHandle, VoiceNetworkQualityReading,
 };
 use super::network_quality_publication::{VoiceRttQuality, rtt_quality};
+use super::state::VoiceConnectionHandle;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct IndicatorDisclosureState {
@@ -45,6 +46,7 @@ impl IndicatorDisclosureState {
 #[component]
 pub(crate) fn VoiceNetworkQualityIndicator(
     participant_user_id: String,
+    participant_session_id: String,
     participant_name: String,
 ) -> Element {
     let current_user_id = use_context::<CurrentUserContext>().require_user().id;
@@ -56,9 +58,21 @@ pub(crate) fn VoiceNetworkQualityIndicator(
     } else {
         "z-30"
     };
-    let local = quality.reading_for(&current_user_id);
-    let participant = quality.reading_for(&participant_user_id);
-    let is_self = participant_user_id == current_user_id;
+    let voice = use_context::<VoiceConnectionHandle>();
+    let local_session_id = voice
+        .state()
+        .active_target()
+        .and_then(|target| voice.media_session_id_for(&target))
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+    let local = quality.reading_for(&current_user_id, &local_session_id);
+    let participant = quality.reading_for(&participant_user_id, &participant_session_id);
+    let is_self = is_local_voice_session(
+        &participant_user_id,
+        &participant_session_id,
+        &current_user_id,
+        &local_session_id,
+    );
     let aggregate_freshness = if is_self {
         local.freshness
     } else {
@@ -155,6 +169,15 @@ pub(crate) fn VoiceNetworkQualityIndicator(
             }
         }
     }
+}
+
+fn is_local_voice_session(
+    participant_user_id: &str,
+    participant_session_id: &str,
+    current_user_id: &str,
+    local_session_id: &str,
+) -> bool {
+    participant_user_id == current_user_id && participant_session_id == local_session_id
 }
 
 fn worst_freshness(

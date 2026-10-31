@@ -18,6 +18,11 @@ use super::{
     VoiceNotificationTargetKind, VoiceOutputRoute,
 };
 
+/// Категория устройства Android для голосовой комнаты.
+pub(crate) fn voice_device_kind() -> cheenhub_contracts::realtime::VoiceDeviceKind {
+    cheenhub_contracts::realtime::VoiceDeviceKind::Mobile
+}
+
 /// Изменение доступности Android audio focus для активного звонка.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum VoiceAudioFocusEvent {

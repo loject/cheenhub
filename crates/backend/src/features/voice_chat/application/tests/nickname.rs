@@ -4,8 +4,8 @@ use crate::features::voice_chat::infrastructure::VoicePresenceTargetKind;
 use cheenhub_contracts::realtime::JoinVoiceRoom;
 use cheenhub_contracts::rest::ServerRoomKind;
 
-use super::{create_room, registered_user, state};
-use crate::features::voice_chat::application::{join_room, update_user_nickname};
+use super::{create_room, join_room, registered_user, state};
+use crate::features::voice_chat::application::update_user_nickname;
 
 #[tokio::test]
 async fn nickname_update_changes_active_voice_presence() {
@@ -23,6 +23,9 @@ async fn nickname_update_changes_active_voice_presence() {
             microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await

@@ -63,12 +63,13 @@ fn VideoOwner() -> Element {
             live_streams,
             Rc::new(RefCell::new(HashMap::new())),
             generations,
-            Rc::new(RefCell::new(HashSet::new())),
+            Rc::new(RefCell::new(HashMap::new())),
             dioxus::core::current_scope_id(),
         );
         handle.mark_live(ParticipantVideoKey::new(
             ParticipantVideoSource::Camera,
             "peer".to_owned(),
+            uuid::Uuid::from_u128(1),
         ));
         handle
     });
@@ -81,7 +82,7 @@ fn video_handle(dom: &VirtualDom) -> ParticipantVideoHandle {
             Signal::new(Vec::new()),
             Rc::new(RefCell::new(HashMap::new())),
             Rc::new(RefCell::new(HashMap::new())),
-            Rc::new(RefCell::new(HashSet::new())),
+            Rc::new(RefCell::new(HashMap::new())),
             ScopeId::ROOT,
         )
     })
@@ -91,6 +92,7 @@ fn frame(sequence: u64, key_frame: bool) -> ParticipantVideoFrame {
     ParticipantVideoFrame {
         room_id: "room".into(),
         sender_user_id: "peer".into(),
+        track_id: uuid::Uuid::from_u128(1),
         sequence,
         timestamp_us: sequence * 1_000_000,
         duration_us: 1_000_000,
@@ -108,7 +110,11 @@ fn video_tile_receives_initial_key_frame_and_following_deltas_after_mounting() {
         handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(1, false));
     });
 
-    let mut frames = handle.subscribe_stream(ParticipantVideoSource::ScreenShare, "peer".into());
+    let mut frames = handle.subscribe_stream(
+        ParticipantVideoSource::ScreenShare,
+        "peer".into(),
+        uuid::Uuid::from_u128(1),
+    );
 
     assert_eq!(frames.try_recv().unwrap(), frame(0, true));
     assert_eq!(frames.try_recv().unwrap(), frame(1, false));
@@ -127,13 +133,17 @@ fn static_screen_remains_visible_without_new_frames_until_explicit_stop() {
 
     dom.in_scope(ScopeId::ROOT, || {
         assert_eq!(
-            handle.live_user_ids(ParticipantVideoSource::ScreenShare),
-            vec!["peer"]
+            handle.live_tracks(ParticipantVideoSource::ScreenShare),
+            vec![("peer".to_owned(), uuid::Uuid::from_u128(1))]
         );
-        handle.release_stream(ParticipantVideoSource::ScreenShare, "peer");
+        handle.release_stream(
+            ParticipantVideoSource::ScreenShare,
+            "peer",
+            uuid::Uuid::from_u128(1),
+        );
         assert!(
             handle
-                .live_user_ids(ParticipantVideoSource::ScreenShare)
+                .live_tracks(ParticipantVideoSource::ScreenShare)
                 .is_empty()
         );
     });
@@ -147,6 +157,9 @@ fn participant_session(
         microphone_enabled: true,
         output_muted: false,
         user_id: user_id.to_owned(),
+        session_id: uuid::Uuid::from_u128(1).to_string(),
+        voice_protocol_version: 4,
+        device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
         nickname: "Участник".to_owned(),
         avatar_url: None,
         joined_at: joined_at.to_owned(),
@@ -159,17 +172,48 @@ fn departed_participant_releases_stale_screen_share() {
     let handle = video_handle(&dom);
     dom.in_scope(ScopeId::ROOT, || {
         handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
-        handle.reconcile_participants(
-            &[participant_session("peer", "2026-10-28T09:00:00Z")],
-            &[],
-            "self",
-        );
+        handle.reconcile_participants(&[participant_session("peer", "2026-10-28T09:00:00Z")], &[]);
     });
 
     assert!(
         handle
-            .live_user_ids(ParticipantVideoSource::ScreenShare)
+            .live_tracks(ParticipantVideoSource::ScreenShare)
             .is_empty()
+    );
+}
+
+#[test]
+fn departed_session_cannot_resurrect_screen_share_from_late_key_frame() {
+    let dom = VirtualDom::new(|| rsx! {});
+    let handle = video_handle(&dom);
+    dom.in_scope(ScopeId::ROOT, || {
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
+        handle.reconcile_participants(&[participant_session("peer", "2026-10-28T09:00:00Z")], &[]);
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(1, true));
+    });
+
+    assert!(
+        handle
+            .live_tracks(ParticipantVideoSource::ScreenShare)
+            .is_empty(),
+        "late key frame must not revive video for a departed voice session"
+    );
+}
+
+#[test]
+fn rejoined_voice_session_can_restart_video_with_a_fresh_key_frame() {
+    let dom = VirtualDom::new(|| rsx! {});
+    let handle = video_handle(&dom);
+    dom.in_scope(ScopeId::ROOT, || {
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
+        handle.reconcile_participants(&[participant_session("peer", "2026-10-28T09:00:00Z")], &[]);
+        handle.reconcile_participants(&[], &[participant_session("peer", "2026-10-28T09:01:00Z")]);
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(2, true));
+    });
+
+    assert_eq!(
+        handle.live_tracks(ParticipantVideoSource::ScreenShare),
+        vec![("peer".to_owned(), Uuid::from_u128(1))]
     );
 }
 
@@ -181,14 +225,35 @@ fn replaced_participant_session_releases_stale_screen_share() {
         handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
         handle.reconcile_participants(
             &[participant_session("peer", "2026-10-28T09:00:00Z")],
-            &[participant_session("peer", "2026-10-28T09:01:00Z")],
-            "self",
+            &[cheenhub_contracts::realtime::VoiceRoomParticipant {
+                session_id: uuid::Uuid::from_u128(2).to_string(),
+                ..participant_session("peer", "2026-10-28T09:01:00Z")
+            }],
         );
     });
 
     assert!(
         handle
-            .live_user_ids(ParticipantVideoSource::ScreenShare)
+            .live_tracks(ParticipantVideoSource::ScreenShare)
+            .is_empty()
+    );
+}
+
+#[test]
+fn rejoining_same_voice_session_with_new_join_time_releases_stale_screen_share() {
+    let dom = VirtualDom::new(|| rsx! {});
+    let handle = video_handle(&dom);
+    dom.in_scope(ScopeId::ROOT, || {
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
+        handle.reconcile_participants(
+            &[participant_session("peer", "2026-10-28T09:00:00Z")],
+            &[participant_session("peer", "2026-10-28T09:01:00Z")],
+        );
+    });
+
+    assert!(
+        handle
+            .live_tracks(ParticipantVideoSource::ScreenShare)
             .is_empty()
     );
 }
@@ -202,13 +267,12 @@ fn unchanged_participant_session_keeps_static_screen_share() {
         handle.reconcile_participants(
             &[participant_session("peer", "2026-10-28T09:00:00Z")],
             &[participant_session("peer", "2026-10-28T09:00:00Z")],
-            "self",
         );
     });
 
     assert_eq!(
-        handle.live_user_ids(ParticipantVideoSource::ScreenShare),
-        vec!["peer"],
+        handle.live_tracks(ParticipantVideoSource::ScreenShare),
+        vec![("peer".to_owned(), uuid::Uuid::from_u128(1))],
     );
 }
 
@@ -218,9 +282,17 @@ fn explicit_stop_discards_buffered_frames_and_restart_waits_for_a_fresh_key_fram
     let handle = video_handle(&dom);
     dom.in_scope(ScopeId::ROOT, || {
         handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
-        handle.release_stream(ParticipantVideoSource::ScreenShare, "peer");
+        handle.release_stream(
+            ParticipantVideoSource::ScreenShare,
+            "peer",
+            uuid::Uuid::from_u128(1),
+        );
     });
-    let mut receiver = handle.subscribe_stream(ParticipantVideoSource::ScreenShare, "peer".into());
+    let mut receiver = handle.subscribe_stream(
+        ParticipantVideoSource::ScreenShare,
+        "peer".into(),
+        uuid::Uuid::from_u128(1),
+    );
     assert!(receiver.try_recv().is_err());
 
     dom.in_scope(ScopeId::ROOT, || {
@@ -235,6 +307,85 @@ fn explicit_stop_discards_buffered_frames_and_restart_waits_for_a_fresh_key_fram
 }
 
 #[test]
+fn legacy_video_stop_without_session_id_releases_only_users_source() {
+    let dom = VirtualDom::new(|| rsx! {});
+    let handle = video_handle(&dom);
+    let mut other_frame = frame(0, true);
+    other_frame.sender_user_id = "other".to_owned();
+    dom.in_scope(ScopeId::ROOT, || {
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
+        handle.publish_frame(ParticipantVideoSource::Camera, frame(0, true));
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, other_frame);
+        handle.release_stream_for_event(ParticipantVideoSource::ScreenShare, "peer", Uuid::nil());
+    });
+
+    assert_eq!(
+        handle.live_tracks(ParticipantVideoSource::ScreenShare),
+        vec![("other".to_owned(), Uuid::from_u128(1))]
+    );
+    assert_eq!(
+        handle.live_tracks(ParticipantVideoSource::Camera),
+        vec![("peer".to_owned(), Uuid::from_u128(1))]
+    );
+}
+
+#[test]
+fn legacy_participant_departure_releases_video_without_session_id() {
+    let dom = VirtualDom::new(|| rsx! {});
+    let handle = video_handle(&dom);
+    let mut legacy_participant = participant_session("peer", "2026-10-28T09:00:00Z");
+    legacy_participant.session_id.clear();
+    dom.in_scope(ScopeId::ROOT, || {
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
+        handle.reconcile_participants(&[legacy_participant], &[]);
+    });
+    assert!(
+        handle
+            .live_tracks(ParticipantVideoSource::ScreenShare)
+            .is_empty()
+    );
+}
+
+#[test]
+fn legacy_rejoin_with_changed_join_time_releases_stale_video() {
+    let dom = VirtualDom::new(|| rsx! {});
+    let handle = video_handle(&dom);
+    let mut previous = participant_session("peer", "2026-10-28T09:00:00Z");
+    let mut current = participant_session("peer", "2026-10-28T09:01:00Z");
+    previous.session_id.clear();
+    current.session_id.clear();
+
+    dom.in_scope(ScopeId::ROOT, || {
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
+        handle.reconcile_participants(&[previous], &[current]);
+    });
+
+    assert!(
+        handle
+            .live_tracks(ParticipantVideoSource::ScreenShare)
+            .is_empty()
+    );
+}
+
+#[test]
+fn legacy_presence_with_unchanged_join_time_keeps_static_video() {
+    let dom = VirtualDom::new(|| rsx! {});
+    let handle = video_handle(&dom);
+    let mut participant = participant_session("peer", "2026-10-28T09:00:00Z");
+    participant.session_id.clear();
+
+    dom.in_scope(ScopeId::ROOT, || {
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
+        handle.reconcile_participants(&[participant.clone()], &[participant]);
+    });
+
+    assert_eq!(
+        handle.live_tracks(ParticipantVideoSource::ScreenShare),
+        vec![("peer".to_owned(), Uuid::from_u128(1))]
+    );
+}
+
+#[test]
 fn leaving_the_call_discards_buffered_screen_frames() {
     let dom = VirtualDom::new(|| rsx! {});
     let handle = video_handle(&dom);
@@ -243,9 +394,49 @@ fn leaving_the_call_discards_buffered_screen_frames() {
         handle.clear();
     });
 
-    let mut receiver = handle.subscribe_stream(ParticipantVideoSource::ScreenShare, "peer".into());
+    let mut receiver = handle.subscribe_stream(
+        ParticipantVideoSource::ScreenShare,
+        "peer".into(),
+        uuid::Uuid::from_u128(1),
+    );
 
     assert!(receiver.try_recv().is_err());
+}
+
+#[test]
+fn same_user_video_sessions_remain_independent_when_one_leaves() {
+    let dom = VirtualDom::new(|| rsx! {});
+    let handle = video_handle(&dom);
+    let second_track_id = uuid::Uuid::from_u128(2);
+    let mut second_frame = frame(0, true);
+    second_frame.track_id = second_track_id;
+    let second_session = cheenhub_contracts::realtime::VoiceRoomParticipant {
+        session_id: second_track_id.to_string(),
+        ..participant_session("peer", "2026-10-28T09:00:00Z")
+    };
+
+    dom.in_scope(ScopeId::ROOT, || {
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, frame(0, true));
+        handle.publish_frame(ParticipantVideoSource::ScreenShare, second_frame.clone());
+        handle.reconcile_participants(
+            &[
+                participant_session("peer", "2026-10-28T09:00:00Z"),
+                second_session.clone(),
+            ],
+            &[second_session],
+        );
+    });
+
+    assert_eq!(
+        handle.live_tracks(ParticipantVideoSource::ScreenShare),
+        vec![("peer".to_owned(), second_track_id)],
+    );
+    let mut remaining_frames = handle.subscribe_stream(
+        ParticipantVideoSource::ScreenShare,
+        "peer".to_owned(),
+        second_track_id,
+    );
+    assert_eq!(remaining_frames.try_recv().unwrap(), second_frame);
 }
 
 #[test]

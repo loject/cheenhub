@@ -11,7 +11,6 @@ use crate::state::AppState;
 
 use super::VoiceChatApplicationError;
 use super::parse_id;
-use super::presence::active_presence_for_user;
 
 /// Рассылает участникам комнаты событие остановки видеопотока отправителя.
 pub(crate) async fn stop_video_stream(
@@ -23,7 +22,10 @@ pub(crate) async fn stop_video_stream(
 ) -> Result<(), VoiceChatApplicationError> {
     let server_id = parse_id(&request.server_id, "Сервер не найден.")?;
     let room_id = parse_id(&request.room_id, "Комната не найдена.")?;
-    let Some(presence) = active_presence_for_user(state, &room_id, user_id) else {
+    let Some(presence) = state
+        .voice_presence_store
+        .presence_for_stream(&realtime_stream_id, user_id)
+    else {
         return Err(VoiceChatApplicationError::NotFound(
             "Пользователь не находится в этой голосовой комнате.".to_owned(),
         ));
@@ -94,6 +96,7 @@ pub(crate) async fn stop_video_stream(
                 server_id: server_id.to_string(),
                 room_id: room_id.to_string(),
                 user_id: user_id.to_string(),
+                session_id: presence.session_id.to_string(),
                 source: request.source,
             },
         )

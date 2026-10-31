@@ -11,10 +11,10 @@ use wasm_bindgen::prelude::*;
 
 use crate::microphone_core::{
     CoreActivationMode, VoiceActivationConfig, VoiceActivityDetector, apply_input_gain,
-    duration_us, rms_level,
+    duration_us, new_microphone_capture_sequence, rms_level,
 };
 
-const MICROPHONE_WORKER_ABI_VERSION: u32 = 9;
+const MICROPHONE_WORKER_ABI_VERSION: u32 = 12;
 
 /// Возвращает версию ABI worker микрофона.
 #[wasm_bindgen]
@@ -107,12 +107,18 @@ impl MicrophoneWorkerProcessor {
         vad_release_delay_us: u32,
         input_gain: f32,
         room_id: &str,
+        sender_session_id: &str,
     ) -> Result<MicrophoneWorkerProcessor, JsValue> {
         if channels != 1 {
             return Err(js_error("microphone worker supports only mono input"));
         }
         let room_id = Uuid::parse_str(room_id)
             .map_err(|error| js_error(format!("invalid voice room id: {error}")))?;
+        let sender_session_id = Uuid::parse_str(sender_session_id)
+            .map_err(|error| js_error(format!("invalid voice session id: {error}")))?;
+        if sender_session_id.is_nil() {
+            return Err(js_error("voice session id must not be nil"));
+        }
         let mode = match activation_mode {
             "always_active" => CoreActivationMode::AlwaysActive,
             "voice_activated" => CoreActivationMode::VoiceActivated,
@@ -136,8 +142,8 @@ impl MicrophoneWorkerProcessor {
             sample_rate_hz,
             input_gain,
             room_id,
-            track_id: Uuid::new_v4(),
-            sequence: 0,
+            track_id: sender_session_id,
+            sequence: new_microphone_capture_sequence(),
         })
     }
 

@@ -31,7 +31,22 @@ pub(crate) struct AudioPlaybackHandle {
 
 impl AudioPlaybackHandle {
     /// Завершает системную дорожку на платформе без воспроизведения.
-    pub(crate) fn stop_system_audio(&self, _sender_user_id: &str, _track_id: uuid::Uuid) {}
+    pub(crate) fn stop_system_audio(
+        &self,
+        _sender_user_id: &str,
+        _session_id: uuid::Uuid,
+        _track_id: uuid::Uuid,
+    ) {
+    }
+    /// Завершает микрофонную сессию на платформе без воспроизведения.
+    pub(crate) fn stop_microphone_session(&self, _sender_user_id: &str, _session_id: uuid::Uuid) {}
+    /// Повторно разрешает сессию на платформе без воспроизведения.
+    pub(crate) fn reactivate_microphone_session(
+        &self,
+        _sender_user_id: &str,
+        _session_id: uuid::Uuid,
+    ) {
+    }
     /// Возвращает, отключено ли входящее воспроизведение.
     pub(crate) fn is_muted(&self) -> bool {
         (self.muted)()

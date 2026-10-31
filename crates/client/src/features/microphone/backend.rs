@@ -25,6 +25,8 @@ pub(crate) struct MicrophoneUplinkConfig {
     pub(crate) grant: String,
     /// Идентификатор целевой комнаты.
     pub(crate) room_id: String,
+    /// UUID основной голосовой сессии для отправляемых медиадатаграмм.
+    pub(crate) sender_session_id: String,
     /// URL основного WebTransport endpoint.
     pub(crate) realtime_url: String,
     /// URL WebSocket fallback.

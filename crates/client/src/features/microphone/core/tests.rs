@@ -80,6 +80,19 @@ fn source_switch_preserves_open_gate_but_resets_source_timers() {
 }
 
 #[test]
+fn new_microphone_capture_starts_at_zero_with_random_nonzero_generation() {
+    let initial = new_microphone_capture_sequence();
+    assert_ne!(initial >> 32, 0);
+    assert_eq!(initial as u32, 0);
+
+    let generations = (0..8)
+        .map(|_| new_microphone_capture_sequence() >> 32)
+        .collect::<std::collections::HashSet<_>>();
+    assert!(generations.len() > 1);
+    assert!(!generations.contains(&0));
+}
+
+#[test]
 fn diagnostics_follow_neural_probability_and_rms_fallback() {
     let mut detector = VoiceActivityDetector::new(VoiceActivationConfig {
         mode: CoreActivationMode::VoiceActivated,

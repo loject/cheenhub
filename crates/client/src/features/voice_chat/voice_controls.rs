@@ -88,6 +88,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
         screen_share_label.to_owned()
     };
     let toggle_microphone = microphone.clone();
+    let toggle_microphone_voice = voice.clone();
     let toggle_camera = camera.clone();
     let toggle_screen_share = screen_share.clone();
     let leave_microphone = microphone.clone();
@@ -108,6 +109,8 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
     let camera_room_id = target.room_id.clone();
     let camera_current_user_id = current_user_id.clone();
     let camera_participant_video = participant_video.clone();
+    let camera_voice = voice.clone();
+    let screen_voice = voice.clone();
     let screen_sender_scope = voice.state.origin_scope();
     let screen_realtime_handle = realtime_handle.clone();
     let screen_server_id = target.server_id.clone();
@@ -142,6 +145,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                             microphone_realtime_handle.clone(),
                             microphone_server_id.clone(),
                             microphone_room_id.clone(),
+                            Some(toggle_microphone_voice.clone()),
                         );
                     },
                     span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "{microphone_label}" }
@@ -190,10 +194,14 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                         let send_room_id = camera_room_id.clone();
                         let local_user_id = camera_current_user_id.clone();
                         let local_video = camera_participant_video.clone();
+                        let send_voice = camera_voice.clone();
                         toggle_camera.toggle(Rc::new(move |frame| {
                             let frame_realtime = send_realtime.clone();
                             let frame_server_id = send_server_id.clone();
                             let frame_room_id = send_room_id.clone();
+                            let Some(media_encoding) = send_voice.outbound_session_id_for(&frame_server_id, &frame_room_id) else {
+                                return;
+                            };
                             local_video.publish_frame(
                                 ParticipantVideoSource::Camera,
                                 ParticipantVideoFrame::from_local_camera(
@@ -208,6 +216,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                                     &frame_server_id,
                                     &frame_room_id,
                                     frame,
+                                    media_encoding,
                                 )
                                 .await
                                 {
@@ -253,6 +262,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                             screen_realtime_handle.clone(),
                             screen_server_id.clone(),
                             screen_room_id.clone(),
+                            screen_voice.clone(),
                         );
                         let local_user_id = screen_current_user_id.clone();
                         let local_video = screen_participant_video.clone();
@@ -347,6 +357,7 @@ fn screen_frame_sender_callback(
     realtime: RealtimeHandle,
     server_id: String,
     room_id: String,
+    voice: VoiceConnectionHandle,
 ) -> ScreenShareFrameCallback {
     let pending = Rc::new(RefCell::new(PendingScreenFrames::default()));
     let (wake_sender, wake_receiver) = mpsc::channel(1);
@@ -357,6 +368,7 @@ fn screen_frame_sender_callback(
         realtime,
         server_id,
         room_id,
+        voice,
     );
     let wake_sender = RefCell::new(wake_sender);
 
@@ -373,6 +385,7 @@ fn spawn_screen_frame_sender(
     realtime: RealtimeHandle,
     server_id: String,
     room_id: String,
+    voice: VoiceConnectionHandle,
 ) {
     Runtime::current().in_scope(owner_scope, || {
         spawn(async move {
@@ -383,8 +396,17 @@ fn spawn_screen_frame_sender(
                     let Some(frame) = frame else {
                         break;
                     };
-                    if let Err(error) =
-                        realtime::send_screen_frame(&realtime, &server_id, &room_id, frame).await
+                    let Some(media_encoding) = voice.outbound_session_id_for(&server_id, &room_id) else {
+                        break;
+                    };
+                    if let Err(error) = realtime::send_screen_frame(
+                        &realtime,
+                        &server_id,
+                        &room_id,
+                        frame,
+                        media_encoding,
+                    )
+                    .await
                     {
                         warn!(
                             %error,

@@ -1,8 +1,11 @@
 //! Регрессии времени жизни отправки демонстрации экрана при смене вкладки.
 
 use super::*;
+use crate::features::microphone::MicrophoneHandle;
 use crate::features::realtime::create_handle;
 use crate::features::screen_share::ScreenShareCodec;
+use crate::features::voice_chat::state::{VoiceConnectionParts, VoiceConnectionState};
+use cheenhub_contracts::rest::AuthUser;
 use futures_util::FutureExt;
 
 #[derive(Clone)]
@@ -10,6 +13,7 @@ struct SenderScenario {
     pending: Rc<RefCell<PendingScreenFrames>>,
     wake_receiver: Rc<RefCell<Option<mpsc::Receiver<()>>>>,
     controls_visible: Signal<bool>,
+    voice: VoiceConnectionHandle,
 }
 
 fn scenario_app() -> Element {
@@ -32,9 +36,38 @@ fn SenderControls() -> Element {
             create_handle(),
             "server".into(),
             "00000000-0000-0000-0000-000000000001".into(),
+            scenario.voice.clone(),
         );
     });
     rsx! { button { "Демонстрация экрана" } }
+}
+
+fn disconnected_voice() -> VoiceConnectionHandle {
+    let microphone = MicrophoneHandle::for_test();
+    VoiceConnectionHandle::new(VoiceConnectionParts {
+        state: Signal::new(VoiceConnectionState::Disconnected),
+        kicked_from_room: Signal::new(None),
+        join_confirmation: Signal::new(None),
+        eviction_notice: Signal::new(None),
+        pending_eviction: Rc::new(RefCell::new(None)),
+        disconnected_presence: Rc::new(RefCell::new(None)),
+        speaking_users: Signal::new(Vec::new()),
+        room_snapshots: Signal::new(Vec::new()),
+        remembered_room: Signal::new(None),
+        media_session: Signal::new(None),
+        speaking_generations: Rc::new(RefCell::new(std::collections::HashMap::new())),
+        join_generation: Rc::new(std::cell::Cell::new(0)),
+        realtime: create_handle(),
+        microphone,
+        current_user: AuthUser {
+            id: "test-user".into(),
+            nickname: "Пользователь".into(),
+            email: "test@example.com".into(),
+            registered_at: "2026-01-01T00:00:00Z".into(),
+            has_password: false,
+            avatar_url: None,
+        },
+    })
 }
 
 fn frame(sequence: u64) -> EncodedScreenShareFrame {
@@ -66,6 +99,7 @@ fn screen_sender_consumes_frames_after_controls_are_unmounted() {
         pending: pending.clone(),
         wake_receiver: Rc::new(RefCell::new(Some(wake_receiver))),
         controls_visible: Signal::new(true),
+        voice: disconnected_voice(),
     });
     dom.provide_root_context(scenario.clone());
     dom.rebuild_in_place();

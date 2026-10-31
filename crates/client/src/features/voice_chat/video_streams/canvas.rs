@@ -13,6 +13,7 @@ use super::{ParticipantVideoHandle, ParticipantVideoSource, backend::Participant
 pub(crate) fn ParticipantVideoCanvas(
     user_id: String,
     source: ParticipantVideoSource,
+    track_id: Uuid,
     on_dimensions: Option<EventHandler<(u32, u32)>>,
 ) -> Element {
     let video = use_context::<ParticipantVideoHandle>();
@@ -37,7 +38,7 @@ pub(crate) fn ParticipantVideoCanvas(
         let owner = renderer_owner.clone();
         move || {
             spawn(async move {
-                let mut frames = video.subscribe_stream(source, user_id.clone());
+                let mut frames = video.subscribe_stream(source, user_id.clone(), track_id);
                 let on_dimensions = Rc::new(move |width, height| {
                     if let Some(handler) = on_dimensions {
                         handler.call((width, height));

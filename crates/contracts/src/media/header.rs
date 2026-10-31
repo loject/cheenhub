@@ -1,15 +1,16 @@
-//! Общий разбор заголовка v1/v2 без копирования закодированного медиа.
+//! Общий разбор заголовков v1/v2/v3 без копирования закодированной полезной нагрузки.
 
 use super::{
     LEGACY_HEADER_LEN, MAGIC, MediaAudioSource, MediaCodec, MediaDatagramError, MediaDatagramKind,
-    TRACK_HEADER_LEN, copy_array, validate_track,
+    SESSION_HEADER_LEN, TRACK_HEADER_LEN, copy_array, validate_track,
 };
 use uuid::Uuid;
 
 /// Проверенный заголовок медиадатаграммы для owned decoder и серверного relay.
 ///
-/// Первые 64 байта одинаковы у v1 и v2; v2 добавляет UUID, назначение аудио
-/// и число каналов. Payload остаётся исходными байтами кодека без вложенной упаковки.
+/// Первые 64 байта одинаковы у v1/v2/v3; v2 добавляет UUID дорожки, назначение
+/// аудио и число каналов, а серверная v3 — подтверждённый UUID голосовой сессии.
+/// Payload остаётся исходными байтами кодека без вложенной упаковки.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MediaDatagramHeader {
     /// Вид кадра, определяющий обработчик медиа.
@@ -32,8 +33,11 @@ pub struct MediaDatagramHeader {
     pub track_id: Uuid,
     /// Назначение аудио v2; `None` у видео и legacy v1.
     pub audio_source: Option<MediaAudioSource>,
-    /// Число каналов аудио v2; ноль у видео и legacy v1.
+    /// Число каналов аудио v2/v3; ноль у видео и legacy v1.
     pub audio_channels: u8,
+    /// Подтверждённая сервером голосовая сессия отправителя в v3.
+    /// У клиентских v1/v2 пакетов отсутствует.
+    pub voice_session_id: Option<Uuid>,
     /// Объявленная длина закодированной полезной нагрузки.
     pub payload_len: usize,
     header_len: usize,
@@ -41,9 +45,9 @@ pub struct MediaDatagramHeader {
 }
 
 impl MediaDatagramHeader {
-    /// Разбирает v1/v2, проверяя размер всего пакета и метаданные дорожки.
+    /// Разбирает v1/v2/v3, проверяя длину пакета и метаданные дорожки.
     ///
-    /// Дополнительные trailing bytes игнорируются, как в legacy decoder.
+    /// Байты после объявленного пакета игнорируются.
     ///
     /// # Errors
     /// Возвращает ошибку для усечённого пакета, неизвестного формата или неверной дорожки.
@@ -57,6 +61,7 @@ impl MediaDatagramHeader {
         let header_len = match bytes[4] {
             1 => LEGACY_HEADER_LEN,
             2 => TRACK_HEADER_LEN,
+            3 => SESSION_HEADER_LEN,
             version => return Err(MediaDatagramError::UnknownVersion(version)),
         };
         if bytes.len() < header_len {
@@ -64,7 +69,7 @@ impl MediaDatagramHeader {
         }
         let kind = MediaDatagramKind::from_u8(bytes[5])?;
         let codec = MediaCodec::from_u8(bytes[6])?;
-        let (track_id, audio_source, audio_channels) = if bytes[4] == 2 {
+        let (track_id, audio_source, audio_channels) = if bytes[4] >= 2 {
             let track_id = Uuid::from_bytes(copy_array(&bytes[64..80]));
             if track_id.is_nil() {
                 return Err(MediaDatagramError::InvalidTrack);
@@ -80,6 +85,15 @@ impl MediaDatagramHeader {
             (Uuid::nil(), None, 0)
         };
         validate_track(kind, codec, track_id, audio_source, audio_channels)?;
+        let voice_session_id = if bytes[4] == 3 {
+            let session_id = Uuid::from_bytes(copy_array(&bytes[82..98]));
+            if session_id.is_nil() {
+                return Err(MediaDatagramError::InvalidTrack);
+            }
+            Some(session_id)
+        } else {
+            None
+        };
         let payload_len = u32::from_be_bytes(copy_array(&bytes[60..64])) as usize;
         let wire_len = header_len
             .checked_add(payload_len)
@@ -99,6 +113,7 @@ impl MediaDatagramHeader {
             track_id,
             audio_source,
             audio_channels,
+            voice_session_id,
             payload_len,
             header_len,
             wire_len,

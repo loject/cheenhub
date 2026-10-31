@@ -13,6 +13,7 @@ use crate::features::microphone::{EncodedMicrophoneFrame, MicrophoneFrameCallbac
 use crate::features::realtime::RealtimeHandle;
 
 use super::realtime;
+use super::state::VoiceConnectionHandle;
 
 const SLOW_VOICE_FRAME_SEND_WARN_AFTER: Duration = Duration::from_millis(40);
 const VOICE_FRAME_SEND_WARNING_INTERVAL_MS: u64 = 5_000;
@@ -57,6 +58,7 @@ pub(super) fn voice_frame_sender_callback(
     realtime: RealtimeHandle,
     server_id: String,
     room_id: String,
+    voice: VoiceConnectionHandle,
 ) -> MicrophoneFrameCallback {
     let pending = Rc::new(RefCell::new(PendingVoiceFrame::default()));
     let (wake_sender, wake_receiver) = mpsc::channel(1);
@@ -66,6 +68,7 @@ pub(super) fn voice_frame_sender_callback(
         realtime,
         server_id.clone(),
         room_id.clone(),
+        voice,
     );
     let wake_sender = RefCell::new(wake_sender);
     let sender_closed_logged = Cell::new(false);
@@ -93,6 +96,7 @@ fn spawn_voice_frame_sender(
     realtime: RealtimeHandle,
     server_id: String,
     room_id: String,
+    voice: VoiceConnectionHandle,
 ) {
     spawn(async move {
         let last_slow_send_warning_ms = Cell::new(0);
@@ -121,8 +125,19 @@ fn spawn_voice_frame_sender(
             let frame_sequence = frame.sequence;
             let frame_duration_us = frame.duration_us;
             let payload_bytes = frame.bytes.len();
+            let Some(sender_session_id) = voice.outbound_session_id_for(&server_id, &room_id)
+            else {
+                continue;
+            };
             let started_at = Instant::now();
-            let result = realtime::send_voice_frame(&realtime, &server_id, &room_id, frame).await;
+            let result = realtime::send_voice_frame(
+                &realtime,
+                &server_id,
+                &room_id,
+                sender_session_id,
+                frame,
+            )
+            .await;
             let elapsed = started_at.elapsed();
             if elapsed >= SLOW_VOICE_FRAME_SEND_WARN_AFTER
                 && should_emit_voice_frame_warning(

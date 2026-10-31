@@ -7,12 +7,13 @@ mod native;
 mod web;
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use dioxus::core::{Runtime, ScopeId};
 use dioxus::prelude::*;
 use futures_channel::mpsc;
+use uuid::Uuid;
 
 use crate::features::camera::EncodedCameraFrame;
 use crate::features::runtime::sleep_ms;
@@ -27,7 +28,16 @@ const PARTICIPANT_VIDEO_RELEASE_TIMEOUT_MS: u32 = 1_500;
 type ParticipantVideoSubscribers =
     Rc<RefCell<HashMap<ParticipantVideoKey, delivery::ParticipantVideoDelivery>>>;
 type ParticipantVideoGenerations = Rc<RefCell<HashMap<ParticipantVideoKey, u64>>>;
-type ParticipantVideoBlockedStreams = Rc<RefCell<HashSet<ParticipantVideoKey>>>;
+type ParticipantVideoBlockedStreams =
+    Rc<RefCell<HashMap<ParticipantVideoKey, ParticipantVideoBlockReason>>>;
+
+/// Причина блокировки кадров: остановленный источник можно перезапустить,
+/// завершённую голосовую сессию нельзя оживить поздним ключевым кадром.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::features::voice_chat) enum ParticipantVideoBlockReason {
+    AwaitingKeyFrame,
+    DepartedPresence,
+}
 
 /// Тип видеопотока внутри плитки участника.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -62,6 +72,8 @@ pub(crate) struct ParticipantVideoFrame {
     pub(crate) room_id: String,
     /// Идентификатор аутентифицированного отправителя.
     pub(crate) sender_user_id: String,
+    /// UUID видеодорожки, равный голосовой сессии отправителя; nil для локального preview.
+    pub(crate) track_id: Uuid,
     /// Локальная для отправителя последовательность пакетов.
     pub(crate) sequence: u64,
     /// Временная метка захвата или кодирования в микросекундах.
@@ -84,6 +96,7 @@ impl ParticipantVideoFrame {
         Self {
             room_id,
             sender_user_id,
+            track_id: Uuid::nil(),
             sequence: frame.sequence,
             timestamp_us: frame.timestamp_us,
             duration_us: frame.duration_us,
@@ -101,6 +114,7 @@ impl ParticipantVideoFrame {
         Self {
             room_id,
             sender_user_id,
+            track_id: Uuid::nil(),
             sequence: frame.sequence,
             timestamp_us: frame.timestamp_us,
             duration_us: frame.duration_us,
@@ -115,6 +129,7 @@ impl From<InboundVideoFrame> for ParticipantVideoFrame {
         Self {
             room_id: frame.room_id,
             sender_user_id: frame.sender_user_id,
+            track_id: frame.track_id,
             sequence: frame.sequence,
             timestamp_us: frame.timestamp_us,
             duration_us: frame.duration_us,
@@ -129,6 +144,7 @@ impl From<InboundVideoFrame> for ParticipantVideoFrame {
 pub(crate) struct ParticipantVideoActivity {
     source: ParticipantVideoSource,
     user_id: String,
+    track_id: Uuid,
 }
 
 /// Состояние видео участников внутри функции голосового чата.
@@ -161,12 +177,12 @@ impl ParticipantVideoHandle {
         }
     }
 
-    /// Возвращает идентификаторы пользователей, которые сейчас публикуют заданный источник.
-    pub(crate) fn live_user_ids(&self, source: ParticipantVideoSource) -> Vec<String> {
+    /// Возвращает активные видеодорожки с идентификатором пользователя и сессии.
+    pub(crate) fn live_tracks(&self, source: ParticipantVideoSource) -> Vec<(String, Uuid)> {
         (self.live_streams)()
             .into_iter()
             .filter(|activity| activity.source == source)
-            .map(|activity| activity.user_id)
+            .map(|activity| (activity.user_id, activity.track_id))
             .collect()
     }
 
@@ -177,7 +193,8 @@ impl ParticipantVideoHandle {
         frame: ParticipantVideoFrame,
     ) {
         Runtime::current().in_scope(self.owner_scope, || {
-            let key = ParticipantVideoKey::new(source, frame.sender_user_id.clone());
+            let key =
+                ParticipantVideoKey::new(source, frame.sender_user_id.clone(), frame.track_id);
             if self.should_drop_blocked_frame(&key, frame.key_frame) {
                 debug!(
                     user_id = %key.user_id,
@@ -196,16 +213,44 @@ impl ParticipantVideoHandle {
         });
     }
 
+    /// Останавливает одну сессию; старое событие без UUID очищает источник пользователя.
+    pub(crate) fn release_stream_for_event(
+        &self,
+        source: ParticipantVideoSource,
+        user_id: &str,
+        session_id: Uuid,
+    ) {
+        if !session_id.is_nil() {
+            self.release_stream(source, user_id, session_id);
+            return;
+        }
+        for (stream_user_id, track_id) in self.live_tracks(source) {
+            if stream_user_id == user_id {
+                self.release_stream(source, user_id, track_id);
+            }
+        }
+    }
+
     /// Немедленно освобождает индикатор активности одного видеопотока.
-    pub(crate) fn release_stream(&self, source: ParticipantVideoSource, user_id: &str) {
-        let key = ParticipantVideoKey::new(source, user_id.to_owned());
+    pub(crate) fn release_stream(
+        &self,
+        source: ParticipantVideoSource,
+        user_id: &str,
+        track_id: Uuid,
+    ) {
+        let key = ParticipantVideoKey::new(source, user_id.to_owned(), track_id);
         self.generations.borrow_mut().remove(&key);
-        self.blocked_streams.borrow_mut().insert(key.clone());
+        self.blocked_streams
+            .borrow_mut()
+            .insert(key.clone(), ParticipantVideoBlockReason::AwaitingKeyFrame);
         self.subscribers.borrow_mut().remove(&key);
         let mut next_streams = (self.live_streams)();
         let previous_len = next_streams.len();
-        next_streams
-            .retain(|activity| activity.source != key.source || activity.user_id != key.user_id);
+        next_streams.retain(|activity| {
+            activity.source != key.source
+                || activity.user_id != key.user_id
+                || activity.track_id != key.track_id
+        });
         if next_streams.len() == previous_len {
             return;
         }
@@ -219,34 +264,95 @@ impl ParticipantVideoHandle {
         );
     }
 
-    /// Сбрасывает видео участников, чьё голосовое присутствие завершилось или сменило сессию.
+    /// Запрещает поздним кадрам повторно открыть видео покинувшей сессии.
+    fn retire_stream_for_event(
+        &self,
+        source: ParticipantVideoSource,
+        user_id: &str,
+        session_id: Uuid,
+    ) {
+        let tracks = if session_id.is_nil() {
+            self.live_tracks(source)
+                .into_iter()
+                .filter_map(|(owner, id)| (owner == user_id).then_some(id))
+                .collect()
+        } else {
+            vec![session_id]
+        };
+        for track_id in tracks {
+            self.release_stream(source, user_id, track_id);
+            self.blocked_streams.borrow_mut().insert(
+                ParticipantVideoKey::new(source, user_id.to_owned(), track_id),
+                ParticipantVideoBlockReason::DepartedPresence,
+            );
+        }
+    }
+
+    /// Сбрасывает только видео завершившихся голосовых сессий участников.
     ///
-    /// Сохраняет неподвижную демонстрацию при неизменном `joined_at`: отсутствие
-    /// кадров само по себе не означает завершение захвата экрана.
+    /// Неподвижная демонстрация остаётся видимой, пока в снимке комнаты
+    /// сохраняются та же сессия и время входа, даже если давно не было кадров.
     pub(crate) fn reconcile_participants(
         &self,
         previous: &[cheenhub_contracts::realtime::VoiceRoomParticipant],
         current: &[cheenhub_contracts::realtime::VoiceRoomParticipant],
-        current_user_id: &str,
     ) {
         for participant in previous {
-            if participant.user_id == current_user_id {
-                continue;
-            }
             let still_same_session = current.iter().any(|next| {
-                next.user_id == participant.user_id && next.joined_at == participant.joined_at
+                next.user_id == participant.user_id
+                    && next.session_id == participant.session_id
+                    && next.joined_at == participant.joined_at
             });
             if still_same_session {
                 continue;
             }
+            let track_id = match Uuid::parse_str(&participant.session_id) {
+                Ok(id) => id,
+                Err(_) if participant.session_id.is_empty() => Uuid::nil(),
+                Err(_) => {
+                    warn!(
+                        user_id = %participant.user_id,
+                        session_id = %participant.session_id,
+                        "cannot release participant video for invalid voice session id"
+                    );
+                    continue;
+                }
+            };
 
-            self.release_stream(ParticipantVideoSource::Camera, &participant.user_id);
-            self.release_stream(ParticipantVideoSource::ScreenShare, &participant.user_id);
+            self.retire_stream_for_event(
+                ParticipantVideoSource::Camera,
+                &participant.user_id,
+                track_id,
+            );
+            self.retire_stream_for_event(
+                ParticipantVideoSource::ScreenShare,
+                &participant.user_id,
+                track_id,
+            );
             debug!(
                 user_id = %participant.user_id,
-                new_session = current.iter().any(|next| next.user_id == participant.user_id),
+                %track_id,
+                joined_at = %participant.joined_at,
                 "cleared participant video sources after voice presence changed"
             );
+        }
+        for participant in current {
+            let same_presence = previous.iter().any(|old| {
+                old.user_id == participant.user_id
+                    && old.session_id == participant.session_id
+                    && old.joined_at == participant.joined_at
+            });
+            if same_presence {
+                continue;
+            }
+            let Ok(session_id) = Uuid::parse_str(&participant.session_id) else {
+                continue;
+            };
+            self.blocked_streams.borrow_mut().retain(|key, reason| {
+                *reason != ParticipantVideoBlockReason::DepartedPresence
+                    || key.user_id != participant.user_id
+                    || key.track_id != session_id
+            });
         }
     }
 
@@ -255,10 +361,11 @@ impl ParticipantVideoHandle {
         &self,
         source: ParticipantVideoSource,
         user_id: String,
+        track_id: Uuid,
     ) -> mpsc::UnboundedReceiver<ParticipantVideoFrame> {
         self.subscribers
             .borrow_mut()
-            .entry(ParticipantVideoKey::new(source, user_id))
+            .entry(ParticipantVideoKey::new(source, user_id, track_id))
             .or_default()
             .subscribe()
     }
@@ -292,15 +399,17 @@ impl ParticipantVideoHandle {
         };
 
         let mut next_streams = (self.live_streams)();
-        if next_streams
-            .iter()
-            .any(|activity| activity.source == key.source && activity.user_id == key.user_id)
-        {
+        if next_streams.iter().any(|activity| {
+            activity.source == key.source
+                && activity.user_id == key.user_id
+                && activity.track_id == key.track_id
+        }) {
             return;
         }
         next_streams.push(ParticipantVideoActivity {
             source: key.source,
             user_id: key.user_id.clone(),
+            track_id: key.track_id,
         });
         let mut live_streams = self.live_streams;
         live_streams.set(next_streams);
@@ -330,12 +439,16 @@ impl ParticipantVideoHandle {
                     }
                     Some(_) => {
                         generations.borrow_mut().remove(&key);
-                        blocked_streams.borrow_mut().insert(key.clone());
+                        blocked_streams
+                            .borrow_mut()
+                            .insert(key.clone(), ParticipantVideoBlockReason::AwaitingKeyFrame);
                         subscribers.borrow_mut().remove(&key);
                         let mut next_streams = live_streams();
                         let previous_len = next_streams.len();
                         next_streams.retain(|activity| {
-                            activity.source != key.source || activity.user_id != key.user_id
+                            activity.source != key.source
+                                || activity.user_id != key.user_id
+                                || activity.track_id != key.track_id
                         });
                         if next_streams.len() != previous_len {
                             live_streams.set(next_streams);
@@ -354,13 +467,12 @@ impl ParticipantVideoHandle {
     }
 
     fn should_drop_blocked_frame(&self, key: &ParticipantVideoKey, key_frame: bool) -> bool {
-        if !self.blocked_streams.borrow().contains(key) {
-            return false;
+        match self.blocked_streams.borrow().get(key).copied() {
+            None => return false,
+            Some(ParticipantVideoBlockReason::DepartedPresence) => return true,
+            Some(ParticipantVideoBlockReason::AwaitingKeyFrame) if !key_frame => return true,
+            Some(ParticipantVideoBlockReason::AwaitingKeyFrame) => {}
         }
-        if !key_frame {
-            return true;
-        }
-
         self.blocked_streams.borrow_mut().remove(key);
         false
     }
@@ -371,11 +483,16 @@ impl ParticipantVideoHandle {
 pub(super) struct ParticipantVideoKey {
     source: ParticipantVideoSource,
     user_id: String,
+    track_id: Uuid,
 }
 
 impl ParticipantVideoKey {
-    fn new(source: ParticipantVideoSource, user_id: String) -> Self {
-        Self { source, user_id }
+    fn new(source: ParticipantVideoSource, user_id: String, track_id: Uuid) -> Self {
+        Self {
+            source,
+            user_id,
+            track_id,
+        }
     }
 }
 

@@ -82,6 +82,7 @@ pub(super) fn ActiveVoiceNotificationControls() -> Element {
                                 realtime.clone(),
                                 target.server_id,
                                 target.room_id,
+                                voice.clone(),
                             );
                         } else {
                             microphone_uplink::toggle(
@@ -89,6 +90,7 @@ pub(super) fn ActiveVoiceNotificationControls() -> Element {
                                 realtime.clone(),
                                 target.server_id,
                                 target.room_id,
+                                Some(voice.clone()),
                             );
                         }
                     }

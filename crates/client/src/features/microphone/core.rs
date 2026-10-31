@@ -167,6 +167,16 @@ pub(crate) fn duration_us(frames: usize, sample_rate_hz: u32) -> u32 {
     .min(u64::from(u32::MAX)) as u32
 }
 
+/// Создаёт начальный sequence нового захвата микрофона.
+///
+/// Старшие 32 бита содержат случайное ненулевое поколение захвата, младшие
+/// начинаются с нуля. Это позволяет приёмнику отличить перезапуск кодировщика
+/// от перестановки кадров без изменения формата медиадатаграммы.
+pub(crate) fn new_microphone_capture_sequence() -> u64 {
+    let generation = (uuid::Uuid::new_v4().as_u128() as u32).max(1);
+    u64::from(generation) << 32
+}
+
 #[cfg(test)]
 // Файл подключается и как `microphone::core` из `features/microphone/mod.rs`, и как
 // `microphone_core` через `#[path]` в `worker_lib.rs`. Во втором случае каталог дочернего модуля

@@ -9,6 +9,7 @@ pub use header::MediaDatagramHeader;
 const MAGIC: &[u8; 4] = b"CHUB";
 const LEGACY_HEADER_LEN: usize = 64;
 const TRACK_HEADER_LEN: usize = 82;
+const SESSION_HEADER_LEN: usize = 98;
 
 /// Назначение аудиодорожки; не заменяет серверную проверку права публикации.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -105,7 +106,7 @@ pub struct MediaDatagram {
 }
 
 impl MediaDatagram {
-    /// Кодирует v2 для именованной дорожки и v1 для legacy-пакета с nil UUID.
+    /// Кодирует v2 для дорожки с UUID и v1 для legacy-пакета без дорожки.
     ///
     /// # Errors
     /// Возвращает ошибку при некорректных метаданных дорожки или слишком большом payload.
@@ -147,7 +148,8 @@ impl MediaDatagram {
         Ok(bytes)
     }
 
-    /// Декодирует v1/v2; legacy-аудио получает nil UUID, `None` и ноль каналов.
+    /// Декодирует v1/v2/v3; legacy-аудио получает nil UUID, `None` и ноль каналов.
+    /// Серверное поле голосовой сессии v3 доступно через `MediaDatagramHeader`.
     ///
     /// # Errors
     /// Возвращает ошибку заголовка, метаданных или усечённой полезной нагрузки.

@@ -1,7 +1,7 @@
 //! Провайдер контекста голосового соединения.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
@@ -28,12 +28,13 @@ use super::notification_sounds::{
 };
 use super::realtime;
 use super::state::{
-    VoiceConnectionHandle, VoiceConnectionParts, VoiceConnectionState, VoiceRoomTarget,
-    VoiceRoomTargetKind,
+    VoiceConnectionHandle, VoiceConnectionParts, VoiceConnectionState, VoiceMediaSession,
+    VoiceRoomTarget, VoiceRoomTargetKind,
 };
 use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
-use super::voice_call_platform::{self, VoiceAudioFocusEvent};
+use super::voice_call_platform;
 use super::voice_recovery;
+use super::voice_session_dialogs::VoiceSessionDialogs;
 
 /// Предоставляет состояние голосового соединения аутентифицированным компонентам приложения.
 /// TODO: review, выглядит сложно и как куча бойлерплейта
@@ -48,17 +49,23 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let network_quality = use_context::<NetworkQualityHandle>();
     let state = use_signal(|| VoiceConnectionState::Disconnected);
     let mut platform_call_active = use_signal(|| false);
-    let mut voice_audio_focused = use_signal(|| true);
+    let voice_audio_focused = use_signal(|| true);
     let kicked_from_room = use_signal(|| None::<String>);
+    let join_confirmation = use_signal(|| None::<super::state::VoiceJoinConfirmation>);
+    let eviction_notice =
+        use_signal(|| None::<cheenhub_contracts::realtime::VoicePresenceEvictionReason>);
+    let pending_eviction = use_hook(|| Rc::new(RefCell::new(None)));
+    let disconnected_presence = use_hook(|| Rc::new(RefCell::new(None)));
     let speaking_users = use_signal(Vec::new);
     let room_snapshots = use_signal(Vec::new);
     let remembered_room = use_signal(|| None::<VoiceRoomTarget>);
+    let media_session = use_signal(|| None::<VoiceMediaSession>);
     let speaking_generations = use_hook(|| Rc::new(RefCell::new(HashMap::<String, u64>::new())));
     let join_generation = use_hook(|| Rc::new(Cell::<u64>::new(0)));
     let participant_video_streams = use_signal(Vec::new);
     let participant_video_subscribers = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
     let participant_video_generations = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
-    let participant_video_blocked_streams = use_hook(|| Rc::new(RefCell::new(HashSet::new())));
+    let participant_video_blocked_streams = use_hook(|| Rc::new(RefCell::new(HashMap::new())));
     let participant_video = ParticipantVideoHandle::new(
         participant_video_streams,
         participant_video_subscribers,
@@ -69,6 +76,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let participant_video_context = participant_video.clone();
     use_context_provider(move || participant_video_context.clone());
     let mut microphone_target_room = use_signal(|| None::<String>);
+    let mut microphone_target_session_id = use_signal(|| None::<String>);
     let mut camera_target_room = use_signal(|| None::<LocalVideoTarget>);
     let mut screen_share_target_room = use_signal(|| None::<LocalVideoTarget>);
     let mut mic_paused_by_focus = use_signal(|| false);
@@ -83,9 +91,14 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let handle = VoiceConnectionHandle::new(VoiceConnectionParts {
         state,
         kicked_from_room,
+        join_confirmation,
+        eviction_notice,
+        pending_eviction,
+        disconnected_presence,
         speaking_users,
         room_snapshots,
         remembered_room,
+        media_session,
         speaking_generations,
         join_generation: join_generation.clone(),
         realtime: realtime.clone(),
@@ -109,38 +122,24 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     );
     use_voice_network_quality_runtime(
         state,
+        handle.clone(),
         current_user.id.clone(),
         realtime.clone(),
         network_quality,
     );
 
     voice_call_platform::use_background_realtime_activity(state, realtime.clone());
+    super::voice_eviction_subscription::use_voice_eviction_subscription(
+        realtime.clone(),
+        handle.clone(),
+    );
 
-    let snapshot_realtime = realtime.clone();
-    let snapshot_handle = handle.clone();
-    let snapshot_video = participant_video.clone();
-    let snapshot_current_user_id = current_user.id.clone();
-    use_hook(move || {
-        spawn(async move {
-            let mut snapshots = realtime::subscribe_voice_chat(&snapshot_realtime);
-            while let Some(snapshot) = snapshots.next().await {
-                if let VoiceConnectionState::Connected {
-                    target,
-                    participants,
-                } = snapshot_handle.state()
-                    && target.server_id == snapshot.server_id
-                    && target.room_id == snapshot.room_id
-                {
-                    snapshot_video.reconcile_participants(
-                        &participants,
-                        &snapshot.participants,
-                        &snapshot_current_user_id,
-                    );
-                }
-                snapshot_handle.apply_snapshot(snapshot);
-            }
-        })
-    });
+    super::voice_snapshot_subscription::use_voice_snapshot_subscription(
+        realtime.clone(),
+        handle.clone(),
+        participant_video.clone(),
+        playback.clone(),
+    );
     let bitrate_realtime = realtime.clone();
     let bitrate_microphone = microphone.clone();
     let bitrate_state = state;
@@ -165,26 +164,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             }
         })
     });
-    use_hook(move || {
-        spawn(async move {
-            let mut events = voice_call_platform::subscribe_voice_audio_focus();
-            while let Some(event) = events.next().await {
-                let focused = matches!(event, VoiceAudioFocusEvent::Gained);
-                voice_audio_focused.set(focused);
-                match event {
-                    VoiceAudioFocusEvent::Gained => {
-                        info!("Android voice-call audio focus gained");
-                    }
-                    VoiceAudioFocusEvent::LostTransient => {
-                        warn!("Android voice-call audio focus lost temporarily");
-                    }
-                    VoiceAudioFocusEvent::Lost => {
-                        warn!("Android voice-call audio focus lost");
-                    }
-                }
-            }
-        })
-    });
+    super::voice_audio_focus::use_voice_audio_focus(voice_audio_focused);
     super::inbound_audio::use_inbound_audio(
         realtime.clone(),
         playback.clone(),
@@ -193,7 +173,6 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         voice_audio_focused,
     );
     let screen_datagram_realtime = realtime.clone();
-    let screen_datagram_current_user_id = current_user.id.clone();
     let screen_datagram_video = participant_video.clone();
     use_hook(move || {
         spawn(async move {
@@ -203,9 +182,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 let Some(target) = current.active_target() else {
                     continue;
                 };
-                if frame.room_id != target.room_id
-                    || frame.sender_user_id == screen_datagram_current_user_id
-                {
+                if frame.room_id != target.room_id {
                     continue;
                 }
                 screen_datagram_video
@@ -214,7 +191,6 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         })
     });
     let camera_datagram_realtime = realtime.clone();
-    let camera_datagram_current_user_id = current_user.id.clone();
     let camera_datagram_video = participant_video.clone();
     use_hook(move || {
         spawn(async move {
@@ -224,9 +200,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 let Some(target) = current.active_target() else {
                     continue;
                 };
-                if frame.room_id != target.room_id
-                    || frame.sender_user_id == camera_datagram_current_user_id
-                {
+                if frame.room_id != target.room_id {
                     continue;
                 }
                 camera_datagram_video.publish_frame(ParticipantVideoSource::Camera, frame.into());
@@ -234,7 +208,6 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         })
     });
     let video_ended_realtime = realtime.clone();
-    let video_ended_current_user_id = current_user.id.clone();
     let video_ended_participant_video = participant_video.clone();
     let video_ended_playback = playback.clone();
     use_hook(move || {
@@ -245,18 +218,20 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 let Some(target) = current.active_target() else {
                     continue;
                 };
-                if event.server_id != target.server_id
-                    || event.room_id != target.room_id
-                    || event.sender_user_id == video_ended_current_user_id
-                {
+                if event.server_id != target.server_id || event.room_id != target.room_id {
                     continue;
                 }
-                video_ended_participant_video.release_stream(
+                video_ended_participant_video.release_stream_for_event(
                     participant_source_from_contract(event.source),
                     &event.sender_user_id,
+                    event.session_id,
                 );
                 if let Some(track_id) = event.audio_track_id {
-                    video_ended_playback.stop_system_audio(&event.sender_user_id, track_id);
+                    video_ended_playback.stop_system_audio(
+                        &event.sender_user_id,
+                        event.session_id,
+                        track_id,
+                    );
                 }
             }
         })
@@ -299,6 +274,13 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             target,
             participants,
         } => {
+            let Some(session_id) =
+                effect_handle.outbound_session_id_for(&target.server_id, &target.room_id)
+            else {
+                debug!(room_id = %target.room_id, "waiting for confirmed voice media session");
+                return;
+            };
+            let confirmed_session_id = session_id.to_string();
             if matches!(target.kind, VoiceRoomTargetKind::DirectMessage) {
                 microphone.set_bitrate_bps(cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS);
             }
@@ -365,12 +347,19 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 mic_paused_by_focus.set(false);
             }
             if microphone_target_room().as_deref() == Some(target.room_id.as_str()) {
-                if paused_by_focus {
+                let session_changed =
+                    microphone_target_session_id() != Some(confirmed_session_id.clone());
+                if paused_by_focus || session_changed {
+                    if session_changed && !paused_by_focus {
+                        microphone.stop();
+                    }
+                    microphone_target_session_id.set(Some(confirmed_session_id));
                     microphone_uplink::restart(
                         microphone.clone(),
                         realtime.clone(),
                         target.server_id.clone(),
                         target.room_id.clone(),
+                        effect_handle.clone(),
                     );
                 }
                 info!(
@@ -383,6 +372,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 return;
             }
             microphone_target_room.set(Some(target.room_id.clone()));
+            microphone_target_session_id.set(Some(confirmed_session_id));
             info!(
                 target_kind = ?target.kind,
                 server_id = %target.server_id,
@@ -395,6 +385,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
                 realtime.clone(),
                 target.server_id,
                 target.room_id,
+                effect_handle.clone(),
             );
         }
         VoiceConnectionState::Disconnected
@@ -406,6 +397,9 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
             let had_camera_target = previous_camera_target.is_some();
             let had_screen_share_target = previous_screen_share_target.is_some();
             let had_microphone_target = microphone_target_room().is_some();
+            if microphone_target_session_id().is_some() {
+                microphone_target_session_id.set(None);
+            }
             let was_paused_by_focus = mic_paused_by_focus();
 
             if let Some(target) = previous_camera_target {
@@ -481,6 +475,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         DirectCallProvider {
             {children}
         }
+        VoiceSessionDialogs {}
         if let Some(room_name) = kicked_from_room() {
             KickedFromVoiceModal {
                 room_name,

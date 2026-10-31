@@ -20,9 +20,9 @@ use super::browser_errors::js_error_message;
 
 mod control;
 
-const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=14";
-const MICROPHONE_WORKER_WASM_BINDGEN_URL: &str = "/workers/microphone/microphone_worker.js?v=8";
-const MICROPHONE_WORKER_WASM_URL: &str = "/workers/microphone/microphone_worker_bg.wasm?v=8";
+const MICROPHONE_UPLINK_WORKER_URL: &str = "/audio/microphone-uplink-worker.js?v=17";
+const MICROPHONE_WORKER_WASM_BINDGEN_URL: &str = "/workers/microphone/microphone_worker.js?v=11";
+const MICROPHONE_WORKER_WASM_URL: &str = "/workers/microphone/microphone_worker_bg.wasm?v=11";
 const WORKER_START_TIMEOUT_MS: u32 = 10_000;
 
 type WorkerReadySender = Rc<RefCell<Option<oneshot::Sender<Result<(), String>>>>>;
@@ -282,6 +282,11 @@ fn start_message(
     )?;
     set_property(&message, "uplinkGrant", JsValue::from_str(&uplink.grant))?;
     set_property(&message, "roomId", JsValue::from_str(&uplink.room_id))?;
+    set_property(
+        &message,
+        "senderSessionId",
+        JsValue::from_str(&uplink.sender_session_id),
+    )?;
     set_property(
         &message,
         "denoiseEnabled",

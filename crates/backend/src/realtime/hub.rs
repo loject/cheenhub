@@ -95,6 +95,25 @@ impl RealtimeHub {
         .await
     }
 
+    /// Регистрирует тестовый транспорт с заранее известным UUID подключения.
+    #[cfg(test)]
+    pub(crate) async fn register_test_session_with_id(
+        &self,
+        session_id: Uuid,
+        user_id: Uuid,
+        auth_session_id: Uuid,
+    ) {
+        let (outbound, _receiver) = tokio::sync::mpsc::channel(1);
+        let _disconnect = self
+            .register_session(
+                session_id,
+                user_id,
+                auth_session_id,
+                DatagramSink::websocket(outbound),
+            )
+            .await;
+    }
+
     /// Регистрирует надежный поток, привязанный к модулю.
     pub(crate) async fn register_stream(
         &self,
@@ -128,6 +147,18 @@ impl RealtimeHub {
         self.sessions
             .register_session(session_id, user_id, auth_session_id, datagrams)
             .await
+    }
+
+    /// Возвращает auth-сессию только действительного транспортного подключения пользователя.
+    pub(crate) fn auth_session_for_transport(
+        &self,
+        session_id: &Uuid,
+        user_id: &Uuid,
+    ) -> Option<Uuid> {
+        self.sessions
+            .get(session_id)
+            .filter(|session| session.user_id == *user_id)
+            .map(|session| session.auth_session_id)
     }
 
     /// Удаляет аутентифицированную realtime-сессию.

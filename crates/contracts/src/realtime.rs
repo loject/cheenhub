@@ -53,8 +53,9 @@ pub use voice_chat::{
     MicrophoneUplinkBound, MicrophoneUplinkGrantIssued, ParticipantNetworkQualityUpdated,
     PublishVoiceNetworkQuality, RespondDirectCall, ServerAudioBitrate, ServerVoiceRoomsSnapshot,
     SetVoiceMicrophoneState, SetVoiceOutputState, StartDirectCall, StopVoiceVideoStream,
-    VoiceChatKind, VoiceNetworkTargetKind, VoiceRoomParticipant, VoiceRoomSnapshot,
-    VoiceVideoStreamEnded, VoiceVideoStreamSource,
+    VoiceChatKind, VoiceDeviceKind, VoiceNetworkTargetKind, VoicePresenceEvicted,
+    VoicePresenceEvictionReason, VoiceRoomParticipant, VoiceRoomSnapshot, VoiceVideoStreamEnded,
+    VoiceVideoStreamSource,
 };
 
 #[cfg(test)]

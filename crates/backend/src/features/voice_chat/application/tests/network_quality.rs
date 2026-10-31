@@ -10,9 +10,9 @@ use cheenhub_contracts::rest::ServerRoomKind;
 use chrono::Utc;
 use uuid::Uuid;
 
-use super::{create_room, registered_user, state};
+use super::{create_room, join_room, registered_user, state};
 use crate::features::voice_chat::application::{
-    VoiceChatApplicationError, authorize_network_quality_publication_at, join_room,
+    VoiceChatApplicationError, authorize_network_quality_publication_at,
     prepare_network_quality_broadcast, publish_network_quality,
 };
 use crate::features::voice_chat::infrastructure::{VoicePresence, VoicePresenceTargetKind};
@@ -33,6 +33,9 @@ async fn insert_presence(
             output_muted: false,
             realtime_stream_id,
             session_id: Uuid::new_v4(),
+            auth_session_id: Uuid::new_v4(),
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            voice_protocol_version: 4,
             target_kind,
             server_id,
             room_id,
@@ -78,6 +81,9 @@ async fn network_quality_accepts_maximum_rtt_and_rejects_value_above_it() {
             microphone_enabled: true,
             server_id,
             room_id,
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await

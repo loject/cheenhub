@@ -7,7 +7,7 @@ use cheenhub_contracts::realtime::{
 use cheenhub_contracts::rest::RegisterRequest;
 use chrono::{Duration, Utc};
 
-use super::state;
+use super::{join_direct_message_room, state};
 use crate::features::auth::application as auth_application;
 use crate::features::social::{accept_friend_request, open_dm_conversation, send_friend_request};
 use crate::features::voice_chat::application::direct_calls::{
@@ -15,8 +15,8 @@ use crate::features::voice_chat::application::direct_calls::{
     start_direct_call_without_expiry_task,
 };
 use crate::features::voice_chat::application::{
-    VoiceChatApplicationError, disconnect_realtime_stream, join_direct_message_room,
-    leave_direct_message_room, list_direct_message_voice_rooms,
+    VoiceChatApplicationError, disconnect_realtime_stream, leave_direct_message_room,
+    list_direct_message_voice_rooms,
 };
 use crate::state::AppState;
 
@@ -113,6 +113,9 @@ async fn direct_call_microphone_choice_is_present_on_join_and_can_be_enabled() {
         JoinDirectMessageVoiceRoom {
             conversation_id: conversation_id.clone(),
             microphone_enabled: false,
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -133,6 +136,53 @@ async fn direct_call_microphone_choice_is_present_on_join_and_can_be_enabled() {
     .unwrap();
 
     assert!(snapshot.participants[0].microphone_enabled);
+}
+
+#[tokio::test]
+async fn legacy_direct_call_conflict_requires_upgrade_without_eviction() {
+    let state = state();
+    let (alice, alice_id, _bob, _bob_id, conversation_id) =
+        direct_message_conversation(&state).await;
+    let request = || JoinDirectMessageVoiceRoom {
+        conversation_id: conversation_id.clone(),
+        microphone_enabled: true,
+        voice_protocol_version: 4,
+        device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+        confirm_disconnect_other_devices: false,
+    };
+
+    join_direct_message_room(
+        &state,
+        uuid::Uuid::new_v4(),
+        uuid::Uuid::new_v4(),
+        &alice,
+        &alice_id,
+        request(),
+    )
+    .await
+    .expect("first device joins direct call");
+    let result = join_direct_message_room(
+        &state,
+        uuid::Uuid::new_v4(),
+        uuid::Uuid::new_v4(),
+        &alice,
+        &alice_id,
+        request(),
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(VoiceChatApplicationError::BadRequest(message))
+            if message.contains("Обновите CheenHub")
+    ));
+    assert_eq!(
+        state
+            .voice_presence_store
+            .active_voice_connection_count()
+            .await,
+        1
+    );
 }
 
 #[tokio::test]
@@ -214,6 +264,9 @@ async fn disconnecting_direct_message_presence_ends_active_call() {
         JoinDirectMessageVoiceRoom {
             microphone_enabled: true,
             conversation_id,
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -420,6 +473,9 @@ async fn friends_can_join_and_leave_direct_message_voice_room() {
         JoinDirectMessageVoiceRoom {
             microphone_enabled: true,
             conversation_id: conversation_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await
@@ -436,6 +492,9 @@ async fn friends_can_join_and_leave_direct_message_voice_room() {
         JoinDirectMessageVoiceRoom {
             microphone_enabled: true,
             conversation_id: conversation_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await

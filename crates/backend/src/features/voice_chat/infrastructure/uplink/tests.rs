@@ -35,15 +35,23 @@ async fn grant_is_one_time_and_bound_to_user() {
         .consume_microphone_uplink_grant(&grant_id, &user_id, worker_session_id, Utc::now())
         .await
         .expect("владелец должен потребить grant");
-    assert!(
+    assert_eq!(
         store
-            .microphone_uplink_is_bound(
-                &worker_session_id,
-                &user_id,
-                &room_id,
-                &presence_session_id,
-            )
-            .await
+            .microphone_uplink_presence_session(&worker_session_id, &user_id, &room_id)
+            .await,
+        Some(presence_session_id)
+    );
+    assert_eq!(
+        store
+            .microphone_uplink_presence_session(&worker_session_id, &Uuid::new_v4(), &room_id)
+            .await,
+        None
+    );
+    assert_eq!(
+        store
+            .microphone_uplink_presence_session(&worker_session_id, &user_id, &Uuid::new_v4())
+            .await,
+        None
     );
     assert_eq!(
         store
@@ -86,15 +94,11 @@ async fn replacement_grant_revokes_previous_worker_binding() {
         })
         .await;
 
-    assert!(
-        !store
-            .microphone_uplink_is_bound(
-                &worker_session_id,
-                &user_id,
-                &room_id,
-                &presence_session_id,
-            )
-            .await
+    assert_eq!(
+        store
+            .microphone_uplink_presence_session(&worker_session_id, &user_id, &room_id)
+            .await,
+        None
     );
 }
 
@@ -113,6 +117,9 @@ async fn leaving_presence_revokes_bound_uplink() {
             output_muted: false,
             realtime_stream_id,
             session_id: presence_session_id,
+            auth_session_id: Uuid::new_v4(),
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            voice_protocol_version: 4,
             target_kind: VoicePresenceTargetKind::Server,
             server_id,
             room_id,
@@ -139,15 +146,11 @@ async fn leaving_presence_revokes_bound_uplink() {
 
     store.leave_realtime_stream(&realtime_stream_id).await;
 
-    assert!(
-        !store
-            .microphone_uplink_is_bound(
-                &worker_session_id,
-                &user_id,
-                &room_id,
-                &presence_session_id,
-            )
-            .await
+    assert_eq!(
+        store
+            .microphone_uplink_presence_session(&worker_session_id, &user_id, &room_id)
+            .await,
+        None
     );
 }
 

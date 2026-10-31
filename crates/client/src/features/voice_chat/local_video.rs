@@ -109,7 +109,7 @@ pub(super) fn release_local_video_target(
 
     runtime
         .participant_video
-        .release_stream(source, &runtime.current_user_id);
+        .release_stream(source, &runtime.current_user_id, uuid::Uuid::nil());
     spawn(async move {
         let result = match source {
             ParticipantVideoSource::Camera => {

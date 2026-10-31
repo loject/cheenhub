@@ -108,6 +108,7 @@ fn clear_voice_after_disconnect(
     participant_video: &ParticipantVideoHandle,
 ) {
     remember_active_room(handle);
+    handle.clear_media_session();
 
     state.set(VoiceConnectionState::Disconnected);
     handle.clear_speaking_users();

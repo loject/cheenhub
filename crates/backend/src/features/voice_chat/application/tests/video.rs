@@ -20,6 +20,9 @@ async fn stopping_video_rejects_nil_or_camera_audio_identity() {
             microphone_enabled: true,
             server_id: server_id.clone(),
             room_id: room_id.clone(),
+            voice_protocol_version: 4,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
         },
     )
     .await

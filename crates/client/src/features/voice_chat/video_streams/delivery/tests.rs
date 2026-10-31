@@ -6,6 +6,7 @@ fn frame(sequence: u64, key_frame: bool, bytes: usize) -> ParticipantVideoFrame 
     ParticipantVideoFrame {
         room_id: "room".into(),
         sender_user_id: "peer".into(),
+        track_id: uuid::Uuid::from_u128(1),
         sequence,
         timestamp_us: sequence * 33_333,
         duration_us: 33_333,

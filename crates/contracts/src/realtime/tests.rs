@@ -4,6 +4,7 @@ use uuid::Uuid;
 #[test]
 fn voice_microphone_choice_defaults_for_legacy_peers_and_preserves_explicit_mute() {
     let legacy = serde_json::json!({
+        "session_id": Uuid::new_v4().to_string(),
         "user_id": "participant", "nickname": "Участник", "avatar_url": null, "joined_at": "",
     });
     let participant: VoiceRoomParticipant = serde_json::from_value(legacy.clone()).unwrap();
@@ -26,11 +27,13 @@ fn voice_microphone_choice_defaults_for_legacy_peers_and_preserves_explicit_mute
 
 mod author_roles;
 mod direct_messages;
+mod multi_device_voice;
 mod social_list;
 
 #[test]
 fn output_muted_defaults_for_legacy_participants_and_round_trips_updates() {
     let legacy = serde_json::json!({
+        "session_id": Uuid::new_v4().to_string(),
         "user_id": "participant", "nickname": "Участник", "avatar_url": null, "joined_at": "",
     });
     let participant: VoiceRoomParticipant = serde_json::from_value(legacy.clone()).unwrap();
@@ -197,6 +200,7 @@ fn voice_video_stream_ended_envelope_round_trips() {
         RealtimeKind::VoiceChat(VoiceChatKind::VideoStreamEnded),
         None,
         VoiceVideoStreamEnded {
+            session_id: Uuid::new_v4().to_string(),
             audio_track_id: None,
             server_id: Uuid::new_v4().to_string(),
             room_id: Uuid::new_v4().to_string(),
@@ -223,6 +227,7 @@ fn voice_video_stream_ended_envelope_round_trips() {
 fn screen_end_preserves_audio_track_identity() {
     let track_id = Uuid::new_v4();
     let ended = VoiceVideoStreamEnded {
+        session_id: Uuid::new_v4().to_string(),
         audio_track_id: Some(track_id),
         server_id: Uuid::new_v4().to_string(),
         room_id: Uuid::new_v4().to_string(),
@@ -239,6 +244,7 @@ fn screen_end_preserves_audio_track_identity() {
 #[test]
 fn legacy_screen_end_does_not_identify_or_stop_audio() {
     let decoded: VoiceVideoStreamEnded = serde_json::from_value(serde_json::json!({
+        "session_id": Uuid::new_v4().to_string(),
         "server_id": "server", "room_id": "room", "user_id": "user", "source": "screen_share"
     }))
     .unwrap();
@@ -450,6 +456,7 @@ fn voice_network_quality_envelopes_round_trip() {
     assert!(published_json.contains("\"rtt_ms\":42"));
 
     let update = ParticipantNetworkQualityUpdated {
+        session_id: Uuid::new_v4().to_string(),
         target_kind: VoiceNetworkTargetKind::DirectMessage,
         server_id: Uuid::new_v4().to_string(),
         room_id: Uuid::new_v4().to_string(),
@@ -479,11 +486,15 @@ fn voice_room_snapshot_with_audio_bitrate_round_trips() {
     }
 
     let snapshot = VoiceRoomSnapshot {
+        self_session_id: None,
         server_id: Uuid::new_v4().to_string(),
         room_id: Uuid::new_v4().to_string(),
         participants: vec![VoiceRoomParticipant {
             microphone_enabled: true,
             output_muted: false,
+            session_id: Uuid::new_v4().to_string(),
+            voice_protocol_version: 4,
+            device_kind: VoiceDeviceKind::Desktop,
             user_id: Uuid::new_v4().to_string(),
             nickname: "voice_user".to_owned(),
             avatar_url: None,
@@ -544,6 +555,9 @@ fn avatar_fields_round_trip_in_realtime_payloads() {
     let participant = VoiceRoomParticipant {
         microphone_enabled: true,
         output_muted: false,
+        session_id: Uuid::new_v4().to_string(),
+        voice_protocol_version: 4,
+        device_kind: VoiceDeviceKind::Desktop,
         user_id: Uuid::new_v4().to_string(),
         nickname: "voice_user".to_owned(),
         avatar_url: Some("http://localhost/api/images/avatar".to_owned()),

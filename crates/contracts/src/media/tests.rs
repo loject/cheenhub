@@ -1,5 +1,7 @@
 use super::*;
 
+mod multi_device;
+
 #[test]
 fn audio_tracks_preserve_independent_identity_and_source() {
     let microphone = MediaDatagram {

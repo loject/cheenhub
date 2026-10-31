@@ -13,6 +13,7 @@ use super::super::backend::{
     EncodedMicrophoneFrame, MicrophoneCallbacks, MicrophoneCodec, MicrophoneConfig,
     MicrophoneError, MicrophoneLevel,
 };
+use super::super::core::new_microphone_capture_sequence;
 use super::super::vad::{VoiceActivityDetector, rms_level};
 
 const OPUS_FRAME_DURATION_US: u32 = 10_000;
@@ -116,7 +117,7 @@ fn run_encoder_worker(
     let mut denoise_warning_sent = false;
     let mut denoise_revision = None;
     let mut pending = Vec::with_capacity(frame_samples * 2);
-    let mut sequence = 0_u64;
+    let mut sequence = new_microphone_capture_sequence();
     let mut captured_samples = 0_u64;
     let mut applied_bitrate = config.bitrate_bps;
 

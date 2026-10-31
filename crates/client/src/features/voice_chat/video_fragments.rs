@@ -42,6 +42,7 @@ pub(super) fn video_frame_datagrams(
     kind: MediaDatagramKind,
     codec: MediaCodec,
     frame: OutboundVideoFrame,
+    video_track_id: Uuid,
 ) -> Result<Vec<MediaDatagram>, RealtimeError> {
     let flags = if frame.key_frame {
         MEDIA_DATAGRAM_FLAG_KEY_FRAME
@@ -50,7 +51,7 @@ pub(super) fn video_frame_datagrams(
     };
     if frame.bytes.len() <= VIDEO_FRAME_FRAGMENT_BYTES {
         return Ok(vec![MediaDatagram {
-            track_id: uuid::Uuid::nil(),
+            track_id: video_track_id,
             audio_source: None,
             audio_channels: 0,
             kind,
@@ -106,7 +107,7 @@ pub(super) fn video_frame_datagrams(
             payload.extend_from_slice(chunk);
 
             Ok(MediaDatagram {
-                track_id: uuid::Uuid::nil(),
+                track_id: video_track_id,
                 audio_source: None,
                 audio_channels: 0,
                 kind,
@@ -158,6 +159,7 @@ impl VideoFrameReassembler {
         let key = VideoFrameKey {
             room_id: datagram.room_id,
             sender_user_id: datagram.sender_user_id,
+            track_id: datagram.track_id,
             kind: datagram.kind,
             sequence: datagram.sequence,
         };
@@ -236,10 +238,14 @@ impl VideoFrameReassembler {
         }
 
         let sender_user_id = datagram.sender_user_id;
+        let room_id = datagram.room_id;
+        let track_id = datagram.track_id;
         let kind = datagram.kind;
         let sequence = datagram.sequence;
         self.pending.retain(|key, _| {
             key.sender_user_id != sender_user_id
+                || key.room_id != room_id
+                || key.track_id != track_id
                 || key.kind != kind
                 || key.sequence.saturating_add(8) >= sequence
         });
@@ -250,6 +256,7 @@ impl VideoFrameReassembler {
 struct VideoFrameKey {
     room_id: Uuid,
     sender_user_id: Uuid,
+    track_id: Uuid,
     kind: MediaDatagramKind,
     sequence: u64,
 }

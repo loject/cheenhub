@@ -32,6 +32,7 @@ pub(crate) async fn handle(
         RealtimeKind::VoiceChat(VoiceChatKind::JoinVoiceRoom) => {
             let request_id = require_request_id(&envelope)?;
             let payload: JoinVoiceRoom = decode_payload(&envelope)?;
+            let include_session_id = payload.voice_protocol_version >= 5;
             match application::join_room(
                 state,
                 realtime_stream_id,
@@ -42,13 +43,16 @@ pub(crate) async fn handle(
             )
             .await
             {
-                Ok(response) => {
+                Ok(mut snapshot) => {
+                    if include_session_id {
+                        snapshot.self_session_id = Some(session_id.to_string());
+                    }
                     write_envelope(
                         send,
                         RealtimeModule::VoiceChat,
                         RealtimeKind::VoiceChat(VoiceChatKind::VoiceRoomSnapshot),
                         Some(request_id),
-                        response,
+                        snapshot,
                     )
                     .await
                 }
@@ -75,6 +79,7 @@ pub(crate) async fn handle(
         RealtimeKind::VoiceChat(VoiceChatKind::JoinDirectMessageVoiceRoom) => {
             let request_id = require_request_id(&envelope)?;
             let payload: JoinDirectMessageVoiceRoom = decode_payload(&envelope)?;
+            let include_session_id = payload.voice_protocol_version >= 5;
             match application::join_direct_message_room(
                 state,
                 realtime_stream_id,
@@ -85,13 +90,16 @@ pub(crate) async fn handle(
             )
             .await
             {
-                Ok(response) => {
+                Ok(mut snapshot) => {
+                    if include_session_id {
+                        snapshot.self_session_id = Some(session_id.to_string());
+                    }
                     write_envelope(
                         send,
                         RealtimeModule::VoiceChat,
                         RealtimeKind::VoiceChat(VoiceChatKind::VoiceRoomSnapshot),
                         Some(request_id),
-                        response,
+                        snapshot,
                     )
                     .await
                 }
@@ -381,6 +389,19 @@ async fn reject_application_error(
     error: VoiceChatApplicationError,
 ) -> anyhow::Result<()> {
     match error {
+        VoiceChatApplicationError::JoinConflict(conflict) => {
+            let (code, message) = match conflict {
+                crate::features::voice_chat::infrastructure::VoiceJoinConflict::DeviceTransitionConfirmationRequired => (
+                    RejectionCode::VoiceDeviceConfirmationRequired,
+                    "Другое устройство уже находится в голосовом общении. Подтвердите переключение.",
+                ),
+                crate::features::voice_chat::infrastructure::VoiceJoinConflict::SameAuthSessionConfirmationRequired => (
+                    RejectionCode::VoiceSessionTakeoverConfirmationRequired,
+                    "Другая вкладка уже использует ваше голосовое подключение. Подтвердите переключение, чтобы отключить её.",
+                ),
+            };
+            send_rejection(send, request_id, code, message).await
+        }
         VoiceChatApplicationError::BadRequest(message) => {
             send_rejection(send, request_id, RejectionCode::BadRequest, &message).await
         }

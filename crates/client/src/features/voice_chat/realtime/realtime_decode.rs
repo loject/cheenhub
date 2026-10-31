@@ -1,11 +1,13 @@
 //! Декодирование входящих realtime-событий и media datagram для голосового чата.
 
 use cheenhub_contracts::media::{
-    MEDIA_DATAGRAM_FLAG_KEY_FRAME, MediaCodec, MediaDatagram, MediaDatagramKind,
+    MEDIA_DATAGRAM_FLAG_KEY_FRAME, MediaCodec, MediaDatagram, MediaDatagramHeader,
+    MediaDatagramKind,
 };
 use cheenhub_contracts::realtime::{
     ParticipantNetworkQualityUpdated, RealtimeEnvelope, RealtimeKind, RealtimeModule,
-    ServerAudioBitrate, VoiceChatKind, VoiceRoomSnapshot, VoiceVideoStreamEnded,
+    ServerAudioBitrate, VoiceChatKind, VoicePresenceEvicted, VoiceRoomSnapshot,
+    VoiceVideoStreamEnded,
 };
 
 use super::{InboundVideoFrame, InboundVideoStreamEnded, InboundVoiceFrame};
@@ -18,6 +20,16 @@ pub(super) fn server_audio_bitrate(envelope: RealtimeEnvelope) -> Option<ServerA
     }
 
     serde_json::from_value::<ServerAudioBitrate>(envelope.payload).ok()
+}
+
+pub(super) fn voice_presence_evicted(envelope: RealtimeEnvelope) -> Option<VoicePresenceEvicted> {
+    if envelope.module != RealtimeModule::VoiceChat
+        || envelope.kind != RealtimeKind::VoiceChat(VoiceChatKind::VoicePresenceEvicted)
+    {
+        return None;
+    }
+
+    serde_json::from_value(envelope.payload).ok()
 }
 
 pub(super) fn participants_changed(envelope: RealtimeEnvelope) -> Option<VoiceRoomSnapshot> {
@@ -55,28 +67,30 @@ pub(super) fn video_stream_ended(envelope: RealtimeEnvelope) -> Option<InboundVi
         server_id: event.server_id,
         room_id: event.room_id,
         sender_user_id: event.user_id,
+        session_id: uuid::Uuid::parse_str(&event.session_id).unwrap_or_else(|_| uuid::Uuid::nil()),
         source: event.source,
     })
 }
 
 pub(super) fn voice_frame(bytes: &[u8]) -> Option<InboundVoiceFrame> {
-    let datagram = MediaDatagram::decode(bytes).ok()?;
-    if datagram.kind != MediaDatagramKind::VoiceFrame || datagram.codec != MediaCodec::Opus {
+    let header = MediaDatagramHeader::decode(bytes).ok()?;
+    if header.kind != MediaDatagramKind::VoiceFrame || header.codec != MediaCodec::Opus {
         return None;
     }
 
     Some(InboundVoiceFrame {
-        room_id: datagram.room_id.to_string(),
-        sender_user_id: datagram.sender_user_id.to_string(),
-        track_id: datagram.track_id,
-        audio_source: datagram
+        room_id: header.room_id.to_string(),
+        sender_user_id: header.sender_user_id.to_string(),
+        track_id: header.track_id,
+        voice_session_id: header.voice_session_id,
+        audio_source: header
             .audio_source
             .unwrap_or(cheenhub_contracts::media::MediaAudioSource::Microphone),
-        audio_channels: datagram.audio_channels.max(1),
-        sequence: datagram.sequence,
-        timestamp_us: datagram.timestamp_us,
-        duration_us: datagram.duration_us,
-        bytes: datagram.payload,
+        audio_channels: header.audio_channels.max(1),
+        sequence: header.sequence,
+        timestamp_us: header.timestamp_us,
+        duration_us: header.duration_us,
+        bytes: header.payload(bytes).ok()?.to_vec(),
     })
 }
 
@@ -102,6 +116,7 @@ pub(super) fn video_frame_from_datagram(datagram: MediaDatagram) -> InboundVideo
     InboundVideoFrame {
         room_id: datagram.room_id.to_string(),
         sender_user_id: datagram.sender_user_id.to_string(),
+        track_id: datagram.track_id,
         sequence: datagram.sequence,
         timestamp_us: datagram.timestamp_us,
         duration_us: datagram.duration_us,

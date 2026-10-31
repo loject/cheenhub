@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+mod multi_device;
+pub use multi_device::{VoiceDeviceKind, VoicePresenceEvicted, VoicePresenceEvictionReason};
+
 /// Виды сообщений модуля присутствия в голосовом чате.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -52,6 +55,8 @@ pub enum VoiceChatKind {
     VoiceRoomSnapshot,
     /// Событие изменения списка участников голосовой комнаты.
     ParticipantsChanged,
+    /// Адресное уведомление об отключении одного голосового подключения другим устройством.
+    VoicePresenceEvicted,
     /// Событие остановки видеопотока участника голосовой комнаты.
     VideoStreamEnded,
     /// Актуальный целевой битрейт Opus-аудио голосовых комнат сервера.
@@ -72,10 +77,32 @@ pub struct JoinVoiceRoom {
     /// Сохранённый выбор пользователя; отсутствие поля сохраняет поведение старых клиентов.
     #[serde(default = "microphone_enabled_by_default")]
     pub microphone_enabled: bool,
+    /// Разрешение отключить другие голосовые подключения при конфликте.
+    #[serde(default)]
+    pub confirm_disconnect_other_devices: bool,
+    /// Версия голосового протокола; ноль означает старый клиент.
+    #[serde(default)]
+    pub voice_protocol_version: u8,
+    /// Отображаемый тип устройства; не участвует в авторизации.
+    #[serde(default)]
+    pub device_kind: VoiceDeviceKind,
     /// Идентификатор сервера.
     pub server_id: String,
     /// Идентификатор комнаты.
     pub room_id: String,
+}
+
+impl Default for JoinVoiceRoom {
+    fn default() -> Self {
+        Self {
+            microphone_enabled: microphone_enabled_by_default(),
+            confirm_disconnect_other_devices: false,
+            voice_protocol_version: 0,
+            device_kind: VoiceDeviceKind::Unknown,
+            server_id: String::new(),
+            room_id: String::new(),
+        }
+    }
 }
 
 /// Полезная нагрузка запроса на выход из комнаты с поддержкой голоса.
@@ -125,8 +152,29 @@ pub struct JoinDirectMessageVoiceRoom {
     /// Явный выбор микрофона до начала захвата; не зависит от VAD и PTT.
     #[serde(default = "microphone_enabled_by_default")]
     pub microphone_enabled: bool,
+    /// Разрешение отключить другие голосовые подключения при конфликте.
+    #[serde(default)]
+    pub confirm_disconnect_other_devices: bool,
+    /// Версия голосового протокола; ноль означает старый клиент.
+    #[serde(default)]
+    pub voice_protocol_version: u8,
+    /// Отображаемый тип устройства; не участвует в авторизации.
+    #[serde(default)]
+    pub device_kind: VoiceDeviceKind,
     /// Идентификатор личного диалога.
     pub conversation_id: String,
+}
+
+impl Default for JoinDirectMessageVoiceRoom {
+    fn default() -> Self {
+        Self {
+            microphone_enabled: microphone_enabled_by_default(),
+            confirm_disconnect_other_devices: false,
+            voice_protocol_version: 0,
+            device_kind: VoiceDeviceKind::Unknown,
+            conversation_id: String::new(),
+        }
+    }
 }
 
 /// Полезная нагрузка запроса на выход из голосового звонка личного диалога.
@@ -262,6 +310,9 @@ pub struct VoiceRoomSnapshot {
     pub room_id: String,
     /// Участники, присутствующие в комнате.
     pub participants: Vec<VoiceRoomParticipant>,
+    /// UUID собственного подключения в ответе на join нового сервера.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_session_id: Option<String>,
     /// Целевой битрейт Opus-аудио сервера, когда снимок является ответом на вход.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_bitrate_bps: Option<u32>,
@@ -296,6 +347,9 @@ pub enum VoiceNetworkTargetKind {
 /// Актуальное измерение RTT одного участника голосового общения.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParticipantNetworkQualityUpdated {
+    /// UUID конкретного подключения; отсутствие поля означает старый сервер.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub session_id: String,
     /// Тип голосовой цели.
     pub target_kind: VoiceNetworkTargetKind,
     /// Маршрутный идентификатор сервера или личного диалога.
@@ -357,6 +411,9 @@ pub struct StopVoiceVideoStream {
 /// Событие остановки видеопотока участника голосовой комнаты.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoiceVideoStreamEnded {
+    /// UUID подключения; отсутствие поля означает старый сервер.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub session_id: String,
     /// UUID остановленного системного аудио; отсутствие поля сохраняет legacy-семантику видео.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_track_id: Option<uuid::Uuid>,
@@ -395,6 +452,15 @@ pub struct VoiceRoomParticipant {
     /// Отключил ли пользователь входящее воспроизведение; старые клиенты считаются слышащими.
     #[serde(default)]
     pub output_muted: bool,
+    /// UUID конкретного подключения; пустая строка у старого сервера.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub session_id: String,
+    /// Максимальная версия голосового протокола, поддерживаемая подключением.
+    #[serde(default = "legacy_voice_protocol_version")]
+    pub voice_protocol_version: u8,
+    /// Отображаемый тип устройства; неизвестный тип не препятствует участию.
+    #[serde(default)]
+    pub device_kind: VoiceDeviceKind,
     /// Стабильный идентификатор пользователя.
     pub user_id: String,
     /// Снимок имени пользователя.
@@ -425,4 +491,8 @@ pub struct SetVoiceOutputState {
 
 fn microphone_enabled_by_default() -> bool {
     true
+}
+
+fn legacy_voice_protocol_version() -> u8 {
+    3
 }

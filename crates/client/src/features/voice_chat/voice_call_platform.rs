@@ -76,7 +76,7 @@ mod implementation;
 pub(crate) use implementation::{
     VoiceAudioFocusEvent, load_voice_output_route, set_voice_call_participating,
     set_voice_output_route, subscribe_voice_audio_focus, subscribe_voice_notification_actions,
-    supports_voice_output_route, update_active_voice_notification,
+    supports_voice_output_route, update_active_voice_notification, voice_device_kind,
 };
 
 /// Сохраняет realtime во время подключения, звонка и выхода; освобождает его после завершения.

@@ -62,6 +62,12 @@ pub enum RejectionCode {
     UnsupportedMessage,
     /// Неожиданная ошибка сервера.
     InternalError,
+    /// Для перехода между голосовыми целями нужно подтвердить отключение других устройств.
+    VoiceDeviceConfirmationRequired,
+    /// Другое подключение той же auth-сессии уже находится в голосе.
+    VoiceSessionTakeoverConfirmationRequired,
+    /// Версия клиента не поддерживает текущий голосовой протокол.
+    VoiceClientUpgradeRequired,
 }
 
 /// Полезная нагрузка отклонения для ошибок протокола realtime.

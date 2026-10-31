@@ -1,11 +1,12 @@
 //! Inbound voice jitter buffering.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::features::audio_playback::backend::VoiceFrame;
 
 const MAX_PENDING_FRAMES: usize = 80;
 const SEQUENCE_RESET_BACKWARD_THRESHOLD: u64 = 64;
+const RETIRED_CAPTURE_EPOCH_LIMIT: usize = 8;
 
 /// Per-sender encoded voice jitter buffer.
 #[derive(Default)]
@@ -13,6 +14,8 @@ pub(super) struct JitterBuffer {
     pending: BTreeMap<u64, QueuedVoiceFrame>,
     next_sequence: Option<u64>,
     playout_started: bool,
+    active_capture_epoch: Option<u32>,
+    retired_capture_epochs: VecDeque<u32>,
 }
 
 /// Result of pushing a frame into a jitter buffer.
@@ -61,6 +64,38 @@ impl JitterBuffer {
     /// Pushes one inbound frame into the reorder queue.
     pub(super) fn push(&mut self, frame: VoiceFrame, now_us: u64) -> JitterBufferPush {
         let sequence = frame.sequence;
+        let capture_epoch = (sequence >> 32) as u32;
+        if let Some(active_epoch) = self.active_capture_epoch {
+            if capture_epoch != active_epoch {
+                if self.retired_capture_epochs.contains(&capture_epoch) {
+                    return JitterBufferPush::DroppedStale {
+                        expected_sequence: self.next_sequence.unwrap_or(sequence),
+                    };
+                }
+                if self.retired_capture_epochs.len() == RETIRED_CAPTURE_EPOCH_LIMIT {
+                    self.retired_capture_epochs.pop_front();
+                }
+                self.retired_capture_epochs.push_back(active_epoch);
+                let previous_expected_sequence = self.next_sequence.unwrap_or(sequence);
+                self.active_capture_epoch = Some(capture_epoch);
+                self.pending.clear();
+                self.next_sequence = Some(sequence);
+                self.playout_started = false;
+                self.pending.insert(
+                    sequence,
+                    QueuedVoiceFrame {
+                        frame,
+                        arrival_us: now_us,
+                    },
+                );
+                return JitterBufferPush::Reset {
+                    previous_expected_sequence,
+                    pending_frames: 1,
+                };
+            }
+        } else {
+            self.active_capture_epoch = Some(capture_epoch);
+        }
         if let Some(expected_sequence) = self.next_sequence {
             if sequence < expected_sequence {
                 if !self.playout_started {

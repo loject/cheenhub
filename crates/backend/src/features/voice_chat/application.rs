@@ -11,7 +11,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::features::social::{self, DirectMessageVoiceAccess, SocialError};
-use crate::features::voice_chat::infrastructure::VoicePresence;
+use crate::features::voice_chat::infrastructure::{VoiceJoinConflict, VoicePresence};
 use crate::state::AppState;
 
 mod activity;
@@ -66,22 +66,32 @@ pub(crate) async fn join_room(
         .map_err(VoiceChatApplicationError::Internal)?
         .ok_or_else(|| VoiceChatApplicationError::NotFound("Сервер не найден.".to_owned()))?;
     let target = server_voice_target(server_id, room_id);
+    let auth_session_id = presence::authorize_join_transport(state, &session_id, user_id)?;
+    let incoming = VoicePresence {
+        microphone_enabled: request.microphone_enabled,
+        output_muted: false,
+        realtime_stream_id,
+        session_id,
+        auth_session_id,
+        device_kind: request.device_kind,
+        voice_protocol_version: request.voice_protocol_version,
+        target_kind: target.kind,
+        server_id,
+        room_id,
+        user_id: *user_id,
+        nickname: user.nickname.clone(),
+        avatar_url: user.avatar_url.clone(),
+        joined_at: Utc::now(),
+    };
     let removed = state
         .voice_presence_store
-        .join(VoicePresence {
-            microphone_enabled: request.microphone_enabled,
-            output_muted: false,
-            realtime_stream_id,
-            session_id,
-            target_kind: target.kind,
-            server_id,
-            room_id,
-            user_id: *user_id,
-            nickname: user.nickname.clone(),
-            avatar_url: user.avatar_url.clone(),
-            joined_at: Utc::now(),
-        })
-        .await;
+        .try_join(
+            incoming.clone(),
+            request.voice_protocol_version >= 5 && request.confirm_disconnect_other_devices,
+        )
+        .await
+        .map_err(|conflict| voice_join_conflict_error(conflict, request.voice_protocol_version))?;
+    presence::fanout_join_evictions(state, &removed, &incoming).await;
 
     // Удаление могло завершиться после проверки доступа, но до записи presence.
     let available = state
@@ -135,22 +145,32 @@ pub(crate) async fn join_direct_message_room(
     let conversation_id = parse_id(&request.conversation_id, "Диалог не найден.")?;
     let access = ensure_direct_message_voice_available(state, user_id, &conversation_id).await?;
     let target = direct_message_voice_target(access.conversation_id);
+    let auth_session_id = presence::authorize_join_transport(state, &session_id, user_id)?;
+    let incoming = VoicePresence {
+        microphone_enabled: request.microphone_enabled,
+        output_muted: false,
+        realtime_stream_id,
+        session_id,
+        auth_session_id,
+        device_kind: request.device_kind,
+        voice_protocol_version: request.voice_protocol_version,
+        target_kind: target.kind,
+        server_id: target.server_id,
+        room_id: target.room_id,
+        user_id: *user_id,
+        nickname: user.nickname.clone(),
+        avatar_url: user.avatar_url.clone(),
+        joined_at: Utc::now(),
+    };
     let removed = state
         .voice_presence_store
-        .join(VoicePresence {
-            microphone_enabled: request.microphone_enabled,
-            output_muted: false,
-            realtime_stream_id,
-            session_id,
-            target_kind: target.kind,
-            server_id: target.server_id,
-            room_id: target.room_id,
-            user_id: *user_id,
-            nickname: user.nickname.clone(),
-            avatar_url: user.avatar_url.clone(),
-            joined_at: Utc::now(),
-        })
-        .await;
+        .try_join(
+            incoming.clone(),
+            request.voice_protocol_version >= 5 && request.confirm_disconnect_other_devices,
+        )
+        .await
+        .map_err(|conflict| voice_join_conflict_error(conflict, request.voice_protocol_version))?;
+    presence::fanout_join_evictions(state, &removed, &incoming).await;
 
     tracing::info!(
         conversation_id = %access.conversation_id,
@@ -269,6 +289,7 @@ pub(crate) async fn list_server_voice_rooms(
             server_id: server_id.to_string(),
             room_id: room_id.to_string(),
             participants: participants.iter().map(participant_summary).collect(),
+            self_session_id: None,
             audio_bitrate_bps: None,
         })
         .collect::<Vec<_>>();
@@ -332,9 +353,30 @@ pub(crate) async fn update_user_nickname(state: &AppState, user_id: &Uuid, nickn
     }
 }
 
+/// Возвращает совместимую ошибку для клиента, который не поддерживает подтверждение смены устройства.
+fn voice_join_conflict_error(
+    conflict: VoiceJoinConflict,
+    voice_protocol_version: u8,
+) -> VoiceChatApplicationError {
+    if voice_protocol_version < 5 {
+        tracing::warn!(
+            voice_protocol_version,
+            ?conflict,
+            "legacy voice client must update before resolving device conflict"
+        );
+        VoiceChatApplicationError::BadRequest(
+            "Обновите CheenHub, чтобы переключаться между голосовыми устройствами.".to_owned(),
+        )
+    } else {
+        VoiceChatApplicationError::JoinConflict(conflict)
+    }
+}
+
 /// Ошибка приложения голосового чата.
 #[derive(Debug)]
 pub(crate) enum VoiceChatApplicationError {
+    /// Запрошенное переключение голосового устройства ожидает подтверждения.
+    JoinConflict(VoiceJoinConflict),
     /// Форма запроса или целевой ресурс недействительны.
     BadRequest(String),
     /// Пользователь не может получить доступ к запрошенной голосовой комнате.

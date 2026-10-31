@@ -133,6 +133,7 @@ pub(super) async fn authorize_network_quality_publication_at(
             server_id: target.server_id.to_string(),
             room_id: target.room_id.to_string(),
             user_id: user_id.to_string(),
+            session_id: presence.session_id.to_string(),
             rtt_ms: request.rtt_ms,
         },
     }))

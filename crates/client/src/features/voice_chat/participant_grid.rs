@@ -47,7 +47,7 @@ pub(crate) fn VoiceParticipantGrid(
     server_id: String,
     room_id: String,
     participants: Vec<VoiceRoomParticipant>,
-    speaking_user_ids: Vec<String>,
+    speaking_sessions: Vec<(String, Option<uuid::Uuid>)>,
     status: VoiceParticipantGridStatus,
     can_kick_voice: bool,
     on_retry: EventHandler<()>,
@@ -85,14 +85,16 @@ pub(crate) fn VoiceParticipantGrid(
     let kick_server_id = server_id.clone();
     let kick_room_id = room_id.clone();
     let camera_live = matches!(camera.status(), CameraStatus::Live);
-    let camera_user_ids = participant_video.live_user_ids(ParticipantVideoSource::Camera);
-    let screen_user_ids = participant_video.live_user_ids(ParticipantVideoSource::ScreenShare);
+    let camera_tracks = participant_video.live_tracks(ParticipantVideoSource::Camera);
+    let screen_tracks = participant_video.live_tracks(ParticipantVideoSource::ScreenShare);
+    let current_session_id = voice.outbound_session_id_for(&server_id, &room_id);
     let participant_tiles = participant_tiles(
         &participants,
-        &speaking_user_ids,
-        &camera_user_ids,
-        &screen_user_ids,
+        &speaking_sessions,
+        &camera_tracks,
+        &screen_tracks,
         &current_user_id,
+        current_session_id,
         camera_live,
     );
     let grid_layout = participant_grid_layout(participant_tiles.len());
@@ -153,6 +155,7 @@ pub(crate) fn VoiceParticipantGrid(
                             focused: active_focus_tile_key.as_deref() == Some(tile.key.as_str()),
                             speaking: tile.speaking,
                             media: tile.media,
+                            track_id: tile.track_id,
                             participant: tile.participant.clone(),
                             on_toggle_focus: {
                                 let focus_tile_key = tile.key.clone();

@@ -40,7 +40,10 @@ fn oversized_image_is_rejected_before_network_request() {
 
 #[test]
 fn server_rejection_preserves_product_message() {
-    let error = RealtimeError::rejected("Писать можно только друзьям.");
+    let error = RealtimeError::rejected(
+        cheenhub_contracts::realtime::RejectionCode::BadRequest,
+        "Писать можно только друзьям.",
+    );
 
     assert_eq!(
         user_error(&error, "Не удалось отправить сообщение."),

@@ -17,6 +17,7 @@ pub(crate) async fn send_voice_frame(
     realtime: &RealtimeHandle,
     _server_id: &str,
     room_id: &str,
+    sender_session_id: Uuid,
     frame: EncodedMicrophoneFrame,
 ) -> Result<(), RealtimeError> {
     if !frame.can_send() {
@@ -29,7 +30,7 @@ pub(crate) async fn send_voice_frame(
         MicrophoneCodec::Opus => MediaCodec::Opus,
     };
     let datagram = MediaDatagram {
-        track_id: frame.track_id,
+        track_id: sender_session_id,
         audio_source: Some(cheenhub_contracts::media::MediaAudioSource::Microphone),
         audio_channels: frame.channels,
         kind: MediaDatagramKind::VoiceFrame,

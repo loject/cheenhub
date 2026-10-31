@@ -6,6 +6,18 @@ use futures_channel::mpsc;
 
 use super::{ActiveVoiceNotification, VoiceNotificationAction, VoiceOutputRoute};
 
+/// Категория устройства для платформ без отдельной реализации системного звонка.
+pub(crate) fn voice_device_kind() -> cheenhub_contracts::realtime::VoiceDeviceKind {
+    use cheenhub_contracts::realtime::VoiceDeviceKind;
+    if cfg!(target_os = "ios") {
+        VoiceDeviceKind::Mobile
+    } else if cfg!(target_arch = "wasm32") {
+        VoiceDeviceKind::Web
+    } else {
+        VoiceDeviceKind::Desktop
+    }
+}
+
 /// Изменение доступности системного audio focus.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

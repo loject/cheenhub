@@ -9,19 +9,22 @@ use super::backend::VoiceFrame;
 
 const RETIRED_TRACK_LIMIT: usize = 32;
 
-/// Текущие дорожки одного назначения у каждого отправителя.
+/// Активные дорожки захватов и независимо подключённых голосовых сессий.
 ///
-/// Число декодеров ограничено двумя на пользователя. Короткая история UUID
-/// не даёт поздним пакетам недавних захватов заменить текущий декодер.
+/// Legacy-захваты сохраняют историю замен, а проверенные микрофонные сессии
+/// одного пользователя получают независимые jitter buffers и декодеры.
 #[derive(Default)]
 pub(super) struct PlaybackTracks {
-    slots: HashMap<(String, MediaAudioSource), TrackSlot>,
+    slots: HashMap<(String, MediaAudioSource, Option<Uuid>), TrackSlot>,
+    session_microphones: HashMap<(String, Uuid), u8>,
 }
 
 #[derive(Default)]
 struct TrackSlot {
     active: Option<(Uuid, u8)>,
     retired: VecDeque<Uuid>,
+    /// Явно завершённые голосовые сессии не возобновляются после позднего snapshot.
+    stopped_sessions: VecDeque<Uuid>,
 }
 
 /// Ключ принятой дорожки и ключ заменённого декодера для освобождения ресурсов.
@@ -40,14 +43,45 @@ impl PlaybackTracks {
         {
             return None;
         }
+        if frame.audio_source == MediaAudioSource::Microphone && frame.session_track {
+            if frame.track_id.is_nil()
+                || self
+                    .slots
+                    .get(&(frame.sender_user_id.clone(), frame.audio_source, None))
+                    .is_some_and(|slot| slot.stopped_sessions.contains(&frame.track_id))
+            {
+                return None;
+            }
+            let channels = self
+                .session_microphones
+                .entry((frame.sender_user_id.clone(), frame.track_id))
+                .or_insert(frame.audio_channels);
+            return (*channels == frame.audio_channels).then_some(TrackAdmission {
+                key: playback_key_for(
+                    &frame.sender_user_id,
+                    frame.audio_source,
+                    frame.voice_session_id,
+                    frame.track_id,
+                ),
+                replaced: None,
+            });
+        }
+        let session_id = (frame.audio_source == MediaAudioSource::System)
+            .then_some(frame.voice_session_id)
+            .flatten();
         let slot = self
             .slots
-            .entry((frame.sender_user_id.clone(), frame.audio_source))
+            .entry((frame.sender_user_id.clone(), frame.audio_source, session_id))
             .or_default();
         if slot.retired.contains(&frame.track_id) {
             return None;
         }
-        let key = playback_key(&frame.sender_user_id, frame.audio_source, frame.track_id);
+        let key = playback_key_for(
+            &frame.sender_user_id,
+            frame.audio_source,
+            session_id,
+            frame.track_id,
+        );
         if let Some((id, channels)) = slot.active {
             if id == frame.track_id {
                 return (channels == frame.audio_channels).then_some(TrackAdmission {
@@ -55,8 +89,9 @@ impl PlaybackTracks {
                     replaced: None,
                 });
             }
-            let replaced = playback_key(&frame.sender_user_id, frame.audio_source, id);
-            retire(slot, id);
+            let replaced =
+                playback_key_for(&frame.sender_user_id, frame.audio_source, session_id, id);
+            retire(&mut slot.retired, id);
             slot.active = Some((frame.track_id, frame.audio_channels));
             return Some(TrackAdmission {
                 key,
@@ -75,42 +110,109 @@ impl PlaybackTracks {
         &mut self,
         sender: &str,
         source: MediaAudioSource,
+        voice_session_id: Option<Uuid>,
         track_id: Uuid,
     ) -> Option<String> {
-        let slot = self.slots.entry((sender.to_owned(), source)).or_default();
-        retire(slot, track_id);
+        let voice_session_id = (source == MediaAudioSource::System)
+            .then_some(voice_session_id)
+            .flatten();
+        let slot = self
+            .slots
+            .entry((sender.to_owned(), source, voice_session_id))
+            .or_default();
+        retire(&mut slot.retired, track_id);
         if slot.active.is_some_and(|(id, _)| id == track_id) {
             slot.active = None;
-            Some(playback_key(sender, source, track_id))
+            Some(playback_key_for(sender, source, voice_session_id, track_id))
         } else {
             None
         }
     }
 
+    /// Останавливает одну подтверждённую микрофонную сессию, отсекая поздние пакеты.
+    pub(super) fn stop_microphone_session(
+        &mut self,
+        sender: &str,
+        session_id: Uuid,
+    ) -> Option<String> {
+        let present = self
+            .session_microphones
+            .remove(&(sender.to_owned(), session_id));
+        let slot = self
+            .slots
+            .entry((sender.to_owned(), MediaAudioSource::Microphone, None))
+            .or_default();
+        let was_legacy_active = slot.active.is_some_and(|(id, _)| id == session_id);
+        if was_legacy_active {
+            slot.active = None;
+        }
+        retire(&mut slot.retired, session_id);
+        retire(&mut slot.stopped_sessions, session_id);
+        (present.is_some() || was_legacy_active)
+            .then(|| playback_key(sender, MediaAudioSource::Microphone, session_id))
+    }
+
+    /// Разрешает новую публикацию прежней голосовой сессии после подтверждённого входа.
+    ///
+    /// Удаляет запрет поздних пакетов только для указанного UUID. Состояние
+    /// декодера освобождает владеющий им AudioPlaybackHandle.
+    pub(super) fn reactivate_microphone_session(&mut self, sender: &str, session_id: Uuid) {
+        self.session_microphones
+            .remove(&(sender.to_owned(), session_id));
+        let slot = self
+            .slots
+            .entry((sender.to_owned(), MediaAudioSource::Microphone, None))
+            .or_default();
+        if slot.active.is_some_and(|(id, _)| id == session_id) {
+            slot.active = None;
+        }
+        slot.retired.retain(|id| *id != session_id);
+        slot.stopped_sessions.retain(|id| *id != session_id);
+    }
+
     /// Удаляет слоты ушедшего пользователя, освобождая историю его захватов.
     pub(super) fn remove_sender(&mut self, sender: &str) {
-        self.slots.retain(|(owner, _), _| owner != sender);
+        self.slots.retain(|(owner, _, _), _| owner != sender);
+        self.session_microphones
+            .retain(|(owner, _), _| owner != sender);
     }
 
     /// Очищает слоты при выходе из комнаты или выключении воспроизведения.
     pub(super) fn clear(&mut self) {
         self.slots.clear();
+        self.session_microphones.clear();
     }
 }
 
-fn retire(slot: &mut TrackSlot, id: Uuid) {
-    if slot.retired.contains(&id) {
+fn retire(retired: &mut VecDeque<Uuid>, id: Uuid) {
+    if retired.contains(&id) {
         return;
     }
-    if slot.retired.len() == RETIRED_TRACK_LIMIT {
-        slot.retired.pop_front();
+    if retired.len() == RETIRED_TRACK_LIMIT {
+        retired.pop_front();
     }
-    slot.retired.push_back(id);
+    retired.push_back(id);
 }
 
 /// Формирует внутренний ключ очереди из владельца, назначения и UUID захвата.
 pub(super) fn playback_key(sender: &str, source: MediaAudioSource, id: Uuid) -> String {
     format!("{sender}/{}/{id}", source as u8)
+}
+
+/// Отделяет системный звук двух устройств даже при одинаковом UUID захвата.
+pub(super) fn playback_key_for(
+    sender: &str,
+    source: MediaAudioSource,
+    voice_session_id: Option<Uuid>,
+    track_id: Uuid,
+) -> String {
+    if source == MediaAudioSource::System
+        && let Some(session_id) = voice_session_id
+    {
+        format!("{sender}/{}/{session_id}/{track_id}", source as u8)
+    } else {
+        playback_key(sender, source, track_id)
+    }
 }
 
 /// Возвращает владельца внутреннего ключа очереди для настроек громкости пользователя.

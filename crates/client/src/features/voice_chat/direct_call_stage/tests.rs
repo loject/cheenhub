@@ -1,5 +1,32 @@
 use super::{DirectCallStageStatus, stage_state_content};
-use super::{ParticipantVideoSource, screen_share_card_style};
+use super::{ParticipantVideoSource, matching_peer_video, screen_share_card_style};
+use cheenhub_contracts::realtime::{VoiceDeviceKind, VoiceRoomParticipant};
+use uuid::Uuid;
+
+#[test]
+fn stale_peer_screen_track_does_not_override_camera_of_current_voice_session() {
+    let old = Uuid::from_u128(1);
+    let current = Uuid::from_u128(2);
+    let peer = VoiceRoomParticipant {
+        microphone_enabled: true,
+        output_muted: false,
+        user_id: "peer".to_owned(),
+        session_id: current.to_string(),
+        voice_protocol_version: 5,
+        device_kind: VoiceDeviceKind::Desktop,
+        nickname: "Друг".to_owned(),
+        avatar_url: None,
+        joined_at: "2026-10-31T09:00:00Z".to_owned(),
+    };
+    let screen = vec![("peer".to_owned(), old)];
+    let camera = vec![("peer".to_owned(), current)];
+
+    assert_eq!(
+        matching_peer_video(Some(&peer), "peer", &screen, &camera),
+        Some((ParticipantVideoSource::Camera, current))
+    );
+    assert_eq!(matching_peer_video(None, "peer", &screen, &camera), None);
+}
 
 #[test]
 fn screen_share_card_preserves_frame_aspect_and_fits_both_stage_dimensions() {

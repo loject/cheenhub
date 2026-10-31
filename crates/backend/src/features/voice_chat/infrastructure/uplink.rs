@@ -56,7 +56,9 @@ impl InMemoryVoicePresenceStore {
         let mut grants = self.microphone_uplink_grants.lock().await;
         grants.retain(|entry| {
             entry.expires_at > Utc::now()
-                && !(entry.user_id == grant.user_id && entry.room_id == grant.room_id)
+                && !(entry.user_id == grant.user_id
+                    && entry.room_id == grant.room_id
+                    && entry.presence_session_id == grant.presence_session_id)
         });
         grants.push(grant);
     }
@@ -94,23 +96,22 @@ impl InMemoryVoicePresenceStore {
         Ok(binding)
     }
 
-    /// Проверяет привязку worker-сессии к текущему активному присутствию.
-    pub(crate) async fn microphone_uplink_is_bound(
+    /// Возвращает основную голосовую сессию для авторизованного microphone worker.
+    ///
+    /// Привязка определяется только по серверному grant и фактическому подключению,
+    /// без доверия к идентификаторам внутри медиапакета.
+    pub(crate) async fn microphone_uplink_presence_session(
         &self,
         session_id: &Uuid,
         user_id: &Uuid,
         room_id: &Uuid,
-        presence_session_id: &Uuid,
-    ) -> bool {
+    ) -> Option<Uuid> {
         self.microphone_uplink_bindings
             .lock()
             .await
             .get(session_id)
-            .is_some_and(|entry| {
-                &entry.user_id == user_id
-                    && &entry.room_id == room_id
-                    && &entry.presence_session_id == presence_session_id
-            })
+            .filter(|entry| &entry.user_id == user_id && &entry.room_id == room_id)
+            .map(|entry| entry.presence_session_id)
     }
 
     pub(super) async fn revoke_microphone_uplinks_for(&self, presences: &[VoicePresence]) {

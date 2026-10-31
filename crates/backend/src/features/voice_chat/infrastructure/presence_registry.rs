@@ -12,6 +12,8 @@ use uuid::Uuid;
 use super::presence_index::{MediaRouteSnapshot, PresenceReadIndex};
 use super::{VoicePresence, VoicePresenceTarget, VoicePresenceTargetKind};
 
+mod join;
+
 /// Управляет активным голосовым присутствием и его read indexes.
 #[derive(Default)]
 pub(super) struct PresenceRegistry {
@@ -26,9 +28,11 @@ pub(super) struct PresenceRegistry {
 struct PresenceState {
     /// Текущее присутствие каждого realtime-потока.
     by_stream: HashMap<Uuid, Arc<VoicePresence>>,
-    /// Единственный активный realtime-поток каждого пользователя.
-    stream_by_user: HashMap<Uuid, Uuid>,
-    /// Присутствия пользователей, сгруппированные по полным целям комнаты.
+    /// Все активные голосовые потоки пользователя, включая разные устройства.
+    streams_by_user: HashMap<Uuid, HashSet<Uuid>>,
+    /// Единственный активный голосовой поток каждой auth-сессии.
+    stream_by_auth: HashMap<Uuid, Uuid>,
+    /// Присутствия, сгруппированные по цели и физической транспортной сессии.
     rooms: HashMap<VoicePresenceTarget, HashMap<Uuid, Arc<VoicePresence>>>,
     /// Серверные цели с участниками для точечного удаления сервера.
     server_rooms: HashMap<Uuid, HashSet<VoicePresenceTarget>>,
@@ -58,56 +62,6 @@ pub(super) fn join_publication_plan(
 }
 
 impl PresenceRegistry {
-    /// Заменяет присутствие пользователя или потока и возвращает удалённые записи.
-    pub(super) async fn join(&self, presence: VoicePresence) -> Vec<VoicePresence> {
-        let mut state = self.state.lock().await;
-        let mut removed = Vec::with_capacity(2);
-        let mut affected_rooms = HashSet::new();
-        let mut previous_presences = Vec::with_capacity(2);
-
-        if let Some(previous) = state.by_stream.get(&presence.realtime_stream_id).cloned() {
-            previous_presences.push(previous);
-        }
-        let previous_for_user = state
-            .stream_by_user
-            .get(&presence.user_id)
-            .and_then(|stream_id| state.by_stream.get(stream_id))
-            .cloned();
-
-        if let Some(previous) = previous_for_user
-            && !previous_presences
-                .iter()
-                .any(|entry| entry.realtime_stream_id == previous.realtime_stream_id)
-        {
-            previous_presences.push(previous);
-        }
-
-        for previous in &previous_presences {
-            // Поточный индекс заранее закрывает старое присутствие для новых читателей.
-            self.index.remove_stream(&previous.realtime_stream_id);
-        }
-        for previous in &previous_presences {
-            self.remove_from_state(&mut state, previous, &mut affected_rooms);
-            removed.push((**previous).clone());
-        }
-
-        let presence = Arc::new(presence);
-        self.insert_into_state(&mut state, Arc::clone(&presence));
-        for publication in join_publication_plan(affected_rooms, presence.target()) {
-            match publication {
-                RoomPublication::Removal(target) | RoomPublication::Addition(target) => {
-                    self.publish_room(&state, target);
-                }
-            }
-        }
-        // Новый stream index появляется только после публикации route:
-        // на границе возможна временная ошибка авторизации, но не её расширение.
-        self.index.insert_stream(presence);
-
-        removed.sort_by_key(|previous| previous.joined_at);
-        removed
-    }
-
     /// Удаляет присутствие одного realtime-потока.
     pub(super) async fn leave_realtime_stream(
         &self,
@@ -173,15 +127,15 @@ impl PresenceRegistry {
             room_id: *room_id,
         };
         let mut state = self.state.lock().await;
-        let Some(presence) = state
+        let presences = state
             .rooms
             .get(&target)
-            .and_then(|users| users.get(user_id))
+            .into_iter()
+            .flat_map(HashMap::values)
+            .filter(|presence| presence.user_id == *user_id)
             .cloned()
-        else {
-            return Vec::new();
-        };
-        self.remove_and_publish(&mut state, &[presence])
+            .collect::<Vec<_>>();
+        self.remove_and_publish(&mut state, &presences)
     }
 
     /// Перечисляет участников одной комнаты в порядке присоединения.
@@ -234,7 +188,8 @@ impl PresenceRegistry {
         rooms
     }
 
-    /// Возвращает активное присутствие пользователя в комнате без асинхронной блокировки.
+    /// Поиск присутствия по пользователю для регрессионных тестов.
+    #[cfg(test)]
     pub(super) fn room_presence_for_user(
         &self,
         target_kind: VoicePresenceTargetKind,
@@ -244,7 +199,8 @@ impl PresenceRegistry {
         self.index.for_room_user(target_kind, room_id, user_id)
     }
 
-    /// Возвращает согласованный маршрут для одного медиапакета.
+    /// Прежний маршрут по пользователю, используемый только регрессионными тестами.
+    #[cfg(test)]
     pub(super) fn media_route(
         &self,
         target_kind: VoicePresenceTargetKind,
@@ -254,6 +210,18 @@ impl PresenceRegistry {
         self.index.media_route(target_kind, room_id, user_id)
     }
 
+    /// Возвращает маршрут только для указанной транспортной сессии пользователя.
+    pub(super) fn media_route_for_session(
+        &self,
+        target_kind: VoicePresenceTargetKind,
+        room_id: &Uuid,
+        session_id: &Uuid,
+        user_id: &Uuid,
+    ) -> Option<MediaRouteSnapshot> {
+        self.index
+            .media_route_for_session(target_kind, room_id, session_id, user_id)
+    }
+
     /// Возвращает присутствие потока без асинхронной блокировки.
     ///
     /// Индекс обновляется в fail-closed порядке: удаление публикуется до
@@ -261,7 +229,7 @@ impl PresenceRegistry {
     /// возможен краткий `None`. При обновлении профиля индекс может кратко
     /// вернуть прежние никнейм или аватар; единственный вызывающий код
     /// использует только неизменную цель присутствия. Медиа-авторизация
-    /// использует `media_route`.
+    /// использует `media_route_for_session`.
     pub(super) fn presence_for_stream(
         &self,
         realtime_stream_id: &Uuid,
@@ -327,16 +295,25 @@ impl PresenceRegistry {
         nickname: String,
     ) -> Vec<VoicePresenceTarget> {
         let mut state = self.state.lock().await;
-        let Some(stream_id) = state.stream_by_user.get(user_id).copied() else {
-            return Vec::new();
-        };
-        let Some(current) = state.by_stream.get(&stream_id).cloned() else {
-            return Vec::new();
-        };
-        let mut updated = (*current).clone();
-        updated.nickname = nickname;
-        self.replace_canonical_presence(&mut state, Arc::new(updated));
-        vec![current.target()]
+        let stream_ids = state
+            .streams_by_user
+            .get(user_id)
+            .cloned()
+            .unwrap_or_default();
+        let mut affected = HashSet::new();
+        for stream_id in stream_ids {
+            let Some(current) = state.by_stream.get(&stream_id).cloned() else {
+                continue;
+            };
+            if current.nickname == nickname {
+                continue;
+            }
+            let mut updated = (*current).clone();
+            updated.nickname = nickname.clone();
+            self.replace_canonical_presence(&mut state, Arc::new(updated));
+            affected.insert(current.target());
+        }
+        affected.into_iter().collect()
     }
 
     /// Обновляет URL аватара присутствующего пользователя и возвращает затронутую цель.
@@ -346,16 +323,25 @@ impl PresenceRegistry {
         avatar_url: Option<String>,
     ) -> Vec<VoicePresenceTarget> {
         let mut state = self.state.lock().await;
-        let Some(stream_id) = state.stream_by_user.get(user_id).copied() else {
-            return Vec::new();
-        };
-        let Some(current) = state.by_stream.get(&stream_id).cloned() else {
-            return Vec::new();
-        };
-        let mut updated = (*current).clone();
-        updated.avatar_url = avatar_url;
-        self.replace_canonical_presence(&mut state, Arc::new(updated));
-        vec![current.target()]
+        let stream_ids = state
+            .streams_by_user
+            .get(user_id)
+            .cloned()
+            .unwrap_or_default();
+        let mut affected = HashSet::new();
+        for stream_id in stream_ids {
+            let Some(current) = state.by_stream.get(&stream_id).cloned() else {
+                continue;
+            };
+            if current.avatar_url == avatar_url {
+                continue;
+            }
+            let mut updated = (*current).clone();
+            updated.avatar_url = avatar_url.clone();
+            self.replace_canonical_presence(&mut state, Arc::new(updated));
+            affected.insert(current.target());
+        }
+        affected.into_iter().collect()
     }
 
     /// Возвращает число активных голосовых подключений.
@@ -368,12 +354,19 @@ impl PresenceRegistry {
         let user_id = presence.user_id;
         let target = presence.target();
         state.by_stream.insert(stream_id, Arc::clone(&presence));
-        state.stream_by_user.insert(user_id, stream_id);
+        state
+            .streams_by_user
+            .entry(user_id)
+            .or_default()
+            .insert(stream_id);
+        state
+            .stream_by_auth
+            .insert(presence.auth_session_id, stream_id);
         state
             .rooms
             .entry(target)
             .or_default()
-            .insert(user_id, Arc::clone(&presence));
+            .insert(presence.session_id, Arc::clone(&presence));
         if target.kind == VoicePresenceTargetKind::Server {
             state
                 .server_rooms
@@ -393,9 +386,17 @@ impl PresenceRegistry {
         let user_id = presence.user_id;
         let target = presence.target();
         state.by_stream.remove(&stream_id);
-        state.stream_by_user.remove(&user_id);
+        if let Some(streams) = state.streams_by_user.get_mut(&user_id) {
+            streams.remove(&stream_id);
+            if streams.is_empty() {
+                state.streams_by_user.remove(&user_id);
+            }
+        }
+        if state.stream_by_auth.get(&presence.auth_session_id) == Some(&stream_id) {
+            state.stream_by_auth.remove(&presence.auth_session_id);
+        }
         if let Some(users) = state.rooms.get_mut(&target) {
-            users.remove(&user_id);
+            users.remove(&presence.session_id);
             if users.is_empty() {
                 state.rooms.remove(&target);
                 if target.kind == VoicePresenceTargetKind::Server
@@ -456,7 +457,7 @@ impl PresenceRegistry {
             .rooms
             .get_mut(&presence.target())
             .expect("active presence must belong to an indexed room")
-            .insert(presence.user_id, Arc::clone(&presence));
+            .insert(presence.session_id, Arc::clone(&presence));
         self.index.replace_presence(Arc::clone(&presence));
         self.index.insert_stream(presence);
     }
