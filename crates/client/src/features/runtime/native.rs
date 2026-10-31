@@ -158,7 +158,7 @@ fn init_dioxus_profile_logger() {
         return;
     }
     if dispatcher::has_been_set() {
-        eprintln!("{ENABLE_ENV}=1 не включил Dioxus-профилирование: tracing subscriber уже задан.");
+        // Профиль уже включён как отдельный слой общего desktop-подписчика.
         return;
     }
 
