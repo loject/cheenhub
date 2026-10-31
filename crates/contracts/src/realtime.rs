@@ -45,17 +45,20 @@ pub use text_chat::{
 };
 pub use typing::TypingAuthor;
 pub use voice_chat::{
-    BindMicrophoneUplink, CancelDirectCall, DirectCallEndReason, DirectCallLifecycleEvent,
-    DirectCallResponse, DirectCallSnapshot, DirectCallState, DirectCallsSnapshot,
-    DirectMessageVoiceRoomsSnapshot, EndDirectCall, IssueMicrophoneUplinkGrant,
-    JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember, LeaveDirectMessageVoiceRoom,
-    LeaveVoiceRoom, ListDirectCalls, ListDirectMessageVoiceRooms, ListServerVoiceRooms,
+    BindMicrophoneUplink, CancelDirectCall, CancelVoiceRoomInvite, DirectCallEndReason,
+    DirectCallLifecycleEvent, DirectCallResponse, DirectCallSnapshot, DirectCallState,
+    DirectCallsSnapshot, DirectMessageVoiceRoomsSnapshot, EndDirectCall,
+    IssueMicrophoneUplinkGrant, JoinDirectMessageVoiceRoom, JoinVoiceRoom, KickVoiceMember,
+    LeaveDirectMessageVoiceRoom, LeaveVoiceRoom, ListDirectCalls, ListDirectMessageVoiceRooms,
+    ListServerVoiceRooms, ListVoiceRoomInviteCandidates, ListVoiceRoomInvites,
     MicrophoneUplinkBound, MicrophoneUplinkGrantIssued, ParticipantNetworkQualityUpdated,
-    PublishVoiceNetworkQuality, RespondDirectCall, ServerAudioBitrate, ServerVoiceRoomsSnapshot,
-    SetVoiceMicrophoneState, SetVoiceOutputState, StartDirectCall, StopVoiceVideoStream,
-    VoiceChatKind, VoiceDeviceKind, VoiceNetworkTargetKind, VoicePresenceEvicted,
-    VoicePresenceEvictionReason, VoiceRoomParticipant, VoiceRoomSnapshot, VoiceVideoStreamEnded,
-    VoiceVideoStreamSource,
+    PublishVoiceNetworkQuality, RespondDirectCall, RespondVoiceRoomInvite, SendVoiceRoomInvite,
+    ServerAudioBitrate, ServerVoiceRoomsSnapshot, SetVoiceMicrophoneState, SetVoiceOutputState,
+    StartDirectCall, StopVoiceVideoStream, VoiceChatKind, VoiceDeviceKind, VoiceNetworkTargetKind,
+    VoicePresenceEvicted, VoicePresenceEvictionReason, VoiceRoomInviteCandidate,
+    VoiceRoomInviteCandidatesSnapshot, VoiceRoomInviteLifecycleEvent, VoiceRoomInviteResponse,
+    VoiceRoomInviteSnapshot, VoiceRoomInviteStatus, VoiceRoomInvitesSnapshot, VoiceRoomParticipant,
+    VoiceRoomSnapshot, VoiceVideoStreamEnded, VoiceVideoStreamSource,
 };
 
 #[cfg(test)]
