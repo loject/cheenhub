@@ -3,6 +3,8 @@
 mod account_section;
 mod delete_account_modal;
 mod developer_section;
+#[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
+mod diagnostics_section;
 mod page;
 mod password_section;
 mod platform;

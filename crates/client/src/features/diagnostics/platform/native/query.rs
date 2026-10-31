@@ -12,35 +12,35 @@ const PAGE_LIMIT: usize = 500;
 
 /// Фильтры, общие для просмотра и экспорта событий.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct LogFilter {
-    pub(super) level: Option<String>,
-    pub(super) target: String,
-    pub(super) text: String,
-    pub(super) since: Option<String>,
-    pub(super) until: Option<String>,
+pub(crate) struct LogFilter {
+    pub(crate) level: Option<String>,
+    pub(crate) target: String,
+    pub(crate) text: String,
+    pub(crate) since: Option<String>,
+    pub(crate) until: Option<String>,
 }
 
 /// Одна полная диагностическая запись, пригодная для копирования.
 #[derive(Clone, Debug)]
-pub(super) struct LogEntry {
-    pub(super) timestamp: String,
-    pub(super) level: String,
-    pub(super) target: String,
-    pub(super) message: String,
-    pub(super) raw: String,
+pub(crate) struct LogEntry {
+    pub(crate) timestamp: String,
+    pub(crate) level: String,
+    pub(crate) target: String,
+    pub(crate) message: String,
+    pub(crate) raw: String,
 }
 
 /// Страница событий в порядке от новых к старым.
-pub(super) struct LogPage {
-    pub(super) total: usize,
-    pub(super) entries: Vec<LogEntry>,
+pub(crate) struct LogPage {
+    pub(crate) total: usize,
+    pub(crate) entries: Vec<LogEntry>,
 }
 
 /// Ограничения ручного экспорта событий.
 #[derive(Clone, Copy)]
-pub(super) struct ExportLimits {
-    pub(super) max_lines: usize,
-    pub(super) max_bytes: u64,
+pub(crate) struct ExportLimits {
+    pub(crate) max_lines: usize,
+    pub(crate) max_bytes: u64,
 }
 
 impl Default for ExportLimits {
@@ -53,10 +53,10 @@ impl Default for ExportLimits {
 }
 
 /// Результат экспорта с признаком отсечения лишних событий.
-pub(super) struct ExportResult {
-    pub(super) lines: usize,
-    pub(super) bytes: u64,
-    pub(super) truncated: bool,
+pub(crate) struct ExportResult {
+    pub(crate) lines: usize,
+    pub(crate) bytes: u64,
+    pub(crate) truncated: bool,
 }
 
 /// Читает ограниченную страницу подходящих событий.
@@ -83,28 +83,78 @@ pub(super) fn export_logs(
     filter: &LogFilter,
     limits: ExportLimits,
 ) -> io::Result<ExportResult> {
+    // Нельзя перезаписывать файлы работающего журнала, даже через ссылку на них.
+    reject_archive_destination(directory, output)?;
     // Снимок создаётся до открытия файла экспорта и не меняется при ротации.
     let matched = matching_logs(directory, filter)?;
-    let mut file = File::create(output)?;
-    let max_lines = limits.max_lines.min(50_000);
-    let max_bytes = limits.max_bytes.min(10 * 1024 * 1024);
-    let mut result = ExportResult {
-        lines: 0,
-        bytes: 0,
-        truncated: false,
-    };
-    for entry in matched {
-        let length = entry.raw.len() as u64;
-        if result.lines >= max_lines || result.bytes.saturating_add(length) > max_bytes {
-            result.truncated = true;
-            break;
+    // Записываем во временный файл рядом с назначением: даже hard link на архив
+    // не позволит обнулить исходный журнал через File::create(output).
+    let temporary = output.with_extension(format!("export-{}.tmp", uuid::Uuid::new_v4()));
+    let outcome = (|| -> io::Result<ExportResult> {
+        let mut file = File::options()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        let max_lines = limits.max_lines.min(50_000);
+        let max_bytes = limits.max_bytes.min(10 * 1024 * 1024);
+        let mut result = ExportResult {
+            lines: 0,
+            bytes: 0,
+            truncated: false,
+        };
+        for entry in matched {
+            let length = entry.raw.len() as u64;
+            if result.lines >= max_lines || result.bytes.saturating_add(length) > max_bytes {
+                result.truncated = true;
+                break;
+            }
+            file.write_all(entry.raw.as_bytes())?;
+            result.lines += 1;
+            result.bytes += length;
         }
-        file.write_all(entry.raw.as_bytes())?;
-        result.lines += 1;
-        result.bytes += length;
+        file.flush()?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, output)?;
+        Ok(result)
+    })();
+    if outcome.is_err() {
+        let _ = fs::remove_file(&temporary);
     }
-    file.flush()?;
-    Ok(result)
+    outcome
+}
+
+fn reject_archive_destination(directory: &Path, output: &Path) -> io::Result<()> {
+    let archive_dir = fs::canonicalize(directory).ok();
+    let output_parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let same_directory = archive_dir
+        .as_ref()
+        .is_some_and(|archive| fs::canonicalize(output_parent).ok().as_ref() == Some(archive));
+    let active_name = output.file_name().is_some_and(|name| {
+        (0..ARCHIVE_FILES).any(|index| {
+            name.to_string_lossy()
+                .eq_ignore_ascii_case(&format!("client.{index}.jsonl"))
+        })
+    });
+    let existing_destination = fs::canonicalize(output).ok();
+    let aliases_archive = existing_destination.as_ref().is_some_and(|destination| {
+        (0..ARCHIVE_FILES).any(|index| {
+            fs::canonicalize(directory.join(format!("client.{index}.jsonl")))
+                .ok()
+                .as_ref()
+                == Some(destination)
+        })
+    });
+    if (same_directory && active_name) || aliases_archive {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "cannot export over an active log archive",
+        ));
+    }
+    Ok(())
 }
 
 fn matching_logs(directory: &Path, filter: &LogFilter) -> io::Result<Vec<LogEntry>> {

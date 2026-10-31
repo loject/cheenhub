@@ -5,3 +5,9 @@ fn native_keeps_system_settings_available() {
     assert!(is_section_available(UserSettingsSection::System));
     assert!(resolve_section(UserSettingsSection::System) == UserSettingsSection::System);
 }
+
+#[test]
+fn native_exposes_diagnostics_settings() {
+    assert!(is_section_available(UserSettingsSection::Diagnostics));
+    assert!(resolve_section(UserSettingsSection::Diagnostics) == UserSettingsSection::Diagnostics);
+}

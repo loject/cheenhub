@@ -4,12 +4,20 @@ use dioxus::prelude::*;
 
 use super::account_section::AccountSettingsSection;
 use super::developer_section::DeveloperSettingsSection;
+#[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
+use super::diagnostics_section::DiagnosticsSettingsSection;
 use super::platform;
 use super::profile_section::ProfileSettingsSection;
 use super::security_section::SecuritySettingsSection;
 use super::sound_section::SoundSettingsSection;
 use super::system_section::SystemSettingsSection;
 use crate::features::developer_mode::DeveloperModeHandle;
+
+#[cfg(not(all(feature = "desktop", not(target_arch = "wasm32"))))]
+#[component]
+fn DiagnosticsSettingsSection() -> Element {
+    rsx! {}
+}
 
 /// User settings sections shown in the modal menu.
 #[derive(Clone, Copy, PartialEq)]
@@ -22,6 +30,8 @@ pub(crate) enum UserSettingsSection {
     Security,
     /// Client system behavior.
     System,
+    /// Локальный журнал событий настольного клиента.
+    Diagnostics,
     /// Сеанс и управление жизненным циклом аккаунта.
     Account,
     /// Локальные инструменты; доступны только после активации Developer Mode.
@@ -60,6 +70,11 @@ const SETTINGS_SECTIONS: &[UserSettingsSectionMeta] = &[
         kind: UserSettingsSection::System,
         label: "Система",
         description: "Окно, трей и запуск",
+    },
+    UserSettingsSectionMeta {
+        kind: UserSettingsSection::Diagnostics,
+        label: "Диагностика",
+        description: "Локальные логи и экспорт",
     },
     UserSettingsSectionMeta {
         kind: UserSettingsSection::Account,
@@ -171,6 +186,9 @@ pub(crate) fn UserSettingsPage(
                             UserSettingsSection::System => rsx! {
                                 SystemSettingsSection {}
                             },
+                            UserSettingsSection::Diagnostics => rsx! {
+                                DiagnosticsSettingsSection {}
+                            },
                             UserSettingsSection::Account => rsx! {
                                 AccountSettingsSection {}
                             },
@@ -197,6 +215,7 @@ fn section_label(section: UserSettingsSection) -> &'static str {
         UserSettingsSection::Sound => "Звук",
         UserSettingsSection::Security => "Безопасность",
         UserSettingsSection::System => "Система",
+        UserSettingsSection::Diagnostics => "Диагностика",
         UserSettingsSection::Account => "Аккаунт",
     }
 }
