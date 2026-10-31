@@ -29,3 +29,23 @@ fn two_sessions_of_one_account_have_distinct_sidebar_render_keys() {
     );
     assert_eq!(voice_participant_key(&first), voice_participant_key(&first));
 }
+
+#[test]
+fn joining_voice_room_expands_collapsed_participants() {
+    assert!(expanded_after_connection_change(false, false, true));
+}
+
+#[test]
+fn participant_updates_preserve_manual_collapse() {
+    assert!(!expanded_after_connection_change(false, true, true));
+}
+
+#[test]
+fn leaving_voice_room_does_not_force_expansion() {
+    assert!(!expanded_after_connection_change(false, true, false));
+}
+
+#[test]
+fn manual_expansion_survives_presence_changes() {
+    assert!(expanded_after_connection_change(true, true, false));
+}
