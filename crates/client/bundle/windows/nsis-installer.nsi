@@ -21,8 +21,17 @@ RequestExecutionLevel admin
 RequestExecutionLevel user
 {{/if}}
 
+; Числовая версия ресурса Windows: RC ниже стабильного релиза той же версии.
+!searchparse /noerrors "{{version}}" "" CHEENHUB_VERSION_BASE "-rc." CHEENHUB_VERSION_RC
+!ifdef CHEENHUB_VERSION_RC
+    !define CHEENHUB_WINDOWS_VERSION "${CHEENHUB_VERSION_BASE}.${CHEENHUB_VERSION_RC}"
+!else
+    !define CHEENHUB_WINDOWS_VERSION "{{version}}.65535"
+!endif
+!echo "CheenHub Windows installer resource version: ${CHEENHUB_WINDOWS_VERSION}"
+
 ; Метаданные версии
-VIProductVersion "{{version}}.0"
+VIProductVersion "${CHEENHUB_WINDOWS_VERSION}"
 VIAddVersionKey "ProductName" "{{product_name}}"
 VIAddVersionKey "FileVersion" "{{version}}"
 VIAddVersionKey "ProductVersion" "{{version}}"

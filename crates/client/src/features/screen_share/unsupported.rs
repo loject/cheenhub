@@ -1,5 +1,9 @@
 //! Неподдерживаемый backend демонстрации экрана.
-#![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
+#![cfg(all(
+    not(target_arch = "wasm32"),
+    not(target_os = "android"),
+    not(all(target_os = "windows", feature = "windows")),
+))]
 
 use std::rc::Rc;
 
