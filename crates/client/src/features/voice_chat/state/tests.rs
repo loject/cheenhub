@@ -8,6 +8,7 @@ use cheenhub_contracts::realtime::{VoiceRoomParticipant, VoiceRoomSnapshot};
 use cheenhub_contracts::rest::AuthUser;
 use dioxus::prelude::*;
 
+use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::microphone::MicrophoneHandle;
 use crate::features::realtime::{RealtimeError, create_handle};
 
@@ -85,6 +86,7 @@ fn voice_handle_with_generation(
         join_generation,
         realtime: create_handle(),
         microphone: microphone.clone(),
+        playback: AudioPlaybackHandle::for_test(),
         current_user: current_user(),
     });
     (handle, microphone)

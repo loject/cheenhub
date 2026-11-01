@@ -339,6 +339,39 @@ impl AudioPlaybackHandle {
         Ok(context)
     }
 
+    /// Создаёт нейтральный браузерный контекст без AudioContext для unit-тестов.
+    #[cfg(test)]
+    pub(crate) fn for_test() -> Self {
+        let jitter_buffer_us = storage::DEFAULT_JITTER_BUFFER_US;
+        Self {
+            muted: Signal::new(false),
+            selected_output_device_id: Signal::new(None),
+            selected_output_device_label: Signal::new(None),
+            output_volume_percent: Signal::new(100),
+            jitter_buffer_us: Signal::new(jitter_buffer_us),
+            inner: Rc::new(RefCell::new(AudioPlaybackInner {
+                tracks: super::tracks::PlaybackTracks::default(),
+                context: None,
+                muted: false,
+                senders: HashMap::new(),
+                jitter_buffers: HashMap::new(),
+                jitter_drainers: HashMap::new(),
+                next_jitter_drainer_generation: 0,
+                jitter_buffer_us,
+                jitter_warning_at_ms: HashMap::new(),
+                decoder_queue_warning_at_ms: HashMap::new(),
+                playback_schedule_warning_at: HashMap::new(),
+                diagnostics: AudioPlaybackDiagnostics::new(),
+                scheduled_sources: HashMap::new(),
+                scheduled_until: HashMap::new(),
+                connection_signal_loop: ConnectionSignalLoopState::default(),
+                incoming_call_ring: IncomingCallRingState::default(),
+                user_volumes: HashMap::new(),
+                output_gain: 1.0,
+            })),
+        }
+    }
+
     fn set_output_device_preference(&self, device_id: Option<String>, label: Option<String>) {
         if self.selected_output_device_id.peek().as_deref() == device_id.as_deref()
             && self.selected_output_device_label.peek().as_deref() == label.as_deref()

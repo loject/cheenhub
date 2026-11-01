@@ -1,6 +1,7 @@
 //! Регрессии времени жизни отправки демонстрации экрана при смене вкладки.
 
 use super::*;
+use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::microphone::MicrophoneHandle;
 use crate::features::realtime::create_handle;
 use crate::features::screen_share::ScreenShareCodec;
@@ -59,6 +60,7 @@ fn disconnected_voice() -> VoiceConnectionHandle {
         join_generation: Rc::new(std::cell::Cell::new(0)),
         realtime: create_handle(),
         microphone,
+        playback: AudioPlaybackHandle::for_test(),
         current_user: AuthUser {
             id: "test-user".into(),
             nickname: "Пользователь".into(),

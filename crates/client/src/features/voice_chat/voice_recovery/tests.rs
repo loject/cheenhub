@@ -72,6 +72,7 @@ fn reconnect_preserves_newly_active_target() {
     });
 }
 
+use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::microphone::MicrophoneHandle;
 use crate::features::realtime::create_handle;
 use crate::features::voice_chat::state::{
@@ -119,6 +120,7 @@ fn voice_handle_with_generation(
         join_generation,
         realtime: create_handle(),
         microphone: microphone.clone(),
+        playback: AudioPlaybackHandle::for_test(),
         current_user: current_user(),
     });
     (handle, microphone)

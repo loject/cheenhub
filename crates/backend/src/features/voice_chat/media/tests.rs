@@ -45,6 +45,18 @@ fn v5_microphone_must_belong_to_authenticated_voice_session() {
 }
 
 #[test]
+fn disabled_microphone_blocks_modern_and_legacy_uplink_but_not_system_audio() {
+    use cheenhub_contracts::media::MediaAudioSource;
+
+    let allowed = super::relay::microphone_uplink_allowed;
+    assert!(!allowed(Some(MediaAudioSource::Microphone), false));
+    assert!(!allowed(None, false));
+    assert!(allowed(Some(MediaAudioSource::System), false));
+    assert!(allowed(Some(MediaAudioSource::Microphone), true));
+    assert!(allowed(None, true));
+}
+
+#[test]
 fn legacy_video_uses_authenticated_session_track_without_new_wire_version() {
     let mut packet = MediaDatagram::decode(&encoded_datagram(
         MediaDatagramKind::CameraFrame,

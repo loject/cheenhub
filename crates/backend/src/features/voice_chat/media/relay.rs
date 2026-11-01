@@ -95,6 +95,16 @@ pub(super) fn authorized_audio_track(
     }
 }
 
+/// Разрешает системное аудио независимо от микрофона и блокирует его uplink при mute.
+///
+/// Отсутствующий `audio_source` у legacy v1 означает микрофон.
+pub(super) fn microphone_uplink_allowed(
+    audio_source: Option<MediaAudioSource>,
+    microphone_enabled: bool,
+) -> bool {
+    audio_source == Some(MediaAudioSource::System) || microphone_enabled
+}
+
 /// Привязывает legacy-микрофон к аутентифицированной голосовой сессии.
 ///
 /// Для v1 заполняет отсутствующие метаданные mono-микрофона; v2 сохраняет
@@ -245,6 +255,17 @@ pub(crate) async fn handle_webtransport_frame_bytes(
     let recipients = route.recipients;
     let legacy_recipients = route.legacy_recipients;
     let modern_recipients = route.modern_recipients;
+    if media_kind == "voice"
+        && !microphone_uplink_allowed(header.audio_source, presence.microphone_enabled)
+    {
+        debug!(
+            %session_id,
+            %user_id,
+            room_id = %header.room_id,
+            "dropping microphone audio from muted participant"
+        );
+        return;
+    }
     if media_kind == "voice"
         && !authorized_audio_track(
             header.audio_source,

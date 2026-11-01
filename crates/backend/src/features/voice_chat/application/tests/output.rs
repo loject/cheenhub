@@ -1,8 +1,8 @@
 //! Проверки публикации состояния входящего звука участника голосовой комнаты.
 
 use cheenhub_contracts::realtime::{
-    JoinVoiceRoom, RealtimeEnvelope, RealtimeKind, RealtimeModule, SetVoiceOutputState,
-    VoiceChatKind, VoiceRoomSnapshot,
+    JoinVoiceRoom, RealtimeEnvelope, RealtimeKind, RealtimeModule, SetVoiceMicrophoneState,
+    SetVoiceOutputState, VoiceChatKind, VoiceRoomSnapshot,
 };
 use cheenhub_contracts::rest::ServerRoomKind;
 use uuid::Uuid;
@@ -82,7 +82,10 @@ async fn output_mute_updates_presence_and_fans_out_only_when_changed() {
     );
     let snapshot: VoiceRoomSnapshot = serde_json::from_value(reply.payload).unwrap();
     assert!(snapshot.participants[0].output_muted);
-    assert!(snapshot.participants[0].microphone_enabled);
+    assert!(
+        !snapshot.participants[0].microphone_enabled,
+        "выключение входящего звука должно одновременно выключать микрофон"
+    );
 
     let WebSocketOutbound::PreparedEnvelope(event) = observed.try_recv().unwrap() else {
         panic!("expected participant fanout")
@@ -104,6 +107,77 @@ async fn output_mute_updates_presence_and_fans_out_only_when_changed() {
         observed.try_recv().is_err(),
         "unchanged output choice must not fan out again"
     );
+}
+
+#[tokio::test]
+async fn deafen_transitions_preserve_explicit_microphone_preference() {
+    let state = state();
+    let (user, user_id) = registered_user(&state).await;
+    let stream_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4();
+    let (server_id, room_id) = create_room(&state, &user_id, "voice", ServerRoomKind::Voice).await;
+    join_room(
+        &state,
+        stream_id,
+        session_id,
+        &user,
+        &user_id,
+        JoinVoiceRoom {
+            server_id,
+            room_id: room_id.clone(),
+            microphone_enabled: true,
+            voice_protocol_version: 5,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    let deafened = crate::features::voice_chat::application::set_output_state(
+        &state,
+        stream_id,
+        &user_id,
+        SetVoiceOutputState {
+            room_id: room_id.clone(),
+            output_muted: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(deafened.participants[0].output_muted);
+    assert!(!deafened.participants[0].microphone_enabled);
+
+    let undeafened = crate::features::voice_chat::application::set_output_state(
+        &state,
+        stream_id,
+        &user_id,
+        SetVoiceOutputState {
+            room_id: room_id.clone(),
+            output_muted: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!undeafened.participants[0].output_muted);
+    assert!(
+        !undeafened.participants[0].microphone_enabled,
+        "снятие deafen не должно само включать микрофон"
+    );
+
+    let microphone_enabled = crate::features::voice_chat::application::set_microphone_state(
+        &state,
+        stream_id,
+        &user_id,
+        SetVoiceMicrophoneState {
+            room_id,
+            microphone_enabled: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!microphone_enabled.participants[0].output_muted);
+    assert!(microphone_enabled.participants[0].microphone_enabled);
 }
 
 #[tokio::test]

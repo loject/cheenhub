@@ -6,7 +6,7 @@ use dioxus::prelude::info;
 
 use super::state::VoiceConnectionHandle;
 
-/// Восстанавливает захват только при сохранённом разрешении пользователя.
+/// Восстанавливает захват только при разрешённом входящем звуке и выборе пользователя.
 pub(crate) fn restart(
     microphone: MicrophoneHandle,
     realtime: RealtimeHandle,
@@ -15,6 +15,7 @@ pub(crate) fn restart(
     voice: VoiceConnectionHandle,
 ) {
     if !microphone.voice_enabled()
+        || voice.output_muted()
         || voice
             .outbound_session_id_for(&server_id, &room_id)
             .is_none()
@@ -25,7 +26,7 @@ pub(crate) fn restart(
     super::microphone_uplink_platform::restart(microphone, realtime, server_id, room_id, voice);
 }
 
-/// Меняет сохраняемый выбор; ошибки и временные остановки его не сбрасывают.
+/// Меняет выбор микрофона; попытка включения при deafen сначала снимает deafen.
 pub(crate) fn toggle(
     microphone: MicrophoneHandle,
     realtime: RealtimeHandle,
@@ -33,6 +34,18 @@ pub(crate) fn toggle(
     room_id: String,
     voice: Option<VoiceConnectionHandle>,
 ) {
+    if voice
+        .as_ref()
+        .is_some_and(VoiceConnectionHandle::output_muted)
+    {
+        microphone.set_voice_enabled(true);
+        if let Some(voice) = &voice {
+            voice.set_output_muted(false);
+        }
+        info!(%server_id, %room_id, "enabled incoming voice audio and microphone by user request");
+        return;
+    }
+
     let enabled = !microphone.voice_enabled();
     microphone.set_voice_enabled(enabled);
     if enabled {
@@ -50,5 +63,5 @@ pub(crate) fn toggle(
     } else {
         microphone.stop();
     }
-    info!(%server_id, %room_id, "applied user microphone toggle");
+    info!(%server_id, %room_id, microphone_enabled = enabled, "applied user microphone toggle");
 }

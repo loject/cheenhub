@@ -209,6 +209,19 @@ impl AudioPlaybackHandle {
     /// Останавливает отсутствующий повторяющийся сигнал соединения.
     pub(crate) fn stop_connection_signal_loop(&self) {}
 
+    /// Создаёт нейтральный контекст без аудиобэкенда для unit-тестов.
+    #[cfg(test)]
+    pub(crate) fn for_test() -> Self {
+        Self {
+            muted: Signal::new(false),
+            selected_output_device_id: Signal::new(None),
+            selected_output_device_label: Signal::new(None),
+            output_volume_percent: Signal::new(100),
+            jitter_buffer_us: Signal::new(storage::DEFAULT_JITTER_BUFFER_US),
+            warned_unsupported: Rc::new(Cell::new(false)),
+        }
+    }
+
     fn set_output_device_preference(&self, device_id: Option<String>, label: Option<String>) {
         if self.selected_output_device_id.peek().as_deref() == device_id.as_deref()
             && self.selected_output_device_label.peek().as_deref() == label.as_deref()

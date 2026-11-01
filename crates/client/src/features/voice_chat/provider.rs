@@ -18,8 +18,8 @@ use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
 use super::direct_call_provider::DirectCallProvider;
 use super::kicked_modal::KickedFromVoiceModal;
 use super::local_video::{
-    LocalVideoRuntime, LocalVideoTarget, participant_source_from_contract, reconcile_camera_target,
-    reconcile_screen_share_target, release_local_video_target,
+    LocalVideoRuntime, LocalVideoTarget, reconcile_camera_target, reconcile_screen_share_target,
+    release_local_video_target,
 };
 use super::microphone_uplink;
 use super::network_quality::use_voice_network_quality_runtime;
@@ -81,6 +81,7 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let mut camera_target_room = use_signal(|| None::<LocalVideoTarget>);
     let mut screen_share_target_room = use_signal(|| None::<LocalVideoTarget>);
     let mut mic_paused_by_focus = use_signal(|| false);
+    let mut mic_paused_by_deafen = use_signal(|| false);
     let voice_notification_sounds =
         use_hook(|| Rc::new(RefCell::new(VoiceNotificationSoundState::default())));
     let camera_notification_sounds =
@@ -104,21 +105,17 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         join_generation: join_generation.clone(),
         realtime: realtime.clone(),
         microphone: microphone.clone(),
+        playback: playback.clone(),
         current_user: current_user.clone(),
     });
     super::screen_audio::use_screen_audio(screen_share.clone(), realtime.clone(), handle.clone());
     let context_handle = handle.clone();
     use_context_provider(move || context_handle.clone());
-    super::microphone_state::use_microphone_state_publication(
-        state,
-        join_generation.clone(),
-        microphone.clone(),
-        realtime.clone(),
-    );
     super::output_state::use_output_state_publication(
         state,
         join_generation.clone(),
         playback.clone(),
+        microphone.clone(),
         realtime.clone(),
     );
     use_voice_network_quality_runtime(
@@ -173,70 +170,12 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
         handle.clone(),
         voice_audio_focused,
     );
-    let screen_datagram_realtime = realtime.clone();
-    let screen_datagram_video = participant_video.clone();
-    use_hook(move || {
-        spawn(async move {
-            let mut frames = realtime::subscribe_screen_frames(&screen_datagram_realtime);
-            while let Some(frame) = frames.next().await {
-                let current = state();
-                let Some(target) = current.active_target() else {
-                    continue;
-                };
-                if frame.room_id != target.room_id {
-                    continue;
-                }
-                screen_datagram_video
-                    .publish_frame(ParticipantVideoSource::ScreenShare, frame.into());
-            }
-        })
-    });
-    let camera_datagram_realtime = realtime.clone();
-    let camera_datagram_video = participant_video.clone();
-    use_hook(move || {
-        spawn(async move {
-            let mut frames = realtime::subscribe_camera_frames(&camera_datagram_realtime);
-            while let Some(frame) = frames.next().await {
-                let current = state();
-                let Some(target) = current.active_target() else {
-                    continue;
-                };
-                if frame.room_id != target.room_id {
-                    continue;
-                }
-                camera_datagram_video.publish_frame(ParticipantVideoSource::Camera, frame.into());
-            }
-        })
-    });
-    let video_ended_realtime = realtime.clone();
-    let video_ended_participant_video = participant_video.clone();
-    let video_ended_playback = playback.clone();
-    use_hook(move || {
-        spawn(async move {
-            let mut events = realtime::subscribe_video_stream_ended(&video_ended_realtime);
-            while let Some(event) = events.next().await {
-                let current = state();
-                let Some(target) = current.active_target() else {
-                    continue;
-                };
-                if event.server_id != target.server_id || event.room_id != target.room_id {
-                    continue;
-                }
-                video_ended_participant_video.release_stream_for_event(
-                    participant_source_from_contract(event.source),
-                    &event.sender_user_id,
-                    event.session_id,
-                );
-                if let Some(track_id) = event.audio_track_id {
-                    video_ended_playback.stop_system_audio(
-                        &event.sender_user_id,
-                        event.session_id,
-                        track_id,
-                    );
-                }
-            }
-        })
-    });
+    super::video_runtime::use_video_datagram_runtime(
+        state,
+        realtime.clone(),
+        participant_video.clone(),
+        playback.clone(),
+    );
     voice_recovery::use_voice_recovery(
         handle.clone(),
         realtime.clone(),
@@ -270,204 +209,228 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let effect_handle = handle.clone();
     let effect_current_user_id = current_user.id.clone();
     let effect_voice_sounds = voice_notification_sounds.clone();
-    use_effect(move || match state() {
-        VoiceConnectionState::Connected {
-            target,
-            participants,
-        } => {
-            let Some(session_id) =
-                effect_handle.outbound_session_id_for(&target.server_id, &target.room_id)
-            else {
-                debug!(room_id = %target.room_id, "waiting for confirmed voice media session");
-                return;
-            };
-            let confirmed_session_id = session_id.to_string();
-            if matches!(target.kind, VoiceRoomTargetKind::DirectMessage) {
-                microphone.set_bitrate_bps(cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS);
-            }
-            if !platform_call_active() {
-                match voice_call_platform::set_voice_call_participating(true) {
-                    Ok(()) => {
-                        platform_call_active.set(true);
-                        info!(
-                            server_id = %target.server_id,
-                            room_id = %target.room_id,
-                            "acquired platform voice-call lifecycle"
-                        );
-                    }
-                    Err(error) => {
-                        warn!(
-                            %error,
-                            server_id = %target.server_id,
-                            room_id = %target.room_id,
-                            "failed to acquire platform voice-call lifecycle"
-                        );
+    use_effect(move || {
+        // Изменение deafen должно повторно пройти через lifecycle микрофона.
+        let _ = playback.is_muted();
+        match state() {
+            VoiceConnectionState::Connected {
+                target,
+                participants,
+            } => {
+                let Some(session_id) =
+                    effect_handle.outbound_session_id_for(&target.server_id, &target.room_id)
+                else {
+                    debug!(room_id = %target.room_id, "waiting for confirmed voice media session");
+                    return;
+                };
+                let confirmed_session_id = session_id.to_string();
+                if matches!(target.kind, VoiceRoomTargetKind::DirectMessage) {
+                    microphone.set_bitrate_bps(cheenhub_contracts::media::VOICE_AUDIO_BITRATE_BPS);
+                }
+                if !platform_call_active() {
+                    match voice_call_platform::set_voice_call_participating(true) {
+                        Ok(()) => {
+                            platform_call_active.set(true);
+                            info!(
+                                server_id = %target.server_id,
+                                room_id = %target.room_id,
+                                "acquired platform voice-call lifecycle"
+                            );
+                        }
+                        Err(error) => {
+                            warn!(
+                                %error,
+                                server_id = %target.server_id,
+                                room_id = %target.room_id,
+                                "failed to acquire platform voice-call lifecycle"
+                            );
+                        }
                     }
                 }
-            }
-            effect_voice_sounds.borrow_mut().record_connected(
-                &target,
-                &participants,
-                &effect_current_user_id,
-                &playback,
-            );
-            let local_video_runtime = LocalVideoRuntime {
-                realtime: realtime.clone(),
-                participant_video: participant_video.clone(),
-                current_user_id: effect_current_user_id.clone(),
-            };
-            reconcile_camera_target(
-                camera.clone(),
-                local_video_runtime.clone(),
-                &mut camera_target_room,
-                &target,
-            );
-            reconcile_screen_share_target(
-                screen_share.clone(),
-                local_video_runtime,
-                &mut screen_share_target_room,
-                &target,
-            );
-            if !voice_audio_focused() {
-                if !mic_paused_by_focus()
-                    && matches!(
+                effect_voice_sounds.borrow_mut().record_connected(
+                    &target,
+                    &participants,
+                    &effect_current_user_id,
+                    &playback,
+                );
+                let local_video_runtime = LocalVideoRuntime {
+                    realtime: realtime.clone(),
+                    participant_video: participant_video.clone(),
+                    current_user_id: effect_current_user_id.clone(),
+                };
+                reconcile_camera_target(
+                    camera.clone(),
+                    local_video_runtime.clone(),
+                    &mut camera_target_room,
+                    &target,
+                );
+                reconcile_screen_share_target(
+                    screen_share.clone(),
+                    local_video_runtime,
+                    &mut screen_share_target_room,
+                    &target,
+                );
+                let output_muted = playback.is_muted();
+                if output_muted {
+                    if !mic_paused_by_deafen() {
+                        mic_paused_by_deafen.set(true);
+                    }
+                    if matches!(
                         microphone.status_untracked(),
                         MicrophoneStatus::Live | MicrophoneStatus::Starting
-                    )
-                {
-                    mic_paused_by_focus.set(true);
-                }
-                microphone.stop();
-                playback.stop_voice_playback();
-                return;
-            }
-
-            playback.resume();
-            let paused_by_focus = mic_paused_by_focus();
-            if paused_by_focus {
-                mic_paused_by_focus.set(false);
-            }
-            if microphone_target_room().as_deref() == Some(target.room_id.as_str()) {
-                let session_changed =
-                    microphone_target_session_id() != Some(confirmed_session_id.clone());
-                if paused_by_focus || session_changed {
-                    if session_changed && !paused_by_focus {
+                    ) {
                         microphone.stop();
                     }
-                    microphone_target_session_id.set(Some(confirmed_session_id));
-                    microphone_uplink::restart(
-                        microphone.clone(),
-                        realtime.clone(),
-                        target.server_id.clone(),
-                        target.room_id.clone(),
-                        effect_handle.clone(),
-                    );
                 }
+                if !voice_audio_focused() {
+                    if !mic_paused_by_focus()
+                        && matches!(
+                            microphone.status_untracked(),
+                            MicrophoneStatus::Live | MicrophoneStatus::Starting
+                        )
+                    {
+                        mic_paused_by_focus.set(true);
+                    }
+                    microphone.stop();
+                    playback.stop_voice_playback();
+                    return;
+                }
+
+                playback.resume();
+                let paused_by_focus = mic_paused_by_focus();
+                if paused_by_focus {
+                    mic_paused_by_focus.set(false);
+                }
+                let paused_by_deafen = mic_paused_by_deafen() && !output_muted;
+                if paused_by_deafen {
+                    mic_paused_by_deafen.set(false);
+                }
+                if microphone_target_room().as_deref() == Some(target.room_id.as_str()) {
+                    let session_changed =
+                        microphone_target_session_id() != Some(confirmed_session_id.clone());
+                    if paused_by_focus || paused_by_deafen || session_changed {
+                        if session_changed && !paused_by_focus {
+                            microphone.stop();
+                        }
+                        microphone_target_session_id.set(Some(confirmed_session_id));
+                        microphone_uplink::restart(
+                            microphone.clone(),
+                            realtime.clone(),
+                            target.server_id.clone(),
+                            target.room_id.clone(),
+                            effect_handle.clone(),
+                        );
+                    }
+                    info!(
+                        target_kind = ?target.kind,
+                        server_id = %target.server_id,
+                        room_id = %target.room_id,
+                        microphone_paused_by_focus = paused_by_focus,
+                        microphone_paused_by_deafen = paused_by_deafen,
+                        "voice media already targets active room"
+                    );
+                    return;
+                }
+                microphone_target_room.set(Some(target.room_id.clone()));
+                microphone_target_session_id.set(Some(confirmed_session_id));
                 info!(
                     target_kind = ?target.kind,
                     server_id = %target.server_id,
                     room_id = %target.room_id,
-                    microphone_paused_by_focus = paused_by_focus,
-                    "voice media already targets active room"
+                    output_muted = playback.is_muted(),
+                    "starting voice media for active room"
                 );
-                return;
+                microphone_uplink::restart(
+                    microphone.clone(),
+                    realtime.clone(),
+                    target.server_id,
+                    target.room_id,
+                    effect_handle.clone(),
+                );
             }
-            microphone_target_room.set(Some(target.room_id.clone()));
-            microphone_target_session_id.set(Some(confirmed_session_id));
-            info!(
-                target_kind = ?target.kind,
-                server_id = %target.server_id,
-                room_id = %target.room_id,
-                output_muted = playback.is_muted(),
-                "starting voice media for active room"
-            );
-            microphone_uplink::restart(
-                microphone.clone(),
-                realtime.clone(),
-                target.server_id,
-                target.room_id,
-                effect_handle.clone(),
-            );
-        }
-        VoiceConnectionState::Disconnected
-        | VoiceConnectionState::Connecting { .. }
-        | VoiceConnectionState::Disconnecting { .. }
-        | VoiceConnectionState::Error { .. } => {
-            let previous_camera_target = camera_target_room();
-            let previous_screen_share_target = screen_share_target_room();
-            let had_camera_target = previous_camera_target.is_some();
-            let had_screen_share_target = previous_screen_share_target.is_some();
-            let had_microphone_target = microphone_target_room().is_some();
-            if microphone_target_session_id().is_some() {
-                microphone_target_session_id.set(None);
-            }
-            let was_paused_by_focus = mic_paused_by_focus();
+            VoiceConnectionState::Disconnected
+            | VoiceConnectionState::Connecting { .. }
+            | VoiceConnectionState::Disconnecting { .. }
+            | VoiceConnectionState::Error { .. } => {
+                if mic_paused_by_deafen() {
+                    mic_paused_by_deafen.set(false);
+                }
+                let previous_camera_target = camera_target_room();
+                let previous_screen_share_target = screen_share_target_room();
+                let had_camera_target = previous_camera_target.is_some();
+                let had_screen_share_target = previous_screen_share_target.is_some();
+                let had_microphone_target = microphone_target_room().is_some();
+                if microphone_target_session_id().is_some() {
+                    microphone_target_session_id.set(None);
+                }
+                let was_paused_by_focus = mic_paused_by_focus();
 
-            if let Some(target) = previous_camera_target {
-                let local_video_runtime = LocalVideoRuntime {
-                    realtime: realtime.clone(),
-                    participant_video: participant_video.clone(),
-                    current_user_id: effect_current_user_id.clone(),
-                };
-                release_local_video_target(
-                    local_video_runtime,
-                    target,
-                    ParticipantVideoSource::Camera,
-                );
-                camera_target_room.set(None);
-                camera.stop();
-            }
-            if let Some(target) = previous_screen_share_target {
-                let local_video_runtime = LocalVideoRuntime {
-                    realtime: realtime.clone(),
-                    participant_video: participant_video.clone(),
-                    current_user_id: effect_current_user_id.clone(),
-                };
-                release_local_video_target(
-                    local_video_runtime,
-                    target,
-                    ParticipantVideoSource::ScreenShare,
-                );
-                screen_share_target_room.set(None);
-                screen_share.stop();
-            }
-            participant_video.clear();
-            if had_microphone_target {
-                microphone_target_room.set(None);
-                microphone.stop();
-            }
-            if was_paused_by_focus {
-                mic_paused_by_focus.set(false);
-            }
-            if platform_call_active() {
-                match voice_call_platform::set_voice_call_participating(false) {
-                    Ok(()) => {
-                        platform_call_active.set(false);
-                        info!("released platform voice-call lifecycle");
-                    }
-                    Err(error) => {
-                        warn!(%error, "failed to release platform voice-call lifecycle");
+                if let Some(target) = previous_camera_target {
+                    let local_video_runtime = LocalVideoRuntime {
+                        realtime: realtime.clone(),
+                        participant_video: participant_video.clone(),
+                        current_user_id: effect_current_user_id.clone(),
+                    };
+                    release_local_video_target(
+                        local_video_runtime,
+                        target,
+                        ParticipantVideoSource::Camera,
+                    );
+                    camera_target_room.set(None);
+                    camera.stop();
+                }
+                if let Some(target) = previous_screen_share_target {
+                    let local_video_runtime = LocalVideoRuntime {
+                        realtime: realtime.clone(),
+                        participant_video: participant_video.clone(),
+                        current_user_id: effect_current_user_id.clone(),
+                    };
+                    release_local_video_target(
+                        local_video_runtime,
+                        target,
+                        ParticipantVideoSource::ScreenShare,
+                    );
+                    screen_share_target_room.set(None);
+                    screen_share.stop();
+                }
+                participant_video.clear();
+                if had_microphone_target {
+                    microphone_target_room.set(None);
+                    microphone.stop();
+                }
+                if was_paused_by_focus {
+                    mic_paused_by_focus.set(false);
+                }
+                if platform_call_active() {
+                    match voice_call_platform::set_voice_call_participating(false) {
+                        Ok(()) => {
+                            platform_call_active.set(false);
+                            info!("released platform voice-call lifecycle");
+                        }
+                        Err(error) => {
+                            warn!(%error, "failed to release platform voice-call lifecycle");
+                        }
                     }
                 }
-            }
-            effect_handle.clear_speaking_users();
-            if effect_voice_sounds.borrow().is_current_user_connected() {
-                playback.stop_voice_playback();
-            }
-            effect_voice_sounds.borrow_mut().record_inactive(&playback);
+                effect_handle.clear_speaking_users();
+                if effect_voice_sounds.borrow().is_current_user_connected() {
+                    playback.stop_voice_playback();
+                }
+                effect_voice_sounds.borrow_mut().record_inactive(&playback);
 
-            if had_camera_target
-                || had_screen_share_target
-                || had_microphone_target
-                || was_paused_by_focus
-            {
-                info!(
-                    microphone = had_microphone_target,
-                    microphone_paused_by_focus = was_paused_by_focus,
-                    camera = had_camera_target,
-                    screen_share = had_screen_share_target,
-                    "released local voice media resources"
-                );
+                if had_camera_target
+                    || had_screen_share_target
+                    || had_microphone_target
+                    || was_paused_by_focus
+                {
+                    info!(
+                        microphone = had_microphone_target,
+                        microphone_paused_by_focus = was_paused_by_focus,
+                        camera = had_camera_target,
+                        screen_share = had_screen_share_target,
+                        "released local voice media resources"
+                    );
+                }
             }
         }
     });

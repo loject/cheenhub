@@ -12,6 +12,7 @@ use dioxus::prelude::*;
 use futures_util::future::{Either, FutureExt, select};
 use uuid::Uuid;
 
+use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::microphone::MicrophoneHandle;
 use crate::features::realtime::RealtimeHandle;
 use crate::features::runtime::sleep_ms;
@@ -105,6 +106,7 @@ pub(crate) struct VoiceConnectionHandle {
     join_generation: Rc<Cell<u64>>,
     realtime: RealtimeHandle,
     microphone: MicrophoneHandle,
+    playback: AudioPlaybackHandle,
     current_user: AuthUser,
 }
 
@@ -138,6 +140,8 @@ pub(super) struct VoiceConnectionParts {
     pub(super) realtime: RealtimeHandle,
     /// Контекст захвата микрофона.
     pub(super) microphone: MicrophoneHandle,
+    /// Контекст входящего воспроизведения голосовой сессии.
+    pub(super) playback: AudioPlaybackHandle,
     /// Текущий пользователь.
     pub(super) current_user: AuthUser,
 }
@@ -160,6 +164,7 @@ impl VoiceConnectionHandle {
             join_generation: parts.join_generation,
             realtime: parts.realtime,
             microphone: parts.microphone,
+            playback: parts.playback,
             current_user: parts.current_user,
         }
     }
@@ -173,6 +178,19 @@ impl VoiceConnectionHandle {
     /// Reads the current voice connection state.
     pub(crate) fn state(&self) -> VoiceConnectionState {
         (self.state)()
+    }
+
+    /// Возвращает, выключено ли входящее голосовое воспроизведение.
+    pub(crate) fn output_muted(&self) -> bool {
+        self.playback.is_muted()
+    }
+
+    /// Меняет состояние входящего звука через принадлежащий голосовому контексту playback.
+    pub(crate) fn set_output_muted(&self, muted: bool) {
+        if muted {
+            self.microphone.stop();
+        }
+        self.playback.set_muted(muted);
     }
 
     /// Returns the authenticated current user identifier.
@@ -301,7 +319,7 @@ impl VoiceConnectionHandle {
             let join = join_target(
                 &realtime,
                 &target,
-                handle.microphone.voice_enabled_untracked(),
+                handle.microphone.voice_enabled_untracked() && !handle.playback.is_muted(),
                 confirmed,
             );
             match select(

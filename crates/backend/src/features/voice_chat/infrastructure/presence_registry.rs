@@ -254,10 +254,14 @@ impl PresenceRegistry {
         if current.user_id != *user_id || current.room_id != *room_id {
             return None;
         }
-        let changed = current.microphone_enabled != enabled;
+        // Включение микрофона одновременно снимает deafen: состояние с
+        // выключенным входящим звуком и включённым микрофоном недопустимо.
+        let output_muted = if enabled { false } else { current.output_muted };
+        let changed = current.microphone_enabled != enabled || current.output_muted != output_muted;
         if changed {
             let mut updated = (*current).clone();
             updated.microphone_enabled = enabled;
+            updated.output_muted = output_muted;
             self.replace_canonical_presence(&mut state, Arc::new(updated));
         }
         Some((current.target(), changed))
@@ -279,10 +283,19 @@ impl PresenceRegistry {
         if current.user_id != *user_id || current.room_id != *room_id {
             return None;
         }
-        let changed = current.output_muted != output_muted;
+        // Deafen атомарно выключает микрофон. Снятие deafen само по себе
+        // микрофон не включает — прежнее предпочтение восстанавливает клиент.
+        let microphone_enabled = if output_muted {
+            false
+        } else {
+            current.microphone_enabled
+        };
+        let changed = current.output_muted != output_muted
+            || current.microphone_enabled != microphone_enabled;
         if changed {
             let mut updated = (*current).clone();
             updated.output_muted = output_muted;
+            updated.microphone_enabled = microphone_enabled;
             self.replace_canonical_presence(&mut state, Arc::new(updated));
         }
         Some((current.target(), changed))

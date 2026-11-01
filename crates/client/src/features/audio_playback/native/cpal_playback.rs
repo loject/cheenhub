@@ -491,3 +491,6 @@ fn playback_now_us() -> u64 {
         .map(|duration| duration.as_micros().min(u128::from(u64::MAX)) as u64)
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests;

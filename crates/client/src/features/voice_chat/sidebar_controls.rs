@@ -236,9 +236,12 @@ pub(crate) fn SidebarVoiceControls() -> Element {
                         r#type: "button",
                         class: output_button_class,
                         "aria-label": output_label,
-                        onclick: move |_| {
-                            let next_muted = !toggle_playback.is_muted();
-                            toggle_playback.set_muted(next_muted);
+                        onclick: {
+                            let toggle_voice = voice.clone();
+                            move |_| {
+                                let next_muted = !toggle_playback.is_muted();
+                                toggle_voice.set_output_muted(next_muted);
+                            }
                         },
                         if output_muted {
                             svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
