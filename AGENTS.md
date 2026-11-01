@@ -87,6 +87,11 @@
 - Use a lowercase type and scope, and choose a type that matches the change, such as `feat`, `fix`, `refactor`, `docs`, `build`, `test`, or `chore`.
 - Check recent commit history before committing so the message matches the repository's established style.
 
+## Unexpected Bug Findings
+
+- If an unrelated bug is discovered during investigation, implementation, review, or verification, always explicitly report it to the user, including its location, potential impact, and whether it was changed. Do not silently ignore it.
+- Do not fix unrelated bugs without the user's authorization; keep the current task scoped to the requested changes unless the user approves expanding it.
+
 ## Handoff Summary
 
 - After implementing changes, include a brief bullet list of all tradeoffs made during implementation and the potential consequences of each decision in the handoff summary.
