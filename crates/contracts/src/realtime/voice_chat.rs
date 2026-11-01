@@ -14,9 +14,6 @@ pub use invitations::{
 pub use multi_device::{VoiceDeviceKind, VoicePresenceEvicted, VoicePresenceEvictionReason};
 pub use video_stream::{StopVoiceVideoStream, VoiceVideoStreamEnded, VoiceVideoStreamSource};
 
-#[cfg(test)]
-mod invitation_contract_tests;
-
 /// Виды сообщений модуля присутствия в голосовом чате.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

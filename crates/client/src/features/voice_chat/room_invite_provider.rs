@@ -1,6 +1,6 @@
 //! Глобальный signaling и уведомления приглашений в серверные голосовые комнаты.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use dioxus::prelude::*;
 use futures_channel::mpsc;
@@ -11,9 +11,9 @@ use crate::features::audio_playback::AudioPlaybackHandle;
 use crate::features::realtime::{RealtimeConnectionStatus, RealtimeHandle};
 use crate::features::toast::ToastHandle;
 
-use super::direct_call_state::DirectCallHandle;
+use super::direct_call_provider::DirectCallRingStatus;
 use super::room_invite_realtime;
-use super::room_invite_state::RoomInviteHandle;
+use super::room_invite_state::{RoomInviteHandle, RoomInviteSignals};
 use super::room_invite_toast::{RoomInviteToast, RoomInviteToastAction};
 use super::state::VoiceConnectionHandle;
 
@@ -23,16 +23,26 @@ pub(super) fn RoomInviteProvider(children: Element) -> Element {
     let user_id = use_context::<CurrentUserContext>().require_user().id;
     let realtime = use_context::<RealtimeHandle>();
     let voice = use_context::<VoiceConnectionHandle>();
-    let direct_call = use_context::<DirectCallHandle>();
+    let direct_ring = use_context::<DirectCallRingStatus>();
     let playback = use_context::<AudioPlaybackHandle>();
     let toasts = use_context::<ToastHandle>();
     let invites = use_signal(Vec::new);
+    let pending_deadlines = use_signal(HashMap::new);
     let ignored = use_signal(HashSet::new);
+    let candidates = use_signal(HashMap::new);
+    let recent_results = use_signal(HashMap::new);
+    let terminal_cleanup_deadlines = use_signal(HashMap::new);
     let busy = use_signal(|| false);
     let handle = RoomInviteHandle::new(
-        invites,
-        ignored,
-        busy,
+        RoomInviteSignals {
+            invites,
+            pending_deadlines,
+            ignored_ids: ignored,
+            candidates,
+            recent_results,
+            terminal_cleanup_deadlines,
+            busy,
+        },
         realtime.clone(),
         voice,
         toasts,
@@ -81,8 +91,7 @@ pub(super) fn RoomInviteProvider(children: Element) -> Element {
                     if previous != Some(invite.status) {
                         use cheenhub_contracts::realtime::VoiceRoomInviteStatus;
                         match invite.status {
-                            VoiceRoomInviteStatus::Accepted => event_toasts
-                                .success(format!("Приглашение в «{}» принято.", invite.room_name)),
+                            VoiceRoomInviteStatus::Accepted => {}
                             VoiceRoomInviteStatus::Declined => {
                                 event_toasts.info("Приглашение отклонено.")
                             }
@@ -113,25 +122,24 @@ pub(super) fn RoomInviteProvider(children: Element) -> Element {
 
     // Приоритет у личного звонка; приглашение не должно заглушить его рингтон.
     let ring_handle = handle.clone();
-    let ring_direct_call = direct_call.clone();
     let ring_playback = playback.clone();
     let mut ringing_id = use_signal(|| None::<String>);
     use_effect(move || {
-        let dm_incoming = ring_direct_call.incoming_call().is_some();
-        let desired = if dm_incoming {
-            None
-        } else {
-            ring_handle.incoming().map(|invite| invite.invite_id)
-        };
+        let dm_ringing = direct_ring.is_ringing();
+        let desired = desired_room_invite_ring(
+            ring_handle.incoming().map(|invite| invite.invite_id),
+            dm_ringing,
+        );
         let previous = ringing_id.peek().clone();
         if previous == desired {
             return;
         }
-        if previous.is_some() && !dm_incoming {
+        if previous.is_some() && !dm_ringing {
             ring_playback.stop_incoming_call_ring();
         }
-        if desired.is_some() {
+        if let Some(invite_id) = desired.as_ref() {
             ring_playback.start_incoming_call_ring();
+            debug!(%invite_id, "started incoming voice room invitation ringtone");
         }
         ringing_id.set(desired);
     });
@@ -173,6 +181,17 @@ pub(super) fn RoomInviteProvider(children: Element) -> Element {
     rsx! { {children} }
 }
 
+/// Уступает общий рингтон только звучащему личному звонку, а не проигнорированному.
+fn desired_room_invite_ring(
+    invite_id: Option<String>,
+    direct_call_ringing: bool,
+) -> Option<String> {
+    invite_id.filter(|_| !direct_call_ringing)
+}
+
 fn toast_key(invite_id: &str) -> String {
     format!("voice-room-invite:{invite_id}")
 }
+
+#[cfg(test)]
+mod tests;

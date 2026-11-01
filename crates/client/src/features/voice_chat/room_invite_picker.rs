@@ -13,14 +13,19 @@ use super::room_invite_state::RoomInviteHandle;
 
 /// Кнопка приглашения и раскрывающийся список участников над плавающей панелью.
 #[component]
-pub(super) fn RoomInvitePicker(server_id: String, room_id: String, enabled: bool) -> Element {
+pub(super) fn RoomInvitePicker(
+    server_id: String,
+    room_id: String,
+    enabled: bool,
+    mut opened: Signal<bool>,
+) -> Element {
     let realtime = use_context::<RealtimeHandle>();
     let invites = use_context::<RoomInviteHandle>();
-    let mut opened = use_signal(|| false);
     let mut loading = use_signal(|| false);
     let mut candidates = use_signal(Vec::<VoiceRoomInviteCandidate>::new);
     let mut load_error = use_signal(|| None::<String>);
     let load_realtime = realtime.clone();
+    let load_invites = invites.clone();
     let load_server_id = server_id.clone();
     let load_room_id = room_id.clone();
     let outgoing = invites.outgoing_for_room(&server_id, &room_id);
@@ -37,6 +42,7 @@ pub(super) fn RoomInvitePicker(server_id: String, room_id: String, enabled: bool
 
     rsx! {
         div { class: "relative",
+            onclick: move |event| event.stop_propagation(),
             button {
                 r#type: "button",
                 disabled: !enabled,
@@ -55,11 +61,15 @@ pub(super) fn RoomInvitePicker(server_id: String, room_id: String, enabled: bool
                     loading.set(true);
                     load_error.set(None);
                     let realtime = load_realtime.clone();
+                    let handle = load_invites.clone();
                     let server_id = load_server_id.clone();
                     let room_id = load_room_id.clone();
                     spawn(async move {
                         match room_invite_realtime::candidates(&realtime, server_id, room_id).await {
-                            Ok(snapshot) => candidates.set(snapshot.candidates),
+                            Ok(snapshot) => {
+                                handle.remember_candidates(&snapshot.candidates);
+                                candidates.set(snapshot.candidates);
+                            }
                             Err(error) => load_error.set(Some(error.to_string())),
                         }
                         loading.set(false);
@@ -67,11 +77,11 @@ pub(super) fn RoomInvitePicker(server_id: String, room_id: String, enabled: bool
                 },
                 span { class: "pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[12px] font-medium text-zinc-200 opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100", "Пригласить" }
                 svg { class: "h-5 w-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m8-14a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm9 1v6m-3-3h6" }
+                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M19 8v6m-3-3h6" }
                 }
             }
             if opened() {
-                div { class: "absolute bottom-[calc(100%+14px)] right-0 z-[60] w-80 max-w-[calc(100vw-32px)] rounded-2xl border border-zinc-700 bg-zinc-950 p-3 text-zinc-100 shadow-2xl",
+                div { class: "absolute bottom-[calc(100%+14px)] left-1/2 z-[60] w-80 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-2xl border border-zinc-700 bg-zinc-950 p-3 text-zinc-100 shadow-2xl",
                     div { class: "mb-3 flex items-center justify-between gap-2",
                         p { class: "text-[13px] font-semibold", "Пригласить в комнату" }
                         button {

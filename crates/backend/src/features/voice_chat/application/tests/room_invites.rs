@@ -124,6 +124,15 @@ async fn voice_room_invite_accepts_once_and_restores_snapshots() {
         .unwrap();
     assert_eq!(incoming.invites.len(), 1);
     assert_eq!(incoming.invites[0].invite_id, sent.invite.invite_id);
+    assert_eq!(
+        sent.invite.recipient_nickname.as_deref(),
+        Some("invite_callee")
+    );
+    assert_eq!(
+        incoming.invites[0].recipient_nickname,
+        sent.invite.recipient_nickname
+    );
+    assert!(sent.invite.resolved_at.is_none());
     assert!(matches!(
         respond_voice_room_invite(
             &state,
@@ -147,6 +156,7 @@ async fn voice_room_invite_accepts_once_and_restores_snapshots() {
     .await
     .unwrap();
     assert_eq!(accepted.invite.status, VoiceRoomInviteStatus::Accepted);
+    assert!(accepted.invite.resolved_at.is_some());
     assert_eq!(
         list_voice_room_invites(&state, &caller_id, ListVoiceRoomInvites)
             .await
@@ -167,6 +177,59 @@ async fn voice_room_invite_accepts_once_and_restores_snapshots() {
         .await
         .is_err()
     );
+}
+
+#[tokio::test]
+async fn voice_room_invite_candidates_include_multiple_members_in_nickname_order() {
+    let state = state();
+    let (caller, caller_id) = registered_user(&state).await;
+    let (server_id, room_id) =
+        create_room(&state, &caller_id, "voice", ServerRoomKind::Voice).await;
+    let server_uuid = Uuid::parse_str(&server_id).unwrap();
+    let mut expected = Vec::new();
+    for (nickname, email) in [
+        ("zeta_invitee", "zeta-invitee@example.com"),
+        ("alpha_invitee", "alpha-invitee@example.com"),
+        ("beta_invitee", "beta-invitee@example.com"),
+    ] {
+        let registered = auth_application::register(
+            &state,
+            RegisterRequest {
+                nickname: nickname.to_owned(),
+                email: email.to_owned(),
+                password: "password123".to_owned(),
+                accepts_terms: true,
+                accepts_personal_data: true,
+            },
+        )
+        .await
+        .unwrap();
+        let user_id = Uuid::parse_str(&registered.user.id).unwrap();
+        state
+            .server_store
+            .insert_server_member(&server_uuid, &user_id)
+            .await
+            .unwrap();
+        expected.push((nickname.to_owned(), user_id.to_string()));
+    }
+    expected.sort();
+    let stream = caller_in_room(&state, &caller, &caller_id, &server_id, &room_id).await;
+
+    let snapshot = list_voice_room_invite_candidates(
+        &state,
+        stream,
+        &caller_id,
+        ListVoiceRoomInviteCandidates { server_id, room_id },
+    )
+    .await
+    .unwrap();
+
+    let actual: Vec<(String, String)> = snapshot
+        .candidates
+        .into_iter()
+        .map(|candidate| (candidate.nickname, candidate.user_id))
+        .collect();
+    assert_eq!(actual, expected);
 }
 
 #[tokio::test]

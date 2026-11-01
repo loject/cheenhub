@@ -9,6 +9,10 @@ use uuid::Uuid;
 
 /// Время хранения завершённого приглашения для восстановления после переподключения.
 const RESOLVED_RETENTION: Duration = Duration::minutes(2);
+/// Минимальная пауза между приглашениями одной пары пользователей независимо от комнаты.
+const REINVITE_COOLDOWN: Duration = Duration::seconds(30);
+/// Максимум одновременно ожидающих приглашений одному пользователю.
+const MAX_PENDING_FOR_RECIPIENT: usize = 5;
 
 /// Атомарное хранилище приглашений, независимое от личных звонков.
 #[derive(Default)]
@@ -28,6 +32,10 @@ pub(crate) struct VoiceRoomInvite {
     pub(crate) caller_nickname: String,
     pub(crate) caller_avatar_url: Option<String>,
     pub(crate) recipient_user_id: Uuid,
+    /// Имя получателя, зафиксированное при отправке приглашения.
+    pub(crate) recipient_nickname: String,
+    /// Аватар получателя, зафиксированный при отправке приглашения.
+    pub(crate) recipient_avatar_url: Option<String>,
     pub(crate) status: VoiceRoomInviteStatus,
     pub(crate) created_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
@@ -47,9 +55,12 @@ impl VoiceRoomInvite {
             caller_nickname: self.caller_nickname.clone(),
             caller_avatar_url: self.caller_avatar_url.clone(),
             recipient_user_id: self.recipient_user_id.to_string(),
+            recipient_nickname: Some(self.recipient_nickname.clone()),
+            recipient_avatar_url: self.recipient_avatar_url.clone(),
             status: self.status,
             created_at: self.created_at.to_rfc3339(),
             expires_at: self.expires_at.to_rfc3339(),
+            resolved_at: self.resolved_at.map(|resolved| resolved.to_rfc3339()),
         }
     }
 }
@@ -59,6 +70,10 @@ impl VoiceRoomInvite {
 pub(crate) enum VoiceRoomInviteStoreError {
     /// Для той же пары участников и комнаты приглашение уже ожидает ответа.
     AlreadyPending,
+    /// Повторное приглашение этой пары отправлено раньше разрешённого интервала.
+    TooSoon,
+    /// Получатель уже имеет максимально допустимое число ожидающих приглашений.
+    RecipientAtCapacity,
     /// Приглашение не найдено.
     NotFound,
     /// Запрос выполняет посторонний пользователь.
@@ -87,6 +102,25 @@ impl InMemoryVoiceRoomInviteStore {
                 && existing.recipient_user_id == invite.recipient_user_id
         }) {
             return Err(VoiceRoomInviteStoreError::AlreadyPending);
+        }
+        if invites.iter().any(|existing| {
+            existing.caller_user_id == invite.caller_user_id
+                && existing.recipient_user_id == invite.recipient_user_id
+                && now < existing.created_at + REINVITE_COOLDOWN
+        }) {
+            return Err(VoiceRoomInviteStoreError::TooSoon);
+        }
+        if invites
+            .iter()
+            .filter(|existing| {
+                existing.recipient_user_id == invite.recipient_user_id
+                    && existing.status == VoiceRoomInviteStatus::Pending
+                    && existing.expires_at > now
+            })
+            .count()
+            >= MAX_PENDING_FOR_RECIPIENT
+        {
+            return Err(VoiceRoomInviteStoreError::RecipientAtCapacity);
         }
         invites.push(invite.clone());
         Ok(invite)
@@ -215,3 +249,6 @@ fn mark_resolved(invite: &mut VoiceRoomInvite, status: VoiceRoomInviteStatus, no
     invite.status = status;
     invite.resolved_at = Some(now);
 }
+
+#[cfg(test)]
+mod tests;

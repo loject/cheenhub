@@ -143,6 +143,7 @@ pub(super) fn DirectCallProvider(children: Element) -> Element {
     let ringing_playback = playback.clone();
     let ringing_call = direct_call.clone();
     let mut incoming_ring_state = use_signal(IncomingCallRingState::default);
+    use_context_provider(move || DirectCallRingStatus(incoming_ring_state));
     use_effect(move || {
         let incoming_call_id = ringing_call.incoming_call().map(|call| call.call_id);
         let ignored_call_id = incoming_toast_state().ignored_call_id;
@@ -252,6 +253,17 @@ pub(super) fn DirectCallProvider(children: Element) -> Element {
     rsx! {
         ActiveVoiceNotificationControls {}
         {children}
+    }
+}
+
+/// Признак реально запущенного рингтона личного звонка для вложенных уведомлений.
+#[derive(Clone, Copy)]
+pub(super) struct DirectCallRingStatus(Signal<IncomingCallRingState>);
+
+impl DirectCallRingStatus {
+    /// Разрешает приглашению использовать общий аудиоплеер только после остановки личного рингтона.
+    pub(super) fn is_ringing(&self) -> bool {
+        (self.0)().ringing_call_id.is_some()
     }
 }
 
