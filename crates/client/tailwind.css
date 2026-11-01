@@ -1866,7 +1866,7 @@
 
 /* Refine focused layout: center the reused participant tiles. */
 .participants-grid[data-focused="true"] {
-  grid-template-columns: repeat(var(--focus-strip-columns, 1), minmax(160px, 210px));
+  grid-template-columns: repeat(var(--focus-strip-columns, 1), minmax(0, 210px));
   grid-template-rows: minmax(0, 1fr) auto;
   justify-content: center;
   justify-items: center;
@@ -1901,7 +1901,7 @@
 
 @media (max-width: 900px) {
   .participants-grid[data-focused="true"] {
-    grid-template-columns: repeat(var(--focus-strip-columns, 1), minmax(150px, 190px));
+    grid-template-columns: repeat(var(--focus-strip-columns, 1), minmax(0, 190px));
   }
 
   .participants-grid[data-focused="true"] > article {
@@ -2003,7 +2003,7 @@
 /* Keep the focused-mode participant row compact on short displays. */
 @media (max-height: 900px) {
   .participants-grid[data-focused="true"] {
-    grid-template-columns: repeat(var(--focus-strip-columns, 1), minmax(200px, 240px));
+    grid-template-columns: repeat(var(--focus-strip-columns, 1), minmax(0, 240px));
   }
 
   .participants-grid[data-focused="true"] > article:not([data-focused="true"]) {
@@ -2013,11 +2013,75 @@
 
 @media (max-height: 720px) {
   .participants-grid[data-focused="true"] {
-    grid-template-columns: repeat(var(--focus-strip-columns, 1), minmax(180px, 210px));
+    grid-template-columns: repeat(var(--focus-strip-columns, 1), minmax(0, 210px));
   }
 
   .participants-grid[data-focused="true"] > article:not([data-focused="true"]) {
     max-width: 210px;
+  }
+}
+
+/* Компактный дозвон в нижней полосе фокуса: аватар, статус и отмена остаются доступны. */
+.participants-grid[data-focused="true"] > article[data-outgoing-invite] {
+  aspect-ratio: auto;
+  min-height: 6.5rem;
+  padding: 0.625rem;
+}
+
+.participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-content {
+  flex-direction: row;
+  gap: 0.625rem;
+  text-align: left;
+}
+
+.participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-avatar,
+.participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-avatar-image {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-avatar-image {
+  font-size: 0.875rem;
+}
+
+.participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-body {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-body p {
+  font-size: 0.6875rem;
+  line-height: 0.9375rem;
+}
+
+.participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-body button {
+  margin-top: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+}
+
+/* На узком экране содержимое приглашения не должно распирать плитку по горизонтали. */
+@media (max-width: 600px) {
+  .participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-content {
+    flex-direction: column;
+    gap: 0.375rem;
+    text-align: center;
+  }
+
+  .participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-body {
+    align-items: center;
+    text-align: center;
+  }
+
+  .participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-avatar,
+  .participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-avatar-image {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .participants-grid[data-focused="true"] > article[data-outgoing-invite] .room-invite-progress-body button {
+    max-width: 100%;
+    white-space: normal;
   }
 }
 

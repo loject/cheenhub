@@ -65,23 +65,22 @@ pub(crate) async fn list_voice_room_invite_candidates(
         members.remove(&participant.user_id);
     }
 
-    let mut candidates = Vec::with_capacity(members.len());
-    for member_id in members {
-        let Some(account) = state
-            .auth_store
-            .find_user_by_id(&member_id)
-            .await
-            .map_err(VoiceChatApplicationError::Internal)?
-        else {
-            continue;
-        };
-        let member = auth_user(state, &account);
-        candidates.push(VoiceRoomInviteCandidate {
-            user_id: member_id.to_string(),
-            nickname: member.nickname,
-            avatar_url: member.avatar_url,
-        });
-    }
+    let accounts = state
+        .auth_store
+        .find_users_by_ids(&members.into_iter().collect::<Vec<_>>())
+        .await
+        .map_err(VoiceChatApplicationError::Internal)?;
+    let mut candidates = accounts
+        .into_iter()
+        .map(|account| {
+            let member = auth_user(state, &account);
+            VoiceRoomInviteCandidate {
+                user_id: member.id,
+                nickname: member.nickname,
+                avatar_url: member.avatar_url,
+            }
+        })
+        .collect::<Vec<_>>();
     candidates.sort_by(|a, b| a.nickname.cmp(&b.nickname).then(a.user_id.cmp(&b.user_id)));
     Ok(VoiceRoomInviteCandidatesSnapshot {
         server_id: server_id.to_string(),
@@ -140,6 +139,13 @@ pub(crate) async fn send_voice_room_invite(
         .await
         .map_err(VoiceChatApplicationError::Internal)?
         .ok_or_else(|| VoiceChatApplicationError::NotFound("Комната не найдена.".to_owned()))?;
+    let recipient_account = state
+        .auth_store
+        .find_user_by_id(&recipient_id)
+        .await
+        .map_err(VoiceChatApplicationError::Internal)?
+        .ok_or_else(|| VoiceChatApplicationError::NotFound("Пользователь не найден.".to_owned()))?;
+    let recipient = auth_user(state, &recipient_account);
     let now = Utc::now();
     let invite = state
         .voice_room_invite_store
@@ -154,6 +160,8 @@ pub(crate) async fn send_voice_room_invite(
                 caller_nickname: caller.nickname.clone(),
                 caller_avatar_url: caller.avatar_url.clone(),
                 recipient_user_id: recipient_id,
+                recipient_nickname: recipient.nickname,
+                recipient_avatar_url: recipient.avatar_url,
                 status: cheenhub_contracts::realtime::VoiceRoomInviteStatus::Pending,
                 created_at: now,
                 expires_at: now + ROOM_INVITE_TIMEOUT,
@@ -162,7 +170,17 @@ pub(crate) async fn send_voice_room_invite(
             now,
         )
         .await
-        .map_err(map_store_error)?;
+        .map_err(|error| {
+            tracing::warn!(
+                caller_user_id = %caller_user_id,
+                recipient_user_id = %recipient_id,
+                %server_id,
+                %room_id,
+                ?error,
+                "rejected voice room invitation"
+            );
+            map_store_error(error)
+        })?;
     fanout_invite_event(state, &invite).await;
     spawn_invite_expiry(state.clone(), invite.id, invite.expires_at);
     Ok(lifecycle_event(&invite))
@@ -252,7 +270,10 @@ pub(crate) async fn list_voice_room_invites(
         .iter()
         .map(VoiceRoomInvite::snapshot)
         .collect();
-    Ok(VoiceRoomInvitesSnapshot { invites })
+    Ok(VoiceRoomInvitesSnapshot {
+        invites,
+        server_now: Some(Utc::now().to_rfc3339()),
+    })
 }
 
 async fn ensure_sender_in_room(
@@ -316,6 +337,12 @@ fn map_store_error(error: VoiceRoomInviteStoreError) -> VoiceChatApplicationErro
     match error {
         VoiceRoomInviteStoreError::AlreadyPending => VoiceChatApplicationError::BadRequest(
             "Приглашение этому пользователю уже отправлено.".to_owned(),
+        ),
+        VoiceRoomInviteStoreError::TooSoon => VoiceChatApplicationError::BadRequest(
+            "Подожди немного перед повторным приглашением этого пользователя.".to_owned(),
+        ),
+        VoiceRoomInviteStoreError::RecipientAtCapacity => VoiceChatApplicationError::BadRequest(
+            "Пользователю уже отправлено слишком много приглашений. Попробуй позже.".to_owned(),
         ),
         VoiceRoomInviteStoreError::NotFound => {
             VoiceChatApplicationError::NotFound("Приглашение не найдено.".to_owned())

@@ -17,6 +17,8 @@ fn invite(now: DateTime<Utc>) -> VoiceRoomInvite {
         caller_nickname: "Отправитель".to_owned(),
         caller_avatar_url: None,
         recipient_user_id: Uuid::new_v4(),
+        recipient_nickname: "Получатель".to_owned(),
+        recipient_avatar_url: Some("/avatars/recipient.png".to_owned()),
         status: VoiceRoomInviteStatus::Pending,
         created_at: now,
         expires_at: now + Duration::seconds(45),
@@ -38,6 +40,105 @@ async fn voice_invite_store_blocks_repeated_pending_and_isolates_user_lists() {
     assert_eq!(store.list_for_user(&first.caller_user_id).await.len(), 1);
     assert_eq!(store.list_for_user(&first.recipient_user_id).await.len(), 1);
     assert!(store.list_for_user(&Uuid::new_v4()).await.is_empty());
+}
+
+#[tokio::test]
+async fn voice_invite_store_snapshot_preserves_recipient_metadata_and_resolution_time() {
+    let store = InMemoryVoiceRoomInviteStore::default();
+    let now = Utc::now();
+    let first = invite(now);
+    store.start(first.clone(), now).await.unwrap();
+
+    let pending = store.find(&first.id).await.unwrap().snapshot();
+    assert_eq!(pending.recipient_nickname.as_deref(), Some("Получатель"));
+    assert_eq!(
+        pending.recipient_avatar_url.as_deref(),
+        Some("/avatars/recipient.png")
+    );
+    assert!(pending.resolved_at.is_none());
+
+    let resolved_at = now + Duration::seconds(3);
+    let resolved = store
+        .respond(
+            &first.id,
+            &first.recipient_user_id,
+            VoiceRoomInviteResponse::Decline,
+            resolved_at,
+        )
+        .await
+        .unwrap();
+    let restored = resolved.snapshot();
+    assert_eq!(restored.status, VoiceRoomInviteStatus::Declined);
+    assert_eq!(
+        restored.resolved_at.as_deref(),
+        Some(resolved_at.to_rfc3339().as_str())
+    );
+    assert_eq!(restored.recipient_nickname.as_deref(), Some("Получатель"));
+}
+
+#[tokio::test]
+async fn voice_invite_store_rejects_immediate_resend_after_decline_but_allows_retry_after_cooldown()
+{
+    let store = InMemoryVoiceRoomInviteStore::default();
+    let now = Utc::now();
+    let first = invite(now);
+    store.start(first.clone(), now).await.unwrap();
+    store
+        .respond(
+            &first.id,
+            &first.recipient_user_id,
+            VoiceRoomInviteResponse::Decline,
+            now + Duration::seconds(1),
+        )
+        .await
+        .unwrap();
+
+    let mut retry = first.clone();
+    retry.id = Uuid::new_v4();
+    retry.room_id = Uuid::new_v4();
+    retry.created_at = now + Duration::seconds(2);
+    retry.expires_at = retry.created_at + Duration::seconds(45);
+    assert!(matches!(
+        store.start(retry.clone(), retry.created_at).await,
+        Err(VoiceRoomInviteStoreError::TooSoon)
+    ));
+
+    retry.created_at = now + Duration::seconds(30);
+    retry.expires_at = retry.created_at + Duration::seconds(45);
+    store
+        .start(retry, now + Duration::seconds(30))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn voice_invite_store_caps_simultaneous_pending_invites_to_one_recipient() {
+    let store = InMemoryVoiceRoomInviteStore::default();
+    let now = Utc::now();
+    let recipient = Uuid::new_v4();
+    let mut first = None;
+    for _ in 0..5 {
+        let mut current = invite(now);
+        current.recipient_user_id = recipient;
+        store.start(current.clone(), now).await.unwrap();
+        if first.is_none() {
+            first = Some(current);
+        }
+    }
+
+    let mut overflow = invite(now);
+    overflow.recipient_user_id = recipient;
+    assert!(matches!(
+        store.start(overflow.clone(), now).await,
+        Err(VoiceRoomInviteStoreError::RecipientAtCapacity)
+    ));
+
+    let first = first.unwrap();
+    store
+        .cancel(&first.id, &first.caller_user_id, now)
+        .await
+        .unwrap();
+    store.start(overflow, now).await.unwrap();
 }
 
 #[tokio::test]

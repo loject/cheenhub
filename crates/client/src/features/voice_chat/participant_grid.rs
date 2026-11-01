@@ -1,6 +1,6 @@
 //! Voice participant grid component.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cheenhub_contracts::realtime::VoiceRoomParticipant;
 use dioxus::prelude::*;
@@ -16,6 +16,8 @@ use super::participant_grid_data::{
     participant_grid_layout, participant_tiles, preferred_focus_tile_key,
 };
 use super::participant_tile::VoiceParticipantTile;
+use super::room_invite_progress_tile::RoomInviteProgressTile;
+use super::room_invite_state::RoomInviteHandle;
 use super::state::VoiceConnectionHandle;
 use super::video_streams::{ParticipantVideoHandle, ParticipantVideoSource};
 
@@ -58,6 +60,7 @@ pub(crate) fn VoiceParticipantGrid(
     let mut user_volumes = use_signal(HashMap::<String, u32>::new);
     let playback = use_context::<AudioPlaybackHandle>();
     let voice = use_context::<VoiceConnectionHandle>();
+    let room_invites = use_context::<RoomInviteHandle>();
     let camera = use_context::<CameraHandle>();
     let participant_video = use_context::<ParticipantVideoHandle>();
     let current_user_id = use_context::<CurrentUserContext>().require_user().id;
@@ -97,7 +100,12 @@ pub(crate) fn VoiceParticipantGrid(
         current_session_id,
         camera_live,
     );
-    let grid_layout = participant_grid_layout(participant_tiles.len());
+    let present_users = participants
+        .iter()
+        .map(|participant| participant.user_id.clone())
+        .collect::<HashSet<_>>();
+    let outgoing_tiles = room_invites.outgoing_tiles_for_room(&server_id, &room_id, &present_users);
+    let grid_layout = participant_grid_layout(participant_tiles.len() + outgoing_tiles.len());
     let active_focus_tile_key = focused_tile_key().and_then(|key| {
         participant_tiles
             .iter()
@@ -116,7 +124,7 @@ pub(crate) fn VoiceParticipantGrid(
         div {
             class: "voice-stage relative flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-5 pt-6 pb-[108px] max-[900px]:pt-4 max-[900px]:pb-[100px] lg:p-6 lg:pt-6 lg:pb-[108px]",
             onclick: move |_| open_user_menu.set(None),
-            if participants.is_empty() {
+            if should_show_connection_state(&status, participants.is_empty(), outgoing_tiles.is_empty()) {
                 div { class: "voice-empty-state max-w-sm text-center",
                     div { class: "mx-auto grid h-16 w-16 place-items-center rounded-2xl border border-zinc-800 bg-zinc-900/80 text-zinc-500",
                         if is_connecting {
@@ -149,6 +157,12 @@ pub(crate) fn VoiceParticipantGrid(
                     "data-rows": "{grid_layout.rows}",
                     "data-focused": if focused { "true" } else { "false" },
                     style: "{grid_layout.style}",
+                    for tile in outgoing_tiles {
+                        RoomInviteProgressTile {
+                            key: "invite-{tile.invite_id}",
+                            tile,
+                        }
+                    }
                     for tile in participant_tiles {
                         VoiceParticipantTile {
                             key: "{tile.key}",
@@ -263,6 +277,16 @@ pub(crate) fn VoiceParticipantGrid(
     }
 }
 
+/// Сохраняет состояние подключения при наличии плиток ещё не завершённых приглашений.
+fn should_show_connection_state(
+    status: &VoiceParticipantGridStatus,
+    participants_empty: bool,
+    outgoing_tiles_empty: bool,
+) -> bool {
+    participants_empty
+        && (outgoing_tiles_empty || !matches!(status, VoiceParticipantGridStatus::Empty))
+}
+
 fn open_voice_user_menu(
     open_user_menu: &mut Signal<Option<UserMenuState>>,
     name: String,
@@ -278,6 +302,9 @@ fn open_voice_user_menu(
         y,
     }));
 }
+
+#[cfg(test)]
+mod tests;
 
 fn toggle_voice_user_menu(
     open_user_menu: &mut Signal<Option<UserMenuState>>,

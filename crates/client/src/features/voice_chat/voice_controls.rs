@@ -36,6 +36,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
     let realtime_handle = use_context::<RealtimeHandle>();
     let current_user_id = use_context::<CurrentUserContext>().require_user().id;
     let participant_video = use_context::<ParticipantVideoHandle>();
+    let mut invite_picker_opened = use_signal(|| false);
     let state = voice.state();
     let microphone_status = microphone.status();
     let camera_status = camera.status();
@@ -125,7 +126,17 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
 
     rsx! {
         div { class: "voice-floating-controls pointer-events-none absolute inset-x-0 bottom-0 z-50 flex justify-center p-5",
-            div { class: "voice-controls-panel pointer-events-auto flex items-center gap-3 rounded-[24px] border border-zinc-800 bg-zinc-950/85 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.38)] drop-shadow-[0_12px_24px_rgba(0,0,0,.28)] backdrop-blur-xl",
+            if invite_picker_opened() {
+                div {
+                    class: "pointer-events-auto fixed inset-0 cursor-default",
+                    style: "z-index: 49;",
+                    "aria-label": "Закрыть выбор участников",
+                    onclick: move |_| invite_picker_opened.set(false),
+                }
+            }
+            div {
+                class: "voice-controls-panel pointer-events-auto relative z-50 flex items-center gap-3 rounded-[24px] border border-zinc-800 bg-zinc-950/85 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.38)] drop-shadow-[0_12px_24px_rgba(0,0,0,.28)] backdrop-blur-xl",
+                onclick: move |_| invite_picker_opened.set(false),
                 button {
                     r#type: "button",
                     disabled: !media_controls_enabled || microphone_starting,
@@ -314,6 +325,7 @@ pub(crate) fn VoiceControls(target: VoiceRoomTarget) -> Element {
                         server_id: target.server_id.clone(),
                         room_id: target.room_id.clone(),
                         enabled: media_controls_enabled,
+                        opened: invite_picker_opened,
                     }
                 }
                 button {

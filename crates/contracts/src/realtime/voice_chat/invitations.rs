@@ -111,12 +111,21 @@ pub struct VoiceRoomInviteSnapshot {
     pub caller_avatar_url: Option<String>,
     /// Идентификатор получателя приглашения.
     pub recipient_user_id: String,
+    /// Имя получателя на момент отправки, если доступно.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipient_nickname: Option<String>,
+    /// Публичный URL аватара получателя, если он задан.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipient_avatar_url: Option<String>,
     /// Текущее состояние приглашения.
     pub status: VoiceRoomInviteStatus,
     /// Время создания в формате RFC3339.
     pub created_at: String,
     /// Время истечения в формате RFC3339.
     pub expires_at: String,
+    /// Время завершения в формате RFC3339; отсутствует у ожидающих приглашений.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<String>,
 }
 
 /// Адресное событие изменения приглашения для обеих сторон.
@@ -131,4 +140,10 @@ pub struct VoiceRoomInviteLifecycleEvent {
 pub struct VoiceRoomInvitesSnapshot {
     /// Приглашения, доступные пользователю.
     pub invites: Vec<VoiceRoomInviteSnapshot>,
+    /// Время сервера при формировании снимка для расчёта остатка ожидания без часов устройства.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_now: Option<String>,
 }
+
+#[cfg(test)]
+mod tests;
