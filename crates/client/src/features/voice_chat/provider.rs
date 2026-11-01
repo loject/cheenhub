@@ -14,6 +14,7 @@ use crate::features::microphone::{MicrophoneHandle, MicrophoneStatus};
 use crate::features::network::NetworkQualityHandle;
 use crate::features::realtime::RealtimeHandle;
 use crate::features::screen_share::{ScreenShareHandle, ScreenShareStatus};
+use crate::features::system_tray::SystemTrayHandle;
 
 use super::direct_call_provider::DirectCallProvider;
 use super::kicked_modal::KickedFromVoiceModal;
@@ -47,6 +48,11 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let camera = use_context::<CameraHandle>();
     let screen_share = use_context::<ScreenShareHandle>();
     let playback = use_context::<AudioPlaybackHandle>();
+    let system_tray = use_context::<SystemTrayHandle>();
+    use_drop({
+        let system_tray = system_tray.clone();
+        move || system_tray.reset_voice_indicator()
+    });
     let network_quality = use_context::<NetworkQualityHandle>();
     let state = use_signal(|| VoiceConnectionState::Disconnected);
     let mut platform_call_active = use_signal(|| false);
@@ -209,6 +215,25 @@ pub(crate) fn VoiceConnectionProvider(children: Element) -> Element {
     let effect_handle = handle.clone();
     let effect_current_user_id = current_user.id.clone();
     let effect_voice_sounds = voice_notification_sounds.clone();
+    let indicator_system_tray = system_tray.clone();
+    let indicator_microphone = microphone.clone();
+    let indicator_playback = playback.clone();
+    use_effect(move || {
+        let connected = matches!(state(), VoiceConnectionState::Connected { .. });
+        let microphone_muted = !indicator_microphone.voice_enabled();
+        let output_muted = indicator_playback.is_muted();
+        let speaking = connected
+            && !microphone_muted
+            && !output_muted
+            && matches!(indicator_microphone.status(), MicrophoneStatus::Live)
+            && indicator_microphone.level_active();
+        indicator_system_tray.set_voice_indicator(
+            connected,
+            microphone_muted,
+            output_muted,
+            speaking,
+        );
+    });
     use_effect(move || {
         // Изменение deafen должно повторно пройти через lifecycle микрофона.
         let _ = playback.is_muted();

@@ -3,6 +3,7 @@
 mod handle;
 mod native;
 mod provider;
+mod status;
 mod storage;
 
 pub(crate) use handle::SystemTrayHandle;

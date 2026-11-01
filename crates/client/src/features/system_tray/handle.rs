@@ -2,20 +2,50 @@
 
 use dioxus::prelude::*;
 
-use super::{native, storage};
+use super::{native, status::VoiceIconStatus, storage};
 
 /// Контекст управления поведением системного трея.
 #[derive(Clone)]
 pub(crate) struct SystemTrayHandle {
     minimize_to_tray_on_close: Signal<bool>,
+    voice_status: Signal<VoiceIconStatus>,
 }
 
 impl SystemTrayHandle {
     /// Создает контекст управления системным треем.
-    pub(crate) fn new(minimize_to_tray_on_close: Signal<bool>) -> Self {
+    pub(crate) fn new(
+        minimize_to_tray_on_close: Signal<bool>,
+        voice_status: Signal<VoiceIconStatus>,
+    ) -> Self {
         Self {
             minimize_to_tray_on_close,
+            voice_status,
         }
+    }
+
+    /// Синхронизирует единое состояние значка голосового подключения.
+    pub(crate) fn set_voice_indicator(
+        &self,
+        connected: bool,
+        microphone_muted: bool,
+        output_muted: bool,
+        speaking: bool,
+    ) {
+        let next = VoiceIconStatus::from_voice(connected, microphone_muted, output_muted, speaking);
+        self.set_voice_status(next);
+    }
+
+    /// Возвращает обычный значок при уничтожении голосового провайдера.
+    pub(crate) fn reset_voice_indicator(&self) {
+        self.set_voice_status(VoiceIconStatus::Inactive);
+    }
+
+    fn set_voice_status(&self, next: VoiceIconStatus) {
+        let mut signal = self.voice_status;
+        if *signal.peek() == next {
+            return;
+        }
+        signal.set(next);
     }
 
     /// Сообщает, поддерживается ли системный трей на текущей платформе.
