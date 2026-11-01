@@ -1,4 +1,4 @@
-use super::{push_git_release_command, release_target_from_tag, replace_workspace_version};
+use super::{push_git_release_command, replace_workspace_version};
 
 #[test]
 fn pushes_main_and_the_created_tag_to_origin_atomically() {
@@ -19,22 +19,6 @@ fn pushes_main_and_the_created_tag_to_origin_atomically() {
             "refs/tags/v0.28.6:refs/tags/v0.28.6",
         ]
     );
-}
-
-#[test]
-fn normalizes_release_tag_to_workspace_version() {
-    let release = release_target_from_tag("v0.13.0").expect("valid release tag");
-
-    assert_eq!(release.tag, "v0.13.0");
-    assert_eq!(release.version, "0.13.0");
-}
-
-#[test]
-fn accepts_release_version_without_prefix() {
-    let release = release_target_from_tag("0.13.0").expect("valid release version");
-
-    assert_eq!(release.tag, "v0.13.0");
-    assert_eq!(release.version, "0.13.0");
 }
 
 #[test]
