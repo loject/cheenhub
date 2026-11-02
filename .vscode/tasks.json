@@ -3,50 +3,31 @@
   "tasks": [
     {
       "label": "CheenHub: bootstrap cargo-make",
-      "type": "shell",
-      "command": "cargo",
+      "type": "process",
+      "command": "/usr/bin/zsh",
       "args": [
-        "install",
-        "--locked",
-        "cargo-make"
+        "-i",
+        "-c",
+        "cargo install --locked --root \"$HOME/.local\" --version 0.37.24 cargo-make"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
       "presentation": {
-        "echo": true,
         "reveal": "always",
         "focus": false,
-        "panel": "dedicated",
-        "group": "cheenhub-dev",
-        "clear": true,
+        "panel": "new",
+        "clear": false,
         "close": true
       },
-      "problemMatcher": "$rustc"
-    },
-    {
-      "label": "CheenHub: setup Linux dev",
-      "type": "shell",
-      "command": "cargo",
-      "args": [
-        "make",
-        "setup-linux-dev"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "dedicated",
-        "clear": true
+      "runOptions": {
+        "instanceLimit": 1
       },
       "problemMatcher": []
     },
     {
       "label": "CheenHub: setup dev tools",
-      "type": "shell",
+      "type": "process",
       "command": "cargo",
       "args": [
         "make",
@@ -56,35 +37,209 @@
         "cwd": "${workspaceFolder}"
       },
       "presentation": {
-        "echo": true,
         "reveal": "always",
         "focus": false,
-        "panel": "dedicated",
-        "group": "cheenhub-dev",
-        "clear": true,
+        "panel": "new",
+        "clear": false,
         "close": true
       },
-      "problemMatcher": "$rustc"
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
     },
     {
-      "label": "CheenHub: dev stack",
-      "type": "shell",
+      "label": "CheenHub: setup Linux dev",
+      "type": "process",
       "command": "cargo",
       "args": [
         "make",
-        "dev-stack"
+        "setup-linux-dev"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: dev stack · Backend",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dev-stack-backend"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
       "isBackground": true,
       "presentation": {
-        "echo": true,
         "reveal": "always",
         "focus": false,
-        "panel": "dedicated",
-        "group": "cheenhub-dev",
-        "clear": true
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": {
+        "base": "$rustc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "."
+        }
+      }
+    },
+    {
+      "label": "CheenHub: dev stack · Frontend",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dev-frontend"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": {
+        "base": "$rustc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "."
+        }
+      }
+    },
+    {
+      "label": "CheenHub: dev stack desktop · App",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dioxus-desktop"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": {
+        "base": "$rustc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "."
+        }
+      }
+    },
+    {
+      "label": "CheenHub: dev stack Android · App",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dioxus-android"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": {
+        "base": "$rustc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "."
+        }
+      }
+    },
+    {
+      "label": "CheenHub: dev stack Android emulator · App",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dioxus-android-emulator"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": {
+        "base": "$rustc",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "."
+        }
+      }
+    },
+    {
+      "label": "CheenHub: dev stack desktop profile · App",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dioxus-desktop-profile"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
       },
       "problemMatcher": {
         "base": "$rustc",
@@ -97,7 +252,7 @@
     },
     {
       "label": "CheenHub: dev services",
-      "type": "shell",
+      "type": "process",
       "command": "cargo",
       "args": [
         "make",
@@ -106,27 +261,42 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "isBackground": true,
       "presentation": {
-        "echo": true,
         "reveal": "always",
         "focus": false,
-        "panel": "dedicated",
-        "group": "cheenhub-dev",
-        "clear": true
+        "panel": "new",
+        "clear": false
       },
-      "problemMatcher": {
-        "base": "$rustc",
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": ".",
-          "endsPattern": "."
-        }
-      }
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: dev services Android",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dev-services-android"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
     },
     {
       "label": "CheenHub: ensure Docker Desktop",
-      "type": "shell",
+      "type": "process",
       "command": "cargo",
       "args": [
         "make",
@@ -136,19 +306,20 @@
         "cwd": "${workspaceFolder}"
       },
       "presentation": {
-        "echo": true,
         "reveal": "always",
         "focus": false,
-        "panel": "dedicated",
-        "group": "cheenhub-dev",
-        "clear": true,
+        "panel": "new",
+        "clear": false,
         "close": true
+      },
+      "runOptions": {
+        "instanceLimit": 1
       },
       "problemMatcher": []
     },
     {
       "label": "CheenHub: ensure Postgres",
-      "type": "shell",
+      "type": "process",
       "command": "cargo",
       "args": [
         "make",
@@ -158,19 +329,20 @@
         "cwd": "${workspaceFolder}"
       },
       "presentation": {
-        "echo": true,
         "reveal": "always",
         "focus": false,
-        "panel": "dedicated",
-        "group": "cheenhub-dev",
-        "clear": true,
+        "panel": "new",
+        "clear": false,
         "close": true
+      },
+      "runOptions": {
+        "instanceLimit": 1
       },
       "problemMatcher": []
     },
     {
       "label": "CheenHub: dioxus web",
-      "type": "shell",
+      "type": "process",
       "command": "cargo",
       "args": [
         "make",
@@ -179,27 +351,104 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "isBackground": true,
       "presentation": {
-        "echo": true,
         "reveal": "always",
         "focus": false,
-        "panel": "dedicated",
-        "group": "cheenhub-dev",
-        "clear": true
+        "panel": "new",
+        "clear": false
       },
-      "problemMatcher": {
-        "base": "$rustc",
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": ".",
-          "endsPattern": "."
-        }
-      }
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: dioxus web release",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dioxus-web-release"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: dioxus Android",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dioxus-android"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: install production Android",
+      "type": "process",
+      "command": "scripts/install-android-production.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: dioxus desktop profile",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "make",
+        "dioxus-desktop-profile"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
     },
     {
       "label": "CheenHub: backend watch",
-      "type": "shell",
+      "type": "process",
       "command": "cargo",
       "args": [
         "make",
@@ -208,27 +457,20 @@
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "isBackground": true,
       "presentation": {
-        "echo": true,
         "reveal": "always",
         "focus": false,
-        "panel": "dedicated",
-        "group": "cheenhub-dev",
-        "clear": true
+        "panel": "new",
+        "clear": false
       },
-      "problemMatcher": {
-        "base": "$rustc",
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": ".",
-          "endsPattern": "."
-        }
-      }
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
     },
     {
       "label": "CheenHub: migrate database",
-      "type": "shell",
+      "type": "process",
       "command": "cargo",
       "args": [
         "make",
@@ -238,44 +480,114 @@
         "cwd": "${workspaceFolder}"
       },
       "presentation": {
-        "echo": true,
         "reveal": "always",
         "focus": false,
-        "panel": "dedicated",
-        "group": "cheenhub-dev",
-        "clear": true
+        "panel": "new",
+        "clear": false
       },
-      "problemMatcher": "$rustc"
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
     },
     {
-      "label": "CheenHub: create git tag",
-      "type": "shell",
+      "label": "CheenHub: line stats",
+      "type": "process",
       "command": "cargo",
       "args": [
-        "make",
-        "create-git-tag",
-        "${input:cheenhubGitTag}"
+        "run",
+        "--quiet",
+        "-p",
+        "xtask",
+        "--",
+        "line-stats"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
       },
       "presentation": {
-        "echo": true,
         "reveal": "always",
         "focus": false,
-        "panel": "dedicated",
-        "group": "cheenhub-release",
-        "clear": true,
-        "close": true
+        "panel": "new",
+        "clear": false
+      },
+      "runOptions": {
+        "instanceLimit": 1
       },
       "problemMatcher": []
-    }
-  ],
-  "inputs": [
+    },
     {
-      "id": "cheenhubGitTag",
-      "type": "promptString",
-      "description": "Git tag name, for example v1.0.0"
+      "label": "CheenHub: create release tag",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "run",
+        "--quiet",
+        "-p",
+        "xtask",
+        "--",
+        "release-version",
+        "tag"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "clear": false,
+        "close": true
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: dev stack",
+      "dependsOn": [
+        "CheenHub: dev stack · Backend",
+        "CheenHub: dev stack · Frontend"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: dev stack desktop",
+      "dependsOn": [
+        "CheenHub: dev stack · Backend",
+        "CheenHub: dev stack desktop · App"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: dev stack Android",
+      "dependsOn": [
+        "CheenHub: dev stack · Backend",
+        "CheenHub: dev stack Android · App"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: dev stack Android emulator",
+      "dependsOn": [
+        "CheenHub: dev stack · Backend",
+        "CheenHub: dev stack Android emulator · App"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      "label": "CheenHub: dev stack desktop profile",
+      "dependsOn": [
+        "CheenHub: dev stack · Backend",
+        "CheenHub: dev stack desktop profile · App"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
     }
   ]
 }
