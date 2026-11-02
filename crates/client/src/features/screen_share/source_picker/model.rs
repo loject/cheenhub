@@ -36,23 +36,6 @@ impl ScreenShareResolution {
         }
     }
 
-    /// Возвращает значение для HTML-списка.
-    pub(crate) const fn value(self) -> &'static str {
-        match self {
-            Self::P720 => "720",
-            Self::P1080 => "1080",
-        }
-    }
-
-    /// Читает значение из HTML-списка.
-    pub(crate) fn from_value(value: &str) -> Option<Self> {
-        match value {
-            "720" => Some(Self::P720),
-            "1080" => Some(Self::P1080),
-            _ => None,
-        }
-    }
-
     /// Возвращает название для итогового описания.
     pub(crate) const fn title(self) -> &'static str {
         match self {
@@ -81,47 +64,11 @@ impl ScreenShareFrameRate {
         }
     }
 
-    /// Возвращает значение для HTML-списка.
-    pub(crate) const fn value(self) -> &'static str {
-        match self {
-            Self::Fps15 => "15",
-            Self::Fps30 => "30",
-        }
-    }
-
-    /// Читает значение из HTML-списка.
-    pub(crate) fn from_value(value: &str) -> Option<Self> {
-        match value {
-            "15" => Some(Self::Fps15),
-            "30" => Some(Self::Fps30),
-            _ => None,
-        }
-    }
-
     /// Возвращает название для итогового описания.
     pub(crate) const fn title(self) -> &'static str {
         match self {
             Self::Fps15 => "15 кадров/с",
             Self::Fps30 => "30 кадров/с",
-        }
-    }
-}
-
-/// Объяснение автоматической коррекции качества.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ScreenShareQualityAdjustment {
-    /// Для 1080p частота снижена до 15 FPS.
-    FrameRateReducedFor1080p,
-    /// Для 30 FPS разрешение снижено до 720p.
-    ResolutionReducedFor30Fps,
-}
-
-impl ScreenShareQualityAdjustment {
-    /// Возвращает понятное пользователю объяснение.
-    pub(crate) const fn message(self) -> &'static str {
-        match self {
-            Self::FrameRateReducedFor1080p => "Для 1080p частота кадров снижена до 15 FPS.",
-            Self::ResolutionReducedFor30Fps => "Для 30 FPS разрешение снижено до 720p.",
         }
     }
 }
@@ -213,54 +160,6 @@ impl ScreenShareSelection {
             selection.frame_rate = frame_rate;
             selection
         })
-    }
-
-    /// Выбирает разрешение и при необходимости корректирует FPS.
-    pub(crate) fn select_resolution(
-        &mut self,
-        resolution: ScreenShareResolution,
-    ) -> Option<ScreenShareQualityAdjustment> {
-        self.resolution = resolution;
-        if resolution == ScreenShareResolution::P1080
-            && self.frame_rate == ScreenShareFrameRate::Fps30
-        {
-            self.frame_rate = ScreenShareFrameRate::Fps15;
-            return Some(ScreenShareQualityAdjustment::FrameRateReducedFor1080p);
-        }
-
-        None
-    }
-
-    /// Выбирает FPS и при необходимости корректирует разрешение.
-    pub(crate) fn select_frame_rate(
-        &mut self,
-        frame_rate: ScreenShareFrameRate,
-    ) -> Option<ScreenShareQualityAdjustment> {
-        self.frame_rate = frame_rate;
-        if frame_rate == ScreenShareFrameRate::Fps30
-            && self.resolution == ScreenShareResolution::P1080
-        {
-            self.resolution = ScreenShareResolution::P720;
-            return Some(ScreenShareQualityAdjustment::ResolutionReducedFor30Fps);
-        }
-
-        None
-    }
-
-    /// Формирует доступное пользователю описание подтверждаемого выбора.
-    pub(crate) fn confirmation_summary(&self, sources: &[ScreenShareSource]) -> Option<String> {
-        let source = sources
-            .iter()
-            .find(|source| self.source_id.as_deref() == Some(source.id.as_str()))?;
-
-        Some(format!(
-            "{} · {}×{} · {}, {} · Без звука",
-            source.name,
-            source.width,
-            source.height,
-            self.resolution.title(),
-            self.frame_rate.title()
-        ))
     }
 }
 

@@ -2130,3 +2130,162 @@
         opacity: 1;
     }
 }
+
+/* Ползунок битрейта в окне демонстрации экрана. */
+.screen-share-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.screen-share-range:focus {
+  outline: none;
+}
+
+.screen-share-range::-webkit-slider-runnable-track {
+  height: 18px;
+  background: transparent;
+}
+
+.screen-share-range::-moz-range-track {
+  height: 18px;
+  background: transparent;
+}
+
+.screen-share-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #18181b;
+  border-radius: 999px;
+  background: #e4e4e7;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.screen-share-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #18181b;
+  border-radius: 999px;
+  background: #e4e4e7;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .screen-share-range:hover::-webkit-slider-thumb {
+    background: #fafafa;
+  }
+
+  .screen-share-range:hover::-moz-range-thumb {
+    background: #fafafa;
+  }
+}
+
+.screen-share-range:active::-webkit-slider-thumb {
+  transform: scale(1.08);
+}
+
+.screen-share-range:active::-moz-range-thumb {
+  transform: scale(1.08);
+}
+
+.screen-share-range:focus-visible::-webkit-slider-thumb {
+  border-color: #3b82f6;
+}
+
+.screen-share-range:focus-visible::-moz-range-thumb {
+  border-color: #3b82f6;
+}
+
+/* Заблокированная подпиской зона дорожки битрейта. */
+.screen-share-locked-track {
+  background-color: rgba(39, 39, 42, 0.9);
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(250, 204, 21, 0.28) 0 2px,
+    transparent 2px 6px
+  );
+}
+
+/* Пульсация метки предпросмотра. */
+.screen-share-live-dot {
+  animation: screen-share-live-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes screen-share-live-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+
+/* Анимации окна демонстрации экрана. */
+.screen-share-backdrop {
+  animation: screen-share-backdrop-in 180ms ease-out both;
+}
+
+.screen-share-modal {
+  animation: screen-share-modal-in 240ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.screen-share-fade-up {
+  animation: screen-share-fade-up-in 260ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.screen-share-fade-in {
+  animation: screen-share-fade-in 180ms ease-out both;
+}
+
+.screen-share-reveal {
+  animation: screen-share-reveal-in 200ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.screen-share-pop {
+  animation: screen-share-pop-in 220ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes screen-share-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes screen-share-modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes screen-share-fade-up-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes screen-share-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes screen-share-reveal-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes screen-share-pop-in {
+  from { opacity: 0; transform: scale(0.6); }
+  70% { transform: scale(1.06); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-share-backdrop,
+  .screen-share-modal,
+  .screen-share-fade-up,
+  .screen-share-fade-in,
+  .screen-share-reveal,
+  .screen-share-pop {
+    animation: none;
+  }
+}

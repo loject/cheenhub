@@ -1,11 +1,32 @@
 //! Модальное окно выбора экрана и качества демонстрации.
+//!
+//! Окно показывает доступные экраны и панель качества. Разрешение и частота
+//! кадров меняют подтверждаемые параметры, а пресеты, ползунок битрейта и
+//! предложение подписки остаются витриной тарифов.
+
+mod assessment_card;
+mod bitrate_slider;
+mod browser_intro;
+mod decor;
+mod empty_state;
+mod kind_tabs;
+mod list_skeleton;
+mod preset_grid;
+mod quality_panel;
+mod segmented;
+mod source_card;
 
 use dioxus::prelude::*;
 
-use super::model::{
-    ScreenShareFrameRate, ScreenShareQualityAdjustment, ScreenShareResolution,
-    ScreenShareSelection, ScreenShareSource, ScreenShareSourcePickerState, ScreenShareSourceTab,
-};
+use self::browser_intro::BrowserIntro;
+use self::decor::{MockFrameRate, MockResolution, aria_flag, is_supported};
+use self::empty_state::{EmptyState, EmptyStateTone};
+use self::kind_tabs::KindTabs;
+use self::list_skeleton::ListSkeleton;
+use self::quality_panel::{QualityChange, QualityPanel};
+use self::source_card::SourceCard;
+
+use super::model::{ScreenShareSelection, ScreenShareSourcePickerState, ScreenShareSourceTab};
 
 /// Показывает доступные экраны и возвращает подтверждённый пользователем выбор.
 #[component]
@@ -29,9 +50,12 @@ pub(crate) fn ScreenShareSourcePicker(
         | ScreenShareSourcePickerState::Ready(_) => None,
     };
     let loading = matches!(state, ScreenShareSourcePickerState::Loading);
+
     let mut selection = use_signal(|| None::<ScreenShareSelection>);
     let mut active_tab = use_signal(ScreenShareSourceTab::default);
-    let mut quality_adjustment = use_signal(|| None::<ScreenShareQualityAdjustment>);
+    let mut mock_resolution = use_signal(MockResolution::default);
+    let mut mock_frame_rate = use_signal(MockFrameRate::default);
+
     let effective_selection = if browser_mode {
         Some(
             selection()
@@ -41,30 +65,48 @@ pub(crate) fn ScreenShareSourcePicker(
     } else {
         ScreenShareSelection::normalized_for(selection().as_ref(), &sources)
     };
+    let resolution = effective_selection
+        .as_ref()
+        .map_or_else(Default::default, |value| value.resolution);
+    let frame_rate = effective_selection
+        .as_ref()
+        .map_or_else(Default::default, |value| value.frame_rate);
     let selected_tab = active_tab();
-    let confirmation_summary = if browser_mode {
-        effective_selection.as_ref().map(|value| {
-            format!(
-                "{} · {}",
-                value.resolution.title(),
-                value.frame_rate.title()
-            )
-        })
-    } else if selected_tab == ScreenShareSourceTab::Screens {
-        effective_selection
-            .as_ref()
-            .and_then(|value| value.confirmation_summary(&sources))
+    let selected_source = effective_selection.as_ref().and_then(|value| {
+        value
+            .source_id
+            .as_deref()
+            .and_then(|id| sources.iter().find(|source| source.id == id).cloned())
+    });
+    let mock_quality_summary = format!(
+        "{} · {}",
+        mock_resolution().label(),
+        mock_frame_rate().label()
+    );
+    let launch_quality_summary = format!("{} · {}", resolution.title(), frame_rate.title());
+    let quality_summary = if is_supported(mock_resolution(), mock_frame_rate()) {
+        mock_quality_summary.clone()
     } else {
-        None
+        launch_quality_summary.clone()
     };
     let confirm_selection = selected_tab
         .can_confirm(effective_selection.as_ref())
-        .then_some(effective_selection.clone())
+        .then(|| effective_selection.clone())
         .flatten();
+    let start_label = if browser_mode {
+        "Выбрать экран и начать"
+    } else {
+        "Начать демонстрацию"
+    };
+    let source_count_label = match sources.len() {
+        0 => "Нет доступных".to_owned(),
+        1 => "1 экран".to_owned(),
+        count => format!("{count} экрана"),
+    };
 
     rsx! {
         div {
-            class: "fixed inset-0 z-[950] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm",
+            class: "screen-share-backdrop fixed inset-0 z-[950] flex items-center justify-center bg-black/70 px-3 py-4 backdrop-blur-sm",
             role: "presentation",
             onclick: move |_| on_close.call(()),
             onkeydown: move |event| {
@@ -74,25 +116,31 @@ pub(crate) fn ScreenShareSourcePicker(
             },
 
             section {
-                class: "flex max-h-[min(780px,calc(100vh-48px))] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 text-zinc-100 shadow-[0_28px_100px_rgba(0,0,0,0.65)]",
+                class: "screen-share-modal flex max-h-[calc(100vh_-_32px)] w-full max-w-[920px] flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-100",
                 role: "dialog",
                 "aria-modal": "true",
                 "aria-labelledby": "screen-share-source-picker-title",
                 "aria-describedby": "screen-share-source-picker-description",
                 onclick: move |event| event.stop_propagation(),
 
-                header { class: "flex shrink-0 items-start justify-between gap-4 border-b border-zinc-800 px-5 py-4 sm:px-6",
-                    div {
+                header { class: "flex shrink-0 items-center gap-3 border-b border-zinc-800 px-4 py-3",
+                    div { class: "grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-blue-500/15 text-blue-300",
+                        svg { class: "h-[18px] w-[18px]", fill: "none", stroke: "currentColor", stroke_width: "1.8", view_box: "0 0 24 24", "aria-hidden": "true",
+                            rect { x: "3", y: "4", width: "18", height: "12", rx: "2" }
+                            path { stroke_linecap: "round", d: "M8 20h8m-4-4v4M12 12v-4m-2 2 2-2 2 2" }
+                        }
+                    }
+                    div { class: "min-w-0 flex-1",
                         h2 {
                             id: "screen-share-source-picker-title",
-                            class: "text-[17px] font-semibold text-zinc-50",
+                            class: "truncate text-[15px] font-semibold tracking-tight text-white",
                             "Демонстрация экрана"
                         }
                         p {
                             id: "screen-share-source-picker-description",
-                            class: "mt-1 text-[12px] leading-5 text-zinc-400",
+                            class: "mt-0.5 truncate text-[11.5px] leading-4 text-zinc-400",
                             if browser_mode {
-                                "Настройте качество изображения. Источник демонстрации выберете в следующем окне браузера."
+                                "Настройте качество — источник выберете в окне браузера."
                             } else {
                                 "Выберите экран и качество изображения."
                             }
@@ -101,306 +149,169 @@ pub(crate) fn ScreenShareSourcePicker(
                     button {
                         r#type: "button",
                         autofocus: true,
-                        class: "flex size-9 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
+                        class: "grid h-8 w-8 shrink-0 place-items-center rounded-md text-zinc-400 transition-[background-color,color] duration-200 hover:bg-white/[.06] hover:text-white active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300/70",
                         "aria-label": "Закрыть выбор экрана",
                         onclick: move |_| on_close.call(()),
-                        svg { class: "size-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
+                        svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
                             path { stroke_linecap: "round", stroke_linejoin: "round", d: "M6 18 18 6M6 6l12 12" }
                         }
                     }
                 }
 
-                div { class: "min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6",
-                    if !browser_mode {
-                        div {
-                            class: "mb-5 flex w-fit rounded-xl border border-zinc-800 bg-zinc-900/60 p-1",
-                            role: "tablist",
-                        "aria-label": "Тип источника демонстрации",
-                        button {
-                            r#type: "button",
-                            role: "tab",
-                            "aria-selected": if selected_tab == ScreenShareSourceTab::Screens { "true" } else { "false" },
-                            class: if selected_tab == ScreenShareSourceTab::Screens {
-                                "rounded-lg bg-zinc-700 px-4 py-2 text-[12px] font-semibold text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-                            } else {
-                                "rounded-lg px-4 py-2 text-[12px] font-semibold text-zinc-400 transition hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-                            },
-                            onclick: move |_| {
-                                active_tab.set(ScreenShareSourceTab::Screens);
-                                debug!(tab = "screens", "screen share source tab changed");
-                            },
-                            "Экраны"
-                        }
-                        button {
-                            r#type: "button",
-                            role: "tab",
-                            "aria-selected": if selected_tab == ScreenShareSourceTab::Windows { "true" } else { "false" },
-                            class: if selected_tab == ScreenShareSourceTab::Windows {
-                                "rounded-lg bg-zinc-700 px-4 py-2 text-[12px] font-semibold text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-                            } else {
-                                "rounded-lg px-4 py-2 text-[12px] font-semibold text-zinc-400 transition hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-                            },
-                            onclick: move |_| {
-                                active_tab.set(ScreenShareSourceTab::Windows);
-                                debug!(tab = "windows", "screen share source tab changed");
-                            },
-                            "Окна"
-                        }
-                    }
-                    }
-
-                    if selected_tab == ScreenShareSourceTab::Windows {
-                        div {
-                            class: "flex min-h-64 flex-col items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/35 px-6 py-10 text-center",
-                            role: "status",
-                            div { class: "flex size-11 items-center justify-center rounded-full bg-zinc-800 text-zinc-300",
-                                svg { class: "size-5", fill: "none", stroke: "currentColor", stroke_width: "1.8", view_box: "0 0 24 24", "aria-hidden": "true",
-                                    rect { x: "3", y: "5", width: "18", height: "14", rx: "2" }
-                                    path { stroke_linecap: "round", d: "M3 9h18M7 7h.01M10 7h.01" }
+                div { class: "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+                    div { class: "screen-share-fade-up grid items-start gap-5 p-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:gap-6",
+                        div { class: "min-w-0 space-y-3",
+                            if !browser_mode {
+                                div {
+                                    h3 { class: "mb-2 text-[13px] font-semibold tracking-tight text-white", "Что показать" }
+                                    KindTabs {
+                                        active: selected_tab,
+                                        on_change: move |tab| {
+                                            active_tab.set(tab);
+                                            debug!(tab = ?tab, "screen share source tab changed");
+                                        },
+                                    }
                                 }
-                            }
-                            h3 { class: "mt-3 text-[14px] font-semibold text-zinc-100", "Демонстрация окон появится позже" }
-                            p { class: "mt-1 max-w-md text-[12px] leading-5 text-zinc-400", "В ближайших обновлениях здесь можно будет выбрать отдельное окно вместо всего экрана." }
-                        }
-                    } else if loading {
-                        div {
-                            class: "space-y-4",
-                            role: "status",
-                            "aria-live": "polite",
-                            "aria-label": "Загружаем доступные экраны",
-                            div { class: "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3",
-                                for index in 0..3 {
-                                    div { key: "screen-source-skeleton-{index}", class: "overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/60",
-                                        div { class: "aspect-video animate-pulse bg-zinc-800/80" }
-                                        div { class: "space-y-2 p-3",
-                                            div { class: "h-3 w-2/3 animate-pulse rounded bg-zinc-800" }
-                                            div { class: "h-2.5 w-1/3 animate-pulse rounded bg-zinc-800/70" }
+
+                                div { class: "min-h-[248px]",
+                                div { key: "{selected_tab:?}", class: "screen-share-fade-in",
+                                if selected_tab == ScreenShareSourceTab::Windows {
+                                    EmptyState {
+                                        title: "Нет доступных окон",
+                                        body: "Откройте нужное приложение или вернитесь на вкладку «Весь экран», чтобы показать экран целиком.",
+                                    }
+                                } else if loading {
+                                    ListSkeleton {}
+                                } else if let Some(message) = error.clone() {
+                                    EmptyState {
+                                        title: "Не удалось показать экраны",
+                                        body: message,
+                                        action_label: "Повторить",
+                                        tone: EmptyStateTone::Danger,
+                                        on_action: move |_| on_retry.call(()),
+                                    }
+                                } else if sources.is_empty() {
+                                    EmptyState {
+                                        title: "Экраны не найдены",
+                                        body: "Подключите дисплей или обновите список доступных экранов.",
+                                        action_label: "Обновить список",
+                                        on_action: move |_| on_retry.call(()),
+                                    }
+                                } else {
+                                    div {
+                                        class: "space-y-2",
+                                        div { class: "flex items-baseline justify-between gap-2",
+                                            p { class: "text-[11px] font-medium text-zinc-400", "Доступные экраны" }
+                                            p { class: "text-[10.5px] tabular-nums text-zinc-500", "{source_count_label}" }
+                                        }
+                                        div {
+                                            class: "grid grid-cols-2 gap-2",
+                                            role: "radiogroup",
+                                            "aria-label": "Экран для демонстрации",
+                                            for source in sources.iter().cloned() {
+                                                {
+                                                    let current_selection = effective_selection.clone();
+                                                    rsx! {
+                                                        SourceCard {
+                                                            key: "{source.id}",
+                                                            selected: current_selection.as_ref().is_some_and(|value| {
+                                                                value.source_id.as_deref() == Some(source.id.as_str())
+                                                            }),
+                                                            source,
+                                                            on_select: move |source_id: String| {
+                                                                let mut next = current_selection.clone().unwrap_or_else(|| {
+                                                                    ScreenShareSelection::browser_default()
+                                                                });
+                                                                next.source_id = Some(source_id);
+                                                                selection.set(Some(next));
+                                                            },
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
-                            }
-                        }
-                    } else if let Some(message) = error {
-                        div { class: "flex min-h-64 flex-col items-center justify-center rounded-xl border border-red-400/20 bg-red-500/5 px-6 py-10 text-center", role: "alert",
-                            div { class: "flex size-11 items-center justify-center rounded-full bg-red-500/10 text-red-300",
-                                svg { class: "size-5", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 9v4m0 4h.01M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z" }
                                 }
-                            }
-                            h3 { class: "mt-3 text-[14px] font-semibold text-zinc-100", "Не удалось показать экраны" }
-                            p { class: "mt-1 max-w-md text-[12px] leading-5 text-zinc-400", "{message}" }
-                            button {
-                                r#type: "button",
-                                class: "mt-4 rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-[12px] font-semibold text-zinc-100 transition hover:border-zinc-600 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
-                                onclick: move |_| on_retry.call(()),
-                                "Повторить"
-                            }
-                        }
-                    } else if sources.is_empty() && !browser_mode {
-                        div { class: "flex min-h-64 flex-col items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/35 px-6 py-10 text-center", role: "status",
-                            div { class: "flex size-11 items-center justify-center rounded-full bg-zinc-800 text-zinc-300",
-                                svg { class: "size-5", fill: "none", stroke: "currentColor", stroke_width: "1.8", view_box: "0 0 24 24", "aria-hidden": "true",
-                                    rect { x: "3", y: "4", width: "18", height: "12", rx: "2" }
-                                    path { stroke_linecap: "round", d: "M8 20h8m-4-4v4" }
                                 }
-                            }
-                            h3 { class: "mt-3 text-[14px] font-semibold text-zinc-100", "Экраны не найдены" }
-                            p { class: "mt-1 max-w-md text-[12px] leading-5 text-zinc-400", "Подключите дисплей или обновите список доступных экранов." }
-                            button {
-                                r#type: "button",
-                                class: "mt-4 rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-[12px] font-semibold text-zinc-100 transition hover:border-zinc-600 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
-                                onclick: move |_| on_retry.call(()),
-                                "Обновить список"
-                            }
-                        }
-                    } else {
-                        if browser_mode {
-                            div { class: "rounded-xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-[12px] leading-5 text-blue-100",
-                                "После выбора качества браузер предложит указать экран, окно или вкладку для демонстрации."
-                            }
-                        } else {
-                            div {
-                                class: "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3",
-                                role: "radiogroup",
-                                "aria-label": "Экран для демонстрации",
-                                for source in sources.iter().cloned() {
-                                    {source_button(source, effective_selection.as_ref(), selection)}
-                                }
+                            } else {
+                                BrowserIntro {}
                             }
                         }
 
-                        fieldset { class: "mt-6 border-t border-zinc-800 pt-5",
-                            legend { class: "px-1 text-[13px] font-semibold text-zinc-200", "Качество" }
-                            div { class: "mt-3 grid gap-3 sm:grid-cols-2",
-                                label { class: "block",
-                                    span { class: "mb-1.5 block text-[11px] font-medium text-zinc-400", "Разрешение" }
-                                    select {
-                                        class: "h-11 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 text-[13px] font-semibold text-zinc-100 outline-none transition hover:border-zinc-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/25",
-                                        value: effective_selection.as_ref().map_or(ScreenShareResolution::P720.value(), |value| value.resolution.value()),
-                                        onchange: {
-                                            let current = effective_selection.clone();
-                                            move |event: Event<FormData>| {
-                                                let Some(resolution) = ScreenShareResolution::from_value(&event.value()) else {
-                                                    warn!(value = %event.value(), "unknown screen share resolution selected");
-                                                    return;
-                                                };
-                                                if let Some(mut next) = current.clone() {
-                                                    let adjustment = next.select_resolution(resolution);
-                                                    info!(resolution = ?next.resolution, frame_rate = ?next.frame_rate, adjusted = adjustment.is_some(), "screen share quality changed");
-                                                    selection.set(Some(next));
-                                                    quality_adjustment.set(adjustment);
-                                                }
-                                            }
-                                        },
-                                        option { value: "720", "720p" }
-                                        option { value: "1080", "1080p · до 15 FPS" }
-                                    }
-                                }
-                                label { class: "block",
-                                    span { class: "mb-1.5 block text-[11px] font-medium text-zinc-400", "Частота кадров" }
-                                    select {
-                                        class: "h-11 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-3 text-[13px] font-semibold text-zinc-100 outline-none transition hover:border-zinc-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/25",
-                                        value: effective_selection.as_ref().map_or(ScreenShareFrameRate::Fps30.value(), |value| value.frame_rate.value()),
-                                        onchange: {
-                                            let current = effective_selection.clone();
-                                            move |event: Event<FormData>| {
-                                                let Some(frame_rate) = ScreenShareFrameRate::from_value(&event.value()) else {
-                                                    warn!(value = %event.value(), "unknown screen share frame rate selected");
-                                                    return;
-                                                };
-                                                if let Some(mut next) = current.clone() {
-                                                    let adjustment = next.select_frame_rate(frame_rate);
-                                                    info!(resolution = ?next.resolution, frame_rate = ?next.frame_rate, adjusted = adjustment.is_some(), "screen share quality changed");
-                                                    selection.set(Some(next));
-                                                    quality_adjustment.set(adjustment);
-                                                }
-                                            }
-                                        },
-                                        option { value: "15", "15 FPS" }
-                                        option { value: "30", "30 FPS · до 720p" }
-                                    }
-                                }
-                            }
-                            p { class: "mt-2 text-[11px] leading-5 text-zinc-500", "1080p работает до 15 FPS, а 30 FPS — до 720p. При выборе мы автоматически настроим второй параметр." }
-                            if let Some(adjustment) = quality_adjustment() {
-                                div {
-                                    class: "mt-3 flex items-start gap-2 rounded-lg border border-blue-400/20 bg-blue-500/10 px-3 py-2.5 text-[11px] leading-5 text-blue-100",
-                                    role: "status",
-                                    "aria-live": "polite",
-                                    svg { class: "mt-0.5 size-3.5 shrink-0", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24", "aria-hidden": "true",
-                                        path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 16v-4m0-4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" }
-                                    }
-                                    span { "{adjustment.message()}" }
-                                }
+                        div { class: "min-w-0",
+                            QualityPanel {
+                                resolution: mock_resolution(),
+                                frame_rate: mock_frame_rate(),
+                                on_change: move |change: QualityChange| {
+                                    debug!(
+                                        mock_resolution = ?change.mock_resolution,
+                                        mock_frame_rate = ?change.mock_frame_rate,
+                                        resolution = ?change.resolution,
+                                        frame_rate = ?change.frame_rate,
+                                        "screen share quality changed"
+                                    );
+                                    mock_resolution.set(change.mock_resolution);
+                                    mock_frame_rate.set(change.mock_frame_rate);
+                                    let mut next = effective_selection
+                                        .clone()
+                                        .unwrap_or_else(ScreenShareSelection::browser_default);
+                                    next.resolution = change.resolution;
+                                    next.frame_rate = change.frame_rate;
+                                    selection.set(Some(next));
+                                },
                             }
                         }
                     }
                 }
 
-                footer { class: "flex shrink-0 flex-col gap-3 border-t border-zinc-800 bg-zinc-950/95 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6",
-                    div { class: "min-w-0",
-                        if browser_mode {
-                            p { class: "text-[11px] leading-5 text-zinc-400",
-                                "Звук зависит от выбранного источника и возможностей браузера."
-                            }
-                        } else {
-                            p { class: "flex items-center gap-1.5 text-[12px] font-medium text-amber-200",
-                                svg { class: "size-3.5 shrink-0", fill: "none", stroke: "currentColor", stroke_width: "1.9", view_box: "0 0 24 24", "aria-hidden": "true",
-                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M11 5 6 9H3v6h3l5 4V5Zm5.5 5.5 4 4m0-4-4 4" }
-                                }
-                                "Без звука"
+                footer { class: "flex shrink-0 flex-col gap-2.5 border-t border-zinc-800 bg-zinc-950/95 px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+                    div { class: "flex min-w-0 items-center gap-2.5",
+                        div { class: "grid h-8 w-8 shrink-0 place-items-center rounded-md bg-white/[.06] text-zinc-300",
+                            svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "1.8", view_box: "0 0 24 24", "aria-hidden": "true",
+                                rect { x: "3", y: "4", width: "18", height: "12", rx: "2" }
+                                path { stroke_linecap: "round", d: "M8 20h8m-4-4v4" }
                             }
                         }
-                        if let Some(summary) = confirmation_summary {
-                            p { class: "mt-1 truncate text-[11px] text-zinc-500", "{summary}" }
+                        div { class: "min-w-0",
+                            p { class: "text-[10px] font-medium uppercase tracking-wider text-zinc-500",
+                                if browser_mode { "Что показывать" } else { "Будет показано" }
+                            }
+                            p { class: "truncate text-[12px] font-medium text-zinc-100",
+                                if browser_mode {
+                                    "Источник выбирается в браузере"
+                                    span { class: "font-normal text-zinc-400", " · {quality_summary}" }
+                                } else if let Some(source) = selected_source.as_ref() {
+                                    "{source.name}"
+                                    span { class: "font-normal text-zinc-400", " · {quality_summary}" }
+                                } else {
+                                    "Экран не выбран"
+                                }
+                            }
                         }
                     }
                     div { class: "flex shrink-0 items-center justify-end gap-2",
                         button {
                             r#type: "button",
-                            class: "h-10 rounded-lg px-4 text-[13px] font-semibold text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
+                            class: "h-9 rounded-lg px-3 text-[12.5px] font-medium text-zinc-300 transition-[background-color,color] duration-200 hover:bg-white/[.06] hover:text-white active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
                             onclick: move |_| on_close.call(()),
                             "Отмена"
                         }
                         button {
                             r#type: "button",
                             disabled: confirm_selection.is_none(),
-                            title: if selected_tab == ScreenShareSourceTab::Windows { "Демонстрация отдельных окон пока недоступна" } else { "" },
-                            class: "h-10 rounded-lg bg-blue-500 px-5 text-[13px] font-semibold text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300",
+                            "aria-disabled": aria_flag(confirm_selection.is_none()),
+                            class: "inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 text-[12.5px] font-semibold text-white transition-[background-color,opacity] duration-200 hover:bg-blue-400 active:scale-[0.96] disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500 disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300",
                             onclick: move |_| {
                                 if let Some(value) = confirm_selection.clone() {
                                     info!(source_id = ?value.source_id, resolution = ?value.resolution, frame_rate = ?value.frame_rate, "screen share source selection confirmed");
                                     on_confirm.call(value);
                                 }
                             },
-                            "Начать демонстрацию"
+                            "{start_label}"
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-fn source_button(
-    source: ScreenShareSource,
-    current: Option<&ScreenShareSelection>,
-    mut selection: Signal<Option<ScreenShareSelection>>,
-) -> Element {
-    let selected =
-        current.is_some_and(|value| value.source_id.as_deref() == Some(source.id.as_str()));
-    let resolution = current.map_or_else(ScreenShareResolution::default, |value| value.resolution);
-    let frame_rate = current.map_or_else(ScreenShareFrameRate::default, |value| value.frame_rate);
-    let source_id = source.id.clone();
-    let source_label = if source.is_primary {
-        format!(
-            "{}, основной, {} на {} пикселей",
-            source.name, source.width, source.height
-        )
-    } else {
-        format!(
-            "{}, {} на {} пикселей",
-            source.name, source.width, source.height
-        )
-    };
-
-    rsx! {
-        button {
-            key: "{source.id}",
-            r#type: "button",
-            role: "radio",
-            "aria-checked": if selected { "true" } else { "false" },
-            "aria-label": "{source_label}",
-            class: if selected {
-                "group overflow-hidden rounded-xl border border-blue-400/70 bg-blue-500/10 text-left shadow-[0_0_0_2px_rgba(59,130,246,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
-            } else {
-                "group overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/45 text-left transition hover:border-zinc-700 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-            },
-            onclick: move |_| selection.set(Some(ScreenShareSelection {
-                source_id: Some(source_id.clone()),
-                resolution,
-                frame_rate,
-            })),
-            div { class: "relative aspect-video overflow-hidden bg-zinc-900",
-                img {
-                    class: "h-full w-full object-contain transition duration-200 group-hover:scale-[1.01]",
-                    src: "{source.preview_url}",
-                    alt: "Предварительный просмотр: {source.name}",
-                }
-                if source.is_primary {
-                    span { class: "absolute left-2 top-2 rounded-md border border-white/10 bg-black/70 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur-sm", "Основной" }
-                }
-                if selected {
-                    span { class: "absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-blue-500 text-white shadow-lg", "aria-hidden": "true",
-                        svg { class: "size-3.5", fill: "none", stroke: "currentColor", stroke_width: "2.4", view_box: "0 0 24 24",
-                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "m5 12 4 4L19 6" }
-                        }
-                    }
-                }
-            }
-            div { class: "flex items-center justify-between gap-3 px-3 py-2.5",
-                span { class: "truncate text-[12px] font-semibold text-zinc-100", "{source.name}" }
-                span { class: "shrink-0 text-[10px] text-zinc-500", "{source.width}×{source.height}" }
             }
         }
     }
