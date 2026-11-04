@@ -170,7 +170,8 @@ fn spoilers_reveal_independently_and_hidden_link_is_not_mounted() {
     let revealed = dom.render_immediate_to_vec();
     assert!(text(&dom).contains("секрет"));
     assert!(!text(&dom).contains("второй"));
-    assert!(format!("{:?}", revealed.edits).contains("https://example.com"));
+    assert!(!format!("{:?}", revealed.edits).contains("https://example.com"));
+    assert_eq!(clicks(&revealed.edits).len(), 1);
 
     click(&dom, buttons[0]);
     dom.render_immediate_to_vec();
@@ -179,6 +180,15 @@ fn spoilers_reveal_independently_and_hidden_link_is_not_mounted() {
     dom.render_immediate_to_vec();
     assert!(text(&dom).contains("второй"));
     assert!(!text(&dom).contains("секрет"));
+
+    click(&dom, buttons[0]);
+    let revealed_again = dom.render_immediate_to_vec();
+    let link_buttons = clicks(&revealed_again.edits);
+    assert_eq!(link_buttons.len(), 1);
+    click(&dom, link_buttons[0]);
+    let confirmation = dom.render_immediate_to_vec();
+    assert!(text(&dom).contains("Переход по внешней ссылке"));
+    assert!(format!("{:?}", confirmation.edits).contains("https://example.com"));
 }
 
 #[test]
@@ -266,8 +276,17 @@ fn unsafe_link_schemes_never_create_navigation_targets() {
             _ => None,
         })
         .collect();
-    assert_eq!(hrefs.len(), 1, "{hrefs:?}");
-    assert!(hrefs[0].contains("https://example.com"));
+    assert!(hrefs.is_empty(), "{hrefs:?}");
+    let link_buttons = clicks(&mutations.edits);
+    assert_eq!(link_buttons.len(), 1);
+
+    click(&dom, link_buttons[0]);
+    let confirmation = dom.render_immediate_to_vec();
+    assert!(text(&dom).contains("Переход по внешней ссылке"));
+    let output = format!("{:?}", confirmation.edits);
+    assert!(output.contains("https://example.com"));
+    assert!(!output.contains("javascript:alert"));
+    assert!(!output.contains("file:///etc/passwd"));
 }
 
 #[test]
