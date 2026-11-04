@@ -2163,6 +2163,11 @@ html,
   margin-bottom: 0.25rem;
 }
 
+.my-2 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
 .my-5 {
   margin-top: 1.25rem;
   margin-bottom: 1.25rem;
@@ -2531,6 +2536,10 @@ html,
   height: 18px;
 }
 
+.h-\[1em\] {
+  height: 1em;
+}
+
 .h-\[22px\] {
   height: 22px;
 }
@@ -2601,6 +2610,10 @@ html,
 
 .max-h-\[38dvh\] {
   max-height: 38dvh;
+}
+
+.max-h-\[400px\] {
+  max-height: 400px;
 }
 
 .max-h-\[760px\] {
@@ -3125,6 +3138,10 @@ html,
   flex-basis: 100%;
 }
 
+.border-collapse {
+  border-collapse: collapse;
+}
+
 .origin-bottom {
   transform-origin: bottom;
 }
@@ -3312,6 +3329,10 @@ html,
 
 .scroll-mt-24 {
   scroll-margin-top: 6rem;
+}
+
+.list-decimal {
+  list-style-type: decimal;
 }
 
 .list-disc {
@@ -3639,6 +3660,10 @@ html,
   white-space: nowrap;
 }
 
+.whitespace-pre {
+  white-space: pre;
+}
+
 .whitespace-pre-wrap {
   white-space: pre-wrap;
 }
@@ -3715,6 +3740,10 @@ html,
   border-radius: 0px;
 }
 
+.rounded-sm {
+  border-radius: 0.125rem;
+}
+
 .rounded-xl {
   border-radius: 0.75rem;
 }
@@ -3748,6 +3777,10 @@ html,
 
 .border-b {
   border-bottom-width: 1px;
+}
+
+.border-l-2 {
+  border-left-width: 2px;
 }
 
 .border-r {
@@ -4515,6 +4548,10 @@ html,
   background-color: rgb(113 113 122 / var(--tw-bg-opacity, 1));
 }
 
+.bg-zinc-500\/15 {
+  background-color: rgb(113 113 122 / 0.15);
+}
+
 .bg-zinc-600 {
   --tw-bg-opacity: 1;
   background-color: rgb(82 82 91 / var(--tw-bg-opacity, 1));
@@ -5003,6 +5040,10 @@ html,
   padding-left: 1.25rem;
 }
 
+.pl-6 {
+  padding-left: 1.5rem;
+}
+
 .pr-1 {
   padding-right: 0.25rem;
 }
@@ -5079,6 +5120,10 @@ html,
   text-align: right;
 }
 
+.align-\[-0\.12em\] {
+  vertical-align: -0.12em;
+}
+
 .font-mono {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
 }
@@ -5101,6 +5146,10 @@ html,
 .text-5xl {
   font-size: 3rem;
   line-height: 1;
+}
+
+.text-\[0\.9em\] {
+  font-size: 0.9em;
 }
 
 .text-\[10\.5px\] {
@@ -5489,6 +5538,11 @@ html,
 .text-blue-400 {
   --tw-text-opacity: 1;
   color: rgb(96 165 250 / var(--tw-text-opacity, 1));
+}
+
+.text-blue-500 {
+  --tw-text-opacity: 1;
+  color: rgb(59 130 246 / var(--tw-text-opacity, 1));
 }
 
 .text-current {
@@ -6996,6 +7050,62 @@ html,
 
 .\[overflow-wrap\:anywhere\] {
   overflow-wrap: anywhere;
+}
+
+.markdown-code-keyword {
+  color: #d8b4fe;
+  color: light-dark(#a21caf, #d8b4fe);
+}
+
+.markdown-code-string {
+  color: #86efac;
+  color: light-dark(#047857, #86efac);
+}
+
+.markdown-code-comment {
+  color: #94a3b8;
+  color: light-dark(#64748b, #94a3b8);
+}
+
+.markdown-code-constant {
+  color: #fbbf24;
+  color: light-dark(#b45309, #fbbf24);
+}
+
+.markdown-code-name {
+  color: #7dd3fc;
+  color: light-dark(#0369a1, #7dd3fc);
+}
+
+.markdown-spoiler-grain {
+  position: relative;
+  overflow: hidden;
+}
+
+.markdown-spoiler-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle, rgb(255 255 255 / 0.65) 0.7px, transparent 1px),
+    radial-gradient(circle, rgb(255 255 255 / 0.4) 0.6px, transparent 1px),
+    radial-gradient(circle, rgb(24 24 27 / 0.45) 0.7px, transparent 1px);
+  background-size: 7px 9px, 11px 7px, 8px 11px;
+  background-position: 0 0, 3px 2px, 5px 1px;
+  animation: markdown-spoiler-grain 900ms steps(5, end) infinite;
+}
+
+@keyframes markdown-spoiler-grain {
+  to {
+    background-position: 14px -18px, -22px 14px, 16px 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown-spoiler-grain::after {
+    animation: none;
+  }
 }
 
 /* Встроенное редактирование: почти без дополнительной визуальной оболочки. */
@@ -8764,6 +8874,15 @@ html,
     background-color: rgb(255 255 255 / 0.07);
   }
 
+  .hover\:bg-zinc-400:hover {
+    --tw-bg-opacity: 1;
+    background-color: rgb(161 161 170 / var(--tw-bg-opacity, 1));
+  }
+
+  .hover\:bg-zinc-500\/25:hover {
+    background-color: rgb(113 113 122 / 0.25);
+  }
+
   .hover\:bg-zinc-700:hover {
     --tw-bg-opacity: 1;
     background-color: rgb(63 63 70 / var(--tw-bg-opacity, 1));
@@ -10030,6 +10149,17 @@ html,
 
   .xl\:pb-0 {
     padding-bottom: 0px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .dark\:bg-white\/10 {
+    background-color: rgb(255 255 255 / 0.1);
+  }
+
+  .dark\:text-blue-300 {
+    --tw-text-opacity: 1;
+    color: rgb(147 197 253 / var(--tw-text-opacity, 1));
   }
 }
 

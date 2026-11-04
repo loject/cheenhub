@@ -125,7 +125,7 @@ pub(crate) fn ChatMessageItem(
                     }
                 } else if !message.body.is_empty() {
                     div { class: content_class,
-                        span { class: "[overflow-wrap:anywhere]", "{message.body}" }
+                        crate::features::markdown_view::MarkdownContent { key: "{message.id}:{message.body}", body: message.body.clone(), message_id: Some(message.id.clone()) }
                         if is_own {
                             if let Some(status) = message.delivery_status {
                                 {delivery_status_marks(status)}

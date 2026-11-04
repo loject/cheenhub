@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+.markdown-code-keyword { color: #d8b4fe; color: light-dark(#a21caf, #d8b4fe); }
+.markdown-code-string { color: #86efac; color: light-dark(#047857, #86efac); }
+.markdown-code-comment { color: #94a3b8; color: light-dark(#64748b, #94a3b8); }
+.markdown-code-constant { color: #fbbf24; color: light-dark(#b45309, #fbbf24); }
+.markdown-code-name { color: #7dd3fc; color: light-dark(#0369a1, #7dd3fc); }
+
+.markdown-spoiler-grain {
+  position: relative;
+  overflow: hidden;
+}
+
+.markdown-spoiler-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle, rgb(255 255 255 / 0.65) 0.7px, transparent 1px),
+    radial-gradient(circle, rgb(255 255 255 / 0.4) 0.6px, transparent 1px),
+    radial-gradient(circle, rgb(24 24 27 / 0.45) 0.7px, transparent 1px);
+  background-size: 7px 9px, 11px 7px, 8px 11px;
+  background-position: 0 0, 3px 2px, 5px 1px;
+  animation: markdown-spoiler-grain 900ms steps(5, end) infinite;
+}
+
+@keyframes markdown-spoiler-grain {
+  to { background-position: 14px -18px, -22px 14px, 16px 22px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown-spoiler-grain::after { animation: none; }
+}
+
 /* Встроенное редактирование: почти без дополнительной визуальной оболочки. */
 .chat-inline-editor {
     padding: 4px 0 3px;

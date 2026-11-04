@@ -75,7 +75,7 @@ pub(super) fn PinnedMessagesPanel(
                         p { class: "min-w-0 flex-1 truncate text-[12px] leading-5 text-zinc-400",
                             span { class: "font-medium text-zinc-300", "{item.author}" }
                             span { class: "px-1.5 text-zinc-600", "·" }
-                            "{item.body}"
+                            {crate::features::markdown_view::markdown_preview(&item.body, Some(&item.message_id))}
                         }
                     } else if loading {
                         p { class: "truncate text-[12px] text-zinc-500", "Загружаем сообщения…" }
@@ -175,7 +175,7 @@ pub(super) fn PinnedMessagesPanel(
                                             span { class: "truncate text-[12px] font-semibold text-zinc-200", "{item.author}" }
                                             time { class: "shrink-0 text-[10px] tabular-nums text-zinc-500", datetime: "{item.pinned_at_iso}", "{item.pinned_at}" }
                                         }
-                                        p { class: "mt-1 line-clamp-2 break-words text-[12px] leading-[19px] text-zinc-400 [overflow-wrap:anywhere]", "{item.body}" }
+                                        p { class: "mt-1 line-clamp-2 break-words text-[12px] leading-[19px] text-zinc-400 [overflow-wrap:anywhere]", {crate::features::markdown_view::markdown_preview(&item.body, Some(&item.message_id))} }
                                         if navigating_message_id.as_deref() == Some(item.message_id.as_str()) {
                                             span { class: "mt-1 block text-[11px] text-blue-300", role: "status", "Ищем сообщение…" }
                                         }

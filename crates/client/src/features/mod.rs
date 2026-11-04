@@ -16,6 +16,8 @@ pub(crate) mod host_settings;
 pub(crate) mod image_picker;
 pub(crate) mod landing;
 pub(crate) mod legal;
+/// Отображение Markdown сообщений через компоненты Dioxus.
+pub(crate) mod markdown_view;
 /// Единая форма ввода и отправки сообщений.
 pub(crate) mod message_composer;
 pub(crate) mod microphone;

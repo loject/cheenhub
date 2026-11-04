@@ -99,6 +99,10 @@ microphone_worker = [
 ]
 
 [dependencies]
+comrak = { version = "0.59", default-features = false }
+tracing.workspace = true
+syntect = { version = "5.3", default-features = false, features = ["parsing", "regex-fancy"] }
+two-face = { version = "0.5.1", default-features = false, features = ["syntect-fancy"] }
 webbrowser = { version = "1.2.5", optional = true }
 arboard = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
