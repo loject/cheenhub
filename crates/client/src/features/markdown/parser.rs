@@ -103,6 +103,12 @@ impl Converter<'_> {
         let data = node.data.borrow();
         let wrap = |value| Ok(vec![value]);
         match &data.value {
+            NodeValue::Text(text) if !node.ancestors().any(|ancestor| matches!(ancestor.data.borrow().value, NodeValue::Link(_))) => {
+                let nodes = super::autolink::split(text);
+                self.count += nodes.len().saturating_sub(1);
+                if self.count > MAX_NODES { return Err(ParseError::TooComplex); }
+                Ok(nodes)
+            }
             NodeValue::Text(text) => wrap(MessageNode::Text(text.to_string())),
             NodeValue::SoftBreak | NodeValue::LineBreak => wrap(MessageNode::Text("\n".into())),
             NodeValue::Code(code) => wrap(MessageNode::InlineCode(code.literal.clone())),

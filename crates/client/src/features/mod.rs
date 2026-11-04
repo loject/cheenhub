@@ -18,6 +18,8 @@ pub(crate) mod landing;
 pub(crate) mod legal;
 /// Отображение Markdown сообщений через компоненты Dioxus.
 pub(crate) mod markdown_view;
+/// Проверка и подтверждение внешних переходов.
+pub(crate) mod external_link;
 /// Единая форма ввода и отправки сообщений.
 pub(crate) mod message_composer;
 pub(crate) mod microphone;

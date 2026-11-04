@@ -5,11 +5,7 @@ use dioxus::prelude::*;
 
 use super::code_block::MarkdownCodeBlock;
 use super::spoiler::MarkdownSpoiler;
-
-fn safe_url(value: &str) -> Option<String> {
-    let url = url::Url::parse(value).ok()?;
-    (matches!(url.scheme(), "http" | "https") && url.host_str().is_some()).then(|| url.to_string())
-}
+use crate::features::external_link::ExternalLink;
 
 /// Рендерит узел с сохранением структуры и вложенности.
 #[component]
@@ -59,11 +55,7 @@ pub(super) fn MarkdownNode(node: MessageNode) -> Element {
             }
         }
         MessageNode::Link { url, children } => {
-            if let Some(url) = safe_url(&url) {
-                rsx! { a { href: "{url}", target: "_blank", rel: "noopener noreferrer", class: "text-blue-500 underline dark:text-blue-300", onclick: move |event| event.stop_propagation(), onkeydown: move |event| event.stop_propagation(), for (index, node) in children.into_iter().enumerate() { MarkdownNode { key: "{index}", node } } } }
-            } else {
-                rsx! { span { title: "{url}", for (index, node) in children.into_iter().enumerate() { MarkdownNode { key: "{index}", node } } } }
-            }
+            rsx! { ExternalLink { url, for (index, node) in children.into_iter().enumerate() { MarkdownNode { key: "{index}", node } } } }
         }
         MessageNode::Table { alignments, rows } => rsx! {
             div { class: "my-2 max-w-full overflow-x-auto",
