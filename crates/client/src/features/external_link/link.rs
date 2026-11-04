@@ -66,7 +66,7 @@ pub(crate) fn ExternalLink(url: String, children: Element) -> Element {
                         onclick: move |event| {
                             event.stop_propagation();
                             if safety::checked(&confirm_url).is_none() { event.prevent_default(); return; }
-                            if remember() { if let Some(id) = &user_id { storage::trust(id, &confirm_host); } }
+                            if remember() && let Some(id) = &user_id { storage::trust(id, &confirm_host); }
                         },
                         "Открыть ссылку"
                     }
