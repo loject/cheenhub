@@ -28,8 +28,8 @@ fn screen_policy_accepts_window_dimensions_within_allowed_presets() {
 }
 
 #[test]
-fn screen_policy_rejects_dimensions_exceeding_either_preset_bound() {
-    for (width, height) in [(1921, 357), (405, 1081), (2560, 714)] {
+fn screen_policy_accepts_dimensions_above_preset_bounds() {
+    for (width, height) in [(1921, 357), (405, 1081), (2560, 714), (3840, 2160)] {
         let mut tracker = VideoPublicationTracker::default();
         let mut datagram = video_datagram(0, true, width, height);
         datagram.kind = MediaDatagramKind::ScreenFrame;
@@ -41,10 +41,7 @@ fn screen_policy_rejects_dimensions_exceeding_either_preset_bound() {
             Instant::now(),
         );
 
-        assert_eq!(
-            admission,
-            VideoAdmission::Drop(VideoDropReason::UnsupportedResolution { width, height }),
-        );
+        assert_eq!(admission, VideoAdmission::Forward, "{width}x{height}");
     }
 }
 
@@ -65,7 +62,7 @@ fn screen_policy_does_not_use_camera_permissions_for_window_dimensions() {
 }
 
 #[test]
-fn camera_policy_keeps_exact_preset_dimensions() {
+fn camera_policy_accepts_nonstandard_dimensions() {
     let mut tracker = VideoPublicationTracker::default();
     let datagram = video_datagram(0, true, 1280, 357);
 
@@ -76,13 +73,7 @@ fn camera_policy_keeps_exact_preset_dimensions() {
         Instant::now(),
     );
 
-    assert_eq!(
-        admission,
-        VideoAdmission::Drop(VideoDropReason::UnsupportedResolution {
-            width: 1280,
-            height: 357,
-        }),
-    );
+    assert_eq!(admission, VideoAdmission::Forward);
 }
 
 #[test]
@@ -132,7 +123,7 @@ fn screen_policy_allows_30_fps_for_small_window_regardless_of_preset_order() {
 }
 
 #[test]
-fn screen_policy_keeps_15_fps_limit_for_window_exceeding_720p_width() {
+fn screen_policy_does_not_limit_fps_for_wide_windows() {
     let mut tracker = VideoPublicationTracker::default();
     let session_id = Uuid::new_v4();
     let started = Instant::now();
@@ -171,8 +162,5 @@ fn screen_policy_keeps_15_fps_limit_for_window_exceeding_720p_width() {
         started + Duration::from_millis(1020),
     );
 
-    assert!(matches!(
-        admission,
-        VideoAdmission::Drop(VideoDropReason::FpsLimitExceeded { max_fps: 15, .. })
-    ));
+    assert_eq!(admission, VideoAdmission::Forward);
 }

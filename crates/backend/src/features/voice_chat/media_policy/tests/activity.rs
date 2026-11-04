@@ -111,7 +111,8 @@ fn rejected_video_never_becomes_active() {
     let session_id = Uuid::new_v4();
     let room_id = Uuid::new_v4();
     let started = Instant::now();
-    let oversized = sized_key_frame(MediaDatagramKind::CameraFrame, room_id, 1920, 1080);
+    let mut oversized = sized_key_frame(MediaDatagramKind::CameraFrame, room_id, 1920, 1080);
+    oversized.payload.resize(175_001, 0);
     let mut awaiting_key_frame = key_frame_datagram(MediaDatagramKind::CameraFrame, room_id);
     awaiting_key_frame.sequence = 2;
     awaiting_key_frame.flags = 0;
@@ -119,7 +120,7 @@ fn rejected_video_never_becomes_active() {
 
     assert!(matches!(
         tracker.inspect_at(session_id, &oversized, BASE_CAMERA_VIDEO_PRESETS, started),
-        VideoAdmission::Drop(VideoDropReason::UnsupportedResolution { .. })
+        VideoAdmission::Drop(VideoDropReason::BitrateLimitExceeded { .. })
     ));
     assert_eq!(
         tracker.inspect_at(

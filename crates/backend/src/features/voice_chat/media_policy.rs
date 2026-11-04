@@ -18,9 +18,8 @@ use vp9::parse_key_frame_dimensions;
 mod vp9;
 
 const VIDEO_FRAGMENT_HEADER_LEN: usize = 8;
-const FPS_MEASUREMENT_WINDOW: Duration = Duration::from_secs(1);
-const FPS_BLOCK_DURATION: Duration = Duration::from_secs(1);
-const FPS_JITTER_ALLOWANCE: u32 = 2;
+/// Максимальный накопленный burst видеотрафика в секундах целевого битрейта.
+const VIDEO_BURST_SECONDS: u64 = 2;
 const RECENT_SEQUENCE_LIMIT: usize = 128;
 /// Окно, в течение которого видеоисточник считается активным после последнего допустимого кадра.
 const VIDEO_ACTIVITY_WINDOW: Duration = Duration::from_secs(10);
@@ -37,9 +36,11 @@ pub(super) enum VideoDropReason {
     AwaitingFirstFragment,
     AwaitingKeyFrame,
     InvalidVp9KeyFrame,
-    UnsupportedResolution { width: u32, height: u32 },
-    FpsLimitExceeded { max_fps: u32, observed_frames: u32 },
-    FpsBlockActive,
+    SourceNotAllowed,
+    BitrateLimitExceeded {
+        max_bitrate_bps: u32,
+        frame_bytes: usize,
+    },
 }
 
 #[derive(Default)]
@@ -126,9 +127,36 @@ impl VideoPublicationTracker {
             Err(reason) => return VideoAdmission::Drop(reason),
         };
         if !fragment.is_first {
-            return publication
-                .decision_for(frame.sequence)
-                .unwrap_or(VideoAdmission::Drop(VideoDropReason::AwaitingFirstFragment));
+            let Some(decision) = publication.decision_for(frame.sequence) else {
+                return VideoAdmission::Drop(VideoDropReason::AwaitingFirstFragment);
+            };
+            if decision != VideoAdmission::Forward {
+                return decision;
+            }
+            let Some((_, seen, declared_bytes)) = publication
+                .fragment_bytes_seen
+                .iter_mut()
+                .find(|(sequence, _, _)| *sequence == frame.sequence)
+            else {
+                return VideoAdmission::Drop(VideoDropReason::AwaitingFirstFragment);
+            };
+            if fragment.frame_bytes != *declared_bytes {
+                publication.has_key_frame = false;
+                publication.reject_sequence(frame.sequence, VideoDropReason::MalformedFragment);
+                return VideoAdmission::Drop(VideoDropReason::MalformedFragment);
+            }
+            let Some(total) = seen.checked_add(fragment.vp9_payload.len()) else {
+                publication.has_key_frame = false;
+                publication.reject_sequence(frame.sequence, VideoDropReason::MalformedFragment);
+                return VideoAdmission::Drop(VideoDropReason::MalformedFragment);
+            };
+            if total > fragment.frame_bytes {
+                publication.has_key_frame = false;
+                publication.reject_sequence(frame.sequence, VideoDropReason::MalformedFragment);
+                return VideoAdmission::Drop(VideoDropReason::MalformedFragment);
+            }
+            *seen = total;
+            return VideoAdmission::Forward;
         }
         if let Some(decision) = publication.decision_for(frame.sequence) {
             return decision;
@@ -139,10 +167,18 @@ impl VideoPublicationTracker {
             frame.sequence,
             is_key_frame,
             fragment.vp9_payload,
+            fragment.frame_bytes,
             allowed_presets,
             now,
         );
         publication.remember(frame.sequence, decision);
+        if fragment.is_fragmented && decision == VideoAdmission::Forward {
+            publication.fragment_bytes_seen.push((
+                frame.sequence,
+                fragment.vp9_payload.len(),
+                fragment.frame_bytes,
+            ));
+        }
         if decision == VideoAdmission::Forward {
             // Только что прошедший проверку кадр продлевает активность источника;
             // повторные и отклонённые пакеты возвращаются выше без обновления времени.
@@ -259,11 +295,11 @@ struct VideoPublicationKey {
 
 struct VideoPublication {
     key: VideoPublicationKey,
-    selected_preset: Option<VideoPresetId>,
-    window_started_at: Instant,
-    window_frames: u32,
-    blocked_until: Option<Instant>,
+    has_key_frame: bool,
+    budget_bits: Option<u64>,
+    last_budget_update: Instant,
     recent_decisions: Vec<(u64, VideoAdmission)>,
+    fragment_bytes_seen: Vec<(u64, usize, usize)>,
     last_forward_at: Option<Instant>,
 }
 
@@ -271,11 +307,11 @@ impl VideoPublication {
     fn new(key: VideoPublicationKey, now: Instant) -> Self {
         Self {
             key,
-            selected_preset: None,
-            window_started_at: now,
-            window_frames: 0,
-            blocked_until: None,
+            has_key_frame: false,
+            budget_bits: None,
+            last_budget_update: now,
             recent_decisions: Vec::new(),
+            fragment_bytes_seen: Vec::new(),
             last_forward_at: None,
         }
     }
@@ -285,94 +321,67 @@ impl VideoPublication {
         _sequence: u64,
         is_key_frame: bool,
         vp9_payload: &[u8],
+        frame_bytes: usize,
         allowed_presets: &[VideoPresetId],
         now: Instant,
     ) -> VideoAdmission {
-        if let Some(blocked_until) = self.blocked_until
-            && (now < blocked_until || !is_key_frame)
-        {
-            return VideoAdmission::Drop(VideoDropReason::FpsBlockActive);
-        }
+        let Some(max_bitrate_bps) = allowed_presets
+            .iter()
+            .map(|preset| preset.spec())
+            .filter(|spec| Some(spec.source) == source_for_kind(self.key.kind))
+            .map(|spec| spec.bitrate_bps)
+            .max()
+        else {
+            self.has_key_frame = false;
+            return VideoAdmission::Drop(VideoDropReason::SourceNotAllowed);
+        };
 
         if is_key_frame {
             let Some((width, height)) = parse_key_frame_dimensions(vp9_payload) else {
-                self.block();
+                self.has_key_frame = false;
                 return VideoAdmission::Drop(VideoDropReason::InvalidVp9KeyFrame);
             };
-            let Some(preset) = allowed_presets
-                .iter()
-                .copied()
-                .filter(|preset| {
-                    let spec = preset.spec();
-                    Some(spec.source) == source_for_kind(self.key.kind)
-                        && match spec.source {
-                            VideoStreamSource::ScreenShare => {
-                                width <= spec.width && height <= spec.height
-                            }
-                            VideoStreamSource::Camera => {
-                                width == spec.width && height == spec.height
-                            }
-                        }
-                })
-                .max_by_key(|preset| preset.spec().max_fps)
-            else {
-                self.block();
-                return VideoAdmission::Drop(VideoDropReason::UnsupportedResolution {
-                    width,
-                    height,
-                });
-            };
-            if self.selected_preset != Some(preset) {
+            if !self.has_key_frame {
                 tracing::debug!(
                     session_id = %self.key.session_id,
                     room_id = %self.key.room_id,
                     kind = ?self.key.kind,
                     width,
                     height,
-                    preset = ?preset,
-                    max_fps = preset.spec().max_fps,
-                    "accepted video publication dimensions within allowed preset"
+                    max_bitrate_bps,
+                    "accepted video publication keyframe dimensions without resolution limit"
                 );
             }
-            if self.selected_preset.is_none() {
-                self.selected_preset = Some(preset);
-                self.blocked_until = None;
-                self.window_started_at = now;
-                self.window_frames = 1;
-                return VideoAdmission::Forward;
-            }
-            self.selected_preset = Some(preset);
-        }
-
-        let Some(preset) = self.selected_preset else {
+        } else if !self.has_key_frame {
             return VideoAdmission::Drop(VideoDropReason::AwaitingKeyFrame);
-        };
-        self.window_frames = self.window_frames.saturating_add(1);
-        let elapsed = now.saturating_duration_since(self.window_started_at);
-        if elapsed >= FPS_MEASUREMENT_WINDOW {
-            let max_fps = preset.spec().max_fps;
-            let allowed_frames = max_fps
-                .saturating_mul(elapsed.as_millis().min(u128::from(u32::MAX)) as u32)
-                / 1_000
-                + FPS_JITTER_ALLOWANCE;
-            if self.window_frames > allowed_frames {
-                let observed_frames = self.window_frames;
-                self.block();
-                self.blocked_until = Some(now + FPS_BLOCK_DURATION);
-                return VideoAdmission::Drop(VideoDropReason::FpsLimitExceeded {
-                    max_fps,
-                    observed_frames,
-                });
-            }
-            self.window_started_at = now;
-            self.window_frames = 0;
         }
-        VideoAdmission::Forward
-    }
 
-    fn block(&mut self) {
-        self.selected_preset = None;
-        self.window_frames = 0;
+        let capacity_bits = u64::from(max_bitrate_bps).saturating_mul(VIDEO_BURST_SECONDS);
+        let elapsed_ns = now
+            .saturating_duration_since(self.last_budget_update)
+            .as_nanos();
+        let replenished_bits =
+            elapsed_ns.saturating_mul(u128::from(max_bitrate_bps)) / 1_000_000_000;
+        let budget = self.budget_bits.unwrap_or(capacity_bits);
+        let available_bits = budget
+            .saturating_add(u64::try_from(replenished_bits).unwrap_or(u64::MAX))
+            .min(capacity_bits);
+        self.last_budget_update = now;
+        self.budget_bits = Some(available_bits);
+
+        let required_bits = u64::try_from(frame_bytes)
+            .unwrap_or(u64::MAX)
+            .saturating_mul(8);
+        if required_bits > available_bits {
+            self.has_key_frame = false;
+            return VideoAdmission::Drop(VideoDropReason::BitrateLimitExceeded {
+                max_bitrate_bps,
+                frame_bytes,
+            });
+        }
+        self.budget_bits = Some(available_bits - required_bits);
+        self.has_key_frame = true;
+        VideoAdmission::Forward
     }
 
     fn decision_for(&self, sequence: u64) -> Option<VideoAdmission> {
@@ -382,9 +391,23 @@ impl VideoPublication {
             .find_map(|(candidate, decision)| (*candidate == sequence).then_some(*decision))
     }
 
+    fn reject_sequence(&mut self, sequence: u64, reason: VideoDropReason) {
+        if let Some((_, decision)) = self
+            .recent_decisions
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == sequence)
+        {
+            *decision = VideoAdmission::Drop(reason);
+        }
+        self.fragment_bytes_seen
+            .retain(|(candidate, _, _)| *candidate != sequence);
+    }
+
     fn remember(&mut self, sequence: u64, decision: VideoAdmission) {
         if self.recent_decisions.len() == RECENT_SEQUENCE_LIMIT {
-            self.recent_decisions.remove(0);
+            let (expired_sequence, _) = self.recent_decisions.remove(0);
+            self.fragment_bytes_seen
+                .retain(|(candidate, _, _)| *candidate != expired_sequence);
         }
         self.recent_decisions.push((sequence, decision));
     }
@@ -392,27 +415,38 @@ impl VideoPublication {
 
 struct FrameFragment<'a> {
     is_first: bool,
+    is_fragmented: bool,
     vp9_payload: &'a [u8],
+    frame_bytes: usize,
 }
 
 fn frame_fragment(flags: u8, payload: &[u8]) -> Result<FrameFragment<'_>, VideoDropReason> {
     if flags & MEDIA_DATAGRAM_FLAG_FRAGMENTED == 0 {
         return Ok(FrameFragment {
             is_first: true,
+            is_fragmented: false,
             vp9_payload: payload,
+            frame_bytes: payload.len(),
         });
     }
     if payload.len() < VIDEO_FRAGMENT_HEADER_LEN {
         return Err(VideoDropReason::MalformedFragment);
     }
+    let frame_bytes = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
     let fragment_index = u16::from_be_bytes([payload[4], payload[5]]);
     let fragment_count = u16::from_be_bytes([payload[6], payload[7]]);
-    if fragment_count == 0 || fragment_index >= fragment_count {
+    if fragment_count == 0
+        || fragment_index >= fragment_count
+        || frame_bytes == 0
+        || payload.len() - VIDEO_FRAGMENT_HEADER_LEN > frame_bytes
+    {
         return Err(VideoDropReason::MalformedFragment);
     }
     Ok(FrameFragment {
         is_first: fragment_index == 0,
+        is_fragmented: true,
         vp9_payload: &payload[VIDEO_FRAGMENT_HEADER_LEN..],
+        frame_bytes,
     })
 }
 

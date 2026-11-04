@@ -373,28 +373,26 @@ pub(super) fn video_admission_allows_fanout(
         return true;
     };
     match reason {
-        VideoDropReason::UnsupportedResolution { width, height } => warn!(
+        VideoDropReason::BitrateLimitExceeded {
+            max_bitrate_bps,
+            frame_bytes,
+        } => debug!(
             %session_id,
             %user_id,
             %room_id,
             media_kind,
             sequence,
-            width,
-            height,
-            "blocked video publication with unsupported resolution"
+            max_bitrate_bps,
+            frame_bytes,
+            "dropping video frame exceeding bitrate burst budget"
         ),
-        VideoDropReason::FpsLimitExceeded {
-            max_fps,
-            observed_frames,
-        } => warn!(
+        VideoDropReason::SourceNotAllowed => warn!(
             %session_id,
             %user_id,
             %room_id,
             media_kind,
             sequence,
-            max_fps,
-            observed_frames,
-            "blocked video publication after sustained FPS limit violation"
+            "blocked video publication without an allowed source preset"
         ),
         VideoDropReason::InvalidVp9KeyFrame | VideoDropReason::MalformedFragment => warn!(
             %session_id,
@@ -405,9 +403,7 @@ pub(super) fn video_admission_allows_fanout(
             reason = ?reason,
             "blocked malformed video publication datagram"
         ),
-        VideoDropReason::AwaitingFirstFragment
-        | VideoDropReason::AwaitingKeyFrame
-        | VideoDropReason::FpsBlockActive => debug!(
+        VideoDropReason::AwaitingFirstFragment | VideoDropReason::AwaitingKeyFrame => debug!(
             %session_id,
             %user_id,
             %room_id,

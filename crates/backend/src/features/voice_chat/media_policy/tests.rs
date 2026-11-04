@@ -30,9 +30,9 @@ fn screen_policy_accepts_both_base_resolutions() {
 }
 
 #[test]
-fn camera_policy_rejects_1080p() {
+fn camera_policy_accepts_4k_independent_of_preset_dimensions() {
     let mut tracker = VideoPublicationTracker::default();
-    let datagram = video_datagram(1, true, 1920, 1080);
+    let datagram = video_datagram(1, true, 3840, 2160);
     assert_eq!(
         tracker.inspect_at(
             Uuid::new_v4(),
@@ -40,10 +40,7 @@ fn camera_policy_rejects_1080p() {
             BASE_CAMERA_VIDEO_PRESETS,
             Instant::now(),
         ),
-        VideoAdmission::Drop(VideoDropReason::UnsupportedResolution {
-            width: 1920,
-            height: 1080,
-        })
+        VideoAdmission::Forward
     );
 }
 
@@ -62,7 +59,7 @@ fn video_policy_accepts_key_frame_from_borrowed_wire_payload() {
         VideoAdmission::Forward
     );
     assert_eq!(tracker.publications.len(), 1);
-    assert_eq!(tracker.publications[0].window_frames, 1);
+    assert!(tracker.publications[0].has_key_frame);
 }
 
 #[test]
@@ -81,66 +78,142 @@ fn fragmented_frame_is_counted_once() {
         tracker.inspect_at(session_id, &second, BASE_CAMERA_VIDEO_PRESETS, now),
         VideoAdmission::Forward
     );
-    assert_eq!(tracker.publications[0].window_frames, 1);
+    assert!(tracker.publications[0].has_key_frame);
 }
 
 #[test]
-fn sustained_fps_violation_blocks_until_later_key_frame() {
+fn fragmented_frame_rejects_bytes_exceeding_reserved_frame_size() {
+    let mut tracker = VideoPublicationTracker::default();
+    let session_id = Uuid::new_v4();
+    let now = Instant::now();
+    let first = fragmented(video_datagram(1, true, 1280, 720), 0, 2);
+    let mut second = fragmented(video_datagram(1, true, 1280, 720), 1, 2);
+    second.room_id = first.room_id;
+    let declared = u32::from_be_bytes(first.payload[..4].try_into().unwrap()) as usize;
+    second.payload.extend(std::iter::repeat_n(0, declared));
+
+    assert_eq!(
+        tracker.inspect_at(session_id, &first, BASE_CAMERA_VIDEO_PRESETS, now),
+        VideoAdmission::Forward
+    );
+    assert_eq!(
+        tracker.inspect_at(session_id, &second, BASE_CAMERA_VIDEO_PRESETS, now),
+        VideoAdmission::Drop(VideoDropReason::MalformedFragment)
+    );
+}
+
+#[test]
+fn fragmented_frame_rejects_changed_declared_length() {
+    let mut tracker = VideoPublicationTracker::default();
+    let session_id = Uuid::new_v4();
+    let now = Instant::now();
+    let first = fragmented(video_datagram(1, true, 1280, 720), 0, 2);
+    let mut second = fragmented(video_datagram(1, true, 1280, 720), 1, 2);
+    second.room_id = first.room_id;
+    second.payload[..4].copy_from_slice(&100_000_u32.to_be_bytes());
+    second.payload.extend(std::iter::repeat_n(0, 1_000));
+
+    assert_eq!(
+        tracker.inspect_at(session_id, &first, BASE_CAMERA_VIDEO_PRESETS, now),
+        VideoAdmission::Forward
+    );
+    assert_eq!(
+        tracker.inspect_at(session_id, &second, BASE_CAMERA_VIDEO_PRESETS, now),
+        VideoAdmission::Drop(VideoDropReason::MalformedFragment)
+    );
+}
+
+#[test]
+fn camera_accepts_high_fps_when_bitrate_is_within_budget() {
     let mut tracker = VideoPublicationTracker::default();
     let session_id = Uuid::new_v4();
     let started = Instant::now();
-    let key = video_datagram(1, true, 1280, 720);
-    let room_id = key.room_id;
+    let mut datagram = video_datagram(1, true, 1280, 720);
+    let room_id = datagram.room_id;
     assert_eq!(
-        tracker.inspect_at(session_id, &key, BASE_CAMERA_VIDEO_PRESETS, started),
+        tracker.inspect_at(session_id, &datagram, BASE_CAMERA_VIDEO_PRESETS, started),
         VideoAdmission::Forward
     );
-    for sequence in 2..=26 {
-        let mut frame = video_datagram(sequence, false, 0, 0);
-        frame.room_id = room_id;
+    datagram.flags = 0;
+    datagram.payload = vec![0; 100];
+    datagram.room_id = room_id;
+    for sequence in 2..=121 {
+        datagram.sequence = sequence;
         assert_eq!(
             tracker.inspect_at(
                 session_id,
-                &frame,
+                &datagram,
                 BASE_CAMERA_VIDEO_PRESETS,
-                started + Duration::from_millis(sequence * 30),
+                started + Duration::from_millis(sequence * 8),
             ),
-            VideoAdmission::Forward
+            VideoAdmission::Forward,
+            "frame {sequence}"
         );
     }
-    let mut violating = video_datagram(27, false, 0, 0);
-    violating.room_id = room_id;
-    assert!(matches!(
-        tracker.inspect_at(
-            session_id,
-            &violating,
-            BASE_CAMERA_VIDEO_PRESETS,
-            started + Duration::from_millis(1_010),
-        ),
-        VideoAdmission::Drop(VideoDropReason::FpsLimitExceeded { .. })
-    ));
-    let mut early_key = video_datagram(28, true, 1280, 720);
-    early_key.room_id = room_id;
+}
+
+#[test]
+fn camera_allows_two_second_burst_then_rejects_excess_bytes() {
+    let mut tracker = VideoPublicationTracker::default();
+    let session_id = Uuid::new_v4();
+    let now = Instant::now();
+    let mut datagram = video_datagram(1, true, 1280, 720);
+    let room_id = datagram.room_id;
+    datagram.payload.resize(100_000, 0);
+
     assert_eq!(
-        tracker.inspect_at(
-            session_id,
-            &early_key,
-            BASE_CAMERA_VIDEO_PRESETS,
-            started + Duration::from_millis(1_500),
-        ),
-        VideoAdmission::Drop(VideoDropReason::FpsBlockActive)
+        tracker.inspect_at(session_id, &datagram, BASE_CAMERA_VIDEO_PRESETS, now),
+        VideoAdmission::Forward
     );
-    let mut later_key = video_datagram(29, true, 1280, 720);
-    later_key.room_id = room_id;
+
+    datagram.sequence = 2;
+    datagram.flags = 0;
+    datagram.payload.resize(75_000, 0);
+    assert_eq!(
+        tracker.inspect_at(session_id, &datagram, BASE_CAMERA_VIDEO_PRESETS, now),
+        VideoAdmission::Forward
+    );
+
+    datagram.sequence = 3;
+    datagram.payload.resize(1, 0);
+    assert!(matches!(
+        tracker.inspect_at(session_id, &datagram, BASE_CAMERA_VIDEO_PRESETS, now),
+        VideoAdmission::Drop(VideoDropReason::BitrateLimitExceeded { .. })
+    ));
+
+    let mut recovery = video_datagram(4, true, 1280, 720);
+    recovery.room_id = room_id;
     assert_eq!(
         tracker.inspect_at(
             session_id,
-            &later_key,
+            &recovery,
             BASE_CAMERA_VIDEO_PRESETS,
-            started + Duration::from_millis(2_100),
+            now + Duration::from_secs(1)
         ),
         VideoAdmission::Forward
     );
+}
+
+#[test]
+fn screen_burst_uses_its_own_one_point_five_mbps_budget() {
+    let mut tracker = VideoPublicationTracker::default();
+    let session_id = Uuid::new_v4();
+    let now = Instant::now();
+    let mut datagram = video_datagram(1, true, 3840, 2160);
+    datagram.kind = MediaDatagramKind::ScreenFrame;
+    datagram.payload.resize(375_000, 0);
+
+    assert_eq!(
+        tracker.inspect_at(session_id, &datagram, BASE_SCREEN_SHARE_VIDEO_PRESETS, now),
+        VideoAdmission::Forward
+    );
+    datagram.sequence = 2;
+    datagram.flags = 0;
+    datagram.payload = vec![1];
+    assert!(matches!(
+        tracker.inspect_at(session_id, &datagram, BASE_SCREEN_SHARE_VIDEO_PRESETS, now),
+        VideoAdmission::Drop(VideoDropReason::BitrateLimitExceeded { .. })
+    ));
 }
 
 fn video_datagram(sequence: u64, key_frame: bool, width: u32, height: u32) -> MediaDatagram {
@@ -177,7 +250,9 @@ fn fragmented(mut datagram: MediaDatagram, index: u16, count: u16) -> MediaDatag
         .extend_from_slice(&(bytes.len() as u32).to_be_bytes());
     datagram.payload.extend_from_slice(&index.to_be_bytes());
     datagram.payload.extend_from_slice(&count.to_be_bytes());
-    datagram.payload.extend_from_slice(&bytes);
+    if index == 0 {
+        datagram.payload.extend_from_slice(&bytes);
+    }
     datagram
 }
 
