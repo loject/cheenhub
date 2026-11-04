@@ -1,7 +1,7 @@
 //! Разбор Markdown сообщений без HTML и зависимости модели от парсера.
 
-mod parser;
 mod autolink;
+mod parser;
 
 pub use parser::{ParseError, parse_message};
 

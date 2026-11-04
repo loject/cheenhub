@@ -1,8 +1,8 @@
 //! Подтверждение перехода с локальным доверием к hostname.
 
-use dioxus::prelude::*;
-use crate::features::app::{components::modal::Modal, current_user::CurrentUserContext};
 use super::{safety, storage};
+use crate::features::app::{components::modal::Modal, current_user::CurrentUserContext};
+use dioxus::prelude::*;
 
 /// Отображает внешнюю ссылку и запрашивает согласие перед первым переходом.
 #[component]
@@ -16,14 +16,21 @@ pub(crate) fn ExternalLink(url: String, children: Element) -> Element {
     };
     let normalized = parsed.to_string();
     let is_cheenhub = parsed.origin().ascii_serialization() == "https://cheenhub.ru";
-    let hostname = parsed.host_str().unwrap_or_default().trim_end_matches('.').to_owned();
+    let hostname = parsed
+        .host_str()
+        .unwrap_or_default()
+        .trim_end_matches('.')
+        .to_owned();
     let user_id = user.map(|context| context.require_user().id);
     let click_url = normalized.clone();
     let click_host = hostname.clone();
     let click_user = user_id.clone();
     let confirm_url = normalized.clone();
     let confirm_host = hostname.clone();
-    let trusted = is_cheenhub || user_id.as_ref().is_some_and(|id| storage::contains(id, &hostname));
+    let trusted = is_cheenhub
+        || user_id
+            .as_ref()
+            .is_some_and(|id| storage::contains(id, &hostname));
     rsx! {
         if trusted { a {
             href: "{normalized}", target: if is_cheenhub { "_self" } else { "_blank" }, rel: "noopener noreferrer",
