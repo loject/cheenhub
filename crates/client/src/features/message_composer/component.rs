@@ -11,6 +11,7 @@ use super::pending_attachment::{
 use super::sending::submit_message;
 use super::{MAX_IMAGE_BYTES, MessageComposeState, MessageOperations, clipboard};
 use crate::features::image_picker::{ImagePickerButton, ImagePickerOutcome, PickedImage};
+use crate::features::markdown_view::MarkdownContent;
 use crate::features::typing::{TypingIntent, TypingNotifier};
 
 /// Рендерит одну форму сообщения; состояние принадлежит keyed-диалогу владельца.
@@ -25,12 +26,21 @@ pub(crate) fn MessageComposer(
     let mut state = state;
     let mut input_element = use_signal(|| None::<Rc<MountedData>>);
     let mut refocus_requested = use_signal(|| false);
+    let mut preview = use_signal(|| false);
+    let mut focus_after_preview = use_signal(|| false);
     let picker_id = use_hook(|| format!("message-emojis-{}", uuid::Uuid::new_v4()));
     let mut emoji_button = use_signal(|| None::<Rc<MountedData>>);
     let mut picker_style = use_signal(|| {
         String::from("top: max(12px, calc(100dvh - 396px)); left: max(12px, calc(100dvw - 344px));")
     });
     let component_current = use_hook(|| Rc::new(Cell::new(true)));
+    let preview_current = component_current.clone();
+    use_effect(move || {
+        if focus_after_preview() && !preview() {
+            focus_after_preview.set(false);
+            restore_input_focus(input_element, true, preview_current.clone());
+        }
+    });
     use_drop({
         let component_current = component_current.clone();
         let typing = operations.typing;
@@ -143,7 +153,7 @@ pub(crate) fn MessageComposer(
                         value: "{(state.draft)()}",
                         readonly: (state.is_sending)(),
                         placeholder,
-                        style: "field-sizing: content;",
+                        style: if preview() { "display: none; field-sizing: content;" } else { "display: block; field-sizing: content;" },
                         class: "max-h-80 min-h-10 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-[13px] leading-5 text-zinc-100 outline-none placeholder:text-zinc-600",
                         onmounted: move |event| input_element.set(Some(event.data.clone())),
                         oninput: move |event| {
@@ -178,6 +188,27 @@ pub(crate) fn MessageComposer(
                                 submit.call(());
                             }
                         },
+                    }
+                    if preview() {
+                        div { class: "max-h-80 min-h-10 min-w-0 flex-1 overflow-auto px-2 py-2 text-[13px] leading-5 text-zinc-100",
+                            if (state.draft)().is_empty() {
+                                span { class: "text-zinc-500", "Начните вводить сообщение" }
+                            } else {
+                                MarkdownContent { body: (state.draft)() }
+                            }
+                        }
+                    }
+                    button {
+                        r#type: "button",
+                        class: "h-10 shrink-0 rounded-xl px-2 text-xs text-zinc-400 hover:bg-white/5 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300",
+                        "aria-pressed": "{preview()}",
+                        onclick: move |_| {
+                            let returning = preview();
+                            debug!(preview = !returning, "message composer preview changed");
+                            preview.set(!returning);
+                            if returning { focus_after_preview.set(true); }
+                        },
+                        if preview() { "Редактировать" } else { "Предпросмотр" }
                     }
                     button {
                         r#type: "button", disabled: busy,

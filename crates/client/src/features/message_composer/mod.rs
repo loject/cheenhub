@@ -6,6 +6,8 @@ mod clipboard;
 mod component;
 mod emoji_catalog;
 mod emoji_picker;
+#[cfg(test)]
+mod formatting;
 pub(crate) mod pending_attachment;
 mod sending;
 mod state;

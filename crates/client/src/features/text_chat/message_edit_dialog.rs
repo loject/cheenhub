@@ -2,6 +2,9 @@
 
 use cheenhub_contracts::realtime::TextChatMessage;
 use dioxus::prelude::*;
+use std::rc::Rc;
+
+use crate::features::markdown_view::MarkdownContent;
 
 /// Состояние единственного открытого редактора в панели комнаты.
 ///
@@ -46,6 +49,21 @@ pub(crate) fn RoomMessageInlineEditor(
 ) -> Element {
     let initial = message.body.clone();
     let mut draft = use_signal(|| initial);
+    let mut preview = use_signal(|| false);
+    let mut focus_after_preview = use_signal(|| false);
+    let mut input_element = use_signal(|| None::<Rc<MountedData>>);
+    use_effect(move || {
+        if focus_after_preview() && !preview() {
+            focus_after_preview.set(false);
+            if let Some(element) = input_element() {
+                spawn(async move {
+                    if let Err(error) = element.set_focus(true).await {
+                        debug!(%error, "could not restore focus to inline message editor");
+                    }
+                });
+            }
+        }
+    });
     let body = draft();
     let original_for_submit = message.body.clone();
     let original_for_keys = message.body.clone();
@@ -83,12 +101,13 @@ pub(crate) fn RoomMessageInlineEditor(
                     autofocus: true,
                     rows: "2",
                     maxlength: "{max_chars}",
-                    style: "field-sizing: content;",
+                    style: if preview() { "display: none; field-sizing: content;" } else { "display: block; field-sizing: content;" },
                     value: "{body}",
                     disabled: saving,
                     placeholder: "Напиши текст сообщения…",
                     "aria-label": "Текст редактируемого сообщения",
                     onmounted: move |event| {
+                        input_element.set(Some(event.data.clone()));
                         spawn(async move {
                             if let Err(error) = event.data().set_focus(true).await {
                                 debug!(%error, "could not focus inline room message editor");
@@ -115,6 +134,15 @@ pub(crate) fn RoomMessageInlineEditor(
                         }
                     },
                 }
+                if preview() {
+                    div { class: "max-h-[38dvh] min-h-[54px] overflow-auto rounded-lg border border-white/10 bg-[#090f18]/80 px-3 py-2.5 text-[14px] leading-[22px] text-zinc-100",
+                        if body.is_empty() {
+                            span { class: "text-zinc-500", "Начните вводить сообщение" }
+                        } else {
+                            MarkdownContent { body: body.clone() }
+                        }
+                    }
+                }
                 if let Some(error) = error {
                     p {
                         class: "chat-inline-editor-error rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-200",
@@ -124,6 +152,18 @@ pub(crate) fn RoomMessageInlineEditor(
                 }
                 div {
                     class: "chat-inline-editor-actions flex flex-wrap items-center gap-x-3 gap-y-2",
+                    button {
+                        r#type: "button",
+                        class: "h-8 rounded-lg px-3 text-[12px] font-medium text-zinc-300 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300",
+                        "aria-pressed": "{preview()}",
+                        onclick: move |_| {
+                            let returning = preview();
+                            debug!(preview = !returning, "inline message preview changed");
+                            preview.set(!returning);
+                            if returning { focus_after_preview.set(true); }
+                        },
+                        if preview() { "Редактировать" } else { "Предпросмотр" }
+                    }
                     span {
                         class: "hidden text-[10.5px] text-zinc-500 sm:inline",
                         "Esc — отмена · Ctrl+Enter — сохранить"
