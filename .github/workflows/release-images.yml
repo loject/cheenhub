@@ -69,6 +69,19 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "release-tag=${artifact_tag}" >> "$GITHUB_OUTPUT"
 
+      - name: Validate and export release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: cargo run --quiet --locked -p xtask -- release-notes export "${GITHUB_REF_NAME}" dist/release-notes
+
+      - name: Upload release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: dist/release-notes/*
+          if-no-files-found: error
+
   build-backend:
     if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
     name: Build and push backend image
@@ -709,6 +722,12 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-rc.')
 
     steps:
+      - name: Download validated release notes
+        uses: actions/download-artifact@v8
+        with:
+          name: release-notes
+          path: dist/release-notes
+
       - name: Download Android release artifact
         uses: actions/download-artifact@v8
         with:
@@ -839,7 +858,6 @@ jobs:
 
           echo "::group::Create RuStore draft"
 
-          version_name="${GITHUB_REF_NAME#v}"
           draft_response="$(
             curl --fail-with-body --silent --show-error \
               --request POST \
@@ -848,7 +866,7 @@ jobs:
               --header "Content-Type: application/json" \
               --data "$(
                 jq -n \
-                  --arg whatsNew "Версия ${version_name}" \
+                  --rawfile whatsNew dist/release-notes/rustore.txt \
                   '{
                     appType: "MAIN",
                     publishType: "INSTANTLY",

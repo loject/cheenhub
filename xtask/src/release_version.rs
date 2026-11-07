@@ -33,6 +33,8 @@ pub(super) fn run_release_version(args: Vec<String>) -> XtaskResult<()> {
         "tag" => {
             let release = release_target_from_args(&args[1..])?;
             ensure_clean_worktree("before updating the release version")?;
+            crate::release_notes::ReleaseNotes::read(&release.tag)?;
+            println!("Release notes validated: {}", release.tag);
             update_workspace_version(Path::new(ROOT_MANIFEST), &release.version)?;
             let workspace = Workspace::read(Path::new(ROOT_MANIFEST))?;
             workspace.check_release_version()?;

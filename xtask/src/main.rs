@@ -16,6 +16,7 @@ mod dev_env;
 mod edge_contract;
 mod ensure_cargo_cli;
 mod release_artifacts;
+mod release_notes;
 mod release_version;
 
 fn main() {
@@ -38,6 +39,7 @@ fn run() -> XtaskResult<()> {
         "ensure-cargo-cli" => ensure_cargo_cli::run(args.collect()),
         "line-stats" => run_line_stats(),
         "release-artifacts" => release_artifacts::run(args.collect()),
+        "release-notes" => release_notes::run(args.collect()),
         "release-version" => release_version::run_release_version(args.collect()),
         "-h" | "--help" | "help" => print_usage(),
         unknown => Err(format!("unknown xtask command: {unknown}")),
@@ -45,6 +47,9 @@ fn run() -> XtaskResult<()> {
 }
 
 fn print_usage() -> XtaskResult<()> {
+    println!(
+        "Release notes: cargo run -p xtask -- release-notes <check <tag>|export <tag> <directory>>"
+    );
     println!(
         "Usage:\n  cargo run -p xtask -- coverage-gate <check|record>\n  cargo run -p xtask -- dev-env ensure [--file <path>]\n  cargo run -p xtask -- edge-contract [--image <local-nginx-image>]\n  cargo run -p xtask -- ensure-cargo-cli <crate> <binary> <version>\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag [<release-tag>]\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>\n  cargo run -p xtask -- release-artifacts publish <release-tag> <asset-dir>"
     );

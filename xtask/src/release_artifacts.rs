@@ -241,16 +241,23 @@ fn release_asset_files(asset_dir: &Path) -> XtaskResult<Vec<PathBuf>> {
 }
 
 fn ensure_github_release_exists(release_tag: &str) -> XtaskResult<()> {
+    let notes = crate::release_notes::ReleaseNotes::read(release_tag)?;
     if github_release_exists(release_tag)? {
+        checked_status(
+            Command::new("gh")
+                .args(["release", "edit", release_tag])
+                .args(["--notes", &notes.github]),
+            &format!("failed to update GitHub release {release_tag} notes"),
+        )?;
+        println!("Updated GitHub release {release_tag} notes.");
         return Ok(());
     }
 
-    let notes = "Новый релиз.";
     let mut command = Command::new("gh");
     command
         .args(["release", "create", release_tag])
         .args(["--title", release_tag])
-        .args(["--notes", notes])
+        .args(["--notes", &notes.github])
         .arg("--verify-tag");
     if release_tag
         .rsplit_once("-rc.")
