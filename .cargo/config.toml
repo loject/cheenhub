@@ -13,6 +13,4 @@ rustflags = ["-C", "link-arg=-lc++abi"]
 
 [env]
 CMAKE_POLICY_VERSION_MINIMUM = "3.5"
-VPX_LIB_DIR = { value = "crates/client/vendor/libvpx/windows-x64", relative = true }
-VPX_VERSION = "1.16.0"
-VPX_STATIC = "1"
+FFMPEG_DIR = { value = "target/ffmpeg-build/ffmpeg-static", relative = true }

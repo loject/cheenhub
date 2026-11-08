@@ -12,7 +12,14 @@ publisher = "CheenHub"
 icon = ["../../icons/icon.ico"]
 short_description = "CheenHub voice chat"
 long_description = "CheenHub desktop and mobile client."
-resources = ["crates/client/THIRD_PARTY_NOTICES"]
+resources = [
+    "crates/client/THIRD_PARTY_NOTICES",
+    "crates/video-codec/vendor/FFmpeg-LICENSE",
+    "crates/video-codec/vendor/oneVPL-LICENSE",
+    "crates/video-codec/vendor/oneVPL-THIRD-PARTY",
+    "crates/video-codec/vendor/libvpx-LICENSE",
+    "crates/video-codec/vendor/libvpx-PATENTS",
+]
 
 [web.app]
 title = "CheenHub (Чинхаб) — бесплатный голосовой чат для игр и общения с друзьями"
@@ -44,6 +51,9 @@ depends = [
     "libayatana-appindicator3-1",
     "libpulse0",
     "libudev1",
+    "libva2",
+    "libva-drm2",
+    "libdrm2",
 ]
 
 [android]

@@ -4,11 +4,11 @@ use std::rc::Rc;
 
 use super::backend::ParticipantVideoBackend;
 
-#[cfg(all(target_os = "linux", feature = "desktop", feature = "linux"))]
-mod linux;
-
-#[cfg(all(target_os = "windows", feature = "windows"))]
-mod windows;
+#[cfg(any(
+    all(target_os = "linux", feature = "desktop", feature = "linux"),
+    all(target_os = "windows", feature = "windows")
+))]
+mod desktop;
 
 #[cfg(all(
     not(target_arch = "wasm32"),
@@ -27,14 +27,12 @@ fn default_backend_platform() -> Rc<dyn ParticipantVideoBackend> {
     Rc::new(super::web::WebParticipantVideoBackend)
 }
 
-#[cfg(all(target_os = "windows", feature = "windows"))]
+#[cfg(any(
+    all(target_os = "linux", feature = "desktop", feature = "linux"),
+    all(target_os = "windows", feature = "windows")
+))]
 fn default_backend_platform() -> Rc<dyn ParticipantVideoBackend> {
-    Rc::new(windows::WindowsParticipantVideoBackend)
-}
-
-#[cfg(all(target_os = "linux", feature = "desktop", feature = "linux"))]
-fn default_backend_platform() -> Rc<dyn ParticipantVideoBackend> {
-    Rc::new(linux::LinuxParticipantVideoBackend)
+    Rc::new(desktop::DesktopParticipantVideoBackend)
 }
 
 #[cfg(all(

@@ -95,11 +95,11 @@ impl LocalVideoStream {
                 })
                 .await;
             if let Err(error) = result {
-                warn!(%error, %address, "Linux video loopback server failed");
+                warn!(%error, %address, "desktop video loopback server failed");
             }
-            debug!(%address, "Linux video loopback server stopped");
+            debug!(%address, "desktop video loopback server stopped");
         });
-        debug!(%address, "Linux video loopback server listening");
+        debug!(%address, "desktop video loopback server listening");
         Ok(Self {
             url,
             queue: Some(queue),

@@ -5,6 +5,7 @@ members = [
     "crates/contracts",
     "crates/metrics-proxy",
     "crates/migrations",
+    "crates/video-codec",
     "xtask",
 ]
 exclude = ["vendor/dioxus-sdk-storage"]

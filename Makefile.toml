@@ -134,10 +134,15 @@ linux_alias = "dioxus-desktop-linux"
 mac_alias = "dioxus-desktop-mac"
 windows_alias = "dioxus-desktop-windows"
 
+[tasks.build-ffmpeg]
+description = "Build static FFmpeg, oneVPL and software VP9 (C/C++ toolchain, sh, make, pkg-config, NASM; Windows: MSVC, MSYS2, Ninja)."
+command = "cargo"
+args = ["run", "--locked", "-p", "xtask", "--", "build-ffmpeg"]
+
 [tasks.dioxus-desktop-linux]
 env = { CHEENHUB_PORTAL_APP_ID = "ru.cheenhub.Development" }
 description = "Run the Dioxus desktop dev app on Linux."
-dependencies = ["install-dioxus-cli"]
+dependencies = ["build-ffmpeg", "install-dioxus-cli"]
 command = "dx"
 args = [
     "serve",
@@ -169,7 +174,7 @@ args = [
 
 [tasks.dioxus-desktop-windows]
 description = "Run the Dioxus desktop dev app on Windows."
-dependencies = ["install-dioxus-cli"]
+dependencies = ["build-ffmpeg", "install-dioxus-cli"]
 command = "dx"
 args = [
     "serve",
@@ -241,7 +246,7 @@ windows_alias = "dioxus-desktop-profile-windows"
 
 [tasks.dioxus-desktop-profile-linux]
 description = "Run the Dioxus desktop dev app on Linux with Dioxus render profiling."
-dependencies = ["install-dioxus-cli"]
+dependencies = ["build-ffmpeg", "install-dioxus-cli"]
 env = { CHEENHUB_DIOXUS_PROFILE = "1", CHEENHUB_PORTAL_APP_ID = "ru.cheenhub.Development" }
 command = "dx"
 args = [
@@ -275,7 +280,7 @@ args = [
 
 [tasks.dioxus-desktop-profile-windows]
 description = "Run the Dioxus desktop dev app on Windows with Dioxus render profiling."
-dependencies = ["install-dioxus-cli"]
+dependencies = ["build-ffmpeg", "install-dioxus-cli"]
 env = { CHEENHUB_DIOXUS_PROFILE = "1" }
 command = "dx"
 args = [
@@ -318,7 +323,7 @@ dependencies = ["bundle-windows-exe-release", "bundle-windows-msi-release"]
 
 [tasks.bundle-windows-exe-release]
 description = "Build the Windows NSIS .exe client installer."
-dependencies = ["install-dioxus-cli", "check-release-version"]
+dependencies = ["build-ffmpeg", "install-dioxus-cli", "check-release-version"]
 command = "dx"
 args = [
     "bundle",
@@ -339,7 +344,7 @@ args = [
 
 [tasks.bundle-windows-msi-release]
 description = "Build the Windows MSI client installer."
-dependencies = ["install-dioxus-cli", "check-release-version"]
+dependencies = ["build-ffmpeg", "install-dioxus-cli", "check-release-version"]
 command = "dx"
 args = [
     "bundle",
@@ -364,7 +369,7 @@ dependencies = ["bundle-linux-deb-release", "bundle-linux-appimage-release"]
 
 [tasks.bundle-linux-deb-release]
 description = "Build the Linux .deb client package."
-dependencies = ["install-dioxus-cli", "check-release-version"]
+dependencies = ["build-ffmpeg", "install-dioxus-cli", "check-release-version"]
 command = "dx"
 args = [
     "bundle",
@@ -385,7 +390,7 @@ args = [
 
 [tasks.bundle-linux-appimage-release]
 description = "Build the Linux AppImage client package."
-dependencies = ["install-dioxus-cli", "check-release-version"]
+dependencies = ["build-ffmpeg", "install-dioxus-cli", "check-release-version"]
 command = "dx"
 args = [
     "bundle",

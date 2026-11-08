@@ -6,11 +6,13 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use usage::print_usage;
 
 type XtaskResult<T> = Result<T, String>;
 
 const ROOT_MANIFEST: &str = "Cargo.toml";
 
+mod build_ffmpeg;
 mod coverage_gate;
 mod dev_env;
 mod edge_contract;
@@ -18,6 +20,7 @@ mod ensure_cargo_cli;
 mod release_artifacts;
 mod release_notes;
 mod release_version;
+mod usage;
 
 fn main() {
     if let Err(error) = run() {
@@ -33,6 +36,7 @@ fn run() -> XtaskResult<()> {
     };
 
     match command.as_str() {
+        "build-ffmpeg" => build_ffmpeg::run(args.collect()),
         "coverage-gate" => coverage_gate::run(args.collect()),
         "dev-env" => dev_env::run(args.collect()),
         "edge-contract" => edge_contract::run(args.collect()),
@@ -44,16 +48,6 @@ fn run() -> XtaskResult<()> {
         "-h" | "--help" | "help" => print_usage(),
         unknown => Err(format!("unknown xtask command: {unknown}")),
     }
-}
-
-fn print_usage() -> XtaskResult<()> {
-    println!(
-        "Release notes: cargo run -p xtask -- release-notes <check <tag>|export <tag> <directory>>"
-    );
-    println!(
-        "Usage:\n  cargo run -p xtask -- coverage-gate <check|record>\n  cargo run -p xtask -- dev-env ensure [--file <path>]\n  cargo run -p xtask -- edge-contract [--image <local-nginx-image>]\n  cargo run -p xtask -- ensure-cargo-cli <crate> <binary> <version>\n  cargo run -p xtask -- line-stats\n  cargo run -p xtask -- release-version check\n  cargo run -p xtask -- release-version print-tag\n  cargo run -p xtask -- release-version tag [<release-tag>]\n  cargo run -p xtask -- release-artifacts collect <windows|linux|android> <source-dir> <output-dir> <release-tag>\n  cargo run -p xtask -- release-artifacts publish <release-tag> <asset-dir>"
-    );
-    Ok(())
 }
 
 fn run_line_stats() -> XtaskResult<()> {

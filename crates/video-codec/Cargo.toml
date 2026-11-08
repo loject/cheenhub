@@ -1,0 +1,14 @@
+[package]
+name = "cheenhub_video_codec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+tracing.workspace = true
+ffmpeg-next = { version = "=9.0.0", default-features = false, features = ["codec", "format", "static"] }
+
+[dev-dependencies]
+serde_json.workspace = true

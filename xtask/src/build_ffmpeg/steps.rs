@@ -1,0 +1,197 @@
+//! Вызовы штатных build-инструментов библиотек; собственных shell-скриптов нет.
+
+use super::{Build, execute};
+use crate::XtaskResult;
+use std::{fs, process::Command};
+
+/// Собирает статический программный VP9 encoder и устанавливает headers для FFmpeg.
+pub(super) fn vpx(build: &Build) -> XtaskResult<()> {
+    let directory = build.directory.join("vpx-build");
+    let mut configure = build.configure("libvpx-1.16.0", "vpx-build")?;
+    configure
+        .arg(format!("--prefix={}", build.posix_path(&build.prefix)?))
+        .args([
+            "--enable-vp9",
+            "--disable-vp8",
+            "--disable-vp9-decoder",
+            "--disable-examples",
+            "--disable-tools",
+            "--disable-docs",
+            "--disable-unit-tests",
+            "--disable-webm-io",
+            "--disable-libyuv",
+            "--disable-shared",
+            "--enable-static",
+        ]);
+    if build.windows {
+        configure.args(["--target=x86_64-win64-vs17", "--disable-static-msvcrt"]);
+    } else {
+        configure.arg("--enable-pic");
+    }
+    execute("конфигурация libvpx VP9", &mut configure)?;
+    if build.windows {
+        execute(
+            "генерация MSVC-проекта libvpx",
+            Command::new("make")
+                .arg("NO_LAUNCH_DEVENV=1")
+                .current_dir(&directory),
+        )?;
+        execute(
+            "сборка libvpx MSVC",
+            Command::new("MSBuild.exe")
+                .arg("vpx.sln")
+                .args(["/p:Configuration=Release", "/p:Platform=x64"])
+                .arg(format!("/m:{}", build.jobs))
+                .current_dir(&directory),
+        )?;
+        fs::create_dir_all(build.prefix.join("lib/pkgconfig"))
+            .map_err(|error| error.to_string())?;
+        fs::create_dir_all(build.prefix.join("include/vpx")).map_err(|error| error.to_string())?;
+        fs::copy(
+            directory.join("x64/Release/vpxmd.lib"),
+            build.prefix.join("lib/vpx.lib"),
+        )
+        .map_err(|error| error.to_string())?;
+        for entry in
+            fs::read_dir(build.source("libvpx-1.16.0/vpx")).map_err(|error| error.to_string())?
+        {
+            let path = entry.map_err(|error| error.to_string())?.path();
+            if path.extension().is_some_and(|value| value == "h") {
+                fs::copy(
+                    &path,
+                    build
+                        .prefix
+                        .join("include/vpx")
+                        .join(path.file_name().unwrap()),
+                )
+                .map_err(|error| error.to_string())?;
+            }
+        }
+        let prefix = build.prefix.to_string_lossy().replace('\\', "/");
+        fs::write(build.prefix.join("lib/pkgconfig/vpx.pc"), format!(
+            "prefix={prefix}\nlibdir=${{prefix}}/lib\nincludedir=${{prefix}}/include\nName: vpx\nDescription: Static VP9 software encoder\nVersion: 1.16.0\nLibs: -L${{libdir}} -lvpx\nCflags: -I${{includedir}}\n"
+        )).map_err(|error| error.to_string())?;
+    } else {
+        execute(
+            "сборка libvpx",
+            Command::new("make")
+                .arg(format!("-j{}", build.jobs))
+                .current_dir(&directory),
+        )?;
+        execute(
+            "установка libvpx",
+            Command::new("make").arg("install").current_dir(directory),
+        )?;
+    }
+    Ok(())
+}
+
+/// Собирает статический dispatcher QSV, сохраняя GPU runtime системным.
+pub(super) fn vpl(build: &Build) -> XtaskResult<()> {
+    let source = build.source("libvpl-2.16.0");
+    let directory = build.directory.join("vpl-build");
+    let mut configure = Command::new("cmake");
+    configure
+        .arg("-S")
+        .arg(source)
+        .arg("-B")
+        .arg(&directory)
+        .arg(format!("-DCMAKE_INSTALL_PREFIX={}", build.prefix.display()))
+        .args([
+            "-DCMAKE_INSTALL_LIBDIR=lib",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DBUILD_TESTS=OFF",
+            "-DBUILD_EXAMPLES=OFF",
+            "-DINSTALL_EXAMPLES=OFF",
+        ]);
+    if build.windows {
+        configure.args([
+            "-G",
+            "Ninja",
+            "-DCMAKE_C_COMPILER=cl",
+            "-DCMAKE_CXX_COMPILER=cl",
+        ]);
+    }
+    execute("конфигурация oneVPL", &mut configure)?;
+    execute(
+        "сборка oneVPL",
+        Command::new("cmake").arg("--build").arg(&directory).args([
+            "--config",
+            "Release",
+            "--parallel",
+            &build.jobs,
+        ]),
+    )?;
+    execute(
+        "установка oneVPL",
+        Command::new("cmake")
+            .arg("--install")
+            .arg(directory)
+            .args(["--config", "Release"]),
+    )
+}
+
+/// Собирает libavcodec/libavformat с аппаратными VP9 и программным резервом.
+pub(super) fn ffmpeg(build: &Build) -> XtaskResult<()> {
+    let mut configure = build.configure("ffmpeg-8.0.1", "ffmpeg-build")?;
+    configure
+        .arg(format!(
+            "--prefix={}",
+            build.prefix.to_string_lossy().replace('\\', "/")
+        ))
+        .args([
+            "--pkg-config-flags=--static",
+            "--disable-everything",
+            "--disable-autodetect",
+            "--disable-programs",
+            "--disable-doc",
+            "--disable-debug",
+            "--disable-network",
+            "--disable-shared",
+            "--enable-static",
+            "--disable-x86asm",
+            "--disable-avdevice",
+            "--disable-avfilter",
+            "--disable-swscale",
+            "--disable-swresample",
+            "--enable-avcodec",
+            "--enable-avformat",
+            "--enable-avutil",
+            "--enable-muxer=webm",
+            "--enable-bsf=vp9_superframe",
+            "--enable-libvpl",
+            "--enable-encoder=vp9_qsv",
+            "--enable-libvpx",
+            "--enable-encoder=libvpx_vp9",
+        ]);
+    if build.windows {
+        configure.args([
+            "--toolchain=msvc",
+            "--arch=x86_64",
+            "--target-os=win64",
+            "--enable-d3d11va",
+            "--enable-dxva2",
+        ]);
+    } else {
+        configure.args([
+            "--enable-vaapi",
+            "--enable-libdrm",
+            "--enable-encoder=vp9_vaapi",
+            "--enable-pic",
+            "--extra-libs=-lstdc++ -ldl -lpthread",
+        ]);
+    }
+    execute("конфигурация FFmpeg", &mut configure)?;
+    let directory = build.directory.join("ffmpeg-build");
+    execute(
+        "сборка FFmpeg",
+        Command::new("make")
+            .arg(format!("-j{}", build.jobs))
+            .current_dir(&directory),
+    )?;
+    execute(
+        "установка FFmpeg",
+        Command::new("make").arg("install").current_dir(directory),
+    )
+}

@@ -9,14 +9,20 @@ fn first_frame_and_two_second_interval_request_key_frames() {
 }
 
 #[test]
-fn encodes_i420_frame_with_vendored_libvpx() {
-    let mut encoder = WindowsVp9Encoder::new(16, 16, 300_000, 15).unwrap();
-    let mut bytes = vec![16; 16 * 16 * 3 / 2];
-    bytes[16 * 16..].fill(128);
-    let packets = encoder.encode(&I420Frame { bytes }, 0).unwrap();
+fn encodes_i420_frame_with_static_ffmpeg() {
+    let mut encoder = WindowsVp9Encoder::new(128, 128, 300_000, 15).unwrap();
+    let mut bytes = vec![16; 128 * 128 * 3 / 2];
+    bytes[128 * 128..].fill(128);
+    let frame = I420Frame { bytes };
+    let mut packets = Vec::new();
+
+    for index in 0..8 {
+        packets.extend(encoder.encode(&frame, index * (1_000_000 / 15)).unwrap());
+    }
+
     assert!(!packets.is_empty());
     assert!(packets[0].key_frame);
     assert_eq!(packets[0].duration_us, 1_000_000 / 15);
-    assert_eq!(packets[0].width, 16);
-    assert_eq!(packets[0].height, 16);
+    assert_eq!(packets[0].width, 128);
+    assert_eq!(packets[0].height, 128);
 }
