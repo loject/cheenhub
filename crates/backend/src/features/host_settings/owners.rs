@@ -1,12 +1,14 @@
 //! Управление владельцами хоста.
 //!
-//! Права владельца выдаются нескольким пользователям одновременно, поэтому
-//! модуль хранит список, а не единственного владельца. Отзыв прав последнего
-//! владельца запрещён: иначе настройки хоста станут недоступны навсегда.
+//! Все владельцы могут просматривать списки. Выдавать и отзывать права может
+//! только первоначальный владелец; его собственные права защищены от отзыва.
 
 use std::collections::HashMap;
 
-use cheenhub_contracts::rest::{GrantHostOwnerRequest, HostOwnerSummary, HostOwnersResponse};
+use cheenhub_contracts::rest::{
+    GrantHostOwnerRequest, HOST_USERS_PAGE_SIZE, HostOwnerSummary, HostOwnersResponse,
+    HostUserSummary, HostUsersResponse,
+};
 use chrono::{SecondsFormat, Utc};
 use uuid::Uuid;
 
@@ -51,6 +53,69 @@ pub(crate) async fn list_owners(
     );
     Ok(HostOwnersResponse { owners: summaries })
 }
+
+/// Возвращает страницу зарегистрированных пользователей только владельцам хоста.
+///
+/// Страницы начинаются с 1; выход за конец списка возвращает последнюю страницу.
+/// Нулевой номер отклоняется до чтения профилей. Размер страницы фиксирован контрактом.
+pub(crate) async fn list_users(
+    state: &AppState,
+    access_token: &str,
+    page: u64,
+) -> Result<HostUsersResponse, HostSettingsError> {
+    let current_user_id = application::require_host_owner(state, access_token).await?;
+    if page == 0 {
+        return Err(HostSettingsError::BadRequest(
+            "Номер страницы должен начинаться с 1.".into(),
+        ));
+    }
+    let total = state.auth_store.count_registered_users().await?;
+    let page = page.min(total.div_ceil(HOST_USERS_PAGE_SIZE).max(1));
+    let users = state
+        .auth_store
+        .list_registered_users((page - 1) * HOST_USERS_PAGE_SIZE, HOST_USERS_PAGE_SIZE)
+        .await?
+        .into_iter()
+        .map(|user| {
+            let profile = auth_user(state, &user);
+            HostUserSummary {
+                user_id: profile.id,
+                nickname: profile.nickname,
+                email: profile.email,
+                avatar_url: profile.avatar_url,
+                registered_at: user
+                    .registered_at
+                    .to_rfc3339_opts(SecondsFormat::Secs, true),
+            }
+        })
+        .collect::<Vec<_>>();
+    tracing::debug!(%current_user_id, page, total, user_count = users.len(), "listed registered host users");
+    Ok(HostUsersResponse {
+        users,
+        total,
+        page,
+        page_size: HOST_USERS_PAGE_SIZE,
+    })
+}
+
+/// Проверяет право первоначального владельца менять состав владельцев.
+async fn require_initial_owner(
+    state: &AppState,
+    access_token: &str,
+) -> Result<Uuid, HostSettingsError> {
+    let user_id = application::require_host_owner(state, access_token).await?;
+    let owners = state.host_settings_store.load_host_owners().await?;
+    if !owners
+        .iter()
+        .any(|owner| owner.user_id == user_id && owner.granted_by_user_id.is_none())
+    {
+        tracing::warn!(%user_id, "rejected host owner management by non-initial owner");
+        return Err(HostSettingsError::Forbidden(
+            "Менять состав владельцев может только первоначальный владелец хоста.".into(),
+        ));
+    }
+    Ok(user_id)
+}
 /// Выдаёт права владельца хоста пользователю, указанному email или идентификатором.
 ///
 /// Проверка tombstone и запись прав удерживают lifecycle-блокировку аккаунта,
@@ -60,7 +125,7 @@ pub(crate) async fn grant_owner(
     access_token: &str,
     request: GrantHostOwnerRequest,
 ) -> Result<HostOwnersResponse, HostSettingsError> {
-    let current_user_id = application::require_host_owner(state, access_token).await?;
+    let current_user_id = require_initial_owner(state, access_token).await?;
     let target = resolve_target(state, request.user).await?;
 
     if target.id == current_user_id {
@@ -106,13 +171,25 @@ pub(crate) async fn grant_owner(
 
     list_owners(state, access_token).await
 }
-/// Отзывает права владельца хоста, оставляя на хосте хотя бы одного владельца.
+/// Отзывает выданные права по запросу первоначального владельца, сохраняя его доступ.
 pub(crate) async fn revoke_owner(
     state: &AppState,
     access_token: &str,
     target_user_id: Uuid,
 ) -> Result<HostOwnersResponse, HostSettingsError> {
-    let current_user_id = application::require_host_owner(state, access_token).await?;
+    let current_user_id = require_initial_owner(state, access_token).await?;
+    if state
+        .host_settings_store
+        .load_host_owners()
+        .await?
+        .iter()
+        .any(|owner| owner.user_id == target_user_id && owner.granted_by_user_id.is_none())
+    {
+        tracing::warn!(%current_user_id, %target_user_id, "rejected initial host owner revocation");
+        return Err(HostSettingsError::BadRequest(
+            "Нельзя снять права с первоначального владельца хоста.".into(),
+        ));
+    }
     match state
         .host_settings_store
         .revoke_host_owner(target_user_id)
@@ -201,6 +278,7 @@ fn summary(
         granted_at: owner.granted_at.to_rfc3339_opts(SecondsFormat::Secs, true),
         granted_by_nickname,
         is_current_user: owner.user_id == current_user_id,
+        is_initial_owner: owner.granted_by_user_id.is_none(),
     }
 }
 

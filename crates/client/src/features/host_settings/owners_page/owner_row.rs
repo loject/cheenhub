@@ -1,7 +1,7 @@
 //! Строка владельца хоста в списке.
 //!
 //! Отзыв требует подтверждения, потому что пользователь сразу теряет доступ
-//! ко всем настройкам хоста и должен сначала передать их другому владельцу.
+//! ко всем настройкам хоста. Первоначальный владелец сохраняет свои права.
 
 use cheenhub_contracts::rest::HostOwnerSummary;
 use dioxus::prelude::*;
@@ -15,20 +15,25 @@ pub(super) fn HostOwnerRow(
     can_revoke: bool,
     /// Отзыв прав этой строки ожидает ответ сервера; родитель снимает флаг при любом результате.
     is_revoking: bool,
+    is_busy: bool,
     on_revoke: EventHandler<String>,
 ) -> Element {
     let owner = host_owner;
     let mut confirm = use_signal(|| false);
 
-    let granted_line = match owner.granted_by_nickname.as_deref() {
-        Some(granted_by) => format!(
-            "Права выдал {granted_by} · {}",
-            format_date(&owner.granted_at)
-        ),
-        None => format!(
+    let granted_line = if owner.is_initial_owner {
+        format!(
             "Первоначальный владелец · {}",
             format_date(&owner.granted_at)
-        ),
+        )
+    } else {
+        match owner.granted_by_nickname.as_deref() {
+            Some(granted_by) => format!(
+                "Права выдал {granted_by} · {}",
+                format_date(&owner.granted_at)
+            ),
+            None => format!("Права выданы · {}", format_date(&owner.granted_at)),
+        }
     };
 
     rsx! {
@@ -58,7 +63,7 @@ pub(super) fn HostOwnerRow(
                         button {
                             r#type: "button",
                             class: revoke_button_class(true),
-                            disabled: is_revoking,
+                            disabled: is_busy,
                             onclick: move |_| {
                                 let user_id = owner.user_id.clone();
                                 on_revoke.call(user_id);
@@ -68,7 +73,7 @@ pub(super) fn HostOwnerRow(
                         button {
                             r#type: "button",
                             class: cancel_button_class(),
-                            disabled: is_revoking,
+                            disabled: is_busy,
                             onclick: move |_| confirm.set(false),
                             "Отмена"
                         }
@@ -77,6 +82,7 @@ pub(super) fn HostOwnerRow(
                     button {
                         r#type: "button",
                         class: revoke_button_class(false),
+                        disabled: is_busy,
                         onclick: move |_| confirm.set(true),
                         "Отозвать права"
                     }
@@ -89,15 +95,15 @@ pub(super) fn HostOwnerRow(
 /// Класс кнопки отзыва прав: `active` различает подтверждение и обычное действие.
 fn revoke_button_class(active: bool) -> &'static str {
     if active {
-        "inline-flex min-h-9 items-center justify-center rounded-lg border border-red-400/30 bg-red-400/15 px-3 text-[12px] font-semibold text-red-200 transition hover:bg-red-400/25 disabled:cursor-not-allowed disabled:opacity-60"
+        "inline-flex min-h-10 items-center justify-center rounded-lg border border-red-400/30 bg-red-400/15 px-3 text-[12px] font-semibold text-red-200 transition-colors hover:bg-red-400/25 disabled:cursor-not-allowed disabled:opacity-60"
     } else {
-        "inline-flex min-h-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-[12px] font-medium text-zinc-300 transition hover:border-zinc-700 hover:bg-zinc-800"
+        "inline-flex min-h-10 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-[12px] font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
     }
 }
 
 /// Класс кнопки отмены отзыва прав.
 fn cancel_button_class() -> &'static str {
-    "inline-flex min-h-9 items-center justify-center rounded-lg border border-transparent px-3 text-[12px] font-medium text-zinc-500 transition hover:text-zinc-300"
+    "inline-flex min-h-10 items-center justify-center rounded-lg border border-transparent px-3 text-[12px] font-medium text-zinc-500 transition-colors hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-60"
 }
 
 /// Форматирует время выдачи прав в короткий локальный вид.

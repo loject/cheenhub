@@ -23,6 +23,7 @@ fn owner(id: &str) -> HostOwnerSummary {
         granted_at: "2026-10-05T10:00:00Z".into(),
         granted_by_nickname: None,
         is_current_user: false,
+        is_initial_owner: false,
     }
 }
 
@@ -35,11 +36,58 @@ fn load_app() -> Element {
 }
 
 fn rows_app() -> Element {
-    let owners = use_signal(|| vec![owner("alice"), owner("bob"), owner("carol")]);
+    let owners = use_signal(|| {
+        vec![
+            owner("alice"),
+            owner("bob"),
+            owner("carol"),
+            initial_owner(),
+        ]
+    });
     OWNERS.with_borrow_mut(|slot| *slot = Some(owners));
     let pending = use_signal(Vec::<String>::new);
     PENDING.with_borrow_mut(|slot| *slot = Some(pending));
     owner_list(&owners(), &pending(), EventHandler::new(|_| {}))
+}
+
+fn initial_owner() -> HostOwnerSummary {
+    HostOwnerSummary {
+        is_current_user: true,
+        is_initial_owner: true,
+        ..owner("root")
+    }
+}
+
+fn readonly_app() -> Element {
+    owner_list(
+        &[owner("alice"), owner("bob")],
+        &[],
+        EventHandler::new(|_| {}),
+    )
+}
+
+#[test]
+fn promoted_owner_has_no_revoke_controls() {
+    let mut dom = VirtualDom::new(readonly_app);
+    let edits = dom.rebuild_to_vec();
+
+    assert!(clicks(&edits.edits).is_empty());
+    assert!(text(&dom).contains("alice@example.com"));
+}
+
+fn initial_row_app() -> Element {
+    let mut initial = initial_owner();
+    initial.is_current_user = false;
+    initial.user_id = "original".into();
+    owner_list(&[initial, initial_owner()], &[], EventHandler::new(|_| {}))
+}
+
+#[test]
+fn initial_owner_never_has_revoke_controls() {
+    let mut dom = VirtualDom::new(initial_row_app);
+    let edits = dom.rebuild_to_vec();
+
+    assert!(clicks(&edits.edits).is_empty());
 }
 
 fn pump(dom: &mut VirtualDom) {
@@ -213,6 +261,33 @@ fn refreshing_app() -> Element {
         OwnersView {
             loading: true,
             revoking_owners: vec![],
+            owners: vec![owner("alice"), initial_owner()],
+            load_error: None,
+            revoke_error: None,
+            revoke_notice: None,
+        },
+        EventHandler::new(|_| {}),
+        EventHandler::new(|_| {}),
+        EventHandler::new(|_| {}),
+    )
+}
+
+#[test]
+fn refresh_keeps_loaded_owners_and_registered_users_visible() {
+    let mut dom = VirtualDom::new(refreshing_app);
+    dom.rebuild_in_place();
+
+    assert!(text(&dom).contains("Загружаем владельцев"));
+    assert!(text(&dom).contains("Зарегистрированные пользователи"));
+    assert!(text(&dom).contains("Выдать права владельца"));
+    assert!(text(&dom).contains("alice@example.com"));
+}
+
+fn readonly_body_app() -> Element {
+    owners_body(
+        OwnersView {
+            loading: false,
+            revoking_owners: vec![],
             owners: vec![owner("alice")],
             load_error: None,
             revoke_error: None,
@@ -225,13 +300,12 @@ fn refreshing_app() -> Element {
 }
 
 #[test]
-fn refresh_keeps_loaded_list_and_grant_form_visible() {
-    let mut dom = VirtualDom::new(refreshing_app);
+fn promoted_owner_has_no_email_or_id_grant_form() {
+    let mut dom = VirtualDom::new(readonly_body_app);
     dom.rebuild_in_place();
 
-    assert!(text(&dom).contains("Загружаем владельцев"));
-    assert!(text(&dom).contains("Выдать права владельца"));
-    assert!(text(&dom).contains("alice@example.com"));
+    assert!(!text(&dom).contains("Выдать права владельца"));
+    assert!(text(&dom).contains("Зарегистрированные пользователи"));
 }
 
 #[test]
@@ -276,7 +350,7 @@ fn completed_revoke_enables_confirmation_controls() {
         Mutation::SetAttribute { name, value: dioxus::dioxus_core::AttributeValue::Bool(false), .. } if *name == "disabled"
     )).count();
     assert_eq!(
-        enabled_controls, 2,
-        "both retry and cancel must be enabled after completion"
+        enabled_controls, 4,
+        "retry, cancel and the other owner controls must be enabled after completion"
     );
 }

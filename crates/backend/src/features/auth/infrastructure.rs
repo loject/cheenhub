@@ -207,6 +207,16 @@ pub(crate) trait AuthStore: OAuthStore + Send + Sync {
     /// обезличены и пользователя фактически больше нет.
     async fn count_registered_users(&self) -> anyhow::Result<u64>;
 
+    /// Читает страницу зарегистрированных пользователей без системных и обезличенных аккаунтов.
+    ///
+    /// Порядок: время регистрации по убыванию, UUID по возрастанию.
+    /// `offset` пропускает строки, `limit` ограничивает размер результата.
+    async fn list_registered_users(
+        &self,
+        offset: u64,
+        limit: u64,
+    ) -> anyhow::Result<Vec<UserAccount>>;
+
     /// Находит пользователя по нормализованному email.
     async fn find_user_by_email(
         &self,

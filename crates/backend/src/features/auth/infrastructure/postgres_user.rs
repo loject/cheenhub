@@ -119,6 +119,26 @@ pub(super) async fn count_registered_users(database: &DatabaseConnection) -> any
         .await?)
 }
 
+/// Читает ограниченную страницу пользователей в порядке регистрации и UUID.
+pub(super) async fn list_registered_users(
+    database: &DatabaseConnection,
+    offset: u64,
+    limit: u64,
+) -> anyhow::Result<Vec<UserAccount>> {
+    Ok(users::Entity::find()
+        .filter(users::Column::DeletionFinalizedAt.is_null())
+        .filter(users::Column::Kind.eq("user"))
+        .order_by_desc(users::Column::RegisteredAt)
+        .order_by_asc(users::Column::Id)
+        .offset(offset)
+        .limit(limit)
+        .all(database)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect())
+}
+
 /// Находит пользователя по нормализованному email.
 pub(super) async fn find_user_by_email(
     database: &DatabaseConnection,

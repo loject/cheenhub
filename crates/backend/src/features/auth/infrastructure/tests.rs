@@ -3,3 +3,4 @@
 mod deletion;
 mod desktop_oauth;
 mod desktop_oauth_postgres;
+mod registered_users;

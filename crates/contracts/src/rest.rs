@@ -28,14 +28,14 @@ pub use desktop_oauth::{
 };
 pub use error::ApiError;
 pub use host_settings::{
-    EmailTransport, GmailConnectionStartResponse, GrantHostOwnerRequest, HostAccessResponse,
-    HostCpuMetrics, HostDiskMetrics, HostEmailSettingsResponse, HostLogEntry, HostLogLevel,
-    HostLogSettingsResponse, HostLogStreamMessage, HostMemoryMetrics, HostMessagesPerMinuteSample,
-    HostMetricsResponse, HostMetricsSample, HostNetworkMetrics, HostNetworkScope, HostOwnerSummary,
-    HostOwnersResponse, HostRegistrationSettingsResponse, HostStatsResponse,
-    HostVoiceActivityHistoryResponse, HostVoiceActivityResponse, HostVoiceActivitySample,
-    UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
-    UpdateHostRegistrationSettingsRequest,
+    EmailTransport, GmailConnectionStartResponse, GrantHostOwnerRequest, HOST_USERS_PAGE_SIZE,
+    HostAccessResponse, HostCpuMetrics, HostDiskMetrics, HostEmailSettingsResponse, HostLogEntry,
+    HostLogLevel, HostLogSettingsResponse, HostLogStreamMessage, HostMemoryMetrics,
+    HostMessagesPerMinuteSample, HostMetricsResponse, HostMetricsSample, HostNetworkMetrics,
+    HostNetworkScope, HostOwnerSummary, HostOwnersResponse, HostRegistrationSettingsResponse,
+    HostStatsResponse, HostUserSummary, HostUsersResponse, HostVoiceActivityHistoryResponse,
+    HostVoiceActivityResponse, HostVoiceActivitySample, UpdateHostEmailSettingsRequest,
+    UpdateHostLogSettingsRequest, UpdateHostRegistrationSettingsRequest,
 };
 pub use push_notifications::{PushPlatform, UpsertPushInstallationRequest};
 pub use servers::{

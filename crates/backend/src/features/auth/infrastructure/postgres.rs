@@ -145,6 +145,14 @@ impl AuthStore for PostgresAuthStore {
         user::count_registered_users(&self.database).await
     }
 
+    async fn list_registered_users(
+        &self,
+        offset: u64,
+        limit: u64,
+    ) -> anyhow::Result<Vec<UserAccount>> {
+        user::list_registered_users(&self.database, offset, limit).await
+    }
+
     async fn find_user_by_email(
         &self,
         email_normalized: &str,

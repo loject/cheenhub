@@ -3,9 +3,9 @@
 use cheenhub_contracts::rest::{
     GmailConnectionStartResponse, GrantHostOwnerRequest, HostAccessResponse,
     HostEmailSettingsResponse, HostLogSettingsResponse, HostMetricsResponse, HostOwnersResponse,
-    HostRegistrationSettingsResponse, HostStatsResponse, HostVoiceActivityHistoryResponse,
-    HostVoiceActivityResponse, UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
-    UpdateHostRegistrationSettingsRequest,
+    HostRegistrationSettingsResponse, HostStatsResponse, HostUsersResponse,
+    HostVoiceActivityHistoryResponse, HostVoiceActivityResponse, UpdateHostEmailSettingsRequest,
+    UpdateHostLogSettingsRequest, UpdateHostRegistrationSettingsRequest,
 };
 use dioxus::prelude::{debug, info, warn};
 use reqwest::{Response, StatusCode};
@@ -73,6 +73,19 @@ pub(crate) async fn load_owners() -> Result<HostOwnersResponse, HostSettingsApiE
         .await
         .map_err(HostSettingsApiError::Other)?;
     decode_owners(response).await
+}
+
+/// Загружает одну страницу зарегистрированных пользователей, доступную владельцам.
+pub(crate) async fn load_users(page: u64) -> Result<HostUsersResponse, HostSettingsApiError> {
+    let response = authorized_get(&format!("/host-settings/users?page={page}"))
+        .await
+        .map_err(HostSettingsApiError::Other)?;
+    if response.status().is_success() {
+        return response.json().await.map_err(|_| {
+            HostSettingsApiError::Other("Не удалось прочитать список пользователей.".into())
+        });
+    }
+    Err(classify_error(response).await)
 }
 
 /// Выдаёт права владельца хоста пользователю, указанному email или идентификатором.
@@ -346,7 +359,7 @@ async fn classify_error(response: Response) -> HostSettingsApiError {
     let forbidden = response.status() == StatusCode::FORBIDDEN;
     let message = auth_api::read_error(response).await;
     if forbidden {
-        warn!("host settings request rejected for a non-owner user");
+        warn!("host settings request rejected for insufficient owner rights");
         HostSettingsApiError::Forbidden(message)
     } else {
         HostSettingsApiError::Other(message)

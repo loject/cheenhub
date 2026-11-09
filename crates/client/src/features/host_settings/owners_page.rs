@@ -1,9 +1,7 @@
 //! Управление владельцами хоста.
 //!
-//! Страница показывает всех пользователей с глобальными правами и позволяет
-//! выдать права новому владельцу или отозвать их у существующего. Отзыв
-//! последнего владельца сервер не допускает, поэтому кнопка отзыва у единственного
-//! владельца на этом хосте не показывается.
+//! Страница показывает владельцев и страницы зарегистрированных пользователей.
+//! Первоначальный владелец управляет правами; остальные просматривают списки.
 
 use cheenhub_contracts::rest::{HostOwnerSummary, HostOwnersResponse};
 use dioxus::prelude::*;
@@ -11,13 +9,22 @@ use dioxus::prelude::*;
 use super::api;
 use super::tabs::{HostSettingsTab, host_settings_tabs};
 
+mod users_list;
+use users_list::HostUsersList;
+
 mod grant_form;
 use grant_form::HostOwnerGrantForm;
 
 mod owner_row;
 use owner_row::HostOwnerRow;
 
-/// Рендерит список владельцев хоста и форму выдачи прав.
+/// Команды изменения прав, выполняемые страницей последовательно.
+enum OwnerAction {
+    Grant(String),
+    Revoke(String),
+}
+
+/// Рендерит владельцев и страницы пользователей с командами изменения прав.
 ///
 /// Список хранится в сигнале, а не только в ресурсе: выдача и отзыв возвращают
 /// обновлённый список с сервера, поэтому повторный запрос после каждой операции
@@ -30,25 +37,35 @@ pub(crate) fn HostOwnersPage() -> Element {
     let mut revoke_notice = use_signal(|| None::<String>);
     let mut revoking_owners = use_signal(Vec::<String>::new);
 
-    let revoke_owner = use_callback(move |user_id: String| {
-        if revoking_owners.peek().contains(&user_id) {
+    let change_owner = use_callback(move |action: OwnerAction| {
+        if !revoking_owners.peek().is_empty() {
             return;
         }
+        let (user_id, granting) = match action {
+            OwnerAction::Grant(id) => (id, true),
+            OwnerAction::Revoke(id) => (id, false),
+        };
         revoking_owners.write().push(user_id.clone());
         revoke_error.set(None);
         revoke_notice.set(None);
         spawn(async move {
-            match api::revoke_owner(&user_id).await {
+            let result = if granting {
+                api::grant_owner(user_id.clone()).await
+            } else {
+                api::revoke_owner(&user_id).await
+            };
+            match result {
                 Ok(remaining) => {
-                    info!(%user_id, owner_count = remaining.owners.len(), "revoked host owner rights from host settings");
+                    info!(%user_id, granting, owner_count = remaining.owners.len(), "changed host owner rights from host settings");
                     owners.set(remaining.owners);
                     revoke_notice.set(Some(
-                        "Права владельца сняты. Пользователь больше не видит настройки хоста."
+                        if granting { "Права владельца выданы. Пользователь получил доступ к настройкам хоста." }
+                        else { "Права владельца сняты. Пользователь больше не видит настройки хоста." }
                             .to_owned(),
                     ));
                 }
                 Err(failure) => {
-                    warn!(%user_id, message = %failure.message(), "failed to revoke host owner rights");
+                    warn!(%user_id, granting, message = %failure.message(), "failed to change host owner rights");
                     revoke_error.set(Some(failure.message().to_owned()));
                     owners_resource.restart();
                 }
@@ -73,10 +90,8 @@ pub(crate) fn HostOwnersPage() -> Element {
                         revoke_error: revoke_error(),
                         revoke_notice: revoke_notice(),
                     },
-                    EventHandler::new(move |user_id: String| revoke_owner.call(user_id)),
-                    EventHandler::new(move |response: HostOwnersResponse| {
-                        owners.set(response.owners)
-                    }),
+                    EventHandler::new(move |user_id: String| change_owner.call(OwnerAction::Revoke(user_id))),
+                    EventHandler::new(move |user_id: String| change_owner.call(OwnerAction::Grant(user_id))),
                     EventHandler::new(move |_| owners_resource.restart()),
                 )}
             }
@@ -110,14 +125,14 @@ struct OwnersView {
     revoke_notice: Option<String>,
 }
 
-/// Показывает ошибку загрузки или форму выдачи прав вместе со списком владельцев.
+/// Показывает ошибку загрузки или списки владельцев и пользователей.
 ///
-/// Ошибки выдачи и отзыва показываются под формой, поэтому список остаётся
+/// Ошибки выдачи и отзыва показываются над списками, поэтому список остаётся
 /// видимым и пользователь может повторить действие без перезагрузки страницы.
 fn owners_body(
     view: OwnersView,
     on_revoke: EventHandler<String>,
-    on_granted: EventHandler<HostOwnersResponse>,
+    on_grant: EventHandler<String>,
     on_retry: EventHandler<()>,
 ) -> Element {
     if view.loading && view.owners.is_empty() {
@@ -141,9 +156,12 @@ fn owners_body(
     rsx! {
         div { class: "mt-6 space-y-6",
             if view.loading { {loading_notice()} }
-            HostOwnerGrantForm { on_granted }
+            if can_manage_owners(&view.owners) {
+                HostOwnerGrantForm { is_busy: !view.revoking_owners.is_empty(), on_grant }
+            }
             {status_notice(view.revoke_notice, view.revoke_error)}
             {owner_list(&view.owners, &view.revoking_owners, on_revoke)}
+            HostUsersList { owners: view.owners, pending_users: view.revoking_owners, on_grant }
         }
     }
 }
@@ -184,7 +202,7 @@ fn owner_list(
             div { class: "rounded-[18px] border border-zinc-800 bg-zinc-950/70 px-5 py-8 text-center",
                 p { class: "text-[13px] font-medium text-zinc-300", "Пока нет ни одного владельца" }
                 p { class: "mx-auto mt-1.5 max-w-md text-pretty text-[13px] leading-5 text-zinc-500",
-                    "Укажи email или идентификатор пользователя выше, чтобы выдать права владельца хоста."
+                    "Обнови страницу, чтобы загрузить актуальный список владельцев."
                 }
             }
         };
@@ -201,14 +219,22 @@ fn owner_list(
                     HostOwnerRow {
                         key: "{owner.user_id}",
                         host_owner: owner.clone(),
-                        can_revoke: !owner.is_current_user && owners.len() > 1,
+                        can_revoke: can_manage_owners(owners) && !owner.is_initial_owner,
                         is_revoking: revoking_owners.contains(&owner.user_id),
+                        is_busy: !revoking_owners.is_empty(),
                         on_revoke,
                     }
                 }
             }
         }
     }
+}
+
+/// Разрешает управление только текущему первоначальному владельцу.
+fn can_manage_owners(owners: &[HostOwnerSummary]) -> bool {
+    owners
+        .iter()
+        .any(|owner| owner.is_current_user && owner.is_initial_owner)
 }
 
 /// Применяет ответы загрузки к локальному списку, изменяемому операциями выдачи и отзыва.

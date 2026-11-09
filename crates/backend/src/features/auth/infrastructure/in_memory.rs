@@ -149,6 +149,14 @@ impl AuthStore for InMemoryAuthStore {
         super::in_memory_user::count_registered_users(&self.state)
     }
 
+    async fn list_registered_users(
+        &self,
+        offset: u64,
+        limit: u64,
+    ) -> anyhow::Result<Vec<UserAccount>> {
+        super::in_memory_user::list_registered_users(&self.state, offset, limit)
+    }
+
     async fn find_user_by_email(
         &self,
         email_normalized: &str,

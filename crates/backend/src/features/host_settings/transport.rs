@@ -18,9 +18,9 @@ use axum::{
 use cheenhub_contracts::rest::{
     ApiError, GmailConnectionStartResponse, GrantHostOwnerRequest, HostAccessResponse,
     HostEmailSettingsResponse, HostLogSettingsResponse, HostLogStreamMessage, HostOwnersResponse,
-    HostRegistrationSettingsResponse, HostStatsResponse, HostVoiceActivityHistoryResponse,
-    HostVoiceActivityResponse, UpdateHostEmailSettingsRequest, UpdateHostLogSettingsRequest,
-    UpdateHostRegistrationSettingsRequest,
+    HostRegistrationSettingsResponse, HostStatsResponse, HostUsersResponse,
+    HostVoiceActivityHistoryResponse, HostVoiceActivityResponse, UpdateHostEmailSettingsRequest,
+    UpdateHostLogSettingsRequest, UpdateHostRegistrationSettingsRequest,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -39,6 +39,7 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/access", get(access))
         .route("/owners", get(list_owners).post(grant_owner))
         .route("/owners/{user_id}", delete(revoke_owner))
+        .route("/users", get(list_users))
         .route("/metrics", get(metrics))
         .route("/stats", get(stats))
         .route("/activity", get(activity))
@@ -314,6 +315,23 @@ async fn list_owners(
     owners::list_owners(&state, bearer_token(&headers)?)
         .await
         .map(Json)
+}
+
+/// Возвращает страницу зарегистрированных пользователей владельцу хоста.
+async fn list_users(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UsersQuery>,
+) -> Result<Json<HostUsersResponse>, HostSettingsError> {
+    owners::list_users(&state, bearer_token(&headers)?, query.page.unwrap_or(1))
+        .await
+        .map(Json)
+}
+
+/// Номер страницы списка пользователей; отсутствие параметра выбирает первую страницу.
+#[derive(Deserialize)]
+struct UsersQuery {
+    page: Option<u64>,
 }
 
 /// Выдаёт права владельца хоста указанному пользователю.

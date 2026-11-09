@@ -1,5 +1,7 @@
 //! Проверки выдачи и отзыва прав владельца хоста.
 
+mod pagination;
+
 use std::sync::Arc;
 
 use cheenhub_contracts::rest::{GrantHostOwnerRequest, RegisterRequest};
@@ -152,6 +154,127 @@ async fn grants_owner_rights_by_email_and_lists_both_owners() {
         response.owners[1].granted_by_nickname.as_deref(),
         Some("owners_owner"),
         "владелец, выдавший права, сохраняется в записи"
+    );
+}
+
+#[tokio::test]
+async fn promoted_owner_cannot_grant_rights() {
+    let (state, owner, guest_id) = host_with_owner_and_guest().await;
+    let second = register(&state, "promoted_owner", "promoted@example.com").await;
+    grant_owner(
+        &state,
+        &owner.access_token,
+        GrantHostOwnerRequest {
+            user: second.user.id,
+        },
+    )
+    .await
+    .unwrap();
+
+    let result = grant_owner(
+        &state,
+        &second.access_token,
+        GrantHostOwnerRequest {
+            user: guest_id.to_string(),
+        },
+    )
+    .await;
+
+    assert!(matches!(result, Err(HostSettingsError::Forbidden(_))));
+    assert!(
+        !state
+            .host_settings_store
+            .is_host_owner(guest_id)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn promoted_owner_cannot_revoke_another_owner() {
+    let (state, owner, _) = host_with_owner_and_guest().await;
+    let second = register(&state, "promoted_owner", "promoted@example.com").await;
+    grant_owner(
+        &state,
+        &owner.access_token,
+        GrantHostOwnerRequest {
+            user: second.user.id,
+        },
+    )
+    .await
+    .unwrap();
+    let third_id = granted_owner(&state, &owner, "third_owner", "third@example.com").await;
+
+    let result = revoke_owner(&state, &second.access_token, third_id).await;
+
+    assert!(matches!(result, Err(HostSettingsError::Forbidden(_))));
+    assert!(
+        state
+            .host_settings_store
+            .is_host_owner(third_id)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn initial_owner_cannot_be_revoked_when_other_owners_exist() {
+    let (state, owner, _) = host_with_owner_and_guest().await;
+    granted_owner(&state, &owner, "second_owner", "second@example.com").await;
+
+    let result = revoke_owner(&state, &owner.access_token, user_id(&owner)).await;
+
+    assert!(matches!(result, Err(HostSettingsError::BadRequest(_))));
+    assert!(
+        state
+            .host_settings_store
+            .is_host_owner(user_id(&owner))
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn legacy_host_without_initial_owner_remains_read_only_until_manual_recovery() {
+    let (state, owner, guest_id) = host_with_owner_and_guest().await;
+    let second = register(&state, "legacy_owner", "legacy@example.com").await;
+    grant_owner(
+        &state,
+        &owner.access_token,
+        GrantHostOwnerRequest {
+            user: second.user.id.clone(),
+        },
+    )
+    .await
+    .unwrap();
+    // Прямая запись воспроизводит состояние, разрешённое предыдущей версией API.
+    state
+        .host_settings_store
+        .revoke_host_owner(user_id(&owner))
+        .await
+        .unwrap();
+
+    let visible = list_owners(&state, &second.access_token).await.unwrap();
+    let grant = grant_owner(
+        &state,
+        &second.access_token,
+        GrantHostOwnerRequest {
+            user: guest_id.to_string(),
+        },
+    )
+    .await;
+    let revoke = revoke_owner(&state, &second.access_token, user_id(&second)).await;
+
+    assert_eq!(visible.owners.len(), 1);
+    assert!(!visible.owners[0].is_initial_owner);
+    assert!(matches!(grant, Err(HostSettingsError::Forbidden(_))));
+    assert!(matches!(revoke, Err(HostSettingsError::Forbidden(_))));
+    assert!(
+        state
+            .host_settings_store
+            .is_host_owner(user_id(&second))
+            .await
+            .unwrap()
     );
 }
 

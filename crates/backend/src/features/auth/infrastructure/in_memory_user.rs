@@ -105,6 +105,27 @@ pub(super) fn count_registered_users(state: &Mutex<InMemoryState>) -> anyhow::Re
         .count() as u64)
 }
 
+/// Читает страницу пользователей без обезличенных аккаунтов в стабильном порядке.
+pub(super) fn list_registered_users(
+    state: &Mutex<InMemoryState>,
+    offset: u64,
+    limit: u64,
+) -> anyhow::Result<Vec<UserAccount>> {
+    let state = state.lock().map_err(|_| poisoned())?;
+    let mut users = state
+        .users
+        .iter()
+        .filter(|user| user.deletion_finalized_at.is_none())
+        .map(|user| user.account.clone())
+        .collect::<Vec<_>>();
+    users.sort_by(|a, b| b.registered_at.cmp(&a.registered_at).then(a.id.cmp(&b.id)));
+    Ok(users
+        .into_iter()
+        .skip(usize::try_from(offset).unwrap_or(usize::MAX))
+        .take(usize::try_from(limit).unwrap_or(usize::MAX))
+        .collect())
+}
+
 /// Находит пользователя по идентификатору.
 pub(super) fn find_user_by_id(
     state: &Mutex<InMemoryState>,
