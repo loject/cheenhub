@@ -27,6 +27,24 @@ use tracing_subscriber::{
 const HOST_LOG_CAPACITY: usize = 3_000;
 const HOST_LOG_BROADCAST_CAPACITY: usize = 1_024;
 
+#[cfg(test)]
+mod tests;
+
+tokio::task_local! {
+    /// Исключает события обслуживающей журнал операции из обратной рассылки.
+    static HOST_LOG_CAPTURE_DISABLED: bool;
+}
+
+/// Выполняет future без захвата её логов в оперативный журнал хоста.
+///
+/// Остальные tracing-слои продолжают получать события. Ограничение действует
+/// только во время poll этой future, включая вложенные await, и не затрагивает
+/// параллельные задачи. Используется для проверок доступа при отправке логов,
+/// чтобы лог SQL-запроса не запускал следующую проверку по кругу.
+pub(crate) async fn without_host_log_capture<F: std::future::Future>(future: F) -> F::Output {
+    HOST_LOG_CAPTURE_DISABLED.scope(true, future).await
+}
+
 /// Хранит последние записи журнала и рассылает новые подписчикам.
 pub(crate) struct HostLogHub {
     entries: Mutex<VecDeque<HostLogEntry>>,
@@ -103,6 +121,12 @@ where
     S: Subscriber,
 {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
+        if HOST_LOG_CAPTURE_DISABLED
+            .try_with(|disabled| *disabled)
+            .unwrap_or(false)
+        {
+            return;
+        }
         let metadata = event.metadata();
         let mut visitor = HostLogVisitor::default();
         event.record(&mut visitor);

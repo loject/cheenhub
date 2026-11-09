@@ -1,5 +1,7 @@
 //! Проверка отзыва доступа у уже открытого потока серверных логов.
 
+mod logging_store;
+
 use std::{sync::Arc, time::Duration};
 
 use cheenhub_contracts::rest::{HostLogStreamMessage, RegisterRequest};
@@ -171,7 +173,7 @@ async fn revoked_owner_stream_rejects_new_logs_while_remaining_owner_keeps_acces
         .await
         .expect("grant second owner");
     let state = AppState {
-        host_settings_store: store.clone(),
+        host_settings_store: Arc::new(logging_store::LoggingStore(store.clone())),
         host_logs: crate::telemetry::init("info").expect("isolated log subscriber"),
         ..state
     };
@@ -186,8 +188,14 @@ async fn revoked_owner_stream_rejects_new_logs_while_remaining_owner_keeps_acces
             .expect("serve log websocket");
     }));
     let url = format!("ws://{address}/logs/ws");
-    let mut revoked = open_log_stream(&url, &accounts[1].access_token).await;
     let mut remaining = open_log_stream(&url, &accounts[0].access_token).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), remaining.next())
+            .await
+            .is_err(),
+        "an idle log stream must not generate logs from its own access checks"
+    );
+    let mut revoked = open_log_stream(&url, &accounts[1].access_token).await;
 
     store
         .revoke_host_owner(second_id)

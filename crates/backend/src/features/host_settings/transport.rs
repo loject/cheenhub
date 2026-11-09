@@ -187,7 +187,8 @@ async fn handle_logs_socket(state: AppState, mut socket: WebSocket) {
 }
 
 async fn verify_log_access(state: &AppState, user_id: Uuid, socket: &mut WebSocket) -> bool {
-    match application::require_host_owner_rights(state, user_id).await {
+    let access = application::require_host_owner_rights(state, user_id);
+    match crate::telemetry::without_host_log_capture(access).await {
         Ok(()) => true,
         Err(error) => {
             tracing::warn!(%user_id, "closing host log stream after access check failed");
