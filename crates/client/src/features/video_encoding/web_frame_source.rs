@@ -159,8 +159,14 @@ impl VideoElementSourceState {
             "setAttribute",
             &JsValue::from_str("style"),
             &JsValue::from_str(
-                "position:fixed;top:12px;right:12px;width:320px;max-width:35vw;z-index:2147483647;border:2px solid #38bdf8;border-radius:8px;background:#000;pointer-events:none;",
+                "position:fixed;top:12px;right:12px;width:320px;max-width:35vw;opacity:0;pointer-events:none;",
             ),
+        )?;
+        call_method2(
+            &video,
+            "setAttribute",
+            &JsValue::from_str("aria-hidden"),
+            &JsValue::from_str("true"),
         )?;
         if let Ok(body) = Reflect::get(document.as_ref(), &JsValue::from_str("body"))
             && !body.is_null()
