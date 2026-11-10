@@ -1,9 +1,7 @@
 //! Проверки хранения голосового присутствия.
 
 use cheenhub_contracts::media::MediaDatagramKind;
-use cheenhub_contracts::video_presets::{
-    BASE_CAMERA_VIDEO_PRESETS, BASE_SCREEN_SHARE_VIDEO_PRESETS,
-};
+use cheenhub_contracts::video_presets::{CAMERA_BITRATE_LIMIT, SCREEN_SHARE_BITRATE_LIMIT};
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
@@ -258,7 +256,7 @@ async fn disconnect_removes_voice_connection_and_video_activity() {
     let camera = key_frame_datagram(MediaDatagramKind::CameraFrame, room_id);
     assert_eq!(
         store
-            .inspect_video_datagram(session_id, &camera, BASE_CAMERA_VIDEO_PRESETS)
+            .inspect_video_datagram(session_id, &camera, CAMERA_BITRATE_LIMIT)
             .await,
         VideoAdmission::Forward
     );
@@ -266,7 +264,7 @@ async fn disconnect_removes_voice_connection_and_video_activity() {
     screen.sequence = 2;
     assert_eq!(
         store
-            .inspect_video_datagram(session_id, &screen, BASE_SCREEN_SHARE_VIDEO_PRESETS)
+            .inspect_video_datagram(session_id, &screen, SCREEN_SHARE_BITRATE_LIMIT)
             .await,
         VideoAdmission::Forward
     );
@@ -345,7 +343,7 @@ async fn replacing_presence_clears_video_sources_of_previous_session() {
         .inspect_video_datagram(
             old_session,
             &key_frame_datagram(MediaDatagramKind::CameraFrame, room_id),
-            BASE_CAMERA_VIDEO_PRESETS,
+            CAMERA_BITRATE_LIMIT,
         )
         .await;
     assert_eq!(store.active_video_source_count().await, 1);

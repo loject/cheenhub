@@ -3,8 +3,9 @@
 use std::fmt;
 use std::rc::Rc;
 
+use crate::features::video_encoding::VideoEncoderConfig;
 use cheenhub_contracts::video_presets::{
-    BASE_SCREEN_SHARE_VIDEO_PRESETS, VideoPresetId, VideoPresetSpec, VideoStreamSource,
+    SCREEN_SHARE_BITRATE_LIMIT, VideoEncodingSettings, VideoStreamSource,
 };
 use futures_util::future::LocalBoxFuture;
 
@@ -72,8 +73,10 @@ pub(crate) enum ScreenShareCodec {
 pub(crate) struct ScreenShareConfig {
     /// Preferred encoded codec.
     pub(crate) codec: ScreenShareCodec,
-    /// Пресеты, разрешённые текущими возможностями пользователя.
-    pub(crate) allowed_presets: Vec<VideoPresetId>,
+    /// Максимальный тарифный битрейт в битах в секунду.
+    pub(crate) max_bitrate_bps: u32,
+    /// Целевой битрейт для автоматического выбора размеров источника.
+    pub(crate) automatic_bitrate_bps: u32,
 }
 
 /// Точное целевое качество, выбранное до запуска захвата.
@@ -85,6 +88,8 @@ pub(crate) struct ScreenShareTargetQuality {
     pub(crate) height: u32,
     /// Максимальная целевая частота кадров.
     pub(crate) max_fps: u32,
+    /// Целевой битрейт кодировщика в битах в секунду.
+    pub(crate) bitrate_bps: u32,
 }
 
 /// Источник, который должен использовать backend захвата.
@@ -114,53 +119,36 @@ pub(crate) struct ScreenShareStartRequest {
 }
 
 impl ScreenShareConfig {
-    /// Возвращает разрешённый пресет для точного качества, выбранного отправителем.
+    /// Проверяет качество, выбранное отправителем, и возвращает параметры кодирования.
     ///
-    /// Разрешение должно соответствовать одному из разрешённых профилей, а FPS
-    /// может быть ниже его максимума. Bitrate остаётся в рамках этого профиля.
+    /// Положительные размеры и частота кадров не ограничиваются тарифным пресетом.
+    /// Битрейт проверяется относительно действующего ограничения демонстрации.
     pub(crate) fn preset_for_target(
         &self,
         target: &ScreenShareTargetQuality,
-    ) -> Option<VideoPresetSpec> {
-        self.allowed_presets
-            .iter()
-            .copied()
-            .map(VideoPresetId::spec)
-            .find(|preset| {
-                preset.source == VideoStreamSource::ScreenShare
-                    && preset.width == target.width
-                    && preset.height == target.height
-                    && target.max_fps > 0
-                    && target.max_fps <= preset.max_fps
-            })
-            .map(|preset| VideoPresetSpec {
-                max_fps: target.max_fps,
-                ..preset
-            })
+    ) -> Option<VideoEncodingSettings> {
+        if target.width == 0 || target.height == 0 || target.max_fps == 0 || target.bitrate_bps == 0
+        {
+            return None;
+        }
+        (target.bitrate_bps <= self.max_bitrate_bps).then_some(VideoEncodingSettings {
+            source: VideoStreamSource::ScreenShare,
+            width: target.width,
+            height: target.height,
+            max_fps: target.max_fps,
+            bitrate_bps: target.bitrate_bps,
+        })
     }
 
-    /// Выбирает лучший разрешённый пресет для размеров источника.
-    pub(crate) fn preset_for_capture(&self, width: u32, height: u32) -> VideoPresetSpec {
-        self.allowed_presets
-            .iter()
-            .copied()
-            .filter(|preset| preset.spec().source == VideoStreamSource::ScreenShare)
-            .filter(|preset| {
-                let spec = preset.spec();
-                spec.width <= width && spec.height <= height
-            })
-            .max_by_key(|preset| {
-                let spec = preset.spec();
-                u64::from(spec.width) * u64::from(spec.height)
-            })
-            .or_else(|| {
-                self.allowed_presets
-                    .iter()
-                    .copied()
-                    .find(|preset| preset.spec().source == VideoStreamSource::ScreenShare)
-            })
-            .unwrap_or(VideoPresetId::Screen720p30)
-            .spec()
+    /// Создаёт автоматические настройки для размеров источника.
+    pub(crate) fn preset_for_capture(&self, width: u32, height: u32) -> VideoEncodingSettings {
+        VideoEncodingSettings {
+            source: VideoStreamSource::ScreenShare,
+            width: width.max(1),
+            height: height.max(1),
+            max_fps: 30,
+            bitrate_bps: self.automatic_bitrate_bps.min(self.max_bitrate_bps),
+        }
     }
 }
 
@@ -168,25 +156,33 @@ impl Default for ScreenShareConfig {
     fn default() -> Self {
         Self {
             codec: ScreenShareCodec::Vp9,
-            allowed_presets: BASE_SCREEN_SHARE_VIDEO_PRESETS.to_vec(),
+            max_bitrate_bps: SCREEN_SHARE_BITRATE_LIMIT.max_bitrate_bps,
+            automatic_bitrate_bps: SCREEN_SHARE_BITRATE_LIMIT.max_bitrate_bps,
         }
     }
 }
 
 /// Вписывает источник в размеры выбранного пресета, сохраняя его пропорции.
 ///
-/// Изображение не увеличивается; результат округляется до ближайшего пикселя.
+/// Изображение вписывается в выбранные размеры с сохранением пропорций.
 /// Нулевые размеры источника заменяются на один пиксель. Частота кадров и bitrate
 /// остаются параметрами выбранного пресета.
 pub(super) fn fit_capture_preset(
     width: u32,
     height: u32,
-    preset: VideoPresetSpec,
-) -> VideoPresetSpec {
+    preset: VideoEncodingSettings,
+) -> VideoEncodingSettings {
+    if width == 0 || height == 0 {
+        return VideoEncodingSettings {
+            width: 1,
+            height: 1,
+            ..preset
+        };
+    }
     let width = u64::from(width.max(1));
     let height = u64::from(height.max(1));
-    let max_width = width.min(u64::from(preset.width));
-    let max_height = height.min(u64::from(preset.height));
+    let max_width = u64::from(preset.width);
+    let max_height = u64::from(preset.height);
     let (encoded_width, encoded_height) = if max_width * height <= max_height * width {
         (
             max_width,
@@ -202,11 +198,21 @@ pub(super) fn fit_capture_preset(
             max_height,
         )
     };
-    VideoPresetSpec {
+    VideoEncodingSettings {
         width: encoded_width as u32,
         height: encoded_height as u32,
         ..preset
     }
+}
+
+/// Создаёт конфигурацию VP9 из проверенных параметров захвата.
+pub(super) fn encoder_config(settings: VideoEncodingSettings) -> VideoEncoderConfig {
+    VideoEncoderConfig::vp9(
+        settings.width,
+        settings.height,
+        settings.max_fps,
+        settings.bitrate_bps,
+    )
 }
 
 #[cfg(test)]

@@ -1,9 +1,8 @@
 use super::{
-    AssessmentTone, BITRATE_MAX_SUBSCRIBED, BITRATE_MIN, MockFrameRate, MockResolution, aria_flag,
-    assess, bitrate_fraction, change_for, format_bitrate, is_supported, optimize, preset_index,
-    supported_pair,
+    AssessmentTone, BITRATE_MAX_SUBSCRIBED, BITRATE_MIN, ScreenShareFrameRate,
+    ScreenShareResolution, aria_flag, assess, bitrate_fraction, change_for, format_bitrate,
+    optimize, preset_index,
 };
-use crate::features::screen_share::source_picker::{ScreenShareFrameRate, ScreenShareResolution};
 
 #[test]
 fn bitrate_is_printed_with_comma_and_without_trailing_zeros() {
@@ -30,73 +29,31 @@ fn aria_flag_maps_bool_to_string_literal() {
 }
 
 #[test]
-fn preset_index_matches_exact_mock_pairs_only() {
+fn preset_index_matches_exact_quality_pairs() {
     assert_eq!(
-        preset_index(MockResolution::P720, MockFrameRate::Fps30),
+        preset_index(ScreenShareResolution::P720, ScreenShareFrameRate::Fps30),
         Some(0)
     );
     assert_eq!(
-        preset_index(MockResolution::P1080, MockFrameRate::Fps15),
+        preset_index(ScreenShareResolution::P1080, ScreenShareFrameRate::Fps15),
         Some(1)
     );
     assert_eq!(
-        preset_index(MockResolution::P720, MockFrameRate::Fps15),
+        preset_index(ScreenShareResolution::P720, ScreenShareFrameRate::Fps15),
         None
     );
     assert_eq!(
-        preset_index(MockResolution::Uhd4K, MockFrameRate::Fps60),
-        None
+        preset_index(ScreenShareResolution::Uhd4K, ScreenShareFrameRate::Fps60),
+        Some(2)
     );
 }
 
 #[test]
-fn supported_pair_keeps_720p_and_caps_high_resolutions() {
-    assert_eq!(
-        supported_pair(MockResolution::P720, MockFrameRate::Fps15),
-        (ScreenShareResolution::P720, ScreenShareFrameRate::Fps15)
-    );
-    assert_eq!(
-        supported_pair(MockResolution::P720, MockFrameRate::Fps24),
-        (ScreenShareResolution::P720, ScreenShareFrameRate::Fps30)
-    );
-    assert_eq!(
-        supported_pair(MockResolution::P720, MockFrameRate::Fps60),
-        (ScreenShareResolution::P720, ScreenShareFrameRate::Fps30)
-    );
-    assert_eq!(
-        supported_pair(MockResolution::P1080, MockFrameRate::Fps15),
-        (ScreenShareResolution::P1080, ScreenShareFrameRate::Fps15)
-    );
-    assert_eq!(
-        supported_pair(MockResolution::P1080, MockFrameRate::Fps60),
-        (ScreenShareResolution::P1080, ScreenShareFrameRate::Fps15)
-    );
-    assert_eq!(
-        supported_pair(MockResolution::Uhd4K, MockFrameRate::Fps60),
-        (ScreenShareResolution::P1080, ScreenShareFrameRate::Fps15)
-    );
-}
+fn change_for_preserves_selected_quality() {
+    let change = change_for(ScreenShareResolution::Uhd4K, ScreenShareFrameRate::Fps60);
 
-#[test]
-fn is_supported_accepts_only_current_model_pairs() {
-    assert!(is_supported(MockResolution::P720, MockFrameRate::Fps15));
-    assert!(is_supported(MockResolution::P720, MockFrameRate::Fps30));
-    assert!(is_supported(MockResolution::P1080, MockFrameRate::Fps15));
-    assert!(!is_supported(MockResolution::P720, MockFrameRate::Fps24));
-    assert!(!is_supported(MockResolution::P720, MockFrameRate::Fps60));
-    assert!(!is_supported(MockResolution::P1080, MockFrameRate::Fps30));
-    assert!(!is_supported(MockResolution::P1440, MockFrameRate::Fps30));
-    assert!(!is_supported(MockResolution::Uhd4K, MockFrameRate::Fps60));
-}
-
-#[test]
-fn change_for_reports_mock_choice_and_supported_launch_pair() {
-    let change = change_for(MockResolution::Uhd4K, MockFrameRate::Fps60);
-
-    assert_eq!(change.mock_resolution, MockResolution::Uhd4K);
-    assert_eq!(change.mock_frame_rate, MockFrameRate::Fps60);
-    assert_eq!(change.resolution, ScreenShareResolution::P1080);
-    assert_eq!(change.frame_rate, ScreenShareFrameRate::Fps15);
+    assert_eq!(change.resolution, ScreenShareResolution::Uhd4K);
+    assert_eq!(change.frame_rate, ScreenShareFrameRate::Fps60);
 }
 
 #[test]
@@ -110,22 +67,22 @@ fn optimize_returns_the_sharpest_supported_pair() {
 #[test]
 fn assess_marks_supported_combinations_as_good() {
     for (resolution, frame_rate) in [
-        (MockResolution::P1080, MockFrameRate::Fps15),
-        (MockResolution::P720, MockFrameRate::Fps30),
-        (MockResolution::P720, MockFrameRate::Fps15),
+        (ScreenShareResolution::P1080, ScreenShareFrameRate::Fps15),
+        (ScreenShareResolution::P720, ScreenShareFrameRate::Fps30),
+        (ScreenShareResolution::P720, ScreenShareFrameRate::Fps15),
     ] {
         assert_eq!(assess(resolution, frame_rate).tone, AssessmentTone::Good);
     }
 }
 
 #[test]
-fn assess_marks_unsupported_combinations_as_info() {
+fn assess_marks_high_motion_and_resolution_as_info() {
     for (resolution, frame_rate) in [
-        (MockResolution::P720, MockFrameRate::Fps24),
-        (MockResolution::P720, MockFrameRate::Fps60),
-        (MockResolution::P1080, MockFrameRate::Fps30),
-        (MockResolution::P1440, MockFrameRate::Fps60),
-        (MockResolution::Uhd4K, MockFrameRate::Fps60),
+        (ScreenShareResolution::P720, ScreenShareFrameRate::Fps24),
+        (ScreenShareResolution::P720, ScreenShareFrameRate::Fps60),
+        (ScreenShareResolution::P1080, ScreenShareFrameRate::Fps30),
+        (ScreenShareResolution::P1440, ScreenShareFrameRate::Fps60),
+        (ScreenShareResolution::Uhd4K, ScreenShareFrameRate::Fps60),
     ] {
         assert_eq!(assess(resolution, frame_rate).tone, AssessmentTone::Info);
     }

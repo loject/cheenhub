@@ -21,6 +21,7 @@ pub(crate) fn ScreenShareProvider(children: Element) -> Element {
     let generation = use_signal(|| 0);
     let audio_state = use_signal(super::backend::ScreenShareAudioState::default);
     let picker_open = use_signal(|| false);
+    let last_selection = use_signal(|| None);
     let toast = use_context::<ToastHandle>();
     let backend = default_backend();
     let handle = ScreenShareHandle {
@@ -32,6 +33,7 @@ pub(crate) fn ScreenShareProvider(children: Element) -> Element {
         backend,
         toast,
         picker_open,
+        last_selection,
         pending_on_frame: Rc::new(RefCell::new(None)),
     };
     use_context_provider(move || handle.clone());

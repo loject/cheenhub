@@ -48,3 +48,15 @@ fn runtime_error_always_enters_error_status() {
         ScreenShareStatus::Error("WGC failure".to_owned())
     );
 }
+
+#[test]
+fn unsupported_encoder_configuration_is_reported_as_start_error() {
+    let error = ScreenShareError::new("Кодировщик не поддерживает выбранное качество");
+
+    let status = super::status_from_error(error);
+
+    assert_eq!(
+        status,
+        ScreenShareStatus::Error("Кодировщик не поддерживает выбранное качество".to_owned())
+    );
+}

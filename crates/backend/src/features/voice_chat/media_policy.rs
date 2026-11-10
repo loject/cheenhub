@@ -7,7 +7,7 @@ use cheenhub_contracts::{
         MEDIA_DATAGRAM_FLAG_FRAGMENTED, MEDIA_DATAGRAM_FLAG_KEY_FRAME, MediaDatagram,
         MediaDatagramKind,
     },
-    video_presets::{VideoPresetId, VideoStreamSource},
+    video_presets::{VideoBitrateLimit, VideoStreamSource},
 };
 use uuid::Uuid;
 
@@ -53,16 +53,16 @@ impl VideoPublicationTracker {
         &mut self,
         session_id: Uuid,
         datagram: &MediaDatagram,
-        allowed_presets: &[VideoPresetId],
+        bitrate_limit: VideoBitrateLimit,
     ) -> VideoAdmission {
-        self.inspect_at(session_id, datagram, allowed_presets, Instant::now())
+        self.inspect_at(session_id, datagram, bitrate_limit, Instant::now())
     }
 
     fn inspect_at(
         &mut self,
         session_id: Uuid,
         datagram: &MediaDatagram,
-        allowed_presets: &[VideoPresetId],
+        bitrate_limit: VideoBitrateLimit,
         now: Instant,
     ) -> VideoAdmission {
         self.inspect_frame_at(
@@ -74,7 +74,7 @@ impl VideoPublicationTracker {
                 room_id: datagram.room_id,
                 payload: &datagram.payload,
             },
-            allowed_presets,
+            bitrate_limit,
             now,
         )
     }
@@ -84,7 +84,7 @@ impl VideoPublicationTracker {
         session_id: Uuid,
         header: &MediaDatagramHeader,
         payload: &[u8],
-        allowed_presets: &[VideoPresetId],
+        bitrate_limit: VideoBitrateLimit,
         now: Instant,
     ) -> VideoAdmission {
         self.inspect_frame_at(
@@ -96,7 +96,7 @@ impl VideoPublicationTracker {
                 room_id: header.room_id,
                 payload,
             },
-            allowed_presets,
+            bitrate_limit,
             now,
         )
     }
@@ -104,7 +104,7 @@ impl VideoPublicationTracker {
     fn inspect_frame_at(
         &mut self,
         frame: VideoFrameView<'_>,
-        allowed_presets: &[VideoPresetId],
+        bitrate_limit: VideoBitrateLimit,
         now: Instant,
     ) -> VideoAdmission {
         let key = VideoPublicationKey {
@@ -168,7 +168,7 @@ impl VideoPublicationTracker {
             is_key_frame,
             fragment.vp9_payload,
             fragment.frame_bytes,
-            allowed_presets,
+            bitrate_limit,
             now,
         );
         publication.remember(frame.sequence, decision);
@@ -238,12 +238,12 @@ impl InMemoryVoicePresenceStore {
         &self,
         session_id: Uuid,
         datagram: &MediaDatagram,
-        allowed_presets: &[VideoPresetId],
+        bitrate_limit: VideoBitrateLimit,
     ) -> VideoAdmission {
         self.video_publications
             .lock()
             .await
-            .inspect(session_id, datagram, allowed_presets)
+            .inspect(session_id, datagram, bitrate_limit)
     }
 
     /// Применяет video policy к payload из исходного WebTransport-буфера.
@@ -252,13 +252,13 @@ impl InMemoryVoicePresenceStore {
         session_id: Uuid,
         header: &MediaDatagramHeader,
         payload: &[u8],
-        allowed_presets: &[VideoPresetId],
+        bitrate_limit: VideoBitrateLimit,
     ) -> VideoAdmission {
         self.video_publications.lock().await.inspect_header_at(
             session_id,
             header,
             payload,
-            allowed_presets,
+            bitrate_limit,
             Instant::now(),
         )
     }
@@ -322,16 +322,15 @@ impl VideoPublication {
         is_key_frame: bool,
         vp9_payload: &[u8],
         frame_bytes: usize,
-        allowed_presets: &[VideoPresetId],
+        bitrate_limit: VideoBitrateLimit,
         now: Instant,
     ) -> VideoAdmission {
-        let Some(max_bitrate_bps) = allowed_presets
-            .iter()
-            .map(|preset| preset.spec())
-            .filter(|spec| Some(spec.source) == source_for_kind(self.key.kind))
-            .map(|spec| spec.bitrate_bps)
-            .max()
-        else {
+        if Some(bitrate_limit.source) != source_for_kind(self.key.kind) {
+            self.has_key_frame = false;
+            return VideoAdmission::Drop(VideoDropReason::SourceNotAllowed);
+        }
+        let max_bitrate_bps = bitrate_limit.max_bitrate_bps;
+        if max_bitrate_bps == 0 {
             self.has_key_frame = false;
             return VideoAdmission::Drop(VideoDropReason::SourceNotAllowed);
         };

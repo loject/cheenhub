@@ -1,4 +1,4 @@
-//! Общие контракты пресетов исходящего видео.
+//! Общие ограничения битрейта и параметры кодирования исходящего видео.
 
 use serde::{Deserialize, Serialize};
 
@@ -12,24 +12,30 @@ pub enum VideoStreamSource {
     ScreenShare,
 }
 
-/// Стабильный идентификатор пресета исходящего видео.
-///
-/// Идентификатор отделён от параметров, чтобы тариф или подписка могли выдавать
-/// пользователю дополнительный набор разрешённых пресетов.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum VideoPresetId {
-    /// Камера 1280x720 с частотой до 24 кадров в секунду.
-    Camera720p24,
-    /// Демонстрация экрана в пределах 1280x720 с частотой до 30 кадров в секунду.
-    Screen720p30,
-    /// Демонстрация экрана в пределах 1920x1080 с частотой до 15 кадров в секунду.
-    Screen1080p15,
+/// Тарифный предел видеопотока, независимый от размеров и частоты кадров.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VideoBitrateLimit {
+    /// Источник, к которому применяется ограничение.
+    pub source: VideoStreamSource,
+    /// Максимальный средний битрейт в битах в секунду.
+    pub max_bitrate_bps: u32,
 }
 
-/// Числовые параметры пресета исходящего видео.
+/// Бесплатный предел исходящего видео камеры.
+pub const CAMERA_BITRATE_LIMIT: VideoBitrateLimit = VideoBitrateLimit {
+    source: VideoStreamSource::Camera,
+    max_bitrate_bps: 700_000,
+};
+
+/// Бесплатный предел исходящей демонстрации экрана.
+pub const SCREEN_SHARE_BITRATE_LIMIT: VideoBitrateLimit = VideoBitrateLimit {
+    source: VideoStreamSource::ScreenShare,
+    max_bitrate_bps: 1_500_000,
+};
+
+/// Настройки кодирования исходящего видео.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VideoPresetSpec {
+pub struct VideoEncodingSettings {
     /// Источник видеопотока.
     pub source: VideoStreamSource,
     /// Ширина кадра камеры или максимальная ширина кадра демонстрации экрана.
@@ -41,42 +47,6 @@ pub struct VideoPresetSpec {
     /// Целевой bitrate кодировщика в битах в секунду.
     pub bitrate_bps: u32,
 }
-
-impl VideoPresetId {
-    /// Возвращает числовые параметры пресета.
-    pub const fn spec(self) -> VideoPresetSpec {
-        match self {
-            Self::Camera720p24 => VideoPresetSpec {
-                source: VideoStreamSource::Camera,
-                width: 1280,
-                height: 720,
-                max_fps: 24,
-                bitrate_bps: 700_000,
-            },
-            Self::Screen720p30 => VideoPresetSpec {
-                source: VideoStreamSource::ScreenShare,
-                width: 1280,
-                height: 720,
-                max_fps: 30,
-                bitrate_bps: 1_500_000,
-            },
-            Self::Screen1080p15 => VideoPresetSpec {
-                source: VideoStreamSource::ScreenShare,
-                width: 1920,
-                height: 1080,
-                max_fps: 15,
-                bitrate_bps: 1_500_000,
-            },
-        }
-    }
-}
-
-/// Базовые пресеты камеры без расширений подписки.
-pub const BASE_CAMERA_VIDEO_PRESETS: &[VideoPresetId] = &[VideoPresetId::Camera720p24];
-
-/// Базовые пресеты демонстрации экрана без расширений подписки.
-pub const BASE_SCREEN_SHARE_VIDEO_PRESETS: &[VideoPresetId] =
-    &[VideoPresetId::Screen720p30, VideoPresetId::Screen1080p15];
 
 #[cfg(test)]
 mod tests;

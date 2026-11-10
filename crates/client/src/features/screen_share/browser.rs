@@ -4,7 +4,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use cheenhub_contracts::video_presets::VideoPresetSpec;
+use cheenhub_contracts::video_presets::VideoEncodingSettings;
 use dioxus::prelude::{debug, warn};
 use futures_util::FutureExt;
 use futures_util::future::LocalBoxFuture;
@@ -24,7 +24,8 @@ use crate::features::video_encoding::{
 use super::backend::{
     EncodedScreenShareFrame, ScreenShareBackend, ScreenShareCallbacks, ScreenShareCaptureSource,
     ScreenShareCodec, ScreenShareConfig, ScreenShareError, ScreenShareErrorKind,
-    ScreenShareSession, ScreenShareStartRequest, ScreenShareTargetQuality, fit_capture_preset,
+    ScreenShareSession, ScreenShareStartRequest, ScreenShareTargetQuality, encoder_config,
+    fit_capture_preset,
 };
 use super::browser_capture::{
     first_video_track, log_selected_video_track, request_screen_stream, stop_screen_stream,
@@ -161,7 +162,7 @@ async fn start_browser_session(
     };
 
     let mut pending_capture = PendingBrowserCapture {
-        stream: request_screen_stream().await?,
+        stream: request_screen_stream(selected_preset).await?,
         transferred: false,
     };
     let track = first_video_track(&pending_capture.stream)?;
@@ -204,12 +205,7 @@ async fn start_browser_session(
         encoded_height = preset.height,
         "browser screen sharing uses first video frame dimensions within selected quality"
     );
-    let encoder_config = VideoEncoderConfig::vp9(
-        preset.width,
-        preset.height,
-        preset.max_fps,
-        preset.bitrate_bps,
-    );
+    let encoder_config = encoder_config(preset);
     if let Err(error) = ensure_video_encoder_available(&track, encoder_config.clone()).await {
         first_frame.close();
         return Err(error);
@@ -346,7 +342,7 @@ fn spawn_video_reader(
     closed: Rc<Cell<bool>>,
     callbacks: ScreenShareCallbacks,
     config: ScreenShareConfig,
-    selected_preset: Option<VideoPresetSpec>,
+    selected_preset: Option<VideoEncodingSettings>,
     mut encoder_config: VideoEncoderConfig,
 ) {
     spawn_local(async move {
@@ -393,12 +389,7 @@ fn spawn_video_reader(
                 selected_preset
                     .unwrap_or_else(|| config.preset_for_capture(source_width, source_height)),
             );
-            let next_config = VideoEncoderConfig::vp9(
-                preset.width,
-                preset.height,
-                preset.max_fps,
-                preset.bitrate_bps,
-            );
+            let next_config = super::backend::encoder_config(preset);
             if next_config != encoder_config {
                 debug!(
                     source_width,

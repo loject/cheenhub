@@ -1,28 +1,10 @@
 //! Витрина качества демонстрации экрана.
 //!
-//! Панель позволяет выбрать произвольную комбинацию разрешения и частоты кадров,
-//! включая 1440p, 4K и 60 FPS. Реальная модель выбора пока поддерживает только
-//! 720p/1080p и 15/30 FPS, поэтому панель показывает выбранную комбинацию, а
-//! запуск получает ближайшую поддерживаемую пару. Когда модель расширят,
-//! изменится только сопоставление в этом модуле.
+//! Подписи и варианты выбора разрешения, частоты кадров и битрейта.
 
 use super::super::model::{ScreenShareFrameRate, ScreenShareResolution};
 
-/// Разрешение в панели качества.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(super) enum MockResolution {
-    /// 1280×720.
-    #[default]
-    P720,
-    /// 1920×1080.
-    P1080,
-    /// 2560×1440.
-    P1440,
-    /// 3840×2160.
-    Uhd4K,
-}
-
-impl MockResolution {
+impl ScreenShareResolution {
     /// Все варианты в порядке возрастания.
     pub(super) const ALL: [Self; 4] = [Self::P720, Self::P1080, Self::P1440, Self::Uhd4K];
 
@@ -66,34 +48,9 @@ impl MockResolution {
             Self::Uhd4K => "Ultra HD",
         }
     }
-
-    /// Возвращает поддерживаемое моделью разрешение для запуска.
-    ///
-    /// 1440p и 4K пока не выражаются моделью выбора, поэтому запуск получает
-    /// максимальное доступное разрешение — 1080p.
-    pub(super) const fn supported(self) -> ScreenShareResolution {
-        match self {
-            Self::P720 => ScreenShareResolution::P720,
-            Self::P1080 | Self::P1440 | Self::Uhd4K => ScreenShareResolution::P1080,
-        }
-    }
 }
 
-/// Частота кадров в панели качества.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(super) enum MockFrameRate {
-    /// 15 кадров в секунду.
-    Fps15,
-    /// 24 кадра в секунду.
-    Fps24,
-    /// 30 кадров в секунду.
-    #[default]
-    Fps30,
-    /// 60 кадров в секунду.
-    Fps60,
-}
-
-impl MockFrameRate {
+impl ScreenShareFrameRate {
     /// Все варианты в порядке возрастания.
     pub(super) const ALL: [Self; 4] = [Self::Fps15, Self::Fps24, Self::Fps30, Self::Fps60];
 
@@ -137,40 +94,9 @@ impl MockFrameRate {
             Self::Fps60 => "Максимум",
         }
     }
-
-    /// Возвращает поддерживаемую моделью частоту для выбранного разрешения.
-    ///
-    /// 1080p и выше ограничены 15 кадрами в секунду, а 720p — 30 кадрами.
-    pub(super) const fn supported_for(self, resolution: MockResolution) -> ScreenShareFrameRate {
-        match (resolution, self) {
-            (MockResolution::P720, Self::Fps15) => ScreenShareFrameRate::Fps15,
-            (MockResolution::P720, Self::Fps24 | Self::Fps30 | Self::Fps60) => {
-                ScreenShareFrameRate::Fps30
-            }
-            (_, _) => ScreenShareFrameRate::Fps15,
-        }
-    }
 }
 
 /// Возвращает поддерживаемую моделью пару для выбранной комбинации.
-pub(super) fn supported_pair(
-    resolution: MockResolution,
-    frame_rate: MockFrameRate,
-) -> (ScreenShareResolution, ScreenShareFrameRate) {
-    (resolution.supported(), frame_rate.supported_for(resolution))
-}
-
-/// Проверяет, что комбинация запускается без упрощения.
-pub(super) fn is_supported(resolution: MockResolution, frame_rate: MockFrameRate) -> bool {
-    matches!(
-        (resolution, frame_rate),
-        (
-            MockResolution::P720,
-            MockFrameRate::Fps15 | MockFrameRate::Fps30
-        ) | (MockResolution::P1080, MockFrameRate::Fps15)
-    )
-}
-
 /// Уровень качества в панели пресетов.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct QualityPreset {
@@ -181,37 +107,35 @@ pub(super) struct QualityPreset {
     /// Строка с частотой кадров и битрейтом.
     pub(super) meta: &'static str,
     /// Параметры пресета, если его можно применить.
-    pub(super) apply: Option<(MockResolution, MockFrameRate)>,
+    pub(super) apply: Option<(ScreenShareResolution, ScreenShareFrameRate)>,
     /// Признак тарифного ограничения.
     pub(super) requires_subscription: bool,
 }
 
 /// Пресеты, которые показывает панель качества.
 ///
-/// Первые два уровня применяют реальные параметры демонстрации. Третий уровень
-/// оставлен витриной тарифа: у него нет параметров, поэтому он не влияет на
-/// подтверждаемый выбор.
+/// Карточки меняют разрешение и частоту кадров, сохраняя выбранный битрейт.
 pub(super) static QUALITY_PRESETS: [QualityPreset; 3] = [
     QualityPreset {
         name: "Стандартное",
         headline: "720p",
-        meta: "30 к/с · 1 Мбит/с",
-        apply: Some((MockResolution::P720, MockFrameRate::Fps30)),
+        meta: "30 к/с",
+        apply: Some((ScreenShareResolution::P720, ScreenShareFrameRate::Fps30)),
         requires_subscription: false,
     },
     QualityPreset {
         name: "Улучшенное",
         headline: "1080p",
-        meta: "15 к/с · 3 Мбит/с",
-        apply: Some((MockResolution::P1080, MockFrameRate::Fps15)),
+        meta: "15 к/с",
+        apply: Some((ScreenShareResolution::P1080, ScreenShareFrameRate::Fps15)),
         requires_subscription: false,
     },
     QualityPreset {
         name: "Высокое",
         headline: "До 4K",
-        meta: "60 к/с · 5 Мбит/с",
-        apply: None,
-        requires_subscription: true,
+        meta: "60 к/с",
+        apply: Some((ScreenShareResolution::Uhd4K, ScreenShareFrameRate::Fps60)),
+        requires_subscription: false,
     },
 ];
 
@@ -219,7 +143,9 @@ pub(super) static QUALITY_PRESETS: [QualityPreset; 3] = [
 pub(super) const BITRATE_MIN: f64 = 0.25;
 
 /// Максимальный битрейт бесплатного доступа в Мбит/с.
-pub(super) const BITRATE_MAX_FREE: f64 = 1.0;
+pub(super) const BITRATE_MAX_FREE: f64 =
+    cheenhub_contracts::video_presets::SCREEN_SHARE_BITRATE_LIMIT.max_bitrate_bps as f64
+        / 1_000_000.0;
 
 /// Максимальный битрейт расширенного тарифа в Мбит/с.
 ///
@@ -233,25 +159,18 @@ pub(super) const BITRATE_TICKS: [f64; 6] = [0.25, 1.0, 2.0, 3.0, 4.0, 5.0];
 /// Новые параметры качества, выбранные в панели.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct QualityChange {
-    /// Разрешение, которое видит пользователь.
-    pub(super) mock_resolution: MockResolution,
-    /// Частота кадров, которую видит пользователь.
-    pub(super) mock_frame_rate: MockFrameRate,
     /// Разрешение, которое получит запуск.
     pub(super) resolution: ScreenShareResolution,
     /// Частота кадров, которую получит запуск.
     pub(super) frame_rate: ScreenShareFrameRate,
 }
 
-/// Формирует изменение качества с ближайшей поддерживаемой парой.
+/// Формирует изменение качества без преобразования параметров.
 pub(super) fn change_for(
-    mock_resolution: MockResolution,
-    mock_frame_rate: MockFrameRate,
+    resolution: ScreenShareResolution,
+    frame_rate: ScreenShareFrameRate,
 ) -> QualityChange {
-    let (resolution, frame_rate) = supported_pair(mock_resolution, mock_frame_rate);
     QualityChange {
-        mock_resolution,
-        mock_frame_rate,
         resolution,
         frame_rate,
     }
@@ -259,14 +178,17 @@ pub(super) fn change_for(
 
 /// Подбирает максимальное поддерживаемое качество с запасом по частоте кадров.
 pub(super) fn optimize() -> QualityChange {
-    change_for(MockResolution::P1080, MockFrameRate::Fps15)
+    change_for(ScreenShareResolution::P1080, ScreenShareFrameRate::Fps15)
 }
 
 /// Возвращает индекс пресета, совпадающего с текущей комбинацией.
 ///
 /// `None` означает, что пользователь собрал собственные настройки и ни одна
 /// карточка пресета не должна выглядеть выбранной.
-pub(super) fn preset_index(resolution: MockResolution, frame_rate: MockFrameRate) -> Option<usize> {
+pub(super) fn preset_index(
+    resolution: ScreenShareResolution,
+    frame_rate: ScreenShareFrameRate,
+) -> Option<usize> {
     QUALITY_PRESETS
         .iter()
         .position(|preset| preset.apply == Some((resolution, frame_rate)))
@@ -296,45 +218,50 @@ pub(super) struct QualityAssessment {
 
 /// Оценивает выбранную комбинацию разрешения и частоты кадров.
 ///
-/// Комбинации выше текущих возможностей модели получают информативный тон и
-/// честно сообщают, какое качество будет использовано при запуске.
-pub(super) fn assess(resolution: MockResolution, frame_rate: MockFrameRate) -> QualityAssessment {
+/// Оценка описывает возможные компромиссы выбранной комбинации.
+pub(super) fn assess(
+    resolution: ScreenShareResolution,
+    frame_rate: ScreenShareFrameRate,
+) -> QualityAssessment {
     match (resolution, frame_rate) {
-        (MockResolution::P1080, MockFrameRate::Fps15) => QualityAssessment {
+        (ScreenShareResolution::P1080, ScreenShareFrameRate::Fps15) => QualityAssessment {
             tone: AssessmentTone::Good,
             score: 4,
             title: "Чёткая картинка для текста",
             text: "1080p с 15 кадрами в секунду хорошо передаёт документы, интерфейсы и мелкие детали.",
         },
-        (MockResolution::P720, MockFrameRate::Fps30) => QualityAssessment {
+        (ScreenShareResolution::P720, ScreenShareFrameRate::Fps30) => QualityAssessment {
             tone: AssessmentTone::Good,
             score: 3,
             title: "Плавная картинка для движения",
             text: "720p с 30 кадрами в секунду подходит для видео, игр и динамичных сцен.",
         },
-        (MockResolution::P720, MockFrameRate::Fps15) => QualityAssessment {
+        (ScreenShareResolution::P720, ScreenShareFrameRate::Fps15) => QualityAssessment {
             tone: AssessmentTone::Good,
             score: 2,
             title: "Экономный режим",
             text: "Частота кадров снижена: движение будет менее плавным, зато нагрузка на сеть ниже.",
         },
-        (MockResolution::P720, MockFrameRate::Fps24 | MockFrameRate::Fps60) => QualityAssessment {
+        (
+            ScreenShareResolution::P720,
+            ScreenShareFrameRate::Fps24 | ScreenShareFrameRate::Fps60,
+        ) => QualityAssessment {
             tone: AssessmentTone::Info,
             score: 3,
-            title: "720p работает до 30 кадров в секунду",
-            text: "Сейчас трансляция идёт в 720p с 30 кадрами в секунду.",
+            title: "Выбранная частота кадров",
+            text: "Плавность зависит от источника и возможностей устройства.",
         },
-        (MockResolution::P1080, _) => QualityAssessment {
+        (ScreenShareResolution::P1080, _) => QualityAssessment {
             tone: AssessmentTone::Info,
             score: 3,
-            title: "1080p работает при 15 кадрах в секунду",
-            text: "Сейчас трансляция идёт в 1080p с 15 кадрами в секунду.",
+            title: "Высокая детализация",
+            text: "Качество изображения зависит от доступного битрейта и устройства.",
         },
-        (MockResolution::P1440 | MockResolution::Uhd4K, _) => QualityAssessment {
+        (ScreenShareResolution::P1440 | ScreenShareResolution::Uhd4K, _) => QualityAssessment {
             tone: AssessmentTone::Info,
             score: 2,
-            title: "Высокое разрешение появится позже",
-            text: "Сейчас трансляция идёт в 1080p с 15 кадрами в секунду.",
+            title: "Высокое разрешение",
+            text: "Для мелких деталей может потребоваться более высокий битрейт.",
         },
     }
 }

@@ -2,6 +2,7 @@
 
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
 
+use cheenhub_contracts::video_presets::VideoEncodingSettings;
 use dioxus::prelude::debug;
 use js_sys::{Function, Object, Reflect};
 use wasm_bindgen::JsCast;
@@ -15,7 +16,9 @@ use super::browser_errors::{is_permission_denied_error, js_error_message};
 #[cfg(test)]
 mod tests;
 
-pub(super) async fn request_screen_stream() -> Result<MediaStream, ScreenShareError> {
+pub(super) async fn request_screen_stream(
+    settings: Option<VideoEncodingSettings>,
+) -> Result<MediaStream, ScreenShareError> {
     let window = window().ok_or_else(|| ScreenShareError::new("Окно браузера недоступно."))?;
     let media_devices = window
         .navigator()
@@ -35,7 +38,26 @@ pub(super) async fn request_screen_stream() -> Result<MediaStream, ScreenShareEr
     )
     .map_err(screen_share_error)?;
     constraints.set_audio(&audio);
-    constraints.set_video(&JsValue::TRUE);
+    if let Some(settings) = settings {
+        let video = Object::new();
+        for (name, value) in [
+            ("width", settings.width),
+            ("height", settings.height),
+            ("frameRate", settings.max_fps),
+        ] {
+            let ideal = Object::new();
+            Reflect::set(
+                &ideal,
+                &JsValue::from_str("ideal"),
+                &JsValue::from_f64(f64::from(value)),
+            )
+            .map_err(screen_share_error)?;
+            Reflect::set(&video, &JsValue::from_str(name), &ideal).map_err(screen_share_error)?;
+        }
+        constraints.set_video(&video);
+    } else {
+        constraints.set_video(&JsValue::TRUE);
+    }
     for (name, value) in [
         ("systemAudio", "include"),
         ("windowAudio", "exclude"),

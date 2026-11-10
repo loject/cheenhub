@@ -6,8 +6,7 @@ use super::decor::{AssessmentTone, QualityAssessment};
 
 /// Показывает оценку сочетания разрешения и частоты кадров.
 ///
-/// Для неоптимальных сочетаний доступно действие, подбирающее параметры
-/// автоматически.
+/// Для некоторых сочетаний предлагается явно указанная альтернатива.
 #[component]
 pub(super) fn AssessmentCard(
     assessment: QualityAssessment,
@@ -58,7 +57,7 @@ pub(super) fn AssessmentCard(
                             svg { class: "h-3.5 w-3.5", fill: "none", stroke: "currentColor", stroke_width: "1.8", view_box: "0 0 24 24", "aria-hidden": "true",
                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "m4 20 9-9M14 4l1.5 3L19 8.5 15.5 10 14 13l-1.5-3L9 8.5 12.5 7 14 4Z" }
                             }
-                            "Подобрать оптимальные"
+                            "Выбрать 1080p, 15 кадров/с"
                         }
                     }
                 }

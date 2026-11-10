@@ -2,18 +2,16 @@
 //!
 //! Панель позволяет выбрать произвольную комбинацию разрешения и частоты кадров,
 //! включая 1440p, 4K и 60 FPS. Битрейт по-прежнему ограничен бесплатным тарифом.
-//! Комбинации, которые текущая модель запуска ещё не поддерживает, честно
-//! показывают, какое качество будет использовано на самом деле.
 
 use dioxus::prelude::*;
 
 pub(super) use super::decor::QualityChange;
 
+use super::super::model::{ScreenShareFrameRate, ScreenShareResolution};
 use super::assessment_card::AssessmentCard;
 use super::bitrate_slider::BitrateSlider;
 use super::decor::{
-    BITRATE_MAX_FREE, MockFrameRate, MockResolution, QUALITY_PRESETS, assess, change_for,
-    format_bitrate, optimize, preset_index,
+    BITRATE_MAX_FREE, QUALITY_PRESETS, assess, change_for, format_bitrate, optimize, preset_index,
 };
 use super::preset_grid::PresetGrid;
 use super::segmented::{Segmented, SegmentedOption};
@@ -30,23 +28,24 @@ enum Upsell {
 /// Показывает пресеты, расширенные настройки и итоговую оценку качества.
 #[component]
 pub(super) fn QualityPanel(
-    resolution: MockResolution,
-    frame_rate: MockFrameRate,
+    resolution: ScreenShareResolution,
+    frame_rate: ScreenShareFrameRate,
+    bitrate_bps: u32,
     on_change: EventHandler<QualityChange>,
+    on_bitrate_change: EventHandler<u32>,
 ) -> Element {
     let mut advanced_open = use_signal(|| false);
-    let mut bitrate = use_signal(|| BITRATE_MAX_FREE);
     let mut upsell = use_signal(|| None::<Upsell>);
 
     let current_preset = preset_index(resolution, frame_rate);
     let assessment = assess(resolution, frame_rate);
-    let bitrate_value = bitrate();
+    let bitrate_value = f64::from(bitrate_bps) / 1_000_000.0;
     let bitrate_label = format_bitrate(bitrate_value);
     let quality_summary = format!("{} · {}", resolution.label(), frame_rate.label());
     let preset_upsell = matches!(upsell(), Some(Upsell::Preset(_)));
     let bitrate_upsell = matches!(upsell(), Some(Upsell::Bitrate));
 
-    let resolution_options = MockResolution::ALL
+    let resolution_options = ScreenShareResolution::ALL
         .iter()
         .copied()
         .map(|option| SegmentedOption {
@@ -55,7 +54,7 @@ pub(super) fn QualityPanel(
             hint: option.hint().to_owned(),
         })
         .collect::<Vec<_>>();
-    let frame_rate_options = MockFrameRate::ALL
+    let frame_rate_options = ScreenShareFrameRate::ALL
         .iter()
         .copied()
         .map(|option| SegmentedOption {
@@ -81,9 +80,9 @@ pub(super) fn QualityPanel(
                 on_pick: move |index: usize| {
                     let preset = QUALITY_PRESETS[index];
                     match preset.apply {
-                        Some((mock_resolution, mock_frame_rate)) => {
+                        Some((resolution, frame_rate)) => {
                             upsell.set(None);
-                            on_change.call(change_for(mock_resolution, mock_frame_rate));
+                            on_change.call(change_for(resolution, frame_rate));
                         }
                         None => upsell.set(Some(Upsell::Preset(index))),
                     }
@@ -150,7 +149,7 @@ pub(super) fn QualityPanel(
                                     options: resolution_options,
                                     selected: resolution.value().to_owned(),
                                     on_change: move |value: String| {
-                                        if let Some(next) = MockResolution::from_value(&value) {
+                                        if let Some(next) = ScreenShareResolution::from_value(&value) {
                                             on_change.call(change_for(next, frame_rate));
                                         }
                                     },
@@ -165,7 +164,7 @@ pub(super) fn QualityPanel(
                                     options: frame_rate_options,
                                     selected: frame_rate.value().to_owned(),
                                     on_change: move |value: String| {
-                                        if let Some(next) = MockFrameRate::from_value(&value) {
+                                        if let Some(next) = ScreenShareFrameRate::from_value(&value) {
                                             on_change.call(change_for(resolution, next));
                                         }
                                     },
@@ -184,7 +183,7 @@ pub(super) fn QualityPanel(
                                     value: bitrate_value,
                                     limit: BITRATE_MAX_FREE,
                                     on_change: move |value: f64| {
-                                        bitrate.set(value);
+                                        on_bitrate_change.call((value * 1_000_000.0).round() as u32);
                                         if value <= BITRATE_MAX_FREE {
                                             upsell.set(None);
                                         }
@@ -224,8 +223,8 @@ pub(super) fn QualityPanel(
                     r#type: "button",
                     class: "inline-flex h-6 items-center gap-1.5 rounded text-[10.5px] font-medium text-zinc-500 transition-colors duration-200 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300/70",
                     onclick: move |_| {
-                        if let Some((mock_resolution, mock_frame_rate)) = QUALITY_PRESETS[0].apply {
-                            on_change.call(change_for(mock_resolution, mock_frame_rate));
+                        if let Some((resolution, frame_rate)) = QUALITY_PRESETS[0].apply {
+                            on_change.call(change_for(resolution, frame_rate));
                         }
                     },
                     svg { class: "h-3 w-3", fill: "none", stroke: "currentColor", stroke_width: "1.8", view_box: "0 0 24 24", "aria-hidden": "true",

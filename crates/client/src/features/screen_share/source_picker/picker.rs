@@ -1,8 +1,6 @@
 //! Модальное окно выбора экрана и качества демонстрации.
 //!
-//! Окно показывает доступные экраны и панель качества. Разрешение и частота
-//! кадров меняют подтверждаемые параметры, а пресеты, ползунок битрейта и
-//! предложение подписки остаются витриной тарифов.
+//! Окно показывает доступные экраны и передаёт выбранное качество при запуске.
 
 mod assessment_card;
 mod bitrate_slider;
@@ -19,7 +17,7 @@ mod source_card;
 use dioxus::prelude::*;
 
 use self::browser_intro::BrowserIntro;
-use self::decor::{MockFrameRate, MockResolution, aria_flag, is_supported};
+use self::decor::aria_flag;
 use self::empty_state::{EmptyState, EmptyStateTone};
 use self::kind_tabs::KindTabs;
 use self::list_skeleton::ListSkeleton;
@@ -32,6 +30,7 @@ use super::model::{ScreenShareSelection, ScreenShareSourcePickerState, ScreenSha
 #[component]
 pub(crate) fn ScreenShareSourcePicker(
     state: ScreenShareSourcePickerState,
+    initial_selection: Option<ScreenShareSelection>,
     on_close: EventHandler<()>,
     on_retry: EventHandler<()>,
     on_confirm: EventHandler<ScreenShareSelection>,
@@ -51,10 +50,8 @@ pub(crate) fn ScreenShareSourcePicker(
     };
     let loading = matches!(state, ScreenShareSourcePickerState::Loading);
 
-    let mut selection = use_signal(|| None::<ScreenShareSelection>);
+    let mut selection = use_signal(|| initial_selection);
     let mut active_tab = use_signal(ScreenShareSourceTab::default);
-    let mut mock_resolution = use_signal(MockResolution::default);
-    let mut mock_frame_rate = use_signal(MockFrameRate::default);
 
     let effective_selection = if browser_mode {
         Some(
@@ -72,23 +69,14 @@ pub(crate) fn ScreenShareSourcePicker(
         .as_ref()
         .map_or_else(Default::default, |value| value.frame_rate);
     let selected_tab = active_tab();
+    let bitrate_selection = effective_selection.clone();
     let selected_source = effective_selection.as_ref().and_then(|value| {
         value
             .source_id
             .as_deref()
             .and_then(|id| sources.iter().find(|source| source.id == id).cloned())
     });
-    let mock_quality_summary = format!(
-        "{} · {}",
-        mock_resolution().label(),
-        mock_frame_rate().label()
-    );
-    let launch_quality_summary = format!("{} · {}", resolution.title(), frame_rate.title());
-    let quality_summary = if is_supported(mock_resolution(), mock_frame_rate()) {
-        mock_quality_summary.clone()
-    } else {
-        launch_quality_summary.clone()
-    };
+    let quality_summary = format!("{} · {}", resolution.title(), frame_rate.title());
     let confirm_selection = selected_tab
         .can_confirm(effective_selection.as_ref())
         .then(|| effective_selection.clone())
@@ -140,7 +128,7 @@ pub(crate) fn ScreenShareSourcePicker(
                             id: "screen-share-source-picker-description",
                             class: "mt-0.5 truncate text-[11.5px] leading-4 text-zinc-400",
                             if browser_mode {
-                                "Настройте качество — источник выберете в окне браузера."
+                                "Настройте качество — источник выберете в системном окне."
                             } else {
                                 "Выберите экран и качество изображения."
                             }
@@ -241,18 +229,20 @@ pub(crate) fn ScreenShareSourcePicker(
 
                         div { class: "min-w-0",
                             QualityPanel {
-                                resolution: mock_resolution(),
-                                frame_rate: mock_frame_rate(),
+                                resolution,
+                                frame_rate,
+                                bitrate_bps: effective_selection.as_ref().map_or(cheenhub_contracts::video_presets::SCREEN_SHARE_BITRATE_LIMIT.max_bitrate_bps, |value| value.bitrate_bps),
+                                on_bitrate_change: move |bitrate_bps: u32| {
+                                    let mut next = bitrate_selection.clone().unwrap_or_else(ScreenShareSelection::browser_default);
+                                    next.bitrate_bps = bitrate_bps;
+                                    selection.set(Some(next));
+                                },
                                 on_change: move |change: QualityChange| {
                                     debug!(
-                                        mock_resolution = ?change.mock_resolution,
-                                        mock_frame_rate = ?change.mock_frame_rate,
                                         resolution = ?change.resolution,
                                         frame_rate = ?change.frame_rate,
                                         "screen share quality changed"
                                     );
-                                    mock_resolution.set(change.mock_resolution);
-                                    mock_frame_rate.set(change.mock_frame_rate);
                                     let mut next = effective_selection
                                         .clone()
                                         .unwrap_or_else(ScreenShareSelection::browser_default);
@@ -279,7 +269,7 @@ pub(crate) fn ScreenShareSourcePicker(
                             }
                             p { class: "truncate text-[12px] font-medium text-zinc-100",
                                 if browser_mode {
-                                    "Источник выбирается в браузере"
+                                    "Источник выбирается в системном окне"
                                     span { class: "font-normal text-zinc-400", " · {quality_summary}" }
                                 } else if let Some(source) = selected_source.as_ref() {
                                     "{source.name}"
@@ -304,7 +294,7 @@ pub(crate) fn ScreenShareSourcePicker(
                             class: "inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 text-[12.5px] font-semibold text-white transition-[background-color,opacity] duration-200 hover:bg-blue-400 active:scale-[0.96] disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500 disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300",
                             onclick: move |_| {
                                 if let Some(value) = confirm_selection.clone() {
-                                    info!(source_id = ?value.source_id, resolution = ?value.resolution, frame_rate = ?value.frame_rate, "screen share source selection confirmed");
+                                    info!(source_id = ?value.source_id, resolution = ?value.resolution, frame_rate = ?value.frame_rate, bitrate_bps = value.bitrate_bps, "screen share source selection confirmed");
                                     on_confirm.call(value);
                                 }
                             },

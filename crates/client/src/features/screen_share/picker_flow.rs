@@ -41,6 +41,7 @@ pub(super) fn capture_source_from_selection(
         width,
         height,
         max_fps: selection.frame_rate.max_fps(),
+        bitrate_bps: selection.bitrate_bps,
     };
     match &selection.source_id {
         Some(source_id) => ScreenShareCaptureSource::Selected {

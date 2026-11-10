@@ -6,11 +6,42 @@ use crate::features::screen_share::source_picker::{
 };
 
 #[test]
+fn selected_bitrate_is_preserved_in_capture_request() {
+    let mut selection = ScreenShareSelection::browser_default();
+    selection.bitrate_bps = 750_000;
+    selection.resolution = ScreenShareResolution::Uhd4K;
+    selection.frame_rate = ScreenShareFrameRate::Fps60;
+
+    let ScreenShareCaptureSource::PlatformDefault {
+        target: Some(target),
+    } = capture_source_from_selection(&selection)
+    else {
+        panic!("ожидается системный выбор")
+    };
+
+    assert_eq!(target.bitrate_bps, 750_000);
+    let settings = super::super::backend::ScreenShareConfig::default()
+        .preset_for_target(&target)
+        .expect("качество допустимо");
+    let config = super::super::backend::encoder_config(settings);
+    assert_eq!(
+        (
+            config.width,
+            config.height,
+            config.frame_rate,
+            config.bitrate_bps
+        ),
+        (3840, 2160, 60, 750_000)
+    );
+}
+
+#[test]
 fn browser_quality_choice_keeps_platform_source_selection() {
     let selection = ScreenShareSelection {
         source_id: None,
         resolution: ScreenShareResolution::P720,
         frame_rate: ScreenShareFrameRate::Fps15,
+        bitrate_bps: 1_500_000,
     };
 
     assert_eq!(
@@ -20,6 +51,7 @@ fn browser_quality_choice_keeps_platform_source_selection() {
                 width: 1_280,
                 height: 720,
                 max_fps: 15,
+                bitrate_bps: 1_500_000,
             }),
         }
     );
@@ -59,6 +91,7 @@ fn selected_picker_choice_becomes_platform_neutral_request_source() {
         source_id: Some("\\\\.\\DISPLAY2".to_owned()),
         resolution: ScreenShareResolution::P720,
         frame_rate: ScreenShareFrameRate::Fps15,
+        bitrate_bps: 1_500_000,
     };
 
     assert_eq!(
@@ -69,6 +102,7 @@ fn selected_picker_choice_becomes_platform_neutral_request_source() {
                 width: 1_280,
                 height: 720,
                 max_fps: 15,
+                bitrate_bps: 1_500_000,
             },
         }
     );

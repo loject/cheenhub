@@ -512,6 +512,16 @@ class MainActivity : WryActivity() {
         }
     }
 
+    fun cheenHubScreenDimensions(): Long {
+        val (width, height) = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val bounds = windowManager.maximumWindowMetrics.bounds
+            bounds.width() to bounds.height()
+        } else {
+            resources.displayMetrics.widthPixels to resources.displayMetrics.heightPixels
+        }
+        return (width.toLong() shl 32) or (height.toLong() and 0xffffffffL)
+    }
+
     fun startCheenHubScreenShare(
         captureId: Int,
         grant: Intent,

@@ -8,7 +8,7 @@ use super::*;
 use crate::features::voice_chat::media::MediaDatagramHeader;
 use cheenhub_contracts::{
     media::{MediaCodec, MediaDatagram},
-    video_presets::{BASE_CAMERA_VIDEO_PRESETS, BASE_SCREEN_SHARE_VIDEO_PRESETS},
+    video_presets::{CAMERA_BITRATE_LIMIT, SCREEN_SHARE_BITRATE_LIMIT},
 };
 
 #[test]
@@ -21,7 +21,7 @@ fn screen_policy_accepts_both_base_resolutions() {
             tracker.inspect_at(
                 Uuid::new_v4(),
                 &datagram,
-                BASE_SCREEN_SHARE_VIDEO_PRESETS,
+                SCREEN_SHARE_BITRATE_LIMIT,
                 Instant::now(),
             ),
             VideoAdmission::Forward
@@ -37,7 +37,7 @@ fn camera_policy_accepts_4k_independent_of_preset_dimensions() {
         tracker.inspect_at(
             Uuid::new_v4(),
             &datagram,
-            BASE_CAMERA_VIDEO_PRESETS,
+            CAMERA_BITRATE_LIMIT,
             Instant::now(),
         ),
         VideoAdmission::Forward
@@ -55,7 +55,7 @@ fn video_policy_accepts_key_frame_from_borrowed_wire_payload() {
     let payload = header.payload(&wire).expect("payload is borrowed");
 
     assert_eq!(
-        tracker.inspect_header_at(session_id, &header, payload, BASE_CAMERA_VIDEO_PRESETS, now,),
+        tracker.inspect_header_at(session_id, &header, payload, CAMERA_BITRATE_LIMIT, now,),
         VideoAdmission::Forward
     );
     assert_eq!(tracker.publications.len(), 1);
@@ -71,11 +71,11 @@ fn fragmented_frame_is_counted_once() {
     let mut second = fragmented(video_datagram(1, true, 1280, 720), 1, 2);
     second.room_id = first.room_id;
     assert_eq!(
-        tracker.inspect_at(session_id, &first, BASE_CAMERA_VIDEO_PRESETS, now),
+        tracker.inspect_at(session_id, &first, CAMERA_BITRATE_LIMIT, now),
         VideoAdmission::Forward
     );
     assert_eq!(
-        tracker.inspect_at(session_id, &second, BASE_CAMERA_VIDEO_PRESETS, now),
+        tracker.inspect_at(session_id, &second, CAMERA_BITRATE_LIMIT, now),
         VideoAdmission::Forward
     );
     assert!(tracker.publications[0].has_key_frame);
@@ -93,11 +93,11 @@ fn fragmented_frame_rejects_bytes_exceeding_reserved_frame_size() {
     second.payload.extend(std::iter::repeat_n(0, declared));
 
     assert_eq!(
-        tracker.inspect_at(session_id, &first, BASE_CAMERA_VIDEO_PRESETS, now),
+        tracker.inspect_at(session_id, &first, CAMERA_BITRATE_LIMIT, now),
         VideoAdmission::Forward
     );
     assert_eq!(
-        tracker.inspect_at(session_id, &second, BASE_CAMERA_VIDEO_PRESETS, now),
+        tracker.inspect_at(session_id, &second, CAMERA_BITRATE_LIMIT, now),
         VideoAdmission::Drop(VideoDropReason::MalformedFragment)
     );
 }
@@ -114,11 +114,11 @@ fn fragmented_frame_rejects_changed_declared_length() {
     second.payload.extend(std::iter::repeat_n(0, 1_000));
 
     assert_eq!(
-        tracker.inspect_at(session_id, &first, BASE_CAMERA_VIDEO_PRESETS, now),
+        tracker.inspect_at(session_id, &first, CAMERA_BITRATE_LIMIT, now),
         VideoAdmission::Forward
     );
     assert_eq!(
-        tracker.inspect_at(session_id, &second, BASE_CAMERA_VIDEO_PRESETS, now),
+        tracker.inspect_at(session_id, &second, CAMERA_BITRATE_LIMIT, now),
         VideoAdmission::Drop(VideoDropReason::MalformedFragment)
     );
 }
@@ -131,7 +131,7 @@ fn camera_accepts_high_fps_when_bitrate_is_within_budget() {
     let mut datagram = video_datagram(1, true, 1280, 720);
     let room_id = datagram.room_id;
     assert_eq!(
-        tracker.inspect_at(session_id, &datagram, BASE_CAMERA_VIDEO_PRESETS, started),
+        tracker.inspect_at(session_id, &datagram, CAMERA_BITRATE_LIMIT, started),
         VideoAdmission::Forward
     );
     datagram.flags = 0;
@@ -143,7 +143,7 @@ fn camera_accepts_high_fps_when_bitrate_is_within_budget() {
             tracker.inspect_at(
                 session_id,
                 &datagram,
-                BASE_CAMERA_VIDEO_PRESETS,
+                CAMERA_BITRATE_LIMIT,
                 started + Duration::from_millis(sequence * 8),
             ),
             VideoAdmission::Forward,
@@ -162,7 +162,7 @@ fn camera_allows_two_second_burst_then_rejects_excess_bytes() {
     datagram.payload.resize(100_000, 0);
 
     assert_eq!(
-        tracker.inspect_at(session_id, &datagram, BASE_CAMERA_VIDEO_PRESETS, now),
+        tracker.inspect_at(session_id, &datagram, CAMERA_BITRATE_LIMIT, now),
         VideoAdmission::Forward
     );
 
@@ -170,14 +170,14 @@ fn camera_allows_two_second_burst_then_rejects_excess_bytes() {
     datagram.flags = 0;
     datagram.payload.resize(75_000, 0);
     assert_eq!(
-        tracker.inspect_at(session_id, &datagram, BASE_CAMERA_VIDEO_PRESETS, now),
+        tracker.inspect_at(session_id, &datagram, CAMERA_BITRATE_LIMIT, now),
         VideoAdmission::Forward
     );
 
     datagram.sequence = 3;
     datagram.payload.resize(1, 0);
     assert!(matches!(
-        tracker.inspect_at(session_id, &datagram, BASE_CAMERA_VIDEO_PRESETS, now),
+        tracker.inspect_at(session_id, &datagram, CAMERA_BITRATE_LIMIT, now),
         VideoAdmission::Drop(VideoDropReason::BitrateLimitExceeded { .. })
     ));
 
@@ -187,7 +187,7 @@ fn camera_allows_two_second_burst_then_rejects_excess_bytes() {
         tracker.inspect_at(
             session_id,
             &recovery,
-            BASE_CAMERA_VIDEO_PRESETS,
+            CAMERA_BITRATE_LIMIT,
             now + Duration::from_secs(1)
         ),
         VideoAdmission::Forward
@@ -204,14 +204,14 @@ fn screen_burst_uses_its_own_one_point_five_mbps_budget() {
     datagram.payload.resize(375_000, 0);
 
     assert_eq!(
-        tracker.inspect_at(session_id, &datagram, BASE_SCREEN_SHARE_VIDEO_PRESETS, now),
+        tracker.inspect_at(session_id, &datagram, SCREEN_SHARE_BITRATE_LIMIT, now),
         VideoAdmission::Forward
     );
     datagram.sequence = 2;
     datagram.flags = 0;
     datagram.payload = vec![1];
     assert!(matches!(
-        tracker.inspect_at(session_id, &datagram, BASE_SCREEN_SHARE_VIDEO_PRESETS, now),
+        tracker.inspect_at(session_id, &datagram, SCREEN_SHARE_BITRATE_LIMIT, now),
         VideoAdmission::Drop(VideoDropReason::BitrateLimitExceeded { .. })
     ));
 }

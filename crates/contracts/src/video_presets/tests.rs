@@ -1,24 +1,12 @@
 use super::*;
 
 #[test]
-fn base_presets_belong_to_expected_sources() {
-    assert!(
-        BASE_CAMERA_VIDEO_PRESETS
-            .iter()
-            .all(|preset| preset.spec().source == VideoStreamSource::Camera)
+fn camera_and_screen_have_independent_bitrate_limits() {
+    assert_eq!(CAMERA_BITRATE_LIMIT.source, VideoStreamSource::Camera);
+    assert_eq!(CAMERA_BITRATE_LIMIT.max_bitrate_bps, 700_000);
+    assert_eq!(
+        SCREEN_SHARE_BITRATE_LIMIT.source,
+        VideoStreamSource::ScreenShare
     );
-    assert!(
-        BASE_SCREEN_SHARE_VIDEO_PRESETS
-            .iter()
-            .all(|preset| preset.spec().source == VideoStreamSource::ScreenShare)
-    );
-}
-
-#[test]
-fn preset_ids_round_trip_through_json() {
-    let encoded =
-        serde_json::to_string(&VideoPresetId::Screen1080p15).expect("preset id serializes");
-    let decoded: VideoPresetId = serde_json::from_str(&encoded).expect("preset id deserializes");
-
-    assert_eq!(decoded, VideoPresetId::Screen1080p15);
+    assert_eq!(SCREEN_SHARE_BITRATE_LIMIT.max_bitrate_bps, 1_500_000);
 }

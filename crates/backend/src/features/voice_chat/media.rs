@@ -3,7 +3,7 @@
 use bytes::Bytes;
 use cheenhub_contracts::media::MediaDatagram;
 use cheenhub_contracts::video_presets::{
-    BASE_CAMERA_VIDEO_PRESETS, BASE_SCREEN_SHARE_VIDEO_PRESETS, VideoPresetId,
+    CAMERA_BITRATE_LIMIT, SCREEN_SHARE_BITRATE_LIMIT, VideoBitrateLimit,
 };
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -44,7 +44,7 @@ pub(crate) async fn handle_screen_frame(
         datagram,
         "screen",
         false,
-        Some(BASE_SCREEN_SHARE_VIDEO_PRESETS),
+        Some(SCREEN_SHARE_BITRATE_LIMIT),
     )
     .await;
 }
@@ -63,7 +63,7 @@ pub(crate) async fn handle_camera_frame(
         datagram,
         "camera",
         false,
-        Some(BASE_CAMERA_VIDEO_PRESETS),
+        Some(CAMERA_BITRATE_LIMIT),
     )
     .await;
 }
@@ -75,7 +75,7 @@ async fn handle_room_media_frame(
     mut datagram: MediaDatagram,
     media_kind: &'static str,
     allow_microphone_uplink: bool,
-    allowed_video_presets: Option<&'static [VideoPresetId]>,
+    video_bitrate_limit: Option<VideoBitrateLimit>,
 ) {
     debug!(
         %session_id,
@@ -140,7 +140,7 @@ async fn handle_room_media_frame(
             "дорожка legacy-микрофона привязана к голосовой сессии"
         );
     }
-    if let Some(allowed_video_presets) = allowed_video_presets {
+    if let Some(video_bitrate_limit) = video_bitrate_limit {
         if datagram.track_id != presence.session_id {
             if presence.voice_protocol_version >= 5 {
                 debug!(
@@ -160,7 +160,7 @@ async fn handle_room_media_frame(
         }
         let admission = state
             .voice_presence_store
-            .inspect_video_datagram(session_id, &datagram, allowed_video_presets)
+            .inspect_video_datagram(session_id, &datagram, video_bitrate_limit)
             .await;
         if !video_admission_allows_fanout(
             admission,

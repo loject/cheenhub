@@ -31,6 +31,7 @@ pub(crate) struct ScreenShareHandle {
     pub(super) backend: Rc<dyn ScreenShareBackend>,
     pub(super) toast: ToastHandle,
     pub(super) picker_open: Signal<bool>,
+    pub(super) last_selection: Signal<Option<ScreenShareSelection>>,
     pub(super) pending_on_frame: Rc<RefCell<Option<ScreenShareFrameCallback>>>,
 }
 
@@ -76,7 +77,10 @@ impl ScreenShareHandle {
 
         self.start_request(
             ScreenShareStartRequest {
-                config: ScreenShareConfig::default(),
+                config: ScreenShareConfig {
+                    automatic_bitrate_bps: selection.bitrate_bps,
+                    ..ScreenShareConfig::default()
+                },
                 source: capture_source_from_selection(selection),
             },
             on_frame,
@@ -140,6 +144,8 @@ impl ScreenShareHandle {
                     warn!(%error, status = ?next_status, "failed to start screen sharing capture");
                     if error.is_unsupported_browser() {
                         toast.warning(error.to_string());
+                    } else if !error.is_permission_denied() {
+                        toast.warning("Не удалось запустить демонстрацию с выбранными настройками.".to_owned());
                     }
                     session.set(None);
                     status.set(next_status);
@@ -181,7 +187,7 @@ impl ScreenShareHandle {
         });
     }
 
-    /// Сообщает UI, что качество выбирается перед системным окном браузера.
+    /// Сообщает UI, что качество выбирается перед системным окном источника.
     pub(super) fn supports_platform_quality_picker(&self) -> bool {
         self.backend.supports_platform_quality_picker()
     }

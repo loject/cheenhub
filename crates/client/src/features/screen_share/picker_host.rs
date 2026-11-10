@@ -35,6 +35,7 @@ pub(super) fn ScreenSharePickerHost(mut open: Signal<bool>) -> Element {
     rsx! {
         ScreenShareSourcePicker {
             state: picker_state,
+            initial_selection: (screen_share.last_selection)(),
             on_close: move |_| {
                 screen_share_for_close.clear_pending_on_frame();
                 open.set(false);
@@ -53,6 +54,8 @@ pub(super) fn ScreenSharePickerHost(mut open: Signal<bool>) -> Element {
                     "screen share source selection accepted"
                 );
                 open.set(false);
+                let mut last_selection = screen_share.last_selection;
+                last_selection.set(Some(selection.clone()));
                 screen_share.start_selected(&selection);
             },
         }

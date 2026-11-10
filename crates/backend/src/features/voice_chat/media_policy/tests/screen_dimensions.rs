@@ -3,7 +3,7 @@
 use super::*;
 
 #[test]
-fn screen_policy_accepts_window_dimensions_within_allowed_presets() {
+fn screen_policy_accepts_window_dimensions_within_bitrate_limit() {
     for (width, height) in [
         (1280, 357),
         (1280, 386),
@@ -19,7 +19,7 @@ fn screen_policy_accepts_window_dimensions_within_allowed_presets() {
         let admission = tracker.inspect_at(
             Uuid::new_v4(),
             &datagram,
-            BASE_SCREEN_SHARE_VIDEO_PRESETS,
+            SCREEN_SHARE_BITRATE_LIMIT,
             Instant::now(),
         );
 
@@ -37,7 +37,7 @@ fn screen_policy_accepts_dimensions_above_preset_bounds() {
         let admission = tracker.inspect_at(
             Uuid::new_v4(),
             &datagram,
-            BASE_SCREEN_SHARE_VIDEO_PRESETS,
+            SCREEN_SHARE_BITRATE_LIMIT,
             Instant::now(),
         );
 
@@ -54,7 +54,7 @@ fn screen_policy_does_not_use_camera_permissions_for_window_dimensions() {
     let admission = tracker.inspect_at(
         Uuid::new_v4(),
         &datagram,
-        BASE_CAMERA_VIDEO_PRESETS,
+        CAMERA_BITRATE_LIMIT,
         Instant::now(),
     );
 
@@ -69,7 +69,7 @@ fn camera_policy_accepts_nonstandard_dimensions() {
     let admission = tracker.inspect_at(
         Uuid::new_v4(),
         &datagram,
-        BASE_CAMERA_VIDEO_PRESETS,
+        CAMERA_BITRATE_LIMIT,
         Instant::now(),
     );
 
@@ -88,7 +88,7 @@ fn screen_policy_forwards_all_fragments_of_nonstandard_key_frame() {
 
     for fragment in [first, second] {
         assert_eq!(
-            tracker.inspect_at(session_id, &fragment, BASE_SCREEN_SHARE_VIDEO_PRESETS, now),
+            tracker.inspect_at(session_id, &fragment, SCREEN_SHARE_BITRATE_LIMIT, now),
             VideoAdmission::Forward,
         );
     }
@@ -101,10 +101,10 @@ fn screen_policy_allows_30_fps_for_small_window_regardless_of_preset_order() {
     let started = Instant::now();
     let mut datagram = video_datagram(0, true, 1280, 357);
     datagram.kind = MediaDatagramKind::ScreenFrame;
-    let presets = [VideoPresetId::Screen1080p15, VideoPresetId::Screen720p30];
+    let presets = SCREEN_SHARE_BITRATE_LIMIT;
 
     assert_eq!(
-        tracker.inspect_at(session_id, &datagram, &presets, started),
+        tracker.inspect_at(session_id, &datagram, presets, started),
         VideoAdmission::Forward
     );
     datagram.flags = 0;
@@ -114,7 +114,7 @@ fn screen_policy_allows_30_fps_for_small_window_regardless_of_preset_order() {
         let admission = tracker.inspect_at(
             session_id,
             &datagram,
-            &presets,
+            presets,
             started + Duration::from_millis(sequence * 34),
         );
 
@@ -131,12 +131,7 @@ fn screen_policy_does_not_limit_fps_for_wide_windows() {
     datagram.kind = MediaDatagramKind::ScreenFrame;
 
     assert_eq!(
-        tracker.inspect_at(
-            session_id,
-            &datagram,
-            BASE_SCREEN_SHARE_VIDEO_PRESETS,
-            started
-        ),
+        tracker.inspect_at(session_id, &datagram, SCREEN_SHARE_BITRATE_LIMIT, started),
         VideoAdmission::Forward
     );
     datagram.flags = 0;
@@ -147,7 +142,7 @@ fn screen_policy_does_not_limit_fps_for_wide_windows() {
             tracker.inspect_at(
                 session_id,
                 &datagram,
-                BASE_SCREEN_SHARE_VIDEO_PRESETS,
+                SCREEN_SHARE_BITRATE_LIMIT,
                 started + Duration::from_millis(sequence * 34),
             ),
             VideoAdmission::Forward
@@ -158,7 +153,7 @@ fn screen_policy_does_not_limit_fps_for_wide_windows() {
     let admission = tracker.inspect_at(
         session_id,
         &datagram,
-        BASE_SCREEN_SHARE_VIDEO_PRESETS,
+        SCREEN_SHARE_BITRATE_LIMIT,
         started + Duration::from_millis(1020),
     );
 

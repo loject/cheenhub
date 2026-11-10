@@ -2,7 +2,7 @@
 
 use cheenhub_contracts::media::{VOICE_AUDIO_BITRATE_MAX_BPS, VOICE_AUDIO_BITRATE_MIN_BPS};
 use cheenhub_contracts::rest::ServerVoiceSettings;
-use cheenhub_contracts::video_presets::VideoPresetId;
+use cheenhub_contracts::video_presets::{CAMERA_BITRATE_LIMIT, SCREEN_SHARE_BITRATE_LIMIT};
 use dioxus::prelude::*;
 
 use super::api;
@@ -27,7 +27,7 @@ const CAMERA_PROFILE: VideoProfile = VideoProfile {
     title: "Камера",
     description: "Пределы видео для камеры на этом сервере.",
     bitrate_label: "700 кбит/с",
-    bitrate_kbps: VideoPresetId::Camera720p24.spec().bitrate_bps / 1_000,
+    bitrate_kbps: CAMERA_BITRATE_LIMIT.max_bitrate_bps / 1_000,
     bitrate_max_kbps: 2_000,
     resolution: "1280×720 (HD)",
     fps: "24 fps",
@@ -37,7 +37,7 @@ const SCREEN_SHARE_PROFILE: VideoProfile = VideoProfile {
     title: "Демонстрация экрана",
     description: "Пределы видео для показа экрана на этом сервере.",
     bitrate_label: "1.5 Мбит/с",
-    bitrate_kbps: VideoPresetId::Screen720p30.spec().bitrate_bps / 1_000,
+    bitrate_kbps: SCREEN_SHARE_BITRATE_LIMIT.max_bitrate_bps / 1_000,
     bitrate_max_kbps: 2_000,
     resolution: "До 1920×1080 (Full HD)",
     fps: "До 30 fps",

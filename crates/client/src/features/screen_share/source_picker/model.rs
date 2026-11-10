@@ -1,5 +1,7 @@
 //! Чистая модель выбора источника демонстрации экрана.
 
+use cheenhub_contracts::video_presets::SCREEN_SHARE_BITRATE_LIMIT;
+
 /// Экран, доступный для демонстрации.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ScreenShareSource {
@@ -25,6 +27,10 @@ pub(crate) enum ScreenShareResolution {
     P720,
     /// Изображение 1920x1080.
     P1080,
+    /// Изображение 2560x1440.
+    P1440,
+    /// Изображение 3840x2160.
+    Uhd4K,
 }
 
 impl ScreenShareResolution {
@@ -33,6 +39,8 @@ impl ScreenShareResolution {
         match self {
             Self::P720 => (1_280, 720),
             Self::P1080 => (1_920, 1_080),
+            Self::P1440 => (2_560, 1_440),
+            Self::Uhd4K => (3_840, 2_160),
         }
     }
 
@@ -41,6 +49,8 @@ impl ScreenShareResolution {
         match self {
             Self::P720 => "720p",
             Self::P1080 => "1080p",
+            Self::P1440 => "1440p",
+            Self::Uhd4K => "4K",
         }
     }
 }
@@ -50,9 +60,13 @@ impl ScreenShareResolution {
 pub(crate) enum ScreenShareFrameRate {
     /// До 15 кадров в секунду.
     Fps15,
+    /// До 24 кадров в секунду.
+    Fps24,
     /// До 30 кадров в секунду.
     #[default]
     Fps30,
+    /// До 60 кадров в секунду.
+    Fps60,
 }
 
 impl ScreenShareFrameRate {
@@ -60,7 +74,9 @@ impl ScreenShareFrameRate {
     pub(crate) const fn max_fps(self) -> u32 {
         match self {
             Self::Fps15 => 15,
+            Self::Fps24 => 24,
             Self::Fps30 => 30,
+            Self::Fps60 => 60,
         }
     }
 
@@ -68,7 +84,9 @@ impl ScreenShareFrameRate {
     pub(crate) const fn title(self) -> &'static str {
         match self {
             Self::Fps15 => "15 кадров/с",
+            Self::Fps24 => "24 кадра/с",
             Self::Fps30 => "30 кадров/с",
+            Self::Fps60 => "60 кадров/с",
         }
     }
 }
@@ -112,6 +130,8 @@ pub(crate) struct ScreenShareSelection {
     pub(crate) resolution: ScreenShareResolution,
     /// Выбранная частота кадров.
     pub(crate) frame_rate: ScreenShareFrameRate,
+    /// Целевой битрейт кодировщика в битах в секунду.
+    pub(crate) bitrate_bps: u32,
 }
 
 impl ScreenShareSelection {
@@ -121,6 +141,7 @@ impl ScreenShareSelection {
             source_id: None,
             resolution: ScreenShareResolution::default(),
             frame_rate: ScreenShareFrameRate::default(),
+            bitrate_bps: SCREEN_SHARE_BITRATE_LIMIT.max_bitrate_bps,
         }
     }
 
@@ -135,6 +156,7 @@ impl ScreenShareSelection {
             source_id: Some(source.id.clone()),
             resolution: ScreenShareResolution::default(),
             frame_rate: ScreenShareFrameRate::default(),
+            bitrate_bps: SCREEN_SHARE_BITRATE_LIMIT.max_bitrate_bps,
         })
     }
 
@@ -158,6 +180,10 @@ impl ScreenShareSelection {
         Self::default_for(sources).map(|mut selection| {
             selection.resolution = resolution;
             selection.frame_rate = frame_rate;
+            selection.bitrate_bps = current
+                .map_or(SCREEN_SHARE_BITRATE_LIMIT.max_bitrate_bps, |value| {
+                    value.bitrate_bps
+                });
             selection
         })
     }

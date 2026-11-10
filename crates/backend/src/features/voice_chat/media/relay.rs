@@ -4,9 +4,7 @@ use bytes::{Bytes, BytesMut};
 use cheenhub_contracts::media::{
     MediaAudioSource, MediaCodec, MediaDatagram, MediaDatagramError, MediaDatagramKind,
 };
-use cheenhub_contracts::video_presets::{
-    BASE_CAMERA_VIDEO_PRESETS, BASE_SCREEN_SHARE_VIDEO_PRESETS,
-};
+use cheenhub_contracts::video_presets::{CAMERA_BITRATE_LIMIT, SCREEN_SHARE_BITRATE_LIMIT};
 use tracing::{debug, warn};
 use uuid::Uuid;
 
@@ -189,14 +187,14 @@ pub(crate) async fn handle_webtransport_frame_bytes(
     bytes: Bytes,
     header: MediaDatagramHeader,
 ) {
-    let (media_kind, allow_microphone_uplink, allowed_video_presets) =
+    let (media_kind, allow_microphone_uplink, video_bitrate_limit) =
         match (header.kind, header.codec) {
             (MediaDatagramKind::VoiceFrame, MediaCodec::Opus) => ("voice", true, None),
             (MediaDatagramKind::ScreenFrame, MediaCodec::Vp9) => {
-                ("screen", false, Some(BASE_SCREEN_SHARE_VIDEO_PRESETS))
+                ("screen", false, Some(SCREEN_SHARE_BITRATE_LIMIT))
             }
             (MediaDatagramKind::CameraFrame, MediaCodec::Vp9) => {
-                ("camera", false, Some(BASE_CAMERA_VIDEO_PRESETS))
+                ("camera", false, Some(CAMERA_BITRATE_LIMIT))
             }
             _ => {
                 debug!(
@@ -280,7 +278,7 @@ pub(crate) async fn handle_webtransport_frame_bytes(
         return;
     }
 
-    if let Some(allowed_video_presets) = allowed_video_presets {
+    if let Some(video_bitrate_limit) = video_bitrate_limit {
         let Some(authorized_header) =
             authorized_video_header(header, presence.session_id, presence.voice_protocol_version)
         else {
@@ -305,12 +303,7 @@ pub(crate) async fn handle_webtransport_frame_bytes(
             };
             state
                 .voice_presence_store
-                .inspect_video_payload(
-                    session_id,
-                    &authorized_header,
-                    payload,
-                    allowed_video_presets,
-                )
+                .inspect_video_payload(session_id, &authorized_header, payload, video_bitrate_limit)
                 .await
         };
         if !video_admission_allows_fanout(

@@ -49,6 +49,7 @@ fn normalization_preserves_valid_selection() {
         source_id: Some("first".to_owned()),
         resolution: ScreenShareResolution::P1080,
         frame_rate: ScreenShareFrameRate::Fps15,
+        bitrate_bps: 750_000,
     };
 
     assert_eq!(
@@ -64,6 +65,7 @@ fn normalization_moves_quality_to_new_default_source() {
         source_id: Some("disconnected".to_owned()),
         resolution: ScreenShareResolution::P1080,
         frame_rate: ScreenShareFrameRate::Fps15,
+        bitrate_bps: 750_000,
     };
 
     let selection =
@@ -72,6 +74,7 @@ fn normalization_moves_quality_to_new_default_source() {
     assert_eq!(selection.source_id.as_deref(), Some("primary"));
     assert_eq!(selection.resolution, ScreenShareResolution::P1080);
     assert_eq!(selection.frame_rate, ScreenShareFrameRate::Fps15);
+    assert_eq!(selection.bitrate_bps, current.bitrate_bps);
 }
 
 #[test]
@@ -80,6 +83,7 @@ fn windows_tab_never_allows_confirmation() {
         source_id: Some("primary".to_owned()),
         resolution: ScreenShareResolution::P720,
         frame_rate: ScreenShareFrameRate::Fps30,
+        bitrate_bps: 1_500_000,
     };
 
     assert!(ScreenShareSourceTab::Screens.can_confirm(Some(&selection)));
@@ -91,10 +95,14 @@ fn windows_tab_never_allows_confirmation() {
 fn resolution_maps_to_exact_target_dimensions() {
     assert_eq!(ScreenShareResolution::P720.dimensions(), (1_280, 720));
     assert_eq!(ScreenShareResolution::P1080.dimensions(), (1_920, 1_080));
+    assert_eq!(ScreenShareResolution::P1440.dimensions(), (2_560, 1_440));
+    assert_eq!(ScreenShareResolution::Uhd4K.dimensions(), (3_840, 2_160));
 }
 
 #[test]
 fn frame_rate_maps_to_exact_target_fps() {
     assert_eq!(ScreenShareFrameRate::Fps15.max_fps(), 15);
+    assert_eq!(ScreenShareFrameRate::Fps24.max_fps(), 24);
     assert_eq!(ScreenShareFrameRate::Fps30.max_fps(), 30);
+    assert_eq!(ScreenShareFrameRate::Fps60.max_fps(), 60);
 }

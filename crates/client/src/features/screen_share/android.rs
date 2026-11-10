@@ -3,13 +3,14 @@
 use super::backend::{
     EncodedScreenShareFrame, ScreenShareBackend, ScreenShareCallbacks, ScreenShareCaptureSource,
     ScreenShareCodec, ScreenShareError, ScreenShareSession, ScreenShareStartRequest,
+    encoder_config, fit_capture_preset,
 };
 use crate::features::video_encoding::{
     AndroidSurfaceVideoEncoder, AndroidVideoCaptureSession, AndroidVideoEncodingManager,
-    VideoEncoderConfig, VideoEncodingAcceleratorKind, VideoEncodingManager, VideoFrameEncoder,
+    VideoEncodingAcceleratorKind, VideoEncodingManager, VideoFrameEncoder,
     android_video_capture_bridge,
 };
-use dioxus::logger::tracing::error;
+use dioxus::logger::tracing::{error, info};
 use futures_util::future::LocalBoxFuture;
 use std::{cell::Cell, rc::Rc, time::Duration};
 
@@ -17,6 +18,10 @@ use std::{cell::Cell, rc::Rc, time::Duration};
 pub(crate) struct AndroidScreenShareBackend;
 
 impl ScreenShareBackend for AndroidScreenShareBackend {
+    fn supports_platform_quality_picker(&self) -> bool {
+        true
+    }
+
     fn start(
         &self,
         request: ScreenShareStartRequest,
@@ -29,18 +34,33 @@ impl ScreenShareBackend for AndroidScreenShareBackend {
                 ));
             }
             let config = request.config;
-            let preset = config.preset_for_capture(1280, 720);
+            let ScreenShareCaptureSource::PlatformDefault { target } = request.source else {
+                unreachable!();
+            };
+            let (width, height) = screen_dimensions().await?;
+            let preset = if let Some(target) = target {
+                let settings = config.preset_for_target(&target).ok_or_else(|| {
+                    ScreenShareError::new("Выбранное качество демонстрации недоступно.")
+                })?;
+                fit_capture_preset(width, height, settings)
+            } else {
+                config.preset_for_capture(width, height)
+            };
+            info!(
+                source_width = width,
+                source_height = height,
+                width = preset.width,
+                height = preset.height,
+                fps = preset.max_fps,
+                bitrate_bps = preset.bitrate_bps,
+                "Android screen capture quality selected"
+            );
             let bridge = android_video_capture_bridge().map_err(ScreenShareError::new)?;
             let target = callbacks.on_frame.clone();
             let encoder = AndroidVideoEncodingManager
                 .create_encoder(
                     VideoEncodingAcceleratorKind::Native,
-                    VideoEncoderConfig::vp9(
-                        preset.width,
-                        preset.height,
-                        preset.max_fps,
-                        preset.bitrate_bps,
-                    ),
+                    encoder_config(preset),
                     Rc::new(move |f| {
                         target(EncodedScreenShareFrame {
                             sequence: f.sequence,
@@ -75,6 +95,32 @@ impl ScreenShareBackend for AndroidScreenShareBackend {
             Ok(session as Rc<dyn ScreenShareSession>)
         })
     }
+}
+
+async fn screen_dimensions() -> Result<(u32, u32), ScreenShareError> {
+    let (sender, receiver) = futures_channel::oneshot::channel();
+    wry::prelude::dispatch(move |env, activity, _| {
+        let call = env.call_method(activity, "cheenHubScreenDimensions", "()J", &[]);
+        let result = crate::features::runtime::android::guard_jni_result(
+            env,
+            "cheenHubScreenDimensions",
+            call,
+        )
+        .and_then(|value| value.j())
+        .map_err(|error| error.to_string());
+        let _ = sender.send(result);
+    });
+    let packed = receiver
+        .await
+        .map_err(|_| ScreenShareError::new("Не удалось определить размер экрана."))?
+        .map_err(ScreenShareError::new)? as u64;
+    let dimensions = ((packed >> 32) as u32, packed as u32);
+    if dimensions.0 == 0 || dimensions.1 == 0 {
+        return Err(ScreenShareError::new(
+            "Не удалось определить размер экрана.",
+        ));
+    }
+    Ok(dimensions)
 }
 struct AndroidScreenShareSession {
     encoder: Rc<AndroidSurfaceVideoEncoder>,

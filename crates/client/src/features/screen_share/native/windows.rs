@@ -43,25 +43,12 @@ impl ScreenShareBackend for WindowsScreenShareBackend {
                     "Windows backend требует выбранный физический монитор.",
                 ));
             };
-            let selected_preset = request
-                .config
-                .allowed_presets
-                .iter()
-                .copied()
-                .find(|preset| {
-                    let spec = preset.spec();
-                    spec.source == cheenhub_contracts::video_presets::VideoStreamSource::ScreenShare
-                        && spec.width == target.width
-                        && spec.height == target.height
-                        && target.max_fps > 0
-                        && target.max_fps <= spec.max_fps
-                });
-            let Some(selected_preset) = selected_preset else {
+            let Some(selected_preset) = request.config.preset_for_target(&target) else {
                 return Err(ScreenShareError::new(
                     "выбранное качество демонстрации недоступно",
                 ));
             };
-            let bitrate_bps = selected_preset.spec().bitrate_bps;
+            let bitrate_bps = selected_preset.bitrate_bps;
 
             info!(
                 source_id = %source_id,
