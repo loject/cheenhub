@@ -326,6 +326,10 @@ jobs:
         shell: pwsh
         run: cargo run --quiet -p xtask -- release-version check
 
+      - name: Fetch Rust dependencies for offline FFmpeg cache cleanup
+        shell: pwsh
+        run: cargo fetch --locked --target x86_64-pc-windows-msvc
+
       - name: Build static FFmpeg
         shell: pwsh
         run: |
@@ -446,6 +450,10 @@ jobs:
       - name: Validate release version
         shell: bash
         run: cargo run --quiet -p xtask -- release-version check
+
+      - name: Fetch Rust dependencies for offline FFmpeg cache cleanup
+        shell: bash
+        run: cargo fetch --locked --target x86_64-unknown-linux-gnu
 
       - name: Build static FFmpeg
         shell: bash
