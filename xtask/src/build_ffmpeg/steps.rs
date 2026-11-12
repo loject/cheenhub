@@ -2,7 +2,7 @@
 
 use super::{Build, execute};
 use crate::XtaskResult;
-use std::{fs, process::Command};
+use std::{fs, path::Path, process::Command};
 
 /// Собирает статический программный VP9 encoder и устанавливает headers для FFmpeg.
 pub(super) fn vpx(build: &Build) -> XtaskResult<()> {
@@ -129,7 +129,115 @@ pub(super) fn vpl(build: &Build) -> XtaskResult<()> {
             .arg("--install")
             .arg(directory)
             .args(["--config", "Release"]),
+    )?;
+    verify_vpl_pkg_config(build)
+}
+
+fn verify_vpl_pkg_config(build: &Build) -> XtaskResult<()> {
+    for arguments in [vec!["--modversion", "vpl"], vec!["--path", "vpl"]] {
+        let mut command = build.pkg_config_command()?;
+        command.args(&arguments);
+        let output = command
+            .output()
+            .map_err(|error| format!("Не удалось запустить pkg-config для oneVPL: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "pkg-config не обнаружил установленную oneVPL ({}): {}",
+                arguments.join(" "),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        println!(
+            "[FFmpeg] pkgconf {}: {}",
+            arguments.join(" "),
+            String::from_utf8_lossy(&output.stdout).trim()
+        );
+    }
+
+    let mut cflags_command = build.pkg_config_command()?;
+    cflags_command.args(["--cflags", "vpl"]);
+    let cflags = checked_output("pkgconf --cflags vpl", &mut cflags_command)?;
+    let mut libs_command = build.pkg_config_command()?;
+    libs_command.args(["--static", "--libs", "vpl"]);
+    let libraries = checked_output("pkgconf --static --libs vpl", &mut libs_command)?;
+    println!("[FFmpeg] oneVPL compile flags: {cflags}");
+    println!("[FFmpeg] oneVPL static link flags: {libraries}");
+
+    let source = build.directory.join("vpl-probe.c");
+    fs::write(
+        &source,
+        "#include <mfxvideo.h>\n#include <mfxdispatcher.h>\nint main(void) { mfxLoader loader = MFXLoad(); if (loader) MFXUnload(loader); return 0; }\n",
     )
+    .map_err(|error| error.to_string())?;
+    let output = build.directory.join(if build.windows {
+        "vpl-probe.exe"
+    } else {
+        "vpl-probe"
+    });
+    let mut compile = if build.windows {
+        windows_vpl_probe(&source, &output, &cflags, &libraries)?
+    } else {
+        let mut command = Command::new("cc");
+        command.args(cflags.split_whitespace());
+        command.arg(&source);
+        command.args(libraries.split_whitespace());
+        command.arg("-o").arg(&output);
+        command
+    };
+    execute("проверка compile/link oneVPL через pkgconf", &mut compile)
+}
+
+fn windows_vpl_probe(
+    source: &Path,
+    output: &Path,
+    cflags: &str,
+    libraries: &str,
+) -> XtaskResult<Command> {
+    let mut command = Command::new("cl");
+    command.args(["/nologo", "/MD"]);
+    for flag in cflags.split_whitespace() {
+        if let Some(path) = flag.strip_prefix("-I") {
+            command.arg(format!("/I{}", windows_pkg_path(path)?));
+        } else {
+            command.arg(flag);
+        }
+    }
+    command.arg(source).args(["/link", "/NOLOGO"]);
+    for flag in libraries.split_whitespace() {
+        if let Some(path) = flag.strip_prefix("-L") {
+            command.arg(format!("/LIBPATH:{}", windows_pkg_path(path)?));
+        } else if let Some(library) = flag.strip_prefix("-l") {
+            command.arg(format!("{library}.lib"));
+        } else {
+            command.arg(flag);
+        }
+    }
+    command.arg(format!("/OUT:{}", output.display()));
+    Ok(command)
+}
+
+fn windows_pkg_path(path: &str) -> XtaskResult<String> {
+    let output = Command::new("cygpath")
+        .args(["-w", path])
+        .output()
+        .map_err(|error| format!("cygpath не преобразовал путь pkgconf {path}: {error}"))?;
+    if !output.status.success() {
+        return Err(format!("cygpath не преобразовал путь pkgconf {path}"));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn checked_output(stage: &str, command: &mut Command) -> XtaskResult<String> {
+    let output = command
+        .output()
+        .map_err(|error| format!("{stage}: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "{stage}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 /// Собирает libavcodec/libavformat с аппаратными VP9 и программным резервом.

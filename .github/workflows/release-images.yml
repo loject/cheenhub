@@ -332,6 +332,16 @@ jobs:
           cargo run --locked -p xtask -- build-ffmpeg
           if ($LASTEXITCODE -ne 0) { throw "Static FFmpeg build failed." }
 
+      - name: Upload FFmpeg configure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-ffmpeg-config-diagnostics
+          path: |
+            target/ffmpeg-build/ffmpeg-build/ffbuild/config.log
+            target/ffmpeg-build/ffmpeg-static/lib/pkgconfig/vpl.pc
+          if-no-files-found: warn
+
       - name: Build Windows installers
         shell: pwsh
         run: |

@@ -178,18 +178,42 @@ impl Build {
             .current_dir(directory);
         let prefix = self.posix_path(&self.prefix)?;
         let existing = env::var("PKG_CONFIG_PATH").unwrap_or_default();
-        command.env(
-            "PKG_CONFIG_PATH",
-            format!(
-                "{prefix}/lib/pkgconfig{}",
-                if existing.is_empty() {
-                    String::new()
-                } else {
-                    format!(":{existing}")
-                }
-            ),
-        );
+        configure_pkg_config_environment(&mut command, &prefix, &existing, self.windows);
         Ok(command)
+    }
+
+    fn pkg_config_command(&self) -> XtaskResult<Command> {
+        let mut command = Command::new(if self.windows {
+            "pkgconf"
+        } else {
+            "pkg-config"
+        });
+        let path = format!("{}/lib/pkgconfig", self.posix_path(&self.prefix)?);
+        command.env("PKG_CONFIG_PATH", &path);
+        if self.windows {
+            command.env("PKG_CONFIG_LIBDIR", path);
+        }
+        Ok(command)
+    }
+}
+
+fn configure_pkg_config_environment(
+    command: &mut Command,
+    prefix: &str,
+    existing_path: &str,
+    windows: bool,
+) {
+    let package_path = format!("{prefix}/lib/pkgconfig");
+    let search_path = if windows || existing_path.is_empty() {
+        package_path.clone()
+    } else {
+        format!("{package_path}:{existing_path}")
+    };
+    command.env("PKG_CONFIG_PATH", search_path);
+    if windows {
+        command
+            .env("PKG_CONFIG", "pkgconf")
+            .env("PKG_CONFIG_LIBDIR", package_path);
     }
 }
 
