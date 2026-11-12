@@ -257,7 +257,8 @@ jobs:
             throw "The selected linker is not from the configured MSVC toolchain: $linker"
           }
           $msvcBin = Split-Path -Parent $linker
-          "PATH=$msvcBin;C:\msys64\usr\bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "C:\msys64\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $msvcBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Verify Windows build tools
         shell: pwsh
