@@ -287,7 +287,7 @@ jobs:
       - name: Cache Rust and Dioxus build outputs
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: windows-client-release-dx-0.8
+          shared-key: windows-client-release-dx-0.8-ffmpeg-msvc
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
           cache-workspace-crates: true
@@ -326,6 +326,10 @@ jobs:
         shell: pwsh
         run: cargo run --quiet -p xtask -- release-version check
 
+      - name: Fetch Rust dependencies for offline FFmpeg cache cleanup
+        shell: pwsh
+        run: cargo fetch --locked --target x86_64-pc-windows-msvc
+
       - name: Build static FFmpeg
         shell: pwsh
         run: |
@@ -344,6 +348,10 @@ jobs:
 
       - name: Build Windows installers
         shell: pwsh
+        env:
+          # ffmpeg-sys-next запускает bindgen в главном потоке build-скрипта.
+          # Аргумент MSVC действует и на host-сборку при cargo build --target.
+          _LINK_: "/STACK:16777216"
         run: |
           $ErrorActionPreference = 'Stop'
           dx bundle --windows --target x86_64-pc-windows-msvc --package cheenhub_client --bin cheenhub --release --no-default-features --features desktop,windows --package-types nsis --out-dir dist/windows/raw
@@ -446,6 +454,10 @@ jobs:
       - name: Validate release version
         shell: bash
         run: cargo run --quiet -p xtask -- release-version check
+
+      - name: Fetch Rust dependencies for offline FFmpeg cache cleanup
+        shell: bash
+        run: cargo fetch --locked --target x86_64-unknown-linux-gnu
 
       - name: Build static FFmpeg
         shell: bash

@@ -40,7 +40,12 @@ pub(super) fn vpx(build: &Build) -> XtaskResult<()> {
             "сборка libvpx MSVC",
             Command::new("MSBuild.exe")
                 .arg("vpx.sln")
-                .args(["/p:Configuration=Release", "/p:Platform=x64"])
+                .args([
+                    "/p:Configuration=Release",
+                    "/p:Platform=x64",
+                    // Rust переупаковывает архив, а объекты /GL зависят от версии MSVC.
+                    "/p:WholeProgramOptimization=false",
+                ])
                 .arg(format!("/m:{}", build.jobs))
                 .current_dir(&directory),
         )?;
@@ -113,6 +118,16 @@ pub(super) fn vpl(build: &Build) -> XtaskResult<()> {
             "-DCMAKE_CXX_COMPILER=cl",
         ]);
     }
+    // Шаблон vpl.pc не перечисляет эти зависимости статического dispatcher.
+    // Передаём их через Libs.private для проверки линковки и configure FFmpeg.
+    let private_libraries = if build.windows {
+        "-ladvapi32 -lole32"
+    } else {
+        "-lstdc++"
+    };
+    configure.arg(format!(
+        "-DVPL_PKGCONFIG_PRIVATE_LIBS:STRING={private_libraries}"
+    ));
     execute("конфигурация oneVPL", &mut configure)?;
     execute(
         "сборка oneVPL",
@@ -274,8 +289,11 @@ pub(super) fn ffmpeg(build: &Build) -> XtaskResult<()> {
             "--enable-encoder=libvpx_vp9",
         ]);
     if build.windows {
+        // oneVPL, libvpx и Rust MSVC используют динамический CRT (/MD).
         configure.args([
             "--toolchain=msvc",
+            "--extra-cflags=-MD",
+            "--extra-cxxflags=-MD",
             "--arch=x86_64",
             "--target-os=win64",
             "--enable-d3d11va",
@@ -287,7 +305,6 @@ pub(super) fn ffmpeg(build: &Build) -> XtaskResult<()> {
             "--enable-libdrm",
             "--enable-encoder=vp9_vaapi",
             "--enable-pic",
-            "--extra-libs=-lstdc++ -ldl -lpthread",
         ]);
     }
     execute("конфигурация FFmpeg", &mut configure)?;
