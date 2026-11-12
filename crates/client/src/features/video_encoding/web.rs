@@ -2,11 +2,13 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
 
 mod frame;
+mod metrics;
 
 pub(crate) use frame::BrowserVideoFrame;
 use frame::VideoFrame;
 
-use std::cell::Cell;
+use metrics::{EncoderLoad, frame_age_ms, performance_now_ms};
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use dioxus::prelude::{debug, warn};
@@ -169,6 +171,7 @@ pub(crate) struct BrowserVideoEncoderHandle {
     encoder: VideoEncoder,
     trace_input_sequence: Rc<Cell<u64>>,
     output_dimensions: Rc<Cell<(u32, u32)>>,
+    load: Rc<RefCell<EncoderLoad>>,
 }
 
 impl BrowserVideoEncoderHandle {
@@ -189,6 +192,10 @@ impl BrowserVideoEncoderHandle {
             .configure(&webcodecs_encoder_config(config))
             .map_err(video_error)?;
         self.output_dimensions.set((config.width, config.height));
+        let mut load = self.load.borrow_mut();
+        load.clear_timings();
+        load.require_key_frame();
+        drop(load);
         debug!(
             width = config.width,
             height = config.height,
@@ -203,6 +210,22 @@ impl VideoFrameEncoder for BrowserVideoEncoderHandle {
     type InputFrame = BrowserVideoFrame;
 
     fn encode(&self, frame: &Self::InputFrame, key_frame: bool) -> Result<(), VideoEncodingError> {
+        let queue = self.encoder.encode_queue_size();
+        let mut load = self.load.borrow_mut();
+        if !load.accept(queue, key_frame) {
+            if load.dropped == 1 || load.dropped.is_multiple_of(60) {
+                debug!(
+                    encode_queue_size = queue,
+                    dropped_frames = load.dropped,
+                    frame_age_ms = frame_age_ms(frame.timestamp_us()),
+                    "browser video encoder overloaded; dropping frame"
+                );
+            }
+            return Ok(());
+        }
+        let key_frame = load.take_key_frame(key_frame);
+        drop(load);
+        let started = performance_now_ms();
         let trace_sequence = self.trace_input_sequence.get();
         self.trace_input_sequence
             .set(trace_sequence.saturating_add(1));
@@ -222,16 +245,26 @@ impl VideoFrameEncoder for BrowserVideoEncoderHandle {
             );
         }
 
-        if !key_frame {
-            return self.encoder.encode(&frame.frame).map_err(video_error);
+        let result = if key_frame {
+            let options = Object::new();
+            set_property(&options, "keyFrame", &JsValue::TRUE);
+            let options: JsValue = options.into();
+            self.encoder.encode_with_options(&frame.frame, &options)
+        } else {
+            self.encoder.encode(&frame.frame)
+        };
+        if let Err(error) = result {
+            if key_frame {
+                self.load.borrow_mut().require_key_frame();
+            }
+            return Err(video_error(error));
         }
-
-        let options = Object::new();
-        set_property(&options, "keyFrame", &JsValue::TRUE);
-        let options: JsValue = options.into();
-        self.encoder
-            .encode_with_options(&frame.frame, &options)
-            .map_err(video_error)
+        if let Some(started) = started {
+            self.load
+                .borrow_mut()
+                .submitted(frame.timestamp_us(), started);
+        }
+        Ok(())
     }
 
     fn close(&self) -> Result<(), VideoEncodingError> {
@@ -246,10 +279,17 @@ fn create_webcodecs_encoder(
     let sequence = Rc::new(Cell::new(0_u64));
     let output_sequence = sequence.clone();
     let trace_input_sequence = Rc::new(Cell::new(0_u64));
+    let load = Rc::new(RefCell::new(EncoderLoad::default()));
+    let output_load = load.clone();
     let codec = config.codec;
     let output_dimensions = Rc::new(Cell::new((config.width, config.height)));
     let callback_dimensions = output_dimensions.clone();
     let output_closure = Closure::wrap(Box::new(move |chunk: EncodedVideoChunk| {
+        let latency = performance_now_ms().and_then(|now| {
+            output_load
+                .borrow_mut()
+                .output_latency(chunk.timestamp().max(0.0) as u64, now)
+        });
         let byte_length = chunk.byte_length();
         let destination = Uint8Array::new_with_length(byte_length);
         if chunk.copy_to(&destination).is_err() {
@@ -267,6 +307,7 @@ fn create_webcodecs_encoder(
                 height,
                 key_frame = chunk.chunk_type() == "key",
                 frame_age_ms = frame_age_ms(chunk.timestamp().max(0.0) as u64),
+                encode_latency_ms = latency.unwrap_or(-1.0),
                 payload_bytes = byte_length,
                 "screen share latency trace: encoder output"
             );
@@ -316,6 +357,7 @@ fn create_webcodecs_encoder(
             encoder,
             trace_input_sequence,
             output_dimensions,
+            load,
         },
         _output_closure: output_closure,
         _error_closure: error_closure,
@@ -383,23 +425,6 @@ pub(super) fn global_constructor_available(name: &str) -> bool {
 
 fn set_property(object: &Object, name: &str, value: &JsValue) {
     let _ = Reflect::set(object, &JsValue::from_str(name), value);
-}
-
-fn frame_age_ms(timestamp_us: u64) -> f64 {
-    performance_now_ms()
-        .map(|now_ms| (now_ms - timestamp_us as f64 / 1_000.0).max(0.0))
-        .unwrap_or(-1.0)
-}
-
-fn performance_now_ms() -> Option<f64> {
-    let performance = Reflect::get(&js_sys::global(), &JsValue::from_str("performance")).ok()?;
-    Reflect::get(&performance, &JsValue::from_str("now"))
-        .ok()?
-        .dyn_into::<Function>()
-        .ok()?
-        .call0(&performance)
-        .ok()?
-        .as_f64()
 }
 
 fn video_error(error: JsValue) -> VideoEncodingError {
