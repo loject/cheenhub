@@ -16,6 +16,7 @@ use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::components::sidebar_menu_dismiss_layer::SidebarMenuDismissLayer;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
+use crate::features::privacy::PrivacyBlockButton;
 use crate::features::realtime::RealtimeHandle;
 use crate::features::voice_chat::{DirectCallHeader, VoiceConnectionHandle};
 
@@ -402,6 +403,12 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
                         }
                     }
                     if let Some(conversation) = selected_conversation() {
+                        PrivacyBlockButton {
+                            user_id: conversation.friend_user_id.clone(),
+                            nickname: conversation.friend_nickname.clone(),
+                            compact: true,
+                            on_changed: move |_| reload.call(()),
+                        }
                         DirectMessageVoiceButton { conversation }
                     }
                 }
@@ -439,6 +446,7 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
                     y: menu.y,
                     on_close: move |_| friend_menu.set(None),
                     on_delete: move |friend_user_id| delete_friend.call(friend_user_id),
+                    on_changed: move |_| reload.call(()),
                 }
             }
         }

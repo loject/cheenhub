@@ -70,30 +70,6 @@ fn other_friendship_user_id(friendship: &Friendship, current_user_id: &Uuid) -> 
     }
 }
 
-/// Проверяет, что пользователи друзья, и возвращает заданный текст ошибки иначе.
-///
-/// Проверяет принятую дружбу для голосовых звонков; переписка дружбы не требует.
-/// Отказ логируется на уровне warn, потому что обычно означает попытку обратиться к
-/// диалогу, к которому у пользователя нет доступа.
-pub(crate) async fn ensure_accepted_friendship(
-    state: &AppState,
-    current_user_id: &Uuid,
-    friend_user_id: &Uuid,
-    rejection: &str,
-) -> Result<(), SocialError> {
-    if accepted_friendship_exists(state, current_user_id, friend_user_id).await? {
-        Ok(())
-    } else {
-        tracing::warn!(
-            user_id = %current_user_id,
-            friend_user_id = %friend_user_id,
-            %rejection,
-            "rejected direct message action for non-friends"
-        );
-        Err(SocialError::Unauthorized(rejection.to_owned()))
-    }
-}
-
 /// Сообщает, установлена ли между пользователями принятая дружба.
 ///
 /// Отдельная функция для сценариев, где отказ не нужен, а достаточно признака,

@@ -5,6 +5,7 @@ pub mod browser_desktop_auth;
 pub mod desktop_oauth;
 pub mod error;
 pub mod host_settings;
+pub mod privacy;
 pub mod push_notifications;
 pub mod servers;
 pub mod social;
@@ -36,6 +37,10 @@ pub use host_settings::{
     HostStatsResponse, HostUserSummary, HostUsersResponse, HostVoiceActivityHistoryResponse,
     HostVoiceActivityResponse, HostVoiceActivitySample, UpdateHostEmailSettingsRequest,
     UpdateHostLogSettingsRequest, UpdateHostRegistrationSettingsRequest,
+};
+pub use privacy::{
+    BlockedUserSummary, DirectMessageAudience, IncomingContactAudience, ListBlockedUsersResponse,
+    UserPrivacySettings,
 };
 pub use push_notifications::{PushPlatform, UpsertPushInstallationRequest};
 pub use servers::{

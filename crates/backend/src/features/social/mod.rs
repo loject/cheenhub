@@ -21,11 +21,16 @@ pub(crate) use application::{
     DirectMessageVoiceAccess, direct_message_voice_access, direct_message_voice_accesses_for_user,
     direct_message_voice_user_ids,
 };
+pub(crate) use application::{
+    ensure_incoming_call_allowed, ensure_incoming_dm_allowed, ensure_incoming_room_invite_allowed,
+    ensure_not_blocked,
+};
 pub(crate) use error::SocialError;
 
 #[cfg(test)]
 pub(crate) use application::{
     accept_friend_request, open_dm_conversation, send_dm_message, send_friend_request,
+    update_privacy_settings,
 };
 
 /// Собирает маршруты друзей.
@@ -49,6 +54,20 @@ pub(crate) fn friend_routes() -> Router<AppState> {
             post(transport::cancel_friend_request),
         )
         .route("/{friend_user_id}", delete(transport::delete_friend))
+}
+
+/// Собирает маршруты настроек приватности и блокировок.
+pub(crate) fn privacy_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/settings",
+            get(transport::get_privacy_settings).put(transport::update_privacy_settings),
+        )
+        .route("/blocks", get(transport::list_blocked_users))
+        .route(
+            "/blocks/{user_id}",
+            axum::routing::put(transport::block_user).delete(transport::unblock_user),
+        )
 }
 
 /// Собирает маршруты личных сообщений.

@@ -517,3 +517,129 @@ async fn friends_can_join_and_leave_direct_message_voice_room() {
     .expect("alice should leave dm voice");
     assert_eq!(left_snapshot.participants.len(), 1);
 }
+
+#[tokio::test]
+async fn stranger_direct_media_join_respects_recipient_call_privacy() {
+    let state = state();
+    let (alice, alice_id) = registered_user_with_email(
+        &state,
+        "privacy_voice_alice",
+        "privacy-voice-alice@example.com",
+    )
+    .await;
+    let (bob, bob_id) =
+        registered_user_with_email(&state, "privacy_voice_bob", "privacy-voice-bob@example.com")
+            .await;
+    let conversation_id = crate::features::social::open_dm_conversation(
+        &state,
+        &bob_id,
+        cheenhub_contracts::rest::OpenDmConversationRequest {
+            friend_user_id: alice.user.id.clone(),
+        },
+    )
+    .await
+    .unwrap()
+    .conversation
+    .id;
+
+    let denied = join_direct_message_room(
+        &state,
+        uuid::Uuid::new_v4(),
+        uuid::Uuid::new_v4(),
+        &bob.user,
+        &bob_id,
+        JoinDirectMessageVoiceRoom {
+            conversation_id: conversation_id.clone(),
+            microphone_enabled: true,
+            voice_protocol_version: 5,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
+        },
+    )
+    .await;
+    assert!(matches!(
+        denied,
+        Err(VoiceChatApplicationError::Unauthorized(_))
+    ));
+    assert_eq!(
+        state
+            .voice_presence_store
+            .active_voice_connection_count()
+            .await,
+        0
+    );
+
+    crate::features::social::update_privacy_settings(
+        &state,
+        &alice_id,
+        cheenhub_contracts::rest::UserPrivacySettings {
+            direct_calls: cheenhub_contracts::rest::IncomingContactAudience::Everyone,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let allowed = join_direct_message_room(
+        &state,
+        uuid::Uuid::new_v4(),
+        uuid::Uuid::new_v4(),
+        &bob.user,
+        &bob_id,
+        JoinDirectMessageVoiceRoom {
+            conversation_id,
+            microphone_enabled: true,
+            voice_protocol_version: 5,
+            device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+            confirm_disconnect_other_devices: false,
+        },
+    )
+    .await
+    .expect("recipient permits direct media from everyone");
+    assert_eq!(allowed.participants.len(), 1);
+}
+
+#[tokio::test]
+async fn blocked_direct_media_join_is_denied_after_contact_guard_releases() {
+    let state = state();
+    let (alice, alice_id, _bob, bob_id, conversation_id) =
+        direct_message_conversation(&state).await;
+    let guard = state.contact_pair_guards.lock(&alice_id, &bob_id).await;
+    let joining_state = state.clone();
+    let pending = tokio::spawn(async move {
+        join_direct_message_room(
+            &joining_state,
+            uuid::Uuid::new_v4(),
+            uuid::Uuid::new_v4(),
+            &alice,
+            &alice_id,
+            JoinDirectMessageVoiceRoom {
+                conversation_id,
+                microphone_enabled: true,
+                voice_protocol_version: 5,
+                device_kind: cheenhub_contracts::realtime::VoiceDeviceKind::Desktop,
+                confirm_disconnect_other_devices: false,
+            },
+        )
+        .await
+    });
+    tokio::task::yield_now().await;
+    state
+        .social_store
+        .block_user(&alice_id, &bob_id, Utc::now())
+        .await
+        .unwrap();
+    drop(guard);
+
+    let result = pending.await.unwrap();
+    assert!(matches!(
+        result,
+        Err(VoiceChatApplicationError::Unauthorized(_))
+    ));
+    assert_eq!(
+        state
+            .voice_presence_store
+            .active_voice_connection_count()
+            .await,
+        0
+    );
+}

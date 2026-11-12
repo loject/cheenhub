@@ -218,6 +218,19 @@ impl InMemoryVoicePresenceStore {
         .await
     }
 
+    /// Завершает медиаприсутствие участников личного диалога после блокировки.
+    pub(crate) async fn remove_direct_conversation(
+        &self,
+        conversation_id: &Uuid,
+    ) -> Vec<VoicePresence> {
+        self.remove_presence(
+            self.presence
+                .remove_direct_conversation(conversation_id)
+                .await,
+        )
+        .await
+    }
+
     /// Удаляет голосовое присутствие только в комнатах указанного сервера.
     ///
     /// Личные звонки и присутствие на других серверах сохраняются; связанные

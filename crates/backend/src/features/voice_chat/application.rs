@@ -24,6 +24,7 @@ mod network_quality;
 mod output;
 mod permissions;
 mod presence;
+mod privacy;
 mod room_invites;
 mod uplink;
 mod video;
@@ -45,6 +46,7 @@ use network_quality::{
 };
 pub(crate) use output::set_output_state;
 pub(crate) use presence::{disconnect_realtime_stream, remove_deleted_server};
+pub(crate) use privacy::terminate_contact_for_block;
 pub(crate) use room_invites::{
     cancel_voice_room_invite, list_voice_room_invite_candidates, list_voice_room_invites,
     respond_voice_room_invite, send_voice_room_invite,
@@ -148,7 +150,8 @@ pub(crate) async fn join_direct_message_room(
     request: JoinDirectMessageVoiceRoom,
 ) -> Result<VoiceRoomSnapshot, VoiceChatApplicationError> {
     let conversation_id = parse_id(&request.conversation_id, "Диалог не найден.")?;
-    let access = ensure_direct_message_voice_available(state, user_id, &conversation_id).await?;
+    let (access, _contact_guard) =
+        privacy::authorize_direct_media_join(state, user_id, &conversation_id).await?;
     let target = direct_message_voice_target(access.conversation_id);
     let auth_session_id = presence::authorize_join_transport(state, &session_id, user_id)?;
     let incoming = VoicePresence {

@@ -67,7 +67,11 @@ pub(super) fn VoiceSessionDialogs() -> Element {
                     "aria-label": "Голосовое подключение отключено",
                     class: "relative w-full max-w-[420px] rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-zinc-100 shadow-[0_28px_90px_rgba(0,0,0,0.55)]",
                     h2 { class: "text-[16px] font-semibold text-zinc-50", "Голосовое подключение отключено" }
-                    if reason == VoicePresenceEvictionReason::SameAuthSessionTakeover {
+                    if reason == VoicePresenceEvictionReason::PrivacyBlock {
+                        p { class: "mt-3 text-[13px] leading-5 text-zinc-400",
+                            "Личный звонок завершён из-за блокировки собеседника. Ваша авторизация сохранена."
+                        }
+                    } else if reason == VoicePresenceEvictionReason::SameAuthSessionTakeover {
                         p { class: "mt-3 text-[13px] leading-5 text-zinc-400",
                             "Другая вкладка с вашей сессией входа заняла голосовое подключение. Ваша авторизация сохранена."
                         }
@@ -76,8 +80,10 @@ pub(super) fn VoiceSessionDialogs() -> Element {
                             "Ваш аккаунт переключился на другой голосовой разговор с другого устройства. Ваша авторизация сохранена."
                         }
                     }
-                    p { class: "mt-3 text-[12px] leading-5 text-amber-200/85",
-                        "Если это были не вы, завершите все сеансы аккаунта и войдите заново."
+                    if reason != VoicePresenceEvictionReason::PrivacyBlock {
+                        p { class: "mt-3 text-[12px] leading-5 text-amber-200/85",
+                            "Если это были не вы, завершите все сеансы аккаунта и войдите заново."
+                        }
                     }
                     div { class: "mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end",
                         button {
@@ -87,6 +93,7 @@ pub(super) fn VoiceSessionDialogs() -> Element {
                             onclick: move |_| dismiss_eviction.dismiss_eviction_notice(),
                             "Понятно"
                         }
+                        if reason != VoicePresenceEvictionReason::PrivacyBlock {
                         button {
                             r#type: "button",
                             disabled: revoking(),
@@ -111,6 +118,7 @@ pub(super) fn VoiceSessionDialogs() -> Element {
                                 });
                             },
                             if revoking() { "Завершаем сеансы..." } else { "Это не я — выйти везде" }
+                        }
                         }
                     }
                 }

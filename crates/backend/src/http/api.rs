@@ -14,6 +14,7 @@ pub(crate) fn router() -> Router<AppState> {
         .nest("/host-settings", host_settings::routes())
         .nest("/push", push_notifications::routes())
         .nest("/friends", social::friend_routes())
+        .nest("/privacy", social::privacy_routes())
         .nest("/direct", social::dm_routes())
         .nest("/direct-messages", social::dm_routes())
         .route("/realtime/ws", get(realtime::websocket::upgrade))

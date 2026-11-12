@@ -25,6 +25,7 @@ pub(crate) mod message_composer;
 pub(crate) mod microphone;
 pub(crate) mod network;
 pub(crate) mod notifications;
+pub(crate) mod privacy;
 pub(crate) mod pwa;
 pub(crate) mod realtime;
 pub(crate) mod runtime;

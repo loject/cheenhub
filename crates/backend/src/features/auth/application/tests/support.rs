@@ -124,6 +124,7 @@ pub(super) fn state_with_mailer() -> (AppState, Arc<TestAuthMailer>) {
             ),
         ),
         image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
+        contact_pair_guards: Arc::new(Default::default()),
         voice_presence_store: Arc::new(
             crate::features::voice_chat::infrastructure::InMemoryVoicePresenceStore::default(),
         ),

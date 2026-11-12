@@ -113,7 +113,18 @@ pub(crate) async fn send_voice_room_invite(
             "Нельзя пригласить самого себя.".to_owned(),
         ));
     }
+    let _contact_guard = state
+        .contact_pair_guards
+        .lock(caller_user_id, &recipient_id)
+        .await;
     ensure_room_voice_available(state, &recipient_id, &server_id, &room_id).await?;
+    crate::features::social::ensure_incoming_room_invite_allowed(
+        state,
+        caller_user_id,
+        &recipient_id,
+    )
+    .await
+    .map_err(super::social_error)?;
 
     let present = state
         .voice_presence_store
@@ -203,9 +214,26 @@ pub(crate) async fn respond_voice_room_invite(
             "Это приглашение адресовано другому пользователю.".to_owned(),
         ));
     }
+    let _contact_guard = if request.response == VoiceRoomInviteResponse::Accept {
+        Some(
+            state
+                .contact_pair_guards
+                .lock(recipient_user_id, &invite.caller_user_id)
+                .await,
+        )
+    } else {
+        None
+    };
     if request.response == VoiceRoomInviteResponse::Accept {
         ensure_room_voice_available(state, recipient_user_id, &invite.server_id, &invite.room_id)
             .await?;
+        crate::features::social::ensure_not_blocked(
+            state,
+            recipient_user_id,
+            &invite.caller_user_id,
+        )
+        .await
+        .map_err(super::social_error)?;
     }
     let resolved = match state
         .voice_room_invite_store
@@ -306,7 +334,7 @@ fn lifecycle_event(invite: &VoiceRoomInvite) -> VoiceRoomInviteLifecycleEvent {
     }
 }
 
-async fn fanout_invite_event(state: &AppState, invite: &VoiceRoomInvite) {
+pub(super) async fn fanout_invite_event(state: &AppState, invite: &VoiceRoomInvite) {
     let recipient_count = state
         .realtime_hub
         .fanout_to_user_streams(

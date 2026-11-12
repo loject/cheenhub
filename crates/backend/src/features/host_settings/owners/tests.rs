@@ -46,6 +46,7 @@ fn base_state() -> AppState {
             InMemoryAuthStore::default(),
         ))),
         image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
+        contact_pair_guards: Arc::new(Default::default()),
         voice_presence_store: Arc::new(InMemoryVoicePresenceStore::default()),
         voice_room_invite_store: Arc::new(
             crate::features::voice_chat::infrastructure::InMemoryVoiceRoomInviteStore::default(),

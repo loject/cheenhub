@@ -114,6 +114,27 @@ impl PresenceRegistry {
         self.remove_and_publish(&mut state, &presences)
     }
 
+    /// Удаляет все голосовые подключения одного личного диалога после блокировки.
+    pub(super) async fn remove_direct_conversation(
+        &self,
+        conversation_id: &Uuid,
+    ) -> Vec<VoicePresence> {
+        let target = VoicePresenceTarget {
+            kind: VoicePresenceTargetKind::DirectMessage,
+            server_id: *conversation_id,
+            room_id: *conversation_id,
+        };
+        let mut state = self.state.lock().await;
+        let presences = state
+            .rooms
+            .get(&target)
+            .into_iter()
+            .flat_map(HashMap::values)
+            .cloned()
+            .collect::<Vec<_>>();
+        self.remove_and_publish(&mut state, &presences)
+    }
+
     /// Удаляет присутствие пользователя из одной серверной комнаты.
     pub(super) async fn kick_user_from_room(
         &self,

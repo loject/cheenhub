@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::features::images::domain::{NewStoredImage, StoredImage};
 use crate::features::social::error::SocialError;
-use crate::features::social::support::{load_user_conversation, parse_id};
+use crate::features::social::support::{load_user_conversation, other_user_id, parse_id};
 use crate::state::AppState;
 
 const DM_IMAGE_KIND_PREFIX: &str = "direct_message_image:";
@@ -26,7 +26,11 @@ pub(crate) async fn upload_dm_image(
     bytes: Bytes,
 ) -> Result<UploadDmImageResponse, SocialError> {
     let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
-    load_user_conversation(state, &conversation_id, user_id).await?;
+    let conversation = load_user_conversation(state, &conversation_id, user_id).await?;
+    let recipient_id = other_user_id(&conversation, user_id);
+    let _contact_guard = state.contact_pair_guards.lock(user_id, &recipient_id).await;
+    super::ensure_incoming_dm_allowed(state, user_id, &recipient_id, Some(&conversation_id))
+        .await?;
     let image = validate_image(*user_id, conversation_id, bytes)?;
     let summary = summary(&image);
     state

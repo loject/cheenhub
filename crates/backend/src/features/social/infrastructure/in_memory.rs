@@ -1,6 +1,6 @@
 //! Простое in-memory-хранилище друзей и личных сообщений.
 
-use std::sync::Mutex;
+use std::{collections::HashMap, sync::Mutex};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -27,6 +27,9 @@ pub(crate) struct InMemorySocialStore {
     pub(super) messages: Mutex<Vec<DmMessage>>,
     pub(super) member_states: Mutex<Vec<ConversationMemberState>>,
     read_checkpoints: Mutex<Vec<ConversationReadCheckpoint>>,
+    pub(super) privacy_settings:
+        Mutex<HashMap<Uuid, crate::features::social::domain::PrivacySettings>>,
+    pub(super) user_blocks: Mutex<Vec<crate::features::social::domain::UserBlock>>,
 }
 
 #[async_trait]
@@ -108,6 +111,21 @@ impl SocialStore for InMemorySocialStore {
             users,
         )
         .await
+    }
+
+    async fn conversation_between(
+        &self,
+        left_user_id: &Uuid,
+        right_user_id: &Uuid,
+    ) -> anyhow::Result<Option<DmConversation>> {
+        let (low, high) = ordered_pair(*left_user_id, *right_user_id);
+        Ok(self
+            .conversations
+            .lock()
+            .map_err(|_| poisoned())?
+            .iter()
+            .find(|row| row.user_low_id == low && row.user_high_id == high)
+            .cloned())
     }
 
     async fn conversation_by_id(

@@ -184,6 +184,21 @@ impl InMemoryDirectCallStore {
         Some(calls.remove(index))
     }
 
+    /// Удаляет ожидающие и активные звонки направленной пары после блокировки.
+    pub(crate) async fn end_between_users(&self, left: &Uuid, right: &Uuid) -> Vec<DirectCall> {
+        let mut calls = self.calls.lock().await;
+        let mut ended = Vec::new();
+        calls.retain(|call| {
+            let between = (call.caller_user_id == *left && call.callee_user_id == *right)
+                || (call.caller_user_id == *right && call.callee_user_id == *left);
+            if between {
+                ended.push(call.clone());
+            }
+            !between
+        });
+        ended
+    }
+
     /// Возвращает незавершённые звонки пользователя.
     pub(crate) async fn list_for_user(&self, user_id: &Uuid) -> Vec<DirectCall> {
         self.calls

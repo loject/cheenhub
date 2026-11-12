@@ -31,6 +31,64 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
+/// SeaORM-сущность индивидуальных настроек приватности.
+pub mod user_privacy_settings {
+    use sea_orm::entity::prelude::*;
+
+    /// Настройки пользователя и время последнего ограничения входящих ЛС.
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "user_privacy_settings")]
+    pub struct Model {
+        /// Владелец настроек.
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub user_id: Uuid,
+        /// Режим входящих ЛС.
+        pub direct_messages: String,
+        /// Режим личных звонков.
+        pub direct_calls: String,
+        /// Режим приглашений в голосовые комнаты.
+        pub voice_room_invites: String,
+        /// Время последнего ограничения входящих ЛС.
+        pub direct_messages_restricted_since: Option<DateTimeUtc>,
+        /// Время сохранения настроек.
+        pub updated_at: DateTimeUtc,
+    }
+
+    /// Отношения настроек приватности.
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+/// SeaORM-сущность направленных блокировок пользователей.
+pub mod user_blocks {
+    use sea_orm::entity::prelude::*;
+
+    /// Последняя блокировка указанной пары с возможностью разблокировки.
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "user_blocks")]
+    pub struct Model {
+        /// Стабильный идентификатор записи.
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        /// Владелец блокировки.
+        pub blocker_user_id: Uuid,
+        /// Заблокированный пользователь.
+        pub blocked_user_id: Uuid,
+        /// Время последней блокировки.
+        pub blocked_at: DateTimeUtc,
+        /// Время снятия блокировки.
+        pub unblocked_at: Option<DateTimeUtc>,
+    }
+
+    /// Отношения блокировок.
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 /// SeaORM-сущность личных диалогов.
 pub mod dm_conversations {
     use sea_orm::entity::prelude::*;
