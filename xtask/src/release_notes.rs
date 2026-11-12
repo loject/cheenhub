@@ -16,11 +16,32 @@ pub(crate) struct ReleaseNotes {
 impl ReleaseNotes {
     /// Читает описание точного тега из `releases` относительно корня репозитория.
     ///
-    /// Отсутствующий файл, неверный формат или превышение лимита блокируют выпуск.
+    /// Для RC без файла возвращает стандартное описание. Ошибки чтения и
+    /// неверный формат существующего файла блокируют выпуск.
     pub(crate) fn read(tag: &str) -> XtaskResult<Self> {
         let path = notes_path(tag)?;
-        let contents = fs::read_to_string(&path)
-            .map_err(|error| format!("failed to read release notes {}: {error}", path.display()))?;
+        let contents = match fs::read_to_string(&path) {
+            Ok(contents) => contents,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound
+                    && tag.strip_prefix('v').is_some_and(|version| {
+                        crate::release_version::parse_release_version(version)
+                            .is_ok_and(|(_, _, _, rc)| rc.is_some())
+                    }) =>
+            {
+                println!("Release notes not found for {tag}; using default RC description.");
+                return Ok(Self {
+                    github: format!("Release candidate {tag}."),
+                    rustore: String::new(),
+                });
+            }
+            Err(error) => {
+                return Err(format!(
+                    "failed to read release notes {}: {error}",
+                    path.display()
+                ));
+            }
+        };
         Self::parse(tag, &contents)
             .map_err(|error| format!("invalid release notes {}: {error}", path.display()))
     }
@@ -76,7 +97,7 @@ pub(crate) fn run(args: Vec<String>) -> XtaskResult<()> {
     match args.as_slice() {
         [action, tag] if action == "check" => {
             ReleaseNotes::read(tag)?;
-            println!("Release notes validated: {tag}");
+            println!("Release notes ready: {tag}");
             Ok(())
         }
         [action, tag, directory] if action == "export" => {

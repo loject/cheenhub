@@ -1,6 +1,23 @@
 use super::*;
 
 #[test]
+fn missing_rc_notes_use_default_description() {
+    let notes = ReleaseNotes::read("v987654321.0.0-rc.1").unwrap();
+
+    assert!(!notes.github.is_empty());
+}
+
+#[test]
+fn missing_stable_notes_remain_an_error() {
+    assert!(ReleaseNotes::read("v987654321.0.0").is_err());
+}
+
+#[test]
+fn missing_invalid_rc_notes_remain_an_error() {
+    assert!(ReleaseNotes::read("v987654321.0.0-rc.0").is_err());
+}
+
+#[test]
 fn extracts_independent_github_and_rustore_descriptions() {
     let notes = ReleaseNotes::parse(
         "v1.2.3",

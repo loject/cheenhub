@@ -44,7 +44,7 @@ pub(super) fn run_release_version(args: Vec<String>) -> XtaskResult<()> {
             }
             ensure_clean_worktree("before updating the release version")?;
             crate::release_notes::ReleaseNotes::read(&release.tag)?;
-            println!("Release notes validated: {}", release.tag);
+            println!("Release notes ready: {}", release.tag);
             update_workspace_version(Path::new(ROOT_MANIFEST), &release.version)?;
             let workspace = Workspace::read(Path::new(ROOT_MANIFEST))?;
             workspace.check_release_version()?;
@@ -216,7 +216,8 @@ fn prompt_custom_release_target() -> XtaskResult<ReleaseTarget> {
     release_target_from_tag(&tag)
 }
 
-fn parse_release_version(version: &str) -> XtaskResult<(u64, u64, u64, Option<u64>)> {
+/// Разбирает версию выпуска и необязательный положительный номер RC.
+pub(super) fn parse_release_version(version: &str) -> XtaskResult<(u64, u64, u64, Option<u64>)> {
     let (base_version, rc_number) = match version.split_once("-rc.") {
         Some((base, number)) => {
             let number = number.parse::<u64>().map_err(|error| {
