@@ -24,6 +24,14 @@ pub(crate) async fn sleep_duration(duration: Duration) {
     native::sleep_duration(duration).await;
 }
 
+/// Ожидает дедлайн realtime-запроса, не блокируя активный future.
+///
+/// Используется вместо общего `sleep_duration`, поскольку его host-реализация
+/// намеренно синхронна для существующих тестов.
+pub(crate) async fn sleep_request_timeout(duration: Duration) {
+    native::sleep_request_timeout(duration).await;
+}
+
 /// Запускает клиентское приложение с настройками текущей платформы.
 pub(crate) fn launch_client(app: fn() -> dioxus::prelude::Element) {
     native::launch_client(app, crate::features::autostart::started_hidden());

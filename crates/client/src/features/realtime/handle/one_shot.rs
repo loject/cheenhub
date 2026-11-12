@@ -21,37 +21,24 @@ pub(super) async fn request(
     request_id: Uuid,
 ) -> Result<RealtimeEnvelope, RealtimeError> {
     let module = envelope.module;
-    let mut last_error = None;
+    let (send, mut recv) = session
+        .open_bi()
+        .await
+        .map_err(|error| RealtimeError::new(format!("Failed to open realtime stream: {error}")))?;
+    let send = Rc::new(Mutex::new(send));
+    debug!(?module, %request_id, "opened one-shot WebTransport realtime stream");
 
-    for attempt in 0..2 {
-        let (send, mut recv) = session.open_bi().await.map_err(|error| {
-            RealtimeError::new(format!("Failed to open realtime stream: {error}"))
-        })?;
-        let send = Rc::new(Mutex::new(send));
-        debug!(module = ?module, "opened one-shot WebTransport realtime stream");
-
-        match framing::write_envelope(&send, &envelope).await {
-            Ok(()) => {
-                debug!(module = ?module, %request_id, "wrote one-shot realtime request");
-                let response = framing::read_envelope(&mut recv).await?.ok_or_else(|| {
-                    RealtimeError::new("Realtime stream closed before the request completed.")
-                })?;
-                validate_response(module, request_id, &response)?;
-                return Ok(response);
-            }
-            Err(error) => {
-                warn!(
-                    module = ?module,
-                    attempt,
-                    %error,
-                    "failed to write one-shot WebTransport realtime frame"
-                );
-                last_error = Some(error);
-            }
-        }
+    if let Err(error) = framing::write_envelope(&send, &envelope).await {
+        send.lock().await.reset(0);
+        warn!(?module, %request_id, %error, "one-shot frame write failed; request not replayed");
+        return Err(error);
     }
-
-    Err(last_error.unwrap_or_else(|| RealtimeError::new("Failed to write realtime frame.")))
+    debug!(?module, %request_id, "wrote one-shot realtime request");
+    let response = framing::read_envelope(&mut recv).await?.ok_or_else(|| {
+        RealtimeError::new("Realtime stream closed before the request completed.")
+    })?;
+    validate_response(module, request_id, &response)?;
+    Ok(response)
 }
 
 fn validate_response(

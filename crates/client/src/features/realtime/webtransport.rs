@@ -1,19 +1,17 @@
 //! Вспомогательные функции транспортного слоя WebTransport-клиента.
 
-use std::rc::Rc;
-
 use cheenhub_contracts::realtime::{ControlKind, RealtimeEnvelope, RealtimeKind, RealtimeModule};
 use dioxus::prelude::{debug, info, warn};
 use futures_channel::mpsc;
-use futures_util::lock::Mutex;
-use web_transport::{RecvStream, SendStream, Session};
+use web_transport::{RecvStream, Session};
 
 use super::framing;
 use super::guards::{
-    ModuleStreams, PendingKey, PendingRequests, reject_pending_request,
-    reject_pending_requests_for_module, remove_cached_stream,
+    CachedStream, ModuleStreams, PendingRequests, reject_pending_requests_for_stream,
+    remove_cached_stream,
 };
 use super::handle::{DatagramListeners, RealtimeHandle};
+use super::inbound::deliver_pending_response;
 use super::task::spawn_task;
 
 pub(super) fn spawn_datagram_reader(
@@ -42,25 +40,20 @@ pub(super) fn spawn_stream_reader(
     mut recv: RecvStream,
     inbound: mpsc::UnboundedSender<RealtimeEnvelope>,
     pending: PendingRequests,
-    pending_key: Option<PendingKey>,
-    cached_stream: Option<(ModuleStreams, Rc<Mutex<SendStream>>)>,
-    send_keepalive: Option<Rc<Mutex<SendStream>>>,
+    streams: ModuleStreams,
+    cached_stream: CachedStream,
 ) {
     spawn_task(async move {
-        // Одноразовый двунаправленный поток нельзя закрывать до ответа backend.
-        let one_shot = send_keepalive.is_some();
-        let _send_keepalive = send_keepalive;
-        let rejects_module_pending = cached_stream.is_some();
-        let mut received_one_shot_response = false;
+        let stream_id = cached_stream.id;
         let close_reason = loop {
             let envelope = match framing::read_envelope(&mut recv).await {
                 Ok(Some(envelope)) => envelope,
                 Ok(None) => {
-                    debug!(module = ?module, "WebTransport realtime stream closed by peer");
+                    debug!(?module, %stream_id, "WebTransport realtime stream closed by peer");
                     break "Realtime stream closed before the request completed.";
                 }
                 Err(error) => {
-                    warn!(module = ?module, %error, "WebTransport realtime stream read failed");
+                    warn!(?module, %stream_id, %error, "WebTransport realtime stream read failed");
                     break "Realtime stream failed before the request completed.";
                 }
             };
@@ -69,36 +62,27 @@ pub(super) fn spawn_stream_reader(
                 || (envelope.module != module && !is_rejection(&envelope))
             {
                 warn!(
-                    module = ?module,
+                    ?module,
+                    %stream_id,
                     envelope_module = ?envelope.module,
                     envelope_kind = ?envelope.kind,
                     "closing realtime stream after mismatched envelope"
                 );
                 break "Realtime stream returned a mismatched response before the request completed.";
             }
-            if inbound.unbounded_send(envelope).is_err() {
-                debug!(module = ?module, "realtime inbound dispatcher closed");
+            if let Some(request_id) = envelope.request_id {
+                if !deliver_pending_response(&pending, envelope, Some(stream_id)) {
+                    debug!(?module, %stream_id, %request_id, "ignored response without matching stream-owned request");
+                }
+            } else if inbound.unbounded_send(envelope).is_err() {
+                debug!(?module, %stream_id, "realtime inbound dispatcher closed");
                 break "Realtime inbound dispatcher closed before the request completed.";
             }
-            if one_shot {
-                received_one_shot_response = true;
-                break "Realtime one-shot response received.";
-            }
         };
-        if received_one_shot_response {
-            // Завершение задачи освобождает send-половину и сообщает backend, что one-shot завершён.
-        } else if rejects_module_pending {
-            reject_pending_requests_for_module(&pending, module, close_reason);
-        } else if let Some(key) = pending_key {
-            reject_pending_request(&pending, key, close_reason);
-        }
-        if let Some((streams, stream)) = cached_stream {
-            remove_cached_stream(streams, module, stream).await;
-            debug!(
-                module = ?module,
-                "removed closed WebTransport realtime stream from cache"
-            );
-        }
+
+        reject_pending_requests_for_stream(&pending, module, stream_id, close_reason);
+        remove_cached_stream(streams, module, cached_stream.send).await;
+        debug!(?module, %stream_id, "removed closed WebTransport realtime stream from cache");
     });
 }
 

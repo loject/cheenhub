@@ -14,3 +14,16 @@ use std::time::Duration;
 pub(super) async fn sleep_duration(duration: Duration) {
     std::thread::sleep(duration);
 }
+
+/// Не блокирует поток исполнителя при ожидании дедлайна realtime-запроса.
+///
+/// В host-проверках без desktop/mobile runtime используется отдельный поток,
+/// а остальное тестовое поведение `sleep_duration` остается неизменным.
+pub(super) async fn sleep_request_timeout(duration: Duration) {
+    let (sender, receiver) = futures_channel::oneshot::channel();
+    std::thread::spawn(move || {
+        std::thread::sleep(duration);
+        let _ = sender.send(());
+    });
+    let _ = receiver.await;
+}

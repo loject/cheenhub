@@ -24,33 +24,57 @@ pub(super) fn spawn_universal_reader(
                 dispatch_event(&event_listeners, envelope);
                 continue;
             }
-            let Some(request_id) = envelope.request_id else {
-                continue;
-            };
-            let key = (envelope.module, request_id);
-            if let Some(sender) = pending.borrow_mut().remove(&key) {
-                let _ = sender.send(envelope);
-            } else if is_rejection(&envelope) {
-                let key = pending
-                    .borrow()
-                    .keys()
-                    .find(|(_, pending_request_id)| *pending_request_id == request_id)
-                    .copied();
-                if let Some(key) = key
-                    && let Some(sender) = pending.borrow_mut().remove(&key)
-                {
-                    let _ = sender.send(envelope);
-                }
-            } else {
+            let request_id = envelope.request_id;
+            let module = envelope.module;
+            let kind = envelope.kind;
+            if !deliver_pending_response(&pending, envelope, None) {
                 debug!(
-                    module = ?envelope.module,
-                    kind = ?envelope.kind,
-                    %request_id,
-                    "received realtime response without pending receiver"
+                    ?module,
+                    ?kind,
+                    ?request_id,
+                    "received realtime response without matching pending receiver"
                 );
             }
         }
     });
+}
+
+/// Доставляет ответ синхронно только запросу, принадлежащему указанному потоку.
+///
+/// Вызов непосредственно из WebTransport-reader исключает гонку между закрытием
+/// потока и обработкой уже прочитанного ответа общей очередью событий.
+pub(super) fn deliver_pending_response(
+    pending: &PendingRequests,
+    envelope: RealtimeEnvelope,
+    stream_id: Option<uuid::Uuid>,
+) -> bool {
+    let Some(request_id) = envelope.request_id else {
+        return false;
+    };
+    let key = (envelope.module, request_id);
+    let mut requests = pending.borrow_mut();
+    let matching_key = if requests
+        .get(&key)
+        .is_some_and(|request| request.stream_id == stream_id)
+    {
+        Some(key)
+    } else if is_rejection(&envelope) {
+        requests
+            .iter()
+            .find(|((_, id), request)| *id == request_id && request.stream_id == stream_id)
+            .map(|(key, _)| *key)
+    } else {
+        None
+    };
+    let Some(matching_key) = matching_key else {
+        return false;
+    };
+    if let Some(request) = requests.remove(&matching_key) {
+        let _ = request.sender.send(envelope);
+        true
+    } else {
+        false
+    }
 }
 
 fn dispatch_event(event_listeners: &EventListeners, envelope: RealtimeEnvelope) {
@@ -63,3 +87,6 @@ fn is_rejection(envelope: &RealtimeEnvelope) -> bool {
     envelope.module == RealtimeModule::Control
         && envelope.kind == RealtimeKind::Control(ControlKind::Rejected)
 }
+
+#[cfg(test)]
+mod tests;

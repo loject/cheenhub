@@ -5,6 +5,7 @@ mod fallback;
 mod fire_and_forget;
 mod lifecycle;
 mod one_shot;
+mod requests;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -18,16 +19,13 @@ use cheenhub_contracts::realtime::{
 use dioxus::prelude::{debug, warn};
 use futures_channel::{mpsc, oneshot};
 use futures_util::lock::Mutex;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::de::DeserializeOwned;
 use uuid::Uuid;
 use web_time::{Instant, SystemTime, UNIX_EPOCH};
-use web_transport::{SendStream, Session};
+use web_transport::Session;
 
 use super::error::RealtimeError;
-use super::framing;
-use super::guards::{
-    ModuleStreams, PendingRequestGuard, PendingRequests, StreamWriteGuard, remove_cached_stream,
-};
+use super::guards::{ModuleStreams, PendingRequests};
 use super::inbound::{EventListeners, spawn_universal_reader};
 use super::status::{RealtimeConnectionStatus, RealtimeFallbackInfo, RealtimeTransportKind};
 use super::websocket::{WebSocketOutbound, WebSocketOutboundSender};
@@ -167,190 +165,6 @@ impl RealtimeHandle {
         self.inner.status_listeners.borrow_mut().push(sender);
 
         receiver
-    }
-
-    /// Sends one request and waits for a typed response.
-    pub(crate) async fn request<P, R>(
-        &self,
-        module: RealtimeModule,
-        kind: RealtimeKind,
-        payload: P,
-    ) -> Result<R, RealtimeError>
-    where
-        P: Serialize,
-        R: DeserializeOwned,
-    {
-        self.request_with_mode(module, kind, payload, default_request_mode(module))
-            .await
-    }
-
-    /// Отправляет один запрос через короткоживущий надежный поток, если активен WebTransport.
-    pub(crate) async fn request_one_shot<P, R>(
-        &self,
-        module: RealtimeModule,
-        kind: RealtimeKind,
-        payload: P,
-    ) -> Result<R, RealtimeError>
-    where
-        P: Serialize,
-        R: DeserializeOwned,
-    {
-        self.request_with_mode(module, kind, payload, ReliableRequestMode::OneShot)
-            .await
-    }
-
-    async fn request_with_mode<P, R>(
-        &self,
-        module: RealtimeModule,
-        kind: RealtimeKind,
-        payload: P,
-        mode: ReliableRequestMode,
-    ) -> Result<R, RealtimeError>
-    where
-        P: Serialize,
-        R: DeserializeOwned,
-    {
-        validate_module_kind(module, kind)?;
-        let request_id = new_request_id();
-        let envelope =
-            RealtimeEnvelope::new(module, kind, Some(request_id), payload).map_err(|error| {
-                RealtimeError::new(format!("Failed to encode realtime payload: {error}"))
-            })?;
-        if mode == ReliableRequestMode::OneShot
-            && let Some(session) = self.webtransport_session().await
-        {
-            debug!(
-                ?module,
-                ?kind,
-                %request_id,
-                "sending one-shot realtime request"
-            );
-            let response = one_shot::request(envelope, session, request_id).await?;
-            return decode_response(response);
-        }
-
-        let (sender, receiver) = oneshot::channel();
-        self.inner
-            .pending
-            .borrow_mut()
-            .insert((module, request_id), sender);
-        let pending_guard =
-            PendingRequestGuard::new(self.inner.pending.clone(), (module, request_id));
-
-        debug!(
-            ?module,
-            ?kind,
-            %request_id,
-            "sending realtime request"
-        );
-        self.write_envelope(envelope, mode).await?;
-        debug!(
-            ?module,
-            ?kind,
-            %request_id,
-            "wrote realtime request"
-        );
-
-        let response = receiver
-            .await
-            .map_err(|_| RealtimeError::new("Realtime response channel closed."))?;
-        pending_guard.disarm();
-        decode_response(response)
-    }
-
-    async fn write_envelope(
-        &self,
-        envelope: RealtimeEnvelope,
-        mode: ReliableRequestMode,
-    ) -> Result<(), RealtimeError> {
-        let Some(connected) = self.inner.session.lock().await.clone() else {
-            return Err(RealtimeError::new("Realtime session is not connected."));
-        };
-
-        match connected.transport {
-            ConnectedTransport::WebTransport(session)
-                if mode == ReliableRequestMode::Cached && uses_cached_stream(envelope.module) =>
-            {
-                self.write_webtransport_envelope(envelope, (*session).clone())
-                    .await
-            }
-            ConnectedTransport::WebTransport(_) => Err(RealtimeError::new(
-                "One-shot realtime request was not opened through its response-owning path.",
-            )),
-            ConnectedTransport::WebSocket(sender) => sender
-                .unbounded_send(WebSocketOutbound::Envelope(envelope))
-                .map_err(|_| RealtimeError::new("Realtime WebSocket fallback writer is closed.")),
-        }
-    }
-
-    async fn write_webtransport_envelope(
-        &self,
-        envelope: RealtimeEnvelope,
-        session: Session,
-    ) -> Result<(), RealtimeError> {
-        let module = envelope.module;
-        let mut last_error = None;
-
-        for attempt in 0..2 {
-            let stream = self.stream_for(module, session.clone()).await?;
-            let write_guard =
-                StreamWriteGuard::new(module, self.inner.streams.clone(), stream.clone());
-            match framing::write_envelope(&stream, &envelope).await {
-                Ok(()) => {
-                    write_guard.disarm();
-                    return Ok(());
-                }
-                Err(error) => {
-                    remove_cached_stream(self.inner.streams.clone(), module, stream).await;
-                    write_guard.disarm();
-                    warn!(
-                        module = ?module,
-                        attempt,
-                        %error,
-                        "failed to write WebTransport realtime frame; dropped cached module stream"
-                    );
-                    last_error = Some(error);
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| RealtimeError::new("Failed to write realtime frame.")))
-    }
-
-    async fn webtransport_session(&self) -> Option<Session> {
-        let connected = self.inner.session.lock().await.clone()?;
-        match connected.transport {
-            ConnectedTransport::WebTransport(session) => Some((*session).clone()),
-            ConnectedTransport::WebSocket(_) => None,
-        }
-    }
-
-    async fn stream_for(
-        &self,
-        module: RealtimeModule,
-        session: Session,
-    ) -> Result<Rc<Mutex<SendStream>>, RealtimeError> {
-        if let Some(stream) = self.inner.streams.lock().await.get(&module).cloned() {
-            return Ok(stream);
-        }
-
-        let (send, recv) = session.open_bi().await.map_err(|error| {
-            RealtimeError::new(format!("Failed to open realtime stream: {error}"))
-        })?;
-        let send = Rc::new(Mutex::new(send));
-        self.inner.streams.lock().await.insert(module, send.clone());
-        debug!(module = ?module, "opened WebTransport realtime stream");
-        webtransport::spawn_stream_reader(
-            module,
-            recv,
-            self.inner.inbound.clone(),
-            self.inner.pending.clone(),
-            None,
-            Some((self.inner.streams.clone(), send.clone())),
-            None,
-        );
-
-        Ok(send)
     }
 
     fn next_generation(&self) -> u64 {

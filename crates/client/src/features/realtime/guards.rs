@@ -16,9 +16,26 @@ use web_transport::SendStream;
 use super::task::spawn_task;
 
 pub(super) type PendingKey = (RealtimeModule, Uuid);
-pub(super) type PendingRequests =
-    Rc<RefCell<HashMap<PendingKey, oneshot::Sender<RealtimeEnvelope>>>>;
-pub(super) type ModuleStreams = Rc<Mutex<HashMap<RealtimeModule, Rc<Mutex<SendStream>>>>>;
+/// Ожидаемый ответ принадлежит одному конкретному надежному потоку.
+pub(super) struct PendingRequest {
+    /// Канал доставки ответа вызывающему коду.
+    pub sender: oneshot::Sender<RealtimeEnvelope>,
+    /// Идентификатор WebTransport-потока; None используется для WebSocket.
+    pub stream_id: Option<Uuid>,
+}
+
+pub(super) type PendingRequests = Rc<RefCell<HashMap<PendingKey, PendingRequest>>>;
+
+/// Запись кеша с собственной идентичностью для изолированной очистки.
+#[derive(Clone)]
+pub(super) struct CachedStream {
+    /// Идентификатор экземпляра потока, не переиспользуемый после восстановления.
+    pub id: Uuid,
+    /// Последовательно записываемая половина двунаправленного потока.
+    pub send: Rc<Mutex<SendStream>>,
+}
+
+pub(super) type ModuleStreams = Rc<Mutex<HashMap<RealtimeModule, CachedStream>>>;
 
 pub(super) struct PendingRequestGuard {
     pending: PendingRequests,
@@ -57,6 +74,8 @@ pub(super) struct StreamWriteGuard {
     module: RealtimeModule,
     streams: ModuleStreams,
     stream: Rc<Mutex<SendStream>>,
+    pending: PendingRequests,
+    stream_id: Uuid,
     active: Cell<bool>,
 }
 
@@ -65,11 +84,15 @@ impl StreamWriteGuard {
         module: RealtimeModule,
         streams: ModuleStreams,
         stream: Rc<Mutex<SendStream>>,
+        pending: PendingRequests,
+        stream_id: Uuid,
     ) -> Self {
         Self {
             module,
             streams,
             stream,
+            pending,
+            stream_id,
             active: Cell::new(true),
         }
     }
@@ -85,23 +108,23 @@ impl Drop for StreamWriteGuard {
             return;
         }
 
+        reject_pending_requests_for_stream(
+            &self.pending,
+            self.module,
+            self.stream_id,
+            "Realtime stream write was cancelled.",
+        );
         let module = self.module;
+        let stream_id = self.stream_id;
         let streams = self.streams.clone();
         let stream = self.stream.clone();
-        if remove_cached_stream_now(&streams, module, &stream) {
-            warn!(
-                module = ?module,
-                "dropped cached WebTransport realtime stream after canceled frame write"
-            );
-            return;
-        }
-
+        remove_cached_stream_now(&streams, module, &stream);
         spawn_task(async move {
-            remove_cached_stream(streams, module, stream).await;
-            warn!(
-                module = ?module,
-                "dropped cached WebTransport realtime stream after canceled frame write"
-            );
+            remove_cached_stream(streams, module, stream.clone()).await;
+            // Нельзя оставлять на backend полузаписанный фрейм: сбрасываем
+            // send-половину даже после отмены future во время записи.
+            stream.lock().await.reset(0);
+            warn!(?module, %stream_id, "aborted cached WebTransport stream after cancelled write");
         });
     }
 }
@@ -114,24 +137,31 @@ pub(super) async fn remove_cached_stream(
     let mut streams = streams.lock().await;
     let should_remove = streams
         .get(&module)
-        .is_some_and(|current| Rc::ptr_eq(current, &stream));
+        .is_some_and(|current| Rc::ptr_eq(&current.send, &stream));
     if should_remove {
         streams.remove(&module);
     }
 }
 
-pub(super) fn reject_pending_requests_for_module(
+/// Отклоняет только запросы, отправленные через закрытый экземпляр потока.
+pub(super) fn reject_pending_requests_for_stream(
     pending: &PendingRequests,
     module: RealtimeModule,
+    stream_id: Uuid,
     message: &str,
 ) {
     let keys = pending
         .borrow()
-        .keys()
-        .filter(|(pending_module, _)| *pending_module == module)
-        .copied()
+        .iter()
+        .filter(|((pending_module, _), request)| {
+            *pending_module == module && request.stream_id == Some(stream_id)
+        })
+        .map(|(key, _)| *key)
         .collect::<Vec<_>>();
 
+    if !keys.is_empty() {
+        debug!(?module, %stream_id, pending_count = keys.len(), "rejecting requests belonging to closed realtime stream");
+    }
     for key in keys {
         reject_pending_request(pending, key, message);
     }
@@ -152,7 +182,7 @@ pub(super) fn reject_pending_request(pending: &PendingRequests, key: PendingKey,
         payload,
     );
     if let Ok(envelope) = envelope {
-        let _ = sender.send(envelope);
+        let _ = sender.sender.send(envelope);
     }
 }
 
@@ -166,7 +196,7 @@ fn remove_cached_stream_now(
     };
     let should_remove = streams
         .get(&module)
-        .is_some_and(|current| Rc::ptr_eq(current, stream));
+        .is_some_and(|current| Rc::ptr_eq(&current.send, stream));
     if should_remove {
         streams.remove(&module);
     }

@@ -57,6 +57,21 @@ pub(super) async fn sleep_duration(duration: Duration) {
     super::unsupported::sleep_duration(duration).await;
 }
 
+/// Неблокирующий таймер для дедлайна realtime-запросов на рабочих платформах.
+#[cfg(any(target_arch = "wasm32", feature = "desktop", feature = "mobile"))]
+pub(super) async fn sleep_request_timeout(duration: Duration) {
+    sleep_duration(duration).await;
+}
+
+/// Неблокирующий таймер дедлайна для host-тестов без native runtime.
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(feature = "desktop", feature = "mobile"))
+))]
+pub(super) async fn sleep_request_timeout(duration: Duration) {
+    super::unsupported::sleep_request_timeout(duration).await;
+}
+
 /// Запускает desktop-клиент с размером окна CheenHub.
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub(super) fn launch_client(app: fn() -> dioxus::prelude::Element, started_hidden: bool) {
