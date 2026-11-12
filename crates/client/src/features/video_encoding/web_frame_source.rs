@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 use dioxus::prelude::{debug, warn};
 use futures_channel::oneshot;
+use futures_util::FutureExt;
 use js_sys::{Array, Function, Object, Promise, Reflect};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -14,6 +15,8 @@ use web_sys::{MediaStream, MediaStreamTrack};
 
 use super::backend::VideoEncodingError;
 use super::web::{BrowserVideoFrame, global_constructor_available};
+mod track_processor;
+use track_processor::TrackProcessorReaderState;
 
 /// Reader кадров, который выбирает нативный track processor или совместимый video-element fallback.
 pub(crate) struct BrowserVideoFrameReader {
@@ -21,19 +24,27 @@ pub(crate) struct BrowserVideoFrameReader {
 }
 
 enum BrowserVideoFrameSource {
-    TrackProcessor { reader: JsValue },
-    VideoElement { state: Rc<VideoElementSourceState> },
+    TrackProcessor {
+        reader: Rc<TrackProcessorReaderState>,
+    },
+    VideoElement {
+        state: Rc<VideoElementSourceState>,
+    },
 }
 
 /// Cloneable handle для остановки ожидающего browser frame source.
 #[derive(Clone, Default)]
 pub(crate) struct BrowserVideoFrameReaderHandle {
+    track_processor: Option<Rc<TrackProcessorReaderState>>,
     video_element: Option<Rc<VideoElementSourceState>>,
 }
 
 impl BrowserVideoFrameReaderHandle {
     /// Останавливает fallback и освобождает привязанный `HTMLVideoElement`.
     pub(crate) fn stop(&self) {
+        if let Some(reader) = &self.track_processor {
+            reader.stop();
+        }
         if let Some(state) = &self.video_element {
             state.stop();
         }
@@ -52,6 +63,15 @@ impl BrowserVideoFrameReader {
         track: &MediaStreamTrack,
         stream: &MediaStream,
     ) -> Result<Self, VideoEncodingError> {
+        Self::from_stream_cancellable(track, stream, None).await
+    }
+
+    /// Создаёт reader, который можно прервать во время запуска HTML fallback.
+    pub(crate) async fn from_stream_cancellable(
+        track: &MediaStreamTrack,
+        stream: &MediaStream,
+        cancellation: Option<oneshot::Receiver<()>>,
+    ) -> Result<Self, VideoEncodingError> {
         if global_constructor_available("MediaStreamTrackProcessor") {
             match track_processor_reader(track) {
                 Ok(reader) => {
@@ -60,7 +80,9 @@ impl BrowserVideoFrameReader {
                         "browser video frame source selected"
                     );
                     return Ok(Self {
-                        source: BrowserVideoFrameSource::TrackProcessor { reader },
+                        source: BrowserVideoFrameSource::TrackProcessor {
+                            reader: Rc::new(TrackProcessorReaderState::new(reader)),
+                        },
                     });
                 }
                 Err(error) if video_element_frame_callback_available() => {
@@ -74,7 +96,7 @@ impl BrowserVideoFrameReader {
             }
         }
 
-        let state = VideoElementSourceState::start(track, stream).await?;
+        let state = VideoElementSourceState::start(track, stream, cancellation).await?;
         debug!(
             frame_source = "html-video-element",
             "browser video frame source selected"
@@ -87,6 +109,10 @@ impl BrowserVideoFrameReader {
     /// Возвращает handle для явной остановки ожидающего fallback callback.
     pub(crate) fn handle(&self) -> BrowserVideoFrameReaderHandle {
         BrowserVideoFrameReaderHandle {
+            track_processor: match &self.source {
+                BrowserVideoFrameSource::TrackProcessor { reader } => Some(reader.clone()),
+                BrowserVideoFrameSource::VideoElement { .. } => None,
+            },
             video_element: match &self.source {
                 BrowserVideoFrameSource::TrackProcessor { .. } => None,
                 BrowserVideoFrameSource::VideoElement { state } => Some(state.clone()),
@@ -98,7 +124,7 @@ impl BrowserVideoFrameReader {
     pub(crate) async fn read(&self) -> Result<Option<BrowserVideoFrame>, VideoEncodingError> {
         match &self.source {
             BrowserVideoFrameSource::TrackProcessor { reader } => {
-                let read = read_stream_chunk(reader).await?;
+                let read = reader.read().await?;
                 if read.done {
                     Ok(None)
                 } else {
@@ -115,194 +141,14 @@ impl Drop for BrowserVideoFrameReader {
         if let BrowserVideoFrameSource::VideoElement { state } = &self.source {
             state.stop();
         }
+        if let BrowserVideoFrameSource::TrackProcessor { reader } = &self.source {
+            reader.stop();
+        }
     }
 }
 
-type PendingFrame = Result<Option<BrowserVideoFrame>, VideoEncodingError>;
-type VideoFrameCallbackClosure = Closure<dyn FnMut(f64, JsValue)>;
-
-struct VideoElementSourceState {
-    video: JsValue,
-    track: MediaStreamTrack,
-    stopped: Cell<bool>,
-    callback_id: Cell<Option<i32>>,
-    pending: RefCell<Option<oneshot::Sender<PendingFrame>>>,
-    pending_frame_closure: RefCell<Option<VideoFrameCallbackClosure>>,
-    track_ended_closure: RefCell<Option<Closure<dyn FnMut()>>>,
-    trace_frame_count: Cell<u64>,
-}
-
-impl VideoElementSourceState {
-    async fn start(
-        track: &MediaStreamTrack,
-        stream: &MediaStream,
-    ) -> Result<Rc<Self>, VideoEncodingError> {
-        if !video_element_frame_callback_available() {
-            return Err(VideoEncodingError::unsupported(
-                "HTMLVideoElement.requestVideoFrameCallback недоступен.",
-            ));
-        }
-
-        let document = web_sys::window()
-            .and_then(|window| window.document())
-            .ok_or_else(|| VideoEncodingError::unavailable("Документ браузера недоступен."))?;
-        let video: JsValue = document
-            .create_element("video")
-            .map_err(video_error)?
-            .into();
-        set_property(&video, "srcObject", stream.as_ref())?;
-        set_property(&video, "muted", &JsValue::TRUE)?;
-        set_property(&video, "autoplay", &JsValue::TRUE)?;
-        set_property(&video, "playsInline", &JsValue::TRUE)?;
-        call_method2(
-            &video,
-            "setAttribute",
-            &JsValue::from_str("style"),
-            &JsValue::from_str(
-                "position:fixed;top:12px;right:12px;width:320px;max-width:35vw;opacity:0;pointer-events:none;",
-            ),
-        )?;
-        call_method2(
-            &video,
-            "setAttribute",
-            &JsValue::from_str("aria-hidden"),
-            &JsValue::from_str("true"),
-        )?;
-        if let Ok(body) = Reflect::get(document.as_ref(), &JsValue::from_str("body"))
-            && !body.is_null()
-            && !body.is_undefined()
-        {
-            call_method1(&body, "appendChild", &video)?;
-        }
-        play_video(&video).await?;
-
-        let state = Rc::new(Self {
-            video,
-            track: track.clone(),
-            stopped: Cell::new(false),
-            callback_id: Cell::new(None),
-            pending: RefCell::new(None),
-            pending_frame_closure: RefCell::new(None),
-            track_ended_closure: RefCell::new(None),
-            trace_frame_count: Cell::new(0),
-        });
-        state.install_track_ended_handler()?;
-        Ok(state)
-    }
-
-    fn install_track_ended_handler(self: &Rc<Self>) -> Result<(), VideoEncodingError> {
-        let weak_state = Rc::downgrade(self);
-        let closure = Closure::wrap(Box::new(move || {
-            if let Some(state) = weak_state.upgrade() {
-                state.stop();
-            }
-        }) as Box<dyn FnMut()>);
-        set_property(
-            self.track.as_ref(),
-            "onended",
-            closure.as_ref().unchecked_ref(),
-        )?;
-        self.track_ended_closure.replace(Some(closure));
-        Ok(())
-    }
-
-    async fn read(self: &Rc<Self>) -> Result<Option<BrowserVideoFrame>, VideoEncodingError> {
-        if self.stopped.get() {
-            return Ok(None);
-        }
-        if self.pending.borrow().is_some() {
-            return Err(VideoEncodingError::unavailable(
-                "Параллельное чтение HTMLVideoElement не поддерживается.",
-            ));
-        }
-
-        let (sender, receiver) = oneshot::channel();
-        self.pending.replace(Some(sender));
-        let weak_state = Rc::downgrade(self);
-        let closure = Closure::wrap(Box::new(move |now_ms: f64, metadata: JsValue| {
-            let Some(state) = weak_state.upgrade() else {
-                return;
-            };
-            state.callback_id.set(None);
-            // Keep the wasm-bindgen callback alive until JavaScript returns from it.
-            // The next read replaces it after this callback has finished executing.
-            let Some(sender) = state.pending.borrow_mut().take() else {
-                return;
-            };
-            if state.stopped.get() {
-                let _ = sender.send(Ok(None));
-                return;
-            }
-            let timestamp_us = frame_timestamp_us(now_ms, &metadata);
-            let trace_frame = state.trace_frame_count.get();
-            state.trace_frame_count.set(trace_frame.saturating_add(1));
-            if trace_frame.is_multiple_of(15) {
-                let presented_frames =
-                    Reflect::get(&metadata, &JsValue::from_str("presentedFrames"))
-                        .ok()
-                        .and_then(|value| value.as_f64())
-                        .unwrap_or(-1.0);
-                debug!(
-                    now_ms,
-                    timestamp_us, presented_frames, "screen share latency trace: raw video frame"
-                );
-            }
-            let _ = sender.send(video_frame_from_element(&state.video, timestamp_us).map(Some));
-        }) as Box<dyn FnMut(f64, JsValue)>);
-        self.pending_frame_closure.replace(Some(closure));
-        let callback = self
-            .pending_frame_closure
-            .borrow()
-            .as_ref()
-            .map(|closure| closure.as_ref().unchecked_ref::<Function>().clone())
-            .ok_or_else(|| {
-                VideoEncodingError::unavailable("Callback браузерного видео-кадра не установлен.")
-            })?;
-
-        let callback_id =
-            request_video_frame_callback(&self.video, &callback).inspect_err(|_| {
-                self.pending_frame_closure.borrow_mut().take();
-                self.pending.borrow_mut().take();
-            })?;
-        self.callback_id.set(Some(callback_id));
-
-        receiver.await.map_err(|_| {
-            VideoEncodingError::unavailable("Ожидание браузерного видео-кадра было прервано.")
-        })?
-    }
-
-    fn stop(&self) {
-        if self.stopped.replace(true) {
-            return;
-        }
-        if let Some(callback_id) = self.callback_id.take() {
-            let _ = cancel_video_frame_callback(&self.video, callback_id);
-        }
-        if let Some(sender) = self.pending.borrow_mut().take() {
-            let _ = sender.send(Ok(None));
-        }
-        self.pending_frame_closure.borrow_mut().take();
-        let _ = call_method0(&self.video, "pause");
-        let _ = call_method0(&self.video, "remove");
-        let _ = set_property(&self.video, "srcObject", &JsValue::NULL);
-        let _ = set_property(self.track.as_ref(), "onended", &JsValue::NULL);
-        self.track_ended_closure.borrow_mut().take();
-    }
-}
-
-fn video_element_frame_callback_available() -> bool {
-    let Ok(constructor) = Reflect::get(&js_sys::global(), &JsValue::from_str("HTMLVideoElement"))
-    else {
-        return false;
-    };
-    let Ok(prototype) = Reflect::get(&constructor, &JsValue::from_str("prototype")) else {
-        return false;
-    };
-    Reflect::get(&prototype, &JsValue::from_str("requestVideoFrameCallback"))
-        .ok()
-        .and_then(|value| value.dyn_into::<Function>().ok())
-        .is_some()
-}
+mod video_element;
+use video_element::{VideoElementSourceState, video_element_frame_callback_available};
 
 fn track_processor_reader(track: &MediaStreamTrack) -> Result<JsValue, VideoEncodingError> {
     let constructor = global_function("MediaStreamTrackProcessor")?;

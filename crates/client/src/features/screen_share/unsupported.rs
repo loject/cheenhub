@@ -29,6 +29,7 @@ impl ScreenShareBackend for UnavailableScreenShareBackend {
             on_frame: _on_frame,
             on_ended: _on_ended,
             on_error: _on_error,
+            start_control: _start_control,
         } = callbacks;
 
         async move {

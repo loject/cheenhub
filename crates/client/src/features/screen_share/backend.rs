@@ -1,7 +1,10 @@
 //! Контракты backend'а демонстрации экрана.
 
 use std::fmt;
-use std::rc::Rc;
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use crate::features::video_encoding::VideoEncoderConfig;
 use cheenhub_contracts::video_presets::{
@@ -60,6 +63,44 @@ pub(crate) type ScreenShareEndedCallback = Rc<dyn Fn()>;
 
 /// Callback, вызываемый при ошибке уже запущенной сессии захвата.
 pub(crate) type ScreenShareErrorCallback = Rc<dyn Fn(ScreenShareError)>;
+
+/// Управляет отменой одной попытки запуска backend-захвата.
+#[derive(Clone, Default)]
+pub(crate) struct ScreenShareStartControl {
+    state: Rc<ScreenShareStartState>,
+}
+
+#[derive(Default)]
+struct ScreenShareStartState {
+    cancelled: Cell<bool>,
+    cleanup: RefCell<Option<Rc<dyn Fn()>>>,
+}
+
+impl ScreenShareStartControl {
+    /// Отменяет запуск и сразу выполняет уже зарегистрированное освобождение.
+    pub(crate) fn cancel(&self) {
+        if self.state.cancelled.replace(true) {
+            return;
+        }
+        if let Some(cleanup) = self.state.cleanup.borrow_mut().take() {
+            cleanup();
+        }
+    }
+
+    /// Регистрирует освобождение ресурсов, созданных до завершения запуска.
+    pub(crate) fn register_cleanup(&self, cleanup: Rc<dyn Fn()>) {
+        if self.is_cancelled() {
+            cleanup();
+        } else {
+            self.state.cleanup.replace(Some(cleanup));
+        }
+    }
+
+    /// Проверяет отмену после асинхронного шага запуска.
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.state.cancelled.get()
+    }
+}
 
 /// Кодек закодированной демонстрации экрана.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,6 +277,8 @@ pub(crate) struct ScreenShareCallbacks {
     pub(crate) on_ended: ScreenShareEndedCallback,
     /// Callback, вызываемый при runtime-ошибке активной сессии.
     pub(crate) on_error: ScreenShareErrorCallback,
+    /// Токен отмены и освобождения ресурсов незавершённого запуска.
+    pub(crate) start_control: ScreenShareStartControl,
 }
 
 /// Один закодированный кадр демонстрации экрана.

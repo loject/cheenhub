@@ -13,6 +13,9 @@ use super::native::default_backend;
 use super::picker_host::ScreenSharePickerHost;
 use super::provider::ScreenShareHandle;
 
+#[cfg(test)]
+mod tests;
+
 /// Предоставляет состояние захвата экрана аутентифицированным компонентам приложения.
 #[component]
 pub(crate) fn ScreenShareProvider(children: Element) -> Element {
@@ -24,12 +27,15 @@ pub(crate) fn ScreenShareProvider(children: Element) -> Element {
     let last_selection = use_signal(|| None);
     let toast = use_context::<ToastHandle>();
     let backend = default_backend();
+    let start_control = use_signal(|| None);
+    register_pending_start_cleanup(start_control);
     let handle = ScreenShareHandle {
         audio_state,
         provider_scope: current_scope_id(),
         status,
         session,
         generation,
+        start_control,
         backend,
         toast,
         picker_open,
@@ -44,4 +50,15 @@ pub(crate) fn ScreenShareProvider(children: Element) -> Element {
             ScreenSharePickerHost { open: picker_open }
         }
     }
+}
+
+fn register_pending_start_cleanup(
+    start_control: Signal<Option<super::backend::ScreenShareStartControl>>,
+) {
+    use_drop(move || {
+        if let Some(control) = start_control.peek().clone() {
+            info!("screen share provider dropped during startup; cancelling pending capture");
+            control.cancel();
+        }
+    });
 }

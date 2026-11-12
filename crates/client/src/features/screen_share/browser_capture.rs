@@ -3,7 +3,7 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code, unused_imports))]
 
 use cheenhub_contracts::video_presets::VideoEncodingSettings;
-use dioxus::prelude::debug;
+use dioxus::prelude::{debug, info};
 use js_sys::{Function, Object, Reflect};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -72,23 +72,53 @@ pub(super) async fn request_screen_stream(
         .map_err(screen_share_error)?;
     }
 
+    info!("requesting browser display capture with getDisplayMedia");
     let promise = media_devices
         .get_display_media_with_constraints(&constraints)
         .map_err(screen_share_error)?;
     let stream = JsFuture::from(promise).await.map_err(screen_share_error)?;
 
-    stream
+    let stream = stream
         .dyn_into::<MediaStream>()
-        .map_err(|_| ScreenShareError::new("Браузер вернул некорректный поток экрана."))
+        .map_err(|_| ScreenShareError::new("Браузер вернул некорректный поток экрана."))?;
+    info!(
+        stream_active = stream.active(),
+        video_tracks = stream.get_video_tracks().length(),
+        audio_tracks = stream.get_audio_tracks().length(),
+        "browser display capture stream received"
+    );
+    log_stream_tracks(&stream, "после получения", "startup");
+    Ok(stream)
 }
 
 /// Останавливает все дорожки потока, включая аудио незавершённого запуска.
-pub(super) fn stop_screen_stream(stream: &MediaStream) {
+pub(super) fn stop_screen_stream(stream: &MediaStream, reason: &str) {
+    log_stream_tracks(stream, "перед остановкой", reason);
     let tracks = stream.get_tracks();
     for index in 0..tracks.length() {
         if let Ok(track) = tracks.get(index).dyn_into::<web_sys::MediaStreamTrack>() {
             track.stop();
         }
+    }
+    log_stream_tracks(stream, "после остановки", reason);
+}
+
+pub(super) fn log_stream_tracks(stream: &MediaStream, phase: &str, reason: &str) {
+    let tracks = stream.get_tracks();
+    let active = stream.active();
+    for index in 0..tracks.length() {
+        let Ok(track) = tracks.get(index).dyn_into::<web_sys::MediaStreamTrack>() else {
+            continue;
+        };
+        let kind = Reflect::get(track.as_ref(), &JsValue::from_str("kind"))
+            .ok()
+            .and_then(|value| value.as_string())
+            .unwrap_or_else(|| "unknown".to_owned());
+        let ready_state = Reflect::get(track.as_ref(), &JsValue::from_str("readyState"))
+            .ok()
+            .and_then(|value| value.as_string())
+            .unwrap_or_else(|| "unknown".to_owned());
+        debug!(index, %kind, %ready_state, active, %phase, %reason, "browser capture track state");
     }
 }
 

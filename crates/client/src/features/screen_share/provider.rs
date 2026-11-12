@@ -10,7 +10,7 @@ use crate::features::toast::ToastHandle;
 
 use super::backend::{
     ScreenShareBackend, ScreenShareCaptureSource, ScreenShareConfig, ScreenShareFrameCallback,
-    ScreenShareSession, ScreenShareStartRequest, ScreenShareStatus,
+    ScreenShareSession, ScreenShareStartControl, ScreenShareStartRequest, ScreenShareStatus,
 };
 use super::picker_flow::{
     ScreenShareControlIntent, capture_source_from_selection, screen_share_control_intent,
@@ -18,6 +18,9 @@ use super::picker_flow::{
 use super::provider_runtime::{next_generation, screen_share_callbacks, status_from_error};
 use super::source_picker::ScreenShareSelection;
 use super::source_preview;
+
+#[cfg(test)]
+mod tests;
 
 /// Контекстный хэндл, используемый функциями, которым нужен захват экрана.
 #[derive(Clone)]
@@ -28,6 +31,7 @@ pub(crate) struct ScreenShareHandle {
     pub(super) status: Signal<ScreenShareStatus>,
     pub(super) session: Signal<Option<Rc<dyn ScreenShareSession>>>,
     pub(super) generation: Signal<u64>,
+    pub(super) start_control: Signal<Option<ScreenShareStartControl>>,
     pub(super) backend: Rc<dyn ScreenShareBackend>,
     pub(super) toast: ToastHandle,
     pub(super) picker_open: Signal<bool>,
@@ -108,60 +112,108 @@ impl ScreenShareHandle {
         let provider_scope = self.provider_scope;
         let mut audio_state = self.audio_state;
         audio_state.set(super::backend::ScreenShareAudioState::Off);
+        let start_control = ScreenShareStartControl::default();
+        let mut pending_start = self.start_control;
+        pending_start.set(Some(start_control.clone()));
         let start_generation = next_generation(&mut generation);
         status.set(ScreenShareStatus::Starting);
 
         info!(source = ?request.source, "starting screen sharing capture");
-        debug!("scheduling screen sharing lifecycle task on provider scope");
+        let callbacks = screen_share_callbacks(
+            on_frame,
+            super::provider_runtime::CaptureRuntime {
+                session,
+                status,
+                generation,
+                start_generation,
+                provider_scope,
+                audio_state,
+                start_control: start_control.clone(),
+                pending_start,
+                on_warning: Rc::new(move |message| toast.warning(message.to_owned())),
+            },
+        );
+        let (result_sender, result_receiver) = futures_channel::oneshot::channel();
+        let result_control = start_control.clone();
+
+        debug!("scheduling screen sharing result handler on provider scope");
         Runtime::current().in_scope(provider_scope, || {
             spawn(async move {
-            debug!("screen sharing lifecycle task started");
-            let callbacks = screen_share_callbacks(on_frame.clone(), super::provider_runtime::CaptureRuntime {
-                session, status, generation, start_generation, provider_scope, audio_state,
-                on_warning: Rc::new(move |message| toast.warning(message.to_owned())),
-            });
-            debug!("calling screen sharing backend start");
-            match backend.start(request, callbacks).await {
-                Ok(next_session) => {
-                    if generation() != start_generation {
-                        if let Err(error) = next_session.stop().await {
-                            warn!(
-                                %error,
-                                "failed to stop stale screen sharing capture after start"
-                            );
+                let Ok(result) = result_receiver.await else {
+                    return;
+                };
+                if result_control.is_cancelled() {
+                    stop_unobserved_session(result).await;
+                    return;
+                }
+
+                match result {
+                    Ok(next_session) => {
+                        if generation() != start_generation {
+                            if let Err(error) = next_session.stop().await {
+                                warn!(%error, "failed to stop stale screen sharing capture after start");
+                            }
+                            return;
                         }
-                        return;
+                        pending_start.set(None);
+                        session.set(Some(next_session));
+                        status.set(ScreenShareStatus::Live);
+                        info!("screen sharing capture started");
                     }
-                    session.set(Some(next_session));
-                    status.set(ScreenShareStatus::Live);
-                    info!("screen sharing capture started");
+                    Err(error) => {
+                        if generation() != start_generation {
+                            return;
+                        }
+                        pending_start.set(None);
+                        let next_status = status_from_error(error.clone());
+                        warn!(%error, status = ?next_status, "failed to start screen sharing capture");
+                        if error.is_unsupported_browser() {
+                            toast.warning(error.to_string());
+                        } else if !error.is_permission_denied() {
+                            toast.warning("Не удалось запустить демонстрацию с выбранными настройками.".to_owned());
+                        }
+                        session.set(None);
+                        status.set(next_status);
+                    }
                 }
-                Err(error) => {
-                    if generation() != start_generation {
-                        return;
-                    }
-                    let next_status = status_from_error(error.clone());
-                    warn!(%error, status = ?next_status, "failed to start screen sharing capture");
-                    if error.is_unsupported_browser() {
-                        toast.warning(error.to_string());
-                    } else if !error.is_permission_denied() {
-                        toast.warning("Не удалось запустить демонстрацию с выбранными настройками.".to_owned());
-                    }
-                    session.set(None);
-                    status.set(next_status);
+            });
+        });
+
+        debug!("scheduling backend capture task on application root scope");
+        // getDisplayMedia нельзя отменить. Задача в корневом scope должна дождаться позднего ответа
+        // и освободить поток, даже если provider scope уже уничтожен.
+        Runtime::current().in_scope(ScopeId::ROOT, || {
+            spawn(async move {
+                debug!("screen sharing backend task started");
+                if start_control.is_cancelled() {
+                    debug!("discarded screen sharing task after provider scope was dropped");
+                    return;
                 }
-            }
+                debug!("calling screen sharing backend start");
+                let result = backend.start(request, callbacks).await;
+                deliver_start_result(result, start_control, result_sender).await;
             });
         });
     }
 
     /// Stops the active screen sharing session.
     pub(crate) fn stop(&self) {
+        if self.status() == ScreenShareStatus::Starting
+            && let Some(control) = self.start_control.peek().clone()
+        {
+            info!(
+                reason = "manual-start-cancel",
+                "cancelling screen sharing startup"
+            );
+            control.cancel();
+        }
         let mut audio_state = self.audio_state;
         audio_state.set(super::backend::ScreenShareAudioState::Off);
         let mut generation = self.generation;
         let stop_generation = next_generation(&mut generation);
         let Some(active_session) = self.session.peek().clone() else {
+            let mut pending_start = self.start_control;
+            pending_start.set(None);
             let mut status = self.status;
             status.set(ScreenShareStatus::Idle);
             return;
@@ -211,5 +263,31 @@ impl ScreenShareHandle {
     /// Returns the current screen sharing status.
     pub(crate) fn status(&self) -> ScreenShareStatus {
         (self.status)()
+    }
+}
+
+async fn deliver_start_result(
+    result: Result<Rc<dyn ScreenShareSession>, super::backend::ScreenShareError>,
+    start_control: ScreenShareStartControl,
+    result_sender: futures_channel::oneshot::Sender<
+        Result<Rc<dyn ScreenShareSession>, super::backend::ScreenShareError>,
+    >,
+) {
+    if start_control.is_cancelled() {
+        stop_unobserved_session(result).await;
+        return;
+    }
+    if let Err(result) = result_sender.send(result) {
+        stop_unobserved_session(result).await;
+    }
+}
+
+async fn stop_unobserved_session(
+    result: Result<Rc<dyn ScreenShareSession>, super::backend::ScreenShareError>,
+) {
+    if let Ok(session) = result
+        && let Err(error) = session.stop().await
+    {
+        warn!(%error, "failed to stop screen sharing capture after its provider disappeared");
     }
 }

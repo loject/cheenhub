@@ -82,6 +82,10 @@ impl BrowserScreenAudio {
         options.set_sample_rate(48_000.0);
         options.set_latency_hint(&JsValue::from_str("interactive"));
         let context = AudioContext::new_with_context_options(&options).map_err(audio_error)?;
+        debug!(
+            sample_rate = context.sample_rate(),
+            "created screen sharing AudioContext"
+        );
         let mut pending = PendingAudio {
             context: context.clone(),
             track: track.clone(),
@@ -151,6 +155,7 @@ impl BrowserScreenAudio {
         set(&init, "output", output.as_ref())?;
         set(&init, "error", error.as_ref())?;
         let encoder = AudioEncoder::new(&init.into()).map_err(audio_error)?;
+        debug!("created screen sharing AudioEncoder");
         pending.encoder = Some(encoder.clone());
         let config = Object::new();
         set(&config, "codec", &JsValue::from_str("opus"))?;
@@ -330,6 +335,7 @@ impl AudioGraph {
         if self.closed.replace(true) {
             return;
         }
+        debug!("closing screen sharing AudioEncoder and AudioContext");
         self.track.set_onended(None);
         self.track.stop();
         if let Ok(port) = self.node.port() {
@@ -338,13 +344,22 @@ impl AudioGraph {
         let _ = self.source.disconnect();
         let _ = self.node.disconnect();
         let _ = self.gain.disconnect();
-        let _ = self.encoder.close();
+        if let Err(error) = self.encoder.close() {
+            warn!(error = %js_error_message(error), "failed to close screen sharing AudioEncoder");
+        } else {
+            debug!("closed screen sharing AudioEncoder");
+        }
         if let Ok(promise) = self.context.close() {
             spawn_local(async move {
-                if let Err(error) = JsFuture::from(promise).await {
-                    debug!(error = %js_error_message(error), "screen audio context close failed");
+                match JsFuture::from(promise).await {
+                    Ok(_) => debug!("closed screen sharing AudioContext"),
+                    Err(error) => {
+                        warn!(error = %js_error_message(error), "screen audio context close failed")
+                    }
                 }
             });
+        } else {
+            warn!("failed to request screen sharing AudioContext close");
         }
         (self.callbacks.on_audio_state)(ScreenShareAudioState::Off);
         debug!("stopped screen audio capture and released graph");

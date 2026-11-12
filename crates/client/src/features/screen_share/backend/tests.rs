@@ -1,6 +1,95 @@
 use super::*;
 
 #[test]
+fn cancelled_start_runs_cleanup_when_backend_registers_it_late() {
+    let control = ScreenShareStartControl::default();
+    let stopped = Rc::new(std::cell::Cell::new(0));
+    let cleanup_stopped = stopped.clone();
+
+    control.cancel();
+    control.register_cleanup(Rc::new(move || {
+        cleanup_stopped.set(cleanup_stopped.get() + 1);
+    }));
+
+    assert_eq!(stopped.get(), 1);
+    assert!(control.is_cancelled());
+}
+
+#[test]
+fn repeated_start_cancellation_runs_registered_cleanup_once() {
+    let control = ScreenShareStartControl::default();
+    let stopped = Rc::new(std::cell::Cell::new(0));
+    let cleanup_stopped = stopped.clone();
+    control.register_cleanup(Rc::new(move || {
+        cleanup_stopped.set(cleanup_stopped.get() + 1);
+    }));
+
+    control.cancel();
+    control.cancel();
+
+    assert_eq!(stopped.get(), 1);
+}
+
+#[test]
+fn late_permission_response_releases_every_track_from_the_new_stream() {
+    let control = ScreenShareStartControl::default();
+    let video_stopped = Rc::new(std::cell::Cell::new(false));
+    let audio_stopped = Rc::new(std::cell::Cell::new(false));
+    let cleanup_video = video_stopped.clone();
+    let cleanup_audio = audio_stopped.clone();
+
+    control.cancel();
+    control.register_cleanup(Rc::new(move || {
+        cleanup_video.set(true);
+        cleanup_audio.set(true);
+    }));
+
+    assert!(video_stopped.get());
+    assert!(audio_stopped.get());
+}
+
+#[test]
+fn twenty_capture_start_stop_cycles_release_each_capture_once() {
+    let active_captures = Rc::new(std::cell::Cell::new(0));
+    let released_captures = Rc::new(std::cell::Cell::new(0));
+
+    for _ in 0..20 {
+        let control = ScreenShareStartControl::default();
+        active_captures.set(active_captures.get() + 1);
+        let active = active_captures.clone();
+        let released = released_captures.clone();
+        control.register_cleanup(Rc::new(move || {
+            active.set(active.get() - 1);
+            released.set(released.get() + 1);
+        }));
+
+        control.cancel();
+        control.cancel();
+    }
+
+    assert_eq!(active_captures.get(), 0);
+    assert_eq!(released_captures.get(), 20);
+}
+
+#[test]
+fn cancelling_old_start_does_not_release_the_replacement_capture() {
+    let old_control = ScreenShareStartControl::default();
+    let new_control = ScreenShareStartControl::default();
+    let new_capture_released = Rc::new(std::cell::Cell::new(false));
+    let release_new_capture = new_capture_released.clone();
+    new_control.register_cleanup(Rc::new(move || release_new_capture.set(true)));
+
+    old_control.cancel();
+
+    assert!(!new_control.is_cancelled());
+    assert!(!new_capture_released.get());
+
+    new_control.cancel();
+
+    assert!(new_capture_released.get());
+}
+
+#[test]
 fn screen_quality_accepts_large_dimensions_and_frame_rates() {
     let config = ScreenShareConfig::default();
     for (width, height, max_fps) in [(1920, 1080, 30), (2560, 1440, 60), (3840, 2160, 60)] {

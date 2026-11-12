@@ -9,7 +9,7 @@ use futures_util::StreamExt;
 
 use super::backend::{
     EncodedScreenShareFrame, ScreenShareCallbacks, ScreenShareError, ScreenShareFrameCallback,
-    ScreenShareSession, ScreenShareStatus,
+    ScreenShareSession, ScreenShareStartControl, ScreenShareStatus,
 };
 
 /// Сигналы и владелец одной попытки запуска демонстрации.
@@ -26,6 +26,10 @@ pub(super) struct CaptureRuntime {
     pub(super) provider_scope: ScopeId,
     /// Состояние системного аудио текущего захвата.
     pub(super) audio_state: Signal<super::backend::ScreenShareAudioState>,
+    /// Слот отмены незавершённого backend-запуска.
+    pub(super) pending_start: Signal<Option<ScreenShareStartControl>>,
+    /// Контроль отмены этой конкретной попытки запуска.
+    pub(super) start_control: ScreenShareStartControl,
     /// Продуктовые сообщения об ограничениях или сбое звука.
     pub(super) on_warning: Rc<dyn Fn(&str)>,
 }
@@ -35,6 +39,7 @@ pub(super) fn screen_share_callbacks(
     runtime: CaptureRuntime,
 ) -> ScreenShareCallbacks {
     let (events, receiver) = mpsc::unbounded();
+    let start_control = runtime.start_control.clone();
     spawn_screen_share_callback_relay(receiver, on_frame, runtime);
 
     let ended_events = events.clone();
@@ -53,6 +58,7 @@ pub(super) fn screen_share_callbacks(
         on_error: Rc::new(move |error| {
             let _ = error_events.unbounded_send(ScreenShareCallbackEvent::Error(error));
         }),
+        start_control,
     }
 }
 
@@ -68,6 +74,8 @@ fn spawn_screen_share_callback_relay(
         start_generation,
         provider_scope,
         mut audio_state,
+        mut pending_start,
+        start_control: _,
         on_warning,
     } = runtime;
     Runtime::current().in_scope(provider_scope, || {
@@ -99,6 +107,7 @@ fn spawn_screen_share_callback_relay(
                         }
                         let ended_generation_value = next_generation(&mut generation);
                         audio_state.set(super::backend::ScreenShareAudioState::Off);
+                        pending_start.set(None);
                         session.set(None);
                         status.set(ScreenShareStatus::Idle);
                         info!(
@@ -113,6 +122,7 @@ fn spawn_screen_share_callback_relay(
                         }
                         let error_generation_value = next_generation(&mut generation);
                         audio_state.set(super::backend::ScreenShareAudioState::Off);
+                        pending_start.set(None);
                         session.set(None);
                         status.set(status_from_runtime_error(error.clone()));
                         warn!(

@@ -181,6 +181,7 @@ web-sys = { workspace = true, optional = true, features = [
     "BinaryType",
     "Worklet",
     "Event",
+    "EventTarget",
     "ClipboardEvent",
     "DataTransfer",
     "DataTransferItem",
