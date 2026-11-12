@@ -1,13 +1,15 @@
 //! Проверки политики видеопубликаций и подсчёта активных видеоисточников.
 
 mod activity;
+mod burst;
+mod fragmentation;
 mod screen_dimensions;
 pub(crate) mod support;
 
 use super::*;
 use crate::features::voice_chat::media::MediaDatagramHeader;
 use cheenhub_contracts::{
-    media::{MediaCodec, MediaDatagram},
+    media::{MEDIA_DATAGRAM_FLAG_FRAGMENTED, MediaCodec, MediaDatagram},
     video_presets::{CAMERA_BITRATE_LIMIT, SCREEN_SHARE_BITRATE_LIMIT},
 };
 
@@ -247,11 +249,13 @@ fn fragmented(mut datagram: MediaDatagram, index: u16, count: u16) -> MediaDatag
     datagram.payload = Vec::new();
     datagram
         .payload
-        .extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+        .extend_from_slice(&((bytes.len() + usize::from(count) - 1) as u32).to_be_bytes());
     datagram.payload.extend_from_slice(&index.to_be_bytes());
     datagram.payload.extend_from_slice(&count.to_be_bytes());
     if index == 0 {
         datagram.payload.extend_from_slice(&bytes);
+    } else {
+        datagram.payload.push(0);
     }
     datagram
 }
@@ -292,4 +296,157 @@ impl BitWriter {
             self.bit_offset += 1;
         }
     }
+}
+
+#[test]
+fn oversized_recovery_keyframe_borrows_budget_and_repayment_prevents_burst() {
+    let mut tracker = VideoPublicationTracker::default();
+    let session_id = Uuid::new_v4();
+    let now = Instant::now();
+    let mut key = video_datagram(1, true, 1920, 1080);
+    key.kind = MediaDatagramKind::ScreenFrame;
+    key.payload.resize(500_000, 0);
+
+    assert_eq!(
+        tracker.inspect_at(session_id, &key, SCREEN_SHARE_BITRATE_LIMIT, now),
+        VideoAdmission::Forward
+    );
+    key.sequence = 2;
+    key.flags = 0;
+    key.payload = vec![1];
+    assert!(matches!(
+        tracker.inspect_at(session_id, &key, SCREEN_SHARE_BITRATE_LIMIT, now),
+        VideoAdmission::Drop(VideoDropReason::BitrateLimitExceeded { .. })
+    ));
+    key.sequence = 3;
+    key.flags = MEDIA_DATAGRAM_FLAG_KEY_FRAME;
+    key.payload = vp9_key_frame(1920, 1080);
+    assert_eq!(
+        tracker.inspect_at(
+            session_id,
+            &key,
+            SCREEN_SHARE_BITRATE_LIMIT,
+            now + Duration::from_secs(1)
+        ),
+        VideoAdmission::Forward
+    );
+}
+
+#[test]
+fn recovery_keyframe_larger_than_bounded_credit_is_rejected_even_after_waiting() {
+    let mut tracker = VideoPublicationTracker::default();
+    let session_id = Uuid::new_v4();
+    let now = Instant::now();
+    let mut frame = video_datagram(1, true, 1920, 1080);
+    frame.kind = MediaDatagramKind::ScreenFrame;
+    frame.payload.resize(750_001, 0);
+
+    for seconds in [0, 10, 30] {
+        frame.sequence += 1;
+        assert!(matches!(
+            tracker.inspect_at(
+                session_id,
+                &frame,
+                SCREEN_SHARE_BITRATE_LIMIT,
+                now + Duration::from_secs(seconds)
+            ),
+            VideoAdmission::Drop(VideoDropReason::BitrateLimitExceeded { .. })
+        ));
+    }
+}
+
+#[test]
+fn fragmented_recovery_keyframe_charges_full_size_only_once() {
+    let mut tracker = VideoPublicationTracker::default();
+    let session = Uuid::new_v4();
+    let now = Instant::now();
+    let mut key = video_datagram(1, true, 1920, 1080);
+    key.kind = MediaDatagramKind::ScreenFrame;
+    key.payload.resize(500_000, 0);
+    let first = fragmented(key.clone(), 0, 2);
+    let second = fragmented(key, 1, 2);
+
+    assert_eq!(
+        tracker.inspect_at(session, &first, SCREEN_SHARE_BITRATE_LIMIT, now),
+        VideoAdmission::Forward
+    );
+    assert_eq!(
+        tracker.inspect_at(session, &second, SCREEN_SHARE_BITRATE_LIMIT, now),
+        VideoAdmission::Forward
+    );
+    assert_eq!(tracker.publications[0].budget_bits, Some(-1_000_008));
+}
+
+#[test]
+fn repeated_recovery_keyframes_cannot_exceed_credit_and_recover_after_refill() {
+    let mut tracker = VideoPublicationTracker::default();
+    let session = Uuid::new_v4();
+    let now = Instant::now();
+    let mut frame = video_datagram(1, true, 1920, 1080);
+    frame.kind = MediaDatagramKind::ScreenFrame;
+    frame.payload.resize(500_000, 0);
+
+    assert_eq!(
+        tracker.inspect_at(session, &frame, SCREEN_SHARE_BITRATE_LIMIT, now),
+        VideoAdmission::Forward
+    );
+    for sequence in 2..5 {
+        frame.sequence = sequence;
+        assert!(matches!(
+            tracker.inspect_at(session, &frame, SCREEN_SHARE_BITRATE_LIMIT, now),
+            VideoAdmission::Drop(VideoDropReason::BitrateLimitExceeded { .. })
+        ));
+    }
+    frame.sequence = 5;
+    assert_eq!(
+        tracker.inspect_at(
+            session,
+            &frame,
+            SCREEN_SHARE_BITRATE_LIMIT,
+            now + Duration::from_secs(10)
+        ),
+        VideoAdmission::Forward
+    );
+}
+
+#[test]
+fn stopping_and_restarting_source_preserves_bitrate_debt() {
+    let mut tracker = VideoPublicationTracker::default();
+    let session = Uuid::new_v4();
+    let now = Instant::now();
+    let mut frame = video_datagram(1, true, 1920, 1080);
+    frame.kind = MediaDatagramKind::ScreenFrame;
+    frame.payload.resize(500_000, 0);
+    assert_eq!(
+        tracker.inspect_at(session, &frame, SCREEN_SHARE_BITRATE_LIMIT, now),
+        VideoAdmission::Forward
+    );
+
+    tracker.remove_source(session, frame.room_id, frame.kind);
+    frame.sequence = 2;
+
+    assert!(matches!(
+        tracker.inspect_at(session, &frame, SCREEN_SHARE_BITRATE_LIMIT, now),
+        VideoAdmission::Drop(VideoDropReason::BitrateLimitExceeded { .. })
+    ));
+    assert_eq!(tracker.active_source_count(now), 0);
+}
+
+#[test]
+fn replaying_accepted_first_fragment_does_not_forward_unaccounted_bytes() {
+    let mut tracker = VideoPublicationTracker::default();
+    let session = Uuid::new_v4();
+    let now = Instant::now();
+    let mut frame = video_datagram(1, true, 1920, 1080);
+    frame.kind = MediaDatagramKind::ScreenFrame;
+    let first = fragmented(frame, 0, 2);
+
+    assert_eq!(
+        tracker.inspect_at(session, &first, SCREEN_SHARE_BITRATE_LIMIT, now),
+        VideoAdmission::Forward
+    );
+    assert_eq!(
+        tracker.inspect_at(session, &first, SCREEN_SHARE_BITRATE_LIMIT, now),
+        VideoAdmission::Drop(VideoDropReason::DuplicateFrame)
+    );
 }

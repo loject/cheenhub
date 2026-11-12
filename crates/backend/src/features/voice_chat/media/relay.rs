@@ -396,7 +396,9 @@ pub(super) fn video_admission_allows_fanout(
             reason = ?reason,
             "blocked malformed video publication datagram"
         ),
-        VideoDropReason::AwaitingFirstFragment | VideoDropReason::AwaitingKeyFrame => debug!(
+        VideoDropReason::AwaitingFirstFragment
+        | VideoDropReason::AwaitingKeyFrame
+        | VideoDropReason::DuplicateFrame => debug!(
             %session_id,
             %user_id,
             %room_id,

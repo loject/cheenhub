@@ -3,10 +3,7 @@
 use std::time::{Duration, Instant};
 
 use cheenhub_contracts::{
-    media::{
-        MEDIA_DATAGRAM_FLAG_FRAGMENTED, MEDIA_DATAGRAM_FLAG_KEY_FRAME, MediaDatagram,
-        MediaDatagramKind,
-    },
+    media::{MEDIA_DATAGRAM_FLAG_KEY_FRAME, MediaDatagram, MediaDatagramKind},
     video_presets::{VideoBitrateLimit, VideoStreamSource},
 };
 use uuid::Uuid;
@@ -15,9 +12,10 @@ use super::infrastructure::{InMemoryVoicePresenceStore, VoicePresence};
 use super::media::MediaDatagramHeader;
 use vp9::parse_key_frame_dimensions;
 
+mod fragment;
 mod vp9;
+use fragment::{FragmentState, frame_fragment};
 
-const VIDEO_FRAGMENT_HEADER_LEN: usize = 8;
 /// Максимальный накопленный burst видеотрафика в секундах целевого битрейта.
 const VIDEO_BURST_SECONDS: u64 = 2;
 const RECENT_SEQUENCE_LIMIT: usize = 128;
@@ -35,6 +33,8 @@ pub(super) enum VideoDropReason {
     MalformedFragment,
     AwaitingFirstFragment,
     AwaitingKeyFrame,
+    /// Фрагмент или целый кадр уже были пересланы либо вышли из окна последовательностей.
+    DuplicateFrame,
     InvalidVp9KeyFrame,
     SourceNotAllowed,
     BitrateLimitExceeded {
@@ -122,44 +122,76 @@ impl VideoPublicationTracker {
             }
         };
 
+        if publication.highest_sequence.is_some_and(|highest| {
+            highest.saturating_sub(frame.sequence) >= RECENT_SEQUENCE_LIMIT as u64
+        }) {
+            return VideoAdmission::Drop(VideoDropReason::DuplicateFrame);
+        }
+
         let fragment = match frame_fragment(frame.flags, frame.payload) {
             Ok(fragment) => fragment,
-            Err(reason) => return VideoAdmission::Drop(reason),
+            Err(reason) => {
+                if publication.decision_for(frame.sequence) == Some(VideoAdmission::Forward) {
+                    publication.has_key_frame = false;
+                    publication.reject_sequence(frame.sequence, reason);
+                }
+                return VideoAdmission::Drop(reason);
+            }
         };
-        if !fragment.is_first {
+        if fragment.index != 0 {
             let Some(decision) = publication.decision_for(frame.sequence) else {
                 return VideoAdmission::Drop(VideoDropReason::AwaitingFirstFragment);
             };
             if decision != VideoAdmission::Forward {
                 return decision;
             }
-            let Some((_, seen, declared_bytes)) = publication
+            let Some((_, state)) = publication
                 .fragment_bytes_seen
                 .iter_mut()
-                .find(|(sequence, _, _)| *sequence == frame.sequence)
+                .find(|(sequence, _)| *sequence == frame.sequence)
             else {
                 return VideoAdmission::Drop(VideoDropReason::AwaitingFirstFragment);
             };
-            if fragment.frame_bytes != *declared_bytes {
-                publication.has_key_frame = false;
-                publication.reject_sequence(frame.sequence, VideoDropReason::MalformedFragment);
-                return VideoAdmission::Drop(VideoDropReason::MalformedFragment);
+            let key_frame = frame.flags & MEDIA_DATAGRAM_FLAG_KEY_FRAME != 0;
+            match state.accept(&fragment, key_frame) {
+                Ok(complete) => {
+                    if complete {
+                        publication
+                            .fragment_bytes_seen
+                            .retain(|(sequence, _)| *sequence != frame.sequence);
+                    }
+                }
+                Err(VideoDropReason::DuplicateFrame) => {
+                    return VideoAdmission::Drop(VideoDropReason::DuplicateFrame);
+                }
+                Err(reason) => {
+                    publication.has_key_frame = false;
+                    publication.reject_sequence(frame.sequence, reason);
+                    return VideoAdmission::Drop(reason);
+                }
             }
-            let Some(total) = seen.checked_add(fragment.vp9_payload.len()) else {
-                publication.has_key_frame = false;
-                publication.reject_sequence(frame.sequence, VideoDropReason::MalformedFragment);
-                return VideoAdmission::Drop(VideoDropReason::MalformedFragment);
-            };
-            if total > fragment.frame_bytes {
-                publication.has_key_frame = false;
-                publication.reject_sequence(frame.sequence, VideoDropReason::MalformedFragment);
-                return VideoAdmission::Drop(VideoDropReason::MalformedFragment);
-            }
-            *seen = total;
             return VideoAdmission::Forward;
         }
         if let Some(decision) = publication.decision_for(frame.sequence) {
-            return decision;
+            if decision == VideoAdmission::Forward
+                && let Some((_, state)) = publication
+                    .fragment_bytes_seen
+                    .iter_mut()
+                    .find(|(sequence, _)| *sequence == frame.sequence)
+            {
+                let key_frame = frame.flags & MEDIA_DATAGRAM_FLAG_KEY_FRAME != 0;
+                if !fragment.is_fragmented
+                    || state.accept(&fragment, key_frame) == Err(VideoDropReason::MalformedFragment)
+                {
+                    publication.has_key_frame = false;
+                    publication.reject_sequence(frame.sequence, VideoDropReason::MalformedFragment);
+                    return VideoAdmission::Drop(VideoDropReason::MalformedFragment);
+                }
+            }
+            return match decision {
+                VideoAdmission::Forward => VideoAdmission::Drop(VideoDropReason::DuplicateFrame),
+                rejected => rejected,
+            };
         }
 
         let is_key_frame = frame.flags & MEDIA_DATAGRAM_FLAG_KEY_FRAME != 0;
@@ -173,11 +205,15 @@ impl VideoPublicationTracker {
         );
         publication.remember(frame.sequence, decision);
         if fragment.is_fragmented && decision == VideoAdmission::Forward {
-            publication.fragment_bytes_seen.push((
-                frame.sequence,
-                fragment.vp9_payload.len(),
-                fragment.frame_bytes,
-            ));
+            if fragment.count > 1 {
+                publication
+                    .fragment_bytes_seen
+                    .push((frame.sequence, FragmentState::new(&fragment, is_key_frame)));
+            } else if fragment.vp9_payload.len() != fragment.frame_bytes {
+                publication.has_key_frame = false;
+                publication.reject_sequence(frame.sequence, VideoDropReason::MalformedFragment);
+                return VideoAdmission::Drop(VideoDropReason::MalformedFragment);
+            }
         }
         if decision == VideoAdmission::Forward {
             // Только что прошедший проверку кадр продлевает активность источника;
@@ -196,18 +232,24 @@ impl VideoPublicationTracker {
         });
     }
 
-    /// Убирает один источник по явной остановке видеопотока владельцем сессии.
+    /// Сбрасывает состояние остановленного источника, сохраняя его бюджет до выхода из комнаты.
     pub(super) fn remove_source(
         &mut self,
         session_id: Uuid,
         room_id: Uuid,
         kind: MediaDatagramKind,
     ) {
-        self.publications.retain(|publication| {
-            !(publication.key.session_id == session_id
+        for publication in self.publications.iter_mut().filter(|publication| {
+            publication.key.session_id == session_id
                 && publication.key.room_id == room_id
-                && publication.key.kind == kind)
-        });
+                && publication.key.kind == kind
+        }) {
+            publication.has_key_frame = false;
+            publication.recent_decisions.clear();
+            publication.fragment_bytes_seen.clear();
+            publication.highest_sequence = None;
+            publication.last_forward_at = None;
+        }
     }
 
     /// Считает источники, от которых недавно пришёл допустимый кадр.
@@ -263,7 +305,7 @@ impl InMemoryVoicePresenceStore {
         )
     }
 
-    /// Убирает один видеоисточник по явному запросу остановки видеопотока.
+    /// Сбрасывает остановленный видеоисточник, сохраняя учёт его бюджета.
     pub(super) async fn remove_video_source(
         &self,
         session_id: Uuid,
@@ -296,10 +338,11 @@ struct VideoPublicationKey {
 struct VideoPublication {
     key: VideoPublicationKey,
     has_key_frame: bool,
-    budget_bits: Option<u64>,
+    budget_bits: Option<i128>,
     last_budget_update: Instant,
     recent_decisions: Vec<(u64, VideoAdmission)>,
-    fragment_bytes_seen: Vec<(u64, usize, usize)>,
+    highest_sequence: Option<u64>,
+    fragment_bytes_seen: Vec<(u64, FragmentState)>,
     last_forward_at: Option<Instant>,
 }
 
@@ -311,6 +354,7 @@ impl VideoPublication {
             budget_bits: None,
             last_budget_update: now,
             recent_decisions: Vec::new(),
+            highest_sequence: None,
             fragment_bytes_seen: Vec::new(),
             last_forward_at: None,
         }
@@ -355,7 +399,7 @@ impl VideoPublication {
             return VideoAdmission::Drop(VideoDropReason::AwaitingKeyFrame);
         }
 
-        let capacity_bits = u64::from(max_bitrate_bps).saturating_mul(VIDEO_BURST_SECONDS);
+        let capacity_bits = i128::from(max_bitrate_bps) * i128::from(VIDEO_BURST_SECONDS);
         let elapsed_ns = now
             .saturating_duration_since(self.last_budget_update)
             .as_nanos();
@@ -363,22 +407,34 @@ impl VideoPublication {
             elapsed_ns.saturating_mul(u128::from(max_bitrate_bps)) / 1_000_000_000;
         let budget = self.budget_bits.unwrap_or(capacity_bits);
         let available_bits = budget
-            .saturating_add(u64::try_from(replenished_bits).unwrap_or(u64::MAX))
+            .saturating_add(i128::try_from(replenished_bits).unwrap_or(i128::MAX))
             .min(capacity_bits);
         self.last_budget_update = now;
         self.budget_bits = Some(available_bits);
 
-        let required_bits = u64::try_from(frame_bytes)
-            .unwrap_or(u64::MAX)
+        let required_bits = i128::try_from(frame_bytes)
+            .unwrap_or(i128::MAX)
             .saturating_mul(8);
-        if required_bits > available_bits {
+        // Первый keyframe нового источника и keyframe восстановления могут занять
+        // ещё до двух секунд бюджета; новый источник начинает с полного bucket.
+        // Долг погашается будущим трафиком и не позволяет повторять burst бесплатно.
+        let minimum_budget = if is_key_frame && !self.has_key_frame {
+            -capacity_bits
+        } else {
+            0
+        };
+        let remaining = available_bits.saturating_sub(required_bits);
+        if remaining < minimum_budget {
             self.has_key_frame = false;
             return VideoAdmission::Drop(VideoDropReason::BitrateLimitExceeded {
                 max_bitrate_bps,
                 frame_bytes,
             });
         }
-        self.budget_bits = Some(available_bits - required_bits);
+        if remaining < 0 {
+            tracing::debug!(session_id = %self.key.session_id, room_id = %self.key.room_id, kind = ?self.key.kind, debt_bits = -remaining, "video recovery keyframe borrowed bitrate budget");
+        }
+        self.budget_bits = Some(remaining);
         self.has_key_frame = true;
         VideoAdmission::Forward
     }
@@ -399,54 +455,18 @@ impl VideoPublication {
             *decision = VideoAdmission::Drop(reason);
         }
         self.fragment_bytes_seen
-            .retain(|(candidate, _, _)| *candidate != sequence);
+            .retain(|(candidate, _)| *candidate != sequence);
     }
 
     fn remember(&mut self, sequence: u64, decision: VideoAdmission) {
+        self.highest_sequence = Some(self.highest_sequence.map_or(sequence, |v| v.max(sequence)));
         if self.recent_decisions.len() == RECENT_SEQUENCE_LIMIT {
             let (expired_sequence, _) = self.recent_decisions.remove(0);
             self.fragment_bytes_seen
-                .retain(|(candidate, _, _)| *candidate != expired_sequence);
+                .retain(|(candidate, _)| *candidate != expired_sequence);
         }
         self.recent_decisions.push((sequence, decision));
     }
-}
-
-struct FrameFragment<'a> {
-    is_first: bool,
-    is_fragmented: bool,
-    vp9_payload: &'a [u8],
-    frame_bytes: usize,
-}
-
-fn frame_fragment(flags: u8, payload: &[u8]) -> Result<FrameFragment<'_>, VideoDropReason> {
-    if flags & MEDIA_DATAGRAM_FLAG_FRAGMENTED == 0 {
-        return Ok(FrameFragment {
-            is_first: true,
-            is_fragmented: false,
-            vp9_payload: payload,
-            frame_bytes: payload.len(),
-        });
-    }
-    if payload.len() < VIDEO_FRAGMENT_HEADER_LEN {
-        return Err(VideoDropReason::MalformedFragment);
-    }
-    let frame_bytes = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
-    let fragment_index = u16::from_be_bytes([payload[4], payload[5]]);
-    let fragment_count = u16::from_be_bytes([payload[6], payload[7]]);
-    if fragment_count == 0
-        || fragment_index >= fragment_count
-        || frame_bytes == 0
-        || payload.len() - VIDEO_FRAGMENT_HEADER_LEN > frame_bytes
-    {
-        return Err(VideoDropReason::MalformedFragment);
-    }
-    Ok(FrameFragment {
-        is_first: fragment_index == 0,
-        is_fragmented: true,
-        vp9_payload: &payload[VIDEO_FRAGMENT_HEADER_LEN..],
-        frame_bytes,
-    })
 }
 
 fn source_for_kind(kind: MediaDatagramKind) -> Option<VideoStreamSource> {

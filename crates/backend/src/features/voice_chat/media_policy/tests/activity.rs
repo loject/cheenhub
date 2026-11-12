@@ -62,13 +62,12 @@ fn repeated_packets_do_not_add_sources_or_extend_activity() {
         tracker.inspect_at(session_id, &camera, CAMERA_BITRATE_LIMIT, started),
         VideoAdmission::Forward
     );
-    // Повторы с той же последовательностью возвращают кэшированное решение и не
-    // продлевают активность: после окна в 10 секунд источник перестаёт считаться активным.
+    // Повторы не пересылаются и не продлевают активность источника.
     for repeat in 1..=5u64 {
         let moment = started + Duration::from_secs(repeat * 5);
         assert_eq!(
             tracker.inspect_at(session_id, &camera, CAMERA_BITRATE_LIMIT, moment),
-            VideoAdmission::Forward
+            VideoAdmission::Drop(VideoDropReason::DuplicateFrame)
         );
         assert_eq!(tracker.publications.len(), 1);
         let expected = u32::from(repeat < 2);
@@ -110,7 +109,7 @@ fn rejected_video_never_becomes_active() {
     let room_id = Uuid::new_v4();
     let started = Instant::now();
     let mut oversized = sized_key_frame(MediaDatagramKind::CameraFrame, room_id, 1920, 1080);
-    oversized.payload.resize(175_001, 0);
+    oversized.payload.resize(350_001, 0);
     let mut awaiting_key_frame = key_frame_datagram(MediaDatagramKind::CameraFrame, room_id);
     awaiting_key_frame.sequence = 2;
     awaiting_key_frame.flags = 0;
