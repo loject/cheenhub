@@ -48,12 +48,20 @@ fn social_list_response_preserves_friend_without_dialog_and_nonfriend_with_dialo
         friend_nickname: "Борис".to_owned(),
         friend_avatar_url: None,
         relation: None,
+        block_status: crate::rest::DmBlockStatus::None,
         unread_count: 3,
         last_read_message_id: None,
         last_read_seq: 0,
         last_read_at: None,
         updated_at: "2026-10-28T12:00:00Z".to_owned(),
     };
+    let mut legacy = serde_json::to_value(&conversation).unwrap();
+    legacy.as_object_mut().unwrap().remove("block_status");
+    let decoded_legacy: DmConversationSummary = serde_json::from_value(legacy).unwrap();
+    assert_eq!(
+        decoded_legacy.block_status,
+        crate::rest::DmBlockStatus::None
+    );
     let response = SocialEntries {
         entries: vec![
             SocialListEntrySummary {

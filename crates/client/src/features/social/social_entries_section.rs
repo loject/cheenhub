@@ -131,6 +131,10 @@ pub(super) fn SocialEntriesSection(
                                                 "Не в сети"
                                             }
                                         }
+                                    } else if entry.conversation.as_ref().is_some_and(|conversation| matches!(conversation.block_status, cheenhub_contracts::rest::DmBlockStatus::BlockedByMe | cheenhub_contracts::rest::DmBlockStatus::Mutual)) {
+                                        span { class: "shrink-0 text-[10px] text-red-300", "Заблокирован" }
+                                    } else if entry.conversation.as_ref().is_some_and(|conversation| conversation.block_status == cheenhub_contracts::rest::DmBlockStatus::BlockedByPeer) {
+                                        span { class: "shrink-0 text-[10px] text-red-300", "Заблокировал вас" }
                                     } else {
                                         span { class: "shrink-0 text-[10px] text-amber-400/90", "Не в друзьях" }
                                     }

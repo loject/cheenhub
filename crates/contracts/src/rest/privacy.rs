@@ -2,6 +2,21 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Состояние направленных блокировок между участниками личного диалога.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DmBlockStatus {
+    /// Ни один участник не блокировал другого.
+    #[default]
+    None,
+    /// Текущий пользователь заблокировал собеседника.
+    BlockedByMe,
+    /// Собеседник заблокировал текущего пользователя.
+    BlockedByPeer,
+    /// Оба участника заблокировали друг друга.
+    Mutual,
+}
+
 /// Кто может начинать переписку с пользователем.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

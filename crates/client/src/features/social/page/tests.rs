@@ -38,6 +38,7 @@ fn known_conversation_remains_selectable_during_overview_refresh() {
         friend_nickname: "Друг".to_owned(),
         friend_avatar_url: None,
         relation: None,
+        block_status: cheenhub_contracts::rest::DmBlockStatus::None,
         unread_count: 0,
         last_read_message_id: None,
         last_read_seq: 0,

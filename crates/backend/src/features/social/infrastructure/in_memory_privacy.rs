@@ -65,6 +65,31 @@ impl PrivacyStore for InMemorySocialStore {
         Ok(blocks)
     }
 
+    async fn active_blocks_with_peers(
+        &self,
+        user_id: &Uuid,
+        peer_ids: &[Uuid],
+    ) -> anyhow::Result<Vec<UserBlock>> {
+        let peers = peer_ids
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        Ok(self
+            .user_blocks
+            .lock()
+            .map_err(|_| poisoned())?
+            .iter()
+            .filter(|block| {
+                block.unblocked_at.is_none()
+                    && ((block.blocker_user_id == *user_id
+                        && peers.contains(&block.blocked_user_id))
+                        || (block.blocked_user_id == *user_id
+                            && peers.contains(&block.blocker_user_id)))
+            })
+            .cloned()
+            .collect())
+    }
+
     async fn block_user(
         &self,
         blocker: &Uuid,

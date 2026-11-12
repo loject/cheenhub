@@ -10,7 +10,21 @@ fn app() -> Element {
         ConversationNotice {
             user_id: "peer".to_owned(),
             relation: relation(),
+            block_status: DmBlockStatus::None,
             incoming_request_id: Some("request".to_owned()),
+            on_changed: move |_| {},
+        }
+    }
+}
+
+fn blocked_app() -> Element {
+    let block_status = use_context::<Signal<DmBlockStatus>>();
+    rsx! {
+        ConversationNotice {
+            user_id: "peer".to_owned(),
+            relation: None,
+            block_status: block_status(),
+            incoming_request_id: None,
             on_changed: move |_| {},
         }
     }
@@ -66,7 +80,7 @@ fn friendship_updates_hide_notice_and_removal_restores_it() {
     dom.rebuild_in_place();
     pump(&mut dom);
     assert!(text(&dom).contains("Добавить в друзья"));
-    assert!(text(&dom).contains("Блокировка в разработке"));
+    assert!(!text(&dom).contains("Блокировка в разработке"));
 
     dom.in_scope(ScopeId::ROOT, || {
         relation.set(Some(UserRelationStatus::PendingOutgoing))
@@ -81,6 +95,38 @@ fn friendship_updates_hide_notice_and_removal_restores_it() {
     assert!(text(&dom).is_empty());
 
     dom.in_scope(ScopeId::ROOT, || relation.set(None));
+    pump(&mut dom);
+    assert!(text(&dom).contains("Добавить в друзья"));
+}
+
+#[test]
+fn blocked_notices_hide_friendship_and_offer_unblock_only_to_blocker() {
+    let mut dom = VirtualDom::new(blocked_app);
+    let mut block_status = dom.in_scope(ScopeId::ROOT, || Signal::new(DmBlockStatus::BlockedByMe));
+    dom.provide_root_context(block_status);
+    dom.rebuild_in_place();
+    pump(&mut dom);
+    let own_block = text(&dom);
+    assert!(own_block.contains("Вы заблокировали этого пользователя"));
+    assert!(own_block.contains("Разблокировать"));
+    assert!(!own_block.contains("Добавить в друзья"));
+
+    dom.in_scope(ScopeId::ROOT, || {
+        block_status.set(DmBlockStatus::BlockedByPeer)
+    });
+    pump(&mut dom);
+    let peer_block = text(&dom);
+    assert!(peer_block.contains("Пользователь вас заблокировал"));
+    assert!(!peer_block.contains("Разблокировать"));
+    assert!(!peer_block.contains("Добавить в друзья"));
+
+    dom.in_scope(ScopeId::ROOT, || block_status.set(DmBlockStatus::Mutual));
+    pump(&mut dom);
+    let mutual = text(&dom);
+    assert!(mutual.contains("Вы заблокировали друг друга"));
+    assert!(mutual.contains("Разблокировать"));
+
+    dom.in_scope(ScopeId::ROOT, || block_status.set(DmBlockStatus::None));
     pump(&mut dom);
     assert!(text(&dom).contains("Добавить в друзья"));
 }

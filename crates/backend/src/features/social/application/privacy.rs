@@ -1,9 +1,11 @@
 //! Серверные правила входящих контактов и управление приватностью.
 
+use std::collections::HashMap;
+
 use cheenhub_contracts::realtime::SocialChangeReason;
 use cheenhub_contracts::rest::{
-    BlockedUserSummary, DirectMessageAudience, IncomingContactAudience, ListBlockedUsersResponse,
-    UserPrivacySettings,
+    BlockedUserSummary, DirectMessageAudience, DmBlockStatus, IncomingContactAudience,
+    ListBlockedUsersResponse, UserPrivacySettings,
 };
 use chrono::Utc;
 use uuid::Uuid;
@@ -60,6 +62,49 @@ pub(crate) async fn users_blocked(
         .map_err(SocialError::Internal)?
         .iter()
         .any(|row| row.unblocked_at.is_none()))
+}
+
+/// Получает состояния блокировки собеседников одним обращением к хранилищу.
+pub(crate) async fn block_statuses_for_peers(
+    state: &AppState,
+    user_id: &Uuid,
+    peer_ids: &[Uuid],
+) -> Result<HashMap<Uuid, DmBlockStatus>, SocialError> {
+    if peer_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let blocks = state
+        .social_store
+        .active_blocks_with_peers(user_id, peer_ids)
+        .await
+        .map_err(SocialError::Internal)?;
+    let mut directions = HashMap::<Uuid, (bool, bool)>::new();
+    for block in blocks {
+        let blocked_by_me = block.blocker_user_id == *user_id;
+        let peer_id = if blocked_by_me {
+            block.blocked_user_id
+        } else {
+            block.blocker_user_id
+        };
+        let direction = directions.entry(peer_id).or_default();
+        if blocked_by_me {
+            direction.0 = true;
+        } else {
+            direction.1 = true;
+        }
+    }
+    Ok(directions
+        .into_iter()
+        .map(|(peer_id, (mine, theirs))| {
+            let status = match (mine, theirs) {
+                (true, true) => DmBlockStatus::Mutual,
+                (true, false) => DmBlockStatus::BlockedByMe,
+                (false, true) => DmBlockStatus::BlockedByPeer,
+                (false, false) => DmBlockStatus::None,
+            };
+            (peer_id, status)
+        })
+        .collect())
 }
 
 /// Допускает ЛС с учётом дружбы, последнего ограничения и разблокировки.

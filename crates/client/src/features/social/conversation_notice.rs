@@ -1,6 +1,8 @@
 //! Уведомление о переписке с пользователем вне списка друзей.
 
-use cheenhub_contracts::rest::UserRelationStatus;
+use cheenhub_contracts::rest::{DmBlockStatus, UserRelationStatus};
+
+use crate::features::privacy::api as privacy_api;
 use dioxus::prelude::*;
 
 use super::api;
@@ -8,13 +10,14 @@ use super::api;
 #[cfg(test)]
 mod tests;
 
-/// Предлагает отправить или принять заявку в друзья, сохраняя возможность переписки.
+/// Показывает ограничения диалога или предложение дружбы.
 ///
-/// Блокировка пока недоступна и явно обозначена подсказкой при наведении и фокусе.
+/// При собственной блокировке даёт снять её, сохраняя историю переписки.
 #[component]
 pub(super) fn ConversationNotice(
     user_id: String,
     relation: Option<UserRelationStatus>,
+    block_status: DmBlockStatus,
     incoming_request_id: Option<String>,
     on_changed: EventHandler<()>,
 ) -> Element {
@@ -26,6 +29,68 @@ pub(super) fn ConversationNotice(
         completed.set(None);
     }));
     let displayed_relation = completed().or(relation);
+    if block_status != DmBlockStatus::None {
+        let can_unblock = matches!(
+            block_status,
+            DmBlockStatus::BlockedByMe | DmBlockStatus::Mutual
+        );
+        let (heading, description) = match block_status {
+            DmBlockStatus::BlockedByMe => (
+                "Вы заблокировали этого пользователя",
+                "Сообщения, звонки и приглашения недоступны. История переписки сохранена.",
+            ),
+            DmBlockStatus::BlockedByPeer => (
+                "Пользователь вас заблокировал",
+                "Вы не можете отправлять сообщения, звонить или приглашать в голосовую комнату.",
+            ),
+            DmBlockStatus::Mutual => (
+                "Вы заблокировали друг друга",
+                "Личные контакты недоступны. Вы можете снять свою блокировку.",
+            ),
+            DmBlockStatus::None => unreachable!(),
+        };
+        return rsx! {
+            aside { class: "shrink-0 border-b border-red-500/15 bg-red-500/[0.06] px-5 py-3", role: "status",
+                div { class: "flex flex-wrap items-center justify-between gap-3",
+                    div {
+                        p { class: "text-[13px] font-semibold text-red-200", "{heading}" }
+                        p { class: "mt-1 text-[12px] leading-5 text-zinc-400", "{description}" }
+                    }
+                    if can_unblock {
+                        button {
+                            r#type: "button",
+                            disabled: pending(),
+                            class: "min-h-10 shrink-0 rounded-xl border border-red-500/25 bg-red-500/10 px-3 text-[12px] font-medium text-red-100 transition hover:bg-red-500/20 disabled:opacity-50",
+                            onclick: move |_| {
+                                if pending() { return; }
+                                pending.set(true);
+                                error.set(None);
+                                let peer_user_id = user_id.clone();
+                                spawn(async move {
+                                    info!(%peer_user_id, "unblocking user from direct dialog");
+                                    match privacy_api::unblock_user(&peer_user_id).await {
+                                        Ok(()) => {
+                                            info!(%peer_user_id, "user unblocked from direct dialog");
+                                            on_changed.call(());
+                                        }
+                                        Err(cause) => {
+                                            warn!(%peer_user_id, %cause, "failed to unblock user from direct dialog");
+                                            error.set(Some(cause));
+                                        }
+                                    }
+                                    pending.set(false);
+                                });
+                            },
+                            if pending() { "Разблокируем…" } else { "Разблокировать" }
+                        }
+                    }
+                }
+                if let Some(message) = error() {
+                    p { role: "alert", class: "mt-2 text-[12px] text-red-200", "{message}" }
+                }
+            }
+        };
+    }
     if displayed_relation == Some(UserRelationStatus::Friends) {
         return rsx! {};
     }
@@ -80,10 +145,6 @@ pub(super) fn ConversationNotice(
                         },
                         if pending() { span { class: "h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent", "aria-hidden": "true" } }
                         "{label}"
-                    }
-                    span { class: "group relative", title: "Блокировка в разработке",
-                        button { r#type: "button", "aria-disabled": "true", "aria-describedby": "dm-block-unavailable", class: "min-h-10 cursor-not-allowed rounded-xl px-3 text-[12px] text-zinc-500", "Заблокировать" }
-                        span { id: "dm-block-unavailable", role: "tooltip", class: "pointer-events-none absolute right-0 top-full z-50 mt-1 hidden w-max max-w-60 rounded-lg bg-zinc-800 px-3 py-2 text-[12px] text-zinc-200 shadow-lg group-hover:block group-focus-within:block", "Блокировка в разработке" }
                     }
                 }
             }

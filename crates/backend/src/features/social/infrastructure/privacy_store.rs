@@ -26,6 +26,12 @@ pub(crate) trait PrivacyStore: Send + Sync {
     ) -> anyhow::Result<Vec<UserBlock>>;
     /// Возвращает активные блокировки владельца.
     async fn active_user_blocks(&self, user_id: &Uuid) -> anyhow::Result<Vec<UserBlock>>;
+    /// Возвращает активные блокировки указанных пар в обоих направлениях за один запрос.
+    async fn active_blocks_with_peers(
+        &self,
+        user_id: &Uuid,
+        peer_ids: &[Uuid],
+    ) -> anyhow::Result<Vec<UserBlock>>;
     /// Блокирует пользователя и отменяет дружбу/ожидающую заявку.
     async fn block_user(
         &self,

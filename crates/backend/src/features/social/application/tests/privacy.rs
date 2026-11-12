@@ -162,6 +162,92 @@ async fn friends_only_dm_requires_new_recipient_message_and_restriction_reset_re
 }
 
 #[tokio::test]
+async fn conversation_views_report_directional_blocks_and_unblocking() {
+    use cheenhub_contracts::realtime::ListSocialEntries;
+    use cheenhub_contracts::rest::DmBlockStatus;
+
+    let setup = setup_pair().await;
+    let alice = user_id(&setup.alice_user_id);
+    let bob = user_id(&setup.bob_user_id);
+
+    block_user(&setup.state, &alice, &bob).await.unwrap();
+    let alice_view = list_dm_conversations(&setup.state, &alice).await.unwrap();
+    let bob_view = list_dm_conversations(&setup.state, &bob).await.unwrap();
+    assert_eq!(
+        alice_view.conversations[0].block_status,
+        DmBlockStatus::BlockedByMe
+    );
+    assert_eq!(
+        bob_view.conversations[0].block_status,
+        DmBlockStatus::BlockedByPeer
+    );
+
+    let entries = super::super::list_social_entries(
+        &setup.state,
+        &alice,
+        ListSocialEntries {
+            query: None,
+            cursor: None,
+            limit: Some(50),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(entries.entries.iter().any(|entry| {
+        entry
+            .conversation
+            .as_ref()
+            .is_some_and(|conversation| conversation.block_status == DmBlockStatus::BlockedByMe)
+    }));
+
+    block_user(&setup.state, &bob, &alice).await.unwrap();
+    assert_eq!(
+        list_dm_conversations(&setup.state, &alice)
+            .await
+            .unwrap()
+            .conversations[0]
+            .block_status,
+        DmBlockStatus::Mutual,
+    );
+    assert_eq!(
+        list_dm_conversations(&setup.state, &bob)
+            .await
+            .unwrap()
+            .conversations[0]
+            .block_status,
+        DmBlockStatus::Mutual,
+    );
+
+    unblock_user(&setup.state, &alice, &bob).await.unwrap();
+    assert_eq!(
+        list_dm_conversations(&setup.state, &alice)
+            .await
+            .unwrap()
+            .conversations[0]
+            .block_status,
+        DmBlockStatus::BlockedByPeer,
+    );
+    assert_eq!(
+        list_dm_conversations(&setup.state, &bob)
+            .await
+            .unwrap()
+            .conversations[0]
+            .block_status,
+        DmBlockStatus::BlockedByMe,
+    );
+
+    unblock_user(&setup.state, &bob, &alice).await.unwrap();
+    assert_eq!(
+        list_dm_conversations(&setup.state, &alice)
+            .await
+            .unwrap()
+            .conversations[0]
+            .block_status,
+        DmBlockStatus::None,
+    );
+}
+
+#[tokio::test]
 async fn blocking_rejects_both_directions_and_preserves_history_without_restoring_friendship() {
     let setup = setup_pair().await;
     let alice_id = user_id(&setup.alice_user_id);

@@ -166,6 +166,9 @@ pub struct DmConversationSummary {
     /// Отношение к собеседнику; `None` означает отсутствие дружбы и активной заявки.
     #[serde(default)]
     pub relation: Option<UserRelationStatus>,
+    /// Направление действующей блокировки, независимо от статуса дружбы.
+    #[serde(default)]
+    pub block_status: super::privacy::DmBlockStatus,
     /// Количество непрочитанных сообщений без UI-ограничения.
     pub unread_count: i64,
     /// Последнее прочитанное сообщение текущего пользователя.

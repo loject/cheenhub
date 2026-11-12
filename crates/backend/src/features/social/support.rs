@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use cheenhub_contracts::rest::{
-    AuthUser, DmConversationSummary, DmImageAttachmentSummary, DmLastMessageSummary,
+    AuthUser, DmBlockStatus, DmConversationSummary, DmImageAttachmentSummary, DmLastMessageSummary,
     DmMessageDeliveryStatus, DmMessageSummary, FriendRequestStatus, FriendRequestSummary,
     FriendSummary, ListFriendRequestsResponse, UserRelationStatus,
 };
@@ -134,6 +134,13 @@ pub(super) async fn conversation_summaries(
     )
     .await?;
 
+    let block_statuses = super::application::block_statuses_for_peers(
+        state,
+        current_user_id,
+        &friends.keys().copied().collect::<Vec<_>>(),
+    )
+    .await?;
+
     let mut summaries = Vec::with_capacity(conversations.len());
     for conversation in conversations {
         let friend_user_id = other_user_id(&conversation, current_user_id);
@@ -150,6 +157,10 @@ pub(super) async fn conversation_summaries(
             conversation,
             member_state,
             relations.get(&friend_user_id).copied(),
+            block_statuses
+                .get(&friend_user_id)
+                .copied()
+                .unwrap_or_default(),
         ));
     }
     Ok(summaries)
@@ -164,6 +175,7 @@ pub(super) fn conversation_summary_from_parts(
     conversation: DmConversation,
     member_state: ConversationMemberState,
     relation: Option<UserRelationStatus>,
+    block_status: DmBlockStatus,
 ) -> DmConversationSummary {
     DmConversationSummary {
         id: conversation.id.to_string(),
@@ -171,6 +183,7 @@ pub(super) fn conversation_summary_from_parts(
         friend_nickname: friend.nickname,
         friend_avatar_url: friend.avatar_url,
         relation,
+        block_status,
         unread_count: normalize_unread_count(member_state.unread_count),
         last_read_message_id: member_state
             .last_read_message_id
@@ -198,11 +211,15 @@ pub(super) async fn conversation_summary(
         .await
         .map_err(SocialError::Internal)?
         .unwrap_or_else(|| default_member_state(&conversation, current_user_id));
+    let blocks =
+        super::application::block_statuses_for_peers(state, current_user_id, &[friend_user_id])
+            .await?;
     Ok(conversation_summary_from_parts(
         friend,
         conversation,
         member_state,
         relations.get(&friend_user_id).copied(),
+        blocks.get(&friend_user_id).copied().unwrap_or_default(),
     ))
 }
 

@@ -70,6 +70,7 @@ pub(super) fn DirectMessageGroup(
     appearing_message_ids: Vec<String>,
     removing_message_ids: Vec<String>,
     on_edit: EventHandler<String>,
+    can_edit: bool,
     inline_edit: Option<InlineMessageEditState>,
 ) -> Element {
     let Some(first_message) = messages.first().cloned() else {
@@ -119,8 +120,8 @@ pub(super) fn DirectMessageGroup(
                             show_hover_time: index > 0,
                             can_delete_messages: false,
                             on_delete: move |_| {},
-                            on_edit: Some(on_edit),
-                            inline_edit: inline_edit.clone(),
+                            on_edit: if can_edit { Some(on_edit) } else { None },
+                            inline_edit: if can_edit { inline_edit.clone() } else { None },
                             external_attachment: message.image.is_some(),
                             max_edit_chars: Some(4000),
                             if let Some(image) = message.image.clone() {

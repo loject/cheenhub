@@ -120,6 +120,40 @@ impl PrivacyStore for PostgresSocialStore {
             .collect())
     }
 
+    async fn active_blocks_with_peers(
+        &self,
+        user_id: &Uuid,
+        peer_ids: &[Uuid],
+    ) -> anyhow::Result<Vec<UserBlock>> {
+        if peer_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(user_blocks::Entity::find()
+            .filter(
+                Condition::any()
+                    .add(
+                        Condition::all()
+                            .add(user_blocks::Column::BlockerUserId.eq(*user_id))
+                            .add(
+                                user_blocks::Column::BlockedUserId.is_in(peer_ids.iter().copied()),
+                            ),
+                    )
+                    .add(
+                        Condition::all()
+                            .add(user_blocks::Column::BlockedUserId.eq(*user_id))
+                            .add(
+                                user_blocks::Column::BlockerUserId.is_in(peer_ids.iter().copied()),
+                            ),
+                    ),
+            )
+            .filter(user_blocks::Column::UnblockedAt.is_null())
+            .all(&self.database)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
     async fn block_user(
         &self,
         blocker: &Uuid,

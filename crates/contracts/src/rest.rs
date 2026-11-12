@@ -39,8 +39,8 @@ pub use host_settings::{
     UpdateHostLogSettingsRequest, UpdateHostRegistrationSettingsRequest,
 };
 pub use privacy::{
-    BlockedUserSummary, DirectMessageAudience, IncomingContactAudience, ListBlockedUsersResponse,
-    UserPrivacySettings,
+    BlockedUserSummary, DirectMessageAudience, DmBlockStatus, IncomingContactAudience,
+    ListBlockedUsersResponse, UserPrivacySettings,
 };
 pub use push_notifications::{PushPlatform, UpsertPushInstallationRequest};
 pub use servers::{

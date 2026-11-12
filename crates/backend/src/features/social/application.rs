@@ -36,7 +36,7 @@ pub(crate) use direct_messages::{
 };
 pub(crate) use friend_list::list_friends;
 pub(crate) use privacy::{
-    block_user, ensure_incoming_call_allowed, ensure_incoming_dm_allowed,
+    block_statuses_for_peers, block_user, ensure_incoming_call_allowed, ensure_incoming_dm_allowed,
     ensure_incoming_room_invite_allowed, ensure_not_blocked, get_privacy_settings,
     list_blocked_users, unblock_user, update_privacy_settings,
 };

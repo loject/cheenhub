@@ -7,6 +7,7 @@ mod direct_message_editing;
 mod direct_message_group;
 mod direct_message_history;
 mod direct_message_image;
+mod direct_message_route;
 mod direct_message_scroll_button;
 mod direct_message_sending;
 mod direct_message_state;

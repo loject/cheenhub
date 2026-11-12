@@ -1,5 +1,7 @@
 //! Экран друзей и личных сообщений.
 
+use super::direct_message_route::{DirectMessageRouteAction, direct_message_route_action};
+
 #[cfg(test)]
 mod tests;
 
@@ -16,7 +18,7 @@ use crate::features::app::components::avatar::UserAvatar;
 use crate::features::app::components::sidebar_menu_dismiss_layer::SidebarMenuDismissLayer;
 use crate::features::app::current_user::CurrentUserContext;
 use crate::features::app::workspace_route::AppWorkspaceRoute;
-use crate::features::privacy::PrivacyBlockButton;
+use crate::features::privacy::{PrivacyBlockButton, PrivacyBlockModal};
 use crate::features::realtime::RealtimeHandle;
 use crate::features::voice_chat::{DirectCallHeader, VoiceConnectionHandle};
 
@@ -67,6 +69,7 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
     let mut is_connection_status_open = use_signal(|| false);
     let mut requests_collapsed = use_signal(|| true);
     let mut friend_menu = use_signal(|| None::<FriendMenuRequest>);
+    let mut confirming_block = use_signal(|| None::<(String, String)>);
     let mut loaded_route_conversation_id = use_signal(|| None::<String>);
     let mut retried_route_conversation_id = use_signal(|| None::<String>);
 
@@ -390,10 +393,12 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
                         }
                         div { class: "min-w-0 flex-1",
                             h2 { class: "truncate text-[15px] font-semibold tracking-[-0.025em] text-zinc-50", "{conversation.friend_nickname}" }
-                            DirectCallHeader {
-                                conversation_id: conversation.id.clone(),
-                                peer_user_id: conversation.friend_user_id.clone(),
-                                target: direct_message_voice_target(&conversation),
+                            if conversation.block_status == cheenhub_contracts::rest::DmBlockStatus::None {
+                                DirectCallHeader {
+                                    conversation_id: conversation.id.clone(),
+                                    peer_user_id: conversation.friend_user_id.clone(),
+                                    target: direct_message_voice_target(&conversation),
+                                }
                             }
                         }
                     } else {
@@ -403,13 +408,21 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
                         }
                     }
                     if let Some(conversation) = selected_conversation() {
-                        PrivacyBlockButton {
-                            user_id: conversation.friend_user_id.clone(),
-                            nickname: conversation.friend_nickname.clone(),
-                            compact: true,
-                            on_changed: move |_| reload.call(()),
+                        if matches!(
+                            conversation.block_status,
+                            cheenhub_contracts::rest::DmBlockStatus::None
+                                | cheenhub_contracts::rest::DmBlockStatus::BlockedByPeer
+                        ) {
+                            PrivacyBlockButton {
+                                user_id: conversation.friend_user_id.clone(),
+                                nickname: conversation.friend_nickname.clone(),
+                                compact: true,
+                                on_open: move |target| confirming_block.set(Some(target)),
+                            }
                         }
-                        DirectMessageVoiceButton { conversation }
+                        if conversation.block_status == cheenhub_contracts::rest::DmBlockStatus::None {
+                            DirectMessageVoiceButton { conversation }
+                        }
                     }
                 }
                 if let Some(conversation) = selected_conversation() {
@@ -450,40 +463,12 @@ pub(crate) fn SocialPage(on_open_user_settings: EventHandler<()>) -> Element {
                 }
             }
         }
-    }
-}
-
-enum DirectMessageRouteAction {
-    Wait,
-    Select(usize),
-    Refresh,
-    Unavailable,
-}
-
-/// Решает судьбу маршрута только по успешно полученному списку диалогов.
-///
-/// Отсутствующий обзор означает ожидание соединения или ошибку загрузки,
-/// поэтому сам по себе не доказывает отсутствие сохранённого диалога.
-fn direct_message_route_action(
-    conversation_id: &str,
-    overview: Option<&[DmConversationSummary]>,
-    loading: bool,
-    retried: bool,
-) -> DirectMessageRouteAction {
-    let Some(conversations) = overview else {
-        return DirectMessageRouteAction::Wait;
-    };
-    if let Some(index) = conversations
-        .iter()
-        .position(|item| item.id == conversation_id)
-    {
-        return DirectMessageRouteAction::Select(index);
-    }
-    if loading {
-        DirectMessageRouteAction::Wait
-    } else if retried {
-        DirectMessageRouteAction::Unavailable
-    } else {
-        DirectMessageRouteAction::Refresh
+        if let Some((user_id, nickname)) = confirming_block() {
+            PrivacyBlockModal {
+                user_id, nickname,
+                on_close: move |_| confirming_block.set(None),
+                on_changed: move |_| reload.call(()),
+            }
+        }
     }
 }

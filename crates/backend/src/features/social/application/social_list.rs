@@ -102,6 +102,7 @@ pub(crate) async fn list_social_entries(
         .map(|user| (user.id, user))
         .collect::<HashMap<_, _>>();
     let relations = super::relation_statuses(state, user_id, &user_ids).await?;
+    let block_statuses = super::block_statuses_for_peers(state, user_id, &user_ids).await?;
     let mut entries = Vec::with_capacity(page.entries.len());
     for entry in page.entries {
         let account = users.get(&entry.user_id).ok_or_else(|| {
@@ -122,7 +123,16 @@ pub(crate) async fn list_social_entries(
             let read_state = entry
                 .read_state
                 .unwrap_or_else(|| default_member_state(&conversation, user_id));
-            conversation_summary_from_parts(user.clone(), conversation, read_state, relation)
+            conversation_summary_from_parts(
+                user.clone(),
+                conversation,
+                read_state,
+                relation,
+                block_statuses
+                    .get(&entry.user_id)
+                    .copied()
+                    .unwrap_or_default(),
+            )
         });
         entries.push(SocialListEntrySummary {
             user_id: user.id,

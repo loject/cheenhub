@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use cheenhub_contracts::rest::{DmConversationSummary, DmMessageSummary};
+use cheenhub_contracts::rest::{DmBlockStatus, DmConversationSummary, DmMessageSummary};
 use dioxus::prelude::*;
 
 use crate::features::app::components::workspace_split::{
@@ -111,6 +111,7 @@ pub(crate) fn DirectMessageWorkspace(
     let mut voice_surface_generation = use_signal(|| 0_u64);
     let voice_surface_visible = displayed_voice_surface();
     let voice_layout_active = selected_voice_active || voice_surface_visible;
+    let is_blocked = conversation.block_status != DmBlockStatus::None;
     let direct_chat_open_attr = if direct_chat_open() { "true" } else { "false" };
     let chat_resizing = embedded_chat_resize_origin().is_some();
     let chat_resizing_attr = if chat_resizing { "true" } else { "false" };
@@ -220,6 +221,7 @@ pub(crate) fn DirectMessageWorkspace(
         ConversationNotice {
             user_id: conversation.friend_user_id.clone(),
             relation: conversation.relation,
+            block_status: conversation.block_status,
             incoming_request_id,
             on_changed: on_overview_changed,
         }
@@ -411,7 +413,8 @@ pub(crate) fn DirectMessageWorkspace(
                                                     appearing_message_ids: appearing_message_ids_list.clone(),
                                                     removing_message_ids: removing_message_ids_list.clone(),
                                                      on_edit: on_start_edit,
-                                                     inline_edit: inline_edit.clone(),
+                                                     can_edit: !is_blocked,
+                                                     inline_edit: if is_blocked { None } else { inline_edit.clone() },
                                                 }
                                             }
                                         }
@@ -430,12 +433,18 @@ pub(crate) fn DirectMessageWorkspace(
                         if !status().is_empty() {
                             p { class: "mx-auto w-full max-w-5xl px-6 pb-2 text-[11px] leading-4 text-red-200", "{status()}" }
                         }
-                        {direct_message_typing.indicator()}
-                        MessageComposer {
-                            state: compose_state,
-                            operations: compose_operations,
-                            placeholder: format!("Сообщение для {}", conversation.friend_nickname),
-                            active: !voice_layout_active || direct_chat_open(),
+                        if !is_blocked {
+                            {direct_message_typing.indicator()}
+                            MessageComposer {
+                                state: compose_state,
+                                operations: compose_operations,
+                                placeholder: format!("Сообщение для {}", conversation.friend_nickname),
+                                active: !voice_layout_active || direct_chat_open(),
+                            }
+                        } else {
+                            div { class: "shrink-0 border-t border-zinc-800/70 bg-zinc-950/90 px-5 py-4 text-center text-[12px] text-zinc-400", role: "status",
+                                "Переписка доступна только для чтения"
+                            }
                         }
                     }
                 }

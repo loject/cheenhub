@@ -1,5 +1,7 @@
 //! Чтение единого списка друзей и собеседников через общий realtime-транспорт.
 
+use std::time::Duration;
+
 use cheenhub_contracts::realtime::{
     ListSocialEntries, RealtimeKind, RealtimeModule, SocialEntries, SocialKind,
 };
@@ -19,10 +21,11 @@ pub(crate) async fn list_social_entries(
         limit: Some(50),
     };
     realtime
-        .request(
+        .request_with_timeout(
             RealtimeModule::Social,
             RealtimeKind::Social(SocialKind::ListSocialEntries),
             request,
+            Duration::from_secs(20),
         )
         .await
         .map_err(|error| {
