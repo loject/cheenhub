@@ -4,6 +4,8 @@ use cheenhub_contracts::rest::UserSearchResult;
 use dioxus::prelude::*;
 
 use crate::features::app::components::avatar::UserAvatar;
+use crate::features::privacy::api as privacy_api;
+use crate::features::toast::ToastHandle;
 
 use super::api;
 use super::presentation::relation_label;
@@ -18,6 +20,9 @@ pub(super) fn FriendSearchModal(
     let mut results = use_signal(Vec::<UserSearchResult>::new);
     let mut status = use_signal(String::new);
     let mut is_searching = use_signal(|| false);
+    let mut confirming_block = use_signal(|| None::<(String, String)>);
+    let mut is_blocking = use_signal(|| false);
+    let toast = use_context::<ToastHandle>();
 
     let run_search = use_callback(move |_| {
         let request_query = query().trim().to_owned();
@@ -99,6 +104,49 @@ pub(super) fn FriendSearchModal(
                 }
 
                 div { class: "min-h-0 flex-1 overflow-y-auto p-3",
+                    if let Some((user_id, nickname)) = confirming_block() {
+                        div { class: "mb-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3",
+                            p { class: "text-[13px] font-medium text-zinc-100", "Заблокировать {nickname}?" }
+                            p { class: "mt-1 text-[12px] leading-5 text-zinc-400",
+                                "Вы больше не сможете обмениваться личными сообщениями, звонками и приглашениями."
+                            }
+                            div { class: "mt-3 flex justify-end gap-2",
+                                button {
+                                    r#type: "button",
+                                    disabled: is_blocking(),
+                                    class: "rounded-md border border-zinc-700 px-3 py-2 text-[12px] text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-50",
+                                    onclick: move |_| confirming_block.set(None),
+                                    "Отмена"
+                                }
+                                button {
+                                    r#type: "button",
+                                    disabled: is_blocking(),
+                                    class: "rounded-md bg-red-600 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-red-500 disabled:opacity-50",
+                                    onclick: move |_| {
+                                        let user_id = user_id.clone();
+                                        is_blocking.set(true);
+                                        spawn(async move {
+                                            match privacy_api::block_user(&user_id).await {
+                                                Ok(_) => {
+                                                    confirming_block.set(None);
+                                                    toast.success("Пользователь заблокирован.");
+                                                    run_search.call(());
+                                                    on_changed.call(());
+                                                }
+                                                Err(error) => toast.error(error),
+                                            }
+                                            is_blocking.set(false);
+                                        });
+                                    },
+                                    if is_blocking() {
+                                        "Блокировка…"
+                                    } else {
+                                        "Заблокировать"
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if is_searching() && results().is_empty() {
                         div { class: "space-y-2",
                             div { class: "h-12 animate-pulse rounded-lg bg-zinc-900/80" }
@@ -127,21 +175,39 @@ pub(super) fn FriendSearchModal(
                                             r#type: "button",
                                             class: "flex h-9 w-9 items-center justify-center rounded-md border border-blue-400/30 bg-blue-500/10 text-blue-200 transition hover:bg-blue-500/20",
                                             "aria-label": "Отправить заявку",
-                                            onclick: move |_| {
-                                                let user_id = user.id.clone();
-                                                spawn(async move {
-                                                    match api::send_friend_request(user_id).await {
+                                            onclick: {
+                                                let friend_id = user.id.clone();
+                                                move |_| {
+                                                    let user_id = friend_id.clone();
+                                                    spawn(async move {
+                                                        match api::send_friend_request(user_id).await {
                                                         Ok(_) => {
                                                             run_search.call(());
                                                             on_changed.call(());
                                                         }
-                                                        Err(error) => status.set(error),
-                                                    }
-                                                });
+                                                            Err(error) => status.set(error),
+                                                        }
+                                                    });
+                                                }
                                             },
                                             svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
                                                 path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 5v14m-7-7h14" }
                                             }
+                                        }
+                                    }
+                                    button {
+                                        r#type: "button",
+                                        disabled: is_blocking(),
+                                        class: "flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-red-500/25 bg-red-500/10 text-red-300 transition hover:bg-red-500/20 disabled:opacity-50",
+                                        "aria-label": "Заблокировать пользователя",
+                                        onclick: {
+                                            let user_id = user.id.clone();
+                                            let nickname = user.nickname.clone();
+                                            move |_| confirming_block.set(Some((user_id.clone(), nickname.clone())))
+                                        },
+                                        svg { class: "h-4 w-4", fill: "none", stroke: "currentColor", stroke_width: "2", view_box: "0 0 24 24",
+                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "M12 3 4 6v6c0 5 3.4 7.9 8 9 4.6-1.1 8-4 8-9V6l-8-3Z" }
+                                            path { stroke_linecap: "round", stroke_linejoin: "round", d: "m9 9 6 6m0-6-6 6" }
                                         }
                                     }
                                 }

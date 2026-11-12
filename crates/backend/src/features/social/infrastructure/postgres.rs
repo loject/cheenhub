@@ -29,7 +29,7 @@ use crate::features::social::infrastructure::{
 
 /// Postgres-хранилище социальных данных.
 pub(crate) struct PostgresSocialStore {
-    database: DatabaseConnection,
+    pub(super) database: DatabaseConnection,
 }
 
 impl PostgresSocialStore {
@@ -136,6 +136,20 @@ impl SocialStore for PostgresSocialStore {
             limit,
         )
         .await
+    }
+
+    async fn conversation_between(
+        &self,
+        left_user_id: &Uuid,
+        right_user_id: &Uuid,
+    ) -> anyhow::Result<Option<DmConversation>> {
+        let (low, high) = ordered_pair(*left_user_id, *right_user_id);
+        Ok(dm_conversations::Entity::find()
+            .filter(dm_conversations::Column::UserLowId.eq(low))
+            .filter(dm_conversations::Column::UserHighId.eq(high))
+            .one(&self.database)
+            .await?
+            .map(Into::into))
     }
 
     async fn conversation_by_id(

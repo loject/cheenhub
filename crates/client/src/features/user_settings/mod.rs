@@ -8,6 +8,7 @@ mod diagnostics_section;
 mod page;
 mod password_section;
 mod platform;
+mod privacy_section;
 mod profile_section;
 mod profile_submission;
 mod push_to_talk_mode;

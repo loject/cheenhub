@@ -1,5 +1,8 @@
 //! Сценарии приглашений и lifecycle личных звонков.
 
+mod errors;
+
+use errors::{map_store_error, store_error_kind};
 use std::time::Duration as StdDuration;
 
 use cheenhub_contracts::realtime::{
@@ -64,6 +67,13 @@ async fn start_direct_call_at(
         .into_iter()
         .find(|participant| participant != caller_user_id)
         .ok_or_else(|| VoiceChatApplicationError::NotFound("Диалог не найден.".to_owned()))?;
+    let _contact_guard = state
+        .contact_pair_guards
+        .lock(caller_user_id, &callee_user_id)
+        .await;
+    social::ensure_incoming_call_allowed(state, caller_user_id, &callee_user_id)
+        .await
+        .map_err(social_error)?;
     let callee_account = state
         .auth_store
         .find_user_by_id(&callee_user_id)
@@ -357,7 +367,11 @@ async fn fanout_call_event(
     end_reason: Option<DirectCallEndReason>,
     ended_at: Option<DateTime<Utc>>,
 ) {
-    if let (Some(reason), Some(ended_at)) = (end_reason, ended_at) {
+    if let (Some(reason), Some(ended_at)) = (end_reason, ended_at)
+        && social::ensure_not_blocked(state, &call.caller_user_id, &call.callee_user_id)
+            .await
+            .is_ok()
+    {
         enqueue_call_ended_push(state, call, reason, ended_at).await;
     }
 
@@ -381,6 +395,27 @@ async fn fanout_call_event(
             recipient_stream_count,
             "fanned out direct call lifecycle event"
         );
+    }
+}
+
+/// Оповещает обе стороны о завершении звонка при блокировке без push-уведомлений.
+pub(super) async fn fanout_blocked_call(state: &AppState, call: &DirectCall) {
+    let ended_at = Utc::now();
+    for user_id in [call.caller_user_id, call.callee_user_id] {
+        state
+            .realtime_hub
+            .fanout_to_user_streams(
+                RealtimeModule::VoiceChat,
+                RealtimeKind::VoiceChat(VoiceChatKind::DirectCallLifecycleEvent),
+                &[user_id],
+                lifecycle_event(
+                    user_id,
+                    call,
+                    Some(DirectCallEndReason::Ended),
+                    Some(ended_at),
+                ),
+            )
+            .await;
     }
 }
 
@@ -421,36 +456,6 @@ fn snapshot(
         answered_at: call.answered_at.map(|value| value.to_rfc3339()),
         ended_at: ended_at.map(|value| value.to_rfc3339()),
         end_reason,
-    }
-}
-
-fn map_store_error(error: DirectCallStoreError) -> VoiceChatApplicationError {
-    match error {
-        DirectCallStoreError::CallerBusy => VoiceChatApplicationError::BadRequest(
-            "У тебя уже есть незавершённый личный звонок.".to_owned(),
-        ),
-        DirectCallStoreError::NotFound => {
-            VoiceChatApplicationError::NotFound("Звонок не найден.".to_owned())
-        }
-        DirectCallStoreError::Unauthorized => {
-            VoiceChatApplicationError::Unauthorized("Нет доступа к звонку.".to_owned())
-        }
-        DirectCallStoreError::InvalidState => VoiceChatApplicationError::BadRequest(
-            "Действие недоступно в текущем состоянии звонка.".to_owned(),
-        ),
-        DirectCallStoreError::Expired(_) => {
-            VoiceChatApplicationError::NotFound("Время ожидания ответа истекло.".to_owned())
-        }
-    }
-}
-
-fn store_error_kind(error: &DirectCallStoreError) -> &'static str {
-    match error {
-        DirectCallStoreError::CallerBusy => "caller_busy",
-        DirectCallStoreError::NotFound => "not_found",
-        DirectCallStoreError::Unauthorized => "unauthorized",
-        DirectCallStoreError::InvalidState => "invalid_state",
-        DirectCallStoreError::Expired(_) => "expired",
     }
 }
 

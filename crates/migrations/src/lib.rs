@@ -43,6 +43,7 @@ mod m20261017_000039_move_legacy_legal_acceptance;
 mod m20261018_000040_add_user_kind_and_system_accounts;
 mod m20261019_000041_create_text_message_pins;
 mod m20261023_000042_add_text_message_edited_at;
+mod m20261110_000043_create_user_privacy;
 #[cfg(test)]
 mod tests;
 
@@ -97,6 +98,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261018_000040_add_user_kind_and_system_accounts::Migration),
             Box::new(m20261019_000041_create_text_message_pins::Migration),
             Box::new(m20261023_000042_add_text_message_edited_at::Migration),
+            Box::new(m20261110_000043_create_user_privacy::Migration),
         ]
     }
 }

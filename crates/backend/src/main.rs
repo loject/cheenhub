@@ -200,6 +200,7 @@ async fn main() -> anyhow::Result<()> {
         image_store,
         push_notifications: push_notifications.clone(),
         image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
+        contact_pair_guards: Arc::new(Default::default()),
         voice_presence_store: Arc::new(
             features::voice_chat::infrastructure::InMemoryVoicePresenceStore::default(),
         ),

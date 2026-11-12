@@ -4,6 +4,7 @@ mod attachments;
 mod direct_messages;
 mod friend_list;
 mod friendship_policy;
+mod privacy;
 mod social_list;
 
 use cheenhub_contracts::realtime::SocialChangeReason;
@@ -25,7 +26,6 @@ use crate::features::social::support::{
 use crate::state::AppState;
 
 pub(super) use friendship_policy::relation_statuses;
-use friendship_policy::{accepted_friendship_exists, ensure_accepted_friendship};
 
 pub(crate) use attachments::{
     attachment_summaries_by_conversation, attachment_summary, dm_image, upload_dm_image,
@@ -35,6 +35,11 @@ pub(crate) use direct_messages::{
     open_dm_conversation, send_dm_message,
 };
 pub(crate) use friend_list::list_friends;
+pub(crate) use privacy::{
+    block_user, ensure_incoming_call_allowed, ensure_incoming_dm_allowed,
+    ensure_incoming_room_invite_allowed, ensure_not_blocked, get_privacy_settings,
+    list_blocked_users, unblock_user, update_privacy_settings,
+};
 pub(crate) use social_list::list_social_entries;
 
 const USER_SEARCH_LIMIT: u64 = 20;
@@ -44,6 +49,8 @@ const USER_SEARCH_LIMIT: u64 = 20;
 pub(crate) struct DirectMessageVoiceAccess {
     /// Идентификатор личного диалога.
     pub(crate) conversation_id: Uuid,
+    /// Второй участник, правила входящих звонков которого нужно проверить.
+    pub(crate) peer_user_id: Uuid,
 }
 
 /// Проверяет доступ пользователя к голосовому звонку личного диалога.
@@ -73,15 +80,10 @@ pub(crate) async fn direct_message_voice_access(
         conversation.user_low_id
     };
     ensure_user_active(state, &friend_user_id).await?;
-    ensure_accepted_friendship(
-        state,
-        user_id,
-        &friend_user_id,
-        "Звонить можно только друзьям.",
-    )
-    .await?;
+    ensure_not_blocked(state, user_id, &friend_user_id).await?;
     Ok(DirectMessageVoiceAccess {
         conversation_id: conversation.id,
+        peer_user_id: friend_user_id,
     })
 }
 
@@ -102,9 +104,10 @@ pub(crate) async fn direct_message_voice_accesses_for_user(
         } else {
             conversation.user_low_id
         };
-        if accepted_friendship_exists(state, user_id, &friend_user_id).await? {
+        if !privacy::users_blocked(state, user_id, &friend_user_id).await? {
             access.push(DirectMessageVoiceAccess {
                 conversation_id: conversation.id,
+                peer_user_id: friend_user_id,
             });
         }
     }
@@ -124,8 +127,7 @@ pub(crate) async fn direct_message_voice_user_ids(
     else {
         return Ok(Vec::new());
     };
-    if accepted_friendship_exists(state, &conversation.user_low_id, &conversation.user_high_id)
-        .await?
+    if !privacy::users_blocked(state, &conversation.user_low_id, &conversation.user_high_id).await?
     {
         Ok(vec![conversation.user_low_id, conversation.user_high_id])
     } else {
@@ -224,6 +226,11 @@ pub(crate) async fn send_friend_request(
     }
     ensure_user_exists(state, &recipient_user_id).await?;
     ensure_user_active(state, &recipient_user_id).await?;
+    let _contact_guard = state
+        .contact_pair_guards
+        .lock(&current_user.id, &recipient_user_id)
+        .await;
+    ensure_not_blocked(state, &current_user.id, &recipient_user_id).await?;
 
     if let Some(existing) = state
         .social_store
@@ -418,8 +425,24 @@ async fn change_request_status(
         return Err(SocialError::NotFound("Заявка не найдена.".to_owned()));
     }
 
+    let _contact_guard = if next_status == FriendshipStatus::Accepted {
+        Some(
+            state
+                .contact_pair_guards
+                .lock(&friendship.requester_user_id, &friendship.recipient_user_id)
+                .await,
+        )
+    } else {
+        None
+    };
     if next_status == FriendshipStatus::Accepted {
         ensure_user_active(state, &friendship.requester_user_id).await?;
+        ensure_not_blocked(
+            state,
+            &friendship.requester_user_id,
+            &friendship.recipient_user_id,
+        )
+        .await?;
     }
 
     let updated = state

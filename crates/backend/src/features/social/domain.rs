@@ -208,3 +208,74 @@ pub(crate) fn ordered_pair(left: Uuid, right: Uuid) -> (Uuid, Uuid) {
         (right, left)
     }
 }
+
+/// Правило допуска входящих личных звонков и приглашений.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum IncomingContactRule {
+    /// Контакт может начать любой незаблокированный пользователь.
+    Everyone,
+    /// Контакт могут начать только друзья.
+    Friends,
+    /// Входящие контакты запрещены всем.
+    Nobody,
+}
+
+impl IncomingContactRule {
+    /// Значение для записи в PostgreSQL.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Everyone => "everyone",
+            Self::Friends => "friends",
+            Self::Nobody => "nobody",
+        }
+    }
+
+    /// Разбирает сохранённое значение без неявного разрешения неизвестной политики.
+    pub(crate) fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "everyone" => Some(Self::Everyone),
+            "friends" => Some(Self::Friends),
+            "nobody" => Some(Self::Nobody),
+            _ => None,
+        }
+    }
+}
+
+/// Настройки входящих контактов с контрольной датой ограничений ЛС.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PrivacySettings {
+    /// Требуется ли дружба или сообщение владельца для входящих ЛС.
+    pub(crate) direct_messages_friends_only: bool,
+    /// Кто может звонить владельцу.
+    pub(crate) direct_calls: IncomingContactRule,
+    /// Кто может приглашать владельца в голосовые комнаты.
+    pub(crate) voice_room_invites: IncomingContactRule,
+    /// Время последнего переключения ЛС на «Только друзья».
+    pub(crate) direct_messages_restricted_since: Option<DateTime<Utc>>,
+}
+
+impl Default for PrivacySettings {
+    fn default() -> Self {
+        Self {
+            direct_messages_friends_only: false,
+            direct_calls: IncomingContactRule::Friends,
+            voice_room_invites: IncomingContactRule::Friends,
+            direct_messages_restricted_since: None,
+        }
+    }
+}
+
+/// Последняя блокировка направленной пары пользователей.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UserBlock {
+    /// Стабильный идентификатор записи, сохраняемый после разблокировки.
+    pub(crate) id: Uuid,
+    /// Пользователь, установивший блокировку.
+    pub(crate) blocker_user_id: Uuid,
+    /// Пользователь, на которого действует блокировка.
+    pub(crate) blocked_user_id: Uuid,
+    /// Время последней установки блокировки.
+    pub(crate) blocked_at: DateTime<Utc>,
+    /// Время снятия последней блокировки, если она снята.
+    pub(crate) unblocked_at: Option<DateTime<Utc>>,
+}

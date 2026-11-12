@@ -58,6 +58,22 @@ pub(crate) async fn open_dm_conversation(
             "Нельзя открыть личный диалог с собой.".to_owned(),
         ));
     }
+    let _contact_guard = state
+        .contact_pair_guards
+        .lock(user_id, &friend_user_id)
+        .await;
+    let existing = state
+        .social_store
+        .conversation_between(user_id, &friend_user_id)
+        .await
+        .map_err(SocialError::Internal)?;
+    super::ensure_incoming_dm_allowed(
+        state,
+        user_id,
+        &friend_user_id,
+        existing.as_ref().map(|row| &row.id),
+    )
+    .await?;
     let conversation = state
         .social_store
         .get_or_create_conversation(user_id, &friend_user_id, Utc::now())
@@ -208,7 +224,13 @@ pub(crate) async fn send_dm_message(
     let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
     let conversation = load_user_conversation(state, &conversation_id, user_id).await?;
     let friend_user_id = other_user_id(&conversation, user_id);
+    let _contact_guard = state
+        .contact_pair_guards
+        .lock(user_id, &friend_user_id)
+        .await;
     ensure_user_active(state, &friend_user_id).await?;
+    super::ensure_incoming_dm_allowed(state, user_id, &friend_user_id, Some(&conversation_id))
+        .await?;
     let image_id = request
         .image_id
         .as_deref()
@@ -318,6 +340,10 @@ pub(crate) async fn edit_dm_message(
 ) -> Result<EditDmMessageResponse, SocialError> {
     let conversation_id = parse_id(&conversation_id, "Диалог не найден.")?;
     let conversation = load_user_conversation(state, &conversation_id, user_id).await?;
+    let recipient_id = other_user_id(&conversation, user_id);
+    let _contact_guard = state.contact_pair_guards.lock(user_id, &recipient_id).await;
+    super::ensure_incoming_dm_allowed(state, user_id, &recipient_id, Some(&conversation_id))
+        .await?;
     let message_id = parse_id(&message_id, "Сообщение не найдено.")?;
     let original = state
         .social_store

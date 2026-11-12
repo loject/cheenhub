@@ -1,7 +1,11 @@
 //! HTTP-обработчики друзей и личных сообщений.
 
+mod privacy;
 #[cfg(test)]
 mod tests;
+pub(crate) use privacy::{
+    block_user, get_privacy_settings, list_blocked_users, unblock_user, update_privacy_settings,
+};
 
 use axum::{
     Json,

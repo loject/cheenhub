@@ -183,6 +183,26 @@ impl InMemoryVoiceRoomInviteStore {
         Ok(invite.clone())
     }
 
+    /// Отменяет все ожидающие приглашения между заблокировавшими друг друга пользователями.
+    pub(crate) async fn cancel_between_users(
+        &self,
+        left: &Uuid,
+        right: &Uuid,
+        now: DateTime<Utc>,
+    ) -> Vec<VoiceRoomInvite> {
+        let mut invites = self.invites.lock().await;
+        let mut cancelled = Vec::new();
+        for invite in invites.iter_mut() {
+            let between = (invite.caller_user_id == *left && invite.recipient_user_id == *right)
+                || (invite.caller_user_id == *right && invite.recipient_user_id == *left);
+            if between && invite.status == VoiceRoomInviteStatus::Pending {
+                mark_resolved(invite, VoiceRoomInviteStatus::Cancelled, now);
+                cancelled.push(invite.clone());
+            }
+        }
+        cancelled
+    }
+
     /// Возвращает приглашение для проверки целевой комнаты и членства получателя.
     pub(crate) async fn find(&self, invite_id: &Uuid) -> Option<VoiceRoomInvite> {
         self.invites

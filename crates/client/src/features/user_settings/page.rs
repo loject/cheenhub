@@ -7,6 +7,7 @@ use super::developer_section::DeveloperSettingsSection;
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 use super::diagnostics_section::DiagnosticsSettingsSection;
 use super::platform;
+use super::privacy_section::PrivacySettingsSection;
 use super::profile_section::ProfileSettingsSection;
 use super::security_section::SecuritySettingsSection;
 use super::sound_section::SoundSettingsSection;
@@ -28,6 +29,8 @@ pub(crate) enum UserSettingsSection {
     Sound,
     /// Account security and active sessions.
     Security,
+    /// Входящие обращения и блокировка пользователей.
+    Privacy,
     /// Client system behavior.
     System,
     /// Локальный журнал событий настольного клиента.
@@ -65,6 +68,11 @@ const SETTINGS_SECTIONS: &[UserSettingsSectionMeta] = &[
         kind: UserSettingsSection::Security,
         label: "Безопасность",
         description: "Устройства и сеансы",
+    },
+    UserSettingsSectionMeta {
+        kind: UserSettingsSection::Privacy,
+        label: "Приватность",
+        description: "Контакты и блокировки",
     },
     UserSettingsSectionMeta {
         kind: UserSettingsSection::System,
@@ -183,6 +191,9 @@ pub(crate) fn UserSettingsPage(
                             UserSettingsSection::Security => rsx! {
                                 SecuritySettingsSection {}
                             },
+                            UserSettingsSection::Privacy => rsx! {
+                                PrivacySettingsSection {}
+                            },
                             UserSettingsSection::System => rsx! {
                                 SystemSettingsSection {}
                             },
@@ -214,6 +225,7 @@ fn section_label(section: UserSettingsSection) -> &'static str {
         UserSettingsSection::Profile => "Профиль",
         UserSettingsSection::Sound => "Звук",
         UserSettingsSection::Security => "Безопасность",
+        UserSettingsSection::Privacy => "Приватность",
         UserSettingsSection::System => "Система",
         UserSettingsSection::Diagnostics => "Диагностика",
         UserSettingsSection::Account => "Аккаунт",

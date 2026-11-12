@@ -5,6 +5,7 @@ mod in_memory;
 mod in_memory_friend_list;
 mod in_memory_friendships;
 mod in_memory_message_counts;
+mod in_memory_privacy;
 mod in_memory_read_state;
 mod in_memory_social_list;
 mod postgres;
@@ -12,8 +13,10 @@ mod postgres_conversions;
 mod postgres_friend_list;
 mod postgres_friendships;
 mod postgres_message_counts;
+mod postgres_privacy;
 mod postgres_read_state;
 mod postgres_social_list;
+mod privacy_store;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -65,9 +68,11 @@ pub(crate) struct SocialListPage {
     pub(crate) has_more: bool,
 }
 
+use privacy_store::PrivacyStore;
+
 /// Граница хранения социальных связей и личных сообщений.
 #[async_trait]
-pub(crate) trait SocialStore: Send + Sync {
+pub(crate) trait SocialStore: PrivacyStore + Send + Sync {
     /// Находит запись дружбы для пары пользователей.
     async fn friendship_between(
         &self,
@@ -135,6 +140,13 @@ pub(crate) trait SocialStore: Send + Sync {
 
     /// Возвращает исходящие заявки пользователя.
     async fn outgoing_requests(&self, user_id: &Uuid) -> anyhow::Result<Vec<Friendship>>;
+
+    /// Находит личный диалог пары без создания новой записи.
+    async fn conversation_between(
+        &self,
+        left_user_id: &Uuid,
+        right_user_id: &Uuid,
+    ) -> anyhow::Result<Option<DmConversation>>;
 
     /// Находит личный диалог по идентификатору.
     async fn conversation_by_id(

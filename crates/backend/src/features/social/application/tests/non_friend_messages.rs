@@ -101,8 +101,9 @@ async fn non_friends_exchange_messages_and_recipient_gets_unread_dialog() {
         &user_id(&bob.user.id),
         &user_id(&opened.id),
     )
-    .await;
-    assert!(matches!(voice, Err(SocialError::Unauthorized(_))));
+    .await
+    .expect("conversation participant can access voice presence without friendship");
+    assert_eq!(voice.conversation_id, user_id(&opened.id));
     let charlie = registered_user(&state, "charlie_stranger", "charlie-stranger@example.com").await;
     let denied = send_dm_message(
         &state,

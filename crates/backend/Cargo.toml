@@ -57,3 +57,4 @@ x509-parser.workspace = true
 [dev-dependencies]
 cheenhub_migrations = { path = "../migrations" }
 tokio-tungstenite.workspace = true
+tower = { version = "0.5.3", features = ["util"] }

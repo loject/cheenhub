@@ -3,6 +3,7 @@ mod editing;
 mod friend_list;
 mod identity;
 mod non_friend_messages;
+mod privacy;
 mod search;
 mod social_list;
 
@@ -462,6 +463,7 @@ fn state() -> AppState {
             ),
         ),
         image_processing_queue: Arc::new(tokio::sync::Semaphore::new(1)),
+        contact_pair_guards: Arc::new(Default::default()),
         voice_presence_store: Arc::new(InMemoryVoicePresenceStore::default()),
         voice_room_invite_store: Arc::new(
             crate::features::voice_chat::infrastructure::InMemoryVoiceRoomInviteStore::default(),

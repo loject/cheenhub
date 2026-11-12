@@ -1,10 +1,17 @@
 //! Проверки доступа и сценариев приглашения в серверную голосовую комнату.
 
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use cheenhub_contracts::realtime::{
     JoinVoiceRoom, ListVoiceRoomInviteCandidates, ListVoiceRoomInvites, RespondVoiceRoomInvite,
     SendVoiceRoomInvite, VoiceDeviceKind, VoiceRoomInviteResponse, VoiceRoomInviteStatus,
 };
-use cheenhub_contracts::rest::{RegisterRequest, ServerRoomKind};
+use cheenhub_contracts::rest::{
+    IncomingContactAudience, RegisterRequest, ServerRoomKind, UserPrivacySettings,
+};
+use tower::ServiceExt;
 use uuid::Uuid;
 
 use super::{create_room, join_room, registered_user, state};
@@ -15,7 +22,7 @@ use crate::features::voice_chat::application::{
 };
 use crate::state::AppState;
 
-async fn another_user(state: &AppState) -> (cheenhub_contracts::rest::AuthUser, Uuid) {
+async fn another_user(state: &AppState) -> (cheenhub_contracts::rest::AuthResponse, Uuid) {
     let registered = auth_application::register(
         state,
         RegisterRequest {
@@ -29,7 +36,37 @@ async fn another_user(state: &AppState) -> (cheenhub_contracts::rest::AuthUser, 
     .await
     .unwrap();
     let id = Uuid::parse_str(&registered.user.id).unwrap();
-    (registered.user, id)
+    (registered, id)
+}
+
+// В старых сценариях проверяется работа приглашений между участниками сервера,
+// поэтому получатель явно разрешает приглашения от всех через публичный REST API.
+async fn allow_invites_from_everyone(
+    state: &AppState,
+    recipient: &cheenhub_contracts::rest::AuthResponse,
+) {
+    let request = Request::builder()
+        .method("PUT")
+        .uri("/settings")
+        .header(
+            "Authorization",
+            format!("Bearer {}", recipient.access_token),
+        )
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&UserPrivacySettings {
+                voice_room_invites: IncomingContactAudience::Everyone,
+                ..Default::default()
+            })
+            .unwrap(),
+        ))
+        .unwrap();
+    let response = crate::features::social::privacy_routes()
+        .with_state(state.clone())
+        .oneshot(request)
+        .await
+        .expect("privacy request should succeed");
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 async fn caller_in_room(
@@ -64,7 +101,7 @@ async fn caller_in_room(
 async fn voice_room_invite_requires_active_sender_and_target_membership() {
     let state = state();
     let (caller, caller_id) = registered_user(&state).await;
-    let (_, callee_id) = another_user(&state).await;
+    let (callee, callee_id) = another_user(&state).await;
     let (server_id, room_id) =
         create_room(&state, &caller_id, "voice", ServerRoomKind::Voice).await;
     let request = SendVoiceRoomInvite {
@@ -87,6 +124,7 @@ async fn voice_room_invite_requires_active_sender_and_target_membership() {
         .insert_server_member(&Uuid::parse_str(&server_id).unwrap(), &callee_id)
         .await
         .unwrap();
+    allow_invites_from_everyone(&state, &callee).await;
     let event = send_voice_room_invite(&state, stream, &caller, &caller_id, request)
         .await
         .unwrap();
@@ -97,7 +135,7 @@ async fn voice_room_invite_requires_active_sender_and_target_membership() {
 async fn voice_room_invite_accepts_once_and_restores_snapshots() {
     let state = state();
     let (caller, caller_id) = registered_user(&state).await;
-    let (_, callee_id) = another_user(&state).await;
+    let (callee, callee_id) = another_user(&state).await;
     let (server_id, room_id) =
         create_room(&state, &caller_id, "voice", ServerRoomKind::Voice).await;
     state
@@ -105,6 +143,7 @@ async fn voice_room_invite_accepts_once_and_restores_snapshots() {
         .insert_server_member(&Uuid::parse_str(&server_id).unwrap(), &callee_id)
         .await
         .unwrap();
+    allow_invites_from_everyone(&state, &callee).await;
     let stream = caller_in_room(&state, &caller, &caller_id, &server_id, &room_id).await;
     let sent = send_voice_room_invite(
         &state,
@@ -254,7 +293,7 @@ async fn voice_room_invite_candidates_exclude_current_voice_participants() {
         .unwrap();
     assert_eq!(candidates.candidates.len(), 1);
     assert_eq!(candidates.candidates[0].user_id, callee_id.to_string());
-    caller_in_room(&state, &callee, &callee_id, &server_id, &room_id).await;
+    caller_in_room(&state, &callee.user, &callee_id, &server_id, &room_id).await;
     assert!(
         list_voice_room_invite_candidates(&state, stream, &caller_id, request)
             .await

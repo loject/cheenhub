@@ -110,6 +110,22 @@ pub(crate) async fn start_direct_message_typing(
     entry: TypingAuthorEntry,
     conversation_id: Uuid,
 ) -> Result<(), TypingApplicationError> {
+    let participants = fanout::conversation_participant_ids(state, &conversation_id)
+        .await
+        .map_err(TypingApplicationError::Internal)?;
+    if !participants.contains(&entry.user_id) {
+        return Err(TypingApplicationError::BadRequest(
+            "Диалог недоступен.".to_owned(),
+        ));
+    }
+    let recipient = participants
+        .into_iter()
+        .find(|participant| *participant != entry.user_id)
+        .ok_or_else(|| TypingApplicationError::BadRequest("Диалог недоступен.".to_owned()))?;
+    let _contact_guard = state
+        .contact_pair_guards
+        .lock(&entry.user_id, &recipient)
+        .await;
     ensure_conversation_access(state, &entry.user_id, &conversation_id).await?;
     let started = start_entry(
         state,
@@ -335,13 +351,30 @@ async fn ensure_conversation_access(
     let participants = fanout::conversation_participant_ids(state, conversation_id)
         .await
         .map_err(TypingApplicationError::Internal)?;
-    if participants.contains(user_id) {
-        Ok(())
-    } else {
-        Err(TypingApplicationError::BadRequest(
+    if !participants.contains(user_id) {
+        return Err(TypingApplicationError::BadRequest(
             "Диалог недоступен.".to_owned(),
-        ))
+        ));
     }
+    let recipient = participants
+        .into_iter()
+        .find(|participant| participant != user_id)
+        .ok_or_else(|| TypingApplicationError::BadRequest("Диалог недоступен.".to_owned()))?;
+    crate::features::social::ensure_incoming_dm_allowed(
+        state,
+        user_id,
+        &recipient,
+        Some(conversation_id),
+    )
+    .await
+    .map_err(|error| match error {
+        crate::features::social::SocialError::Internal(error) => {
+            TypingApplicationError::Internal(error)
+        }
+        _ => TypingApplicationError::BadRequest(
+            "Набор сообщений этому пользователю недоступен.".to_owned(),
+        ),
+    })
 }
 
 /// Отправляет клиенту отказ по операции индикатора набора.

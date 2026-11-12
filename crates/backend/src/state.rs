@@ -21,9 +21,51 @@ use crate::features::voice_chat::infrastructure::{
 use crate::realtime::hub::RealtimeHub;
 use crate::telemetry::HostLogHub;
 
+const CONTACT_PAIR_LOCK_SHARDS: usize = 256;
+
+/// Синхронизирует операции контакта и блокировки одной пары пользователей внутри процесса.
+///
+/// Фиксированное число сегментов не допускает накопления mutex для произвольных пар.
+/// Разные пары могут изредка попадать в один сегмент и ожидать друг друга.
+pub(crate) struct ContactPairGuards {
+    slots: [tokio::sync::Mutex<()>; CONTACT_PAIR_LOCK_SHARDS],
+}
+
+impl Default for ContactPairGuards {
+    fn default() -> Self {
+        Self {
+            slots: std::array::from_fn(|_| tokio::sync::Mutex::new(())),
+        }
+    }
+}
+
+impl ContactPairGuards {
+    /// Захватывает общий для обоих направлений пары mutex до завершения контактной операции.
+    pub(crate) async fn lock(
+        &self,
+        left: &uuid::Uuid,
+        right: &uuid::Uuid,
+    ) -> tokio::sync::MutexGuard<'_, ()> {
+        use std::hash::{Hash, Hasher};
+
+        let (first, second) = if left <= right {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        let mut hasher = std::hash::DefaultHasher::new();
+        first.hash(&mut hasher);
+        second.hash(&mut hasher);
+        let index = (hasher.finish() as usize) % CONTACT_PAIR_LOCK_SHARDS;
+        self.slots[index].lock().await
+    }
+}
+
 /// Общее состояние приложения бэкенда.
 #[derive(Clone)]
 pub(crate) struct AppState {
+    /// Синхронизация контактных операций с применением блокировок.
+    pub(crate) contact_pair_guards: Arc<ContactPairGuards>,
     /// Бэкенд хранения аутентификации.
     pub(crate) auth_store: Arc<dyn AuthStore>,
     /// Отправитель писем аутентификации.
