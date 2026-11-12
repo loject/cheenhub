@@ -40,7 +40,12 @@ pub(super) fn vpx(build: &Build) -> XtaskResult<()> {
             "сборка libvpx MSVC",
             Command::new("MSBuild.exe")
                 .arg("vpx.sln")
-                .args(["/p:Configuration=Release", "/p:Platform=x64"])
+                .args([
+                    "/p:Configuration=Release",
+                    "/p:Platform=x64",
+                    // Rust переупаковывает архив, а объекты /GL зависят от версии MSVC.
+                    "/p:WholeProgramOptimization=false",
+                ])
                 .arg(format!("/m:{}", build.jobs))
                 .current_dir(&directory),
         )?;
