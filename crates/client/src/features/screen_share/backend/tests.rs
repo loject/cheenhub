@@ -128,9 +128,12 @@ fn capture_preserves_source_aspect_within_the_selected_quality() {
         ((2520, 1080), (1280, 720), (1280, 549)),
         ((2560, 1440), (1920, 1080), (1920, 1080)),
         ((1080, 1920), (1280, 720), (405, 720)),
-        ((640, 480), (1280, 720), (960, 720)),
+        ((640, 480), (1280, 720), (640, 480)),
         ((1366, 768), (1280, 720), (1280, 720)),
-        ((1920, 1080), (3840, 2160), (3840, 2160)),
+        ((1920, 1080), (3840, 2160), (1920, 1080)),
+        ((2560, 1440), (3840, 2160), (2560, 1440)),
+        ((3840, 2160), (3840, 2160), (3840, 2160)),
+        ((3840, 2160), (1920, 1080), (1920, 1080)),
         ((0, 0), (1280, 720), (1, 1)),
         ((u32::MAX, u32::MAX), (1920, 1080), (1080, 1080)),
     ] {
@@ -145,6 +148,8 @@ fn capture_preserves_source_aspect_within_the_selected_quality() {
         let fitted = fit_capture_preset(source.0, source.1, preset);
 
         assert_eq!((fitted.width, fitted.height), expected, "{source:?}");
+        let encoder = encoder_config(fitted);
+        assert_eq!((encoder.width, encoder.height), expected, "{source:?}");
         assert_eq!(fitted.max_fps, preset.max_fps);
         assert_eq!(fitted.bitrate_bps, preset.bitrate_bps);
     }

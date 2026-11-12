@@ -121,6 +121,19 @@ impl Vp9Encoder {
         Err(format!("Кодирование VP9 недоступно: {detail}"))
     }
 
+    /// Завершает кодирование и возвращает все отложенные пакеты в порядке FFmpeg.
+    ///
+    /// Контекст освобождается до возврата результата; продолжать encode нельзя.
+    ///
+    /// # Errors
+    /// Возвращает ошибку, если FFmpeg не завершил encoder или вернул некорректный пакет.
+    pub fn finish(mut self) -> Result<Vec<EncodedPacket>, String> {
+        self.encoder
+            .send_eof()
+            .map_err(|error| format!("Не удалось завершить VP9 encoder: {error}"))?;
+        self.receive_packets(true)
+    }
+
     /// Передаёт плотно упакованный I420 и возвращает готовые пакеты VP9.
     ///
     /// Пустой результат означает аппаратную задержку; timestamp измеряется в мкс.
@@ -149,6 +162,10 @@ impl Vp9Encoder {
         self.encoder
             .send_frame(hardware.as_ref().unwrap_or(&self.software))
             .map_err(|error| error.to_string())?;
+        self.receive_packets(false)
+    }
+
+    fn receive_packets(&mut self, finishing: bool) -> Result<Vec<EncodedPacket>, String> {
         let mut output = Vec::new();
         loop {
             let mut packet = Packet::empty();
@@ -166,7 +183,8 @@ impl Vp9Encoder {
                 }
                 Err(ffmpeg_next::Error::Other {
                     errno: ffmpeg_next::error::EAGAIN,
-                }) => break,
+                }) if !finishing => break,
+                Err(ffmpeg_next::Error::Eof) if finishing => break,
                 Err(error) => return Err(error.to_string()),
             }
         }

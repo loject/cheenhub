@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use cheenhub_contracts::video_presets::{VideoEncodingSettings, VideoStreamSource};
 use dioxus::logger::tracing::{debug, info, warn};
 use futures_channel::{mpsc, oneshot};
 use windows::Foundation::TypedEventHandler;
@@ -27,11 +28,15 @@ use super::encoder::WindowsVp9Encoder;
 use super::frames::I420Frame;
 use super::monitor::find_monitor;
 use super::readback::FrameReadback;
-use super::{CaptureControl, FRAME_POOL_BUFFER_COUNT, FRAME_REPORT_INTERVAL};
-use crate::features::screen_share::{
-    EncodedScreenShareFrame, ScreenShareCodec, ScreenShareTargetQuality,
-};
+use super::{CaptureControl, FRAME_POOL_BUFFER_COUNT, FRAME_REPORT_INTERVAL, lock_control};
+
+mod forward;
+mod startup;
+use crate::features::screen_share::backend::fit_capture_preset;
+use crate::features::screen_share::{EncodedScreenShareFrame, ScreenShareTargetQuality};
 use crate::features::video_encoding::VideoFrameRateGate;
+use forward::forward_packets;
+use startup::confirm_first_frame;
 
 pub(super) enum WorkerEvent {
     /// Готовый VP9-кадр для существующего медиапути.
@@ -131,8 +136,6 @@ fn run_capture(
     info!(source_id = %source_id, "Windows screen capture source found");
     let (device, direct3d_device, context) = create_d3d_device()?;
     let mut readback = FrameReadback::new(device, context);
-    let mut encoder =
-        WindowsVp9Encoder::new(target.width, target.height, bitrate_bps, target.max_fps)?;
     let mut frame_rate_gate = VideoFrameRateGate::new(target.max_fps);
     let interop: IGraphicsCaptureItemInterop =
         factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>().map_err(platform_error)?;
@@ -140,6 +143,16 @@ fn run_capture(
         unsafe { interop.CreateForMonitor(monitor) }.map_err(platform_error)?;
     let initial_size = item.Size().map_err(platform_error)?;
     validate_size(initial_size.Width, initial_size.Height)?;
+    let mut encoded_size = fitted_size(
+        initial_size.Width as u32,
+        initial_size.Height as u32,
+        target,
+        bitrate_bps,
+    )?;
+    let mut encoder =
+        WindowsVp9Encoder::new(encoded_size.0, encoded_size.1, bitrate_bps, target.max_fps)?;
+    let mut encoder_source_size = (initial_size.Width as u32, initial_size.Height as u32);
+    info!(source_id = %source_id, encoded_width = encoded_size.0, encoded_height = encoded_size.1, "Windows screen encoder configured");
 
     let frame_pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
         &direct3d_device,
@@ -248,6 +261,10 @@ fn run_capture(
             continue;
         }
         native_size = Some(current_size);
+        let next_size = match fitted_size(current_size.0, current_size.1, target, bitrate_bps) {
+            Ok(size) => size,
+            Err(error) => return capture_error(first_frame_received, error),
+        };
         frames_total = frames_total.saturating_add(1);
         frames_since_report = frames_since_report.saturating_add(1);
 
@@ -257,6 +274,38 @@ fn run_capture(
             .min(u128::from(u64::MAX)) as u64;
         if !frame_rate_gate.accept(timestamp_us) {
             continue;
+        }
+        if next_size != encoded_size {
+            let packets = match encoder.finish_for_resize() {
+                Ok(packets) => packets,
+                Err(error) => return capture_error(first_frame_received, error),
+            };
+            if lock_control(&control.state).stop_requested {
+                return Ok(CaptureOutcome::ExplicitStop);
+            }
+            if !packets.is_empty() {
+                confirm_first_frame(
+                    &mut first_frame_received,
+                    startup_sender,
+                    source_id,
+                    encoder_source_size,
+                    capture_started_at,
+                );
+            }
+            if !forward_packets(packets, runtime_sender) {
+                return Ok(CaptureOutcome::ExplicitStop);
+            }
+            if let Err(error) =
+                encoder.open_after_resize(next_size.0, next_size.1, bitrate_bps, target.max_fps)
+            {
+                return capture_error(first_frame_received, error);
+            }
+            if lock_control(&control.state).stop_requested {
+                return Ok(CaptureOutcome::ExplicitStop);
+            }
+            encoded_size = next_size;
+            encoder_source_size = current_size;
+            info!(source_id = %source_id, encoded_width = encoded_size.0, encoded_height = encoded_size.1, "Windows screen encoder resized");
         }
         let surface = match frame.Surface() {
             Ok(surface) => surface,
@@ -271,8 +320,8 @@ fn run_capture(
             current_size.0 as usize,
             current_size.1 as usize,
             stride,
-            target.width as usize,
-            target.height as usize,
+            encoded_size.0 as usize,
+            encoded_size.1 as usize,
         ) {
             Ok(image) => image,
             Err(error) => return capture_error(first_frame_received, error),
@@ -286,39 +335,16 @@ fn run_capture(
             continue;
         }
 
-        if !first_frame_received {
-            first_frame_received = true;
-            if let Some(sender) = startup_sender.take() {
-                let _ = sender.send(Ok(StartupInfo {
-                    width: current_size.0,
-                    height: current_size.1,
-                }));
-            }
-            info!(
-                source_id = %source_id,
-                native_width = current_size.0,
-                native_height = current_size.1,
-                startup_elapsed_ms = capture_started_at.elapsed().as_millis(),
-                "Windows screen capture first encoded frame confirmed"
-            );
-        }
+        confirm_first_frame(
+            &mut first_frame_received,
+            startup_sender,
+            source_id,
+            current_size,
+            capture_started_at,
+        );
 
-        for packet in packets {
-            if runtime_sender
-                .unbounded_send(WorkerEvent::Frame(EncodedScreenShareFrame {
-                    sequence: packet.sequence,
-                    timestamp_us: packet.timestamp_us,
-                    duration_us: packet.duration_us,
-                    codec: ScreenShareCodec::Vp9,
-                    key_frame: packet.key_frame,
-                    width: packet.width,
-                    height: packet.height,
-                    bytes: packet.bytes,
-                }))
-                .is_err()
-            {
-                return Ok(CaptureOutcome::ExplicitStop);
-            }
+        if !forward_packets(packets, runtime_sender) {
+            return Ok(CaptureOutcome::ExplicitStop);
         }
 
         if last_report.elapsed() >= FRAME_REPORT_INTERVAL {
@@ -365,6 +391,30 @@ fn validate_size(width: i32, height: i32) -> Result<(), String> {
     } else {
         Ok(())
     }
+}
+
+fn fitted_size(
+    width: u32,
+    height: u32,
+    target: &ScreenShareTargetQuality,
+    bitrate_bps: u32,
+) -> Result<(u32, u32), String> {
+    let fitted = fit_capture_preset(
+        width,
+        height,
+        VideoEncodingSettings {
+            source: VideoStreamSource::ScreenShare,
+            width: target.width,
+            height: target.height,
+            max_fps: target.max_fps,
+            bitrate_bps,
+        },
+    );
+    let size = (fitted.width & !1, fitted.height & !1);
+    if size.0 < 2 || size.1 < 2 {
+        return Err("размер кадра слишком мал для I420".to_owned());
+    }
+    Ok(size)
 }
 
 fn create_d3d_device() -> Result<(ID3D11Device, IDirect3DDevice, ID3D11DeviceContext), String> {
@@ -439,3 +489,6 @@ impl Drop for CaptureResources {
 fn platform_error(error: windows::core::Error) -> String {
     format!("ошибка Windows Graphics Capture: {error}")
 }
+
+#[cfg(test)]
+mod tests;

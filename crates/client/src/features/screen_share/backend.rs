@@ -162,9 +162,9 @@ impl Default for ScreenShareConfig {
     }
 }
 
-/// Вписывает источник в размеры выбранного пресета, сохраняя его пропорции.
+/// Вписывает источник в максимальные размеры, сохраняя его пропорции без увеличения.
 ///
-/// Изображение вписывается в выбранные размеры с сохранением пропорций.
+/// Изображение уменьшается только при превышении выбранных размеров.
 /// Нулевые размеры источника заменяются на один пиксель. Частота кадров и bitrate
 /// остаются параметрами выбранного пресета.
 pub(super) fn fit_capture_preset(
@@ -176,6 +176,13 @@ pub(super) fn fit_capture_preset(
         return VideoEncodingSettings {
             width: 1,
             height: 1,
+            ..preset
+        };
+    }
+    if width <= preset.width && height <= preset.height {
+        return VideoEncodingSettings {
+            width,
+            height,
             ..preset
         };
     }

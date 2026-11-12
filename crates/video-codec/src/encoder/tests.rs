@@ -143,3 +143,46 @@ fn hardware_encoder_produces_key_frame_and_preserves_timestamp() {
     assert_eq!(packets[0].timestamp_us, 1_000_000);
     assert!(!packets[0].bytes.is_empty());
 }
+
+#[test]
+fn finishing_delayed_software_encoder_returns_buffered_packets() {
+    let codec = encoder::find_by_name("libvpx-vp9").unwrap();
+    let mut video = codec::Context::new_with_codec(codec)
+        .encoder()
+        .video()
+        .unwrap();
+    video.set_width(64);
+    video.set_height(48);
+    video.set_format(format::Pixel::YUV420P);
+    video.set_bit_rate(300_000);
+    video.set_time_base((1, 1_000_000));
+    video.set_frame_rate(Some((30, 1)));
+    let mut options = Dictionary::new();
+    options.set("lag-in-frames", "10");
+    options.set("deadline", "good");
+    let encoder = video.open_as_with(codec, options).unwrap();
+    let software = frame::Video::new(format::Pixel::YUV420P, 64, 48);
+    let mut encoder = Vp9Encoder {
+        encoder,
+        software,
+        input_len: 64 * 48 * 3 / 2,
+        hardware: false,
+    };
+    let input = vec![128; 64 * 48 * 3 / 2];
+    let mut output = Vec::new();
+    for index in 0..4 {
+        output.extend(encoder.encode(&input, index * 33_333, index == 0).unwrap());
+    }
+    assert!(output.len() < 4, "кодировщик должен задержать кадры");
+
+    output.extend(encoder.finish().unwrap());
+
+    assert_eq!(output.len(), 4);
+    assert_eq!(
+        output
+            .iter()
+            .map(|packet| packet.timestamp_us)
+            .collect::<Vec<_>>(),
+        vec![0, 33_333, 66_666, 99_999]
+    );
+}

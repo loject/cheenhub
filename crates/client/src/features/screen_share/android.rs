@@ -38,7 +38,7 @@ impl ScreenShareBackend for AndroidScreenShareBackend {
                 unreachable!();
             };
             let (width, height) = screen_dimensions().await?;
-            let preset = if let Some(target) = target {
+            let mut preset = if let Some(target) = target {
                 let settings = config.preset_for_target(&target).ok_or_else(|| {
                     ScreenShareError::new("Выбранное качество демонстрации недоступно.")
                 })?;
@@ -46,6 +46,14 @@ impl ScreenShareBackend for AndroidScreenShareBackend {
             } else {
                 config.preset_for_capture(width, height)
             };
+            // MediaCodec Surface может требовать чётные размеры для VP9.
+            preset.width &= !1;
+            preset.height &= !1;
+            if preset.width == 0 || preset.height == 0 {
+                return Err(ScreenShareError::new(
+                    "Размер изображения слишком мал для кодирования.",
+                ));
+            }
             info!(
                 source_width = width,
                 source_height = height,
