@@ -33,10 +33,19 @@ pub(super) fn run(args: Vec<String>) -> XtaskResult<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .ok_or("Нет корня workspace")?;
+    let platform = if windows {
+        "windows-x86_64-msvc"
+    } else {
+        "linux-x86_64-gnu"
+    };
+    if env::consts::ARCH != "x86_64" {
+        return Err("Готовые пакеты FFmpeg поддерживают только x86_64".into());
+    }
+    let directory = root.join("target/ffmpeg-build").join(platform);
     let build = Build {
         vendor: root.join("crates/video-codec/vendor"),
-        directory: root.join("target/ffmpeg-build"),
-        prefix: root.join("target/ffmpeg-build/ffmpeg-static"),
+        directory: directory.clone(),
+        prefix: directory.join("ffmpeg-static"),
         windows,
         jobs: env::var("NUM_JOBS").unwrap_or_else(|_| "4".into()),
     };
@@ -61,7 +70,7 @@ pub(super) fn run(args: Vec<String>) -> XtaskResult<()> {
     let marker = build.prefix.join("complete");
     if fs::read_to_string(&marker).is_ok_and(|value| value == stamp) {
         println!("[FFmpeg] Статические библиотеки уже собраны.");
-        return Ok(());
+        return package(&build);
     }
     if marker.exists() {
         fs::remove_file(&marker).map_err(|error| error.to_string())?;
@@ -100,19 +109,59 @@ pub(super) fn run(args: Vec<String>) -> XtaskResult<()> {
         fs::copy(build.vendor.join(name), build.prefix.join(name))
             .map_err(|error| error.to_string())?;
     }
-    // ffmpeg-sys-next упаковывает статические архивы в rlib и не отслеживает
-    // их замену внутри FFMPEG_DIR. Удаляем только его воспроизводимый Cargo-кэш.
-    execute(
-        "обновление Cargo-кэша FFmpeg",
-        Command::new("cargo")
-            .args(["clean", "--offline", "-p", "ffmpeg-sys-next"])
-            .current_dir(root),
-    )?;
     fs::write(marker, stamp).map_err(|error| error.to_string())?;
     println!(
         "[FFmpeg] Статическая сборка завершена: {}",
         build.prefix.display()
     );
+    package(&build)
+}
+
+fn package(build: &Build) -> XtaskResult<()> {
+    let package = build.vendor.join("ffmpeg-static");
+    let headers = package.join("include");
+    let libraries = package.join("lib");
+    fs::create_dir_all(&libraries).map_err(|error| error.to_string())?;
+    for component in ["libavcodec", "libavformat", "libavutil"] {
+        let source = build.prefix.join("include").join(component);
+        let destination = headers.join(component);
+        fs::create_dir_all(&destination).map_err(|error| error.to_string())?;
+        for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let path = destination.join(entry.file_name());
+            let bytes = fs::read(entry.path()).map_err(|error| error.to_string())?;
+            if path.exists() {
+                if fs::read(&path).map_err(|error| error.to_string())? != bytes {
+                    return Err(format!(
+                        "Общий заголовок FFmpeg изменился: {}. Обновите заголовки для обеих платформ.",
+                        path.display()
+                    ));
+                }
+            } else {
+                fs::write(path, bytes).map_err(|error| error.to_string())?;
+            }
+        }
+    }
+    for name in ["avcodec", "avformat", "avutil", "vpl", "vpx"] {
+        let archive = format!("lib{name}.a");
+        let msvc_archive = format!("{name}.lib");
+        let source = if build.windows && matches!(name, "vpl" | "vpx") {
+            &msvc_archive
+        } else {
+            &archive
+        };
+        let destination = if build.windows {
+            &msvc_archive
+        } else {
+            &archive
+        };
+        fs::copy(
+            build.prefix.join("lib").join(source),
+            libraries.join(destination),
+        )
+        .map_err(|error| format!("{source}: {error}"))?;
+    }
+    println!("[FFmpeg] Готовый пакет: {}", package.display());
     Ok(())
 }
 

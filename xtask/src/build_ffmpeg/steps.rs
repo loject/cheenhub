@@ -227,6 +227,7 @@ fn windows_vpl_probe(
             command.arg(flag);
         }
     }
+    command.current_dir(output.parent().ok_or("Нет каталога проверки oneVPL")?);
     command.arg(format!("/OUT:{}", output.display()));
     Ok(command)
 }

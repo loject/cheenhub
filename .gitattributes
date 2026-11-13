@@ -1,0 +1,2 @@
+crates/video-codec/vendor/ffmpeg-static/lib/* binary
+crates/video-codec/vendor/ffmpeg-static/include/** text eol=lf

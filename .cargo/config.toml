@@ -13,4 +13,4 @@ rustflags = ["-C", "link-arg=-lc++abi"]
 
 [env]
 CMAKE_POLICY_VERSION_MINIMUM = "3.5"
-FFMPEG_DIR = { value = "target/ffmpeg-build/ffmpeg-static", relative = true }
+FFMPEG_DIR = { value = "crates/video-codec/vendor/ffmpeg-static", relative = true }

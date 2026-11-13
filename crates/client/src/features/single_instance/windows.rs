@@ -23,7 +23,9 @@ static ACTIVATION_RECEIVER: Mutex<Option<UnboundedReceiver<()>>> = Mutex::new(No
 
 /// Регистрирует первый экземпляр или уведомляет его о повторном запуске.
 pub(crate) fn prepare() -> Result<bool, String> {
-    let event_name = wide_null(ACTIVATION_EVENT_NAME);
+    let development = std::env::var("CHEENHUB_DEV_INSTANCE").is_ok_and(|value| value == "1");
+    let suffix = if development { ".dev" } else { "" };
+    let event_name = wide_null(&format!("{ACTIVATION_EVENT_NAME}{suffix}"));
     let event = unsafe { CreateEventW(null(), 0, 0, event_name.as_ptr()) };
     if event.is_null() {
         return Err(format!(
@@ -32,7 +34,7 @@ pub(crate) fn prepare() -> Result<bool, String> {
         ));
     }
 
-    let mutex_name = wide_null(MUTEX_NAME);
+    let mutex_name = wide_null(&format!("{MUTEX_NAME}{suffix}"));
     unsafe {
         SetLastError(ERROR_SUCCESS);
     }
@@ -60,7 +62,10 @@ pub(crate) fn prepare() -> Result<bool, String> {
                 "Не удалось активировать запущенный экземпляр CheenHub: {error}"
             ));
         }
-        info!("forwarded activation request to existing CheenHub instance");
+        info!(
+            development,
+            "forwarded activation request to existing CheenHub instance"
+        );
         return Ok(false);
     }
 
@@ -93,7 +98,7 @@ pub(crate) fn prepare() -> Result<bool, String> {
     INSTANCE_GUARD
         .set(guard)
         .map_err(|_| "Экземпляр CheenHub уже был подготовлен в текущем процессе.".to_owned())?;
-    info!("registered primary CheenHub desktop instance");
+    info!(development, "registered primary CheenHub desktop instance");
     Ok(true)
 }
 

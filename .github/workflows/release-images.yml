@@ -243,51 +243,10 @@ jobs:
       - name: Set up MSVC build environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Install MSYS2 build tools
-        id: msys2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MSYS
-          install: make pkgconf nasm diffutils perl xz
-          path-type: inherit
-
-      - name: Add MSYS2 tools to PATH
-        shell: pwsh
-        env:
-          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
-        run: |
-          $linker = (Get-Command link.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-          if (-not $env:VCToolsInstallDir -or -not $linker.StartsWith($env:VCToolsInstallDir, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "The selected linker is not from the configured MSVC toolchain: $linker"
-          }
-          $msvcBin = Split-Path -Parent $linker
-          $msysBin = Join-Path $env:MSYS2_LOCATION 'usr\bin'
-          if (-not (Test-Path (Join-Path $msysBin 'make.exe'))) { throw "MSYS2 make not found in $msysBin" }
-          $msysBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          $msvcBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Verify Windows build tools
-        shell: pwsh
-        env:
-          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
-        run: |
-          $linker = (Get-Command link.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-          Write-Host "Selected linker: $linker"
-          if (-not $env:VCToolsInstallDir -or -not $linker.StartsWith($env:VCToolsInstallDir, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "The selected linker is not from the configured MSVC toolchain."
-          }
-          foreach ($tool in @('sh.exe', 'make.exe', 'cygpath.exe', 'nasm.exe', 'pkgconf.exe')) {
-            $command = Get-Command $tool -CommandType Application -ErrorAction Stop | Select-Object -First 1
-            Write-Host "Selected ${tool}: $($command.Source)"
-            if ($command.Source -ine (Join-Path $env:MSYS2_LOCATION "usr\bin\$tool")) {
-              throw "The selected $tool is not from the configured MSYS2 installation."
-            }
-          }
-
       - name: Cache Rust and Dioxus build outputs
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: windows-client-release-dx-0.8-ffmpeg-msvc
+          shared-key: windows-client-release-dx-0.8-ffmpeg-msvc-${{ hashFiles('crates/video-codec/vendor/ffmpeg-static/**') }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
           cache-workspace-crates: true
@@ -326,32 +285,12 @@ jobs:
         shell: pwsh
         run: cargo run --quiet -p xtask -- release-version check
 
-      - name: Fetch Rust dependencies for offline FFmpeg cache cleanup
-        shell: pwsh
-        run: cargo fetch --locked --target x86_64-pc-windows-msvc
-
-      - name: Build static FFmpeg
-        shell: pwsh
-        run: |
-          cargo run --locked -p xtask -- build-ffmpeg
-          if ($LASTEXITCODE -ne 0) { throw "Static FFmpeg build failed." }
-
-      - name: Upload FFmpeg configure diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v6
-        with:
-          name: windows-ffmpeg-config-diagnostics
-          path: |
-            target/ffmpeg-build/ffmpeg-build/ffbuild/config.log
-            target/ffmpeg-build/ffmpeg-static/lib/pkgconfig/vpl.pc
-          if-no-files-found: warn
-
       - name: Build Windows installers
         shell: pwsh
         env:
           # ffmpeg-sys-next запускает bindgen в главном потоке build-скрипта.
           # Аргумент MSVC действует и на host-сборку при cargo build --target.
-          _LINK_: "/STACK:16777216"
+          _LINK_: "/STACK:33554432"
         run: |
           $ErrorActionPreference = 'Stop'
           dx bundle --windows --target x86_64-pc-windows-msvc --package cheenhub_client --bin cheenhub --release --no-default-features --features desktop,windows --package-types nsis --out-dir dist/windows/raw
@@ -414,6 +353,7 @@ jobs:
             file \
             libpulse-dev \
             libayatana-appindicator3-dev \
+            libclang-dev \
             libfuse2t64 \
             libglib2.0-dev \
             libgtk-3-dev \
@@ -422,7 +362,6 @@ jobs:
             libva-dev \
             libwebkit2gtk-4.1-dev \
             libxdo-dev \
-            nasm \
             patchelf \
             pkg-config \
             wget
@@ -454,14 +393,6 @@ jobs:
       - name: Validate release version
         shell: bash
         run: cargo run --quiet -p xtask -- release-version check
-
-      - name: Fetch Rust dependencies for offline FFmpeg cache cleanup
-        shell: bash
-        run: cargo fetch --locked --target x86_64-unknown-linux-gnu
-
-      - name: Build static FFmpeg
-        shell: bash
-        run: cargo run --locked -p xtask -- build-ffmpeg
 
       - name: Build Linux packages
         shell: bash
