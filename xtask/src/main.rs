@@ -399,7 +399,14 @@ fn push_git_release_command(tag: &str) -> Command {
 
 fn run_release_build() -> XtaskResult<()> {
     println!("Running cargo build before creating the git tag.");
-    checked_status(Command::new("cargo").args(["build", "--workspace", "--exclude", "xtask"]))?;
+    checked_status(Command::new("cargo").args([
+        "build",
+        "--workspace",
+        "--exclude",
+        "xtask",
+        "--target-dir",
+        "target/release-preflight",
+    ]))?;
     println!("cargo build finished.");
     Ok(())
 }

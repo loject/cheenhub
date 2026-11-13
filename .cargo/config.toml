@@ -12,5 +12,8 @@ rustflags = ["--cfg=web_sys_unstable_apis"]
 rustflags = ["-C", "link-arg=-lc++abi"]
 
 [env]
+# MSVC применяет этот параметр и при линковке host build scripts.
+# bindgen разбирает заголовки FFmpeg в основном потоке build script.
+_LINK_ = "/STACK:33554432"
 CMAKE_POLICY_VERSION_MINIMUM = "3.5"
 FFMPEG_DIR = { value = "crates/video-codec/vendor/ffmpeg-static", relative = true }
